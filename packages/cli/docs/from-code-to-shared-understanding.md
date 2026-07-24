@@ -62,14 +62,14 @@ render Mermaid. When this source changes, regenerate
 Run the complete canonical chain in its versioned order:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --json
+npx workspai workspace intelligence run --for-agent generic --json
 ```
 
 For enterprise CI and release enforcement, add `--strict`. A warning or
 needs-attention verdict then produces a blocked report and exit code `2`:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
 `pipeline` is the broader governance/release orchestrator. It does not replace

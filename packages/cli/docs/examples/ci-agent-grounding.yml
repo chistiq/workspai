@@ -39,7 +39,7 @@ jobs:
         # Exit 1 = hard execution failure; exit 2 = completed but evidence-blocked.
         # Continue here only so the durable run report and blocker evidence can
         # always be uploaded; the final step below still fails either outcome.
-        run: npx workspai workspace intelligence run --for-agent codex --strict --json
+        run: npx workspai workspace intelligence run --for-agent generic --strict --json
         continue-on-error: true
         id: intelligence
 

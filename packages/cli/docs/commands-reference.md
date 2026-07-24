@@ -18,7 +18,7 @@ npx workspai autopilot release [--mode <audit|safe-fix|enforce>] [--json] [--out
 Recommended CI:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
 Run the broader governance and release orchestrators as separate gates; they

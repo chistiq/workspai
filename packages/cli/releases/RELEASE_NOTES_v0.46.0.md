@@ -83,7 +83,7 @@ accidental Python version pin when automatic interpreter selection is desired.
 ```bash
 npm install -g workspai@0.46.0
 workspai --version
-workspai workspace intelligence run --for-agent codex --json
+workspai workspace intelligence run --for-agent generic --json
 ```
 
 There are no breaking changes in this release.

@@ -109,8 +109,8 @@ describe('frontend create registry', () => {
     expect(
       await fs.readJson(path.join(expectedWorkspacePath, '.workspai', 'workspace.json'))
     ).toMatchObject({
-      profile: 'polyglot',
-      engine: { python_core: { status: 'skipped', reason: 'user-opted-out' } },
+      profile: 'minimal',
+      engine: { install_method: 'venv', python_version: null },
     });
     expect(await fs.readJson(path.join(projectPath, '.workspai', 'adopt.json'))).toMatchObject({
       mode: 'linked',

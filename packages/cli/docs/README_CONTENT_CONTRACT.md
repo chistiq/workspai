@@ -65,7 +65,7 @@ as one undifferentiated command wall.
 - Missing relationships mean **not proven**, not independent.
 - The graph is broader than a code graph, but it is not the entire product.
 - The canonical runner is
-  `npx workspai workspace intelligence run --for-agent codex --strict --json`.
+  `npx workspai workspace intelligence run --for-agent generic --strict --json`.
 - `pipeline` is a broader governance/release orchestrator and must not be taught
   as a replacement for the intelligence chain.
 - The integrated CLI already exposes current capabilities. Future standalone

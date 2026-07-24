@@ -1,11 +1,13 @@
 # Measure Workspace Intelligence Usage
 
-Workspai can record model usage, tool activity, cost provenance, and the final
-verified outcome of an agent task. The resulting artifact is designed for CLI,
-IDE, CI, and dashboard consumers.
+Use this feature to answer a practical question: did focused workspace context
+help an AI task use fewer tokens, cost less, or reach a verified result?
 
-It does not store prompt or response bodies. Optional SHA-256 hashes let a
-consumer correlate calls without copying private content into the report.
+Workspai records model usage, tool activity, reported cost, and the final
+verified outcome in one report that the CLI, IDE, CI, and dashboards can read.
+
+It does not store prompt or response text. Optional SHA-256 hashes can connect
+related calls without copying private content into the report.
 
 ## Start a measured task
 
@@ -50,7 +52,7 @@ printf '%s\n' '{
 | `provider-reported` | The provider returned the count                                |
 | `tokenizer-counted` | A named tokenizer counted the exact serialized input or output |
 | `estimated`         | A documented estimate; never presented as provider billing     |
-| `unavailable`       | The provider exposed no usable count                            |
+| `unavailable`       | The provider exposed no usable count                           |
 
 Tool events record progress and repeated work without storing command output:
 

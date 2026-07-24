@@ -105,7 +105,7 @@ catalog, MCP tools, IDE capability discovery, CI evidence, and agent grounding.
 ```bash
 npm install -g workspai@0.48.0
 workspai --version
-workspai workspace intelligence run --for-agent codex --strict --json
+workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
 The short alias is version-aligned:

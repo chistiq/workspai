@@ -1,14 +1,25 @@
 # Unified Workspace Intelligence Runner
 
-`workspace intelligence run` is the canonical contract-backed entrypoint for
-refreshing Workspace Intelligence evidence in one deterministic execution. Use
-it from a Workspai workspace root:
+Use one command when you want the latest answer to these questions:
+
+- What projects and relationships exist now?
+- What changed, and what may be affected?
+- Is the workspace healthy and ready?
+- What should developers, CI, IDEs, and AI tools read?
+
+Run it from a Workspai workspace root:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-The authoritative result is written atomically to
+`generic` is the vendor-neutral context surface. Replace it with `codex`,
+`claude`, `cursor`, or `orca` for agent-specific context. The `agent-sync`
+stage also publishes shared grounding for GitHub Copilot, VS Code, and
+`AGENTS.md` consumers.
+
+Workspai runs the required steps in a fixed order and saves one final report.
+The technical contract writes that report atomically to
 `.workspai/reports/workspace-intelligence-run-last-run.json` with schema
 `workspace-intelligence-run.v1`. JSON stdout returns the same report payload.
 Consumers should read the persisted report when they need durable evidence and
@@ -154,7 +165,7 @@ publish it without applying the relevant redaction policy.
 The simplest hard gate is:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
 Both exit `1` and exit `2` fail a normal CI step. If artifacts must be uploaded

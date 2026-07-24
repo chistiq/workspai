@@ -66,7 +66,7 @@ runs, and export the model-bound Knowledge Graph to standard ecosystem formats.
 
 ```bash
 npm install -g workspai@0.48.0
-workspai workspace intelligence run --for-agent codex --strict --json
+workspai workspace intelligence run --for-agent generic --strict --json
 workspai workspace graph jsonld --output .workspai/reports/workspace-graph.jsonld
 workspai workspace eval status --json
 ```
@@ -134,7 +134,7 @@ revision.
 
 ```bash
 npm install -g workspai@0.47.0
-workspai workspace intelligence run --for-agent codex --strict --json
+workspai workspace intelligence run --for-agent generic --strict --json
 workspai workspace graph search "authentication endpoint" --limit 12 --json
 ```
 
@@ -214,7 +214,7 @@ same canonical source of truth.
 
 ```bash
 npm install -g workspai@0.46.0
-workspai workspace intelligence run --for-agent codex --json
+workspai workspace intelligence run --for-agent generic --json
 ```
 
 [Full Release Notes](./releases/RELEASE_NOTES_v0.46.0.md)

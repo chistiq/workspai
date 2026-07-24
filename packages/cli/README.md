@@ -9,17 +9,17 @@
 
 > One workspace. One truth. Humans and AI aligned.
 
-Workspai is an open-source CLI that turns one or many software projects into an
-organized, evidence-backed view of the whole system. Developers, CI, IDEs,
-MCP-compatible tools, and AI agents can use the same current model instead of
-rebuilding a different picture from scattered files.
+Workspai is an open-source CLI that connects one or many software projects and
+keeps a current, checkable view of the whole system. Developers, CI, IDEs,
+MCP-compatible tools, and AI agents can use that same view instead of rebuilding
+different context from scattered files.
 
 - **See the system:** projects, runtimes, APIs, dependencies, infrastructure,
   documentation, policies, and release state in one model.
-- **Ask with proof:** bounded graph answers linked to the files and facts that
-  support them.
-- **Act with confidence:** change impact, health, verification, readiness, and
-  agent context from one defined and versioned intelligence chain.
+- **Ask with proof:** get focused answers that link back to the supporting files
+  and facts.
+- **Change with confidence:** see what may be affected, run the right checks,
+  and prepare useful context for AI tools.
 
 [Quickstart](#start-in-two-minutes) ·
 [Architecture](#from-code-to-shared-understanding) ·
@@ -30,22 +30,24 @@ rebuilding a different picture from scattered files.
 ## Understand Workspai in one minute
 
 Your software system is more than a repository. It may include several
-applications and services, shared packages, API contracts, deployment files,
-documentation, tests, ownership, and CI evidence. Workspai connects those
-surfaces without making AI the source of truth.
+applications and services, shared packages, API definitions, deployment files,
+documentation, tests, owners, and CI results. Workspai connects those parts
+without asking an AI model to decide what is true.
 
 | Term                | Plain-language meaning                                                               |
 | ------------------- | ------------------------------------------------------------------------------------ |
-| **Workspace**       | The managed boundary containing registered projects, policy, contracts, and evidence |
-| **Project**         | An application, service, library, or existing source tree connected to the workspace |
-| **Workspace Model** | The authoritative structured record used to generate the other views and artifacts   |
-| **Knowledge Graph** | A queryable representation derived from the model, with typed relations and proofs   |
-| **Evidence**        | The source, observation, hash, or report that justifies a fact or decision           |
-| **Artifact**        | A durable file under `.workspai/` that another tool can safely consume               |
+| **Workspace**       | A home for related projects, shared rules, and saved results                         |
+| **Project**         | An application, service, library, or existing source folder connected to a workspace |
+| **Workspace Model** | The main saved record of what Workspai knows about the system                        |
+| **Knowledge Graph** | A searchable map built from the model, with links back to supporting files           |
+| **Evidence**        | The file, observation, hash, or report that supports an answer                       |
+| **Artifact**        | A file under `.workspai/` that people and other tools can read                       |
 
-The Workspace Model is the canonical source of truth. The Knowledge Graph is a
-derived, revision-bound representation—not a competing truth and not an
-LLM-generated guess.
+The Workspace Model is the canonical source of truth. This means it is the main
+saved record. The Knowledge Graph is built from that record to make
+relationships easy to search; it is not a second truth and it is not an AI
+guess. In the technical contract, the graph is a derived, revision-bound
+representation of the model.
 
 The deterministic model, graph, contracts, and verification chain do not
 require an AI API key. Optional AI-backed features declare that dependency
@@ -67,35 +69,37 @@ Global installation is optional. Every example below also works with
 npx wspai --help
 ```
 
-`workspai` is the canonical npm package and command. `wspai` is an optional
-short alias for `npx` workflows. This package is the active CLI boundary in the
+`workspai` is the main npm package and command. `wspai` is an optional shorter
+name for interactive use. This package is the active CLI in the
 [Workspai monorepo](../../README.md).
 
-### 2. Create a lightweight workspace and connect existing source
+### 2. Connect an existing project
 
 ```bash
-npx workspai create workspace platform --profile minimal --yes
-npx workspai adopt /absolute/path/to/project \
-  --workspace ~/.workspai/workspaces/platform \
-  --json
-cd ~/.workspai/workspaces/platform
+cd /absolute/path/to/project
+npx workspai adopt .
 ```
 
-`adopt` registers the project without moving or copying it. To create new
-software instead, start with `npx workspai create` or read
-[Creating Workspaces and Projects](docs/creating-workspaces-and-projects.md).
+`adopt` registers the project without moving or copying it. When run outside a
+workspace, it creates or reuses the minimal default workspace and prints the
+exact `Next shell step`.
 
-### 3. Run the complete Workspace Intelligence chain
+### 3. Continue from the workspace root
+
+Without the VS Code extension, copy the printed `Next shell step` and continue
+in that workspace terminal:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --strict --json
+cd ~/.workspai/workspaces/workspai
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-`codex` selects the generated agent-facing surface; use another supported agent
-identifier when needed. The underlying intelligence chain and evidence remain
-the same.
+`generic` creates vendor-neutral context. Use `codex`, `claude`, `cursor`, or
+`orca` when you want context shaped for that agent. Agent Sync also writes the
+shared files used by GitHub Copilot, VS Code, and `AGENTS.md` consumers without
+changing the system information or the checks Workspai runs.
 
-The run creates durable, discoverable output:
+The run saves its results so people and tools can inspect and reuse them:
 
 ```text
 .workspai/
@@ -113,16 +117,28 @@ The run creates durable, discoverable output:
 AGENTS.md
 ```
 
-Exit code `0` means passed, `1` means execution failed, and `2` means the run
-completed but current evidence blocks the requested decision. A blocked result
+For automation details, including exit codes and blocked results, see the
+[Unified runner guide](docs/workspace-intelligence-runner.md). A blocked result
 is useful evidence, not a crashed command.
 
-The broader governance and release pipeline is a separate gate when you are
-ready; it is not a substitute for the canonical chain:
+When you are ready for the broader release workflow, run:
 
 ```bash
 npx workspai pipeline --json --strict
 ```
+
+Starting new software instead?
+
+```bash
+npx workspai create workspace my-workspace --profile minimal --yes
+cd ~/.workspai/workspaces/my-workspace
+npx workspai create project nextjs web --yes
+```
+
+From the `my-workspace` terminal, create a project, use `adopt` to link one in
+place, or use `import` to copy or clone one into the workspace. See
+[Creating Workspaces and Projects](docs/creating-workspaces-and-projects.md)
+for supported starters.
 
 ## From Code to Shared Understanding
 
@@ -266,11 +282,11 @@ reruns.
 
 ### Governance and operations
 
-| What you need                        | Command                                                                     |
-| ------------------------------------ | --------------------------------------------------------------------------- |
-| Run affected project tests           | `npx workspai workspace run test --affected --blast-radius --json`          |
-| Run the release/governance gate      | `npx workspai pipeline --json --strict`                                     |
-| Run the canonical intelligence chain | `npx workspai workspace intelligence run --for-agent codex --strict --json` |
+| What you need                        | Command                                                                       |
+| ------------------------------------ | ----------------------------------------------------------------------------- |
+| Run affected project tests           | `npx workspai workspace run test --affected --blast-radius --json`            |
+| Run the release/governance gate      | `npx workspai pipeline --json --strict`                                       |
+| Run the canonical intelligence chain | `npx workspai workspace intelligence run --for-agent generic --strict --json` |
 
 `workspace verify` consumes current impact, doctor, contract, analysis, and
 readiness evidence. Use `workspace intelligence run` for the canonical chain,
@@ -388,7 +404,7 @@ All onboarding routes feed the same Workspace Intelligence model.
 | Adopt            | Existing source should stay in place              | `npx workspai adopt /path/to/project --json`                                                             |
 | Import local     | Existing source should be copied into a workspace | `npx workspai import ../orders-api --workspace /path/to/workspace --json`                                |
 | Import Git       | A repository should be cloned into a workspace    | `npx workspai import https://github.com/acme/orders-api.git --git --workspace /path/to/workspace --json` |
-| Create workspace | You need a new governed boundary                  | `npx workspai create workspace platform --profile polyglot --yes`                                        |
+| Create workspace | You need a new governed boundary                  | `npx workspai create workspace my-workspace --profile polyglot --yes`                                    |
 | Create project   | You need a supported new scaffold                 | `npx workspai create project nextjs web --yes`                                                           |
 | Interactive      | You want Workspai to guide the choice             | `npx workspai create`                                                                                    |
 

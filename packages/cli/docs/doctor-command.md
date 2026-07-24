@@ -1,6 +1,8 @@
 # Workspai Doctor Command
 
-`doctor` checks health for the npm wrapper environment in system, workspace, or project scope.
+Use `doctor` to find setup and dependency problems before they interrupt
+development or block a release. It can check the computer, an entire workspace,
+or one project, and reports what is wrong and which fixes are available.
 
 **Related:** [workspace-operations.md](./workspace-operations.md) · [commands-reference.md](./commands-reference.md) · [Documentation index](./README.md)
 
@@ -20,7 +22,7 @@ Checks host prerequisites:
 - RapidKit Core availability
 - Go (optional)
 
-### 2) Workspace Check (Canonical)
+### 2) Workspace Check
 
 ```bash
 cd my-workspace
@@ -87,11 +89,11 @@ npx workspai doctor workspace --profile enterprise-strict --json
 Doctor supports policy profiles so the same evidence can be interpreted correctly in local,
 CI, release, and enterprise gates:
 
-| Profile             | Use when                         | Warning behavior                         |
-| ------------------- | -------------------------------- | ---------------------------------------- |
-| `local`             | Developer diagnostics             | Report warnings, do not block            |
-| `ci`                | CI feedback loop                  | Exit `2` on warnings, `1` on errors      |
-| `release`           | Release readiness gate            | Exit `1` on warnings or errors           |
+| Profile             | Use when                          | Warning behavior                                          |
+| ------------------- | --------------------------------- | --------------------------------------------------------- |
+| `local`             | Developer diagnostics             | Report warnings, do not block                             |
+| `ci`                | CI feedback loop                  | Exit `2` on warnings, `1` on errors                       |
+| `release`           | Release readiness gate            | Exit `1` on warnings or errors                            |
 | `enterprise-strict` | Enterprise/studio repair workflow | Exit `1`; every warning needs evidence or repair guidance |
 
 `--strict` maps to the `release` profile and `--ci` maps to the `ci` profile for backward
@@ -101,11 +103,11 @@ card is advisory locally but blocking for release.
 Doctor also attaches a **freshness contract** to evidence so tools do not treat live state as
 durable structure:
 
-| Freshness category | Meaning                                      | Default TTL |
-| ------------------ | -------------------------------------------- | ----------- |
-| `structure`        | Durable project/workspace shape and markers  | 7 days      |
+| Freshness category | Meaning                                       | Default TTL |
+| ------------------ | --------------------------------------------- | ----------- |
+| `structure`        | Durable project/workspace shape and markers   | 7 days      |
 | `verification`     | Test, script, lint, quality, and probe checks | 24 hours    |
-| `state`            | Live dependency/security state               | 5 minutes   |
+| `state`            | Live dependency/security state                | 5 minutes   |
 
 Each probe can include `freshness`, and each JSON artifact includes `evidenceFreshness`.
 Workspai and CI should refresh stale or `verifyBeforeUse` evidence before claiming a project is
@@ -113,10 +115,10 @@ ready, repaired, or release-safe.
 
 Doctor probes also include an **issue taxonomy** and **repair intent** for Studio-driven repair:
 
-| Field               | Purpose                                                                 |
-| ------------------- | ----------------------------------------------------------------------- |
-| `issueClass`        | Stable category such as `security`, `test`, `container`, or `dependency` |
-| `operationalImpact` | Product impact such as `ci-risk`, `release-risk`, or `security-risk`    |
+| Field               | Purpose                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `issueClass`        | Stable category such as `security`, `test`, `container`, or `dependency`                                      |
+| `operationalImpact` | Product impact such as `ci-risk`, `release-risk`, or `security-risk`                                          |
 | `repairIntent.mode` | Studio action mode: `edit-file`, `run-command`, `review-required`, `verify-before-fix`, or `refresh-evidence` |
 
 This lets Workspai distinguish "show guidance" from "apply an approved file edit", "run a command",
@@ -164,15 +166,15 @@ same repair evidence without guessing the workspace root.
 
 The remediation plan is intentionally ordered for Studio execution:
 
-| Phase | Purpose |
-| --- | --- |
-| `dependency-baseline` | Restore package/runtime dependency baselines before other fixes |
-| `local-environment` | Seed local env files without overwriting operator-owned values |
-| `source-hygiene` | Apply safe project-scoped hygiene files such as `.dockerignore` or `.gitignore` rules |
-| `command-contract` | Add missing test, quality, audit, or runtime command contracts |
-| `runtime-governance` | Run RapidKit/workspace initializers that may touch multiple project surfaces |
-| `manual-review` | Surface guidance that requires a human decision |
-| `generic-execution` | Last-resort shell remediation when no typed operation exists |
+| Phase                 | Purpose                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------- |
+| `dependency-baseline` | Restore package/runtime dependency baselines before other fixes                       |
+| `local-environment`   | Seed local env files without overwriting operator-owned values                        |
+| `source-hygiene`      | Apply safe project-scoped hygiene files such as `.dockerignore` or `.gitignore` rules |
+| `command-contract`    | Add missing test, quality, audit, or runtime command contracts                        |
+| `runtime-governance`  | Run RapidKit/workspace initializers that may touch multiple project surfaces          |
+| `manual-review`       | Surface guidance that requires a human decision                                       |
+| `generic-execution`   | Last-resort shell remediation when no typed operation exists                          |
 
 `dependsOn` lets Workspai avoid false loops: for example, a missing test script repair can depend on
 the project dependency baseline step, so Studio can run or ask for approval in the same order Doctor
@@ -311,11 +313,11 @@ jobs:
 
 ## Exit Codes
 
-| Code | Meaning                        |
-| ---- | ------------------------------ |
-| `0`  | Passed; local-profile warnings remain advisory |
+| Code | Meaning                                                            |
+| ---- | ------------------------------------------------------------------ |
+| `0`  | Passed; local-profile warnings remain advisory                     |
 | `1`  | Errors, or warnings under `release`/`enterprise-strict`/`--strict` |
-| `2`  | Warning-only result under the `ci` profile or `--ci` |
+| `2`  | Warning-only result under the `ci` profile or `--ci`               |
 
 ## Enterprise Probe Extensions
 

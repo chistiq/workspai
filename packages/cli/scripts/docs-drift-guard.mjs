@@ -81,8 +81,8 @@ for (const semantic of [
   'The Workspace Model is the canonical source of truth.',
   'derived, revision-bound representation',
   'not "these projects are independent."',
-  'create workspace platform --profile minimal --yes',
-  '--workspace ~/.workspai/workspaces/platform',
+  'create workspace my-workspace --profile minimal --yes',
+  'cd ~/.workspai/workspaces/my-workspace',
   'A blocked result is useful evidence, not a crashed command.',
   'not a universal token-cost, answer-quality, or task-success claim',
   'The canonical persisted graph is JSON.',
@@ -209,7 +209,8 @@ if (!fs.existsSync(readmeContentContractPath)) {
   }
 }
 
-const canonicalRunner = 'npx workspai workspace intelligence run --for-agent codex --strict --json';
+const canonicalRunner =
+  'npx workspai workspace intelligence run --for-agent generic --strict --json';
 const canonicalReport = '.workspai/reports/workspace-intelligence-run-last-run.json';
 const orderedSteps = [...(chainContract.steps ?? [])].sort(
   (left, right) => left.ordinal - right.ordinal

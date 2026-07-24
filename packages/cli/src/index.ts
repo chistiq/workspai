@@ -2956,6 +2956,7 @@ export async function handleAdoptCommand(
       enableModules: options.enableModules,
       rollbackSnapshot,
     });
+    const suggestedCdCommand = `cd ${workspacePath}`;
 
     if (options.dryRun !== true) {
       try {
@@ -3022,6 +3023,7 @@ export async function handleAdoptCommand(
               usedDefaultWorkspace && options.dryRun === true
                 ? !hasWorkspaceRootMarkers(workspacePath)
                 : false,
+            suggestedCdCommand,
             dryRun: options.dryRun === true,
             adoptedProject,
           },
@@ -3058,7 +3060,14 @@ export async function handleAdoptCommand(
       }
     }
     console.log(chalk.gray(`   Report: ${adoptedProject.adoptReadinessPath}`));
-    console.log(chalk.gray(`   Next: npx workspai workspace model --json`));
+    if (options.dryRun !== true) {
+      console.log(chalk.gray(`   Next shell step: ${suggestedCdCommand}`));
+      console.log(
+        chalk.gray(
+          `   Then: npx workspai workspace intelligence run --for-agent generic --strict --json`
+        )
+      );
+    }
     return 0;
   } catch (error) {
     if (transaction) {
@@ -3332,7 +3341,7 @@ async function ensureManagedDefaultImportWorkspace(options: { silent?: boolean }
     try {
       await createProject(workspaceName, {
         parentDirectory: path.dirname(workspacePath),
-        profile: 'polyglot',
+        profile: 'minimal',
         skipPythonEngine: true,
         skipGit: true,
         yes: true,
@@ -10465,12 +10474,12 @@ export function printHelp() {
   console.log(chalk.cyan(cmd('   npx workspai import <path|git-url>\n')));
   console.log(chalk.white('2. Run the contract-backed intelligence chain\n'));
   console.log(
-    chalk.cyan(cmd('   npx workspai workspace intelligence run --for-agent codex --json\n'))
+    chalk.cyan(cmd('   npx workspai workspace intelligence run --for-agent generic --json\n'))
   );
   console.log(chalk.white('3. Enforce enterprise gates in CI or before release\n'));
   console.log(
     chalk.cyan(
-      cmd('   npx workspai workspace intelligence run --for-agent codex --strict --json\n')
+      cmd('   npx workspai workspace intelligence run --for-agent generic --strict --json\n')
     )
   );
   console.log(chalk.white('4. Explain blockers and trace change impact\n'));
@@ -10487,7 +10496,7 @@ export function printHelp() {
   console.log(chalk.white('\nRun the complete canonical chain?\n'));
   console.log(
     chalk.cyan(
-      cmd('   npx workspai workspace intelligence run --for-agent codex --strict --json\n')
+      cmd('   npx workspai workspace intelligence run --for-agent generic --strict --json\n')
     )
   );
   console.log(chalk.white('What projects exist?\n'));

@@ -1,29 +1,61 @@
 # Workspai NPM — Documentation Index
 
-Hub for user and contributor documentation. Start with the [main README](../README.md) for install and quickstarts.
+Workspai helps people and tools understand the same software system. Use these
+guides to connect existing projects, create new ones, map their relationships,
+check changes, prepare AI context, and automate release checks.
 
-`workspai` is the canonical package and command; `wspai` is only an optional
-short `npx` alias. Install with `npm install -g workspai`, or run the current
-release with `npx workspai@latest --help`.
+Start with the [main README](../README.md) for the product overview, or use the
+quickstart below. `workspai` is the main package and command; `wspai` is only a
+shorter optional name.
 
-## Canonical quickstart
+## Quickstart: connect an existing project
+
+Connect an existing project without moving it, then create one saved,
+checkable view for developers, CI, IDEs, MCP clients, and AI agents:
 
 ```bash
-npx workspai adopt /path/to/project --json
-cd ~/.workspai/workspaces/workspai
-npx workspai workspace intelligence run --for-agent codex --strict --json
+cd /absolute/path/to/project
+npx workspai adopt .
 ```
 
-The broader governance/release pipeline is a separate gate:
+`adopt` keeps the project in place and creates or reuses the minimal default
+workspace. Without the VS Code extension, copy the exact `Next shell step`
+printed by the CLI and continue in that workspace terminal:
+
+```bash
+cd ~/.workspai/workspaces/workspai
+npx workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+Use `generic` for a vendor-neutral context pack, or select `codex`, `claude`,
+`cursor`, or `orca`. Agent Sync also publishes shared files for GitHub Copilot,
+VS Code, and `AGENTS.md` consumers.
+
+Use the release pipeline when you need the broader release workflow:
 
 ```bash
 npx workspai pipeline --json --strict
 ```
 
-Adoption keeps source in place. The runner preserves contract order and writes
-the authoritative `.workspai/reports/workspace-intelligence-run-last-run.json`
-result alongside the model, agent context, report index, and generated
-instructions; see the [Artifact Catalog](./contracts/ARTIFACT_CATALOG.md).
+Adoption keeps source in place. The command maps the system and its
+connections, checks what changes may affect, runs health and release checks,
+and prepares focused AI context under `.workspai/`. When the workspace is not
+ready, the report shows the reason and points to the files or reports behind
+it. Automation details and supported AI tools are documented in the
+[Unified runner](./workspace-intelligence-runner.md). See the
+[Artifact Catalog](./contracts/ARTIFACT_CATALOG.md) for exact paths, writers,
+schemas, and consumers.
+
+To start with a new workspace instead:
+
+```bash
+npx workspai create workspace my-workspace --profile minimal --yes
+cd ~/.workspai/workspaces/my-workspace
+npx workspai create project nextjs web --yes
+```
+
+From the workspace terminal, create a project, use `adopt` to link one in place,
+or use `import` to copy or clone one into the workspace.
 
 ## Table of contents
 
@@ -83,7 +115,7 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 - Create a workspace or project: [creating-workspaces-and-projects.md](./creating-workspaces-and-projects.md)
 - Adopt an existing repo: [workspace-operations.md#import-and-adoption](./workspace-operations.md#import-and-adoption)
 - Scaffold a frontend app: [commands-reference.md](./commands-reference.md) (`create project nextjs <name>`)
-- Canonical intelligence gate: `workspace intelligence run --for-agent codex --strict --json`
+- Canonical intelligence gate: `workspace intelligence run --for-agent generic --strict --json`
 - Broader CI release gate: [commands-reference.md](./commands-reference.md) (`pipeline`, `readiness`)
 - Targeted model/context inspection — schemas in [contracts/workspace-intelligence/](../contracts/workspace-intelligence/)
 

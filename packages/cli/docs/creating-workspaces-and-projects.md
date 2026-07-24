@@ -1,16 +1,20 @@
 # Creating Workspaces and Projects
 
-This guide explains, in plain language, what Workspai does when you create a
-workspace or a project. It covers interactive commands, automation, project
-locations, workspace linking, supported kits, and the most important flags.
+Use this guide when you want to start a new software system or add a new
+application to an existing one. Workspai creates the files, records where the
+project belongs, and makes it visible to the same checks and tools as the rest
+of the workspace.
+
+The sections below explain project locations, supported starters, interactive
+commands, automation, and the most useful options.
 
 For a compact list of command syntax, see
 [commands-reference.md](./commands-reference.md).
 
 ## The two things you can create
 
-A **workspace** is the governed boundary that holds project registrations,
-policies, contracts, and Workspace Intelligence reports.
+A **workspace** is the shared home for related projects, rules, and saved
+Workspai reports.
 
 A **project** is an application or service, such as a FastAPI API, Go service,
 Spring Boot service, .NET API, or frontend application.
@@ -588,13 +592,13 @@ native, official, and existing-project lanes.
 
 # Failure and cleanup behavior
 
-| Situation                                                | Result                                 |
-| -------------------------------------------------------- | -------------------------------------- |
-| Invalid name                                             | Stops before normal scaffold writes    |
-| Target directory already exists                          | Stops without merging or overwriting   |
-| Project scaffold fails                                   | Workspace linking does not run         |
-| Git initialization fails                                 | Usually warns and keeps the scaffold   |
-| Go or Maven dependency warm-up fails                     | Warns and keeps the scaffold           |
+| Situation                                                | Result                                                                      |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Invalid name                                             | Stops before normal scaffold writes                                         |
+| Target directory already exists                          | Stops without merging or overwriting                                        |
+| Project scaffold fails                                   | Workspace linking does not run                                              |
+| Git initialization fails                                 | Usually warns and keeps the scaffold                                        |
+| Go or Maven dependency warm-up fails                     | Warns and keeps the scaffold                                                |
 | Workspace registration/finalization fails after scaffold | Lifecycle rollback restores metadata and removes a newly owned project tree |
 
 Create finalization uses a durable lifecycle transaction. On failure it restores

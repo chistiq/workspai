@@ -97,6 +97,13 @@ if [[ -n "$BUMP" ]]; then
     "${NPM_CMD[@]}" install --package-lock-only --ignore-scripts
 fi
 
+VERSION="$(node -p "require('./packages/cli/package.json').version")"
+TAG="v$VERSION"
+RELEASE_NOTES_FILE="packages/cli/releases/RELEASE_NOTES_${TAG}.md"
+
+echo "📝 Verifying versioned GitHub release notes..."
+node packages/cli/scripts/github-release-notes.mjs --tag "$TAG" --check
+
 echo "🔄 Regenerating version-derived contracts..."
 "${NPM_CMD[@]}" --workspace workspai run generate:contracts
 "${NPM_CMD[@]}" --workspace workspai run check:generated-contracts
@@ -107,8 +114,6 @@ echo "🧪 Running quality checks..."
 "${NPM_CMD[@]}" run bundle-size
 echo "✅ Quality checks passed"
 
-VERSION="$(node -p "require('./packages/cli/package.json').version")"
-TAG="v$VERSION"
 PKG_NAME="$(node -p "require('./packages/cli/package.json').name")"
 ALIAS_PKG_NAME="$(node -p "require('./packages/wspai/package.json').name")"
 ALIAS_PKG_VERSION="$(node -p "require('./packages/wspai/package.json').version")"
@@ -186,10 +191,16 @@ git push origin "$CURRENT_BRANCH" --follow-tags
 
 if command -v gh >/dev/null 2>&1; then
     echo "🎉 Creating GitHub release: $TAG"
-    gh release create "$TAG" --generate-notes
+    RELEASE_BODY_FILE="$(mktemp)"
+    trap 'rm -f "$RELEASE_BODY_FILE"' EXIT
+    node packages/cli/scripts/github-release-notes.mjs \
+        --tag "$TAG" \
+        --output "$RELEASE_BODY_FILE"
+    gh release create "$TAG" --title "$TAG" --notes-file "$RELEASE_BODY_FILE"
 else
     echo "ℹ️ gh CLI not found. Create release manually:"
     echo "   https://github.com/chistiq/workspai/releases/new"
+    echo "   Notes source: $RELEASE_NOTES_FILE"
 fi
 
 echo "✅ Release complete: $TAG"

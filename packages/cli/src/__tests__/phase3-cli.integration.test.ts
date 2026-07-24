@@ -188,6 +188,7 @@ describe('Phase 3 commands - CLI process integration', () => {
           workspacePath: managedWorkspace,
           workspaceResolution: 'default-auto',
           defaultWorkspaceCreated: true,
+          suggestedCdCommand: `cd ${managedWorkspace}`,
           dryRun: false,
           adoptedProject: {
             path: canonicalProjectDir,
@@ -197,6 +198,11 @@ describe('Phase 3 commands - CLI process integration', () => {
         });
         expect(fs.existsSync(path.join(projectDir, '.workspai', 'adopt.json'))).toBe(true);
         expect(fs.existsSync(path.join(managedWorkspace, '.workspai-workspace'))).toBe(true);
+        expect(
+          JSON.parse(
+            fs.readFileSync(path.join(managedWorkspace, '.workspai', 'workspace.json'), 'utf8')
+          )
+        ).toMatchObject({ profile: 'minimal' });
       } finally {
         fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       }

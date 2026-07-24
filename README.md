@@ -13,13 +13,14 @@ Your software is more than source files in one repository. It is projects,
 services, APIs, packages, infrastructure, documentation, policies, tests, and
 release evidence—and the relationships between them.
 
-Workspai turns those scattered surfaces into one governed view that developers,
-CI, IDEs, MCP clients, and AI agents can share:
+Workspai connects those parts and keeps one current view that developers, CI,
+IDEs, MCP clients, and AI agents can share:
 
-- **See the system:** a canonical Workspace Model across projects and runtimes.
-- **Ask with proof:** a bounded Knowledge Graph answer linked to source evidence.
-- **Act with confidence:** impact, verification, readiness, and agent context
-  produced by one contract-backed intelligence chain.
+- **See the system:** know what projects exist and how they fit together.
+- **Ask with proof:** get answers that link back to the files and facts behind
+  them.
+- **Change with confidence:** see what may break, run the right checks, and give
+  AI tools focused context from the same saved information.
 
 [Quickstart](#start-in-two-minutes) ·
 [How it works](#how-workspace-intelligence-works) ·
@@ -32,22 +33,24 @@ CI, IDEs, MCP clients, and AI agents can share:
 
 ![From Code to Shared Understanding](packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png)
 
-Code search can find a symbol. Workspai can connect that symbol to the project,
-API, service, dependency, deployment evidence, affected scope, verification
-gate, and agent context around it.
+Code search can find a symbol. Workspai can also show which project owns it,
+which API or service uses it, what a change may affect, which checks matter,
+and what an AI tool should read next.
 
 ```text
 Question: What implements this endpoint, and what could this change affect?
 
-Bounded result
+Focused result
 ├── matching endpoint and implementation
 ├── nearby dependencies and affected projects
-├── proof paths back to files, lines, and content hashes
-└── current verification and readiness evidence
+├── links back to the supporting files and lines
+└── current health and release checks
 ```
 
-Workspai does not invent missing relationships. An absent edge means “not
-proven by current evidence,” not “these projects are independent.”
+Workspai does not invent missing relationships. If it cannot prove a
+connection from the available files and reports, it marks that connection as
+unknown. In contract terms, an absent connection means “not proven,” not
+“these projects are independent.”
 
 ## Start in two minutes
 
@@ -58,39 +61,55 @@ npm install -g workspai
 workspai --help
 ```
 
-Create a managed workspace and connect an existing project without moving its
-source:
+From an existing project, run:
 
 ```bash
-npx workspai create workspace platform --profile polyglot --skip-python-engine --yes
-cd ~/.workspai/workspaces/platform
-npx workspai adopt /absolute/path/to/project --json
+cd /absolute/path/to/project
+npx workspai adopt .
 ```
 
-Build the shared model, evidence, and agent-ready context:
+Workspai keeps the project in place and creates or reuses a minimal workspace in
+the default system location. It prints the exact next shell step. Without the
+VS Code extension, copy that step and continue from the workspace terminal:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --strict --json
+cd ~/.workspai/workspaces/workspai
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-The durable result is under `.workspai/`. Exit code `0` means passed, `1` means
-execution failed, and `2` means the run completed but evidence still blocks the
-requested decision.
+Use `generic` for vendor-neutral context, or choose `codex`, `claude`,
+`cursor`, or `orca`. The same run also syncs shared grounding for GitHub
+Copilot, VS Code, and `AGENTS.md` consumers.
+
+The durable result is under `.workspai/`. When the workspace is not ready,
+Workspai returns the blockers and their evidence instead of claiming the
+system is healthy.
 
 Already have a Workspai workspace? Run only the final command.
 
+Starting from scratch instead?
+
+```bash
+npx workspai create workspace my-workspace --profile minimal --yes
+cd ~/.workspai/workspaces/my-workspace
+npx workspai create project nextjs web --yes
+```
+
+From the `my-workspace` terminal, you can also use `adopt` to link an existing
+project in place or `import` to copy or clone one into the workspace.
+
 ## What Workspai gives you
 
-| You need to know…                | Workspai gives you…                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| What is in this software system? | A canonical model of projects, runtimes, frameworks, commands, contracts, policies, and detected facts |
-| How are things connected?        | A queryable Knowledge Graph with typed entities, relations, trust, derivation, and proofs              |
-| What changed?                    | Model snapshots and deterministic diffs                                                                |
-| What could break?                | Direct and transitive impact paths across registered projects                                          |
-| Can this proceed?                | Doctor, contract, analysis, readiness, and verification evidence                                       |
-| What should an agent read?       | Bounded context, report indexes, skills, instructions, and MCP tools                                   |
-| Why is it blocked?               | Evidence-backed explanations and remediation handoffs                                                  |
-| Is context actually smaller?     | Reproducible retrieval benchmarks plus provider-aware execution evaluation                             |
+| You need to know…                | Workspai gives you…                                                               |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| What is in this software system? | One structured list of its projects, runtimes, frameworks, rules, and known facts |
+| How are things connected?        | A searchable map with links back to the files that prove each connection          |
+| What changed?                    | A saved before-and-after comparison                                               |
+| What could break?                | The projects and dependencies that may be affected                                |
+| Can this proceed?                | Health, policy, analysis, release, and verification checks                        |
+| What should an AI tool read?     | Focused context, instructions, skills, and MCP tools                              |
+| Why is it blocked?               | A clear reason with supporting files and reports                                  |
+| Is the context actually smaller? | A repeatable measurement instead of a marketing estimate                          |
 
 The first run produces a discoverable evidence set, including:
 
@@ -111,16 +130,18 @@ The first run produces a discoverable evidence set, including:
 AGENTS.md
 ```
 
-Canonical JSON artifacts publish versioned schemas. Consumers discover exact
-versions and paths through the
+These JSON files use versioned, published schemas. Tools can discover their
+exact versions and paths through the
 [published contract catalog](packages/cli/contracts/published-contract-catalog.v1.json)
 instead of scraping Markdown or guessing filenames.
 
 ## How Workspace Intelligence works
 
-The Workspace Model is the canonical source of truth. The Knowledge Graph is a
-derived, revision-bound representation—not a second competing truth and not a
-prompt.
+The Workspace Model is the canonical source of truth. In plain language, it is
+the saved record of what Workspai currently knows about the system. The
+Knowledge Graph is built from that record so it can be searched and explored;
+it is not a second source of truth and it is not an AI guess. In the technical
+contract, the graph is a derived, revision-bound representation of the model.
 
 ```text
 Code · packages · APIs · infra · docs · CI · policies · runtime evidence
@@ -205,7 +226,7 @@ Model → Diff → Impact → Doctor + Contract Verify + Analyze → Readiness
 Run it as one operation:
 
 ```bash
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
 Each stage declares its inputs, outputs, order, and continuation semantics. The
@@ -222,7 +243,7 @@ or inspect the machine-readable
 | ------------------------------------ | ----------------------------------------------------------------------------------------- |
 | Connect an existing project in place | `npx workspai adopt /path/to/project --json`                                              |
 | Create a workspace or project        | [Creating workspaces and projects](packages/cli/docs/creating-workspaces-and-projects.md) |
-| Run the complete intelligence chain  | `npx workspai workspace intelligence run --for-agent codex --strict --json`               |
+| Run the complete intelligence chain  | `npx workspai workspace intelligence run --for-agent generic --strict --json`             |
 | Ask a bounded architecture question  | `npx workspai workspace graph search "authentication endpoint" --limit 12 --json`         |
 | Trace why a relationship exists      | `npx workspai workspace graph evidence "GET /users" --json`                               |
 | Inspect a change and blast radius    | [Workspace Knowledge Graph](packages/cli/docs/workspace-knowledge-graph.md)               |

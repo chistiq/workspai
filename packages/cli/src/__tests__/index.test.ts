@@ -711,8 +711,10 @@ describe('CLI Entry Point', () => {
         expect(await fs.pathExists(path.join(sourceDir, '.workspai', 'adopt.json'))).toBe(true);
 
         const payload = JSON.parse(consoleLog.mock.calls[0]?.[0] as string) as {
+          suggestedCdCommand: string;
           adoptedProject: { name: string; path: string; stack: string };
         };
+        expect(payload.suggestedCdCommand).toBe(`cd ${workspaceRoot}`);
         expect(payload.adoptedProject).toMatchObject({
           name: 'web',
           path: sourceDir,
@@ -868,6 +870,9 @@ describe('CLI Entry Point', () => {
         expect(
           await fs.pathExists(path.join(expectedWorkspacePath, '.workspai', 'workspace.json'))
         ).toBe(true);
+        expect(
+          await fs.readJson(path.join(expectedWorkspacePath, '.workspai', 'workspace.json'))
+        ).toMatchObject({ profile: 'minimal' });
       } finally {
         await fs.remove(fakeHome);
         await fs.remove(cwdOutsideWorkspace);

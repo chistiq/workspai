@@ -88,7 +88,7 @@ can reject stale or mismatched graph data instead of silently trusting it.
 ```bash
 npm install -g workspai@0.47.0
 workspai --version
-workspai workspace intelligence run --for-agent codex --strict --json
+workspai workspace intelligence run --for-agent generic --strict --json
 workspai workspace graph search "authentication endpoint" --limit 12 --json
 ```
 

@@ -362,7 +362,7 @@ canonical file. Legacy files remain readable during the compatibility window.
 ## Consumer rules
 
 1. **Project count:** read `workspace-registry.v1.json` (or run `workspace registry status --json`).
-2. **Workspace Intelligence chain:** run `workspace intelligence run --for-agent codex --strict --json` to preserve Model → Diff → Impact → Doctor + Contract Verify + Analyze → Readiness → Verify → Context → Agent Sync → Explain. `pipeline` is the broader governance/release orchestrator and `autopilot` is a separate release surface; neither redefines the canonical chain. Use `pipeline-last-run.json` only for the pipeline orchestration summary.
+2. **Workspace Intelligence chain:** run `workspace intelligence run --for-agent generic --strict --json` to preserve Model → Diff → Impact → Doctor + Contract Verify + Analyze → Readiness → Verify → Context → Agent Sync → Explain. `pipeline` is the broader governance/release orchestrator and `autopilot` is a separate release surface; neither redefines the canonical chain. Use `pipeline-last-run.json` only for the pipeline orchestration summary.
 3. **Do not** use `workspace.json.projects` (removed in schema 1.0).
 4. Prefer `schemaVersion` constants in each artifact; legacy `v1` on readiness is accepted when reading old reports.
 5. **Agent retrieval:** start with `AGENTS.md` and `.workspai/reports/INDEX.json`, then use `workspace graph search <query> --limit <n> --json` or MCP `searchWorkspaceGraph` for question-sized facts. Follow returned proof paths to source evidence. Read the full context, model, or graph only when the bounded result is insufficient.

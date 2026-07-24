@@ -1,11 +1,14 @@
 # Workspai Practical User Scenarios (Open Source Edition)
 
-Practical workflows for OSS teams using the npm CLI. Command syntax: [commands-reference.md](./commands-reference.md). Import/adopt details: [workspace-operations.md](./workspace-operations.md).
+This guide shows complete, copyable ways to use Workspai on real projects:
+connect existing code, create new applications, prepare AI context, check
+changes, and use the same results in CI.
 
-All scenarios use the same [Unified Workspace Intelligence Runner](./workspace-intelligence-runner.md):
-`sync` and baseline resolution are reported separately from the exact 11-stage
-chain. Treat exit `1` as an execution failure and exit `2` as an evidence-blocked
-completed run that requires remediation before release.
+Command syntax: [commands-reference.md](./commands-reference.md). Import and
+adopt behavior: [workspace-operations.md](./workspace-operations.md). All
+scenarios use the same
+[Workspace Intelligence runner](./workspace-intelligence-runner.md), so the
+system map, checks, and saved reports stay consistent.
 
 ## Scenario 0 — Existing project (adopt or import)
 
@@ -16,7 +19,7 @@ Goal: connect code you already have without reshuffling repositories.
 ```bash
 npx workspai adopt /path/to/existing-app --workspace /path/to/workspace --json
 cd /path/to/workspace
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 cd /path/to/existing-app
 npx workspai doctor project --json
 ```
@@ -78,7 +81,7 @@ release or agent input:
 
 ```bash
 cd ..
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
 The canonical durable outputs are `.workspai/reports/workspace-model.json`,
@@ -197,7 +200,7 @@ loading every source file or the complete graph into a model prompt.
 
 ```bash
 cd my-workspace
-npx workspai workspace intelligence run --for-agent codex --strict --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 npx workspai workspace graph search "authentication endpoint" --limit 12 --json
 npx workspai workspace graph benchmark "authentication endpoint" --limit 12 --json
 npx workspai workspace mcp serve

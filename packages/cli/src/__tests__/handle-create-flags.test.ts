@@ -235,8 +235,8 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(
       await fsExtra.readJson(path.join(workspacePath, '.workspai', 'workspace.json'))
     ).toMatchObject({
-      profile: 'polyglot',
-      engine: { python_core: { status: 'skipped', reason: 'user-opted-out' } },
+      profile: 'minimal',
+      engine: { install_method: 'venv', python_version: null },
     });
     expect(await fsExtra.readJson(path.join(projectPath, '.workspai', 'adopt.json'))).toMatchObject(
       {
@@ -429,8 +429,8 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
         path.join(managedWorkspace, '.workspai', 'workspace.json')
       );
       expect(workspaceManifest).toMatchObject({
-        profile: 'polyglot',
-        engine: { python_core: { status: 'skipped', reason: 'user-opted-out' } },
+        profile: 'minimal',
+        engine: { install_method: 'venv', python_version: null },
       });
       const adoptMetadata = await fsExtra.readJson(
         path.join(projectRoot, '.workspai', 'adopt.json')

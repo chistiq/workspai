@@ -1,6 +1,8 @@
 # Workspace Operations
 
-Behavioral guide for import, adoption, snapshots, archives, contracts, collaboration bundles, and local infra sidecars.
+Use this guide to bring existing software into Workspai, move or share workspace
+state safely, and manage supporting local services. It explains what each
+operation changes before you run it.
 
 Command syntax: [commands-reference.md](./commands-reference.md).
 
@@ -8,8 +10,11 @@ Command syntax: [commands-reference.md](./commands-reference.md).
 
 Use `import` to copy or clone an existing project into a Workspai workspace.
 Use `adopt` when the project must stay where it already lives but should become
-visible to Workspai Workspace Intelligence. Core module commands remain limited
-to projects whose existing RapidKit metadata identifies a module-enabled kit.
+visible to Workspai. In both cases, the project becomes part of the shared
+system map, checks, and AI context.
+
+RapidKit Core module commands remain available only when existing project
+metadata identifies a kit that supports modules.
 
 ```bash
 npx workspai import ../orders-api
@@ -24,7 +29,8 @@ npx workspai adopt --json
 - Local folders are copied; git sources are cloned with shallow history.
 - Outside any workspace (no `--workspace`), Workspai creates or reuses the managed `workspai` workspace. New defaults use `~/.workspai/workspaces/workspai`; valid legacy candidates under `~/rapidkit/workspaces/workspai` and `~/Workspai/rapidkits/workspai` can still be reused.
 - Existing workspaces under legacy managed roots remain registered after upgrade.
-- CLI prints a next-step `cd ...` hint (`suggestedCdCommand` in JSON mode).
+- CLI prints the exact next `cd ...` step. JSON mode returns the same value as
+  `suggestedCdCommand`.
 - Failed workspace sync rolls back imported files and registry entries.
 
 ### Adopt behavior
@@ -38,7 +44,9 @@ npx workspai adopt --json
 ### JSON output (`--json`)
 
 - Import returns `workspacePath`, `workspaceResolution`, `defaultWorkspaceCreated`, `suggestedCdCommand`, and `importedProject`. The imported project includes its `source`.
-- Adopt returns `workspacePath`, `workspaceResolution`, `defaultWorkspaceCreated`, `wouldCreateDefaultWorkspace`, `dryRun`, and `adoptedProject`.
+- Adopt returns `workspacePath`, `workspaceResolution`,
+  `defaultWorkspaceCreated`, `wouldCreateDefaultWorkspace`,
+  `suggestedCdCommand`, `dryRun`, and `adoptedProject`.
 - Project results include detected `name`, `path`, `stack`, `runtime`, `framework`, `supportTier`, `moduleSupport`, and `confidence` where available.
 
 Imported projects receive `.workspai/import-readiness.json`. Adopted projects add frontend-aware detection for Next.js, React, Vite, Vue, Angular, SvelteKit, Nuxt, Astro, Remix, and Solid.
