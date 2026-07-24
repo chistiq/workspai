@@ -88,7 +88,7 @@ describe('Network Operations', () => {
     it('should fetch repository information', async () => {
       const mockRepoInfo = {
         name: 'workspai',
-        owner: 'rapidkitlabs',
+        owner: 'chistiq',
         stars: 100,
         description: 'Workspai CLI monorepo',
       };
@@ -100,10 +100,11 @@ describe('Network Operations', () => {
 
       global.fetch = fetchMock;
 
-      const response = await fetch('https://api.github.com/repos/rapidkitlabs/workspai');
+      const response = await fetch('https://api.github.com/repos/chistiq/workspai');
       const data = await response.json();
 
       expect(data.name).toBe('workspai');
+      expect(data.owner).toBe('chistiq');
       expect(data.stars).toBe(100);
     });
 

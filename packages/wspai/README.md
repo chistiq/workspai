@@ -38,10 +38,10 @@ directory regardless of which command spelling you choose.
 
 ## Documentation
 
-- [Workspai CLI overview](https://github.com/rapidkitlabs/workspai/blob/main/packages/cli/README.md)
-- [Task-oriented documentation](https://github.com/rapidkitlabs/workspai/blob/main/packages/cli/docs/README.md)
-- [Command reference](https://github.com/rapidkitlabs/workspai/blob/main/packages/cli/docs/commands-reference.md)
-- [Workspace Intelligence contracts](https://github.com/rapidkitlabs/workspai/tree/main/packages/cli/contracts)
+- [Workspai CLI overview](https://github.com/chistiq/workspai/blob/main/packages/cli/README.md)
+- [Task-oriented documentation](https://github.com/chistiq/workspai/blob/main/packages/cli/docs/README.md)
+- [Command reference](https://github.com/chistiq/workspai/blob/main/packages/cli/docs/commands-reference.md)
+- [Workspace Intelligence contracts](https://github.com/chistiq/workspai/tree/main/packages/cli/contracts)
 
 Issues and contributions belong in the
-[Workspai repository](https://github.com/rapidkitlabs/workspai/issues).
+[Workspai repository](https://github.com/chistiq/workspai/issues).

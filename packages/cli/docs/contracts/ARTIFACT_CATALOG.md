@@ -191,6 +191,12 @@ on each settled change, driven by graph-aware incremental rebuilds. Events carry
 removed projects, graph edge deltas, structural `modelHash`, and `mode`/`durationMs`. Canonical
 source: `src/workspace-watch.ts`.
 
+Use `workspace watch --graph-stream --json` for the transport-neutral
+`workspace-graph-stream.v1` feed consumed by IDEs. The first line is an
+authoritative snapshot; subsequent lines are hash-linked, revisioned deltas.
+Consumers must request a new snapshot after any revision, identity, generation,
+schema, validation, or hash-continuity failure.
+
 **Health/impact history.** Each `workspace verify` run appends a compact record to
 `.workspai/reports/workspace-intelligence-history.json` (`workspace-intelligence-history.v1`),
 a ring buffer capped at the 50 most-recent entries (verdict, risk, freshness, gate, counts).

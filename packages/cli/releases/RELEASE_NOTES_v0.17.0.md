@@ -447,7 +447,7 @@ npx rapidkit@0.17.0 doctor --workspace
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-npm)
+- [GitHub Repository](https://github.com/chistiq/rapidkit-npm)
 - [Documentation](https://getrapidkit.com/docs)
 - [VS Code Extension](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
 - [Discord Community](https://discord.gg/rapidkit)

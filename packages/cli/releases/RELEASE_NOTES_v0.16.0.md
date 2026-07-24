@@ -190,9 +190,9 @@ Thanks to the community for feedback on workspace management and cross-tool inte
 ## 🔗 Links
 
 - **npm Package:** [rapidkit@0.16.0](https://www.npmjs.com/package/rapidkit/v/0.16.0)
-- **GitHub Release:** [v0.16.0](https://github.com/rapidkitlabs/rapidkit-npm/releases/tag/v0.16.0)
+- **GitHub Release:** [v0.16.0](https://github.com/chistiq/rapidkit-npm/releases/tag/v0.16.0)
 - **Documentation:** [getrapidkit.com](https://getrapidkit.com)
-- **Support:** [GitHub Issues](https://github.com/rapidkitlabs/rapidkit-npm/issues)
+- **Support:** [GitHub Issues](https://github.com/chistiq/rapidkit-npm/issues)
 
 ---
 

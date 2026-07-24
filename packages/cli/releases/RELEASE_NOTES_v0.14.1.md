@@ -150,7 +150,7 @@ No special configuration needed!
 
 ## 🔗 Resources
 
-- **GitHub:** https://github.com/rapidkitlabs/rapidkit-npm
+- **GitHub:** https://github.com/chistiq/rapidkit-npm
 - **Documentation:** https://docs.rapidkit.dev
 - **NPM Package:** https://www.npmjs.com/package/rapidkit
 
@@ -160,4 +160,4 @@ Thanks to the community for reporting this issue!
 
 ---
 
-**Full Changelog:** https://github.com/rapidkitlabs/rapidkit-npm/compare/v0.14.0...v0.14.1
+**Full Changelog:** https://github.com/chistiq/rapidkit-npm/compare/v0.14.0...v0.14.1

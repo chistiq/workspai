@@ -59,6 +59,7 @@ export type RuntimeCommandDocumentation = {
       format: 'json' | 'raw-text';
       mediaType:
         | 'application/json'
+        | 'application/x-ndjson'
         | 'application/ld+json'
         | 'application/graphml+xml'
         | 'application/gexf+xml'
@@ -402,6 +403,20 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
         { selector: 'jsonld', format: 'raw-text', mediaType: 'application/ld+json' },
         { selector: 'graphml', format: 'raw-text', mediaType: 'application/graphml+xml' },
         { selector: 'gexf', format: 'raw-text', mediaType: 'application/gexf+xml' },
+      ],
+    },
+  },
+  'workspace watch': {
+    canonicalArgv: ['workspace', 'watch', '--json'],
+    output: {
+      defaultFormat: 'human-or-json',
+      modes: [
+        { selector: '--json', format: 'json', mediaType: 'application/x-ndjson' },
+        {
+          selector: '--graph-stream --json',
+          format: 'json',
+          mediaType: 'application/x-ndjson',
+        },
       ],
     },
   },

@@ -126,7 +126,7 @@ npx workspai pipeline --json --strict
 
 ## From Code to Shared Understanding
 
-![From Code to Shared Understanding](https://raw.githubusercontent.com/rapidkitlabs/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png)
+![From Code to Shared Understanding](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png)
 
 [View the Mermaid source and explanation](docs/from-code-to-shared-understanding.md).
 
@@ -483,7 +483,7 @@ For command-specific behavior, use the
 
 Workspai is MIT-licensed and developed in the open. Contributions to runtime
 support, contracts, documentation, tests, and Workspace Intelligence workflows
-are welcome.
+are welcome. Workspai is built by [Chistiq](https://chistiq.com/).
 
 From a source checkout:
 
@@ -499,12 +499,12 @@ Go, Java, and .NET are required only for workflows that exercise those runtimes.
 To validate only this package, run `npm --workspace workspai run validate` from
 the monorepo root.
 
-- Read [CONTRIBUTING.md](https://github.com/rapidkitlabs/workspai/blob/main/packages/cli/CONTRIBUTING.md) before submitting changes.
-- Use [GitHub Issues](https://github.com/rapidkitlabs/workspai/issues) for reproducible bugs and feature requests.
-- Use [GitHub Discussions](https://github.com/rapidkitlabs/workspai/discussions) for questions and design conversations.
+- Read [CONTRIBUTING.md](https://github.com/chistiq/workspai/blob/main/packages/cli/CONTRIBUTING.md) before submitting changes.
+- Use [GitHub Issues](https://github.com/chistiq/workspai/issues) for reproducible bugs and feature requests.
+- Use [GitHub Discussions](https://github.com/chistiq/workspai/discussions) for questions and design conversations.
 - Read the [Development Guide](docs/DEVELOPMENT.md) for local workflows.
 - Report vulnerabilities through the [Security Policy](docs/SECURITY.md), not a public issue.
-- Review the [Changelog](https://github.com/rapidkitlabs/workspai/blob/main/packages/cli/CHANGELOG.md) before upgrading.
+- Review the [Changelog](https://github.com/chistiq/workspai/blob/main/packages/cli/CHANGELOG.md) before upgrading.
 
 ## License
 

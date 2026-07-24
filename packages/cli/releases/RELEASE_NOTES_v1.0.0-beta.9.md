@@ -133,10 +133,10 @@ Thank you to everyone who contributed to this release!
 ## 📚 Resources
 
 - **NPM**: https://www.npmjs.com/package/rapidkit
-- **GitHub**: https://github.com/rapidkitlabs/rapidkit-npm
+- **GitHub**: https://github.com/chistiq/rapidkit-npm
 - **Docs**: https://getrapidkit.com (coming soon)
-- **Issues**: https://github.com/rapidkitlabs/rapidkit-npm/issues
+- **Issues**: https://github.com/chistiq/rapidkit-npm/issues
 
 ---
 
-**Full Changelog**: [v1.0.0-beta.8...v1.0.0-beta.9](https://github.com/rapidkitlabs/rapidkit-npm/compare/v1.0.0-beta.8...v1.0.0-beta.9)
+**Full Changelog**: [v1.0.0-beta.8...v1.0.0-beta.9](https://github.com/chistiq/rapidkit-npm/compare/v1.0.0-beta.8...v1.0.0-beta.9)

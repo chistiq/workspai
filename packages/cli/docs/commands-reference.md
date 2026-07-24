@@ -67,7 +67,7 @@ npx workspai workspace impact --from <workspace-diff-report> [--workspace <path>
 npx workspai workspace verify [--from-impact <file>] [--workspace <path>] [--scope project:<name>] [--strict] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace eval [init <task> [strategy]|record|status|report|compare --from <report>] [--workspace <path>] [--output <file>] [--json]
-npx workspai workspace watch [--workspace <path>] [--json] [--once] [--scan-depth <count>]
+npx workspai workspace watch [--workspace <path>] [--json] [--graph-stream] [--once] [--scan-depth <count>]
 npx workspai workspace explain|why <target> [--workspace <path>] [--json] [--write]
 npx workspai workspace trace --from <workspace-diff-report> [--workspace <path>] [--json] [--write]
 printf '%s\n' '{"actionId":"fix-api","summary":"API tests passed","outcome":"ok"}' | npx workspai workspace feedback record [--workspace <path>] --json

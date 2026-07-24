@@ -154,7 +154,7 @@ export function registerAICommands(program: Command): void {
             chalk.gray('   Try more general terms (e.g., "storage" instead of "blockchain")\n')
           );
           console.log(chalk.white('3. Request feature:'));
-          console.log(chalk.gray('   https://github.com/rapidkitlabs/workspai/issues\n'));
+          console.log(chalk.gray('   https://github.com/chistiq/workspai/issues\n'));
 
           if (recommendations.length > 0) {
             console.log(chalk.yellow('⚠️  Low confidence matches found:\n'));

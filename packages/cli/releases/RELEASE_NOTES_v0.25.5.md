@@ -33,5 +33,5 @@ Prevents a Windows-specific edge case where a workspace-local `rapidkit.cmd` or 
 ### Links
 
 - 📦 [npm](https://www.npmjs.com/package/rapidkit)
-- 🐙 [GitHub](https://github.com/rapidkitlabs/rapidkit)
+- 🐙 [GitHub](https://github.com/chistiq/rapidkit)
 - 🌐 [Workspai](https://www.workspai.com/)

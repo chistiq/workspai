@@ -97,7 +97,7 @@ npx rapidkit@1.0.0-beta.6 my-workspace --demo
 ## 🔗 Links
 
 - **NPM Package**: https://www.npmjs.com/package/rapidkit
-- **GitHub**: https://github.com/rapidkitlabs/rapidkit-npm
+- **GitHub**: https://github.com/chistiq/rapidkit-npm
 - **Documentation**: See `docs/` folder
 
 ## 🙏 Notes

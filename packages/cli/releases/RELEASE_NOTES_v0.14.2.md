@@ -64,11 +64,11 @@ This release sets the foundation for v0.15.0, which will focus on:
 ## Links
 
 - 📦 [npm Package](https://www.npmjs.com/package/rapidkit)
-- 🐙 [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-npm)
+- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-npm)
 - 📚 [Full Changelog](../CHANGELOG.md)
 - 📋 [Action Plan](../docs/ACTION_PLAN_v0.15.0.md)
 - ✅ [Polish Checklist](../docs/POLISH_CHECKLIST.md)
 
 ---
 
-**Full Changelog**: [v0.14.1...v0.14.2](https://github.com/rapidkitlabs/rapidkit-npm/compare/v0.14.1...v0.14.2)
+**Full Changelog**: [v0.14.1...v0.14.2](https://github.com/chistiq/rapidkit-npm/compare/v0.14.1...v0.14.2)

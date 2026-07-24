@@ -46,6 +46,7 @@
     "workspaceContext": "workspace-context.v1",
     "workspaceDependencyGraph": "workspace-dependency-graph.v1",
     "workspaceKnowledgeGraph": "workspace-knowledge-graph.v1",
+    "workspaceGraphStream": "workspace-graph-stream.v1",
     "workspaceKnowledgeGraphChangeOverlay": "workspace-knowledge-graph-change-overlay.v1",
     "workspaceKnowledgeSearch": "workspace-knowledge-search.v1",
     "workspaceGraphTokenEfficiency": "workspace-graph-token-efficiency.v1",

@@ -76,14 +76,14 @@ Looking ahead to future releases:
 ## 📚 Documentation
 
 - [NPM Package](https://www.npmjs.com/package/rapidkit)
-- [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-npm)
+- [GitHub Repository](https://github.com/chistiq/rapidkit-npm)
 - [VS Code Extension](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
 
 ## 💬 Feedback
 
 We'd love to hear from you:
-- 🐛 [Report Issues](https://github.com/rapidkitlabs/rapidkit-npm/issues)
-- ⭐ [Star us on GitHub](https://github.com/rapidkitlabs/rapidkit-npm)
+- 🐛 [Report Issues](https://github.com/chistiq/rapidkit-npm/issues)
+- ⭐ [Star us on GitHub](https://github.com/chistiq/rapidkit-npm)
 - 💬 Share your experience
 
 ---

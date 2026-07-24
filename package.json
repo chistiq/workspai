@@ -3,7 +3,16 @@
   "private": true,
   "version": "0.48.0",
   "description": "Workspai monorepo for Workspace Intelligence packages.",
+  "author": "Chistiq",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chistiq/workspai.git"
+  },
+  "homepage": "https://www.workspai.com/",
+  "bugs": {
+    "url": "https://github.com/chistiq/workspai/issues"
+  },
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "packages/*"
@@ -13,6 +22,7 @@
   },
   "scripts": {
     "workspaces:list": "corepack npm query .workspace",
+    "check:brand": "node scripts/check-brand-contract.mjs",
     "check": "corepack npm --workspaces --if-present run check",
     "fix": "corepack npm --workspaces --if-present run fix",
     "validate": "corepack npm --workspaces --if-present run validate",
@@ -36,7 +46,7 @@
     "release:minor": "corepack npm --workspace workspai run release:minor",
     "release:major": "corepack npm --workspace workspai run release:major",
     "prepare": "husky",
-    "prepush:check": "corepack npm run check && corepack npm run ci && corepack npm --workspace workspai run contracts:validate"
+    "prepush:check": "corepack npm run check:brand && corepack npm run check && corepack npm run ci && corepack npm --workspace workspai run contracts:validate"
   },
   "devDependencies": {
     "chokidar": "^3.6.0",

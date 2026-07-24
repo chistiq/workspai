@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/workspai.svg?style=flat-square)](https://www.npmjs.com/package/workspai)
 [![Downloads](https://img.shields.io/npm/dm/workspai.svg?style=flat-square)](https://www.npmjs.com/package/workspai)
-[![CI](https://img.shields.io/github/actions/workflow/status/rapidkitlabs/workspai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/rapidkitlabs/workspai/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/chistiq/workspai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/chistiq/workspai/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
 ## Workspace Intelligence for software systems
@@ -294,8 +294,11 @@ Before contributing, read the
 
 ## Community
 
-- [Issues](https://github.com/rapidkitlabs/workspai/issues) for reproducible bugs and feature requests
-- [Discussions](https://github.com/rapidkitlabs/workspai/discussions) for questions and design proposals
+Workspai is an open-source project by [Chistiq](https://chistiq.com/), the
+intelligence infrastructure company behind RapidKit and Workspai.
+
+- [Issues](https://github.com/chistiq/workspai/issues) for reproducible bugs and feature requests
+- [Discussions](https://github.com/chistiq/workspai/discussions) for questions and design proposals
 - [Security policy](packages/cli/docs/SECURITY.md) for private vulnerability reporting
 - [Changelog](packages/cli/CHANGELOG.md) for release history
 

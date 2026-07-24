@@ -125,6 +125,10 @@ jobs:
       - name: Build project
         run: npm --workspace workspai run build
 
+      # Organization ownership and public-link contract
+      - name: Validate Chistiq brand contract
+        run: npm run check:brand
+
       # Shared parity contract gate (npm <-> extension snapshot)
       - name: Validate import stack parity contract snapshot
         run: npm --workspace workspai run test:parity-contract

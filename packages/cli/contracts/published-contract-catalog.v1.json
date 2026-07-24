@@ -234,6 +234,11 @@
       "contractPath": "contracts/workspace-intelligence/workspace-knowledge-graph.v1.json",
       "publication": "json-schema"
     },
+    "workspaceGraphStream": {
+      "schemaVersion": "workspace-graph-stream.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-graph-stream.v1.json",
+      "publication": "json-schema"
+    },
     "workspaceKnowledgeGraphChangeOverlay": {
       "schemaVersion": "workspace-knowledge-graph-change-overlay.v1",
       "contractPath": "contracts/workspace-intelligence/workspace-knowledge-graph-change-overlay.v1.json",

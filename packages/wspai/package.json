@@ -19,12 +19,16 @@
     "governance",
     "AI-agents"
   ],
-  "author": "RapidKit Labs",
+  "author": "Chistiq",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rapidkitlabs/workspai.git",
+    "url": "git+https://github.com/chistiq/workspai.git",
     "directory": "packages/wspai"
+  },
+  "homepage": "https://www.workspai.com/",
+  "bugs": {
+    "url": "https://github.com/chistiq/workspai/issues"
   },
   "bin": {
     "wspai": "bin/wspai.js"

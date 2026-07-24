@@ -390,9 +390,9 @@ This release includes template fixes synchronized with RapidKit Core v0.3.0:
 ## 📚 Resources
 
 - **Changelog:** [CHANGELOG.md](../CHANGELOG.md)
-- **GitHub Repository:** [RapidKit NPM Package](https://github.com/rapidkit/rapidkit-npm)
+- **GitHub Repository:** [RapidKit NPM Package](https://github.com/chistiq/rapidkit-npm)
 - **Documentation:** [docs.rapidkit.dev](https://docs.rapidkit.dev)
-- **Core Python Package:** [RapidKit Core](https://github.com/rapidkit/rapidkit-core)
+- **Core Python Package:** [RapidKit Core](https://github.com/chistiq/rapidkit-core)
 
 ---
 
@@ -421,6 +421,6 @@ Special thanks to all contributors who helped identify and fix issues in this re
 
 **Questions or Issues?**
 
-- 🐛 Report bugs: [GitHub Issues](https://github.com/rapidkit/rapidkit-npm/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/rapidkit/rapidkit-npm/discussions)
+- 🐛 Report bugs: [GitHub Issues](https://github.com/chistiq/rapidkit-npm/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/chistiq/rapidkit-npm/discussions)
 - 📧 Contact: support@rapidkit.dev

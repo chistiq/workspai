@@ -285,6 +285,8 @@ export type RunWorkspaceWatchOptions = {
   workspacePath: string;
   buildOptions: BuildWorkspaceModelOptions;
   emit: (event: WorkspaceWatchEvent) => void;
+  /** Receives the authoritative in-memory model after each emitted watch event. */
+  onModel?: (model: WorkspaceModel, event: WorkspaceWatchEvent) => void | Promise<void>;
   onProgress?: (message: string) => void;
   /** Debounce window for coalescing bursts of FS events (ms). */
   debounceMs?: number;
@@ -306,6 +308,9 @@ export async function runWorkspaceWatch(options: RunWorkspaceWatchOptions): Prom
   const engine = new WorkspaceWatchEngine(options.buildOptions, options.engineOptions);
   const ready = await engine.start();
   options.emit(ready);
+  if (engine.currentModel) {
+    await options.onModel?.(engine.currentModel, ready);
+  }
 
   if (options.once) {
     return;
@@ -331,6 +336,9 @@ export async function runWorkspaceWatch(options: RunWorkspaceWatchOptions): Prom
     try {
       const event = await engine.pulse();
       options.emit(event);
+      if (engine.currentModel) {
+        await options.onModel?.(engine.currentModel, event);
+      }
     } catch (error) {
       options.emit(
         validatedWorkspaceWatchEvent({

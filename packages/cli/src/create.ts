@@ -3554,7 +3554,7 @@ ${name}/
 
 ---
 
-**Generated with Workspai** | [GitHub](https://github.com/rapidkitlabs/workspai)
+**Generated with Workspai** | [GitHub](https://github.com/chistiq/workspai)
 `;
 
     await fsPromises.writeFile(path.join(projectPath, 'README.md'), readmeContent, 'utf-8');

@@ -23,17 +23,17 @@ useful contribution.
 Good first contributions usually include documentation corrections, focused
 tests, clearer diagnostics, small cross-platform fixes, and isolated bug fixes.
 Look for
-[`good first issue`](https://github.com/rapidkitlabs/workspai/labels/good%20first%20issue)
-and [`help wanted`](https://github.com/rapidkitlabs/workspai/labels/help%20wanted)
+[`good first issue`](https://github.com/chistiq/workspai/labels/good%20first%20issue)
+and [`help wanted`](https://github.com/chistiq/workspai/labels/help%20wanted)
 labels.
 
 ## Before You Start
 
 Use the existing GitHub templates:
 
-- [Bug report](https://github.com/rapidkitlabs/workspai/issues/new?template=bug_report.yml)
-- [Feature request](https://github.com/rapidkitlabs/workspai/issues/new?template=feature_request.yml)
-- [Discussions](https://github.com/rapidkitlabs/workspai/discussions) for design questions and early proposals
+- [Bug report](https://github.com/chistiq/workspai/issues/new?template=bug_report.yml)
+- [Feature request](https://github.com/chistiq/workspai/issues/new?template=feature_request.yml)
+- [Discussions](https://github.com/chistiq/workspai/discussions) for design questions and early proposals
 
 Open an issue or discussion before work that:
 
@@ -62,7 +62,7 @@ See the [Package Manager Policy](docs/PACKAGE_MANAGER_POLICY.md).
 ### Clone and install
 
 ```bash
-git clone https://github.com/rapidkitlabs/workspai.git
+git clone https://github.com/chistiq/workspai.git
 cd workspai
 corepack npm ci
 ```
@@ -281,8 +281,8 @@ package release scripts.
 Be respectful, specific, and collaborative. Assume good intent, discuss ideas
 with evidence, and focus reviews on the change rather than the contributor.
 
-- Ask usage and design questions in [GitHub Discussions](https://github.com/rapidkitlabs/workspai/discussions).
-- Report reproducible bugs and feature requests in [GitHub Issues](https://github.com/rapidkitlabs/workspai/issues).
+- Ask usage and design questions in [GitHub Discussions](https://github.com/chistiq/workspai/discussions).
+- Report reproducible bugs and feature requests in [GitHub Issues](https://github.com/chistiq/workspai/issues).
 - Report vulnerabilities through the [Security Policy](docs/SECURITY.md).
 
 Every focused improvement helps make Workspace Intelligence more useful and

@@ -18,6 +18,11 @@ describe('npm publish contract', () => {
     repository?: {
       url?: string;
     };
+    author?: string;
+    homepage?: string;
+    bugs?: {
+      url?: string;
+    };
     scripts?: Record<string, string>;
   };
 
@@ -42,6 +47,11 @@ describe('npm publish contract', () => {
       bin?: Record<string, string>;
       dependencies?: Record<string, string>;
       private?: boolean;
+      author?: string;
+      homepage?: string;
+      bugs?: {
+        url?: string;
+      };
     };
 
     expect(aliasPackage.private).toBeUndefined();
@@ -49,6 +59,9 @@ describe('npm publish contract', () => {
     expect(aliasPackage.version).toBe(packageJson.version);
     expect(aliasPackage.dependencies?.workspai).toBe(packageJson.version);
     expect(aliasPackage.bin?.wspai).toBe('bin/wspai.js');
+    expect(aliasPackage.author).toBe('Chistiq');
+    expect(aliasPackage.homepage).toBe('https://www.workspai.com/');
+    expect(aliasPackage.bugs?.url).toBe('https://github.com/chistiq/workspai/issues');
   });
 
   it('publishes Workspai CLI as the unscoped npm package', () => {
@@ -246,13 +259,16 @@ describe('npm publish contract', () => {
     ].map((match) => match[1]);
 
     expect(rawImageUrls).toContain(
-      'https://raw.githubusercontent.com/rapidkitlabs/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png'
+      'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png'
     );
-    expect(packageJson.repository?.url).toBe('git+https://github.com/rapidkitlabs/workspai.git');
+    expect(packageJson.repository?.url).toBe('git+https://github.com/chistiq/workspai.git');
+    expect(packageJson.author).toBe('Chistiq');
+    expect(packageJson.homepage).toBe('https://www.workspai.com/');
+    expect(packageJson.bugs?.url).toBe('https://github.com/chistiq/workspai/issues');
 
     for (const imageUrl of rawImageUrls) {
       const pathname = new URL(imageUrl).pathname;
-      const match = pathname.match(/^\/rapidkitlabs\/workspai\/main\/packages\/cli\/(.+)$/);
+      const match = pathname.match(/^\/chistiq\/workspai\/main\/packages\/cli\/(.+)$/);
       expect(match, imageUrl).not.toBeNull();
 
       const encodedAssetPath = match?.[1] ?? '';

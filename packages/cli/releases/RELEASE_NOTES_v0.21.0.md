@@ -251,8 +251,8 @@ rapidkit --version
 
 Thanks to all contributors and users who provided feedback on performance improvements!
 
-**Found an issue?** [Report it on GitHub](https://github.com/rapidkitlabs/rapidkit-npm/issues)
+**Found an issue?** [Report it on GitHub](https://github.com/chistiq/rapidkit-npm/issues)
 
 ---
 
-**Full Changelog**: [v0.20.0...v0.21.0](https://github.com/rapidkitlabs/rapidkit-npm/compare/v0.20.0...v0.21.0)
+**Full Changelog**: [v0.20.0...v0.21.0](https://github.com/chistiq/rapidkit-npm/compare/v0.20.0...v0.21.0)

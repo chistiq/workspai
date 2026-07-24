@@ -1217,6 +1217,10 @@
           "attributeName": "once"
         },
         {
+          "flags": "--graph-stream",
+          "attributeName": "graphStream"
+        },
+        {
           "flags": "--for-agent [agent]",
           "attributeName": "forAgent"
         },

@@ -110,7 +110,7 @@ After `rapidkit init`, all commands work directly:
 - **Documentation:** https://getrapidkit.com/docs
 - **npm Package:** https://www.npmjs.com/package/rapidkit
 - **VS Code Extension:** [RapidKit for VS Code](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- **GitHub:** https://github.com/rapidkitlabs/rapidkit-npm
+- **GitHub:** https://github.com/chistiq/rapidkit-npm
 
 ---
 
@@ -118,8 +118,8 @@ After `rapidkit init`, all commands work directly:
 
 We'd love to hear your thoughts!
 
-- 🐛 Report issues: [GitHub Issues](https://github.com/rapidkitlabs/rapidkit-npm/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/rapidkitlabs/rapidkit-npm/discussions)
+- 🐛 Report issues: [GitHub Issues](https://github.com/chistiq/rapidkit-npm/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/chistiq/rapidkit-npm/discussions)
 
 ---
 

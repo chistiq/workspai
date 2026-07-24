@@ -76,6 +76,22 @@ describe('workspace watch engine (1.17)', () => {
     expect(engine.currentModel).toBe(initial);
   });
 
+  it('publishes the authoritative model to adapters after the ready event', async () => {
+    const initial = model([project('api')], []);
+    const onModel = vi.fn();
+    await runWorkspaceWatch({
+      workspacePath: '/tmp/ws',
+      buildOptions: { workspacePath: '/tmp/ws' },
+      once: true,
+      emit: vi.fn(),
+      onModel,
+      engineOptions: {
+        rebuild: fakeRebuild([{ model: initial, mode: 'full' }]),
+      },
+    });
+    expect(onModel).toHaveBeenCalledWith(initial, expect.objectContaining({ kind: 'ready' }));
+  });
+
   it('emits a changed event when a project content changes', async () => {
     const before = model([project('api'), project('core')], [edge('api', 'core')]);
     const after = model(

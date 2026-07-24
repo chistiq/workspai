@@ -1266,8 +1266,24 @@
       "summary": "Observe relevant workspace changes and publish versioned watch events.",
       "canonicalArgv": [
         "workspace",
-        "watch"
-      ]
+        "watch",
+        "--json"
+      ],
+      "output": {
+        "defaultFormat": "human-or-json",
+        "modes": [
+          {
+            "selector": "--json",
+            "format": "json",
+            "mediaType": "application/x-ndjson"
+          },
+          {
+            "selector": "--graph-stream --json",
+            "format": "json",
+            "mediaType": "application/x-ndjson"
+          }
+        ]
+      }
     },
     {
       "invocation": "workspace why",

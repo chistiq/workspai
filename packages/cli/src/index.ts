@@ -7654,6 +7654,10 @@ program
     'Rebuild only changed projects and re-infer only their incident graph edges (graph-aware)'
   )
   .option('--once', 'For workspace watch: do the initial in-memory build and exit (no watcher)')
+  .option(
+    '--graph-stream',
+    'For workspace watch: emit workspace-graph-stream.v1 snapshot/delta NDJSON'
+  )
   .option('--for-agent [agent]', 'Build an agent-ready workspace context pack')
   .option(
     '--agent-sync',
@@ -7784,6 +7788,7 @@ See the command reference for action-specific required inputs and output artifac
       cache?: boolean;
       incremental?: boolean;
       once?: boolean;
+      graphStream?: boolean;
     };
 
     const requireWorkspaceRootForAction = (actionName: string): string => {
@@ -9180,6 +9185,15 @@ See the command reference for action-specific required inputs and output artifac
       const { runWorkspaceWatch } = await import('./workspace-watch.js');
       const once = actionOptions.once === true || hasRawFlag('--once');
       const emitJson = actionOptions.json === true;
+      const emitGraphStream = actionOptions.graphStream === true || hasRawFlag('--graph-stream');
+      if (emitGraphStream && !emitJson) {
+        throw new Error('workspace watch --graph-stream requires --json.');
+      }
+      const graphPublisher = emitGraphStream
+        ? new (await import('./workspace-graph-stream.js')).WorkspaceGraphStreamPublisher({
+            workspacePath,
+          })
+        : null;
       const controller = new AbortController();
       const onSigint = (): void => controller.abort();
       process.once('SIGINT', onSigint);
@@ -9202,7 +9216,51 @@ See the command reference for action-specific required inputs and output artifac
             console.error(chalk.gray(`   ${message}`));
           }
         },
+        onModel: graphPublisher
+          ? async (model) => {
+              if (!model.graph) {
+                return;
+              }
+              const { buildWorkspaceKnowledgeGraph } =
+                await import('./workspace-knowledge-graph.js');
+              const { readWorkspaceContract } = await import('./utils/workspace-contract.js');
+              let contract = null;
+              try {
+                contract = (await readWorkspaceContract({ workspacePath })).contract;
+              } catch {
+                // Observed workspaces remain valid graph-stream sources.
+              }
+              const graph = await buildWorkspaceKnowledgeGraph({
+                workspacePath,
+                workspace: {
+                  name: model.workspace.name,
+                  ...(model.workspace.profile ? { profile: model.workspace.profile } : {}),
+                },
+                projects: model.projects.map((project) => ({
+                  id: project.name,
+                  path: project.path,
+                  ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+                  runtime: project.runtime,
+                  framework: project.framework,
+                  ...(project.kit ? { kit: project.kit } : {}),
+                })),
+                projectTopology: model.graph,
+                contract,
+                now: new Date(model.generatedAt),
+                source: {
+                  kind: 'workspace-model',
+                  artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
+                  hashAlgorithm: 'sha256',
+                  hash: (await import('./workspace-model-hash.js')).hashWorkspaceModel(model),
+                },
+              });
+              console.log(JSON.stringify(graphPublisher.publish(model, graph)));
+            }
+          : undefined,
         emit: (event) => {
+          if (emitGraphStream) {
+            return;
+          }
           if (emitJson) {
             console.log(JSON.stringify(event));
             return;

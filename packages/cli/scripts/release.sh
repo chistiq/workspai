@@ -189,7 +189,7 @@ if command -v gh >/dev/null 2>&1; then
     gh release create "$TAG" --generate-notes
 else
     echo "ℹ️ gh CLI not found. Create release manually:"
-    echo "   https://github.com/rapidkitlabs/workspai/releases/new"
+    echo "   https://github.com/chistiq/workspai/releases/new"
 fi
 
 echo "✅ Release complete: $TAG"

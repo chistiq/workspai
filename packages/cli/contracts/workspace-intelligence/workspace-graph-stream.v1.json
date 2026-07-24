@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://getrapidkit.com/schemas/workspace-graph-stream.v1.json",
+  "title": "Workspai Workspace Graph Stream",
+  "description": "Transport-neutral, revision-safe events for hydrating and incrementally updating a Workspace Knowledge Graph consumer.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "type",
+    "workspaceId",
+    "sessionId",
+    "generation",
+    "revision",
+    "modelHash",
+    "graphHash",
+    "generatedAt",
+    "causationId",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspace-graph-stream.v1" },
+    "type": {
+      "enum": [
+        "graph.snapshot",
+        "graph.delta",
+        "graph.provider-progress",
+        "graph.quality-changed",
+        "graph.proof-invalidated",
+        "graph.resync-required",
+        "graph.paused",
+        "graph.complete",
+        "graph.heartbeat",
+        "graph.error"
+      ]
+    },
+    "workspaceId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "generation": { "type": "integer", "minimum": 0 },
+    "baseRevision": { "type": "integer", "minimum": 0 },
+    "baseModelHash": { "$ref": "#/$defs/hash" },
+    "baseGraphHash": { "$ref": "#/$defs/hash" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "modelHash": { "$ref": "#/$defs/hash" },
+    "graphHash": { "$ref": "#/$defs/hash" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "causationId": { "type": "string", "minLength": 1 },
+    "correlationId": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "graph.snapshot" } } },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/$defs/snapshotPayload" },
+          "baseRevision": false,
+          "baseModelHash": false,
+          "baseGraphHash": false
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "graph.delta" } } },
+      "then": {
+        "required": ["baseRevision", "baseModelHash", "baseGraphHash"],
+        "properties": { "payload": { "$ref": "#/$defs/deltaPayload" } }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "graph.provider-progress" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/providerProgressPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "graph.quality-changed" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/qualityPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "graph.proof-invalidated" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/proofInvalidatedPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "graph.resync-required" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/resyncPayload" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": { "enum": ["graph.paused", "graph.complete", "graph.heartbeat"] }
+        }
+      },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/controlPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "graph.error" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/errorPayload" } } }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "id": { "type": "string", "minLength": 1 },
+    "snapshotPayload": {
+      "type": "object",
+      "required": ["graph"],
+      "properties": {
+        "graph": { "$ref": "workspace-knowledge-graph.v1.json" },
+        "reason": { "enum": ["initial", "refresh", "recovery", "schema-transition"] }
+      },
+      "additionalProperties": false
+    },
+    "deltaPayload": {
+      "type": "object",
+      "required": [
+        "entitiesAdded",
+        "entitiesUpdated",
+        "entitiesRemoved",
+        "relationsAdded",
+        "relationsUpdated",
+        "relationsRemoved",
+        "proofsAdded",
+        "proofsUpdated",
+        "proofsRemoved",
+        "providersUpdated",
+        "diagnostics"
+      ],
+      "properties": {
+        "entitiesAdded": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/entities/items" }
+        },
+        "entitiesUpdated": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/entities/items" }
+        },
+        "entitiesRemoved": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "relationsAdded": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/relations/items" }
+        },
+        "relationsUpdated": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/relations/items" }
+        },
+        "relationsRemoved": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "proofsAdded": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/proofs/items" }
+        },
+        "proofsUpdated": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/proofs/items" }
+        },
+        "proofsRemoved": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "providersUpdated": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/providers/items" }
+        },
+        "quality": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "workspace-knowledge-graph.v1.json#/properties/quality" }
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/diagnostics/items" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerProgressPayload": {
+      "type": "object",
+      "required": ["providerId", "status"],
+      "properties": {
+        "providerId": { "$ref": "#/$defs/id" },
+        "status": { "enum": ["queued", "running", "passed", "partial", "skipped", "failed"] },
+        "completed": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "qualityPayload": {
+      "type": "object",
+      "required": ["quality"],
+      "properties": {
+        "quality": { "$ref": "workspace-knowledge-graph.v1.json#/properties/quality" },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/diagnostics/items" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "proofInvalidatedPayload": {
+      "type": "object",
+      "required": ["proofIds", "reason"],
+      "properties": {
+        "proofIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "entityIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "relationIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "resyncPayload": {
+      "type": "object",
+      "required": ["reason"],
+      "properties": {
+        "reason": {
+          "enum": [
+            "revision-gap",
+            "identity-mismatch",
+            "generation-regression",
+            "schema-unsupported",
+            "hash-discontinuity",
+            "validation-failed",
+            "queue-overflow"
+          ]
+        },
+        "expectedRevision": { "type": "integer", "minimum": 0 },
+        "receivedBaseRevision": { "type": "integer", "minimum": 0 },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "controlPayload": {
+      "type": "object",
+      "properties": { "reason": { "type": "string" }, "message": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "errorPayload": {
+      "type": "object",
+      "required": ["code", "message", "recoverable"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "recoverable": { "type": "boolean" },
+        "providerId": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

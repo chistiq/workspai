@@ -45,6 +45,7 @@ import {
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
+export const WORKSPACE_GRAPH_STREAM_SCHEMA_VERSION = 'workspace-graph-stream.v1' as const;
 
 /** Single source of truth for schema versions advertised to IDE/CI consumers. */
 export function getPublishedContractVersions() {
@@ -71,6 +72,7 @@ export function getPublishedContractVersions() {
     workspaceContext: WORKSPACE_CONTEXT_SCHEMA_VERSION,
     workspaceDependencyGraph: WORKSPACE_DEPENDENCY_GRAPH_SCHEMA_VERSION,
     workspaceKnowledgeGraph: WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
+    workspaceGraphStream: WORKSPACE_GRAPH_STREAM_SCHEMA_VERSION,
     workspaceKnowledgeGraphChangeOverlay: WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION,
     workspaceKnowledgeSearch: WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION,
     workspaceGraphTokenEfficiency: WORKSPACE_GRAPH_TOKEN_EFFICIENCY_SCHEMA_VERSION,
@@ -129,6 +131,7 @@ export function getPublishedContractCatalog() {
     workspaceContext: 'contracts/workspace-intelligence/workspace-context.v1.json',
     workspaceDependencyGraph: 'contracts/workspace-intelligence/workspace-dependency-graph.v1.json',
     workspaceKnowledgeGraph: 'contracts/workspace-intelligence/workspace-knowledge-graph.v1.json',
+    workspaceGraphStream: 'contracts/workspace-intelligence/workspace-graph-stream.v1.json',
     workspaceKnowledgeGraphChangeOverlay:
       'contracts/workspace-intelligence/workspace-knowledge-graph-change-overlay.v1.json',
     workspaceKnowledgeSearch: 'contracts/workspace-intelligence/workspace-knowledge-search.v1.json',

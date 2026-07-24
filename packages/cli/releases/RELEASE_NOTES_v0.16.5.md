@@ -190,9 +190,9 @@ See [CHANGELOG.md](../CHANGELOG.md) for complete details.
 ## 🔗 Links
 
 - **NPM Package:** https://www.npmjs.com/package/rapidkit
-- **GitHub Repository:** https://github.com/rapidkitlabs/rapidkit-npm
+- **GitHub Repository:** https://github.com/chistiq/rapidkit-npm
 - **Documentation:** https://docs.rapidkit.dev
-- **Report Issues:** https://github.com/rapidkitlabs/rapidkit-npm/issues
+- **Report Issues:** https://github.com/chistiq/rapidkit-npm/issues
 
 ---
 

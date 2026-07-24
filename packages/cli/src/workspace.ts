@@ -1287,7 +1287,7 @@ instructions start at \`AGENTS.md\`.
 ## Learn More
 
 - [Workspai Documentation](https://workspai.dev)
-- [GitHub Repository](https://github.com/rapidkitlabs/workspai)
+- [GitHub Repository](https://github.com/chistiq/workspai)
 `;
 }
 

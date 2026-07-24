@@ -183,10 +183,10 @@ None at this time.
 
 ## Support & Feedback
 
-- 📖 [RapidKit Documentation](https://github.com/rapidkitlabs/rapidkit-npm)
-- 🐛 [GitHub Issues](https://github.com/rapidkitlabs/rapidkit-npm/issues)
-- 💬 [RapidKit Community](https://github.com/rapidkitlabs/rapidkit-npm/discussions)
-- 🎯 [Feature Requests](https://github.com/rapidkitlabs/rapidkit-npm/issues/new?labels=enhancement)
+- 📖 [RapidKit Documentation](https://github.com/chistiq/rapidkit-npm)
+- 🐛 [GitHub Issues](https://github.com/chistiq/rapidkit-npm/issues)
+- 💬 [RapidKit Community](https://github.com/chistiq/rapidkit-npm/discussions)
+- 🎯 [Feature Requests](https://github.com/chistiq/rapidkit-npm/issues/new?labels=enhancement)
 
 ## Contributors
 

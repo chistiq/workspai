@@ -144,7 +144,7 @@ yarn upgrade
 
 ## 🔗 Resources
 
-- **GitHub:** https://github.com/rapidkitlabs/rapidkit-npm
+- **GitHub:** https://github.com/chistiq/rapidkit-npm
 - **Documentation:** https://docs.rapidkit.dev
 - **NPM Package:** https://www.npmjs.com/package/rapidkit
 
@@ -154,4 +154,4 @@ Thanks to everyone who contributed to this release!
 
 ---
 
-**Full Changelog:** https://github.com/rapidkitlabs/rapidkit-npm/compare/v0.13.1...v0.14.0
+**Full Changelog:** https://github.com/chistiq/rapidkit-npm/compare/v0.13.1...v0.14.0

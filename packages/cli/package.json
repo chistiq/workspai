@@ -35,12 +35,16 @@
     "generator",
     "scaffold"
   ],
-  "author": "RapidKit Labs",
+  "author": "Chistiq",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rapidkitlabs/workspai.git",
+    "url": "git+https://github.com/chistiq/workspai.git",
     "directory": "packages/cli"
+  },
+  "homepage": "https://www.workspai.com/",
+  "bugs": {
+    "url": "https://github.com/chistiq/workspai/issues"
   },
   "bin": {
     "workspai": "dist/index.js"
