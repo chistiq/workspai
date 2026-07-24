@@ -71,7 +71,7 @@ workspai workspace graph jsonld --output .workspai/reports/workspace-graph.jsonl
 workspai workspace eval status --json
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.48.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.48.0/packages/cli/releases/RELEASE_NOTES_v0.48.0.md)
 
 ---
 
@@ -138,7 +138,7 @@ workspai workspace intelligence run --for-agent generic --strict --json
 workspai workspace graph search "authentication endpoint" --limit 12 --json
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.47.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.47.0/packages/cli/releases/RELEASE_NOTES_v0.47.0.md)
 
 ---
 
@@ -217,7 +217,7 @@ npm install -g workspai@0.46.0
 workspai workspace intelligence run --for-agent generic --json
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.46.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.46.0/packages/cli/releases/RELEASE_NOTES_v0.46.0.md)
 
 ---
 
@@ -283,7 +283,7 @@ npm install -g workspai@0.45.0
 npx wspai commands --json
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.45.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.45.0/packages/cli/releases/RELEASE_NOTES_v0.45.0.md)
 
 ---
 
@@ -352,7 +352,7 @@ npm install -g workspai@0.44.0
 npx wspai --help
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.44.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.44.0/packages/cli/releases/RELEASE_NOTES_v0.44.0.md)
 
 ---
 
@@ -420,7 +420,7 @@ npm install -g workspai@0.43.1
 npx wspai --help
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.43.1.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.43.1/packages/cli/releases/RELEASE_NOTES_v0.43.1.md)
 
 ---
 
@@ -464,7 +464,7 @@ npm install -g workspai@0.43.0
 npx wspai --help
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.43.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.43.0/packages/cli/releases/RELEASE_NOTES_v0.43.0.md)
 
 ---
 
@@ -526,7 +526,7 @@ module-enabled kit actually needs it.
 npm install -g workspai@0.42.0
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.42.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.42.0/packages/cli/releases/RELEASE_NOTES_v0.42.0.md)
 
 ---
 
@@ -573,7 +573,7 @@ Workspace Verify exit-code behavior for Workspai, CI, and CLI users.
 npm install -g rapidkit@0.41.5
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.41.5.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.41.5/packages/cli/releases/RELEASE_NOTES_v0.41.5.md)
 
 ---
 
@@ -623,7 +623,7 @@ Workspace Run, and Workspace Verify evidence.
 npm install -g rapidkit@0.41.4
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.41.4.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.41.4/packages/cli/releases/RELEASE_NOTES_v0.41.4.md)
 
 ---
 
@@ -683,7 +683,7 @@ facts are durable, derived, evidence-backed, live, or verification-gated.
 npm install -g rapidkit@0.41.3
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.41.3.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.41.3/packages/cli/releases/RELEASE_NOTES_v0.41.3.md)
 
 ---
 
@@ -751,7 +751,7 @@ README.
 npm install -g rapidkit@0.41.2
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.41.2.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.41.2/packages/cli/releases/RELEASE_NOTES_v0.41.2.md)
 
 ---
 
@@ -810,7 +810,7 @@ publishing on broken artifacts.
 npm install -g rapidkit@0.41.1
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.41.1.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.41.1/packages/cli/releases/RELEASE_NOTES_v0.41.1.md)
 
 ---
 
@@ -856,7 +856,7 @@ Workspai, CI, and AI agents.
 npm install -g rapidkit@0.41.0
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.41.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.41.0/packages/cli/releases/RELEASE_NOTES_v0.41.0.md)
 
 ---
 
@@ -867,7 +867,7 @@ npm install -g rapidkit@0.41.0
 Reframes root CLI help around Workspace Intelligence positioning while preserving
 the full command reference.
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.40.1.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.40.1/packages/cli/releases/RELEASE_NOTES_v0.40.1.md)
 
 ---
 
@@ -927,7 +927,7 @@ additive.
 npm install -g rapidkit@0.40.0
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.40.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.40.0/packages/cli/releases/RELEASE_NOTES_v0.40.0.md)
 
 ---
 
@@ -1007,7 +1007,7 @@ subcommands/flags are opt-in.
 npm install -g rapidkit@0.39.0
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.39.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.39.0/packages/cli/releases/RELEASE_NOTES_v0.39.0.md)
 
 ---
 
@@ -1071,7 +1071,7 @@ workflows.
 npm install -g rapidkit@0.38.0
 ```
 
-[Full Release Notes](./releases/RELEASE_NOTES_v0.38.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.38.0/packages/cli/releases/RELEASE_NOTES_v0.38.0.md)
 
 ---
 
@@ -1135,7 +1135,7 @@ reliable for enterprise workflows.
 npm install -g rapidkit@0.37.1
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.37.1.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.37.1/packages/cli/releases/RELEASE_NOTES_v0.37.1.md)
 
 ---
 
@@ -1207,7 +1207,7 @@ This release introduces comprehensive CLI observability infrastructure, governan
 npm install -g rapidkit@0.37.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.37.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.37.0/packages/cli/releases/RELEASE_NOTES_v0.37.0.md)
 
 ---
 
@@ -1244,7 +1244,7 @@ This release adds in-place project adoption, official `create frontend` generato
 npm install -g rapidkit@0.35.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.35.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.35.0/packages/cli/releases/RELEASE_NOTES_v0.35.0.md)
 
 ---
 
@@ -1285,7 +1285,7 @@ This minor release completes the npm-wrapper governance loop so teams can run bo
 npm install -g rapidkit@0.34.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.34.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.34.0/packages/cli/releases/RELEASE_NOTES_v0.34.0.md)
 
 ---
 
@@ -1319,7 +1319,7 @@ This patch makes global, `npx`, and workspace-local command flows behave consist
 npm install -g rapidkit@0.33.2
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.33.2.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.33.2/packages/cli/releases/RELEASE_NOTES_v0.33.2.md)
 
 ---
 
@@ -1348,7 +1348,7 @@ This patch fixes npm-to-core command routing so module maintenance and dry-run p
 npm install -g rapidkit@0.33.1
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.33.1.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.33.1/packages/cli/releases/RELEASE_NOTES_v0.33.1.md)
 
 ---
 
@@ -1381,7 +1381,7 @@ This minor release adds contract-driven local dev infrastructure for polyglot wo
 npm install -g rapidkit@0.33.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.33.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.33.0/packages/cli/releases/RELEASE_NOTES_v0.33.0.md)
 
 ---
 
@@ -1418,7 +1418,7 @@ This patch closes first-use reliability gaps across Linux, macOS, and Windows. I
 npm install -g rapidkit@0.32.2
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.32.2.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.32.2/packages/cli/releases/RELEASE_NOTES_v0.32.2.md)
 
 ---
 
@@ -1446,7 +1446,7 @@ This patch closes a product-surface drift gap between the npm CLI and companion 
 npm install -g rapidkit@0.32.1
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.32.1.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.32.1/packages/cli/releases/RELEASE_NOTES_v0.32.1.md)
 
 ---
 
@@ -1479,7 +1479,7 @@ This release strengthens RapidKit npm as the workspace-level verification surfac
 npm install -g rapidkit@0.32.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.32.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.32.0/packages/cli/releases/RELEASE_NOTES_v0.32.0.md)
 
 ---
 
@@ -1512,7 +1512,7 @@ This release turns the npm CLI into a stronger workspace handoff and governance 
 npm install -g rapidkit@0.31.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.31.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.31.0/packages/cli/releases/RELEASE_NOTES_v0.31.0.md)
 
 ---
 
@@ -1541,7 +1541,7 @@ This release introduces a new wrapper-owned `rapidkit analyze` command, improved
 npm install -g rapidkit@0.30.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.30.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.30.0/packages/cli/releases/RELEASE_NOTES_v0.30.0.md)
 
 ---
 
@@ -1573,7 +1573,7 @@ This patch hardens backend project import rollback behavior and stabilizes CLI i
 npm install -g rapidkit@0.29.1
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.29.1.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.29.1/packages/cli/releases/RELEASE_NOTES_v0.29.1.md)
 
 ---
 
@@ -1608,7 +1608,7 @@ This release adds workspace snapshot support and updates repository metadata/doc
 npm install -g rapidkit@0.29.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.29.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.29.0/packages/cli/releases/RELEASE_NOTES_v0.29.0.md)
 
 ---
 
@@ -1649,7 +1649,7 @@ This release adds `autopilot release` as a top-level wrapper command to run a fu
 npm install -g rapidkit@0.28.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.28.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.28.0/packages/cli/releases/RELEASE_NOTES_v0.28.0.md)
 
 ---
 
@@ -1694,7 +1694,7 @@ This patch focuses on enterprise-grade stabilization and operational predictabil
 npm install -g rapidkit@0.27.6
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.27.6.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.27.6/packages/cli/releases/RELEASE_NOTES_v0.27.6.md)
 
 ---
 
@@ -1728,7 +1728,7 @@ This patch focuses on stabilization and operator clarity. It hardens global Rapi
 npm install -g rapidkit@0.27.5
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.27.5.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.27.5/packages/cli/releases/RELEASE_NOTES_v0.27.5.md)
 
 ---
 
@@ -1782,7 +1782,7 @@ This patch introduces workspace import flows in the npm wrapper, hardens shared 
 npm install -g rapidkit@0.27.4
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.27.4.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.27.4/packages/cli/releases/RELEASE_NOTES_v0.27.4.md)
 
 ---
 
@@ -1831,7 +1831,7 @@ This patch adds project-scoped doctor diagnostics, introduces enterprise-grade w
 npm install -g rapidkit@0.27.3
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.27.3.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.27.3/packages/cli/releases/RELEASE_NOTES_v0.27.3.md)
 
 ---
 
@@ -1870,7 +1870,7 @@ This patch upgrades doctor intelligence for realistic multi-runtime analysis, im
 npm install -g rapidkit@0.27.2
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.27.2.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.27.2/packages/cli/releases/RELEASE_NOTES_v0.27.2.md)
 
 ---
 
@@ -1891,7 +1891,7 @@ This patch closed AI recommendation UX gaps, aligned module identity parsing to 
 npm install -g rapidkit@0.27.1
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.27.1.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.27.1/packages/cli/releases/RELEASE_NOTES_v0.27.1.md)
 
 ---
 
@@ -1921,7 +1921,7 @@ This patch fixes `workspace share` option parsing so exported bundles can reliab
 npm install -g rapidkit@0.27.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.27.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.27.0/packages/cli/releases/RELEASE_NOTES_v0.27.0.md)
 
 ---
 
@@ -1960,7 +1960,7 @@ This release adds first-class Java/Spring support to RapidKit, including a new S
 npm install -g rapidkit@0.26.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.26.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.26.0/packages/cli/releases/RELEASE_NOTES_v0.26.0.md)
 
 ---
 
@@ -1994,7 +1994,7 @@ This patch refactors the Go kit scaffolding internals to remove duplicated templ
 npm install -g rapidkit@0.25.7
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.25.7.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.25.7/packages/cli/releases/RELEASE_NOTES_v0.25.7.md)
 
 ---
 
@@ -2103,7 +2103,7 @@ This patch upgrades `rapidkit doctor workspace` performance and reliability with
 npm install -g rapidkit@0.25.3
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.25.3.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.25.3/packages/cli/releases/RELEASE_NOTES_v0.25.3.md)
 
 ---
 
@@ -2137,7 +2137,7 @@ This patch makes `rapidkit init` significantly more resilient across Python/Node
 npm install -g rapidkit@0.25.2
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.25.2.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.25.2/packages/cli/releases/RELEASE_NOTES_v0.25.2.md)
 
 ---
 
@@ -2170,7 +2170,7 @@ This patch release finalizes the new Poetry-missing fallback behavior, hardens c
 npm install -g rapidkit@0.25.1
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.25.1.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.25.1/packages/cli/releases/RELEASE_NOTES_v0.25.1.md)
 
 ---
 
@@ -2211,7 +2211,7 @@ This minor release unifies the root help UX across entry modes, completes worksp
 npm install -g rapidkit@0.25.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.25.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.25.0/packages/cli/releases/RELEASE_NOTES_v0.25.0.md)
 
 ---
 
@@ -2259,7 +2259,7 @@ This patch finalizes workspace-based architecture documentation and adds automat
 npm install -g rapidkit@0.24.2
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.24.2.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.24.2/packages/cli/releases/RELEASE_NOTES_v0.24.2.md)
 
 ---
 
@@ -2294,7 +2294,7 @@ This patch release resolves setup/runtime contract regressions, hardens cross-OS
 npm install -g rapidkit@0.24.1
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.24.1.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.24.1/packages/cli/releases/RELEASE_NOTES_v0.24.1.md)
 
 ---
 
@@ -2345,7 +2345,7 @@ This minor release improves cross-OS confidence (especially Windows), introduces
 npm install -g rapidkit@0.24.0
 ```
 
-[📖 Full Release Notes](./releases/RELEASE_NOTES_v0.24.0.md)
+[📖 Full Release Notes](https://github.com/chistiq/workspai/blob/v0.24.0/packages/cli/releases/RELEASE_NOTES_v0.24.0.md)
 
 ---
 
@@ -2353,48 +2353,48 @@ npm install -g rapidkit@0.24.0
 
 | Version                                      | Date         | Highlights                                                                                        |
 | -------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------- |
-| [v0.25.3](releases/RELEASE_NOTES_v0.25.3.md) | Mar 22, 2026 | Doctor workspace caching/evidence, safer go fix gating, post-fix verification                     |
-| [v0.25.2](releases/RELEASE_NOTES_v0.25.2.md) | Feb 27, 2026 | Smart init orchestration, wrapper/core ownership matrix, Go UX + delegation hardening             |
-| [v0.25.1](releases/RELEASE_NOTES_v0.25.1.md) | Feb 27, 2026 | Poetry fallback stabilization, cross-platform doctor hardening, Windows workspace launcher parity |
-| [v0.25.0](releases/RELEASE_NOTES_v0.25.0.md) | Feb 26, 2026 | Help surface unification, workspace policy/list contract completion, reliability hardening        |
-| [v0.24.2](releases/RELEASE_NOTES_v0.24.2.md) | Feb 25, 2026 | Workspace docs governance, docs drift/link/smoke gates, CI ownership hardening                    |
-| [v0.24.1](releases/RELEASE_NOTES_v0.24.1.md) | Feb 25, 2026 | Setup contract fixes, cross-OS matrix reliability, workspace flow alignment                       |
-| [v0.24.0](releases/RELEASE_NOTES_v0.24.0.md) | Feb 25, 2026 | Windows-native bridge E2E, mirror lifecycle hardening, runtime adapter stability                  |
-| [v0.23.1](releases/RELEASE_NOTES_v0.23.1.md) | Feb 22, 2026 | Audit stabilization, minimatch override, Windows CI path fix                                      |
-| [v0.23.0](releases/RELEASE_NOTES_v0.23.0.md) | Feb 22, 2026 | Workspace architecture phases 1→4, runtime/command contracts, npm global install hotfix           |
-| [v0.22.0](releases/RELEASE_NOTES_v0.22.0.md) | Feb 21, 2026 | Go/Fiber + Go/Gin kits, Go command parity, Swagger DX hardening                                   |
-| [v0.21.2](releases/RELEASE_NOTES_v0.21.2.md) | Feb 20, 2026 | Release flow modernization, npm-only policy, security/doc alignment                               |
-| [v0.21.1](releases/RELEASE_NOTES_v0.21.1.md) | Feb 18, 2026 | Context-aware init, create workspace mode, doctor workspace scan fix                              |
-| [v0.20.0](releases/RELEASE_NOTES_v0.20.0.md) | Feb 14, 2026 | FastAPI DDD Kit, Domain-Driven Design template, offline support                                   |
-| [v0.19.1](releases/RELEASE_NOTES_v0.19.1.md) | Feb 12, 2026 | Dependency refresh, lockfile sync, Python template compatibility                                  |
-| [v0.19.0](releases/RELEASE_NOTES_v0.19.0.md) | Feb 10, 2026 | AI module recommender, semantic search, config commands                                           |
-| [v0.18.1](releases/RELEASE_NOTES_v0.18.1.md) | Feb 9, 2026  | Windows CI path normalization fix                                                                 |
-| [v0.18.0](releases/RELEASE_NOTES_v0.18.0.md) | Feb 9, 2026  | Contract sync, modules catalog API, Python bridge reliability                                     |
-| [v0.17.0](releases/RELEASE_NOTES_v0.17.0.md) | Feb 6, 2026  | Enhanced doctor command, workspace health monitoring, auto-fix                                    |
-| [v0.16.5](releases/RELEASE_NOTES_v0.16.5.md) | Feb 5, 2026  | Configuration file support, doctor command, diagnostics                                           |
-| [v0.16.4](releases/RELEASE_NOTES_v0.16.4.md) | Feb 2, 2026  | Documentation quality, test stability, code polish                                                |
-| [v0.16.3](releases/RELEASE_NOTES_v0.16.3.md) | Feb 1, 2026  | Template fixes, Python Core 0.2.2 compatibility, test updates                                     |
-| [v0.16.0](releases/RELEASE_NOTES_v0.16.0.md) | Feb 1, 2026  | Workspace registry, unified signatures, cross-tool integration                                    |
-| [v0.15.1](releases/RELEASE_NOTES_v0.15.1.md) | Jan 31, 2026 | Bridge stability, command fallback, improved test coverage                                        |
-| [v0.15.0](releases/RELEASE_NOTES_v0.15.0.md) | Jan 30, 2026 | Core integration, workspace UX, Scenario C fix, tests & CI                                        |
-| [v0.14.2](releases/RELEASE_NOTES_v0.14.2.md) | Jan 23, 2026 | Documentation & cleanup                                                                           |
-| [v0.14.1](releases/RELEASE_NOTES_v0.14.1.md) | Dec 31, 2025 | Poetry virtualenv detection fix                                                                   |
-| [v0.14.0](releases/RELEASE_NOTES_v0.14.0.md) | Dec 31, 2025 | Major dependency updates                                                                          |
-| [v0.13.1](releases/RELEASE_NOTES_v0.13.1.md) | Dec 25, 2025 | Type safety & test coverage                                                                       |
-| [v0.13.0](releases/RELEASE_NOTES_v0.13.0.md) | Dec 22, 2025 | NestJS test coverage boost                                                                        |
-| [v0.12.9](releases/RELEASE_NOTES_v0.12.9.md) | Dec 22, 2025 | Unified npx commands                                                                              |
-| [v0.12.8](releases/RELEASE_NOTES_v0.12.8.md) | Dec 13, 2025 | Windows spawn fix                                                                                 |
-| [v0.12.7](releases/RELEASE_NOTES_v0.12.7.md) | Dec 13, 2025 | Windows support                                                                                   |
-| [v0.12.6](releases/RELEASE_NOTES_v0.12.6.md) | Dec 12, 2025 | Quality & security infrastructure                                                                 |
-| [v0.12.5](releases/RELEASE_NOTES_v0.12.5.md) | Dec 6, 2025  | CI/CD cross-platform fixes                                                                        |
-| [v0.12.4](releases/RELEASE_NOTES_v0.12.4.md) | Dec 6, 2025  | Shell activation UX                                                                               |
-| [v0.12.3](releases/RELEASE_NOTES_v0.12.3.md) | Dec 4, 2025  | Smart CLI delegation                                                                              |
-| [v0.12.2](releases/RELEASE_NOTES_v0.12.2.md) | Dec 4, 2025  | Auto-activate in init command                                                                     |
-| [v0.12.1](releases/RELEASE_NOTES_v0.12.1.md) | Dec 3, 2025  | NestJS port fix                                                                                   |
-| [v0.12.0](releases/RELEASE_NOTES_v0.12.0.md) | Dec 3, 2025  | NestJS support                                                                                    |
-| [v0.11.3](releases/RELEASE_NOTES_v0.11.3.md) | Dec 3, 2025  | Bug fixes                                                                                         |
-| [v0.11.2](releases/RELEASE_NOTES_v0.11.2.md) | Dec 3, 2025  | Improvements                                                                                      |
-| [v0.11.1](releases/RELEASE_NOTES_v0.11.1.md) | Nov 28, 2025 | Features                                                                                          |
+| [v0.25.3](https://github.com/chistiq/workspai/blob/v0.25.3/packages/cli/releases/RELEASE_NOTES_v0.25.3.md) | Mar 22, 2026 | Doctor workspace caching/evidence, safer go fix gating, post-fix verification                     |
+| [v0.25.2](https://github.com/chistiq/workspai/blob/v0.25.2/packages/cli/releases/RELEASE_NOTES_v0.25.2.md) | Feb 27, 2026 | Smart init orchestration, wrapper/core ownership matrix, Go UX + delegation hardening             |
+| [v0.25.1](https://github.com/chistiq/workspai/blob/v0.25.1/packages/cli/releases/RELEASE_NOTES_v0.25.1.md) | Feb 27, 2026 | Poetry fallback stabilization, cross-platform doctor hardening, Windows workspace launcher parity |
+| [v0.25.0](https://github.com/chistiq/workspai/blob/v0.25.0/packages/cli/releases/RELEASE_NOTES_v0.25.0.md) | Feb 26, 2026 | Help surface unification, workspace policy/list contract completion, reliability hardening        |
+| [v0.24.2](https://github.com/chistiq/workspai/blob/v0.24.2/packages/cli/releases/RELEASE_NOTES_v0.24.2.md) | Feb 25, 2026 | Workspace docs governance, docs drift/link/smoke gates, CI ownership hardening                    |
+| [v0.24.1](https://github.com/chistiq/workspai/blob/v0.24.1/packages/cli/releases/RELEASE_NOTES_v0.24.1.md) | Feb 25, 2026 | Setup contract fixes, cross-OS matrix reliability, workspace flow alignment                       |
+| [v0.24.0](https://github.com/chistiq/workspai/blob/v0.24.0/packages/cli/releases/RELEASE_NOTES_v0.24.0.md) | Feb 25, 2026 | Windows-native bridge E2E, mirror lifecycle hardening, runtime adapter stability                  |
+| [v0.23.1](https://github.com/chistiq/workspai/blob/v0.23.1/packages/cli/releases/RELEASE_NOTES_v0.23.1.md) | Feb 22, 2026 | Audit stabilization, minimatch override, Windows CI path fix                                      |
+| [v0.23.0](https://github.com/chistiq/workspai/blob/v0.23.0/packages/cli/releases/RELEASE_NOTES_v0.23.0.md) | Feb 22, 2026 | Workspace architecture phases 1→4, runtime/command contracts, npm global install hotfix           |
+| [v0.22.0](https://github.com/chistiq/workspai/blob/v0.22.0/packages/cli/releases/RELEASE_NOTES_v0.22.0.md) | Feb 21, 2026 | Go/Fiber + Go/Gin kits, Go command parity, Swagger DX hardening                                   |
+| [v0.21.2](https://github.com/chistiq/workspai/blob/v0.21.2/packages/cli/releases/RELEASE_NOTES_v0.21.2.md) | Feb 20, 2026 | Release flow modernization, npm-only policy, security/doc alignment                               |
+| [v0.21.1](https://github.com/chistiq/workspai/blob/v0.21.1/packages/cli/releases/RELEASE_NOTES_v0.21.1.md) | Feb 18, 2026 | Context-aware init, create workspace mode, doctor workspace scan fix                              |
+| [v0.20.0](https://github.com/chistiq/workspai/blob/v0.20.0/packages/cli/releases/RELEASE_NOTES_v0.20.0.md) | Feb 14, 2026 | FastAPI DDD Kit, Domain-Driven Design template, offline support                                   |
+| [v0.19.1](https://github.com/chistiq/workspai/blob/v0.19.1/packages/cli/releases/RELEASE_NOTES_v0.19.1.md) | Feb 12, 2026 | Dependency refresh, lockfile sync, Python template compatibility                                  |
+| [v0.19.0](https://github.com/chistiq/workspai/blob/v0.19.0/packages/cli/releases/RELEASE_NOTES_v0.19.0.md) | Feb 10, 2026 | AI module recommender, semantic search, config commands                                           |
+| [v0.18.1](https://github.com/chistiq/workspai/blob/v0.18.1/packages/cli/releases/RELEASE_NOTES_v0.18.1.md) | Feb 9, 2026  | Windows CI path normalization fix                                                                 |
+| [v0.18.0](https://github.com/chistiq/workspai/blob/v0.18.0/packages/cli/releases/RELEASE_NOTES_v0.18.0.md) | Feb 9, 2026  | Contract sync, modules catalog API, Python bridge reliability                                     |
+| [v0.17.0](https://github.com/chistiq/workspai/blob/v0.17.0/packages/cli/releases/RELEASE_NOTES_v0.17.0.md) | Feb 6, 2026  | Enhanced doctor command, workspace health monitoring, auto-fix                                    |
+| [v0.16.5](https://github.com/chistiq/workspai/blob/v0.16.5/packages/cli/releases/RELEASE_NOTES_v0.16.5.md) | Feb 5, 2026  | Configuration file support, doctor command, diagnostics                                           |
+| [v0.16.4](https://github.com/chistiq/workspai/blob/v0.16.4/packages/cli/releases/RELEASE_NOTES_v0.16.4.md) | Feb 2, 2026  | Documentation quality, test stability, code polish                                                |
+| [v0.16.3](https://github.com/chistiq/workspai/blob/v0.16.3/packages/cli/releases/RELEASE_NOTES_v0.16.3.md) | Feb 1, 2026  | Template fixes, Python Core 0.2.2 compatibility, test updates                                     |
+| [v0.16.0](https://github.com/chistiq/workspai/blob/v0.16.0/packages/cli/releases/RELEASE_NOTES_v0.16.0.md) | Feb 1, 2026  | Workspace registry, unified signatures, cross-tool integration                                    |
+| [v0.15.1](https://github.com/chistiq/workspai/blob/v0.15.1/packages/cli/releases/RELEASE_NOTES_v0.15.1.md) | Jan 31, 2026 | Bridge stability, command fallback, improved test coverage                                        |
+| [v0.15.0](https://github.com/chistiq/workspai/blob/v0.15.0/packages/cli/releases/RELEASE_NOTES_v0.15.0.md) | Jan 30, 2026 | Core integration, workspace UX, Scenario C fix, tests & CI                                        |
+| [v0.14.2](https://github.com/chistiq/workspai/blob/v0.14.2/packages/cli/releases/RELEASE_NOTES_v0.14.2.md) | Jan 23, 2026 | Documentation & cleanup                                                                           |
+| [v0.14.1](https://github.com/chistiq/workspai/blob/v0.14.1/packages/cli/releases/RELEASE_NOTES_v0.14.1.md) | Dec 31, 2025 | Poetry virtualenv detection fix                                                                   |
+| [v0.14.0](https://github.com/chistiq/workspai/blob/v0.14.0/packages/cli/releases/RELEASE_NOTES_v0.14.0.md) | Dec 31, 2025 | Major dependency updates                                                                          |
+| [v0.13.1](https://github.com/chistiq/workspai/blob/v0.13.1/packages/cli/releases/RELEASE_NOTES_v0.13.1.md) | Dec 25, 2025 | Type safety & test coverage                                                                       |
+| [v0.13.0](https://github.com/chistiq/workspai/blob/v0.13.0/packages/cli/releases/RELEASE_NOTES_v0.13.0.md) | Dec 22, 2025 | NestJS test coverage boost                                                                        |
+| [v0.12.9](https://github.com/chistiq/workspai/blob/v0.12.9/packages/cli/releases/RELEASE_NOTES_v0.12.9.md) | Dec 22, 2025 | Unified npx commands                                                                              |
+| [v0.12.8](https://github.com/chistiq/workspai/blob/v0.12.8/packages/cli/releases/RELEASE_NOTES_v0.12.8.md) | Dec 13, 2025 | Windows spawn fix                                                                                 |
+| [v0.12.7](https://github.com/chistiq/workspai/blob/v0.12.7/packages/cli/releases/RELEASE_NOTES_v0.12.7.md) | Dec 13, 2025 | Windows support                                                                                   |
+| [v0.12.6](https://github.com/chistiq/workspai/blob/v0.12.6/packages/cli/releases/RELEASE_NOTES_v0.12.6.md) | Dec 12, 2025 | Quality & security infrastructure                                                                 |
+| [v0.12.5](https://github.com/chistiq/workspai/blob/v0.12.5/packages/cli/releases/RELEASE_NOTES_v0.12.5.md) | Dec 6, 2025  | CI/CD cross-platform fixes                                                                        |
+| [v0.12.4](https://github.com/chistiq/workspai/blob/v0.12.4/packages/cli/releases/RELEASE_NOTES_v0.12.4.md) | Dec 6, 2025  | Shell activation UX                                                                               |
+| [v0.12.3](https://github.com/chistiq/workspai/blob/v0.12.3/packages/cli/releases/RELEASE_NOTES_v0.12.3.md) | Dec 4, 2025  | Smart CLI delegation                                                                              |
+| [v0.12.2](https://github.com/chistiq/workspai/blob/v0.12.2/packages/cli/releases/RELEASE_NOTES_v0.12.2.md) | Dec 4, 2025  | Auto-activate in init command                                                                     |
+| [v0.12.1](https://github.com/chistiq/workspai/blob/v0.12.1/packages/cli/releases/RELEASE_NOTES_v0.12.1.md) | Dec 3, 2025  | NestJS port fix                                                                                   |
+| [v0.12.0](https://github.com/chistiq/workspai/blob/v0.12.0/packages/cli/releases/RELEASE_NOTES_v0.12.0.md) | Dec 3, 2025  | NestJS support                                                                                    |
+| [v0.11.3](https://github.com/chistiq/workspai/blob/v0.11.3/packages/cli/releases/RELEASE_NOTES_v0.11.3.md) | Dec 3, 2025  | Bug fixes                                                                                         |
+| [v0.11.2](https://github.com/chistiq/workspai/blob/v0.11.2/packages/cli/releases/RELEASE_NOTES_v0.11.2.md) | Dec 3, 2025  | Improvements                                                                                      |
+| [v0.11.1](https://github.com/chistiq/workspai/blob/v0.11.1/packages/cli/releases/RELEASE_NOTES_v0.11.1.md) | Nov 28, 2025 | Features                                                                                          |
 | [v0.11.0](CHANGELOG.md#0110---2025-11-14)    | Nov 14, 2025 | Major release                                                                                     |
 
 For complete changelog, see [CHANGELOG.md](CHANGELOG.md).
