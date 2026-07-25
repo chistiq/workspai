@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-07-25
+
+### Added
+
+- Added the public `workspace-graph-stream.v1` contract for transport-neutral,
+  revision-safe graph snapshots, deltas, progress, quality, invalidation,
+  resynchronization, lifecycle, heartbeat, and error events.
+- Added `workspace watch --graph-stream --json` so IDEs and other long-running
+  consumers can hydrate once and receive bounded Knowledge Graph changes
+  without repeatedly loading the complete graph.
+- Added graph-stream capability and contract discovery to the runtime command
+  inventory, published contract catalog, extension compatibility contract, and
+  artifact documentation.
+- Added a repository-wide brand contract that protects canonical Chistiq,
+  Workspai, repository, documentation, support, and contribution references.
+- Added a release-note generator and validation gate for publishing the exact
+  versioned release document as the GitHub Release body.
+
+### Changed
+
+- Moved Workspai repository ownership, issue, discussion, contribution, image,
+  and release links from RapidKit Labs to Chistiq while preserving the
+  Workspai product and npm package identities.
+- Simplified existing-project onboarding: `workspai adopt .` now creates or
+  reuses a minimal default workspace and prints the exact workspace shell step
+  and canonical intelligence command to run next.
+- Made `generic` the vendor-neutral agent example while retaining the supported
+  agent-specific output selectors.
+- Reworked root, CLI, alias, scenario, workspace-operation, Doctor, CI, and
+  runner documentation around plain-language user paths and canonical
+  `.workspai` evidence.
+- Bumped the monorepo root, `workspai`, and `wspai` packages to `0.49.0`, and
+  aligned the alias dependency on `workspai@0.49.0`.
+
+### Fixed
+
+- Fixed GitHub Release links so every release points to its tag-bound document
+  under `packages/cli/releases` instead of a nonexistent repository-root path.
+- Hardened release validation to reject relative, noncanonical, mismatched-tag,
+  and missing-current-version release-note links before publishing.
+- Fixed workspace-watch integration so each emitted event can expose its
+  authoritative in-memory model to the graph-stream publisher without
+  introducing a second model source of truth.
+- Fixed onboarding examples that implied users must manually create a workspace
+  before adopting an existing project.
+- Fixed Windows and cross-platform test assumptions in frontend creation,
+  offline scaffold, networking, and phase-three CLI coverage.
+
+### Verification
+
+- Full CLI suite: 2,088 tests passed across 194 test files, with 8 explicit
+  skips and no failures.
+- Graph-stream schema and publisher tests cover initial snapshots, hash-linked
+  deltas, revision continuity, proof timestamp stability, and resync events.
+- Release-note tests cover canonical GitHub body generation and fail-closed
+  aggregate-link validation.
+- Published and mirrored command/contract inventories include the graph-stream
+  surface for CLI, CI, IDE, and extension consumers.
+
 ## [0.48.0] - 2026-07-22
 
 ### Added

@@ -5,7 +5,76 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.48.0 (July 22, 2026)
+## Latest Release: v0.49.0 (July 25, 2026)
+
+### Live, Contract-Backed Workspace Graph Updates
+
+This minor release gives IDEs and other long-running consumers a stable way to
+follow Workspace Knowledge Graph changes as they happen. It also makes
+existing-project onboarding shorter, completes the repository's move to
+Chistiq, and prevents broken GitHub Release links from being published again.
+
+**What's New:**
+
+- **Revision-safe graph streaming**
+  - Added the public `workspace-graph-stream.v1` event contract.
+  - Added `workspace watch --graph-stream --json` for an initial graph snapshot
+    followed by bounded entity, relation, proof, provider, quality, and
+    diagnostic deltas.
+  - Every delta carries base and current revisions plus model and graph hashes,
+    allowing consumers to detect gaps and request a complete resynchronization.
+
+- **One model, live derived views**
+  - The canonical Workspace Model remains the source of truth.
+  - The watch engine passes its authoritative in-memory model to the
+    graph-stream publisher; the publisher derives the matching graph revision
+    without creating a competing model or persistence boundary.
+  - Runtime, published-contract, extension-compatibility, and artifact
+    inventories expose the same stream capability.
+
+- **Faster existing-project onboarding**
+  - Running `workspai adopt .` from a project creates or reuses the minimal
+    default workspace when needed.
+  - The command prints the exact workspace shell step and the canonical
+    intelligence command to run next.
+  - Documentation now starts with this direct path and uses `generic` for
+    vendor-neutral agent context.
+
+- **Chistiq ownership and release integrity**
+  - Repository, issue, discussion, contribution, package, and image references
+    now point to Chistiq.
+  - Added a repository-wide brand contract.
+  - Added GitHub Release body generation from the exact versioned source file.
+  - Release validation now rejects relative, noncanonical, tag-mismatched, or
+    missing-current-version links before publishing.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Full CLI suite: 2,088 tests passed across 194 test files; 8 tests remain
+  explicitly skipped.
+- Contract tests validate all graph-stream event families and revision rules.
+- Publisher tests validate snapshots, deterministic hash-linked deltas, and
+  stable proof comparison.
+- Release tests validate tag-bound GitHub bodies and fail-closed aggregate
+  links.
+- Mirrored command and contract inventories expose the same graph-stream
+  capability to CLI, CI, IDE, and extension consumers.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.49.0
+workspai --version
+workspai workspace watch --graph-stream --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.49.0/packages/cli/releases/RELEASE_NOTES_v0.49.0.md)
+
+---
+
+## Previous Release: v0.48.0 (July 22, 2026)
 
 ### Measurable Workspace Intelligence and Portable Graph Interchange
 

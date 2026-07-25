@@ -59,6 +59,54 @@ describe('GitHub release notes contract', () => {
     });
   });
 
+  it('fails closed when aggregate notes contain a relative release link', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-release-aggregate-'));
+    temporaryDirectories.push(directory);
+    const aggregatePath = path.join(directory, 'RELEASE_NOTES.md');
+    await fs.writeFile(
+      aggregatePath,
+      '[Full Release Notes](./releases/RELEASE_NOTES_v0.48.0.md)\n',
+      'utf8'
+    );
+
+    await expect(
+      execa(process.execPath, [
+        SCRIPT_PATH,
+        '--tag',
+        'v0.48.0',
+        '--aggregate',
+        aggregatePath,
+        '--check',
+      ])
+    ).rejects.toMatchObject({
+      exitCode: 1,
+    });
+  });
+
+  it('fails closed when an aggregate link uses the wrong tag', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-release-tag-drift-'));
+    temporaryDirectories.push(directory);
+    const aggregatePath = path.join(directory, 'RELEASE_NOTES.md');
+    await fs.writeFile(
+      aggregatePath,
+      '[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.47.0/packages/cli/releases/RELEASE_NOTES_v0.48.0.md)\n',
+      'utf8'
+    );
+
+    await expect(
+      execa(process.execPath, [
+        SCRIPT_PATH,
+        '--tag',
+        'v0.48.0',
+        '--aggregate',
+        aggregatePath,
+        '--check',
+      ])
+    ).rejects.toMatchObject({
+      exitCode: 1,
+    });
+  });
+
   it('publishes the rendered versioned body instead of generated notes', async () => {
     const releaseScript = await fs.readFile(RELEASE_SCRIPT_PATH, 'utf8');
 
