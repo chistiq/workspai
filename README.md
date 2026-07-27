@@ -102,6 +102,11 @@ cd ~/.workspai/workspaces/my-workspace
 npx workspai create project nextjs web --yes
 ```
 
+The project picker groups starters as **Backend**, **Frontend**, **Desktop**,
+and **Extension**. Expanded starters include `rust.axum`, `desktop.tauri`,
+`desktop.electron`, `extension.vscode`, and `php.laravel`; every created
+project enters the same Model, Doctor, Graph, and agent-context contracts.
+
 From the `my-workspace` terminal, you can also use `adopt` to link an existing
 project in place or `import` to copy or clone one into the workspace.
 
@@ -255,6 +260,9 @@ or inspect the machine-readable
 | I want to…                           | Command or guide                                                                          |
 | ------------------------------------ | ----------------------------------------------------------------------------------------- |
 | Connect an existing project in place | `npx workspai adopt /path/to/project --json`                                              |
+| Copy or clone a project into a workspace | `npx workspai import <path-or-git-url> --workspace /path/to/workspace --json`            |
+| Connect an existing workspace in place | `npx workspai workspace connect /path/to/workspace --json`                              |
+| Restore and register a workspace archive | `npx workspai workspace import team.workspai-archive.zip --output ./team --json`          |
 | Create a workspace or project        | [Creating workspaces and projects](packages/cli/docs/creating-workspaces-and-projects.md) |
 | Run the complete intelligence chain  | `npx workspai workspace intelligence run --for-agent generic --strict --json`             |
 | Ask a bounded architecture question  | `npx workspai workspace graph search "authentication endpoint" --limit 12 --json`         |

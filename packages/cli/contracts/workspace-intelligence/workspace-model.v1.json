@@ -34,7 +34,46 @@
       },
       "additionalProperties": true
     },
-    "identity": { "type": "object", "additionalProperties": true },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "service",
+              "worker",
+              "library",
+              "infra",
+              "docs",
+              "test-suite",
+              "unknown"
+            ]
+          }
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "library",
+              "infrastructure",
+              "documentation",
+              "quality",
+              "unknown"
+            ]
+          }
+        }
+      },
+      "additionalProperties": true
+    },
     "summary": { "type": "object", "additionalProperties": true },
     "factFreshness": { "$ref": "#/$defs/factFreshnessSummary" },
     "facts": {
@@ -43,7 +82,39 @@
     },
     "projects": {
       "type": "array",
-      "items": { "type": "object", "additionalProperties": true }
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "worker",
+              "library",
+              "infra",
+              "docs",
+              "test-suite",
+              "unknown"
+            ]
+          },
+          "category": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "library",
+              "infrastructure",
+              "documentation",
+              "quality",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
     },
     "contracts": { "type": "object", "additionalProperties": true },
     "projectTopology": {

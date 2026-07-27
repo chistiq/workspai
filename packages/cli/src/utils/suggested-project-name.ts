@@ -1,4 +1,5 @@
 import { resolveFrontendGenerator } from '../frontend-project.js';
+import { resolveOfficialProjectGenerator } from '../official-project.js';
 import { resolveKitDefinition } from './kit-registry.js';
 
 const NAME_THEMES = [
@@ -64,6 +65,13 @@ const FRONTEND_SUFFIX: Record<string, string> = {
   sveltekit: 'app',
 };
 
+const OFFICIAL_SUFFIX: Record<string, string> = {
+  tauri: 'desktop',
+  electron: 'desktop',
+  'vscode-extension': 'extension',
+  laravel: 'api',
+};
+
 function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
@@ -78,6 +86,11 @@ export function suggestProjectNameForKit(kitId: string): string {
   if (frontend) {
     const suffix = FRONTEND_SUFFIX[frontend.id] ?? 'app';
     return `${theme}-${suffix}`;
+  }
+
+  const official = resolveOfficialProjectGenerator(kitId);
+  if (official) {
+    return `${theme}-${OFFICIAL_SUFFIX[official.id] ?? 'app'}`;
   }
 
   const kit = resolveKitDefinition(kitId);

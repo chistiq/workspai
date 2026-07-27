@@ -36,7 +36,7 @@ describe('frontend generator commands', () => {
       command: 'npx',
       args: [
         '--yes',
-        '@angular/cli@19',
+        '@angular/cli@latest',
         'new',
         'demo-app',
         '--defaults',
@@ -96,7 +96,7 @@ describe('frontend generator commands', () => {
     const astro = resolveFrontendGenerator('frontend.astro');
     expect(astro?.commandExec('demo-app', { skipGit: true, skipInstall: true })).toEqual({
       command: 'npm',
-      args: ['create', 'astro@4', 'demo-app', '--', '--yes', '--no-install', '--no-git'],
+      args: ['create', 'astro@latest', 'demo-app', '--', '--yes', '--no-install', '--no-git'],
     });
   });
 });

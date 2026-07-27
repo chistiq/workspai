@@ -6,12 +6,23 @@ operation changes before you run it.
 
 Command syntax: [commands-reference.md](./commands-reference.md).
 
-## Import and adoption
+## Choose the operation by intent
 
-Use `import` to copy or clone an existing project into a Workspai workspace.
-Use `adopt` when the project must stay where it already lives but should become
-visible to Workspai. In both cases, the project becomes part of the shared
-system map, checks, and AI context.
+Workspai keeps project onboarding and workspace portability separate. Choose
+the operation by what should happen to the source:
+
+| Resource  | Source           | Intent                       | Command                      | Source moved or copied? | Registered? |
+| --------- | ---------------- | ---------------------------- | ---------------------------- | ----------------------- | ----------- |
+| Project   | Local folder     | Keep the project where it is | `workspai adopt`             | No                      | Yes         |
+| Project   | Local folder     | Copy it into a workspace     | `workspai import`            | Copied                  | Yes         |
+| Project   | Git URL          | Clone it into a workspace    | `workspai import --git`      | Cloned                  | Yes         |
+| Workspace | Existing folder  | Use it where it is           | `workspai workspace connect` | No                      | Yes         |
+| Workspace | Portable archive | Restore and start using it   | `workspai workspace import`  | Materialized            | Yes         |
+| Workspace | Portable archive | Extract files only           | `workspai workspace hydrate` | Materialized            | No          |
+
+All registered routes reconcile the canonical registry, workspace contract,
+and project entry surfaces. `hydrate` deliberately stops after safe extraction
+so automation can inspect the materialized files before registration.
 
 RapidKit Core module commands remain available only when existing project
 metadata identifies a kit that supports modules.
@@ -22,6 +33,8 @@ npx workspai import https://github.com/acme/orders-api.git --git
 npx workspai import ../orders-api --workspace ./my-workspace --name orders-api --json
 npx workspai adopt ../marketing-web --workspace ./my-workspace
 npx workspai adopt --json
+npx workspai workspace connect ../existing-workspace --json
+npx workspai workspace import team.workspai-archive.zip --output ./team --json
 ```
 
 ### Import behavior
@@ -45,6 +58,40 @@ npx workspai adopt --json
   preserved.
 - `--dry-run --json` previews detection without writing metadata.
 
+### Existing workspace behavior
+
+- `workspace connect` registers a valid local Workspai workspace in place. It
+  does not copy its projects.
+- `workspace import` verifies an archive, materializes it atomically, removes
+  machine-local bindings from the source machine, registers the workspace, and
+  reconciles its portable contract snapshot and project entry links.
+- Archive import never silently overwrites an explicit `--output` destination.
+- External adopted projects are not copied into an archive. The manifest keeps
+  only their portable identity and reports that they must be relinked.
+- `workspace hydrate` is the lower-level extraction primitive. Use it when a
+  deployment or migration process—not Workspai—owns registration.
+
+Every registered onboarding route emits the same versioned ingestion plan in
+JSON. The plan states the resource, source kind, materialization mode,
+ownership, registration intent, destination, and grounding policy. Consumers
+should use that contract instead of inferring behavior from command names.
+`workspace hydrate` remains an unregistered archive primitive and emits the
+versioned archive operation result instead.
+
+### Automatic consumer sync
+
+Workspace creation publishes the initial contract, canonical model, Knowledge
+Graph, structural baseline, context, report index, `AGENTS.md`, operational
+skills, and supported IDE/agent surfaces—even before the first project exists.
+Successful project creation, adoption, import, workspace connection, and
+workspace import refresh those same projections in the background. The
+structural baseline is created once and preserved; current model, graph, diff,
+impact, context, and project grounding move forward with workspace membership.
+
+Doctor, Analyze, Readiness, and Verify remain explicit checks because they may
+run project tools or enforce release policy. Use `workspace intelligence run`
+when you want that governed decision chain, rather than only lifecycle sync.
+
 ### Work from the project directory
 
 After `adopt`, `import`, or project creation, the project is a first-class
@@ -66,12 +113,12 @@ one workspace silently when ownership is ambiguous.
 
 The project receives four distinct surfaces:
 
-| File | Purpose | Portable |
-| --- | --- | --- |
-| `.workspai/workspace-link.local.json` | Machine-local canonical workspace binding | No; always gitignored |
-| `.workspai/reports/project-context-agent.json` | Bounded project view of model, graph, proofs, diagnostics, and safe commands | Yes |
-| `.workspai/PROJECT-GROUNDING.md` | Human- and agent-readable project entry guide | Yes |
-| `AGENTS.md` managed section | Tells compatible agents where to start and when to cross the project boundary | Yes |
+| File                                           | Purpose                                                                       | Portable              |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- | --------------------- |
+| `.workspai/workspace-link.local.json`          | Machine-local canonical workspace binding                                     | No; always gitignored |
+| `.workspai/reports/project-context-agent.json` | Bounded project view of model, graph, proofs, diagnostics, and safe commands  | Yes                   |
+| `.workspai/PROJECT-GROUNDING.md`               | Human- and agent-readable project entry guide                                 | Yes                   |
+| `AGENTS.md` managed section                    | Tells compatible agents where to start and when to cross the project boundary | Yes                   |
 
 The bounded context includes project identity and commands, dependencies and
 dependents, related API/deployment/test surfaces, current project findings,
@@ -242,9 +289,21 @@ npx workspai workspace archive inspect team-workspace.workspai-archive.zip
 npx workspai workspace archive verify team-workspace.workspai-archive.zip --strict
 npx workspai workspace archive doctor team-workspace.workspai-archive.zip
 npx workspai workspace hydrate team-workspace.workspai-archive.zip --output ./team-workspace
+npx workspai workspace import team-workspace.workspai-archive.zip --output ./team-workspace
+npx workspai workspace connect /path/to/existing-workspace
 ```
 
-Export excludes dependency folders, build output, git history, logs, `.env`, and private keys by default. Use `--include-env` only for trusted internal handoffs. Hydrate accepts legacy `.rapidkit-workspace` and `.rapidkit/*` archive entries, but restores them as canonical `.workspai-workspace` and `.workspai/*` paths.
+Export excludes dependency folders, build output, git history, logs, `.env`,
+private keys, machine-local project links, derived registries, and raw
+absolute-path workspace contracts by default. The manifest carries a
+path-neutral contract snapshot so manual ports, APIs, ownership, events, and
+dependency declarations survive transfer. External projects and their absolute
+paths are excluded and reported as explicit relink actions. Use `--include-env`
+only for trusted internal handoffs. Hydrate accepts legacy
+`.rapidkit-workspace` and `.rapidkit/*` archive entries, but restores them as
+canonical `.workspai-workspace` and `.workspai/*` paths. Workspace import then
+reconciles the portable snapshot with project metadata on the destination
+machine and rebuilds machine-local bindings.
 
 Archive export, verification, and hydrate stream file payloads instead of loading the workspace into memory. Exports use ZIP64, so multi-gigabyte workspaces and archives with more than 65,535 files are supported. Stored ZIP entries are the default; use `--archive-compression deflate` when transfer size matters more than export CPU time.
 
@@ -302,6 +361,9 @@ Artifacts:
 | `autopilot release`                                         | Wrapper orchestrator   | End-to-end release gate evidence                   |
 | `import`                                                    | Workspace ingestion    | Rollback-safe sync                                 |
 | `adopt`                                                     | Workspace adoption     | In-place linking + registry sync                   |
+| `workspace connect`                                         | Workspace ingestion    | In-place workspace registration + reconciliation   |
+| `workspace import`                                          | Workspace ingestion    | Verified archive restore + registration            |
+| `workspace hydrate`                                         | Archive primitive      | Verified extraction without registration           |
 | `workspace model/context/diff/impact/verify`                | Workspace intelligence | Model, context packs, blast radius                 |
 | `workspace intelligence run`                                | Workspace intelligence | Canonical contract-backed chain and strict gate    |
 | `snapshot`                                                  | Workspace recovery     | Metadata or full snapshots                         |

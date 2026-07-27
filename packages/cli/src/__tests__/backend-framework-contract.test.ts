@@ -172,6 +172,20 @@ describe('backend-framework-contract', () => {
     ]);
   });
 
+  it('reports both Node and Rust runtime surfaces for a Tauri project', async () => {
+    const tauriProject = await createTempProject('tauri-runtimes');
+    await fs.writeJson(path.join(tauriProject, 'package.json'), {
+      dependencies: { '@tauri-apps/api': 'latest' },
+    });
+    await fs.ensureDir(path.join(tauriProject, 'src-tauri'));
+    await fs.writeFile(
+      path.join(tauriProject, 'src-tauri', 'Cargo.toml'),
+      '[package]\nname = "desktop"\n'
+    );
+
+    expect(detectRuntimeCandidatesFromProject(tauriProject)).toEqual(['rust', 'node']);
+  });
+
   it('pins unknown normalization and returns immutable public descriptors', () => {
     expect(normalizeBackendPlatformKey(undefined)).toBe('unknown');
     expect(normalizeBackendPlatformKey('  Vue.JS  ')).toBe('vue');
@@ -197,6 +211,24 @@ describe('backend-framework-contract', () => {
     ['express', 'package.json', '{"dependencies":{"express":"latest"}}', 'express'],
     ['fastify', 'package.json', '{"dependencies":{"fastify":"latest"}}', 'fastify'],
     ['koa', 'package.json', '{"dependencies":{"koa":"latest"}}', 'koa'],
+    [
+      'tauri',
+      'package.json',
+      '{"dependencies":{"@tauri-apps/api":"latest"},"devDependencies":{"@tauri-apps/cli":"latest"}}',
+      'tauri',
+    ],
+    [
+      'electron',
+      'package.json',
+      '{"devDependencies":{"electron":"latest","@electron-forge/cli":"latest"}}',
+      'electron',
+    ],
+    [
+      'vscode-extension',
+      'package.json',
+      '{"engines":{"vscode":"^1.90.0"},"activationEvents":[],"contributes":{"commands":[]}}',
+      'vscode-extension',
+    ],
     ['node-generic', 'package.json', '{"name":"node-app"}', 'node'],
     ['fastapi', 'requirements.txt', 'fastapi==1.0', 'fastapi'],
     ['django', 'pyproject.toml', 'dependencies = ["django"]', 'django'],

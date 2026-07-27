@@ -34,6 +34,8 @@ export type WorkspaceKnowledgeProjectInput = {
   runtime?: string;
   framework?: string;
   kit?: string;
+  kind?: string;
+  category?: string;
 };
 
 export type BuildWorkspaceKnowledgeGraphOptions = {
@@ -828,6 +830,8 @@ const foundationProvider: Provider = {
           runtime: project.runtime,
           framework: project.framework,
           kit: project.kit,
+          kind: project.kind,
+          category: project.category,
         },
         proofIds: [projectProof],
       });

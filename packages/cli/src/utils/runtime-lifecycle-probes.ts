@@ -243,6 +243,59 @@ function probeManifestRuntime(
   }
 }
 
+function readComposerScripts(projectRoot: string): Set<string> {
+  try {
+    const manifest = JSON.parse(readTextIfExists(path.join(projectRoot, 'composer.json'))) as {
+      scripts?: Record<string, unknown>;
+    };
+    return new Set(Object.keys(manifest.scripts ?? {}));
+  } catch {
+    return new Set();
+  }
+}
+
+function probePhp(projectRoot: string, command: LifecycleProbeCommand): boolean {
+  if (!pathExists(path.join(projectRoot, 'composer.json'))) return false;
+  const scripts = readComposerScripts(projectRoot);
+  const artisan = pathExists(path.join(projectRoot, 'artisan'));
+  switch (command) {
+    case 'init':
+      return true;
+    case 'dev':
+      return artisan || scripts.has('dev');
+    case 'start':
+      return artisan || scripts.has('start');
+    case 'test':
+      return artisan || scripts.has('test');
+    case 'build':
+      return scripts.has('build');
+    case 'lint':
+      return scripts.has('lint') || scripts.has('analyse') || scripts.has('analyze');
+    case 'format':
+      return (
+        scripts.has('format') ||
+        scripts.has('fmt') ||
+        pathExists(path.join(projectRoot, 'pint.json')) ||
+        pathExists(path.join(projectRoot, 'vendor', 'bin', 'pint'))
+      );
+    default:
+      return false;
+  }
+}
+
+function probeRust(projectRoot: string, command: LifecycleProbeCommand): boolean {
+  if (!pathExists(path.join(projectRoot, 'Cargo.toml'))) return false;
+  return (
+    command === 'init' ||
+    command === 'dev' ||
+    command === 'start' ||
+    command === 'build' ||
+    command === 'test' ||
+    command === 'lint' ||
+    command === 'format'
+  );
+}
+
 export function isRuntimeLifecycleCommandAvailable(
   projectRoot: string,
   runtime: BackendRuntimeFamily | string,
@@ -268,6 +321,10 @@ export function isRuntimeLifecycleCommandAvailable(
       return probeJava(projectRoot, command);
     case 'dotnet':
       return probeDotnet(projectRoot, command);
+    case 'rust':
+      return probeRust(projectRoot, command);
+    case 'php':
+      return probePhp(projectRoot, command);
     default:
       return false;
   }

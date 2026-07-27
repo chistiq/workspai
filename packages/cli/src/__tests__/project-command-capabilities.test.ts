@@ -131,7 +131,7 @@ describe('project command capabilities', () => {
     });
   });
 
-  it('limits observed imported runtimes to help-level lifecycle support', async () => {
+  it('exposes only PHP lifecycle commands proven by project files', async () => {
     const phpProject = await createProject(
       {
         runtime: 'php',
@@ -145,11 +145,15 @@ describe('project command capabilities', () => {
 
     expect(capabilities.runtime).toBe('php');
     expect(capabilities.framework).toBe('laravel');
-    expect(capabilities.runtimeSupportTier).toBe('observed');
+    expect(capabilities.runtimeSupportTier).toBe('extended');
     expect(capabilities.frameworkSupportTier).toBe('extended');
     expect(capabilities.commandMap.help).toMatchObject({
       status: 'supported',
       owner: 'npm',
+    });
+    expect(capabilities.commandMap.init).toMatchObject({
+      status: 'supported',
+      owner: 'runtime',
     });
     expect(capabilities.commandMap.dev).toMatchObject({
       status: 'unsupported',

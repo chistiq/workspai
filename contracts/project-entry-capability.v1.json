@@ -23,10 +23,9 @@
     {
       "id": "import",
       "status": "available",
-      "purpose": "Attach an existing project, repository folder, or imported path to a workspace inventory.",
+      "purpose": "Copy a local project or clone a repository into workspace-owned source.",
       "commands": [
-        "import",
-        "workspace import"
+        "import"
       ]
     }
   ],

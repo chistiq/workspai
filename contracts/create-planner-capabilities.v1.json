@@ -19,56 +19,80 @@
       "id": "fastapi.standard",
       "runtime": "python",
       "framework": "fastapi",
+      "category": "backend",
       "owner": "core",
       "stability": "stable",
+      "versionPolicy": "tested-baseline",
       "moduleSupport": true
     },
     {
       "id": "fastapi.ddd",
       "runtime": "python",
       "framework": "fastapi",
+      "category": "backend",
       "owner": "core",
       "stability": "stable",
+      "versionPolicy": "tested-baseline",
       "moduleSupport": true
     },
     {
       "id": "nestjs.standard",
       "runtime": "node",
       "framework": "nestjs",
+      "category": "backend",
       "owner": "core",
       "stability": "stable",
+      "versionPolicy": "tested-baseline",
       "moduleSupport": true
     },
     {
       "id": "springboot.standard",
       "runtime": "java",
       "framework": "springboot",
+      "category": "backend",
       "owner": "npm",
       "stability": "stable",
+      "versionPolicy": "tested-baseline",
       "moduleSupport": false
     },
     {
       "id": "gofiber.standard",
       "runtime": "go",
       "framework": "gofiber",
+      "category": "backend",
       "owner": "npm",
       "stability": "stable",
+      "versionPolicy": "tested-baseline",
       "moduleSupport": false
     },
     {
       "id": "gogin.standard",
       "runtime": "go",
       "framework": "gogin",
+      "category": "backend",
       "owner": "npm",
       "stability": "stable",
+      "versionPolicy": "tested-baseline",
       "moduleSupport": false
     },
     {
       "id": "dotnet.webapi.clean",
       "runtime": "dotnet",
       "framework": "dotnet",
+      "category": "backend",
       "owner": "npm",
       "stability": "preview",
+      "versionPolicy": "tested-baseline",
+      "moduleSupport": false
+    },
+    {
+      "id": "rust.axum",
+      "runtime": "rust",
+      "framework": "axum",
+      "category": "backend",
+      "owner": "npm",
+      "stability": "preview",
+      "versionPolicy": "tested-baseline",
       "moduleSupport": false
     }
   ],
@@ -84,10 +108,12 @@
       "ecosystem": "nextjs",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npx create-next-app@latest <name>"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.remix",
@@ -100,10 +126,12 @@
       "ecosystem": "remix",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npx create-react-router@latest <name>"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.vite-react",
@@ -116,10 +144,12 @@
       "ecosystem": "react",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npm create vite@latest <name> -- --template react-ts"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.vite-vue",
@@ -132,10 +162,12 @@
       "ecosystem": "vue",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npm create vite@latest <name> -- --template vue-ts"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.vite-svelte",
@@ -148,10 +180,12 @@
       "ecosystem": "svelte",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npm create vite@latest <name> -- --template svelte-ts"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.vite-solid",
@@ -165,10 +199,12 @@
       "ecosystem": "solid",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npm create vite@latest <name> -- --template solid-ts"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.vite-vanilla",
@@ -181,10 +217,12 @@
       "ecosystem": "vite",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npm create vite@latest <name> -- --template vanilla-ts"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.nuxt",
@@ -197,10 +235,12 @@
       "ecosystem": "nuxt",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npx create-nuxt@latest <name> --template minimal --packageManager npm --gitInit true"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.angular",
@@ -212,10 +252,12 @@
       "ecosystem": "angular",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
-        "npx @angular/cli@19 new <name>"
+        "npx @angular/cli@latest new <name>"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.astro",
@@ -226,10 +268,12 @@
       "ecosystem": "astro",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
-        "npm create astro@4 <name>"
+        "npm create astro@latest <name>"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
     },
     {
       "id": "frontend.sveltekit",
@@ -241,10 +285,81 @@
       "ecosystem": "sveltekit",
       "status": "available",
       "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
       "officialCommands": [
         "npx sv@latest create <name>"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "frontend"
+    },
+    {
+      "id": "desktop.tauri",
+      "aliases": [
+        "desktop.tauri",
+        "tauri",
+        "tauri-app"
+      ],
+      "ecosystem": "tauri",
+      "status": "available",
+      "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
+      "officialCommands": [
+        "npm create tauri-app@latest <name> -- --template vanilla-ts"
+      ],
+      "adoptAfterCreate": true,
+      "category": "desktop"
+    },
+    {
+      "id": "desktop.electron",
+      "aliases": [
+        "desktop.electron",
+        "electron",
+        "electron-forge"
+      ],
+      "ecosystem": "electron",
+      "status": "available",
+      "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
+      "officialCommands": [
+        "npx create-electron-app@latest <name> --template=vite-typescript"
+      ],
+      "adoptAfterCreate": true,
+      "category": "desktop"
+    },
+    {
+      "id": "extension.vscode",
+      "aliases": [
+        "extension.vscode",
+        "vscode",
+        "vscode-extension",
+        "visual-studio-code-extension"
+      ],
+      "ecosystem": "vscode-extension",
+      "status": "available",
+      "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
+      "officialCommands": [
+        "npx --package yo@latest --package generator-code@latest -- yo code <name> --quick --extensionType ts --pkgManager npm --bundle esbuild"
+      ],
+      "adoptAfterCreate": true,
+      "category": "extension"
+    },
+    {
+      "id": "php.laravel",
+      "aliases": [
+        "php.laravel",
+        "laravel",
+        "php-laravel"
+      ],
+      "ecosystem": "laravel",
+      "status": "available",
+      "canExecuteCreate": true,
+      "versionPolicy": "latest-stable",
+      "officialCommands": [
+        "composer create-project --no-interaction --prefer-dist --stability=stable laravel/laravel <name>"
+      ],
+      "adoptAfterCreate": true,
+      "category": "backend"
     },
     {
       "id": "wordpress-site",
@@ -257,13 +372,15 @@
       "ecosystem": "wordpress",
       "status": "planned",
       "canExecuteCreate": false,
+      "versionPolicy": "planned",
       "officialCommands": [
         "wp core download",
         "wp config create",
         "wp db create",
         "wp core install"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "backend"
     },
     {
       "id": "wordpress-block",
@@ -275,24 +392,12 @@
       "ecosystem": "wordpress",
       "status": "planned",
       "canExecuteCreate": false,
+      "versionPolicy": "planned",
       "officialCommands": [
         "npx @wordpress/create-block@latest <slug>"
       ],
-      "adoptAfterCreate": true
-    },
-    {
-      "id": "laravel",
-      "aliases": [
-        "laravel",
-        "php-laravel"
-      ],
-      "ecosystem": "php",
-      "status": "planned",
-      "canExecuteCreate": false,
-      "officialCommands": [
-        "composer create-project laravel/laravel <name>"
-      ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "backend"
     },
     {
       "id": "symfony",
@@ -303,10 +408,12 @@
       "ecosystem": "php",
       "status": "planned",
       "canExecuteCreate": false,
+      "versionPolicy": "planned",
       "officialCommands": [
         "composer create-project symfony/skeleton <name>"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "backend"
     },
     {
       "id": "rails",
@@ -318,10 +425,12 @@
       "ecosystem": "ruby",
       "status": "planned",
       "canExecuteCreate": false,
+      "versionPolicy": "planned",
       "officialCommands": [
         "rails new <name>"
       ],
-      "adoptAfterCreate": true
+      "adoptAfterCreate": true,
+      "category": "backend"
     }
   ],
   "existingRuntimeSignals": [
@@ -337,6 +446,9 @@
     "Do not translate unsupported stack requests into unrelated native kits.",
     "If native create is unavailable, explain the lane and guide to adopt/import.",
     "The existing lane is open-ended for readable projects; existingRuntimeSignals are examples for planner detection, not an allowlist.",
-    "Use the same capability contract in CLI, CI, VS Code, and AI planning surfaces."
+    "Use the same capability contract in CLI, CI, VS Code, and AI planning surfaces.",
+    "Available official generators request the upstream latest stable channel and record that policy in project evidence.",
+    "Native Workspai-owned kits use tested dependency baselines so repeated creates remain deterministic.",
+    "Workspace management during project creation is foundation-only; it must not install the optional Python engine. Each selected kit owns its runtime prerequisites and install flow."
   ]
 }

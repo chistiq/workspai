@@ -204,11 +204,28 @@ or update a registry.
 Workspace creation does not merge into or overwrite an existing target. If the
 resolved directory already exists, choose another name or output parent.
 
-To bring an existing repository into Workspai, use `adopt` or `import` instead:
+To bring existing software into Workspai, use the operation that matches who
+owns its location:
 
 ```bash
+# Keep a project where it is.
 npx workspai adopt /path/to/project
+
+# Copy or clone a project into the selected workspace.
+npx workspai import /path/to/project --workspace /path/to/my-workspace
+
+# Register an existing Workspai workspace without moving it.
+npx workspai workspace connect /path/to/existing-workspace
+
+# Restore and register a portable workspace archive.
+npx workspai workspace import team.workspai-archive.zip --output ./team
 ```
+
+Running `npx workspai create` interactively exposes the same choices as
+“Create a project”, “Add existing software”, and—when appropriate—“Create
+another workspace”. Inside a workspace, project and onboarding choices appear
+first; creating another workspace remains an explicit escape hatch rather than
+the default.
 
 ## Main workspace files
 
@@ -249,7 +266,7 @@ npx workspai create
 If you choose project creation, the same project flow is used.
 
 When the terminal is interactive and the current directory is not inside a
-workspace, **every supported backend and frontend kit** shows the workspace
+workspace, **every supported backend, frontend, desktop, and extension kit** shows the workspace
 management question before scaffolding:
 
 ```text
@@ -275,7 +292,12 @@ npx workspai create project fastapi.standard api
 npx workspai create project gofiber.standard gateway
 npx workspai create project springboot.standard orders
 npx workspai create project dotnet.webapi.clean billing
+npx workspai create project rust.axum telemetry-api
 npx workspai create project frontend.nextjs dashboard
+npx workspai create project desktop.tauri desktop-app
+npx workspai create project desktop.electron admin-console
+npx workspai create project extension.vscode editor-tools
+npx workspai create project php.laravel customer-api
 ```
 
 The shorter frontend alias remains available:
@@ -295,6 +317,7 @@ npx workspai create frontend nextjs dashboard
 | `gogin.standard`      | Go      | Workspai npm CLI     | No                   |
 | `springboot.standard` | Java    | Workspai npm CLI     | No                   |
 | `dotnet.webapi.clean` | .NET    | Workspai npm CLI     | No                   |
+| `rust.axum`           | Rust    | Workspai npm CLI     | No                   |
 
 NestJS runs on Node.js, but its current scaffold is provided through the
 RapidKit Core bridge.
@@ -319,6 +342,34 @@ Workspai has official-generator paths for:
 
 The ecosystem's official generator creates the application. Workspai then adds
 project metadata and performs the selected workspace registration.
+
+## Desktop, extension, and additional backend generators
+
+| Category  | Project           | Kit                | Creation owner                         |
+| --------- | ----------------- | ------------------ | -------------------------------------- |
+| Backend   | Axum              | `rust.axum`        | Workspai deterministic Cargo baseline |
+| Backend   | Laravel           | `php.laravel`      | Composer / Laravel                     |
+| Desktop   | Tauri             | `desktop.tauri`    | create-tauri-app                       |
+| Desktop   | Electron Forge    | `desktop.electron` | create-electron-app                    |
+| Extension | VS Code Extension | `extension.vscode` | generator-code                         |
+
+Every generated project receives a canonical `kind` and `category`. The four
+user-facing categories are `backend`, `frontend`, `desktop`, and `extension`;
+they remain visible in the Workspace Model and Knowledge Graph so consumers do
+not have to guess a project’s role from its runtime.
+
+Official generators may download packages and therefore need network access.
+Each available integration requests the upstream latest stable channel rather
+than pinning an old framework major. npm engine compatibility is enforced
+strictly against the Node.js runtime running Workspai, and required ecosystem
+tools such as Rust/Cargo, Git, PHP, or Composer are checked before generation.
+The upstream generator remains authoritative for its exact supported runtime
+range; Workspai records the `latest-stable` policy in the generated project
+metadata and evidence.
+
+`desktop.electron`, `extension.vscode`, and `php.laravel` do not accept
+`--skip-install`, because their official generators do not expose a reliable,
+documented no-install contract.
 
 # Where the project is created
 
@@ -441,6 +492,9 @@ npx workspai create project gofiber.standard gateway \
 
 Unlike `create workspace --here`, this turns the current directory itself into
 a workspace. It then creates the project under the requested output parent.
+This registration is foundation-only: it does not probe Python or Poetry,
+create a virtual environment, or install `rapidkit-core`. The selected kit owns
+its runtime prerequisites and installation flow.
 
 For example, from `/home/me/platform`:
 
@@ -449,7 +503,9 @@ Workspace: /home/me/platform
 Project:   /home/me/platform/gateway
 ```
 
-This uses the full current-folder workspace registration flow.
+This uses the full current-folder Workspace Intelligence registration flow
+(contract, model, graph, agent context, and registry) without coupling the
+workspace to the optional Python engine.
 
 ## Choice 3: Create without workspace management
 

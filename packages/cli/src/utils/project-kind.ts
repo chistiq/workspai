@@ -4,9 +4,33 @@ import fsExtra from 'fs-extra';
 import { projectMetadataCandidates } from './workspace-paths.js';
 
 export type WorkspaceProjectKind =
-  'service' | 'frontend' | 'worker' | 'library' | 'infra' | 'docs' | 'test-suite' | 'unknown';
+  | 'backend'
+  | 'frontend'
+  | 'desktop'
+  | 'extension'
+  | 'service'
+  | 'worker'
+  | 'library'
+  | 'infra'
+  | 'docs'
+  | 'test-suite'
+  | 'unknown';
+
+export type WorkspaceProjectCategory =
+  | 'backend'
+  | 'frontend'
+  | 'desktop'
+  | 'extension'
+  | 'library'
+  | 'infrastructure'
+  | 'documentation'
+  | 'quality'
+  | 'unknown';
 
 const PROJECT_KIND_VALUES = new Set<WorkspaceProjectKind>([
+  'backend',
+  'desktop',
+  'extension',
   'service',
   'frontend',
   'worker',
@@ -46,7 +70,36 @@ function normalizeProjectKind(raw: unknown): WorkspaceProjectKind | null {
     return null;
   }
   const normalized = raw.trim().toLowerCase() as WorkspaceProjectKind;
-  return PROJECT_KIND_VALUES.has(normalized) ? normalized : null;
+  if (!PROJECT_KIND_VALUES.has(normalized)) {
+    return null;
+  }
+  // `service` was the pre-taxonomy backend value. Read it forever, but do not
+  // keep emitting it into new model/graph generations.
+  return normalized === 'service' ? 'backend' : normalized;
+}
+
+export function categorizeWorkspaceProjectKind(
+  kind: WorkspaceProjectKind
+): WorkspaceProjectCategory {
+  switch (kind) {
+    case 'backend':
+    case 'service':
+    case 'worker':
+      return 'backend';
+    case 'frontend':
+    case 'desktop':
+    case 'extension':
+    case 'library':
+      return kind;
+    case 'infra':
+      return 'infrastructure';
+    case 'docs':
+      return 'documentation';
+    case 'test-suite':
+      return 'quality';
+    default:
+      return 'unknown';
+  }
 }
 
 export async function inferWorkspaceProjectKind(
@@ -68,6 +121,18 @@ export async function inferWorkspaceProjectKind(
     .trim()
     .toLowerCase();
 
+  if (/\b(tauri|electron|wails|desktop)\b/.test(serviceSignals)) {
+    return 'desktop';
+  }
+
+  if (
+    /\b(vscode-extension|visual studio code extension|jetbrains-plugin|browser-extension)\b/.test(
+      serviceSignals
+    )
+  ) {
+    return 'extension';
+  }
+
   if (
     /\b(frontend|nextjs|next\.js|react|vue|svelte|vite|angular|astro|remix|nuxt)\b/.test(
       serviceSignals
@@ -81,7 +146,7 @@ export async function inferWorkspaceProjectKind(
       serviceSignals
     )
   ) {
-    return 'service';
+    return 'backend';
   }
 
   const packageJson = await readJsonIfExists(path.join(projectPath, 'package.json'));
@@ -98,6 +163,37 @@ export async function inferWorkspaceProjectKind(
       .filter((item): item is string => typeof item === 'string')
       .join(' ')
       .toLowerCase();
+    const engines = ((packageJson.engines as Record<string, unknown> | undefined) ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const categories = Array.isArray(packageJson.categories)
+      ? packageJson.categories.filter((item): item is string => typeof item === 'string')
+      : [];
+
+    if (
+      dependencies['@tauri-apps/api'] ||
+      dependencies['@tauri-apps/cli'] ||
+      (await fsExtra.pathExists(path.join(projectPath, 'src-tauri', 'tauri.conf.json'))) ||
+      (await fsExtra.pathExists(path.join(projectPath, 'src-tauri', 'tauri.conf.json5')))
+    ) {
+      return 'desktop';
+    }
+    if (
+      dependencies.electron ||
+      dependencies['@electron-forge/cli'] ||
+      scriptText.includes('electron-forge') ||
+      scriptText.includes('electron ')
+    ) {
+      return 'desktop';
+    }
+    if (
+      typeof engines.vscode === 'string' ||
+      categories.some((category) => category.toLowerCase() === 'extension packs') ||
+      (packageJson.publisher && (packageJson.activationEvents || packageJson.contributes))
+    ) {
+      return 'extension';
+    }
 
     if (
       dependencies.next ||
@@ -124,5 +220,5 @@ export async function inferWorkspaceProjectKind(
     return 'infra';
   }
 
-  return 'service';
+  return 'backend';
 }

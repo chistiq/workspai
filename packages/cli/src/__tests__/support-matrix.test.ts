@@ -27,8 +27,8 @@ describe('support matrix', () => {
     expect(getFrameworkSupportTier('unknown')).toBe('observed');
   });
 
-  it('keeps Go, Java, and .NET lifecycle-ready without module mutation support', () => {
-    for (const runtime of ['go', 'java', 'dotnet']) {
+  it('keeps extended runtimes lifecycle-ready without module mutation support', () => {
+    for (const runtime of ['go', 'java', 'dotnet', 'rust', 'php']) {
       const support = getRuntimeSupport(runtime);
       const commands = buildRuntimeCommandSupport({ runtime, moduleSupport: false });
 
@@ -53,9 +53,7 @@ describe('support matrix', () => {
 
   it('keeps observed runtimes import-safe but lifecycle-limited', () => {
     for (const runtime of [
-      'php',
       'ruby',
-      'rust',
       'elixir',
       'clojure',
       'scala',

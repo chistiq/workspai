@@ -18,12 +18,12 @@ import { buildCleanGitEnv } from './utils/git-worktree.js';
 import { projectMetadataCandidates, workspaceMetadataCandidates } from './utils/workspace-paths.js';
 import { assertWorkspaceArtifactContract } from './contracts/artifact-contract-registry.js';
 
-interface WorkspaceProject {
+export interface WorkspaceProject {
   name: string;
   path: string;
 }
 
-interface WorkspaceEntry {
+export interface WorkspaceEntry {
   name: string;
   path: string;
   mode?: string;
@@ -473,6 +473,53 @@ export async function registerWorkspaceStrict(workspacePath: string, name: strin
       mode: 'full',
       projects: [],
     });
+  });
+}
+
+export async function captureWorkspaceRegistrationStrict(
+  workspacePath: string
+): Promise<WorkspaceEntry | null> {
+  const normalizedWorkspacePath = normalizeRegistryPath(workspacePath);
+  const registry = await readWorkspaceRegistryCandidatesStrict();
+  const workspace = registry.workspaces.find(
+    (candidate) => candidate.path === normalizedWorkspacePath
+  );
+  return workspace
+    ? {
+        ...workspace,
+        projects: workspace.projects.map((project) => ({ ...project })),
+      }
+    : null;
+}
+
+export async function restoreWorkspaceRegistrationStrict(
+  workspacePath: string,
+  snapshot: WorkspaceEntry | null
+): Promise<void> {
+  const normalizedWorkspacePath = normalizeRegistryPath(workspacePath);
+  await mutateWorkspaceRegistry((registry) => {
+    const existingIndex = registry.workspaces.findIndex(
+      (workspace) => workspace.path === normalizedWorkspacePath
+    );
+    if (!snapshot) {
+      if (existingIndex >= 0) registry.workspaces.splice(existingIndex, 1);
+      return;
+    }
+    const restored = normalizeWorkspaceEntry(snapshot);
+    if (existingIndex >= 0) {
+      registry.workspaces[existingIndex] = restored;
+    } else {
+      registry.workspaces.push(restored);
+    }
+  });
+}
+
+export async function unregisterWorkspaceStrict(workspacePath: string): Promise<void> {
+  const normalizedWorkspacePath = normalizeRegistryPath(workspacePath);
+  await mutateWorkspaceRegistry((registry) => {
+    registry.workspaces = registry.workspaces.filter(
+      (workspace) => workspace.path !== normalizedWorkspacePath
+    );
   });
 }
 

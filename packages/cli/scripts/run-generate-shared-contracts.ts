@@ -23,6 +23,10 @@ import {
 } from '../src/contracts/cli-discovery-contract.js';
 import { buildPublishedContractCatalog } from '../src/contracts/published-contract-versions.js';
 import { buildOperationalJsonSchemas } from '../src/contracts/operational-json-schemas.js';
+import {
+  buildIngestionPlanSchema,
+  buildIngestionResultSchema,
+} from '../src/contracts/ingestion-contract.js';
 
 const contractsDir = path.resolve(process.cwd(), 'contracts');
 
@@ -36,7 +40,10 @@ function writeJson(fileName: string, value: unknown) {
 writeJson('runtime-command-surface.v1.json', buildRuntimeCommandSurfaceContract());
 process.env.VITEST = '1';
 const { getGlobalCommandCapabilities } = await import('../src/index.js');
-writeJson('cli-runtime-command-inventory.v1.snapshot.json', getGlobalCommandCapabilities().runtimeInventory);
+writeJson(
+  'cli-runtime-command-inventory.v1.snapshot.json',
+  getGlobalCommandCapabilities().runtimeInventory
+);
 writeJson('cli-operation-result.v1.json', buildCliOperationResultSchema());
 writeJson('command-capabilities.v1.json', buildCommandCapabilitiesSchema());
 writeJson('version.v1.json', buildVersionContractSchema());
@@ -50,6 +57,8 @@ writeJson(
   'workspace-archive-operation-result.v1.json',
   buildWorkspaceArchiveOperationResultSchema()
 );
+writeJson('ingestion-plan.v1.json', buildIngestionPlanSchema());
+writeJson('ingestion-result.v1.json', buildIngestionResultSchema());
 writeJson('create-planner-capabilities.v1.json', buildCreatePlannerCapabilitiesContract());
 writeJson('agent-customization-pack.v1.json', buildAgentCustomizationPackContract());
 writeJson('backend-import-stack-parity.snapshot.json', buildImportStackParitySnapshot());

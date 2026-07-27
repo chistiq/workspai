@@ -8,6 +8,7 @@ import os from 'os';
 import path from 'path';
 import * as cliPrompts from '../cli-ui/prompts.js';
 import * as frontendProject from '../frontend-project.js';
+import * as officialProject from '../official-project.js';
 
 describe('handleCreateOrFallback - wrapper flags handling', () => {
   let tmpDir: string;
@@ -51,7 +52,10 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
 
     const args = ['create', 'project', 'fastapi.standard', 'demo', '--create-workspace', '--yes'];
     const code = await index.handleCreateOrFallback(args);
-    expect(registerSpy).toHaveBeenCalledWith(process.cwd(), expect.objectContaining({ yes: true }));
+    expect(registerSpy).toHaveBeenCalledWith(
+      process.cwd(),
+      expect.not.objectContaining({ installPythonEngine: true })
+    );
     expect(resolveSpy).toHaveBeenCalled();
     expect(runSpy).toHaveBeenCalled();
 
@@ -192,6 +196,93 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
       expect(forwarded).toEqual(['create', 'project', 'fastapi.standard', 'demo']);
       expect(args).toContain('--no-workspace');
       expect(code).toBe(0);
+    } finally {
+      if (stdinIsTty) {
+        Object.defineProperty(process.stdin, 'isTTY', stdinIsTty);
+      } else {
+        delete (process.stdin as NodeJS.ReadStream & { isTTY?: boolean }).isTTY;
+      }
+    }
+  });
+
+  it('turns the current folder into a foundation-only workspace before project scaffolding', async () => {
+    const promptSpy = vi.spyOn(cliPrompts, 'prompt').mockResolvedValue({
+      workspaceMode: 'current',
+    });
+    const registerSpy = vi.spyOn(create, 'registerWorkspaceAtPath').mockResolvedValue();
+    const resolveSpy = vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
+    const runSpy = vi.spyOn(coreExec, 'runCoreRapidkit').mockResolvedValue(0 as any);
+    const stdinIsTty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', {
+      configurable: true,
+      get: () => true,
+    });
+
+    try {
+      const code = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        'fastapi.standard',
+        'demo',
+      ]);
+
+      expect(promptSpy).toHaveBeenCalled();
+      expect(registerSpy).toHaveBeenCalledWith(
+        process.cwd(),
+        expect.objectContaining({
+          yes: false,
+        })
+      );
+      expect(registerSpy).not.toHaveBeenCalledWith(
+        process.cwd(),
+        expect.objectContaining({ installPythonEngine: true })
+      );
+      expect(resolveSpy).toHaveBeenCalled();
+      expect(runSpy).toHaveBeenCalled();
+      expect(code).toBe(0);
+    } finally {
+      if (stdinIsTty) {
+        Object.defineProperty(process.stdin, 'isTTY', stdinIsTty);
+      } else {
+        delete (process.stdin as NodeJS.ReadStream & { isTTY?: boolean }).isTTY;
+      }
+    }
+  });
+
+  it('creates a VS Code extension in a current-folder workspace without Python installation', async () => {
+    const promptSpy = vi
+      .spyOn(cliPrompts, 'prompt')
+      .mockResolvedValueOnce({ kitChoice: 'extension.vscode' })
+      .mockResolvedValueOnce({ projectName: 'saas-extension' })
+      .mockResolvedValueOnce({ workspaceMode: 'current' });
+    const registerSpy = vi.spyOn(create, 'registerWorkspaceAtPath').mockResolvedValue();
+    const officialCreateSpy = vi.spyOn(officialProject, 'createOfficialProject').mockResolvedValue({
+      definition: officialProject.resolveOfficialProjectGenerator('extension.vscode')!,
+      projectName: 'saas-extension',
+      projectPath: path.join(process.cwd(), 'saas-extension'),
+      dryRun: true,
+      commandDisplay: 'npx --yes yo@latest generator-code@latest',
+      commandExec: ['npx', '--yes', 'yo@latest', 'generator-code@latest'],
+    });
+    const stdinIsTty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', {
+      configurable: true,
+      get: () => true,
+    });
+
+    try {
+      expect(await index.handleCreateOrFallback(['create', 'project'])).toBe(0);
+      expect(promptSpy).toHaveBeenCalledTimes(3);
+      expect(registerSpy).toHaveBeenCalledWith(
+        process.cwd(),
+        expect.not.objectContaining({ installPythonEngine: true })
+      );
+      expect(officialCreateSpy).toHaveBeenCalledWith([
+        'create',
+        'project',
+        'extension.vscode',
+        'saas-extension',
+      ]);
     } finally {
       if (stdinIsTty) {
         Object.defineProperty(process.stdin, 'isTTY', stdinIsTty);

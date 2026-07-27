@@ -5,6 +5,7 @@ import {
   resolveCreatePlannerCapability,
 } from '../utils/create-planner-capabilities';
 import { listFrontendGenerators } from '../frontend-project';
+import { listOfficialProjectGenerators } from '../official-project';
 import { listInteractiveKits, resolveKitDefinition } from '../utils/kit-registry';
 
 describe('create planner capabilities', () => {
@@ -12,6 +13,7 @@ describe('create planner capabilities', () => {
     const nativeKitIds = listInteractiveKits().map((kit) => kit.id);
 
     for (const kitId of nativeKitIds) {
+      expect(resolveKitDefinition(kitId)?.versionPolicy).toBe('tested-baseline');
       const capability = resolveCreatePlannerCapability({ kitId });
       expect(capability).toMatchObject({
         lane: 'native',
@@ -24,6 +26,7 @@ describe('create planner capabilities', () => {
 
   it('routes official frontend generators through the available official lane', () => {
     for (const definition of listFrontendGenerators()) {
+      expect(definition.versionPolicy).toBe('latest-stable');
       const capability = resolveCreatePlannerCapability({ kitId: definition.kitId });
       expect(capability).toMatchObject({
         lane: 'official',
@@ -35,8 +38,20 @@ describe('create planner capabilities', () => {
     }
   });
 
-  it('keeps external generator ecosystems planned and routed through adopt fallback', () => {
-    for (const alias of ['wordpress', 'wordpress-block', 'laravel', 'symfony', 'rails']) {
+  it('routes the official desktop, extension, and Laravel generators through available', () => {
+    for (const definition of listOfficialProjectGenerators()) {
+      expect(definition.versionPolicy).toBe('latest-stable');
+      expect(resolveCreatePlannerCapability({ kitId: definition.kitId })).toMatchObject({
+        lane: 'official',
+        status: 'available',
+        canExecuteCreate: true,
+        resolved: definition.kitId,
+      });
+    }
+  });
+
+  it('keeps remaining external generator ecosystems planned and routed through adopt fallback', () => {
+    for (const alias of ['wordpress', 'wordpress-block', 'symfony', 'rails']) {
       const capability = resolveCreatePlannerCapability({ framework: alias });
       expect(capability.lane).toBe('official');
       expect(capability.status).toBe('planned');
@@ -61,6 +76,7 @@ describe('create planner capabilities', () => {
       lane: 'existing',
       status: 'available',
       canExecuteCreate: false,
+      resolved: 'php',
     });
     expect(resolveCreatePlannerCapability({ runtime: 'zig' })).toMatchObject({
       lane: 'existing',

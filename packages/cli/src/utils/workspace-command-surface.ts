@@ -39,6 +39,7 @@ export const WORKSPACE_SUBCOMMANDS = [
   'archive',
   'hydrate',
   'import',
+  'connect',
   'run',
   'init',
 ] as const;

@@ -1,8 +1,11 @@
 import os from 'os';
 import path from 'path';
+import fs from 'fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertIndependentWorkspaceTarget,
+  buildWorkspaceCreateLocationChoices,
   formatWorkspaceCdCommand,
   resolveWorkspaceOutputParent,
   resolveWorkspaceParentFromArgs,
@@ -67,6 +70,59 @@ describe('workspace-create-location', () => {
       homeDir: os.homedir(),
     });
     expect(parent).toBeUndefined();
+  });
+
+  it('does not offer the current directory while already inside a workspace', async () => {
+    const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-create-location-'));
+    const workspacePath = path.join(testRoot, 'current-workspace');
+    const projectPath = path.join(workspacePath, 'project');
+    await fs.mkdir(projectPath, { recursive: true });
+    await fs.writeFile(
+      path.join(workspacePath, '.workspai-workspace'),
+      JSON.stringify({ signature: 'WORKSPAI_WORKSPACE', name: 'current-workspace' })
+    );
+
+    try {
+      await expect(
+        buildWorkspaceCreateLocationChoices(projectPath, '/home/test-user')
+      ).resolves.toEqual([
+        {
+          value: 'managed',
+          label: 'Managed home',
+          hint: path.join('/home/test-user', '.workspai', 'workspaces'),
+        },
+      ]);
+      await expect(
+        resolveWorkspaceOutputParent(['create', 'workspace'], {
+          cwd: projectPath,
+          homeDir: '/home/test-user',
+          interactive: true,
+        })
+      ).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(testRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a workspace target nested below another workspace boundary', async () => {
+    const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-nested-target-'));
+    const workspacePath = path.join(testRoot, 'parent-workspace');
+    await fs.mkdir(workspacePath, { recursive: true });
+    await fs.writeFile(
+      path.join(workspacePath, '.workspai-workspace'),
+      JSON.stringify({ signature: 'WORKSPAI_WORKSPACE', name: 'parent-workspace' })
+    );
+
+    try {
+      await expect(
+        assertIndependentWorkspaceTarget(path.join(workspacePath, 'nested-workspace'))
+      ).rejects.toThrow(/Workspai workspaces cannot be nested/);
+      await expect(
+        assertIndependentWorkspaceTarget(path.join(testRoot, 'sibling-workspace'))
+      ).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(testRoot, { recursive: true, force: true });
+    }
   });
 
   it('does not block same-name workspaces in another parent when output parent is explicit', () => {

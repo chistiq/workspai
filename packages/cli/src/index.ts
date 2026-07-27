@@ -167,6 +167,12 @@ import {
   resolveFrontendGenerator,
 } from './frontend-project.js';
 import {
+  createOfficialProject,
+  isOfficialProjectKit,
+  officialProjectCreateUsage,
+  resolveOfficialProjectGenerator,
+} from './official-project.js';
+import {
   getDefaultPythonCommand,
   getPythonCommandCandidates,
   getRapidkitLocalScriptCandidates,
@@ -216,6 +222,13 @@ import {
 } from './utils/artifact-path-compat.js';
 import { WORKSPACE_CONTRACT_PATH } from './utils/workspace-contract.js';
 import { WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH } from './utils/workspace-registry-summary.js';
+import { connectWorkspace, importWorkspaceArchive } from './workspace-ingestion.js';
+import {
+  buildExistingSoftwareSourcePrompt,
+  buildInteractiveCreateTargetChoices,
+  classifyExistingSoftwareSource,
+  type InteractiveCreateTarget,
+} from './utils/create-ingestion-choice.js';
 
 export type BridgeFailureCode =
   | 'PYTHON_NOT_FOUND'
@@ -346,7 +359,10 @@ async function enforceWorkspaceProfileForRequestedKit(kitName: string): Promise<
     ]);
     const kitDefinition = resolveKitDefinition(normalizedKitName);
     const frontendDefinition = resolveFrontendGenerator(normalizedKitName);
-    const runtime = frontendDefinition ? 'node' : (kitDefinition?.runtime ?? 'python');
+    const officialDefinition = resolveOfficialProjectGenerator(normalizedKitName);
+    const runtime = frontendDefinition
+      ? 'node'
+      : (officialDefinition?.runtime ?? kitDefinition?.runtime ?? 'python');
     const projectCompatibility = resolveWorkspaceProfileProjectCompatibility({
       profile,
       runtime,
@@ -427,7 +443,7 @@ export async function commandAvailable(command: string, cwd: string): Promise<bo
   return code === 0;
 }
 
-type InferredRuntime = 'python' | 'node' | 'go' | 'java' | 'dotnet' | null;
+type InferredRuntime = 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php' | null;
 
 export async function inferRuntimeByFiles(targetPath: string): Promise<InferredRuntime> {
   const goMod = path.join(targetPath, 'go.mod');
@@ -459,6 +475,12 @@ export async function inferRuntimeByFiles(targetPath: string): Promise<InferredR
       return 'dotnet';
     }
   }
+
+  const cargoToml = path.join(targetPath, 'Cargo.toml');
+  if (await fsExtra.pathExists(cargoToml)) return 'rust';
+
+  const composerJson = path.join(targetPath, 'composer.json');
+  if (await fsExtra.pathExists(composerJson)) return 'php';
 
   const packageJson = path.join(targetPath, 'package.json');
   if (await fsExtra.pathExists(packageJson)) return 'node';
@@ -918,6 +940,7 @@ async function finalizeCreatedProjectWorkspace(
       mode: 'managed',
     });
     await transaction.commit();
+    await syncWorkspaceContractAfterProjectChange(workspacePath);
   } catch (error) {
     await rollbackProjectLifecycleTransaction(transaction, error);
   }
@@ -1036,6 +1059,30 @@ async function runFrontendProjectCreate(args: string[]): Promise<number> {
     );
     if (!args[3]) {
       process.stderr.write(`Usage: ${frontendCreateUsage(definition.id)}\n`);
+    }
+    return 1;
+  }
+}
+
+async function runOfficialProjectCreate(args: string[]): Promise<number> {
+  const definition = resolveOfficialProjectGenerator(args[2]);
+  if (!definition) return 1;
+  let ownedProjectPath: string | undefined;
+
+  try {
+    const result = await createOfficialProject(args);
+    if (!result.dryRun) {
+      ownedProjectPath = result.projectPath;
+      await finalizeCreatedProjectWorkspace(args, result.projectPath, result.projectName);
+    }
+    return 0;
+  } catch (error) {
+    if (ownedProjectPath) await fsExtra.remove(ownedProjectPath).catch(() => undefined);
+    process.stderr.write(
+      `Workspai ${definition.kitId} generator failed: ${(error as Error)?.message ?? error}\n`
+    );
+    if (!args[3]) {
+      process.stderr.write(`Usage: ${officialProjectCreateUsage(definition.kitId)}\n`);
     }
     return 1;
   }
@@ -1181,6 +1228,9 @@ Examples:
   npx workspai create project nestjs.standard api --skip-install
   npx workspai create project gofiber.standard api --output ./services
   npx workspai create project nextjs web --skip-install
+  npx workspai create project rust.axum api --skip-install
+  npx workspai create project desktop.tauri desktop-app
+  npx workspai create project extension.vscode editor-tools --skip-install
 
 Common kits:
   fastapi.standard      Python API via RapidKit Core bridge
@@ -1191,6 +1241,11 @@ Common kits:
   springboot.standard   Java Spring Boot service
   dotnet.webapi.clean   .NET Web API service
   nextjs                Frontend Next.js app
+  rust.axum             Backend Rust/Axum API
+  desktop.tauri         Desktop Tauri app
+  desktop.electron      Desktop Electron Forge app
+  extension.vscode      VS Code extension
+  php.laravel           Backend Laravel application
 
 Options:
   --output <dir>        Parent directory for the project
@@ -1319,7 +1374,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
     const hasYes = args.includes('--yes') || args.includes('-y');
     const passthroughFlags = args.slice(1);
 
-    let createTarget: 'workspace' | 'project';
+    let createTarget: InteractiveCreateTarget;
     if (!process.stdin.isTTY || hasYes) {
       createTarget = 'workspace';
       if (process.stdin.isTTY) {
@@ -1331,19 +1386,82 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       if (process.stdin.isTTY) {
         showIntro('create');
       }
+      const currentWorkspace = findWorkspaceUp(process.cwd());
+      const currentWorkspaceName = currentWorkspace ? path.basename(currentWorkspace) : null;
       const answers = (await prompt([
         {
           type: 'rawlist',
           name: 'createTarget',
-          message: 'What do you want to create?',
-          choices: [
-            { name: 'workspace', value: 'workspace' },
-            { name: 'project', value: 'project' },
-          ],
+          message: currentWorkspaceName
+            ? `What would you like to add to ${currentWorkspaceName}?`
+            : 'What would you like to set up?',
+          choices: buildInteractiveCreateTargetChoices(currentWorkspaceName),
         },
-      ])) as { createTarget: 'workspace' | 'project' };
+      ])) as { createTarget: InteractiveCreateTarget };
 
       createTarget = answers.createTarget;
+    }
+
+    if (createTarget === 'existing') {
+      const currentWorkspace = findWorkspaceUp(process.cwd());
+      const { source } = (await prompt([buildExistingSoftwareSourcePrompt()])) as {
+        source: string;
+      };
+      const classifiedSource = classifyExistingSoftwareSource(source);
+
+      if (classifiedSource.kind === 'workspace-archive') {
+        const result = await importWorkspaceArchive({
+          archivePathOrUrl: classifiedSource.source,
+          projectGrounding: 'managed',
+        });
+        console.log(chalk.green(`✔ Workspace imported and registered: ${result.workspacePath}`));
+        for (const warning of result.warnings) console.log(chalk.yellow(`   ⚠ ${warning}`));
+        return 0;
+      }
+
+      if (classifiedSource.kind === 'git-project') {
+        return await handleImportCommand(classifiedSource.source, {
+          workspace: currentWorkspace ?? undefined,
+        });
+      }
+
+      if (classifiedSource.kind === 'local-workspace') {
+        const result = await connectWorkspace({
+          workspacePath: classifiedSource.source,
+          projectGrounding: 'managed',
+        });
+        console.log(chalk.green(`✔ Workspace connected: ${result.workspacePath}`));
+        for (const warning of result.warnings) console.log(chalk.yellow(`   ⚠ ${warning}`));
+        return 0;
+      }
+
+      const { existingProjectMode } = (await prompt([
+        {
+          type: 'rawlist',
+          name: 'existingProjectMode',
+          message: 'How should Workspai add this project?',
+          choices: [
+            {
+              name: 'Keep it where it is (recommended)',
+              value: 'link',
+            },
+            {
+              name: 'Copy it into the workspace',
+              value: 'copy',
+            },
+          ],
+        },
+      ])) as { existingProjectMode: 'link' | 'copy' };
+
+      return existingProjectMode === 'link'
+        ? await handleAdoptCommand(classifiedSource.source, {
+            workspace: currentWorkspace ?? undefined,
+            projectGrounding: 'managed',
+          })
+        : await handleImportCommand(classifiedSource.source, {
+            workspace: currentWorkspace ?? undefined,
+            projectGrounding: 'managed',
+          });
     }
 
     const reroutedArgs = ['create', createTarget, ...passthroughFlags];
@@ -1509,7 +1627,11 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
           },
         ])) as { kitChoice: string };
 
-        if (isNpmBackedKit(kitChoice) || isFrontendProjectKit(kitChoice)) {
+        if (
+          isNpmBackedKit(kitChoice) ||
+          isFrontendProjectKit(kitChoice) ||
+          isOfficialProjectKit(kitChoice)
+        ) {
           const defaultProjectName = suggestProjectNameForKit(kitChoice);
           const { projectName } = (await prompt([
             {
@@ -1528,11 +1650,9 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
           await prepareOutsideWorkspaceCreate(normalizedArgs);
           const code = isFrontendProjectKit(kitChoice)
             ? await runFrontendProjectCreate(normalizedArgs)
-            : await runNpmBackedKitCreate(normalizedArgs);
-          const workspacePath = findWorkspaceUp(process.cwd());
-          if (code === 0 && workspacePath) {
-            await syncWorkspaceContractAfterProjectChange(workspacePath);
-          }
+            : isOfficialProjectKit(kitChoice)
+              ? await runOfficialProjectCreate(normalizedArgs)
+              : await runNpmBackedKitCreate(normalizedArgs);
           return code;
         }
 
@@ -1578,6 +1698,10 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       // Frontend generators manage their own registry linking (including managed workspai adoption).
       if (isFrontendProjectKit(args[2])) {
         return await runFrontendProjectCreate(args);
+      }
+
+      if (isOfficialProjectKit(args[2])) {
+        return await runOfficialProjectCreate(args);
       }
 
       if (args.includes('--skip-python-engine') || args.includes('--no-python-engine')) {
@@ -2107,26 +2231,16 @@ async function syncWorkspaceContractAfterProjectChange(
   options?: { silent?: boolean }
 ): Promise<void> {
   try {
-    const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
-    const result = await syncWorkspaceContract({ workspacePath });
-    if (
-      !options?.silent &&
-      (result.addedProjects.length > 0 || result.updatedProjects.length > 0)
-    ) {
-      console.log(
-        chalk.gray(`ℹ️  Workspace contract synced (${result.contract.projects.length} project(s)).`)
-      );
-    }
-    if (!options?.silent && result.verification.status !== 'passed') {
-      console.log(chalk.yellow('⚠️  Workspace contract verification failed after project sync.'));
-      for (const violation of result.verification.violations) {
-        console.log(chalk.gray(`   Violation: ${violation}`));
-      }
-      console.log(chalk.white('   Next: npx workspai workspace contract inspect'));
-    }
+    const { syncWorkspaceConsumerArtifacts } = await import('./utils/workspace-onboarding.js');
+    await syncWorkspaceConsumerArtifacts(workspacePath, { silent: options?.silent });
   } catch (error) {
     if (!options?.silent) {
-      console.log(chalk.yellow(`⚠️  Workspace contract sync skipped: ${(error as Error).message}`));
+      console.log(chalk.yellow(`⚠️  Workspace consumer sync skipped: ${(error as Error).message}`));
+      console.log(
+        chalk.gray(
+          '   Retry: npx workspai workspace agent-sync --write --refresh-context --preset enterprise'
+        )
+      );
     }
   }
 }
@@ -2838,24 +2952,15 @@ export async function handleImportCommand(
         }
         const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
           await import('./workspace.js');
-        const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
         await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
         await registerProjectInWorkspaceStrict(
           workspacePath,
           importedProject.name,
           importedProject.path
         );
-        await syncWorkspaceContract({ workspacePath, strict: true });
       }
-      const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
-      await syncProjectIntelligenceLens({
-        workspacePath,
-        projectPath: importedProject.path,
-        projectName: importedProject.name,
-        relationship: 'imported',
-        mode: options.projectGrounding ?? 'managed',
-      });
       await transaction.commit();
+      await syncWorkspaceContractAfterProjectChange(workspacePath, { silent: options.json });
     } catch (syncError) {
       try {
         await rollbackProjectLifecycleTransaction(transaction, syncError);
@@ -2880,6 +2985,7 @@ export async function handleImportCommand(
             defaultWorkspaceCreated: usedDefaultWorkspace ? createdDefaultWorkspace : false,
             projectWorkspaceCommand,
             commandsResolveWorkspaceFromProject: true,
+            plan: importedProject.ingestionPlan,
             importedProject,
           },
           null,
@@ -3091,7 +3197,6 @@ export async function handleAdoptCommand(
         } else {
           const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
             await import('./workspace.js');
-          const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
           await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
           await registerProjectInWorkspaceStrict(
             workspacePath,
@@ -3101,17 +3206,9 @@ export async function handleAdoptCommand(
           if (shouldInjectAdoptSyncFailure) {
             throw new Error('forced sync failure for command-level adopt rollback test');
           }
-          await syncWorkspaceContract({ workspacePath, strict: true });
         }
-        const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
-        await syncProjectIntelligenceLens({
-          workspacePath,
-          projectPath: adoptedProject.path,
-          projectName: adoptedProject.name,
-          relationship: 'adopted',
-          mode: options.projectGrounding ?? 'managed',
-        });
         await transaction?.commit();
+        await syncWorkspaceContractAfterProjectChange(workspacePath, { silent: options.json });
       } catch (syncError) {
         if (transaction) {
           try {
@@ -3144,6 +3241,7 @@ export async function handleAdoptCommand(
             projectWorkspaceCommand,
             commandsResolveWorkspaceFromProject: options.dryRun !== true,
             dryRun: options.dryRun === true,
+            plan: adoptedProject.ingestionPlan,
             adoptedProject,
           },
           null,
@@ -4452,34 +4550,38 @@ export async function handleBootstrapCommand(
 
 export async function handleSetupCommand(args: string[]): Promise<number> {
   if (args.includes('--help') || args.includes('-h')) {
-    console.log(chalk.yellow('Usage: workspai setup <python|node|go|java|dotnet> [--warm-deps]'));
+    console.log(
+      chalk.yellow('Usage: workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]')
+    );
     return 0;
   }
 
   const runtime = (args[1] || '').toLowerCase();
   const jsonMode = args.includes('--json');
   const warmDeps = args.includes('--warm-deps') || args.includes('--warm-dependencies');
-  if (!runtime || !['python', 'node', 'go', 'java', 'dotnet'].includes(runtime)) {
+  if (!runtime || !['python', 'node', 'go', 'java', 'dotnet', 'rust', 'php'].includes(runtime)) {
     if (jsonMode) {
       process.stdout.write(
         `${JSON.stringify(
           {
             command: 'setup',
             result: 'error',
-            error: 'Usage: workspai setup <python|node|go|java|dotnet> [--warm-deps]',
+            error: 'Usage: workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]',
           },
           null,
           2
         )}\n`
       );
     } else {
-      console.log(chalk.yellow('Usage: workspai setup <python|node|go|java|dotnet> [--warm-deps]'));
+      console.log(
+        chalk.yellow('Usage: workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]')
+      );
     }
     return 1;
   }
 
   const warmRuntimeDependencies = async (
-    targetRuntime: 'python' | 'node' | 'go' | 'java' | 'dotnet',
+    targetRuntime: 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php',
     targetPath: string
   ): Promise<CommandResult> => {
     if (targetRuntime === 'node') {
@@ -4604,9 +4706,35 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
       };
     }
 
+    if (targetRuntime === 'rust') {
+      if (!fs.existsSync(path.join(targetPath, 'Cargo.toml'))) {
+        return {
+          exitCode: 0,
+          message: 'Rust warm-up skipped: Cargo.toml not found in current directory.',
+        };
+      }
+      return { exitCode: await runCommandInCwd('cargo', ['fetch'], targetPath) };
+    }
+
+    if (targetRuntime === 'php') {
+      if (!fs.existsSync(path.join(targetPath, 'composer.json'))) {
+        return {
+          exitCode: 0,
+          message: 'PHP warm-up skipped: composer.json not found in current directory.',
+        };
+      }
+      return {
+        exitCode: await runCommandInCwd(
+          'composer',
+          ['install', '--no-interaction', '--no-scripts'],
+          targetPath
+        ),
+      };
+    }
+
     return {
       exitCode: 0,
-      message: 'Dependency warm-up currently applies to node/go/java/dotnet runtimes.',
+      message: 'Dependency warm-up is not available for this runtime.',
     };
   };
 
@@ -4617,13 +4745,16 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
     const previousSuppress = process.env.RAPIDKIT_SUPPRESS_RUN_COMMAND_OUTPUT;
     process.env.RAPIDKIT_SUPPRESS_RUN_COMMAND_OUTPUT = '1';
     try {
-      const adapter = getRuntimeAdapter(runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet', {
-        runCommandInCwd,
-        runCoreRapidkit: async (adapterArgs, opts) => {
-          const result = await runCoreRapidkitCapture(adapterArgs, { ...opts, cwd: undefined });
-          return result.exitCode;
-        },
-      });
+      const adapter = getRuntimeAdapter(
+        runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php',
+        {
+          runCommandInCwd,
+          runCoreRapidkit: async (adapterArgs, opts) => {
+            const result = await runCoreRapidkitCapture(adapterArgs, { ...opts, cwd: undefined });
+            return result.exitCode;
+          },
+        }
+      );
       const prereq = await adapter.checkPrereqs();
       const workspacePath = findWorkspaceUp(process.cwd());
       const runtimePath = workspacePath || process.cwd();
@@ -4681,7 +4812,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
         for (const targetPath of targets) {
           results.push(
             await warmRuntimeDependencies(
-              runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet',
+              runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php',
               targetPath
             )
           );
@@ -4724,11 +4855,14 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
       }
     }
   }
-  const adapter = getRuntimeAdapter(runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet', {
-    runCommandInCwd,
-    runCoreRapidkit: (adapterArgs, opts) =>
-      runCoreRapidkit(adapterArgs, { ...opts, cwd: undefined }),
-  });
+  const adapter = getRuntimeAdapter(
+    runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php',
+    {
+      runCommandInCwd,
+      runCoreRapidkit: (adapterArgs, opts) =>
+        runCoreRapidkit(adapterArgs, { ...opts, cwd: undefined }),
+    }
+  );
   const prereq = await adapter.checkPrereqs();
   const hints = await adapter.doctorHints(process.cwd());
   const workspacePath = findWorkspaceUp(process.cwd());
@@ -4753,7 +4887,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
 
   if (prereq.exitCode === 0) {
     console.log(chalk.green(`\u2705 ${runtime} prerequisites look good.`));
-    const otherRuntimes = ['python', 'node', 'go', 'java', 'dotnet']
+    const otherRuntimes = ['python', 'node', 'go', 'java', 'dotnet', 'rust', 'php']
       .filter((r) => r !== runtime)
       .join('/');
     console.log(
@@ -4838,7 +4972,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
         }
       } else {
         const depsWarmResult = await warmRuntimeDependencies(
-          runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet',
+          runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php',
           runtimePath
         );
         const skipped = /skipped/i.test(depsWarmResult.message || '');
@@ -5836,6 +5970,8 @@ export async function handleInitCommand(args: string[]): Promise<number> {
       const workspacePathForPolicy = findWorkspaceUp(cwd);
       const pythonAdapter = getRuntimeAdapter('python', { runCommandInCwd, runCoreRapidkit });
       const dotnetAdapter = getRuntimeAdapter('dotnet', { runCommandInCwd, runCoreRapidkit });
+      const rustAdapter = getRuntimeAdapter('rust', { runCommandInCwd, runCoreRapidkit });
+      const phpAdapter = getRuntimeAdapter('php', { runCommandInCwd, runCoreRapidkit });
       const explicitTargetArgs = args.slice(1).filter((arg) => !arg.startsWith('-'));
 
       if (explicitTargetArgs.length > 0) {
@@ -5858,6 +5994,12 @@ export async function handleInitCommand(args: string[]): Promise<number> {
         }
         if (isPythonProject(targetJson, targetPath) || inferredRuntime === 'python') {
           return await handlePythonInitSmart(targetPath, pythonAdapter);
+        }
+        if (inferredRuntime === 'rust') {
+          return reportRuntimeCommandResult(await rustAdapter.initProject(targetPath));
+        }
+        if (inferredRuntime === 'php') {
+          return reportRuntimeCommandResult(await phpAdapter.initProject(targetPath));
         }
         return await runCoreRapidkit(args, { cwd });
       }
@@ -5897,6 +6039,12 @@ export async function handleInitCommand(args: string[]): Promise<number> {
       ) {
         return await handlePythonInitSmart(cwd, pythonAdapter);
       }
+      if (!cwdIsWorkspaceRoot && inferredRuntimeNow === 'rust') {
+        return reportRuntimeCommandResult(await rustAdapter.initProject(cwd));
+      }
+      if (!cwdIsWorkspaceRoot && inferredRuntimeNow === 'php') {
+        return reportRuntimeCommandResult(await phpAdapter.initProject(cwd));
+      }
 
       const workspacePath = workspacePathForPolicy || findWorkspaceUp(cwd);
       const contextFile = findContextFileUp(cwd);
@@ -5920,6 +6068,12 @@ export async function handleInitCommand(args: string[]): Promise<number> {
         }
         if (isPythonProject(projectRootJson, projectRoot) || inferredRootRuntime === 'python') {
           return await handlePythonInitSmart(projectRoot, pythonAdapter);
+        }
+        if (inferredRootRuntime === 'rust') {
+          return reportRuntimeCommandResult(await rustAdapter.initProject(projectRoot));
+        }
+        if (inferredRootRuntime === 'php') {
+          return reportRuntimeCommandResult(await phpAdapter.initProject(projectRoot));
         }
 
         return await runCoreRapidkit(['init'], { cwd: projectRoot });
@@ -6497,7 +6651,7 @@ program.addHelpText(
 Workspace Setup Commands
   ${primaryCliName} bootstrap         Bootstrap projects in workspace (--profile java-only|python-only|node-only|go-only|dotnet-only|polyglot|enterprise)
   ${primaryCliName} analyze           Analyze workspace/project health and generate enterprise evidence
-  ${primaryCliName} setup <runtime>   Set up runtime toolchain  (runtime: python | node | go | java | dotnet)
+  ${primaryCliName} setup <runtime>   Set up runtime toolchain  (runtime: python | node | go | java | dotnet | rust | php)
   ${primaryCliName} readiness         Build release-readiness evidence (use --json for CI)
   ${primaryCliName} autopilot release Run end-to-end release gate orchestration (audit|safe-fix|enforce)
   ${primaryCliName} workspace list    List registered workspaces on this system
@@ -10071,10 +10225,63 @@ See the command reference for action-specific required inputs and output artifac
         );
         process.exit(1);
       }
+    } else if (action === 'connect') {
+      const workspacePath = path.resolve(subaction || process.cwd());
+      try {
+        const result = await connectWorkspace({
+          workspacePath,
+          dryRun: actionOptions.dryRun === true || hasRawFlag('--dry-run'),
+          projectGrounding: actionOptions.projectGrounding,
+        });
+        if (actionOptions.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+        console.log(
+          chalk.green(
+            result.status === 'preview'
+              ? `✔ Workspace connection preview: ${workspacePath}`
+              : `✔ Workspace connected: ${workspacePath}`
+          )
+        );
+        for (const warning of result.warnings) console.log(chalk.yellow(`   ⚠ ${warning}`));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'workspace connect',
+                code: 'workspace.connect.failed',
+                message,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ Workspace connect failed: ${message}`));
+        }
+        process.exit(1);
+      }
     } else if (action === 'hydrate' || action === 'import') {
       const archivePathOrUrl = subaction;
       if (!archivePathOrUrl) {
         if (actionOptions.json) {
+          if (action === 'import') {
+            console.log(
+              JSON.stringify(
+                cliOperationError({
+                  operation: 'workspace import',
+                  code: 'workspace.import.input-required',
+                  message: 'workspace import requires an archive path or URL.',
+                }),
+                null,
+                2
+              )
+            );
+            process.exit(1);
+          }
           console.log(
             JSON.stringify(
               {
@@ -10083,8 +10290,8 @@ See the command reference for action-specific required inputs and output artifac
                 status: 'error',
                 timestamp: new Date().toISOString(),
                 error: {
-                  code: `workspace.${action}.input-required`,
-                  message: `workspace ${action} requires an archive path or URL.`,
+                  code: 'workspace.hydrate.input-required',
+                  message: 'workspace hydrate requires an archive path or URL.',
                 },
               },
               null,
@@ -10102,35 +10309,77 @@ See the command reference for action-specific required inputs and output artifac
         process.exit(1);
       }
 
-      const { hydrateWorkspaceArchive } = await import('./utils/workspace-archive.js');
       try {
-        const result = await hydrateWorkspaceArchive({
-          archivePathOrUrl,
-          outputPath: workspaceOutputPath(),
-          force: actionOptions.force === true || hasRawFlag('--force'),
-          dryRun: actionOptions.dryRun === true || hasRawFlag('--dry-run'),
-          strict: actionOptions.strict === true || hasRawFlag('--strict'),
-          safety: workspaceArchiveSafety(),
-        });
-
-        if (actionOptions.json) {
-          console.log(JSON.stringify(result, null, 2));
-          return;
-        }
-
-        console.log(
-          chalk.green(
-            result.dryRun
-              ? `✔ Workspace archive hydrate preview: ${result.outputPath}`
-              : `✔ Workspace archive hydrated: ${result.outputPath}`
-          )
-        );
-        console.log(chalk.gray(`   Files: ${result.files.length}`));
-        if (result.manifest?.workspaceName) {
-          console.log(chalk.gray(`   Workspace: ${result.manifest.workspaceName}`));
+        if (action === 'import') {
+          const result = await importWorkspaceArchive({
+            archivePathOrUrl,
+            outputPath: workspaceOutputPath(),
+            dryRun: actionOptions.dryRun === true || hasRawFlag('--dry-run'),
+            strict: actionOptions.strict === true || hasRawFlag('--strict'),
+            projectGrounding: actionOptions.projectGrounding,
+            safety: workspaceArchiveSafety(),
+          });
+          if (actionOptions.json) {
+            console.log(JSON.stringify(result, null, 2));
+            return;
+          }
+          console.log(
+            chalk.green(
+              result.status === 'preview'
+                ? `✔ Workspace import preview: ${result.workspacePath}`
+                : `✔ Workspace imported and registered: ${result.workspacePath}`
+            )
+          );
+          for (const warning of result.warnings) console.log(chalk.yellow(`   ⚠ ${warning}`));
+        } else {
+          const { hydrateWorkspaceArchive } = await import('./utils/workspace-archive.js');
+          const result = await hydrateWorkspaceArchive({
+            archivePathOrUrl,
+            outputPath: workspaceOutputPath(),
+            force: actionOptions.force === true || hasRawFlag('--force'),
+            dryRun: actionOptions.dryRun === true || hasRawFlag('--dry-run'),
+            strict: actionOptions.strict === true || hasRawFlag('--strict'),
+            safety: workspaceArchiveSafety(),
+          });
+          if (actionOptions.json) {
+            console.log(JSON.stringify(result, null, 2));
+            return;
+          }
+          console.log(
+            chalk.green(
+              result.dryRun
+                ? `✔ Workspace archive hydrate preview: ${result.outputPath}`
+                : `✔ Workspace archive hydrated: ${result.outputPath}`
+            )
+          );
+          console.log(chalk.gray(`   Files: ${result.files.length}`));
+          if (result.manifest?.workspaceName) {
+            console.log(chalk.gray(`   Workspace: ${result.manifest.workspaceName}`));
+          }
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         if (actionOptions.json) {
+          if (action === 'import') {
+            console.log(
+              JSON.stringify(
+                cliOperationError({
+                  operation: 'workspace import',
+                  code: 'workspace.import.failed',
+                  message,
+                  context: {
+                    archivePathOrUrl,
+                    ...(workspaceOutputPath()
+                      ? { outputPath: workspaceOutputPath() as string }
+                      : {}),
+                  },
+                }),
+                null,
+                2
+              )
+            );
+            process.exit(1);
+          }
           console.log(
             JSON.stringify(
               {
@@ -10143,7 +10392,7 @@ See the command reference for action-specific required inputs and output artifac
                 dryRun: actionOptions.dryRun === true || hasRawFlag('--dry-run'),
                 error: {
                   code: `workspace.${action}.failed`,
-                  message: (error as Error).message,
+                  message,
                 },
               },
               null,
@@ -10152,7 +10401,7 @@ See the command reference for action-specific required inputs and output artifac
           );
           process.exit(1);
         }
-        console.log(chalk.red(`❌ Workspace ${action} failed: ${(error as Error).message}`));
+        console.log(chalk.red(`❌ Workspace ${action} failed: ${message}`));
         process.exit(1);
       }
     } else if (action === 'run') {
@@ -11034,7 +11283,7 @@ export function printHelp() {
   );
   console.log(
     grayCmd(
-      '  npx workspai setup python|node|go|java|dotnet [--warm-deps]  Set up runtime (+ optional deps warm-up)'
+      '  npx workspai setup python|node|go|java|dotnet|rust|php [--warm-deps]  Set up runtime (+ optional deps warm-up)'
     )
   );
   console.log(
@@ -11656,6 +11905,38 @@ export async function bootstrapCli(): Promise<void> {
                 return reportRuntimeCommandResult(await adapter.runBuild(process.cwd()));
               }
               return reportRuntimeCommandResult(await adapter.runStart(process.cwd()));
+            }
+
+            if (inferredRuntime === 'rust' || inferredRuntime === 'php') {
+              const adapter = getRuntimeAdapter(inferredRuntime, {
+                runCommandInCwd,
+                runCoreRapidkit,
+              });
+              if (action === 'lint') {
+                return reportRuntimeCommandResult(
+                  (await adapter.runLint?.(process.cwd())) ?? {
+                    exitCode: 1,
+                    message: 'Lint is not supported.',
+                  }
+                );
+              }
+              if (action === 'format') {
+                return reportRuntimeCommandResult(
+                  (await adapter.runFormat?.(process.cwd())) ?? {
+                    exitCode: 1,
+                    message: 'Format is not supported.',
+                  }
+                );
+              }
+              const result =
+                action === 'dev'
+                  ? await adapter.runDev(process.cwd())
+                  : action === 'test'
+                    ? await adapter.runTest(process.cwd())
+                    : action === 'build'
+                      ? await adapter.runBuild(process.cwd())
+                      : await adapter.runStart(process.cwd());
+              return reportRuntimeCommandResult(result);
             }
 
             return -1;

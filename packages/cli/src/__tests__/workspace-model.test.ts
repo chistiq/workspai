@@ -333,7 +333,8 @@ describe('workspace intelligence model', () => {
     expect(model.projects[0]).toMatchObject({
       name: 'orders-api',
       path: 'orders-api',
-      kind: 'service',
+      kind: 'backend',
+      category: 'backend',
       runtime: 'python',
       framework: 'fastapi',
       frameworkDisplayName: 'FastAPI',
@@ -518,7 +519,7 @@ describe('workspace intelligence model', () => {
     });
   });
 
-  it('keeps observed PHP projects in existing create capability', async () => {
+  it('offers the official Laravel create capability for detected Laravel projects', async () => {
     const workspacePath = await makeTempDir('rk-model-php-');
     await fsExtra.outputJson(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
       name: 'content-platform',
@@ -542,10 +543,9 @@ describe('workspace intelligence model', () => {
       framework: 'laravel',
       createCapability: {
         lane: 'official',
-        status: 'planned',
-        canExecuteCreate: false,
-        resolved: 'laravel',
-        fallbackLane: 'existing',
+        status: 'available',
+        canExecuteCreate: true,
+        resolved: 'php.laravel',
       },
     });
   });

@@ -123,6 +123,85 @@ function buildDeflatedZipWithDirectory(entries: Array<{ name: string; data: Buff
 }
 
 describe('workspace archive export/hydrate', () => {
+  it('excludes machine-local bindings and derived absolute-path registries', () => {
+    expect(shouldExcludeWorkspaceArchivePath('api/.workspai/workspace-link.local.json')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('.workspai/imported-projects.json')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('.workspai/workspace-registry.v1.json')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('.workspai/workspace.contract.json')).toBe(true);
+  });
+
+  it('describes external adopted projects without publishing their absolute paths', async () => {
+    const workspacePath = await makeTempDir('rk-workspace-external-manifest-');
+    const outputRoot = await makeTempDir('rk-workspace-external-manifest-out-');
+    const archivePath = path.join(outputRoot, 'external.workspai-archive.zip');
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'WORKSPAI_WORKSPACE',
+      name: 'external-ws',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-07-27T00:00:00.000Z',
+      workspace: { name: 'external-ws', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'outside-api',
+          relativePath: 'external/outside-api',
+          externalPath: '/private/machine/outside-api',
+          relationship: 'adopted',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+        {
+          slug: 'billing-api',
+          relativePath: 'billing-api',
+          modules: ['observability'],
+          ports: [{ name: 'http', port: 4300, protocol: 'http' }],
+          contracts: {
+            owns: ['billing'],
+            apis: [{ name: 'billing', basePath: '/billing' }],
+            publishes: ['invoice.created'],
+            consumes: [],
+            dependsOn: [],
+            env: ['DATABASE_URL'],
+          },
+        },
+      ],
+    });
+
+    const exported = await exportWorkspaceArchive({ workspacePath, outputPath: archivePath });
+
+    expect(exported.manifest.externalProjects).toEqual([
+      {
+        name: 'outside-api',
+        relationship: 'adopted',
+        included: false,
+        requiredAction: 'relink',
+      },
+    ]);
+    expect(exported.manifest.files.map((file) => file.path)).not.toContain(
+      '.workspai/workspace.contract.json'
+    );
+    expect(exported.manifest.portableContract?.projects).toEqual([
+      expect.objectContaining({
+        slug: 'billing-api',
+        ports: [{ name: 'http', port: 4300, protocol: 'http' }],
+        contracts: expect.objectContaining({
+          owns: ['billing'],
+          publishes: ['invoice.created'],
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(exported.manifest)).not.toContain('/private/machine');
+  });
   const tempDirs: string[] = [];
 
   async function makeTempDir(prefix: string): Promise<string> {

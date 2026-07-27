@@ -48,6 +48,10 @@ import {
   DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
 } from '../utils/doctor-evidence-contract.js';
 import { PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION } from './project-workspace-resolution-contract.js';
+import {
+  INGESTION_PLAN_SCHEMA_VERSION,
+  INGESTION_RESULT_SCHEMA_VERSION,
+} from './ingestion-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -64,6 +68,8 @@ export function getPublishedContractVersions() {
     workspaceArchiveCapabilities: WORKSPACE_ARCHIVE_CAPABILITIES_SCHEMA_VERSION,
     workspaceArchiveManifest: WORKSPACE_ARCHIVE_MANIFEST_SCHEMA_VERSION,
     workspaceArchiveOperationResult: WORKSPACE_ARCHIVE_OPERATION_RESULT_SCHEMA_VERSION,
+    ingestionPlan: INGESTION_PLAN_SCHEMA_VERSION,
+    ingestionResult: INGESTION_RESULT_SCHEMA_VERSION,
     projectEntryCapability: PROJECT_ENTRY_CAPABILITY_SCHEMA_VERSION,
     projectWorkspaceLink: 'project-workspace-link.v1',
     projectWorkspaceResolution: PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION,
@@ -130,6 +136,8 @@ export function getPublishedContractCatalog() {
     workspaceArchiveCapabilities: 'contracts/workspace-archive-capabilities.v1.json',
     workspaceArchiveManifest: 'contracts/workspace-archive-manifest.v1.json',
     workspaceArchiveOperationResult: 'contracts/workspace-archive-operation-result.v1.json',
+    ingestionPlan: 'contracts/ingestion-plan.v1.json',
+    ingestionResult: 'contracts/ingestion-result.v1.json',
     projectEntryCapability: 'contracts/project-entry-capability.v1.json',
     projectWorkspaceLink: 'contracts/project-workspace-link.v1.json',
     projectWorkspaceResolution: 'contracts/project-workspace-resolution.v1.json',

@@ -1,10 +1,44 @@
 import path from 'path';
 import { homedir } from 'node:os';
 import process from 'node:process';
+import fsExtra from 'fs-extra';
 
 import { prompt } from '../cli-ui/prompts.js';
 import { isCliJsonLogFormat } from '../observability/cli-log-format.js';
 import { getCanonicalWorkspacesDirectory, resolveNewWorkspacePath } from './workspace-paths.js';
+
+export type WorkspaceCreateLocationChoice = {
+  value: 'managed' | 'here';
+  label: string;
+  hint: string;
+};
+
+export class NestedWorkspaceCreationError extends Error {
+  readonly code = 'WORKSPACE_NESTING_NOT_SUPPORTED';
+
+  constructor(
+    readonly targetPath: string,
+    readonly containingWorkspacePath: string
+  ) {
+    super(
+      [
+        'Workspai workspaces cannot be nested.',
+        `Target: ${targetPath}`,
+        `Containing workspace: ${containingWorkspacePath}`,
+        'Choose Managed home or pass --output <path> with a location outside the current workspace.',
+      ].join('\n')
+    );
+    this.name = 'NestedWorkspaceCreationError';
+  }
+}
+
+async function workspaceBoundaryExists(markerPath: string): Promise<boolean> {
+  try {
+    return Boolean(await fsExtra.stat(markerPath));
+  } catch {
+    return false;
+  }
+}
 
 export function readArgvFlagValue(argv: readonly string[], flag: string): string | undefined {
   const index = argv.indexOf(flag);
@@ -20,6 +54,59 @@ export function readArgvFlagValue(argv: readonly string[], flag: string): string
 
 export function hasWorkspaceHereFlag(argv: readonly string[]): boolean {
   return argv.includes('--here');
+}
+
+export async function findContainingWorkspaceRoot(startPath: string): Promise<string | undefined> {
+  let currentPath = path.resolve(startPath);
+
+  while (true) {
+    const markerPaths = [
+      path.join(currentPath, '.workspai-workspace'),
+      path.join(currentPath, '.rapidkit-workspace'),
+      path.join(currentPath, '.workspai', 'workspace.json'),
+      path.join(currentPath, '.rapidkit', 'workspace.json'),
+    ];
+    if ((await Promise.all(markerPaths.map(workspaceBoundaryExists))).some(Boolean)) {
+      return currentPath;
+    }
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) {
+      return undefined;
+    }
+    currentPath = parentPath;
+  }
+}
+
+export async function assertIndependentWorkspaceTarget(targetPath: string): Promise<void> {
+  const resolvedTarget = path.resolve(targetPath);
+  const containingWorkspacePath = await findContainingWorkspaceRoot(path.dirname(resolvedTarget));
+  if (containingWorkspacePath) {
+    throw new NestedWorkspaceCreationError(resolvedTarget, containingWorkspacePath);
+  }
+}
+
+export async function buildWorkspaceCreateLocationChoices(
+  workingDirectory: string,
+  homeDir: string = homedir()
+): Promise<WorkspaceCreateLocationChoice[]> {
+  const managedRoot = getCanonicalWorkspacesDirectory(homeDir);
+  const choices: WorkspaceCreateLocationChoice[] = [
+    {
+      value: 'managed',
+      label: 'Managed home',
+      hint: managedRoot,
+    },
+  ];
+
+  if (!(await findContainingWorkspaceRoot(workingDirectory))) {
+    choices.push({
+      value: 'here',
+      label: 'Current directory',
+      hint: workingDirectory,
+    });
+  }
+
+  return choices;
 }
 
 export function resolveWorkspaceParentFromArgs(
@@ -112,24 +199,17 @@ export async function resolveWorkspaceOutputParent(
     return undefined;
   }
 
-  const managedRoot = getCanonicalWorkspacesDirectory(homeDir);
+  const choices = await buildWorkspaceCreateLocationChoices(workingDirectory, homeDir);
+  if (choices.length === 1) {
+    return undefined;
+  }
+
   const { location } = (await prompt([
     {
       type: 'rawlist',
       name: 'location',
       message: 'Where should the workspace be created?',
-      choices: [
-        {
-          value: 'managed',
-          label: 'Managed home',
-          hint: managedRoot,
-        },
-        {
-          value: 'here',
-          label: 'Current directory',
-          hint: workingDirectory,
-        },
-      ],
+      choices,
       default: 0,
     },
   ])) as { location: 'managed' | 'here' };

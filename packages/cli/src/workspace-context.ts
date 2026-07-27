@@ -423,6 +423,7 @@ export async function buildWorkspaceAgentContext(
       name: project.name,
       path: project.path,
       kind: project.kind,
+      category: project.category,
       runtime: project.runtime,
       framework: project.frameworkDisplayName,
       ...(project.generator ? { generator: project.generator } : {}),

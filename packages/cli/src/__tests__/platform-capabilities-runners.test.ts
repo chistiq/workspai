@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   augmentPathWithNodeBin,
+  buildLatestStableGeneratorEnv,
   buildPackageRunnerSubprocessEnv,
   resolvePackageRunnerInvocation,
   resolvePackageRunnerExecutable,
@@ -162,5 +163,19 @@ describe('platform-capabilities package runners', () => {
     expect(buildPackageRunnerSubprocessEnv({ PATH: '' }, 'linux').COREPACK_HOME).toBe(
       path.join(os.tmpdir(), 'rapidkit-corepack')
     );
+  });
+
+  it('enforces upstream Node engine compatibility for latest-stable generators', () => {
+    const env = buildLatestStableGeneratorEnv(
+      {
+        PATH: '/usr/bin',
+        npm_config_package: 'file:/tmp/workspai',
+      },
+      'linux'
+    );
+
+    expect(env.npm_config_engine_strict).toBe('true');
+    expect(env.npm_config_package).toBeUndefined();
+    expect(env.PATH).toContain(path.dirname(process.execPath));
   });
 });

@@ -15,11 +15,11 @@ describe('frontend scaffold generator hardening', () => {
     ]);
   });
 
-  it('pins angular scaffolding to cli 19 for node 20 compatibility', () => {
+  it('requests the latest stable Angular CLI and lets its engine contract guard compatibility', () => {
     const angular = resolveFrontendGenerator('frontend.angular');
     expect(angular?.commandExec('trail-app', { skipGit: false, skipInstall: false }).args).toEqual([
       '--yes',
-      '@angular/cli@19',
+      '@angular/cli@latest',
       'new',
       'trail-app',
       '--defaults',

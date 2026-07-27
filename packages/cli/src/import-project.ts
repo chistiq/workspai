@@ -13,7 +13,11 @@ import {
   type BackendSupportTier,
 } from './utils/backend-framework-contract.js';
 import { resolveImportModuleSupport } from './utils/import-module-support.js';
-import { inferWorkspaceProjectKind, type WorkspaceProjectKind } from './utils/project-kind.js';
+import {
+  categorizeWorkspaceProjectKind,
+  inferWorkspaceProjectKind,
+  type WorkspaceProjectKind,
+} from './utils/project-kind.js';
 import { resolveWorkspaceProjectPaths } from './utils/workspace-project-paths.js';
 import { buildCleanGitEnv } from './utils/git-worktree.js';
 import {
@@ -43,6 +47,7 @@ import {
   syncProjectIntelligenceLens,
   type ProjectGroundingMode,
 } from './project-intelligence-lens.js';
+import { buildIngestionPlan, type IngestionPlan } from './contracts/ingestion-contract.js';
 
 export type ImportSourceType = 'local-folder' | 'git-url';
 
@@ -57,6 +62,7 @@ export interface ImportProjectIntoWorkspaceOptions {
 }
 
 export interface ImportedProjectResult {
+  ingestionPlan: IngestionPlan;
   name: string;
   path: string;
   relativePath: string;
@@ -283,6 +289,8 @@ async function writeImportedProjectMetadata(input: {
         ? input.existingProjectJson.slug
         : path.basename(input.projectPath),
     kind: input.projectKind,
+    category: categorizeWorkspaceProjectKind(input.projectKind),
+    project_type: categorizeWorkspaceProjectKind(input.projectKind),
     runtime: input.detection.runtime,
     framework: input.detection.key,
     kit:
@@ -331,6 +339,7 @@ async function writeImportedProjectMetadata(input: {
       slug: payload.slug,
       relative_path: relativePath,
       kind: input.projectKind,
+      category: categorizeWorkspaceProjectKind(input.projectKind),
       module_support: moduleSupport,
     },
     detection: {
@@ -338,6 +347,7 @@ async function writeImportedProjectMetadata(input: {
       framework_display_name: input.detection.displayName,
       runtime: input.detection.runtime,
       kind: input.projectKind,
+      category: categorizeWorkspaceProjectKind(input.projectKind),
       confidence: input.detection.confidence,
       support_tier: input.detection.supportTier,
       import_stack: input.detection.importStack,
@@ -391,6 +401,7 @@ async function writeImportedProjectRegistryEntry(
     moduleSupport: importedProject.moduleSupport,
     confidence: importedProject.confidence,
     source: importedProject.source,
+    relationship: 'imported',
     importedAt: new Date().toISOString(),
   };
 
@@ -435,7 +446,9 @@ export async function importProjectIntoWorkspace(
       }
       await assertSafeProjectMetadataDirectories(sourcePath);
       if (hasWorkspaceRootMarkers(sourcePath)) {
-        throw new Error('This is a workspace. Import it as a workspace instead.');
+        throw new Error(
+          'This path is a Workspai workspace. Use `workspai workspace connect <path>` instead.'
+        );
       }
 
       assertImportSourceOutsideWorkspace(workspacePath, sourcePath);
@@ -498,6 +511,18 @@ export async function importProjectIntoWorkspace(
       projectName: path.basename(destinationPath),
     });
     const importedProject: ImportedProjectResult = {
+      ingestionPlan: buildIngestionPlan({
+        action: 'import-project',
+        resourceKind: 'project',
+        sourceKind: sourceType,
+        mode: sourceType === 'git-url' ? 'clone' : 'copy',
+        ownership: sourceType === 'git-url' ? 'materialized' : 'workspace-owned',
+        registration: 'project',
+        source: sourceType === 'git-url' ? source : path.resolve(source),
+        targetWorkspace: workspacePath,
+        destination: destinationPath,
+        projectGrounding: options.projectGrounding ?? 'managed',
+      }),
       name: path.basename(destinationPath),
       path: destinationPath,
       relativePath: importedPaths.contractRelativePath,

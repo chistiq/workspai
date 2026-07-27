@@ -141,9 +141,12 @@ describe('workspace intelligence architecture contract', () => {
       expect.arrayContaining([
         'frontend.nextjs',
         'frontend.vite-react',
+        'desktop.tauri',
+        'desktop.electron',
+        'extension.vscode',
+        'php.laravel',
         'wordpress-site',
         'wordpress-block',
-        'laravel',
         'symfony',
         'rails',
       ])

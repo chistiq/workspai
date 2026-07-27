@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/ingestion-plan.v1.json",
+  "title": "Workspai Ingestion Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "action",
+    "resourceKind",
+    "sourceKind",
+    "mode",
+    "ownership",
+    "registration",
+    "source"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "workspai.ingestion-plan.v1"
+    },
+    "action": {
+      "enum": [
+        "adopt-project",
+        "import-project",
+        "connect-workspace",
+        "import-workspace",
+        "hydrate-workspace"
+      ]
+    },
+    "resourceKind": {
+      "enum": [
+        "project",
+        "workspace"
+      ]
+    },
+    "sourceKind": {
+      "enum": [
+        "local-folder",
+        "git-url",
+        "archive"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "link",
+        "copy",
+        "clone",
+        "hydrate"
+      ]
+    },
+    "ownership": {
+      "enum": [
+        "external",
+        "workspace-owned",
+        "materialized"
+      ]
+    },
+    "registration": {
+      "enum": [
+        "project",
+        "workspace",
+        "none"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetWorkspace": {
+      "type": "string",
+      "minLength": 1
+    },
+    "destination": {
+      "type": "string",
+      "minLength": 1
+    },
+    "projectGrounding": {
+      "enum": [
+        "managed",
+        "local",
+        "off"
+      ]
+    }
+  }
+}

@@ -54,11 +54,14 @@ describe('registerWorkspaceAtPath', () => {
     vi.restoreAllMocks();
   });
 
-  it('should write workspace marker and gitignore and install via Poetry by default', async () => {
+  it('installs via Poetry only when the optional Python engine is explicitly requested', async () => {
     mockExecaSuccess();
 
     const testPath = '/tmp/my-ws';
-    await registerWorkspaceAtPath(testPath, { skipGit: true });
+    await registerWorkspaceAtPath(testPath, {
+      skipGit: true,
+      installPythonEngine: true,
+    });
 
     // marker
     expect(fsExtra.outputFile).toHaveBeenCalledWith(
@@ -98,7 +101,7 @@ describe('registerWorkspaceAtPath', () => {
       'utf-8'
     );
 
-    // Poetry commands (default install method)
+    // Poetry commands (default method after explicit Python-engine opt-in)
     expect(execa).toHaveBeenCalledWith('poetry', ['--version']);
     expect(execa).toHaveBeenCalledWith(
       'poetry',
@@ -126,6 +129,45 @@ describe('registerWorkspaceAtPath', () => {
     expect(addCalls[0][2]).toHaveProperty('timeout');
   });
 
+  it('registers a foundation-only workspace without probing or installing Python tooling', async () => {
+    mockExecaSuccess();
+
+    const testPath = '/tmp/my-ws-foundation-only';
+    await registerWorkspaceAtPath(testPath, {
+      skipGit: true,
+      profile: 'minimal',
+    });
+
+    const commandCalls = vi.mocked(execa).mock.calls as unknown as any[][];
+    expect(
+      commandCalls.some(
+        ([command, args]) =>
+          command === 'poetry' ||
+          String(command).includes('pipx') ||
+          (Array.isArray(args) && (args.includes('venv') || args.includes('rapidkit-core')))
+      )
+    ).toBe(false);
+
+    const workspaceManifestCall = vi
+      .mocked(fsExtra.outputFile)
+      .mock.calls.find(([filePath]) =>
+        /[\\/]\.workspai[\\/]workspace\.json$/.test(String(filePath))
+      );
+    expect(workspaceManifestCall?.[1]).toEqual(expect.stringContaining('"status": "skipped"'));
+    expect(workspaceManifestCall?.[1]).toEqual(
+      expect.stringContaining('"reason": "project-workspace-foundation"')
+    );
+    expect(
+      vi
+        .mocked(fsExtra.outputFile)
+        .mock.calls.some(([filePath]) => /[\\/]pyproject\.toml$/.test(String(filePath)))
+    ).toBe(false);
+    expect(finalizeWorkspaceOnboarding).toHaveBeenCalledWith(testPath, {
+      workspaceName: 'my-ws-foundation-only',
+      silent: false,
+    });
+  });
+
   // ─── Error path: git init fails → warn, not crash ────────────────────────
   it('should warn (not throw) when git init fails during workspace registration', async () => {
     mockExecaSuccess();
@@ -147,7 +189,11 @@ describe('registerWorkspaceAtPath', () => {
 
     // skipGit: false so git block IS entered
     await expect(
-      registerWorkspaceAtPath('/tmp/my-ws-no-git', { skipGit: false, installMethod: 'poetry' })
+      registerWorkspaceAtPath('/tmp/my-ws-no-git', {
+        skipGit: false,
+        installPythonEngine: true,
+        installMethod: 'poetry',
+      })
     ).resolves.toBeUndefined();
 
     expect(spinnerMock.warn).toHaveBeenCalledWith('Could not initialize git repository');
@@ -165,7 +211,10 @@ describe('registerWorkspaceAtPath', () => {
 
     // Should not throw — venv is the fallback
     await expect(
-      registerWorkspaceAtPath('/tmp/my-ws-venv', { skipGit: true })
+      registerWorkspaceAtPath('/tmp/my-ws-venv', {
+        skipGit: true,
+        installPythonEngine: true,
+      })
     ).resolves.toBeUndefined();
 
     // venv path: python3 -m venv should have been called
@@ -181,7 +230,11 @@ describe('registerWorkspaceAtPath', () => {
     mockExecaSuccess();
 
     await expect(
-      registerWorkspaceAtPath('/tmp/my-ws-pipx', { skipGit: true, installMethod: 'pipx' })
+      registerWorkspaceAtPath('/tmp/my-ws-pipx', {
+        skipGit: true,
+        installPythonEngine: true,
+        installMethod: 'pipx',
+      })
     ).resolves.toBeUndefined();
 
     // pipx install should have been called
@@ -216,7 +269,11 @@ describe('registerWorkspaceAtPath', () => {
     vi.mocked(createUiSpinner).mockReturnValue(spinnerMock as any);
 
     await expect(
-      registerWorkspaceAtPath('/tmp/my-ws-fail', { skipGit: true, installMethod: 'poetry' })
+      registerWorkspaceAtPath('/tmp/my-ws-fail', {
+        skipGit: true,
+        installPythonEngine: true,
+        installMethod: 'poetry',
+      })
     ).rejects.toThrow('poetry install exploded');
 
     expect(spinnerMock.fail).toHaveBeenCalledWith('Failed to register workspace');
@@ -238,6 +295,7 @@ describe('registerWorkspaceAtPath', () => {
 
     await registerWorkspaceAtPath('/tmp/my-ws-git-ok', {
       skipGit: false,
+      installPythonEngine: true,
       installMethod: 'poetry',
     });
 
@@ -278,6 +336,7 @@ describe('registerWorkspaceAtPath', () => {
 
     await registerWorkspaceAtPath('/tmp/existing-parent-repo/workspai', {
       skipGit: false,
+      installPythonEngine: true,
       installMethod: 'poetry',
     });
 
@@ -300,7 +359,11 @@ describe('registerWorkspaceAtPath', () => {
     );
 
     await expect(
-      registerWorkspaceAtPath('/tmp/my-ws-no-registry', { skipGit: true, installMethod: 'poetry' })
+      registerWorkspaceAtPath('/tmp/my-ws-no-registry', {
+        skipGit: true,
+        installPythonEngine: true,
+        installMethod: 'poetry',
+      })
     ).rejects.toThrow('registry module unavailable');
   });
 });

@@ -1,4 +1,5 @@
 import { listFrontendGenerators } from '../frontend-project.js';
+import { listOfficialProjectGenerators } from '../official-project.js';
 import { listInteractiveKits, normalizeKitId } from './kit-registry.js';
 
 export type CreatePlannerLane = 'native' | 'official' | 'existing';
@@ -10,6 +11,7 @@ export interface OfficialCreateCandidate {
   ecosystem: string;
   status: CreatePlannerStatus;
   canExecuteCreate: boolean;
+  versionPolicy: 'latest-stable' | 'planned';
   officialCommands: string[];
   adoptAfterCreate: true;
 }
@@ -34,6 +36,17 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     ecosystem: definition.framework,
     status: 'available' as const,
     canExecuteCreate: true,
+    versionPolicy: definition.versionPolicy,
+    officialCommands: [definition.commandDisplay('<name>', { skipGit: false, skipInstall: false })],
+    adoptAfterCreate: true as const,
+  })),
+  ...listOfficialProjectGenerators().map((definition) => ({
+    id: definition.kitId,
+    aliases: [...definition.aliases],
+    ecosystem: definition.framework,
+    status: 'available' as const,
+    canExecuteCreate: true,
+    versionPolicy: definition.versionPolicy,
     officialCommands: [definition.commandDisplay('<name>', { skipGit: false, skipInstall: false })],
     adoptAfterCreate: true as const,
   })),
@@ -43,6 +56,7 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     ecosystem: 'wordpress',
     status: 'planned',
     canExecuteCreate: false,
+    versionPolicy: 'planned',
     officialCommands: ['wp core download', 'wp config create', 'wp db create', 'wp core install'],
     adoptAfterCreate: true,
   },
@@ -52,16 +66,8 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     ecosystem: 'wordpress',
     status: 'planned',
     canExecuteCreate: false,
+    versionPolicy: 'planned',
     officialCommands: ['npx @wordpress/create-block@latest <slug>'],
-    adoptAfterCreate: true,
-  },
-  {
-    id: 'laravel',
-    aliases: ['laravel', 'php-laravel'],
-    ecosystem: 'php',
-    status: 'planned',
-    canExecuteCreate: false,
-    officialCommands: ['composer create-project laravel/laravel <name>'],
     adoptAfterCreate: true,
   },
   {
@@ -70,6 +76,7 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     ecosystem: 'php',
     status: 'planned',
     canExecuteCreate: false,
+    versionPolicy: 'planned',
     officialCommands: ['composer create-project symfony/skeleton <name>'],
     adoptAfterCreate: true,
   },
@@ -79,6 +86,7 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     ecosystem: 'ruby',
     status: 'planned',
     canExecuteCreate: false,
+    versionPolicy: 'planned',
     officialCommands: ['rails new <name>'],
     adoptAfterCreate: true,
   },

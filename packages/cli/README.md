@@ -153,6 +153,27 @@ cd ~/.workspai/workspaces/my-workspace
 npx workspai create project nextjs web --yes
 ```
 
+The project picker is organized by **Backend**, **Frontend**, **Desktop**, and
+**Extension**. In addition to the existing web and service starters, Workspai
+can create Axum, Tauri, Electron, VS Code extension, and Laravel projects:
+
+```bash
+npx workspai create project rust.axum api
+npx workspai create project desktop.tauri desktop-app
+npx workspai create project desktop.electron admin-console
+npx workspai create project extension.vscode editor-tools
+npx workspai create project php.laravel web-api
+```
+
+Axum is a deterministic Workspai-owned baseline. Tauri, Electron, VS Code, and
+Laravel use their ecosystem generator, after which Workspai writes canonical
+project metadata and joins the project to the same Model, Doctor, Graph, and
+agent-context pipeline. All available official generators request their latest
+stable channel, enforce Node engine compatibility, check required local
+toolchains, and record that policy in project evidence. Frontend remains a
+first-class project category rather than being folded into a generic Node
+project.
+
 From the `my-workspace` terminal, create a project, use `adopt` to link one in
 place, or use `import` to copy or clone one into the workspace. See
 [Creating Workspaces and Projects](docs/creating-workspaces-and-projects.md)
@@ -314,7 +335,7 @@ Other useful operational commands:
 
 ```bash
 npx workspai doctor workspace
-npx workspai setup <python|node|go|java|dotnet> [--warm-deps]
+npx workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]
 npx workspai workspace list
 npx workspai cache <status|clear|prune|repair>
 npx workspai mirror <status|sync|verify|rotate>
@@ -345,6 +366,12 @@ Impact reports include affected projects and graph paths back to the change, so
 developers, CI, IDEs, and agents reason over the same blast radius.
 
 ### Ground AI tools
+
+Workspai creates the initial model, graph, context, `AGENTS.md`, report index,
+skills, and supported agent/IDE files with the workspace. It refreshes them
+after successful project creation, adoption, import, or workspace connection.
+Run Agent Sync directly only when you want an explicit refresh or different
+targets/preset:
 
 ```bash
 npx workspai workspace agent-sync \
@@ -426,18 +453,23 @@ tools without changing the source of truth:
 
 All onboarding routes feed the same Workspace Intelligence model.
 
-| Route            | Use it when                                       | Example                                                                                                  |
-| ---------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Adopt            | Existing source should stay in place              | `npx workspai adopt /path/to/project --json`                                                             |
-| Import local     | Existing source should be copied into a workspace | `npx workspai import ../orders-api --workspace /path/to/workspace --json`                                |
-| Import Git       | A repository should be cloned into a workspace    | `npx workspai import https://github.com/acme/orders-api.git --git --workspace /path/to/workspace --json` |
-| Create workspace | You need a new governed boundary                  | `npx workspai create workspace my-workspace --profile polyglot --yes`                                    |
-| Create project   | You need a supported new scaffold                 | `npx workspai create project nextjs web --yes`                                                           |
-| Interactive      | You want Workspai to guide the choice             | `npx workspai create`                                                                                    |
+| Route             | Use it when                                       | Example                                                                                                  |
+| ----------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Adopt             | Existing source should stay in place              | `npx workspai adopt /path/to/project --json`                                                             |
+| Import local      | Existing source should be copied into a workspace | `npx workspai import ../orders-api --workspace /path/to/workspace --json`                                |
+| Import Git        | A repository should be cloned into a workspace    | `npx workspai import https://github.com/acme/orders-api.git --git --workspace /path/to/workspace --json` |
+| Connect workspace | An existing workspace should stay in place        | `npx workspai workspace connect /path/to/workspace --json`                                               |
+| Import workspace  | A portable workspace archive should become active | `npx workspai workspace import team.workspai-archive.zip --output ./team --json`                         |
+| Create workspace  | You need a new governed boundary                  | `npx workspai create workspace my-workspace --profile polyglot --yes`                                    |
+| Create project    | You need a supported new scaffold                 | `npx workspai create project nextjs web --yes`                                                           |
+| Interactive       | You want Workspai to guide the choice             | `npx workspai create`                                                                                    |
 
-Adopt never moves or copies source. Create can use a Workspai-managed kit or an
-available official ecosystem generator. Unsupported native create requests are
-directed toward official tooling followed by adoption.
+Adopt and workspace connect never move or copy source. Project import copies or
+clones; workspace import verifies and materializes a portable archive before
+registration. `workspace hydrate` only extracts an archive and intentionally
+does not register it. Create can use a Workspai-managed kit or an available
+official ecosystem generator. Unsupported native create requests are directed
+toward official tooling followed by adoption.
 
 Detailed onboarding behavior:
 

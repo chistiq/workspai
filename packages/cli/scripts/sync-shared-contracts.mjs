@@ -52,6 +52,8 @@ const GENERATED_FILES = [
   'workspace-archive-capabilities.v1.json',
   'workspace-archive-manifest.v1.json',
   'workspace-archive-operation-result.v1.json',
+  'ingestion-plan.v1.json',
+  'ingestion-result.v1.json',
   'create-planner-capabilities.v1.json',
   'agent-customization-pack.v1.json',
   'backend-import-stack-parity.snapshot.json',
@@ -75,6 +77,8 @@ const VSCODE_SRC_CONTRACT_FILES = [
   'workspace-archive-capabilities.v1.json',
   'workspace-archive-manifest.v1.json',
   'workspace-archive-operation-result.v1.json',
+  'ingestion-plan.v1.json',
+  'ingestion-result.v1.json',
 ];
 const LEGACY_CONTRACT_PORTAL_PATTERN = /https:\/\/(?:www\.)?(?:getrapidkit\.com|rapidkit\.dev)\//i;
 const WORKSPAI_CONTRACT_TITLE_PATTERN = /^Workspai\b/;

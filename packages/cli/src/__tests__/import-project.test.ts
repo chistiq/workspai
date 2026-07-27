@@ -96,7 +96,8 @@ describe('import-project', () => {
     expect(projectJson).toMatchObject({
       name: 'edge-api',
       slug: 'edge-api',
-      kind: 'service',
+      kind: 'backend',
+      category: 'backend',
       runtime: 'node',
       framework: 'express',
       kit_name: 'imported.express',
@@ -120,14 +121,16 @@ describe('import-project', () => {
       },
       project: {
         relative_path: 'edge-api',
-        kind: 'service',
+        kind: 'backend',
+        category: 'backend',
         module_support: false,
       },
       detection: {
         framework: 'express',
         framework_display_name: 'Express',
         runtime: 'node',
-        kind: 'service',
+        kind: 'backend',
+        category: 'backend',
       },
       policy: {
         copied_secrets: false,
@@ -439,7 +442,8 @@ describe('import-project', () => {
     expect(projectJson).toMatchObject({
       runtime: 'dotnet',
       framework: 'dotnet',
-      kind: 'service',
+      kind: 'backend',
+      category: 'backend',
       kit_name: 'imported.dotnet',
       module_support: false,
     });
@@ -458,7 +462,7 @@ describe('import-project', () => {
     });
   });
 
-  it('imports observed ecosystem projects safely without over-promising lifecycle or module support', async () => {
+  it('imports extended ecosystem projects with only file-proven lifecycle support', async () => {
     const workspacePath = await makeTempDir('rapidkit-import-workspace-');
     const sourcePath = await makeTempDir('rapidkit-import-laravel-source-');
 
@@ -507,17 +511,24 @@ describe('import-project', () => {
         supportTier: 'extended',
       },
       commandSupport: {
-        lifecycleCommands: ['help'],
+        lifecycleCommands: ['help', 'init'],
         moduleCommands: false,
       },
     });
-    expect(readinessJson.commandSupport.unsupportedLifecycleCommands).toEqual([]);
+    expect(readinessJson.commandSupport.unsupportedLifecycleCommands).toEqual([
+      'build',
+      'dev',
+      'format',
+      'lint',
+      'start',
+      'test',
+    ]);
 
     const capabilities = resolveProjectCommandCapabilities(imported.path);
     expect(capabilities.runtime).toBe('php');
     expect(capabilities.framework).toBe('laravel');
     expect(capabilities.frameworkSupportTier).toBe('extended');
-    expect(capabilities.runtimeSupportTier).toBe('observed');
+    expect(capabilities.runtimeSupportTier).toBe('extended');
     expect(capabilities.commandMap.help).toMatchObject({ status: 'supported', owner: 'npm' });
     expect(capabilities.commandMap.dev).toMatchObject({ status: 'unsupported', owner: 'runtime' });
     expect(capabilities.commandMap.modules).toMatchObject({ status: 'unsupported', owner: 'none' });

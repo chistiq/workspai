@@ -240,7 +240,7 @@ describe('CLI Entry Point', () => {
           npx workspai workspace hydrate <archive> --output <dir> Hydrate workspace archive
           npx workspai workspace policy show        Show effective workspace policies
           npx workspai workspace policy set <k> <v> Update workspace policy values
-          npx workspai setup python|node|go|java|dotnet [--warm-deps]  Set up runtime (+ optional deps warm-up)
+          npx workspai setup python|node|go|java|dotnet|rust|php [--warm-deps]  Set up runtime (+ optional deps warm-up)
           npx workspai mirror [status|sync|verify|rotate] Registry mirror management
           npx workspai cache [status|clear|prune|repair]  Package cache management
           npx workspai infra plan                     Discover and generate infra compose
@@ -612,10 +612,22 @@ describe('CLI Entry Point', () => {
 
         const payload = JSON.parse(stdout) as {
           workspacePath: string;
+          plan: {
+            action: string;
+            mode: string;
+            ownership: string;
+            registration: string;
+          };
           importedProject: { name: string; stack: string; source: string; path: string };
         };
 
         expect(payload.workspacePath).toBe(workspaceRoot);
+        expect(payload.plan).toMatchObject({
+          action: 'import-project',
+          mode: 'copy',
+          ownership: 'workspace-owned',
+          registration: 'project',
+        });
         expect(payload.importedProject).toMatchObject({
           name: 'orders-api',
           stack: 'express',
@@ -679,6 +691,12 @@ describe('CLI Entry Point', () => {
         const payload = JSON.parse(stdout) as {
           workspacePath: string;
           workspaceResolution: string;
+          plan: {
+            action: string;
+            mode: string;
+            ownership: string;
+            registration: string;
+          };
           adoptedProject: {
             name: string;
             path: string;
@@ -692,6 +710,12 @@ describe('CLI Entry Point', () => {
 
         expect(payload.workspacePath).toBe(workspaceRoot);
         expect(payload.workspaceResolution).toBe('explicit');
+        expect(payload.plan).toMatchObject({
+          action: 'adopt-project',
+          mode: 'link',
+          ownership: 'external',
+          registration: 'project',
+        });
         expect(payload.adoptedProject).toMatchObject({
           name: 'web',
           path: sourceDir,
@@ -1354,6 +1378,30 @@ describe('CLI Entry Point', () => {
         operation: 'workspace unknown-action',
         status: 'error',
         error: { code: 'workspace.action.unknown' },
+      });
+    });
+
+    it('keeps workspace import and hydrate input errors on their own contracts', async () => {
+      const imported = await execa('node', [CLI_PATH, 'workspace', 'import', '--json'], {
+        reject: false,
+      });
+      expect(imported.exitCode).toBe(1);
+      expect(JSON.parse(imported.stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'workspace import',
+        status: 'error',
+        error: { code: 'workspace.import.input-required' },
+      });
+
+      const hydrated = await execa('node', [CLI_PATH, 'workspace', 'hydrate', '--json'], {
+        reject: false,
+      });
+      expect(hydrated.exitCode).toBe(1);
+      expect(JSON.parse(hydrated.stdout)).toMatchObject({
+        schemaVersion: 'workspai-workspace-archive-operation-result-v1',
+        operation: 'hydrate',
+        status: 'error',
+        error: { code: 'workspace.hydrate.input-required' },
       });
     });
 

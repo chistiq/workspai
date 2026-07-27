@@ -60,9 +60,8 @@ export function buildProjectEntryCapabilityContract(): ProjectEntryCapabilityCon
       {
         id: 'import',
         status: 'available',
-        purpose:
-          'Attach an existing project, repository folder, or imported path to a workspace inventory.',
-        commands: ['import', 'workspace import'],
+        purpose: 'Copy a local project or clone a repository into workspace-owned source.',
+        commands: ['import'],
       },
     ],
     universalExistingProjectEntry: {

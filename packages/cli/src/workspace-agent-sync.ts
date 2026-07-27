@@ -326,6 +326,8 @@ export type AgentGroundingSyncResult = {
 
 export type SyncWorkspaceAgentGroundingOptions = {
   workspacePath: string;
+  /** Reuse the canonical model already built by the owning lifecycle transaction. */
+  model?: WorkspaceModel;
   scope?: string;
   agent?: WorkspaceContextAgent | string | boolean;
   targets?: AgentGroundingTarget[];
@@ -1371,10 +1373,10 @@ async function syncWorkspaceAgentGroundingUnsafe(
 
   let contextPath: string | undefined;
   let context: Awaited<ReturnType<typeof buildWorkspaceAgentContext>> | null = null;
-  let sharedModel: WorkspaceModel | undefined;
+  let sharedModel: WorkspaceModel | undefined = options.model;
 
   if (options.refreshContext) {
-    sharedModel = await buildWorkspaceModel({
+    sharedModel ??= await buildWorkspaceModel({
       workspacePath,
       includeEvidence: true,
     });

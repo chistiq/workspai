@@ -373,6 +373,7 @@ function projectSignature(project: WorkspaceModelProject): Record<string, unknow
     name: project.name,
     path: project.path,
     kind: project.kind,
+    category: project.category,
     runtime: project.runtime,
     framework: project.framework,
     generator: project.generator,

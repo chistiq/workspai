@@ -25,6 +25,10 @@ import {
 } from '../../contracts/cli-discovery-contract';
 import { buildPublishedContractCatalog } from '../../contracts/published-contract-versions';
 import { buildOperationalJsonSchemas } from '../../contracts/operational-json-schemas';
+import {
+  buildIngestionPlanSchema,
+  buildIngestionResultSchema,
+} from '../../contracts/ingestion-contract';
 
 function readJsonContract(fileName: string): unknown {
   const contractPath = path.resolve(process.cwd(), 'contracts', fileName);
@@ -64,6 +68,11 @@ describe('generated shared contracts (Wave B + C)', () => {
     expect(readJsonContract('workspace-archive-operation-result.v1.json')).toEqual(
       buildWorkspaceArchiveOperationResultSchema()
     );
+  });
+
+  it('keeps the canonical ingestion plan and result schemas aligned with their generators', () => {
+    expect(readJsonContract('ingestion-plan.v1.json')).toEqual(buildIngestionPlanSchema());
+    expect(readJsonContract('ingestion-result.v1.json')).toEqual(buildIngestionResultSchema());
   });
 
   it('keeps committed create planner capabilities aligned with the generator', () => {

@@ -183,6 +183,22 @@ export function buildPackageRunnerSubprocessEnv(
   return env;
 }
 
+/**
+ * Official scaffolders are resolved from their stable channel at execution
+ * time. Make npm reject a generator tree that does not support the operator's
+ * current Node.js runtime instead of leaving behind an unusable scaffold after
+ * an engine warning.
+ */
+export function buildLatestStableGeneratorEnv(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv {
+  return {
+    ...buildPackageRunnerSubprocessEnv(baseEnv, platform),
+    npm_config_engine_strict: 'true',
+  };
+}
+
 export function getDefaultPythonCommand(platform: NodeJS.Platform = process.platform): string {
   return isWindowsPlatform(platform) ? 'python' : 'python3';
 }

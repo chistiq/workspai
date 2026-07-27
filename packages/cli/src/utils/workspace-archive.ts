@@ -26,6 +26,7 @@ import {
   workspaceMetadataCandidates,
   workspaceMetadataPath,
 } from './workspace-paths.js';
+import type { WorkspaceContract } from './workspace-contract.js';
 
 export const WORKSPACE_ARCHIVE_MANIFEST_PATH = '.workspai/archive-manifest.json';
 const LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH = '.rapidkit/archive-manifest.json';
@@ -47,6 +48,19 @@ export interface WorkspaceArchiveManifest {
     envFilesIncluded: boolean;
     excludedByDefault: string[];
   };
+  externalProjects?: Array<{
+    name: string;
+    relationship: 'adopted' | 'linked' | 'imported' | 'managed' | 'restored';
+    included: false;
+    requiredAction: 'relink';
+  }>;
+  /**
+   * A path-neutral snapshot of the canonical contract. It preserves manual
+   * ports, APIs, ownership, events, and dependency declarations while
+   * intentionally excluding projects whose identity depends on a source
+   * machine's absolute path.
+   */
+  portableContract?: WorkspaceContract;
   files: Array<{
     path: string;
     size: number;
@@ -280,6 +294,11 @@ const EXCLUDED_BASENAMES = new Set([
   'npm-debug.log',
   'yarn-error.log',
   'pnpm-debug.log',
+  // Machine-local bindings and derived registries contain absolute paths and
+  // must be rebuilt on the destination machine.
+  'workspace-link.local.json',
+  'imported-projects.json',
+  'workspace-registry.v1.json',
 ]);
 
 const SECRET_BASENAME_PATTERNS = [
@@ -354,6 +373,12 @@ export function shouldExcludeWorkspaceArchivePath(
   }
 
   const basename = segments[segments.length - 1] || '';
+  if (
+    normalized === '.workspai/workspace.contract.json' ||
+    normalized === '.rapidkit/workspace.contract.json'
+  ) {
+    return true;
+  }
   if (EXCLUDED_BASENAMES.has(basename)) {
     return true;
   }
@@ -365,6 +390,77 @@ export function shouldExcludeWorkspaceArchivePath(
   }
 
   return basename.endsWith('.pyc') || basename.endsWith('.log');
+}
+
+async function readWorkspaceContractForArchive(
+  workspacePath: string
+): Promise<WorkspaceContract | null> {
+  for (const contractPath of [
+    path.join(workspacePath, '.workspai', 'workspace.contract.json'),
+    path.join(workspacePath, '.rapidkit', 'workspace.contract.json'),
+  ]) {
+    if (!(await fsExtra.pathExists(contractPath))) continue;
+    try {
+      return (await fsExtra.readJson(contractPath)) as WorkspaceContract;
+    } catch (error) {
+      throw new Error(
+        `Workspace contract could not be inspected safely for archive portability: ${contractPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+  return null;
+}
+
+function collectExternalWorkspaceProjects(
+  contract: WorkspaceContract | null
+): NonNullable<WorkspaceArchiveManifest['externalProjects']> {
+  return (contract?.projects ?? [])
+    .filter(
+      (project) =>
+        typeof project.externalPath === 'string' ||
+        (typeof project.relativePath === 'string' && project.relativePath.startsWith('external/'))
+    )
+    .map((project) => ({
+      name: project.slug || project.relativePath || 'external-project',
+      relationship: ['adopted', 'linked', 'imported', 'managed', 'restored'].includes(
+        String(project.relationship)
+      )
+        ? (project.relationship as 'adopted' | 'linked' | 'imported' | 'managed' | 'restored')
+        : 'adopted',
+      included: false as const,
+      requiredAction: 'relink' as const,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function buildPortableWorkspaceContract(
+  contract: WorkspaceContract | null
+): WorkspaceContract | undefined {
+  if (!contract) return undefined;
+  return {
+    ...contract,
+    workspace: { ...contract.workspace },
+    projects: contract.projects
+      .filter(
+        (project) =>
+          typeof project.externalPath !== 'string' && !project.relativePath.startsWith('external/')
+      )
+      .map(({ externalPath: _externalPath, ...project }) => ({
+        ...project,
+        modules: [...project.modules],
+        ports: project.ports.map((port) => ({ ...port })),
+        contracts: {
+          owns: [...project.contracts.owns],
+          apis: project.contracts.apis.map((api) => ({ ...api })),
+          publishes: [...project.contracts.publishes],
+          consumes: [...project.contracts.consumes],
+          dependsOn: [...project.contracts.dependsOn],
+          env: [...project.contracts.env],
+        },
+      })),
+  };
 }
 
 async function* walkWorkspaceFiles(
@@ -532,6 +628,9 @@ export async function exportWorkspaceArchive(
   }
 
   const workspaceName = await readWorkspaceName(workspacePath);
+  const workspaceContract = await readWorkspaceContractForArchive(workspacePath);
+  const externalProjects = collectExternalWorkspaceProjects(workspaceContract);
+  const portableContract = buildPortableWorkspaceContract(workspaceContract);
   const archivePath = path.resolve(
     options.outputPath || `${sanitizeWorkspaceArchiveName(workspaceName)}.workspai-archive.zip`
   );
@@ -561,6 +660,8 @@ export async function exportWorkspaceArchive(
         '*.log',
       ],
     },
+    ...(externalProjects.length > 0 ? { externalProjects } : {}),
+    ...(portableContract ? { portableContract } : {}),
   };
 
   const normalizedArchivePath = path.resolve(archivePath);

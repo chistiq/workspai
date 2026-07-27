@@ -8,7 +8,7 @@ Complete CLI syntax for the Workspai CLI. For behavior and workflows, see [works
 npx workspai create # Prompts: workspace | project
 npx workspai create workspace <name> [--profile <profile>] [--yes] [--here|--output <parent-dir>] [--skip-python-engine] [--skip-git] [--dry-run] [--install-method <poetry|venv|pipx>]
 npx workspai bootstrap [--profile <profile>] [--ci] [--json] [--compliance-only]
-npx workspai setup <python|node|go|java|dotnet> [--warm-deps]
+npx workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]
 npx workspai pipeline [--json] [--strict] [--skip-verify] [--skip-analyze] [--skip-autopilot] [--autopilot-mode <audit|safe-fix|enforce>] [--agent-sync|--no-agent-sync]
 npx workspai analyze [--workspace <path>] [--json] [--strict] [--output <file>]
 npx workspai readiness [--workspace <path>] [--json] [--strict] [--skip-verify]
@@ -78,6 +78,8 @@ npx workspai workspace archive inspect team-workspace.workspai-archive.zip [--ma
 npx workspai workspace archive verify team-workspace.workspai-archive.zip [--max-download-size <size>] [--max-expanded-size <size>] [--download-timeout-ms <ms>] [--allow-private-network] [--strict] [--json]
 npx workspai workspace archive doctor team-workspace.workspai-archive.zip [--max-download-size <size>] [--max-expanded-size <size>] [--download-timeout-ms <ms>] [--allow-private-network] [--strict] [--json]
 npx workspai workspace hydrate team-workspace.workspai-archive.zip --output ./team-workspace [--max-download-size <size>] [--max-expanded-size <size>] [--download-timeout-ms <ms>] [--allow-private-network]
+npx workspai workspace import team-workspace.workspai-archive.zip --output ./team-workspace [--project-grounding managed|local|off] [--dry-run] [--strict] [--json]
+npx workspai workspace connect [directory] [--project-grounding managed|local|off] [--dry-run] [--json]
 npx workspai import <path|git-url> [--workspace <path>] [--name <project-name>] [--git] [--enable-modules] [--project-grounding managed|local|off] [--json]
 npx workspai adopt [path] [--workspace <path>] [--name <project-name>] [--enable-modules] [--project-grounding managed|local|off] [--dry-run] [--json]
 npx workspai snapshot create [name] [--include-projects] [--reason <text>] [--json]
@@ -209,9 +211,11 @@ Workspace profile compatibility is enforced consistently across `create project`
 `import`, `adopt`, and `bootstrap` compliance. In default `warn` policy mode,
 cross-runtime additions are allowed with a recommendation such as
 `npx workspai bootstrap --profile polyglot`; in `strict` mode, mismatches are
-blocked before the project is registered. Observed runtimes such as Rust, C,
-and C++ are counted in the workspace runtime mix even when Workspai does not own
-a native scaffold for them.
+blocked before the project is registered. Rust is an extended runtime with
+Axum/Tauri scaffolding and Cargo lifecycle support. PHP is extended through
+Laravel and Composer lifecycle support. Observed runtimes such as C and C++ are
+still counted in the workspace runtime mix even when Workspai does not own a
+native scaffold for them.
 
 Core module/template commands are intentionally narrower than runtime detection.
 RapidKit Core modules are guaranteed only for RapidKit Core module-enabled kits:
@@ -242,6 +246,10 @@ Examples:
 ```bash
 npx workspai create project fastapi.standard my-api --yes
 npx workspai create project nextjs my-web --yes
+npx workspai create project rust.axum my-rust-api --yes
+npx workspai create project desktop.tauri my-desktop-app --yes
+npx workspai create project extension.vscode my-extension --yes
+npx workspai create project php.laravel my-laravel-api --yes
 ```
 
 Generator-specific options include `--port`, Spring Boot
@@ -251,7 +259,11 @@ and .NET `--dotnet-version`/`--target-framework`/`--nullable`. Use
 
 `create frontend <id> <name>` is still accepted and routes to the same generators.
 
-`project commands` shows the effective command contract for the current project. Core-backed FastAPI/NestJS projects can use module commands such as `add` and `modules`. Frontend apps, Go, Spring Boot, .NET, and adopted/imported repositories use runtime lifecycle commands and workspace governance while Core module mutation remains disabled.
+`project commands` shows the effective command contract for the current project.
+Core-backed FastAPI/NestJS projects can use module commands such as `add` and
+`modules`. Frontend, desktop, extension, Go, Spring Boot, .NET, Rust, PHP, and
+adopted/imported projects use runtime lifecycle commands and workspace
+governance while Core module mutation remains disabled.
 
 ## Operations
 

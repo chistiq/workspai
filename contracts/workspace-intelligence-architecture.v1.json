@@ -617,7 +617,8 @@
       "springboot.standard",
       "gofiber.standard",
       "gogin.standard",
-      "dotnet.webapi.clean"
+      "dotnet.webapi.clean",
+      "rust.axum"
     ],
     "officialCreate": [
       "frontend.nextjs",
@@ -631,9 +632,12 @@
       "frontend.angular",
       "frontend.astro",
       "frontend.sveltekit",
+      "desktop.tauri",
+      "desktop.electron",
+      "extension.vscode",
+      "php.laravel",
       "wordpress-site",
       "wordpress-block",
-      "laravel",
       "symfony",
       "rails"
     ],
@@ -672,10 +676,9 @@
       {
         "id": "import",
         "status": "available",
-        "purpose": "Attach an existing project, repository folder, or imported path to a workspace inventory.",
+        "purpose": "Copy a local project or clone a repository into workspace-owned source.",
         "commands": [
-          "import",
-          "workspace import"
+          "import"
         ]
       }
     ],

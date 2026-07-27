@@ -1,4 +1,5 @@
 import type { BackendPlatformKey, BackendRuntimeFamily } from './backend-framework-contract.js';
+import type { WorkspaceProjectCategory } from './project-kind.js';
 
 export type KitOwner = 'core' | 'npm';
 export type KitStability = 'stable' | 'preview';
@@ -11,9 +12,11 @@ export interface KitDefinition {
   owner: KitOwner;
   runtime: BackendRuntimeFamily;
   framework: BackendPlatformKey;
+  category: WorkspaceProjectCategory;
   moduleSupport: boolean;
   stability: KitStability;
-  generator?: 'gofiber' | 'gogin' | 'springboot' | 'dotnet-webapi-clean';
+  versionPolicy: 'tested-baseline';
+  generator?: 'gofiber' | 'gogin' | 'springboot' | 'dotnet-webapi-clean' | 'rust-axum';
   createUsage?: string;
 }
 
@@ -34,8 +37,10 @@ export const KIT_REGISTRY: KitDefinition[] = [
     owner: 'core',
     runtime: 'python',
     framework: 'fastapi',
+    category: 'backend',
     moduleSupport: true,
     stability: 'stable',
+    versionPolicy: 'tested-baseline',
   },
   {
     id: 'fastapi.ddd',
@@ -45,8 +50,10 @@ export const KIT_REGISTRY: KitDefinition[] = [
     owner: 'core',
     runtime: 'python',
     framework: 'fastapi',
+    category: 'backend',
     moduleSupport: true,
     stability: 'stable',
+    versionPolicy: 'tested-baseline',
   },
   {
     id: 'nestjs.standard',
@@ -56,8 +63,10 @@ export const KIT_REGISTRY: KitDefinition[] = [
     owner: 'core',
     runtime: 'node',
     framework: 'nestjs',
+    category: 'backend',
     moduleSupport: true,
     stability: 'stable',
+    versionPolicy: 'tested-baseline',
   },
   {
     id: 'springboot.standard',
@@ -67,8 +76,10 @@ export const KIT_REGISTRY: KitDefinition[] = [
     owner: 'npm',
     runtime: 'java',
     framework: 'springboot',
+    category: 'backend',
     moduleSupport: false,
     stability: 'stable',
+    versionPolicy: 'tested-baseline',
     generator: 'springboot',
     createUsage:
       'workspai create project springboot.standard <name> [--java-version <major>] [--spring-boot-version <semver>] [--group-id <com.example>] [--package-name <com.example.app>] [--port <number>]',
@@ -81,8 +92,10 @@ export const KIT_REGISTRY: KitDefinition[] = [
     owner: 'npm',
     runtime: 'go',
     framework: 'gofiber',
+    category: 'backend',
     moduleSupport: false,
     stability: 'stable',
+    versionPolicy: 'tested-baseline',
     generator: 'gofiber',
     createUsage: 'workspai create project gofiber.standard <name> [--output <dir>]',
   },
@@ -94,8 +107,10 @@ export const KIT_REGISTRY: KitDefinition[] = [
     owner: 'npm',
     runtime: 'go',
     framework: 'gogin',
+    category: 'backend',
     moduleSupport: false,
     stability: 'stable',
+    versionPolicy: 'tested-baseline',
     generator: 'gogin',
     createUsage: 'workspai create project gogin.standard <name> [--output <dir>]',
   },
@@ -117,11 +132,29 @@ export const KIT_REGISTRY: KitDefinition[] = [
     owner: 'npm',
     runtime: 'dotnet',
     framework: 'dotnet',
+    category: 'backend',
     moduleSupport: false,
     stability: 'preview',
+    versionPolicy: 'tested-baseline',
     generator: 'dotnet-webapi-clean',
     createUsage:
       'workspai create project dotnet.webapi.clean <name> [--target-framework net8.0] [--root-namespace <Company.Product>] [--port <number>]',
+  },
+  {
+    id: 'rust.axum',
+    aliases: ['rust.axum', 'axum', 'rust-axum'],
+    label: 'rust/axum — Rust Axum API',
+    description: 'Workspai-owned Axum service with health, tests, CI, and container baseline.',
+    owner: 'npm',
+    runtime: 'rust',
+    framework: 'axum',
+    category: 'backend',
+    moduleSupport: false,
+    stability: 'preview',
+    versionPolicy: 'tested-baseline',
+    generator: 'rust-axum',
+    createUsage:
+      'workspai create project rust.axum <name> [--port <number>] [--output <dir>] [--skip-git]',
   },
 ];
 
@@ -204,6 +237,18 @@ export async function runNpmKitGenerator(
       project_name: options.projectName,
       target_framework: readFlagValue(options.args, '--target-framework')?.trim(),
       root_namespace: readFlagValue(options.args, '--root-namespace')?.trim(),
+      description: readFlagValue(options.args, '--description')?.trim(),
+      port: readFlagValue(options.args, '--port')?.trim(),
+      skipGit: options.skipGit,
+      skipInstall: options.skipInstall,
+    });
+    return;
+  }
+
+  if (definition.generator === 'rust-axum') {
+    const { generateRustAxumKit } = await import('../generators/rust-axum.js');
+    await generateRustAxumKit(options.projectPath, {
+      project_name: options.projectName,
       description: readFlagValue(options.args, '--description')?.trim(),
       port: readFlagValue(options.args, '--port')?.trim(),
       skipGit: options.skipGit,

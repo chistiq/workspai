@@ -199,6 +199,9 @@ type DetectedFramework =
   | 'Express'
   | 'Fastify'
   | 'Koa'
+  | 'Tauri'
+  | 'Electron'
+  | 'VS Code Extension'
   | 'Echo'
   | 'Node.js'
   | 'Go'
@@ -242,7 +245,7 @@ type ProjectRuntimeFamily =
   | 'c'
   | 'cpp'
   | 'unknown';
-type ProjectKind = 'backend' | 'frontend' | 'fullstack' | 'generic';
+type ProjectKind = 'backend' | 'frontend' | 'desktop' | 'extension' | 'fullstack' | 'generic';
 type FrameworkConfidence = 'high' | 'medium' | 'low';
 
 interface ProjectHealth {
@@ -1218,6 +1221,14 @@ function supportTierForFramework(framework: DetectedFramework): FrameworkSupport
 }
 
 function kindForFramework(framework: DetectedFramework): ProjectKind {
+  if (framework === 'Tauri' || framework === 'Electron') {
+    return 'desktop';
+  }
+
+  if (framework === 'VS Code Extension') {
+    return 'extension';
+  }
+
   if (
     framework === 'Next.js' ||
     framework === 'Remix' ||
@@ -1268,6 +1279,9 @@ function runtimeForFramework(framework: DetectedFramework): ProjectRuntimeFamily
     framework === 'Express' ||
     framework === 'Fastify' ||
     framework === 'Koa' ||
+    framework === 'Tauri' ||
+    framework === 'Electron' ||
+    framework === 'VS Code Extension' ||
     framework === 'Node.js'
   ) {
     return 'node';
@@ -1427,6 +1441,12 @@ function toDoctorFramework(detection: BackendFrameworkDetection): DetectedFramew
       return 'Fastify';
     case 'koa':
       return 'Koa';
+    case 'tauri':
+      return 'Tauri';
+    case 'electron':
+      return 'Electron';
+    case 'vscode-extension':
+      return 'VS Code Extension';
     case 'node':
       return 'Node.js';
     case 'gofiber':
@@ -1526,7 +1546,14 @@ function applyBackendFrameworkDetection(
   health.importStack = detection.importStack;
   health.frameworkConfidence = detection.confidence;
   health.supportTier = detection.supportTier;
-  health.projectKind = isGenericBackendDetection(detection) ? 'generic' : 'backend';
+  health.projectKind =
+    detection.key === 'tauri' || detection.key === 'electron'
+      ? 'desktop'
+      : detection.key === 'vscode-extension'
+        ? 'extension'
+        : isGenericBackendDetection(detection)
+          ? 'generic'
+          : 'backend';
   health.runtimeFamily = toDoctorRuntimeFamily(detection.runtime);
 }
 
@@ -2562,8 +2589,12 @@ async function appendRuntimeAdapterProbes(
   health: ProjectHealth
 ): Promise<void> {
   const runtime = health.runtimeFamily || 'unknown';
-  const isBackend = health.projectKind === 'backend' || health.projectKind === 'generic';
-  if (!isBackend) {
+  const supportsRuntimeAdapterProbe =
+    health.projectKind === 'backend' ||
+    health.projectKind === 'generic' ||
+    health.projectKind === 'desktop' ||
+    health.projectKind === 'extension';
+  if (!supportsRuntimeAdapterProbe) {
     return;
   }
 
@@ -2586,28 +2617,43 @@ async function appendRuntimeAdapterProbes(
         : 'Commit a lockfile for deterministic installs and CI parity.',
     });
 
-    const bootEntryExists = await anyRelativePathExists(projectPath, [
-      'src/main.ts',
-      'src/main.js',
-      'src/server.ts',
-      'src/server.js',
-      'server.ts',
-      'server.js',
-      'index.ts',
-      'index.js',
-    ]);
+    const bootEntryMarkers =
+      health.projectKind === 'extension'
+        ? ['src/extension.ts', 'src/extension.js', 'extension.ts', 'extension.js']
+        : health.projectKind === 'desktop'
+          ? ['src/main.ts', 'src/main.js', 'src/index.ts', 'src/index.js', 'src-tauri/src/main.rs']
+          : [
+              'src/main.ts',
+              'src/main.js',
+              'src/server.ts',
+              'src/server.js',
+              'server.ts',
+              'server.js',
+              'index.ts',
+              'index.js',
+            ];
+    const bootEntryExists = await anyRelativePathExists(projectPath, bootEntryMarkers);
     pushProjectProbe(health, {
       id: 'adapter-node-boot-entrypoint',
-      label: 'Node adapter boot entrypoint',
+      label:
+        health.projectKind === 'extension'
+          ? 'Extension activation entrypoint'
+          : health.projectKind === 'desktop'
+            ? 'Desktop application entrypoint'
+            : 'Node adapter boot entrypoint',
       status: bootEntryExists ? 'pass' : 'warn',
       severity: 'warn',
       scope: 'project-scoped',
       reason: bootEntryExists
-        ? 'Boot entrypoint markers detected for service startup path.'
-        : 'No canonical Node boot entrypoint markers detected.',
+        ? `${health.projectKind === 'extension' ? 'Extension' : health.projectKind === 'desktop' ? 'Desktop application' : 'Service'} entrypoint markers detected.`
+        : `No canonical ${health.projectKind === 'extension' ? 'extension activation' : health.projectKind === 'desktop' ? 'desktop application' : 'Node boot'} entrypoint markers detected.`,
       recommendation: bootEntryExists
         ? undefined
-        : 'Define and document service bootstrap entrypoint (main/server).',
+        : health.projectKind === 'extension'
+          ? 'Expose the extension activation module declared by package.json.'
+          : health.projectKind === 'desktop'
+            ? 'Expose and document the desktop main-process or Tauri entrypoint.'
+            : 'Define and document service bootstrap entrypoint (main/server).',
     });
     return;
   }
@@ -4954,14 +5000,25 @@ function renderProjectHealth(project: ProjectHealth, hostCore?: HealthCheckResul
 
   // Module / source tree health check
   if (project.modulesHealthy !== undefined) {
-    const healthLabel = project.projectKind === 'frontend' ? 'Source tree' : 'Modules';
+    const healthLabel =
+      project.projectKind === 'frontend'
+        ? 'Source tree'
+        : project.projectKind === 'desktop'
+          ? 'Application source'
+          : project.projectKind === 'extension'
+            ? 'Extension source'
+            : 'Modules';
     if (project.modulesHealthy) {
       console.log(`   ✅ ${healthLabel}: ${chalk.green('Healthy')}`);
     } else if (project.missingModules && project.missingModules.length > 0) {
       console.log(
         `   ⚠️  ${healthLabel}: ${chalk.yellow(`Missing ${project.missingModules.length} init file(s)`)}`
       );
-    } else if (project.projectKind === 'frontend') {
+    } else if (
+      project.projectKind === 'frontend' ||
+      project.projectKind === 'desktop' ||
+      project.projectKind === 'extension'
+    ) {
       console.log(`   ⚠️  ${healthLabel}: ${chalk.yellow('No application directories detected')}`);
     }
   }

@@ -61,7 +61,7 @@ describe('workspace agent context', () => {
       },
       workspace: {
         name: 'agent-platform',
-        type: 'full-stack-workspace',
+        type: 'polyglot-product-workspace',
       },
       scope: {
         requested: 'workspace',
@@ -76,7 +76,7 @@ describe('workspace agent context', () => {
       resolved: 'fastapi.standard',
     });
     expect(context.projects.find((project) => project.name === 'web')?.safeCommands).toEqual([]);
-    expect(context.workspaceSummary).toContain('full-stack-workspace');
+    expect(context.workspaceSummary).toContain('polyglot-product-workspace');
     expect(context.knowledgeGraph).toMatchObject({
       artifact: '.workspai/reports/workspace-knowledge-graph.json',
       schemaVersion: 'workspace-knowledge-graph.v1',

@@ -2,7 +2,10 @@ import { promises as fsPromises } from 'fs';
 import * as fsExtra from 'fs-extra';
 import path from 'path';
 import { prompt } from './cli-ui/index.js';
-import { formatWorkspaceCdCommand } from './utils/workspace-create-location.js';
+import {
+  assertIndependentWorkspaceTarget,
+  formatWorkspaceCdCommand,
+} from './utils/workspace-create-location.js';
 import { finalizeWorkspaceOnboarding } from './utils/workspace-onboarding.js';
 import chalk from 'chalk';
 import type { CliSpinnerHandle } from './observability/cli-progress.js';
@@ -1138,6 +1141,8 @@ export async function createProject(
   if (await fsExtra.pathExists(projectPath)) {
     throw new DirectoryExistsError(name);
   }
+
+  await assertIndependentWorkspaceTarget(projectPath);
 
   // Dry-run mode - show what would be created
   if (dryRun) {
@@ -2788,11 +2793,17 @@ async function installWithPipx(
   );
 }
 
-// Register an existing directory as a Workspai workspace and install the engine.
+// Register an existing directory as a Workspai workspace. Python Core is an
+// optional runtime capability, not a prerequisite for workspace management.
 export async function registerWorkspaceAtPath(
   workspacePath: string,
   options?: {
     skipGit?: boolean;
+    /**
+     * Explicitly install the optional Python engine while registering. Omit
+     * this for the normal foundation-only workspace registration path.
+     */
+    installPythonEngine?: boolean;
     testMode?: boolean;
     userConfig?: UserConfig;
     yes?: boolean;
@@ -2804,6 +2815,7 @@ export async function registerWorkspaceAtPath(
 ) {
   const {
     skipGit = false,
+    installPythonEngine = false,
     testMode = false,
     userConfig = {},
     yes = false,
@@ -2811,24 +2823,28 @@ export async function registerWorkspaceAtPath(
     pythonVersion = '3.10',
   } = options || {};
 
-  // Choose install method: explicit flag wins; otherwise probe for poetry and fall back to venv.
-  const method: InstallMethod =
-    (installMethod as InstallMethod) ||
-    (userConfig.defaultInstallMethod as InstallMethod) ||
-    (await (async (): Promise<InstallMethod> => {
-      try {
-        await execa('poetry', ['--version'], { timeout: 3000 });
-        return 'poetry';
-      } catch {
-        logger.warn(
-          'Poetry not found — auto-selecting venv. Pass --install-method poetry to override.'
-        );
-        return 'venv';
-      }
-    })());
+  let resolvedMethod: InstallMethod = 'venv';
+  if (installPythonEngine) {
+    // Choose install method only when Python Core installation was explicitly
+    // requested by the caller. Foundation-only registration must not probe the
+    // host for Python package-management tools.
+    const method: InstallMethod =
+      (installMethod as InstallMethod) ||
+      (userConfig.defaultInstallMethod as InstallMethod) ||
+      (await (async (): Promise<InstallMethod> => {
+        try {
+          await execa('poetry', ['--version'], { timeout: 3000 });
+          return 'poetry';
+        } catch {
+          logger.warn(
+            'Poetry not found — auto-selecting venv. Pass --install-method poetry to override.'
+          );
+          return 'venv';
+        }
+      })());
 
-  const resolvedMethod: InstallMethod =
-    method === 'poetry' && !(await isPoetryAvailable()) ? 'venv' : method;
+    resolvedMethod = method === 'poetry' && !(await isPoetryAvailable()) ? 'venv' : method;
+  }
 
   const spinner = createCliSpinner('Registering workspace', {
     component: 'create',
@@ -2837,19 +2853,38 @@ export async function registerWorkspaceAtPath(
   const transaction = await beginExistingWorkspaceTransaction(workspacePath);
 
   try {
-    await writeWorkspaceMarker(workspacePath, path.basename(workspacePath), resolvedMethod);
+    const workspaceName = path.basename(workspacePath);
+    const bootstrapMeta: WorkspaceBootstrapMeta | undefined = !installPythonEngine
+      ? {
+          bootstrapNote: 'python-engine-skipped',
+          pythonEngine: 'skipped',
+          pythonEngineReason: 'project-workspace-foundation',
+        }
+      : undefined;
+    await writeWorkspaceMarker(
+      workspacePath,
+      workspaceName,
+      resolvedMethod,
+      installPythonEngine ? pythonVersion : undefined,
+      bootstrapMeta
+    );
     await writeWorkspaceGitignore(workspacePath);
     await writeWorkspaceFoundationFiles(
       workspacePath,
-      path.basename(workspacePath),
+      workspaceName,
       resolvedMethod,
-      pythonVersion,
-      options?.profile
+      installPythonEngine ? pythonVersion : undefined,
+      options?.profile ?? 'minimal',
+      bootstrapMeta
     );
 
-    if (resolvedMethod === 'poetry') {
+    if (!installPythonEngine) {
+      await writeWorkspaceLauncher(workspacePath, resolvedMethod, {
+        pythonEngineSkipped: true,
+      });
+    } else if (resolvedMethod === 'poetry') {
       // Write pyproject.toml stub so installWithPoetry can skip poetry init + poetry add.
-      await writePyprojectStub(workspacePath, path.basename(workspacePath));
+      await writePyprojectStub(workspacePath, workspaceName);
       await installWithPoetry(workspacePath, pythonVersion, spinner, testMode, userConfig, yes);
     } else if (resolvedMethod === 'venv') {
       await installWithVenv(workspacePath, pythonVersion, spinner, testMode, userConfig);
@@ -2857,10 +2892,14 @@ export async function registerWorkspaceAtPath(
       await installWithPipx(workspacePath, spinner, testMode, userConfig, yes);
     }
 
-    await writeWorkspaceLauncher(workspacePath, resolvedMethod);
-    await createReadme(workspacePath, resolvedMethod);
+    if (installPythonEngine) {
+      await writeWorkspaceLauncher(workspacePath, resolvedMethod);
+      await createReadme(workspacePath, resolvedMethod);
+    }
 
-    spinner.succeed('Workspace registered');
+    spinner.succeed(
+      installPythonEngine ? 'Workspace registered' : 'Workspace registered (Python engine skipped)'
+    );
 
     await finalizeWorkspaceOnboarding(workspacePath, {
       workspaceName: path.basename(workspacePath),

@@ -21,10 +21,15 @@ Native create is reserved for Workspai-owned kits with deterministic contracts:
 - Go Fiber and Go Gin
 - Spring Boot
 - ASP.NET Core Web API
+- Rust / Axum
 
 These kits can be exposed through `workspai create project` because Workspai can
 create the project and immediately produce the expected `.workspai` metadata,
 workspace registry entries, doctor evidence, and workspace model data.
+They use a tested dependency baseline instead of floating to new upstream
+majors during creation. Baseline upgrades ship as reviewed Workspai changes so
+the same Workspai version remains reproducible across developer machines and
+CI.
 
 ## Official generators
 
@@ -35,19 +40,45 @@ by Workspai and then registered in Workspace Intelligence:
 - React Router: `npx create-react-router@latest <name>`
 - React, Vue, Svelte, Solid, and Vite: `npm create vite@latest <name> ...`
 - Nuxt: `npx create-nuxt@latest <name> ...`
-- Angular: `npx @angular/cli@19 new <name>`
-- Astro: `npm create astro@4 <name>`
+- Angular: `npx @angular/cli@latest new <name>`
+- Astro: `npm create astro@latest <name>`
 - SvelteKit: `npx sv@latest create <name>`
+- Tauri: `npm create tauri-app@latest <name> -- --template vanilla-ts`
+- Electron Forge: `npx create-electron-app@latest <name> --template=vite-typescript`
+- VS Code Extension: `npx --package yo@latest --package generator-code@latest -- yo code <name> ...`
+- Laravel: `composer create-project --no-interaction --prefer-dist --stability=stable laravel/laravel <name>`
+
+### Stable version and runtime policy
+
+Available official entries request the ecosystem's current stable release at
+execution time; Workspai does not silently pin an older framework major. npm
+generators use the `latest` distribution tag and Composer is restricted to
+stable packages. npm engine checks run in strict mode, so an upstream generator
+that does not support the operator's Node.js runtime stops before Workspai
+claims the scaffold is usable.
+
+Workspai also checks non-Node prerequisites before invoking a generator:
+
+- Tauri requires Rust and Cargo in addition to its platform-specific system
+  dependencies.
+- Electron Forge requires Git.
+- VS Code Extension generation requires Git unless `--skip-git` is selected.
+- Laravel requires PHP and Composer; Node.js/npm remain recommended for
+  frontend asset workflows.
+
+The official generator remains the authority for exact framework/runtime
+compatibility because its stable requirements can change independently of a
+Workspai release. The selected policy is persisted as `latest-stable` in
+project metadata and create evidence.
 
 Other ecosystems are planned official handoffs but are not automated yet:
 
 - WordPress site: `wp core download`, `wp config create`, `wp db create`, `wp core install`
 - WordPress block/plugin: `npx @wordpress/create-block@latest <slug>`
-- Laravel: `composer create-project laravel/laravel <name>`
 - Symfony: `composer create-project symfony/skeleton <name>`
 - Rails: `rails new <name>`
 
-These are `official` candidates, not active native kits. Until each planned
+The remaining entries are `official` candidates, not active native kits. Until each planned
 post-create contract is implemented end to end, Workspai should guide users to
 create externally and then adopt/import the project.
 
@@ -72,7 +103,7 @@ Adoption still gives the project Workspace Intelligence:
 ## Product rule
 
 Do not convert an unsupported or ambiguous stack request into a different native
-kit. For example, a PHP, WordPress, Laravel, Symfony, or Rails request must not
+kit. For example, a WordPress, Symfony, or Rails request must not
 be translated into FastAPI, NestJS, Go, Java, .NET, or a frontend kit.
 
 If executable create is unavailable, the planner should explain the supported

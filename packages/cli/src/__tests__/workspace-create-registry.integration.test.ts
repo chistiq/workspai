@@ -7,6 +7,8 @@ import { execa } from 'execa';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createProject } from '../create.js';
+import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
+import { registerProjectInWorkspaceStrict } from '../workspace.js';
 import {
   getLegacyWorkspaceRegistryDirectory,
   getWorkspaceRegistryDirectory,
@@ -14,6 +16,7 @@ import {
 import { normalizeRegistryPath } from '../utils/registry-path.js';
 import { WORKSPACE_CONTRACT_PATH } from '../utils/workspace-contract.js';
 import { WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH } from '../utils/workspace-registry-summary.js';
+import { syncWorkspaceConsumerArtifacts } from '../utils/workspace-onboarding.js';
 
 const createdPaths: string[] = [];
 const originalHome = process.env.HOME;
@@ -103,6 +106,82 @@ describe('workspace create registry integration', () => {
       exists: true,
       path: registryFile,
     });
+    const model = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model)
+    );
+    const graph = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+    );
+    const context = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext)
+    );
+    const index = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex)
+    );
+
+    expect(model.summary.projectCount).toBe(0);
+    expect(graph.workspace.name).toBe(workspaceName);
+    expect(context.workspace.name).toBe(workspaceName);
+    expect(index.reports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
+          exists: true,
+        }),
+        expect.objectContaining({
+          path: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+          exists: true,
+        }),
+      ])
+    );
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.snapshot))
+    ).toBe(true);
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.diff))
+    ).toBe(true);
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.impact))
+    ).toBe(true);
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'AGENTS.md'))).toBe(true);
+
+    const projectPath = path.join(workspacePath, 'api');
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJson(path.join(projectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'api',
+      runtime: 'node',
+      framework: 'nestjs',
+      kind: 'backend',
+    });
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
+      name: 'api',
+      private: true,
+      scripts: { test: 'vitest run' },
+    });
+    await registerProjectInWorkspaceStrict(workspacePath, 'api', projectPath);
+    const refreshed = await syncWorkspaceConsumerArtifacts(workspacePath, { silent: true });
+    const refreshedModel = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model)
+    );
+
+    expect(refreshed.projectCount).toBe(1);
+    expect(refreshed.baselineCreated).toBe(false);
+    expect(refreshedModel.projects).toEqual([
+      expect.objectContaining({
+        name: 'api',
+        runtime: 'node',
+      }),
+    ]);
+    expect(
+      await fsExtra.pathExists(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))
+    ).toBe(true);
+    expect(
+      await fsExtra.pathExists(
+        path.join(projectPath, '.workspai', 'reports', 'project-context-agent.json')
+      )
+    ).toBe(true);
+    expect(await fsExtra.pathExists(path.join(projectPath, 'AGENTS.md'))).toBe(true);
   });
 
   it('registers nested workspace even when parent directory is already in the registry', async () => {
@@ -149,6 +228,29 @@ describe('workspace create registry integration', () => {
     expect(
       await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH))
     ).toBe(true);
+  });
+
+  it('rejects creating a workspace below an actual workspace boundary', async () => {
+    const homePath = await makeTempDir('rapidkit-registry-home-');
+    const parentWorkspace = await makeTempDir('rapidkit-parent-workspace-');
+    const nestedWorkspace = path.join(parentWorkspace, 'nested-workspace');
+
+    process.env.HOME = homePath;
+    process.env.USERPROFILE = homePath;
+    await fsExtra.writeJson(path.join(parentWorkspace, '.workspai-workspace'), {
+      signature: 'WORKSPAI_WORKSPACE',
+      name: 'parent-workspace',
+    });
+
+    await expect(
+      createProject('nested-workspace', {
+        skipGit: true,
+        yes: true,
+        profile: 'minimal',
+        parentDirectory: parentWorkspace,
+      })
+    ).rejects.toThrow('Workspai workspaces cannot be nested');
+    expect(await fsExtra.pathExists(nestedWorkspace)).toBe(false);
   });
 
   it('removes a newly owned workspace root and restores registries when onboarding fails', async () => {
@@ -212,7 +314,11 @@ describe('workspace create registry integration', () => {
 
     const { registerWorkspaceAtPath } = await import('../create.js');
     await expect(
-      registerWorkspaceAtPath(workspacePath, { skipGit: true, installMethod: 'venv' })
+      registerWorkspaceAtPath(workspacePath, {
+        skipGit: true,
+        installPythonEngine: true,
+        installMethod: 'venv',
+      })
     ).rejects.toThrow('Injected workspace registry summary publication failure');
 
     expect(await fs.readFile(readmePath)).toEqual(readmePreimage);

@@ -21,16 +21,20 @@ export type CreatePlannerCapabilitiesContract = {
     id: string;
     runtime: string;
     framework: string;
+    category: string;
     owner: string;
     stability: string;
+    versionPolicy: 'tested-baseline';
     moduleSupport: boolean;
   }>;
   officialCreate: Array<{
     id: string;
     aliases: string[];
     ecosystem: string;
+    category: string;
     status: CreatePlannerStatus;
     canExecuteCreate: boolean;
+    versionPolicy: 'latest-stable' | 'planned';
     officialCommands: string[];
     adoptAfterCreate: true;
   }>;
@@ -43,8 +47,10 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
     id: kit.id,
     runtime: kit.runtime,
     framework: kit.framework,
+    category: kit.category,
     owner: kit.owner,
     stability: kit.stability,
+    versionPolicy: kit.versionPolicy,
     moduleSupport: kit.moduleSupport,
   }));
   const existingRuntimeSignals = ['php', 'ruby', 'rust', 'elixir', 'clojure', 'scala', 'kotlin'];
@@ -71,6 +77,13 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
     nativeCreate: [...backendNative],
     officialCreate: OFFICIAL_CREATE_CANDIDATES.map((candidate) => ({
       ...candidate,
+      category: candidate.id.startsWith('frontend.')
+        ? 'frontend'
+        : candidate.id.startsWith('desktop.')
+          ? 'desktop'
+          : candidate.id.startsWith('extension.')
+            ? 'extension'
+            : 'backend',
       officialCommands: [...candidate.officialCommands],
       aliases: [...candidate.aliases],
     })),
@@ -80,6 +93,9 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
       'If native create is unavailable, explain the lane and guide to adopt/import.',
       'The existing lane is open-ended for readable projects; existingRuntimeSignals are examples for planner detection, not an allowlist.',
       'Use the same capability contract in CLI, CI, VS Code, and AI planning surfaces.',
+      'Available official generators request the upstream latest stable channel and record that policy in project evidence.',
+      'Native Workspai-owned kits use tested dependency baselines so repeated creates remain deterministic.',
+      'Workspace management during project creation is foundation-only; it must not install the optional Python engine. Each selected kit owns its runtime prerequisites and install flow.',
     ],
   };
 }

@@ -14,7 +14,12 @@ import {
   type CommandCapability,
 } from './utils/project-command-capabilities.js';
 import type { WorkspaceRunStageName } from './utils/cli-lifecycle-contract.js';
-import { inferWorkspaceProjectKind, type WorkspaceProjectKind } from './utils/project-kind.js';
+import {
+  categorizeWorkspaceProjectKind,
+  inferWorkspaceProjectKind,
+  type WorkspaceProjectCategory,
+  type WorkspaceProjectKind,
+} from './utils/project-kind.js';
 import {
   resolveCreatePlannerCapability,
   type CreatePlannerCapability,
@@ -70,6 +75,7 @@ export type WorkspaceModelProject = {
   path: string;
   absolutePath?: string;
   kind: WorkspaceProjectKind;
+  category: WorkspaceProjectCategory;
   runtime: BackendRuntimeFamily;
   runtimeCandidates: BackendRuntimeFamily[];
   framework: string;
@@ -143,6 +149,7 @@ export type WorkspaceModel = {
   identity: {
     workspaceType: string;
     surfaces: WorkspaceProjectKind[];
+    categories: WorkspaceProjectCategory[];
     runtimeFamilies: BackendRuntimeFamily[];
     businessCapabilities: string[];
   };
@@ -555,14 +562,20 @@ async function buildProjectModel(
     framework: detection.key,
     runtime: detection.runtime,
   });
+  const detectedRuntimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  const runtimeCandidates = [
+    detection.runtime,
+    ...detectedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
+  ];
 
   return {
     name: projectName,
     path: toPosixRelative(workspacePath, projectPath),
     ...(options.includeAbsolutePaths ? { absolutePath: projectPath } : {}),
     kind,
+    category: categorizeWorkspaceProjectKind(kind),
     runtime: detection.runtime,
-    runtimeCandidates: detectRuntimeCandidatesFromProject(projectPath),
+    runtimeCandidates,
     framework: detection.key,
     frameworkDisplayName: detection.displayName,
     confidence: detection.confidence,
@@ -612,11 +625,24 @@ function inferWorkspaceType(projects: WorkspaceModelProject[]): string {
   if (projects.length === 0) {
     return 'empty-workspace';
   }
-  if (projects.some((project) => project.kind === 'frontend') && projects.length > 1) {
+  const categories = new Set(projects.map((project) => project.category));
+  if (categories.size > 1) {
+    return 'polyglot-product-workspace';
+  }
+  if (categories.has('frontend') && projects.length > 1) {
     return 'full-stack-workspace';
   }
-  if (projects.some((project) => project.kind === 'frontend')) {
+  if (categories.has('frontend')) {
     return 'frontend-workspace';
+  }
+  if (categories.has('desktop')) {
+    return 'desktop-application-workspace';
+  }
+  if (categories.has('extension')) {
+    return 'extension-workspace';
+  }
+  if (categories.has('library')) {
+    return 'library-workspace';
   }
   if (projects.length > 1) {
     return 'backend-platform';
@@ -1049,6 +1075,17 @@ export function buildWorkspaceModelFacts(model: WorkspaceModel, now: Date): Work
         },
       }),
       buildWorkspaceFact({
+        id: `project.${project.name}.category`,
+        label: `${project.name} category`,
+        scope: 'project',
+        project: project.name,
+        value: project.category,
+        freshness: {
+          ...projectFreshness,
+          sourcePath: modelFactSourcePath([projectSource, 'category']),
+        },
+      }),
+      buildWorkspaceFact({
         id: `project.${project.name}.runtime`,
         label: `${project.name} runtime`,
         scope: 'project',
@@ -1223,6 +1260,7 @@ export async function buildWorkspaceModel(
         ? workspaceJson.mode
         : workspaceContract?.workspace.profile;
   const surfaces = Array.from(new Set(projects.map((project) => project.kind))).sort();
+  const categories = Array.from(new Set(projects.map((project) => project.category))).sort();
   const runtimeFamilies = Array.from(new Set(projects.map((project) => project.runtime))).sort();
   const frameworks = Array.from(new Set(projects.map((project) => project.framework))).sort();
   const policiesSource = [
@@ -1259,6 +1297,7 @@ export async function buildWorkspaceModel(
     identity: {
       workspaceType: inferWorkspaceType(projects),
       surfaces,
+      categories,
       runtimeFamilies,
       businessCapabilities: inferBusinessCapabilities(projects),
     },
@@ -1735,6 +1774,8 @@ export async function writeWorkspaceModel(
       ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
       runtime: project.runtime,
       framework: project.framework,
+      kind: project.kind,
+      category: project.category,
       ...(project.kit ? { kit: project.kit } : {}),
     })),
     projectTopology:

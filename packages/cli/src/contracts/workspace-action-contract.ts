@@ -356,19 +356,28 @@ export const WORKSPACE_ACTION_CONTRACTS = {
   },
   import: {
     usage: 'workspai workspace import <source> [--output <directory>] [--dry-run] [--json]',
-    summary: 'Import and register a portable workspace safely.',
+    summary:
+      'Verify, materialize, register, relink, and reconcile a portable workspace archive safely.',
     flags: [
       '--json',
       '--output',
-      '--force',
       '--dry-run',
       '--strict',
+      '--project-grounding',
       '--max-download-size',
       '--max-expanded-size',
       '--download-timeout-ms',
       '--allow-private-network',
     ],
     examples: ['workspai workspace import workspace.tar.gz --output ./imported --json'],
+  },
+  connect: {
+    usage:
+      'workspai workspace connect [directory] [--project-grounding <mode>] [--dry-run] [--json]',
+    summary:
+      'Register and reconcile an existing Workspai workspace in place without moving its source.',
+    flags: ['--json', '--dry-run', '--project-grounding'],
+    examples: ['workspai workspace connect /path/to/existing-workspace --json'],
   },
   run: {
     usage: 'workspai workspace run <stage> [selection and concurrency options] [--json]',

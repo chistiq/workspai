@@ -21,30 +21,30 @@ export const WORKSPACE_ARCHIVE_CLI_FLAGS = {
   maxDownloadSize: {
     signature: '--max-download-size <size>',
     description: 'Maximum remote archive download size (secure default: 5gb)',
-    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate'],
+    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate', 'import'],
   },
   maxExpandedSize: {
     signature: '--max-expanded-size <size>',
     description: 'Maximum expanded archive payload size (secure default: 20gb)',
-    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate'],
+    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate', 'import'],
   },
   downloadTimeoutMs: {
     signature: '--download-timeout-ms <ms>',
     description: 'Remote archive download timeout in milliseconds; 0 disables it',
-    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate'],
+    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate', 'import'],
   },
   allowPrivateNetwork: {
     signature: '--allow-private-network',
     description:
       'Allow archive downloads from loopback/private networks (unsafe for untrusted input)',
-    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate'],
+    appliesTo: ['inspect', 'verify', 'doctor', 'hydrate', 'import'],
   },
 } as const;
 
 export function buildWorkspaceArchiveCapabilitiesContract() {
   return {
     schemaVersion: WORKSPACE_ARCHIVE_CAPABILITIES_SCHEMA_VERSION,
-    commands: ['export', 'inspect', 'verify', 'doctor', 'hydrate'],
+    commands: ['export', 'inspect', 'verify', 'doctor', 'hydrate', 'import'],
     container: {
       writeFormat: 'zip64',
       readFormats: ['zip', 'zip64'],
@@ -57,6 +57,7 @@ export function buildWorkspaceArchiveCapabilitiesContract() {
       inspect: true,
       verify: true,
       hydrate: true,
+      import: true,
       payloadBufferedInMemory: false,
     },
     sizePolicy: {
@@ -87,6 +88,92 @@ export function buildWorkspaceArchiveCapabilitiesContract() {
   };
 }
 
+function portableWorkspaceContractSchema() {
+  const stringList = {
+    type: 'array',
+    items: { type: 'string' },
+    uniqueItems: true,
+  };
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['schemaVersion', 'kind', 'generatedAt', 'workspace', 'projects'],
+    properties: {
+      schemaVersion: { const: 1 },
+      kind: { const: 'rapidkit.workspace.contract' },
+      generatedAt: { type: 'string', format: 'date-time' },
+      workspace: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: {
+          name: { type: 'string', minLength: 1 },
+          profile: { type: 'string', minLength: 1 },
+        },
+      },
+      projects: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['slug', 'relativePath', 'modules', 'ports', 'contracts'],
+          properties: {
+            slug: { type: 'string', minLength: 1 },
+            relativePath: {
+              type: 'string',
+              minLength: 1,
+              not: { pattern: '^external/' },
+            },
+            source: { enum: ['workspace', 'local-folder', 'git-url', 'adopted-local'] },
+            relationship: { enum: ['imported', 'adopted'] },
+            runtime: { type: 'string', minLength: 1 },
+            framework: { type: 'string', minLength: 1 },
+            kit: { type: 'string', minLength: 1 },
+            modules: stringList,
+            ports: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['name', 'port', 'protocol'],
+                properties: {
+                  name: { type: 'string', minLength: 1 },
+                  port: { type: 'integer', minimum: 1, maximum: 65535 },
+                  protocol: { enum: ['http', 'https', 'grpc', 'tcp', 'udp'] },
+                },
+              },
+            },
+            contracts: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['owns', 'apis', 'publishes', 'consumes', 'dependsOn', 'env'],
+              properties: {
+                owns: stringList,
+                apis: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['name', 'basePath'],
+                    properties: {
+                      name: { type: 'string', minLength: 1 },
+                      basePath: { type: 'string', minLength: 1 },
+                    },
+                  },
+                },
+                publishes: stringList,
+                consumes: stringList,
+                dependsOn: stringList,
+                env: stringList,
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 function manifestProperties() {
   return {
     schemaVersion: { const: WORKSPACE_ARCHIVE_MANIFEST_SCHEMA_VERSION },
@@ -108,6 +195,21 @@ function manifestProperties() {
         excludedByDefault: { type: 'array', items: { type: 'string' }, uniqueItems: true },
       },
     },
+    externalProjects: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'relationship', 'included', 'requiredAction'],
+        properties: {
+          name: { type: 'string', minLength: 1 },
+          relationship: { enum: ['adopted', 'linked', 'imported', 'managed', 'restored'] },
+          included: { const: false },
+          requiredAction: { const: 'relink' },
+        },
+      },
+    },
+    portableContract: portableWorkspaceContractSchema(),
     files: {
       type: 'array',
       items: {

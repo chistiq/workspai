@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/ingestion-result.v1.json",
+  "title": "Workspai Ingestion Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "plan",
+    "writtenFiles",
+    "registered",
+    "verified",
+    "warnings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "workspai.ingestion-result.v1"
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "preview",
+        "failed"
+      ]
+    },
+    "plan": {
+      "$ref": "https://workspai.dev/contracts/ingestion-plan.v1.json"
+    },
+    "workspacePath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "projectPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "writtenFiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "registered": {
+      "type": "boolean"
+    },
+    "verified": {
+      "type": "boolean"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

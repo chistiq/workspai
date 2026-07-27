@@ -8,7 +8,11 @@ import {
 } from './imported-projects-registry.js';
 import { buildImportReadinessReport } from './utils/import-readiness.js';
 import { resolveImportModuleSupport } from './utils/import-module-support.js';
-import { inferWorkspaceProjectKind, type WorkspaceProjectKind } from './utils/project-kind.js';
+import {
+  categorizeWorkspaceProjectKind,
+  inferWorkspaceProjectKind,
+  type WorkspaceProjectKind,
+} from './utils/project-kind.js';
 import { resolveWorkspaceProjectPaths } from './utils/workspace-project-paths.js';
 import { assertSafeProjectMetadataDirectories } from './utils/project-metadata-path-safety.js';
 import {
@@ -40,6 +44,7 @@ import {
   type WorkspaceProfileCompatibilityResult,
   type WorkspaceProfilePolicyMode,
 } from './workspace-profile-compatibility.js';
+import { buildIngestionPlan, type IngestionPlan } from './contracts/ingestion-contract.js';
 
 export interface AdoptProjectOptions {
   workspacePath: string;
@@ -65,6 +70,7 @@ export interface AdoptProjectRollbackSnapshot {
 }
 
 export interface AdoptProjectResult {
+  ingestionPlan: IngestionPlan;
   name: string;
   path: string;
   relativePath: string;
@@ -226,6 +232,8 @@ function buildAdoptedProjectJson(input: {
         ? input.existingProjectJson.slug
         : input.projectName,
     kind: input.projectKind,
+    category: categorizeWorkspaceProjectKind(input.projectKind),
+    project_type: categorizeWorkspaceProjectKind(input.projectKind),
     runtime: input.detection.runtime,
     framework: input.detection.key,
     kit:
@@ -300,7 +308,9 @@ export async function adoptProjectIntoWorkspace(
     throw new Error('Adopt source cannot be the workspace root itself.');
   }
   if (hasWorkspaceRootMarkers(projectPath)) {
-    throw new Error('This is a workspace. Import it as a workspace instead.');
+    throw new Error(
+      'This path is a Workspai workspace. Use `workspai workspace connect <path>` instead.'
+    );
   }
   const rollbackSnapshot =
     options.rollbackSnapshot ??
@@ -383,6 +393,7 @@ export async function adoptProjectIntoWorkspace(
       ...(!paths.isExternal ? { discovered_relative_path: paths.relativePath } : {}),
       is_external: paths.isExternal,
       kind: projectKind,
+      category: categorizeWorkspaceProjectKind(projectKind),
       module_support: moduleSupport,
     },
     detection: {
@@ -390,6 +401,7 @@ export async function adoptProjectIntoWorkspace(
       framework_display_name: detection.displayName,
       runtime: detection.runtime,
       kind: projectKind,
+      category: categorizeWorkspaceProjectKind(projectKind),
       confidence: detection.confidence,
       support_tier: detection.supportTier,
       import_stack: detection.importStack,
@@ -471,6 +483,18 @@ export async function adoptProjectIntoWorkspace(
   }
 
   return {
+    ingestionPlan: buildIngestionPlan({
+      action: 'adopt-project',
+      resourceKind: 'project',
+      sourceKind: 'local-folder',
+      mode: 'link',
+      ownership: 'external',
+      registration: 'project',
+      source: projectPath,
+      targetWorkspace: workspacePath,
+      destination: projectPath,
+      projectGrounding: options.projectGrounding ?? 'managed',
+    }),
     name: projectName,
     path: projectPath,
     relativePath: paths.relativePath,

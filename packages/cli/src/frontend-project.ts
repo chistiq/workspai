@@ -6,13 +6,14 @@ import fsExtra from 'fs-extra';
 import { getVersion } from './update-checker.js';
 import { validateProjectName } from './validation.js';
 import {
-  buildPackageRunnerSubprocessEnv,
+  buildLatestStableGeneratorEnv,
   resolvePackageRunnerInvocation,
 } from './utils/platform-capabilities.js';
 import type { ImportedProjectRegistryEntry } from './imported-projects-registry.js';
 import type { BackendImportStack } from './utils/backend-framework-contract.js';
 import { buildCleanGitEnv, isInsideExistingGitWorktree } from './utils/git-worktree.js';
 import { projectMetadataPath } from './utils/workspace-paths.js';
+import { collectGeneratorVersionEvidence } from './utils/generator-version-evidence.js';
 
 export type FrontendGeneratorId =
   | 'nextjs'
@@ -34,6 +35,7 @@ export interface FrontendGeneratorDefinition {
   displayName: string;
   framework: string;
   defaultPort: number;
+  versionPolicy: 'latest-stable';
   minNodeMajor?: number;
   minNodeMessage?: string;
   commandDisplay: (
@@ -109,6 +111,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Next.js',
     framework: 'nextjs',
     defaultPort: 3000,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npx create-next-app@latest ${name}`,
     commandExec: (name, options) => ({
       command: 'npx',
@@ -129,6 +132,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'React Router',
     framework: 'remix',
     defaultPort: 5173,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npx create-react-router@latest ${name}`,
     commandExec: (name, options) => ({
       command: 'npx',
@@ -149,6 +153,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'React + Vite',
     framework: 'react',
     defaultPort: 5173,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npm create vite@latest ${name} -- --template react-ts`,
     commandExec: (name) => ({
       command: 'npm',
@@ -162,6 +167,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Vue + Vite',
     framework: 'vue',
     defaultPort: 5173,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npm create vite@latest ${name} -- --template vue-ts`,
     commandExec: (name) => ({
       command: 'npm',
@@ -175,6 +181,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Svelte + Vite',
     framework: 'svelte',
     defaultPort: 5173,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npm create vite@latest ${name} -- --template svelte-ts`,
     commandExec: (name) => ({
       command: 'npm',
@@ -188,6 +195,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Solid + Vite',
     framework: 'solid',
     defaultPort: 5173,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npm create vite@latest ${name} -- --template solid-ts`,
     commandExec: (name) => ({
       command: 'npm',
@@ -201,6 +209,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Vite',
     framework: 'vite',
     defaultPort: 5173,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npm create vite@latest ${name} -- --template vanilla-ts`,
     commandExec: (name) => ({
       command: 'npm',
@@ -214,6 +223,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Nuxt',
     framework: 'nuxt',
     defaultPort: 3000,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name, options) =>
       `npx create-nuxt@latest ${name} --template minimal --packageManager npm --gitInit ${
         options?.skipGit ? 'false' : 'true'
@@ -241,15 +251,16 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Angular',
     framework: 'angular',
     defaultPort: 4200,
-    minNodeMajor: 18,
+    versionPolicy: 'latest-stable',
+    minNodeMajor: 20,
     minNodeMessage:
-      'Angular scaffolding requires Node.js 18.19+ or 20.11+. Upgrade Node, or choose another frontend kit.',
-    commandDisplay: (name) => `npx @angular/cli@19 new ${name}`,
+      'The latest stable Angular CLI requires a modern Node.js runtime. Upgrade to Node.js 20.19+ (or a newer supported LTS), then retry.',
+    commandDisplay: (name) => `npx @angular/cli@latest new ${name}`,
     commandExec: (name, options) => ({
       command: 'npx',
       args: [
         '--yes',
-        '@angular/cli@19',
+        '@angular/cli@latest',
         'new',
         name,
         '--defaults',
@@ -265,12 +276,13 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'Astro',
     framework: 'astro',
     defaultPort: 4321,
-    commandDisplay: (name) => `npm create astro@4 ${name}`,
+    versionPolicy: 'latest-stable',
+    commandDisplay: (name) => `npm create astro@latest ${name}`,
     commandExec: (name, options) => ({
       command: 'npm',
       args: [
         'create',
-        'astro@4',
+        'astro@latest',
         name,
         '--',
         '--yes',
@@ -286,6 +298,7 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     displayName: 'SvelteKit',
     framework: 'sveltekit',
     defaultPort: 5173,
+    versionPolicy: 'latest-stable',
     commandDisplay: (name) => `npx sv@latest create ${name}`,
     commandExec: (name, options) => ({
       command: 'npx',
@@ -475,12 +488,14 @@ async function writeFrontendRapidkitMetadata(input: {
 }): Promise<void> {
   const generatedAt = new Date().toISOString();
   const rapidkitVersion = await getVersion();
+  const versionEvidence = await collectGeneratorVersionEvidence(input.projectPath, 'latest');
   const projectJson = {
     schema_version: '1.0',
     name: input.projectName,
     slug: input.projectName,
     kind: 'frontend',
     project_type: 'frontend',
+    category: 'frontend',
     runtime: 'node',
     framework: input.definition.framework,
     framework_display_name: input.definition.displayName,
@@ -497,6 +512,8 @@ async function writeFrontendRapidkitMetadata(input: {
     frontend: {
       generator: input.definition.id,
       official_generator: true,
+      version_policy: input.definition.versionPolicy,
+      version_evidence: versionEvidence,
       default_port: input.definition.defaultPort,
       command_display: input.commandDisplay,
       command_exec: input.commandExec,
@@ -517,6 +534,7 @@ async function writeFrontendRapidkitMetadata(input: {
     runtime: 'node',
     framework: input.definition.framework,
     kind: 'frontend',
+    category: 'frontend',
     source: 'official-generator',
   };
   const evidenceJson = {
@@ -527,6 +545,7 @@ async function writeFrontendRapidkitMetadata(input: {
       name: input.projectName,
       path: input.projectPath,
       kind: 'frontend',
+      category: 'frontend',
       runtime: 'node',
       framework: input.definition.framework,
       framework_display_name: input.definition.displayName,
@@ -534,6 +553,8 @@ async function writeFrontendRapidkitMetadata(input: {
     },
     generator: {
       id: input.definition.id,
+      version_policy: input.definition.versionPolicy,
+      version_evidence: versionEvidence,
       command_display: input.commandDisplay,
       command_exec: input.commandExec,
     },
@@ -642,8 +663,8 @@ async function runCommand(command: string, args: string[], cwd: string): Promise
       shell: false,
       env:
         command === 'git'
-          ? buildCleanGitEnv(buildPackageRunnerSubprocessEnv())
-          : buildPackageRunnerSubprocessEnv(),
+          ? buildCleanGitEnv(buildLatestStableGeneratorEnv())
+          : buildLatestStableGeneratorEnv(),
     });
     child.on('close', (code) => resolve(code ?? 1));
     child.on('error', () => resolve(1));

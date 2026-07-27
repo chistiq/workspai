@@ -823,6 +823,14 @@
       ]
     },
     {
+      "invocation": "workspace connect",
+      "summary": "Register and reconcile an existing workspace in place.",
+      "canonicalArgv": [
+        "workspace",
+        "connect"
+      ]
+    },
+    {
       "invocation": "workspace context",
       "summary": "Build a scoped workspace context projection from the current model and evidence for human or agent consumption.",
       "canonicalArgv": [
@@ -1146,7 +1154,7 @@
     },
     {
       "invocation": "workspace import",
-      "summary": "Attach an existing project or repository to the workspace inventory.",
+      "summary": "Import and register a verified portable workspace archive.",
       "canonicalArgv": [
         "workspace",
         "import"
@@ -1935,6 +1943,7 @@
     "archive",
     "hydrate",
     "import",
+    "connect",
     "run",
     "init"
   ],
@@ -2922,7 +2931,7 @@
     {
       "id": "import",
       "usage": "workspai workspace import <source> [--output <directory>] [--dry-run] [--json]",
-      "summary": "Import and register a portable workspace safely.",
+      "summary": "Verify, materialize, register, relink, and reconcile a portable workspace archive safely.",
       "options": [
         {
           "flag": "--json",
@@ -2933,16 +2942,16 @@
           "description": "Write the requested export or report to this path."
         },
         {
-          "flag": "--force",
-          "description": "Replace an existing generated target where supported."
-        },
-        {
           "flag": "--dry-run",
           "description": "Preview the operation without applying writes."
         },
         {
           "flag": "--strict",
           "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--project-grounding",
+          "description": "Select the project entrypoint policy: managed, local, or off."
         },
         {
           "flag": "--max-download-size",
@@ -2965,6 +2974,30 @@
       "artifact": null,
       "examples": [
         "workspai workspace import workspace.tar.gz --output ./imported --json"
+      ]
+    },
+    {
+      "id": "connect",
+      "usage": "workspai workspace connect [directory] [--project-grounding <mode>] [--dry-run] [--json]",
+      "summary": "Register and reconcile an existing Workspai workspace in place without moving its source.",
+      "options": [
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--dry-run",
+          "description": "Preview the operation without applying writes."
+        },
+        {
+          "flag": "--project-grounding",
+          "description": "Select the project entrypoint policy: managed, local, or off."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace connect /path/to/existing-workspace --json"
       ]
     },
     {
@@ -3367,6 +3400,7 @@
     "gogin.standard",
     "springboot.standard",
     "dotnet.webapi.clean",
+    "rust.axum",
     "frontend.nextjs",
     "frontend.remix",
     "frontend.vite-react",
@@ -3401,7 +3435,8 @@
       "springboot.standard",
       "gofiber.standard",
       "gogin.standard",
-      "dotnet.webapi.clean"
+      "dotnet.webapi.clean",
+      "rust.axum"
     ],
     "officialCreate": [
       "frontend.nextjs",
@@ -3415,9 +3450,12 @@
       "frontend.angular",
       "frontend.astro",
       "frontend.sveltekit",
+      "desktop.tauri",
+      "desktop.electron",
+      "extension.vscode",
+      "php.laravel",
       "wordpress-site",
       "wordpress-block",
-      "laravel",
       "symfony",
       "rails"
     ],
@@ -3518,12 +3556,19 @@
       ]
     },
     "php": {
-      "tier": "observed",
-      "scaffold": false,
+      "tier": "extended",
+      "scaffold": true,
       "import": true,
       "moduleCommands": false,
-      "doctor": "observed",
+      "doctor": "readiness",
       "lifecycleCommands": [
+        "init",
+        "dev",
+        "start",
+        "build",
+        "test",
+        "lint",
+        "format",
         "help"
       ]
     },
@@ -3538,12 +3583,19 @@
       ]
     },
     "rust": {
-      "tier": "observed",
-      "scaffold": false,
+      "tier": "extended",
+      "scaffold": true,
       "import": true,
       "moduleCommands": false,
-      "doctor": "observed",
+      "doctor": "readiness",
       "lifecycleCommands": [
+        "init",
+        "dev",
+        "start",
+        "build",
+        "test",
+        "lint",
+        "format",
         "help"
       ]
     },

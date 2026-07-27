@@ -33,7 +33,8 @@ export type DoctorSurfaceRuntimeFamily =
   | 'cpp'
   | 'unknown';
 
-export type DoctorSurfaceProjectKind = 'backend' | 'frontend' | 'fullstack' | 'generic';
+export type DoctorSurfaceProjectKind =
+  'backend' | 'frontend' | 'desktop' | 'extension' | 'fullstack' | 'generic';
 
 export interface DoctorSurfaceProbe {
   id: string;
@@ -1049,7 +1050,7 @@ async function buildContainerProbe(input: SurfaceInput): Promise<DoctorSurfacePr
     recommendation:
       input.projectKind === 'backend' || input.projectKind === 'fullstack'
         ? 'Add Dockerfile or compose baseline when this service is expected to run in containerized environments.'
-        : 'Add container baseline only if this app is shipped through containerized environments.',
+        : 'Add a container baseline only when this project is shipped through containerized environments.',
   };
 }
 
@@ -1100,7 +1101,7 @@ async function buildKubernetesProbe(input: SurfaceInput): Promise<DoctorSurfaceP
         ? undefined
         : input.projectKind === 'backend' || input.projectKind === 'fullstack'
           ? 'Add deployment manifests or document the non-Kubernetes deployment path.'
-          : 'Document the deployment path when this frontend is production-hosted.',
+          : 'Document the distribution or deployment path when this project is production-hosted.',
     };
   }
 

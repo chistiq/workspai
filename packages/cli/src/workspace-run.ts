@@ -653,7 +653,9 @@ function isWrapperOwnedRuntime(runtime: RuntimeFamily): boolean {
     runtime === 'go' ||
     runtime === 'java' ||
     runtime === 'python' ||
-    runtime === 'dotnet'
+    runtime === 'dotnet' ||
+    runtime === 'rust' ||
+    runtime === 'php'
   );
 }
 

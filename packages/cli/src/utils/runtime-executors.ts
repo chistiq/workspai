@@ -3,7 +3,15 @@ import type { RuntimeCommand } from './runtime-adapters.js';
 import { getRuntimeSupport } from './support-matrix.js';
 
 /** Runtimes with npm-owned execution adapters in `src/runtime-adapters/`. */
-export const NPM_EXECUTOR_RUNTIMES = ['python', 'node', 'go', 'java', 'dotnet'] as const;
+export const NPM_EXECUTOR_RUNTIMES = [
+  'python',
+  'node',
+  'go',
+  'java',
+  'dotnet',
+  'rust',
+  'php',
+] as const;
 
 export type NpmExecutorRuntime = (typeof NPM_EXECUTOR_RUNTIMES)[number];
 

@@ -5,7 +5,8 @@
     "inspect",
     "verify",
     "doctor",
-    "hydrate"
+    "hydrate",
+    "import"
   ],
   "container": {
     "writeFormat": "zip64",
@@ -25,6 +26,7 @@
     "inspect": true,
     "verify": true,
     "hydrate": true,
+    "import": true,
     "payloadBufferedInMemory": false
   },
   "sizePolicy": {
@@ -54,7 +56,8 @@
         "inspect",
         "verify",
         "doctor",
-        "hydrate"
+        "hydrate",
+        "import"
       ]
     },
     "maxExpandedSize": {
@@ -64,7 +67,8 @@
         "inspect",
         "verify",
         "doctor",
-        "hydrate"
+        "hydrate",
+        "import"
       ]
     },
     "downloadTimeoutMs": {
@@ -74,7 +78,8 @@
         "inspect",
         "verify",
         "doctor",
-        "hydrate"
+        "hydrate",
+        "import"
       ]
     },
     "allowPrivateNetwork": {
@@ -84,7 +89,8 @@
         "inspect",
         "verify",
         "doctor",
-        "hydrate"
+        "hydrate",
+        "import"
       ]
     }
   },

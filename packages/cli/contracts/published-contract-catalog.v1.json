@@ -41,6 +41,16 @@
       "contractPath": "contracts/workspace-archive-operation-result.v1.json",
       "publication": "json-schema"
     },
+    "ingestionPlan": {
+      "schemaVersion": "workspai.ingestion-plan.v1",
+      "contractPath": "contracts/ingestion-plan.v1.json",
+      "publication": "json-schema"
+    },
+    "ingestionResult": {
+      "schemaVersion": "workspai.ingestion-result.v1",
+      "contractPath": "contracts/ingestion-result.v1.json",
+      "publication": "json-schema"
+    },
     "projectEntryCapability": {
       "schemaVersion": "workspai-project-entry-capability-v1",
       "contractPath": "contracts/project-entry-capability.v1.json",

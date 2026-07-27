@@ -18,9 +18,9 @@ It separates three concerns:
 | Go                  | extended    |      yes |    yes | init, dev, start, build, test, lint, format, help |              no | readiness |
 | Java / Spring Boot  | extended    |      yes |    yes | init, dev, start, build, test, lint, format, help |              no | readiness |
 | .NET / ASP.NET Core | extended    |      yes |    yes | init, dev, start, build, test, lint, format, help |              no | readiness |
-| PHP                 | observed    |       no |    yes | help                                              |              no | observed  |
+| PHP                 | extended    |      yes |    yes | init, dev, start, build, test, lint, format, help |              no | readiness |
 | Ruby                | observed    |       no |    yes | help                                              |              no | observed  |
-| Rust                | observed    |       no |    yes | help                                              |              no | observed  |
+| Rust                | extended    |      yes |    yes | init, dev, start, build, test, lint, format, help |              no | readiness |
 | Elixir              | observed    |       no |    yes | help                                              |              no | observed  |
 | Clojure             | observed    |       no |    yes | help                                              |              no | observed  |
 | Scala               | observed    |       no |    yes | help                                              |              no | observed  |
@@ -40,7 +40,7 @@ It separates three concerns:
 | Tier        | Frameworks                                                                                                                                                                                                                          |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | first-class | FastAPI, NestJS                                                                                                                                                                                                                     |
-| extended    | Go/Fiber, Go/Gin, Spring Boot, ASP.NET Core, Django, Flask, Express, Fastify, Koa, Echo, Laravel, Symfony, Rails, Sinatra, Actix, Axum, Rocket, Phoenix, Next.js, Remix, React, Vue, Svelte, Solid, Nuxt, Angular, Astro, SvelteKit |
+| extended    | Go/Fiber, Go/Gin, Spring Boot, ASP.NET Core, Django, Flask, Express, Fastify, Koa, Echo, Laravel, Symfony, Rails, Sinatra, Actix, Axum, Rocket, Phoenix, Next.js, Remix, React, Vue, Svelte, Solid, Nuxt, Angular, Astro, SvelteKit, Tauri, Electron, VS Code Extension |
 | observed    | Python, Node.js, Go, Java, PHP, Ruby, Rust, Elixir, Unknown/generic projects                                                                                                                                                        |
 
 ## Import Policy

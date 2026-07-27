@@ -452,13 +452,17 @@ describe.sequential('in-process workspace Commander coverage', () => {
   }, 60_000);
 
   it('executes top-level dry-run and workspace creation callbacks', async () => {
+    const workspaceOutput = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-index-workspace-create-')
+    );
+    temporaryDirectories.push(workspaceOutput);
     await runTopLevelCommand([
       'coverage-dry-run',
       '--dry-run',
       '--yes',
       '--no-update-check',
       '--output',
-      root,
+      workspaceOutput,
     ]);
     await runTopLevelCommand([
       'legacy-workspace-coverage',
@@ -467,7 +471,7 @@ describe.sequential('in-process workspace Commander coverage', () => {
       '--skip-python-engine',
       '--no-update-check',
       '--output',
-      root,
+      workspaceOutput,
     ]);
   }, 30_000);
 
@@ -725,6 +729,16 @@ describe.sequential('in-process workspace Commander coverage', () => {
     expect(await inferRuntimeByFiles(runtimeRoot)).toBe('java');
     await fs.writeFile(path.join(runtimeRoot, 'go.mod'), 'module example.com/test\n');
     expect(await inferRuntimeByFiles(runtimeRoot)).toBe('go');
+    await Promise.all(
+      ['go.mod', 'pom.xml', 'example.sln', 'package.json', 'requirements.txt'].map((fileName) =>
+        fs.rm(path.join(runtimeRoot, fileName), { force: true })
+      )
+    );
+    await fs.writeFile(path.join(runtimeRoot, 'Cargo.toml'), '[package]\nname = "sample"\n');
+    expect(await inferRuntimeByFiles(runtimeRoot)).toBe('rust');
+    await fs.rm(path.join(runtimeRoot, 'Cargo.toml'), { force: true });
+    await fs.writeFile(path.join(runtimeRoot, 'composer.json'), '{}\n');
+    expect(await inferRuntimeByFiles(runtimeRoot)).toBe('php');
   });
 
   it('executes Python venv and pip fallback orchestration against deterministic tool shims', async () => {

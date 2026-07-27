@@ -34,7 +34,7 @@ const repoRootCandidates = [root, path.resolve(root, '..', '..')];
 
 const requiredSnippets = [
   'workspai doctor workspace',
-  'workspai setup <python|node|go|java|dotnet> [--warm-deps]',
+  'workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]',
   'workspai workspace list',
   'workspai cache <status|clear|prune|repair>',
   'workspai mirror <status|sync|verify|rotate>',

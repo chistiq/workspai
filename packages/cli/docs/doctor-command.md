@@ -567,7 +567,7 @@ Legacy evidence without `schemaVersion` is still accepted. Unknown versions are 
 
 ```bash
 npx workspai bootstrap [--profile <profile>]
-npx workspai setup <python|node|go|java|dotnet> [--warm-deps]
+npx workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]
 npx workspai workspace list
 npx workspai cache <status|clear|prune|repair>
 npx workspai mirror <status|sync|verify|rotate>

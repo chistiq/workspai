@@ -4,6 +4,8 @@ import { GoRuntimeAdapter } from './go.js';
 import { JavaRuntimeAdapter } from './java.js';
 import { NodeRuntimeAdapter } from './node.js';
 import { PythonRuntimeAdapter } from './python.js';
+import { PhpRuntimeAdapter } from './php.js';
+import { RustRuntimeAdapter } from './rust.js';
 import path from 'path';
 import { getDefaultPythonCommand } from '../utils/platform-capabilities.js';
 
@@ -62,6 +64,14 @@ export function getRuntimeAdapter(runtime: RuntimeName, deps: AdapterDeps): Runt
     return new DotnetRuntimeAdapter((command, args, cwd) =>
       deps.runCommandInCwd(command, args, cwd)
     );
+  }
+
+  if (runtime === 'rust') {
+    return new RustRuntimeAdapter((command, args, cwd) => deps.runCommandInCwd(command, args, cwd));
+  }
+
+  if (runtime === 'php') {
+    return new PhpRuntimeAdapter((command, args, cwd) => deps.runCommandInCwd(command, args, cwd));
   }
 
   return new PythonRuntimeAdapter((args, cwd) =>

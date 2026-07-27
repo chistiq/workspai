@@ -69,6 +69,9 @@ export type BackendPlatformKey =
   | 'kotlin'
   | 'deno'
   | 'bun'
+  | 'tauri'
+  | 'electron'
+  | 'vscode-extension'
   | 'c'
   | 'cpp'
   | 'unknown';
@@ -475,6 +478,33 @@ const BACKEND_CONTRACTS: Record<BackendPlatformKey, BackendContractDescriptor> =
     importStack: 'unknown',
     aliases: ['bun'],
   },
+  tauri: {
+    key: 'tauri',
+    runtime: 'node',
+    displayName: 'Tauri',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['tauri', 'tauri-app'],
+    kitPrefixes: ['desktop.tauri'],
+  },
+  electron: {
+    key: 'electron',
+    runtime: 'node',
+    displayName: 'Electron',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['electron', 'electron-forge'],
+    kitPrefixes: ['desktop.electron'],
+  },
+  'vscode-extension': {
+    key: 'vscode-extension',
+    runtime: 'node',
+    displayName: 'VS Code Extension',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['vscode-extension', 'visual-studio-code-extension'],
+    kitPrefixes: ['extension.vscode'],
+  },
   c: {
     key: 'c',
     runtime: 'c',
@@ -698,6 +728,46 @@ function detectNodeBackendFromProject(projectPath: string): BackendFrameworkDete
   return buildDetection('node', 'medium', 'marker');
 }
 
+function detectNodeApplicationFromProject(projectPath: string): BackendFrameworkDetection {
+  const packageJson = readJsonIfExists(path.join(projectPath, 'package.json'));
+  if (!packageJson) {
+    return buildDetection('unknown', 'low', 'unknown');
+  }
+  const dependencies = {
+    ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
+  };
+  const engines = (packageJson.engines as Record<string, unknown> | undefined) ?? {};
+  const scripts = (packageJson.scripts as Record<string, unknown> | undefined) ?? {};
+  const scriptText = Object.values(scripts)
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase();
+
+  if (
+    dependencies['@tauri-apps/api'] ||
+    dependencies['@tauri-apps/cli'] ||
+    fs.existsSync(path.join(projectPath, 'src-tauri', 'Cargo.toml'))
+  ) {
+    return buildDetection('tauri', 'high', 'manifest');
+  }
+  if (
+    dependencies.electron ||
+    dependencies['@electron-forge/cli'] ||
+    scriptText.includes('electron-forge') ||
+    scriptText.includes('electron ')
+  ) {
+    return buildDetection('electron', 'high', 'manifest');
+  }
+  if (
+    typeof engines.vscode === 'string' &&
+    (packageJson.activationEvents !== undefined || packageJson.contributes !== undefined)
+  ) {
+    return buildDetection('vscode-extension', 'high', 'manifest');
+  }
+  return buildDetection('unknown', 'low', 'unknown');
+}
+
 function detectPythonBackendFromProject(projectPath: string): BackendFrameworkDetection {
   const merged = [
     readTextIfExists(path.join(projectPath, 'pyproject.toml')),
@@ -851,7 +921,12 @@ export function detectRuntimeCandidatesFromProject(projectPath: string): Backend
   };
 
   if (fs.existsSync(path.join(projectPath, 'go.mod'))) push('go');
-  if (fs.existsSync(path.join(projectPath, 'Cargo.toml'))) push('rust');
+  if (
+    fs.existsSync(path.join(projectPath, 'Cargo.toml')) ||
+    fs.existsSync(path.join(projectPath, 'src-tauri', 'Cargo.toml'))
+  ) {
+    push('rust');
+  }
   if (
     fs.existsSync(path.join(projectPath, 'pom.xml')) ||
     fs.existsSync(path.join(projectPath, 'build.gradle')) ||
@@ -944,6 +1019,10 @@ export function detectBackendFrameworkFromProject(
 
   const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
   if (runtimeCandidates.includes('node')) {
+    const applicationDetection = detectNodeApplicationFromProject(projectPath);
+    if (applicationDetection.key !== 'unknown') {
+      return applicationDetection;
+    }
     const frontendDetection = detectFrontendFrameworkFromProject(projectPath, projectJsonData);
     if (frontendDetection.key !== 'unknown') {
       return frontendDetection;
