@@ -14,6 +14,7 @@ import {
 import { exportWorkspaceArchive } from '../utils/workspace-archive.js';
 import { connectWorkspace, importWorkspaceArchive } from '../workspace-ingestion.js';
 import { registerProjectInWorkspaceStrict, registerWorkspaceStrict } from '../workspace.js';
+import { normalizeRegistryPath } from '../utils/registry-path.js';
 
 const cleanup: string[] = [];
 
@@ -309,7 +310,9 @@ describe('canonical ingestion contract', () => {
         path.join(isolatedHome, '.workspai', 'workspaces.json')
       );
       expect(registry.workspaces).toEqual(
-        expect.arrayContaining([expect.objectContaining({ path: destination })])
+        expect.arrayContaining([
+          expect.objectContaining({ path: normalizeRegistryPath(destination) }),
+        ])
       );
     } finally {
       if (previousHome === undefined) delete process.env.HOME;

@@ -169,12 +169,13 @@ const NPX_PARENT_PACKAGE_ENV_KEYS = ['npm_config_package', 'npm_config__package'
  */
 export function buildPackageRunnerSubprocessEnv(
   baseEnv: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  nodeExecPath: string = process.execPath
 ): NodeJS.ProcessEnv {
   const rapidkitCorepackHome = path.join(os.tmpdir(), 'rapidkit-corepack');
   const env: NodeJS.ProcessEnv = {
     ...baseEnv,
-    PATH: augmentPathWithNodeBin(baseEnv.PATH, platform),
+    PATH: augmentPathWithNodeBin(baseEnv.PATH, platform, nodeExecPath),
     COREPACK_HOME: baseEnv.COREPACK_HOME ?? rapidkitCorepackHome,
   };
   for (const key of NPX_PARENT_PACKAGE_ENV_KEYS) {
@@ -191,10 +192,11 @@ export function buildPackageRunnerSubprocessEnv(
  */
 export function buildLatestStableGeneratorEnv(
   baseEnv: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  nodeExecPath: string = process.execPath
 ): NodeJS.ProcessEnv {
   return {
-    ...buildPackageRunnerSubprocessEnv(baseEnv, platform),
+    ...buildPackageRunnerSubprocessEnv(baseEnv, platform, nodeExecPath),
     npm_config_engine_strict: 'true',
   };
 }

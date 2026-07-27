@@ -20,6 +20,7 @@ import {
 } from '../project-intelligence-lens.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
 import type { WorkspaceModel } from '../workspace-model.js';
+import { normalizeRegistryPath } from '../utils/registry-path.js';
 
 const cleanup: string[] = [];
 
@@ -153,7 +154,7 @@ describe('project workspace binding', () => {
       strict: true,
     });
     expect(resolution).toMatchObject({
-      workspacePath,
+      workspacePath: normalizeRegistryPath(workspacePath),
       projectPath,
       source: 'registry',
     });

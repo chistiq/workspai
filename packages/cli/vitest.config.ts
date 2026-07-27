@@ -5,6 +5,14 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['src/__tests__/setup.ts'],
+    // Full workspace operations perform real filesystem transactions and are
+    // intentionally exercised under coverage on all three CI platforms.
+    // Five seconds is below normal Windows/macOS runner variance and can leave
+    // an in-flight transaction racing teardown. Keep a bounded, platform-safe
+    // budget while individual long-running scenarios retain explicit limits.
+    testTimeout: 30_000,
+    hookTimeout: 60_000,
+    teardownTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

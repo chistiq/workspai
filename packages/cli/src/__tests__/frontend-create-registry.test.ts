@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import { rm } from 'node:fs/promises';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,9 +40,14 @@ describe('frontend create registry', () => {
       process.env.USERPROFILE = originalUserProfile;
     }
     process.chdir('/');
-    await fs.remove(fakeHome);
-    await fs.remove(cwdOutsideWorkspace);
-  });
+    await rm(fakeHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await rm(cwdOutsideWorkspace, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  }, 30_000);
 
   it('links orphan frontend projects to the managed default workspace registry', async () => {
     const definition = resolveFrontendGenerator('nextjs');

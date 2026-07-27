@@ -4550,7 +4550,10 @@ export async function handleBootstrapCommand(
   }
 }
 
-export async function handleSetupCommand(args: string[]): Promise<number> {
+export async function handleSetupCommand(
+  args: string[],
+  commandRunner: typeof runCommandInCwd = runCommandInCwd
+): Promise<number> {
   if (args.includes('--help') || args.includes('-h')) {
     console.log(
       chalk.yellow('Usage: workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]')
@@ -4600,7 +4603,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
 
       if (hasPnpmLock) {
         return {
-          exitCode: await runCommandInCwd(
+          exitCode: await commandRunner(
             'pnpm',
             ['install', '--lockfile-only', '--ignore-scripts'],
             targetPath
@@ -4609,12 +4612,12 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
       }
       if (hasYarnLock) {
         return {
-          exitCode: await runCommandInCwd('yarn', ['install', '--ignore-scripts'], targetPath),
+          exitCode: await commandRunner('yarn', ['install', '--ignore-scripts'], targetPath),
         };
       }
 
       return {
-        exitCode: await runCommandInCwd(
+        exitCode: await commandRunner(
           'npm',
           ['install', '--package-lock-only', '--ignore-scripts'],
           targetPath
@@ -4632,7 +4635,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
       }
 
       return {
-        exitCode: await runCommandInCwd('go', ['mod', 'download'], targetPath),
+        exitCode: await commandRunner('go', ['mod', 'download'], targetPath),
       };
     }
 
@@ -4655,7 +4658,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
 
       if (hasPomXml) {
         return {
-          exitCode: await runCommandInCwd(
+          exitCode: await commandRunner(
             'mvn',
             ['-B', '-q', '-DskipTests', 'dependency:go-offline'],
             targetPath
@@ -4665,7 +4668,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
 
       const gradleCommand = hasGradleWrapper ? gradlew : 'gradle';
       return {
-        exitCode: await runCommandInCwd(gradleCommand, ['--no-daemon', 'dependencies'], targetPath),
+        exitCode: await commandRunner(gradleCommand, ['--no-daemon', 'dependencies'], targetPath),
       };
     }
 
@@ -4704,7 +4707,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
       }
 
       return {
-        exitCode: await runCommandInCwd('dotnet', ['restore'], targetPath),
+        exitCode: await commandRunner('dotnet', ['restore'], targetPath),
       };
     }
 
@@ -4715,7 +4718,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
           message: 'Rust warm-up skipped: Cargo.toml not found in current directory.',
         };
       }
-      return { exitCode: await runCommandInCwd('cargo', ['fetch'], targetPath) };
+      return { exitCode: await commandRunner('cargo', ['fetch'], targetPath) };
     }
 
     if (targetRuntime === 'php') {
@@ -4726,7 +4729,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
         };
       }
       return {
-        exitCode: await runCommandInCwd(
+        exitCode: await commandRunner(
           'composer',
           ['install', '--no-interaction', '--no-scripts'],
           targetPath
@@ -4750,7 +4753,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
       const adapter = getRuntimeAdapter(
         runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php',
         {
-          runCommandInCwd,
+          runCommandInCwd: commandRunner,
           runCoreRapidkit: async (adapterArgs, opts) => {
             const result = await runCoreRapidkitCapture(adapterArgs, { ...opts, cwd: undefined });
             return result.exitCode;
@@ -4860,7 +4863,7 @@ export async function handleSetupCommand(args: string[]): Promise<number> {
   const adapter = getRuntimeAdapter(
     runtime as 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php',
     {
-      runCommandInCwd,
+      runCommandInCwd: commandRunner,
       runCoreRapidkit: (adapterArgs, opts) =>
         runCoreRapidkit(adapterArgs, { ...opts, cwd: undefined }),
     }

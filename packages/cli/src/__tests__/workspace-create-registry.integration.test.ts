@@ -61,7 +61,12 @@ afterEach(async () => {
   while (createdPaths.length > 0) {
     const target = createdPaths.pop();
     if (target) {
-      await fsExtra.remove(target);
+      await fs.rm(target, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
     }
   }
 });
@@ -182,7 +187,7 @@ describe('workspace create registry integration', () => {
       )
     ).toBe(true);
     expect(await fsExtra.pathExists(path.join(projectPath, 'AGENTS.md'))).toBe(true);
-  });
+  }, 60_000);
 
   it('registers nested workspace even when parent directory is already in the registry', async () => {
     const homePath = await makeTempDir('rapidkit-registry-home-');

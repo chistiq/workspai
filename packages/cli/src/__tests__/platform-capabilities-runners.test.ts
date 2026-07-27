@@ -166,16 +166,18 @@ describe('platform-capabilities package runners', () => {
   });
 
   it('enforces upstream Node engine compatibility for latest-stable generators', () => {
+    const nodeExecPath = '/opt/node/bin/node';
     const env = buildLatestStableGeneratorEnv(
       {
         PATH: '/usr/bin',
         npm_config_package: 'file:/tmp/workspai',
       },
-      'linux'
+      'linux',
+      nodeExecPath
     );
 
     expect(env.npm_config_engine_strict).toBe('true');
     expect(env.npm_config_package).toBeUndefined();
-    expect(env.PATH).toContain(path.dirname(process.execPath));
+    expect(env.PATH?.split(':')).toContain(path.posix.dirname(nodeExecPath));
   });
 });

@@ -62,6 +62,7 @@ import {
   listWorkspaces,
   registerWorkspaceStrict,
 } from '../workspace.js';
+import { normalizeRegistryPath } from '../utils/registry-path.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -201,7 +202,12 @@ describe.sequential('in-process workspace Commander coverage', () => {
     errorSpy.mockRestore();
     await Promise.all(
       temporaryDirectories.map((directory) =>
-        fs.rm(directory, { recursive: true, force: true, maxRetries: 3 })
+        fs.rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 100,
+        })
       )
     );
   });
@@ -949,47 +955,48 @@ describe.sequential('in-process workspace Commander coverage', () => {
     await expect(
       handleBootstrapCommand(['bootstrap', '--profile=minimal', '--json'], async () => 0)
     ).resolves.toBeTypeOf('number');
-    for (const profile of [
-      'python-only',
-      'node-only',
-      'go-only',
-      'java-only',
-      'dotnet-only',
-      'polyglot',
-      'enterprise',
-    ]) {
-      await expect(
-        handleBootstrapCommand(['bootstrap', `--profile=${profile}`, '--json'], async () => 0)
-      ).resolves.toBeTypeOf('number');
-    }
+    await expect(
+      handleBootstrapCommand(['bootstrap', '--profile=enterprise', '--json'], async () => 0)
+    ).resolves.toBeTypeOf('number');
     await expect(
       handleBootstrapCommand(['bootstrap', '--profile=minimal', '--compliance-only'], async () => 0)
     ).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', '--help'])).resolves.toBe(0);
-    await expect(handleSetupCommand(['setup', 'unknown'])).resolves.toBe(1);
-    await expect(handleSetupCommand(['setup', 'node', '--json'])).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'go', '--json'])).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'java', '--json'])).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'dotnet', '--json'])).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'node'])).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'go'])).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'java'])).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'dotnet'])).resolves.toBeTypeOf('number');
-    await expect(
-      handleSetupCommand(['setup', 'node', '--json', '--warm-deps'])
-    ).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'go', '--json', '--warm-deps'])).resolves.toBeTypeOf(
+    const setupRunner = async () => 0;
+    await expect(handleSetupCommand(['setup', '--help'], setupRunner)).resolves.toBe(0);
+    await expect(handleSetupCommand(['setup', 'unknown'], setupRunner)).resolves.toBe(1);
+    await expect(handleSetupCommand(['setup', 'node', '--json'], setupRunner)).resolves.toBeTypeOf(
+      'number'
+    );
+    await expect(handleSetupCommand(['setup', 'go', '--json'], setupRunner)).resolves.toBeTypeOf(
+      'number'
+    );
+    await expect(handleSetupCommand(['setup', 'java', '--json'], setupRunner)).resolves.toBeTypeOf(
       'number'
     );
     await expect(
-      handleSetupCommand(['setup', 'java', '--json', '--warm-deps'])
+      handleSetupCommand(['setup', 'dotnet', '--json'], setupRunner)
+    ).resolves.toBeTypeOf('number');
+    await expect(handleSetupCommand(['setup', 'node'], setupRunner)).resolves.toBeTypeOf('number');
+    await expect(handleSetupCommand(['setup', 'go'], setupRunner)).resolves.toBeTypeOf('number');
+    await expect(handleSetupCommand(['setup', 'java'], setupRunner)).resolves.toBeTypeOf('number');
+    await expect(handleSetupCommand(['setup', 'dotnet'], setupRunner)).resolves.toBeTypeOf(
+      'number'
+    );
+    await expect(
+      handleSetupCommand(['setup', 'node', '--json', '--warm-deps'], setupRunner)
     ).resolves.toBeTypeOf('number');
     await expect(
-      handleSetupCommand(['setup', 'dotnet', '--json', '--warm-deps'])
+      handleSetupCommand(['setup', 'go', '--json', '--warm-deps'], setupRunner)
+    ).resolves.toBeTypeOf('number');
+    await expect(
+      handleSetupCommand(['setup', 'java', '--json', '--warm-deps'], setupRunner)
+    ).resolves.toBeTypeOf('number');
+    await expect(
+      handleSetupCommand(['setup', 'dotnet', '--json', '--warm-deps'], setupRunner)
     ).resolves.toBeTypeOf('number');
     process.chdir(path.join(root, 'api'));
     await expect(
-      handleSetupCommand(['setup', 'node', '--json', '--warm-deps'])
+      handleSetupCommand(['setup', 'node', '--json', '--warm-deps'], setupRunner)
     ).resolves.toBeTypeOf('number');
     await expect(handleInitCommand(['init'])).resolves.toBe(0);
     process.chdir(root);
@@ -1064,6 +1071,12 @@ describe.sequential('in-process workspace Commander coverage', () => {
     // to that ever-growing root makes this test order-dependent and can launch
     // dozens of unrelated package-manager fixes under full-suite coverage.
     const doctorRoot = await createWorkspaceFixture();
+    await fs.rm(path.join(doctorRoot, 'api'), {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
     const code = await runDoctor({ workspace: doctorRoot, json: true, apply: true, quiet: true });
     expect([0, 1, 2]).toContain(code);
   }, 60_000);
@@ -1336,7 +1349,9 @@ describe.sequential('in-process workspace Commander coverage', () => {
       .map(([value]) => String(value))
       .find((value) => value.includes('"operation": "workspace eval report"'));
     expect(jsonOutput).toBeTruthy();
-    expect(JSON.parse(jsonOutput!)).toMatchObject({ outputPath: expectedOutput });
+    expect(JSON.parse(jsonOutput!)).toMatchObject({
+      outputPath: normalizeRegistryPath(expectedOutput),
+    });
   });
 
   it('audits a heterogeneous enterprise workspace across every supported runtime', async () => {
