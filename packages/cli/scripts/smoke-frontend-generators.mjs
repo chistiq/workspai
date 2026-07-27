@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -22,19 +22,14 @@ const generatorIds = [
   'sveltekit',
 ];
 
-const dryRunCommandTokens = {
-  nextjs: ['create-next-app@latest'],
-  remix: ['create-react-router@latest'],
-  'vite-react': ['react-ts'],
-  'vite-vue': ['vue-ts'],
-  'vite-svelte': ['svelte-ts'],
-  'vite-solid': ['solid-ts'],
-  'vite-vanilla': ['vanilla-ts'],
-  nuxt: ['create-nuxt@latest'],
-  angular: ['@angular/cli@19'],
-  astro: ['create astro@4'],
-  sveltekit: ['sv@latest'],
-};
+const createPlannerContract = JSON.parse(
+  readFileSync(path.join(repoRoot, 'contracts', 'create-planner-capabilities.v1.json'), 'utf8')
+);
+const officialFrontendByGenerator = new Map(
+  (createPlannerContract.officialCreate ?? [])
+    .filter((entry) => entry.id.startsWith('frontend.'))
+    .map((entry) => [entry.id.slice('frontend.'.length), entry])
+);
 
 const args = process.argv.slice(2);
 const execute =
@@ -61,6 +56,31 @@ function readListOption(name) {
 function fail(message) {
   console.error(`[frontend-generator-smoke] ${message}`);
   process.exit(1);
+}
+
+function expectedDryRunTokens(generator) {
+  const contractEntry = officialFrontendByGenerator.get(generator);
+  if (!contractEntry) {
+    fail(`missing create-planner contract entry for frontend.${generator}`);
+  }
+  if (contractEntry.versionPolicy !== 'latest-stable') {
+    fail(
+      `frontend.${generator} must use latest-stable, received ${contractEntry.versionPolicy ?? 'none'}`
+    );
+  }
+
+  const commandText = (contractEntry.officialCommands ?? []).join(' ');
+  const packageTokens = [...commandText.matchAll(/(?:@[\w.-]+\/)?[\w.-]+@latest\b/g)].map(
+    (match) => match[0]
+  );
+  const templateTokens = [...commandText.matchAll(/--template(?:=|\s+)([\w.-]+)/g)].map(
+    (match) => match[1]
+  );
+  const tokens = [...new Set([...packageTokens, ...templateTokens])];
+  if (tokens.length === 0) {
+    fail(`frontend.${generator} has no stable generator token in its create-planner contract`);
+  }
+  return tokens;
 }
 
 function resolveNodeBin() {
@@ -180,7 +200,7 @@ try {
       fail(`${generator} dry-run did not print an execution command`);
     }
     if (!execute) {
-      for (const token of dryRunCommandTokens[generator] ?? []) {
+      for (const token of expectedDryRunTokens(generator)) {
         if (!output.includes(token)) {
           console.error(output);
           fail(`${generator} dry-run missing command token "${token}"`);
