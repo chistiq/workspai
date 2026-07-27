@@ -8,7 +8,11 @@ import {
   WORKSPACE_MODEL_DIFF_REPORT_PATH,
   type WorkspaceImpact,
 } from './workspace-intelligence.js';
-import { buildWorkspaceModel, type WorkspaceModel } from './workspace-model.js';
+import {
+  buildWorkspaceModel,
+  workspaceModelProjectTopology,
+  type WorkspaceModel,
+} from './workspace-model.js';
 import { WORKSPACE_VERIFY_REPORT_PATH, type WorkspaceVerify } from './workspace-verify.js';
 import { readWorkspaceContract, type WorkspaceContract } from './utils/workspace-contract.js';
 import { attachRunCorrelation } from './observability/run-correlation.js';
@@ -86,7 +90,8 @@ function resolveGraphProjectId(
 ): string {
   const normalized = projectRef.trim().toLowerCase();
   const graphNodeIds =
-    model.graph?.nodes.map((node) => node.id) ?? model.projects.map((project) => project.name);
+    workspaceModelProjectTopology(model)?.nodes.map((node) => node.id) ??
+    model.projects.map((project) => project.name);
   const exactGraphId = graphNodeIds.find((id) => id.toLowerCase() === normalized);
   if (exactGraphId) {
     return exactGraphId;
@@ -347,7 +352,7 @@ export async function buildWorkspaceExplain(
 
   const projectId = input.target.project;
   const graphProjectId = resolveGraphProjectId(model, contract, projectId);
-  const graph = model.graph;
+  const graph = workspaceModelProjectTopology(model);
   const graphExplain = graph
     ? explainGraphNode(graph, graphProjectId)
     : {

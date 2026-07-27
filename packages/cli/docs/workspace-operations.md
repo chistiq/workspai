@@ -29,8 +29,9 @@ npx workspai adopt --json
 - Local folders are copied; git sources are cloned with shallow history.
 - Outside any workspace (no `--workspace`), Workspai creates or reuses the managed `workspai` workspace. New defaults use `~/.workspai/workspaces/workspai`; valid legacy candidates under `~/rapidkit/workspaces/workspai` and `~/Workspai/rapidkits/workspai` can still be reused.
 - Existing workspaces under legacy managed roots remain registered after upgrade.
-- CLI prints the exact next `cd ...` step. JSON mode returns the same value as
-  `suggestedCdCommand`.
+- Workspai writes a validated machine-local workspace binding into the
+  imported project. Workspace commands can then be launched from that project
+  without changing directories.
 - Failed workspace sync rolls back imported files and registry entries.
 
 ### Adopt behavior
@@ -39,14 +40,73 @@ npx workspai adopt --json
 - Default workspace resolution matches import, including canonical creation and valid legacy managed-default reuse.
 - Writes `.workspai/project.json`, `.workspai/adopt.json`, and `.workspai/adopt-readiness.json`.
 - Registry and contract sync include adopted projects for `workspace model`, `workspace context`, Dashboard, and agents.
+- Managed grounding writes a portable project lens, project grounding, and a
+  bounded managed section in `AGENTS.md`. User-authored `AGENTS.md` content is
+  preserved.
 - `--dry-run --json` previews detection without writing metadata.
+
+### Work from the project directory
+
+After `adopt`, `import`, or project creation, the project is a first-class
+entry point into its canonical workspace:
+
+```bash
+cd /absolute/path/to/project
+npx workspai project workspace status --json
+npx workspai doctor project --json
+npx workspai workspace graph search "authentication endpoint" --limit 12 --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+Workspace resolution has one stable precedence:
+`--workspace` → parent workspace → validated local link → reverse registry.
+Workspai returns a specific error for an invalid explicit workspace, malformed
+or stale link, ambiguous registration, or an unlinked project. It never picks
+one workspace silently when ownership is ambiguous.
+
+The project receives four distinct surfaces:
+
+| File | Purpose | Portable |
+| --- | --- | --- |
+| `.workspai/workspace-link.local.json` | Machine-local canonical workspace binding | No; always gitignored |
+| `.workspai/reports/project-context-agent.json` | Bounded project view of model, graph, proofs, diagnostics, and safe commands | Yes |
+| `.workspai/PROJECT-GROUNDING.md` | Human- and agent-readable project entry guide | Yes |
+| `AGENTS.md` managed section | Tells compatible agents where to start and when to cross the project boundary | Yes |
+
+The bounded context includes project identity and commands, dependencies and
+dependents, related API/deployment/test surfaces, current project findings,
+portable proof locators, and model/graph freshness. It deliberately references
+rather than duplicates workspace-wide evidence.
+
+Use `--project-grounding managed` (default) to publish all portable surfaces,
+`local` to keep the project lens and grounding gitignored without managing
+`AGENTS.md`, or `off` to disable project grounding for that operation. The
+machine-local link remains enabled in every mode because it owns command
+resolution; it is private to the current machine and never belongs in a commit.
+Mode reconciliation is convergent: changing modes removes stale managed
+sections, portable files, or ignore rules that the new mode no longer owns,
+while preserving user-authored `AGENTS.md` and `.gitignore` content.
+
+If a workspace moved, or a cloned project has no valid local link, reconcile
+it explicitly:
+
+```bash
+npx workspai project workspace relink --workspace /absolute/path/to/my-workspace --json
+```
+
+Relink succeeds only when the project is already a member of the canonical
+workspace contract.
 
 ### JSON output (`--json`)
 
-- Import returns `workspacePath`, `workspaceResolution`, `defaultWorkspaceCreated`, `suggestedCdCommand`, and `importedProject`. The imported project includes its `source`.
+- Import returns `workspacePath`, `workspaceResolution`,
+  `defaultWorkspaceCreated`, `projectWorkspaceCommand`,
+  `commandsResolveWorkspaceFromProject`, and `importedProject`. The imported
+  project includes its `source`.
 - Adopt returns `workspacePath`, `workspaceResolution`,
   `defaultWorkspaceCreated`, `wouldCreateDefaultWorkspace`,
-  `suggestedCdCommand`, `dryRun`, and `adoptedProject`.
+  `projectWorkspaceCommand`, `commandsResolveWorkspaceFromProject`, `dryRun`,
+  and `adoptedProject`.
 - Project results include detected `name`, `path`, `stack`, `runtime`, `framework`, `supportTier`, `moduleSupport`, and `confidence` where available.
 
 Imported projects receive `.workspai/import-readiness.json`. Adopted projects add frontend-aware detection for Next.js, React, Vite, Vue, Angular, SvelteKit, Nuxt, Astro, Remix, and Solid.
@@ -138,12 +198,18 @@ consumers on one contract revision without injecting the full graph into every
 agent prompt.
 
 The relationship is one-way and contract-enforced: the Workspace Model owns the
-canonical project boundary and compact dependency topology; providers enrich
+canonical project boundary and compact dependency topology in
+`workspace-model.json.projectTopology`; providers enrich
 that inventory into the Knowledge Graph. The graph source kind and artifact
 path are fixed to the model, its source hash identifies the stable structural
 model projection, and persisted current-state consumers reject a mismatched
 graph. `workspace contract graph` follows the same model-first build path; it
 does not create a competing contract- or source-owned Knowledge Graph.
+
+The deprecated `workspace-model.json.graph` field is a temporary v1
+compatibility alias. It is emitted with the same value as `projectTopology`,
+excluded as a duplicate from the canonical hash, and rejected when the two
+fields diverge. New integrations must consume `projectTopology`.
 
 The overlay follows
 `workspace-knowledge-graph-change-overlay.v1`: graph revisions are identified

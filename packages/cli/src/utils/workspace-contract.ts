@@ -1054,7 +1054,8 @@ export async function buildWorkspaceContractGraph(input: {
   const { contractPath, contract } = await readWorkspaceContract(input);
   const now = input.now ?? new Date();
   const generatedAt = now.toISOString();
-  const { buildWorkspaceModel } = await import('../workspace-model.js');
+  const { buildWorkspaceModel, workspaceModelProjectTopology } =
+    await import('../workspace-model.js');
   const { hashWorkspaceModel } = await import('../workspace-model-hash.js');
   const model = await buildWorkspaceModel({
     workspacePath: input.workspacePath,
@@ -1062,7 +1063,7 @@ export async function buildWorkspaceContractGraph(input: {
     now,
   });
   const dependencyGraph =
-    model.graph ??
+    workspaceModelProjectTopology(model) ??
     emptyDependencyGraph(
       contract,
       generatedAt,

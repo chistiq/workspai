@@ -54,7 +54,8 @@ describe('workspace model incremental (1.16)', () => {
     const next = await buildWorkspaceModelIncremental({ workspacePath });
     expect(next.mode).toBe('incremental');
     // Graph still present and consistent.
-    expect(next.model.graph?.nodes.map((node) => node.id).sort()).toEqual(['api', 'web']);
+    expect(next.model.projectTopology?.nodes.map((node) => node.id).sort()).toEqual(['api', 'web']);
+    expect(next.model.graph).toEqual(next.model.projectTopology);
   });
 
   it('handles an added project incrementally (reuse unchanged models, full graph re-scan)', async () => {
@@ -63,7 +64,7 @@ describe('workspace model incremental (1.16)', () => {
 
     const next = await buildWorkspaceModelIncremental({ workspacePath });
     expect(next.mode).toBe('incremental');
-    expect(next.model.graph?.nodes.some((node) => node.id === 'worker')).toBe(true);
+    expect(next.model.projectTopology?.nodes.some((node) => node.id === 'worker')).toBe(true);
   });
 
   it('rebuilds fully when workspace-level files change', async () => {
@@ -77,9 +78,21 @@ describe('workspace model incremental (1.16)', () => {
     expect(next.model.workspace.name).toBe('renamed-fixture');
   });
 
+  it('rebuilds fully when a legacy cache lacks canonical projectTopology', async () => {
+    await buildWorkspaceModelIncremental({ workspacePath });
+    const cachePath = path.join(workspacePath, '.workspai', 'cache', 'workspace-model.v1.json');
+    const envelope = await fsExtra.readJson(cachePath);
+    delete envelope.model.projectTopology;
+    await fsExtra.writeJson(cachePath, envelope, { spaces: 2 });
+
+    const next = await buildWorkspaceModelIncremental({ workspacePath });
+    expect(next.mode).toBe('full');
+    expect(next.model.projectTopology).toEqual(next.model.graph);
+  });
+
   it('preserves the package-dep edge after an incremental rebuild', async () => {
     const full = await buildWorkspaceModelIncremental({ workspacePath });
-    const fullEdge = full.model.graph?.edges.find(
+    const fullEdge = full.model.projectTopology?.edges.find(
       (edge) => edge.from === 'web' && edge.to === 'api' && edge.kind === 'package-dep'
     );
     expect(fullEdge).toBeTruthy();
@@ -87,7 +100,7 @@ describe('workspace model incremental (1.16)', () => {
     await writeSource('api', 'src/main.js', 'export const main = 1;\n');
     const incremental = await buildWorkspaceModelIncremental({ workspacePath });
     expect(incremental.mode).toBe('incremental');
-    const edge = incremental.model.graph?.edges.find(
+    const edge = incremental.model.projectTopology?.edges.find(
       (item) => item.from === 'web' && item.to === 'api' && item.kind === 'package-dep'
     );
     expect(edge).toBeTruthy();

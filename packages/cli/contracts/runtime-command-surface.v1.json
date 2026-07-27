@@ -134,6 +134,10 @@
     ],
     [
       "project",
+      "workspace"
+    ],
+    [
+      "project",
       "archives"
     ],
     [
@@ -637,6 +641,23 @@
       "canonicalArgv": [
         "project",
         "restore"
+      ]
+    },
+    {
+      "invocation": "project workspace",
+      "summary": "Resolve or repair the machine-local binding from the current project to its canonical Workspai workspace.",
+      "canonicalArgv": [
+        "project",
+        "workspace"
+      ]
+    },
+    {
+      "invocation": "project workspace relink",
+      "summary": "Rebuild the machine-local project binding after validating canonical workspace contract membership.",
+      "canonicalArgv": [
+        "project",
+        "workspace",
+        "relink"
       ]
     },
     {
@@ -1573,6 +1594,50 @@
       ]
     },
     {
+      "artifactPath": ".workspai/workspace-link.local.json",
+      "schemaVersion": "project-workspace-link.v1",
+      "contractPath": "contracts/project-workspace-link.v1.json",
+      "producerCommands": [
+        [
+          "adopt"
+        ],
+        [
+          "import"
+        ],
+        [
+          "project",
+          "workspace",
+          "relink"
+        ],
+        [
+          "workspace",
+          "sync"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/reports/project-context-agent.json",
+      "schemaVersion": "project-context-agent.v1",
+      "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
+      "producerCommands": [
+        [
+          "adopt"
+        ],
+        [
+          "import"
+        ],
+        [
+          "workspace",
+          "sync"
+        ],
+        [
+          "workspace",
+          "agent-sync",
+          "--write"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/workspace.contract.json",
       "schemaVersion": 1,
       "contractPath": "contracts/workspace-contract.v1.json",
@@ -1893,7 +1958,7 @@
     },
     {
       "id": "sync",
-      "usage": "workspai workspace sync [--json]",
+      "usage": "workspai workspace sync [--project-grounding <mode>] [--json]",
       "summary": "Synchronize canonical workspace registration and project metadata.",
       "options": [
         {
@@ -1903,6 +1968,10 @@
         {
           "flag": "--json",
           "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--project-grounding",
+          "description": "Select the project entrypoint policy: managed, local, or off."
         }
       ],
       "subactions": [],
@@ -2351,6 +2420,10 @@
         {
           "flag": "--strict",
           "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--project-grounding",
+          "description": "Select the project entrypoint policy: managed, local, or off."
         }
       ],
       "subactions": [],
@@ -2362,7 +2435,7 @@
     },
     {
       "id": "agent-sync",
-      "usage": "workspai workspace agent-sync [--for-agent <agent>] [--target <targets>] [--write]",
+      "usage": "workspai workspace agent-sync [--for-agent <agent>] [--target <targets>] [--project-grounding <mode>] [--write]",
       "summary": "Synchronize bounded workspace grounding for supported agent surfaces.",
       "options": [
         {
@@ -2416,6 +2489,10 @@
         {
           "flag": "--hydrate-prompts",
           "description": "Add workspace-specific verification steps to supported prompts."
+        },
+        {
+          "flag": "--project-grounding",
+          "description": "Select the project entrypoint policy: managed, local, or off."
         }
       ],
       "subactions": [],

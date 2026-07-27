@@ -81,18 +81,26 @@ npx workspai adopt .
 ```
 
 `adopt` registers the project without moving or copying it. When run outside a
-workspace, it creates or reuses the minimal default workspace and prints the
-exact `Next shell step`.
+workspace, it creates or reuses the minimal default workspace and binds the
+project to it.
 
-### 3. Continue from the workspace root
+### 3. Continue from the project
 
-Without the VS Code extension, copy the printed `Next shell step` and continue
-in that workspace terminal:
+The project is now a first-class entry point into its Workspai workspace. Stay
+in the project directory and run:
 
 ```bash
-cd ~/.workspai/workspaces/workspai
+npx workspai project workspace status --json
 npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
+
+Workspai resolves the canonical workspace through a validated machine-local
+link. That link is gitignored; portable project grounding and bounded agent
+context are written under the project's `.workspai/` directory. The project
+lens carries bounded topology, related projects, API/deployment/test surfaces,
+current blockers, proof paths, and model/graph freshness without copying the
+full workspace graph. You only need `--workspace <path>` when resolving an
+ambiguous or moved binding.
 
 `generic` creates vendor-neutral context. Use `codex`, `claude`, `cursor`, or
 `orca` when you want context shaped for that agent. Agent Sync also writes the
@@ -115,6 +123,16 @@ The run saves its results so people and tools can inspect and reuse them:
     ├── workspace-intelligence-run-last-run.json
     └── INDEX.json
 AGENTS.md
+```
+
+Each registered project also receives:
+
+```text
+.workspai/
+├── workspace-link.local.json        # machine-local, gitignored
+├── PROJECT-GROUNDING.md             # portable entry guide
+└── reports/project-context-agent.json
+AGENTS.md                             # existing content preserved
 ```
 
 For automation details, including exit codes and blocked results, see the

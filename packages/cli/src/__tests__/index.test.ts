@@ -771,10 +771,14 @@ describe('CLI Entry Point', () => {
         expect(await fs.pathExists(path.join(sourceDir, '.workspai', 'adopt.json'))).toBe(true);
 
         const payload = JSON.parse(consoleLog.mock.calls[0]?.[0] as string) as {
-          suggestedCdCommand: string;
           adoptedProject: { name: string; path: string; stack: string };
+          projectWorkspaceCommand: string;
+          commandsResolveWorkspaceFromProject: boolean;
         };
-        expect(payload.suggestedCdCommand).toBe(`cd ${workspaceRoot}`);
+        expect(payload.projectWorkspaceCommand).toBe(
+          'npx workspai project workspace status --json'
+        );
+        expect(payload.commandsResolveWorkspaceFromProject).toBe(true);
         expect(payload.adoptedProject).toMatchObject({
           name: 'web',
           path: sourceDir,
@@ -911,14 +915,18 @@ describe('CLI Entry Point', () => {
           workspacePath: string;
           workspaceResolution: string;
           defaultWorkspaceCreated: boolean;
-          suggestedCdCommand: string;
+          projectWorkspaceCommand: string;
+          commandsResolveWorkspaceFromProject: boolean;
           importedProject: { name: string; stack: string; source: string; path: string };
         };
 
         expect(payload.workspacePath).toBe(expectedWorkspacePath);
         expect(payload.workspaceResolution).toBe('default-auto');
         expect(payload.defaultWorkspaceCreated).toBe(true);
-        expect(payload.suggestedCdCommand).toBe(`cd ${expectedWorkspacePath}`);
+        expect(payload.projectWorkspaceCommand).toBe(
+          'npx workspai project workspace status --json'
+        );
+        expect(payload.commandsResolveWorkspaceFromProject).toBe(true);
         expect(payload.importedProject).toMatchObject({
           name: 'default-orders-api',
           stack: 'express',
@@ -1329,7 +1337,7 @@ describe('CLI Entry Point', () => {
           schemaVersion: 'workspai-cli-operation-result-v1',
           operation: 'workspace model',
           status: 'error',
-          error: { code: 'workspace.root.required' },
+          error: { code: 'project.workspace.unlinked' },
         });
       } finally {
         await fs.remove(nonWorkspaceRoot);

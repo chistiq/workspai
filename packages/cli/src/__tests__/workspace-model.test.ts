@@ -150,13 +150,51 @@ describe('workspace intelligence model', () => {
         path: 'workspace contract declaration reconciled with filesystem discovery',
       },
     });
+    expect(model.projectTopology?.nodes.map((node) => node.id)).toEqual(['orders-api']);
     expect(model.graph?.nodes.map((node) => node.id)).toEqual(['orders-api']);
+    expect(model.graph).toEqual(model.projectTopology);
     expect(model.validation.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: 'project.path.missing',
           target: 'services/orders',
         }),
+      ])
+    );
+  });
+
+  it('keeps the deprecated graph alias hash-neutral and rejects alias drift', async () => {
+    const workspacePath = await makeTempDir('rk-model-topology-alias-');
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-06-14T00:00:00.000Z'),
+    });
+    const withoutAlias = { ...model, graph: undefined };
+
+    expect(hashWorkspaceModel(withoutAlias)).toBe(hashWorkspaceModel(model));
+
+    const drifted = {
+      ...model,
+      graph: model.graph
+        ? {
+            ...model.graph,
+            nodes: [
+              ...model.graph.nodes,
+              {
+                id: 'unexpected',
+                label: 'unexpected',
+                path: 'unexpected',
+                runtime: 'unknown',
+                framework: 'unknown',
+                kind: 'unknown',
+              },
+            ],
+          }
+        : undefined,
+    };
+    expect(validateWorkspaceModelStrict(drifted).issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'workspace.project-topology.alias-mismatch' }),
       ])
     );
   });

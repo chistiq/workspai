@@ -32,6 +32,10 @@
           "attributeName": "enableModules"
         },
         {
+          "flags": "--project-grounding <mode>",
+          "attributeName": "projectGrounding"
+        },
+        {
           "flags": "--dry-run",
           "attributeName": "dryRun"
         },
@@ -431,6 +435,10 @@
         {
           "flags": "--enable-modules",
           "attributeName": "enableModules"
+        },
+        {
+          "flags": "--project-grounding <mode>",
+          "attributeName": "projectGrounding"
         },
         {
           "flags": "--git",
@@ -963,6 +971,39 @@
     },
     {
       "path": [
+        "project",
+        "workspace"
+      ],
+      "command": "workspace",
+      "parent": "project",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Show or repair the canonical workspace binding for the current Workspai project",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "action",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
         "readiness"
       ],
       "command": "readiness",
@@ -1274,6 +1315,10 @@
         {
           "flags": "--preset <preset>",
           "attributeName": "preset"
+        },
+        {
+          "flags": "--project-grounding <mode>",
+          "attributeName": "projectGrounding"
         },
         {
           "flags": "--refresh-context",

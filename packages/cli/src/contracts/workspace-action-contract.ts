@@ -35,6 +35,7 @@ export const WORKSPACE_ACTION_FLAG_DESCRIPTIONS: Readonly<Record<string, string>
   '--target': 'Select one or more agent customization targets.',
   '--experimental-hooks': 'Generate advisory VS Code agent hook design files.',
   '--hydrate-prompts': 'Add workspace-specific verification steps to supported prompts.',
+  '--project-grounding': 'Select the project entrypoint policy: managed, local, or off.',
   '--ci': 'Produce a CI-oriented command plan.',
   '--from': 'Read the specified baseline, report, or graph artifact.',
   '--from-impact': 'Read the specified impact report for verification.',
@@ -100,7 +101,8 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     ],
   },
   'agent-sync': {
-    usage: 'workspai workspace agent-sync [--for-agent <agent>] [--target <targets>] [--write]',
+    usage:
+      'workspai workspace agent-sync [--for-agent <agent>] [--target <targets>] [--project-grounding <mode>] [--write]',
     summary: 'Synchronize bounded workspace grounding for supported agent surfaces.',
     flags: [
       '--workspace',
@@ -116,6 +118,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
       '--target',
       '--experimental-hooks',
       '--hydrate-prompts',
+      '--project-grounding',
     ],
     artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.agentCustomizationPack,
     examples: [
@@ -149,6 +152,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
       '--preset',
       '--target',
       '--strict',
+      '--project-grounding',
     ],
     artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext,
     examples: [
@@ -262,9 +266,9 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     examples: ['workspai workspace watch --once --json', 'workspai workspace watch --graph-stream'],
   },
   sync: {
-    usage: 'workspai workspace sync [--json]',
+    usage: 'workspai workspace sync [--project-grounding <mode>] [--json]',
     summary: 'Synchronize canonical workspace registration and project metadata.',
-    flags: ['--workspace', '--json'],
+    flags: ['--workspace', '--json', '--project-grounding'],
     examples: ['workspai workspace sync --json'],
   },
   registry: {

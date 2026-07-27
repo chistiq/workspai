@@ -29,6 +29,48 @@ export function hashWorkspaceModel(model: WorkspaceModel): string {
     facts: _ignoredFacts,
     factFreshness: _ignoredFactFreshness,
     build: _ignoredBuildProvenance,
+    graph: _ignoredDeprecatedGraphAlias,
+    projectTopology: _ignoredProjectTopology,
+    projects,
+    ...modelWithoutLiveState
+  } = model as WorkspaceModel & { runId?: string };
+  const structuralProjects = projects.map((project) => {
+    const { evidence: _ignoredProjectEvidence, ...structuralProject } = project;
+    return structuralProject;
+  });
+  const projectTopology = model.projectTopology ?? model.graph;
+  return hashCanonicalJson({
+    ...modelWithoutLiveState,
+    generatedAt: '<ignored>',
+    projects: structuralProjects,
+    projectTopology: projectTopology ? { ...projectTopology, generatedAt: '<ignored>' } : undefined,
+    validation: model.validation
+      ? {
+          ...model.validation,
+          issues: model.validation.issues
+            .map((issue) => ({ ...issue }))
+            .sort((a, b) => {
+              const left = `${a.severity}:${a.code}:${a.target}:${a.message}`;
+              const right = `${b.severity}:${b.code}:${b.target}:${b.message}`;
+              return left.localeCompare(right);
+            }),
+        }
+      : undefined,
+  });
+}
+
+/**
+ * Hash contract used by workspace-model.v1 snapshots before `projectTopology`
+ * became the canonical topology field. This exists only to authenticate and
+ * migrate already-written snapshots; new artifacts must use
+ * `hashWorkspaceModel`.
+ */
+export function hashLegacyWorkspaceModelV1(model: WorkspaceModel): string {
+  const {
+    runId: _ignoredRunId,
+    evidence: _ignoredEvidence,
+    facts: _ignoredFacts,
+    factFreshness: _ignoredFactFreshness,
     projects,
     ...modelWithoutLiveState
   } = model as WorkspaceModel & { runId?: string };

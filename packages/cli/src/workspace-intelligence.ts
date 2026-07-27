@@ -4,6 +4,7 @@ import fsExtra from 'fs-extra';
 
 import {
   buildWorkspaceModel,
+  workspaceModelProjectTopology,
   WORKSPACE_MODEL_SCHEMA_VERSION,
   WORKSPACE_MODEL_REPORT_PATH,
   type BuildWorkspaceModelOptions,
@@ -25,7 +26,11 @@ import {
 import { writeWorkspaceArtifactJson } from './utils/artifact-path-compat.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 export { hashWorkspaceModel } from './workspace-model-hash.js';
-import { hashWorkspaceModel, stableStringify } from './workspace-model-hash.js';
+import {
+  hashLegacyWorkspaceModelV1,
+  hashWorkspaceModel,
+  stableStringify,
+} from './workspace-model-hash.js';
 
 export const WORKSPACE_MODEL_SNAPSHOT_SCHEMA_VERSION =
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.snapshot;
@@ -42,6 +47,28 @@ export type WorkspaceModelSnapshot = {
   modelRef: string;
   model: WorkspaceModel;
 };
+
+export function migrateLegacyWorkspaceModelSnapshot(
+  snapshot: WorkspaceModelSnapshot
+): WorkspaceModelSnapshot | null {
+  if (
+    snapshot.model.projectTopology ||
+    !snapshot.model.graph ||
+    snapshot.modelHash !== hashLegacyWorkspaceModelV1(snapshot.model)
+  ) {
+    return null;
+  }
+  const model: WorkspaceModel = {
+    ...snapshot.model,
+    projectTopology: snapshot.model.graph,
+    graph: snapshot.model.graph,
+  };
+  return {
+    ...snapshot,
+    modelHash: hashWorkspaceModel(model),
+    model,
+  };
+}
 
 export type WorkspaceModelDiffChangeType =
   | 'project.added'
@@ -248,7 +275,11 @@ async function readModelFromPath(
     }
     const computedHash = hashWorkspaceModel(snapshot.model);
     if (snapshot.modelHash !== computedHash) {
-      throw new Error(`Workspace model snapshot hash mismatch: ${filePath}`);
+      const migrated = migrateLegacyWorkspaceModelSnapshot(snapshot);
+      if (!migrated) {
+        throw new Error(`Workspace model snapshot hash mismatch: ${filePath}`);
+      }
+      return { model: migrated.model, hash: migrated.modelHash };
     }
     return { model: snapshot.model, hash: snapshot.modelHash };
   }
@@ -1015,7 +1046,7 @@ export async function buildWorkspaceImpact(
 
   // Graph-aware transitive blast radius (1.10): propagate from directly-changed
   // projects to their transitive dependents via the model's dependency graph.
-  const graph = diff.currentModel.graph;
+  const graph = workspaceModelProjectTopology(diff.currentModel);
   const centrality = graph ? computeGraphCentrality(graph) : undefined;
   const directlyAffectedNames = new Set(
     affectedProjects

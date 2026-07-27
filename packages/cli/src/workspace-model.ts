@@ -53,7 +53,7 @@ import {
   firstExistingWorkspaceArtifactPath,
   writeWorkspaceArtifactJsonSet,
 } from './utils/artifact-path-compat.js';
-import { hashWorkspaceModel } from './workspace-model-hash.js';
+import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 
 export const WORKSPACE_MODEL_SCHEMA_VERSION = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.model;
 export const WORKSPACE_MODEL_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.model;
@@ -160,10 +160,11 @@ export type WorkspaceModel = {
     exists: boolean;
     status: 'known' | 'missing' | 'unknown';
   };
+  /** Canonical compact project dependency topology. */
+  projectTopology?: WorkspaceDependencyGraph;
   /**
-   * First-class, automatically-inferred dependency graph (workspace-dependency-graph.v1).
-   * Additive and optional for back-compatibility with pre-graph readers; deterministic
-   * (see `hashModel`, which normalizes the graph's `generatedAt`).
+   * @deprecated Use `projectTopology`. This compatibility alias is emitted
+   * during the v1 migration window and must remain structurally identical.
    */
   graph?: WorkspaceDependencyGraph;
   evidence: Record<string, WorkspaceModelEvidenceRef | null>;
@@ -184,6 +185,25 @@ export type WorkspaceModel = {
    */
   build?: WorkspaceModelBuildProvenance;
 };
+
+export function workspaceModelProjectTopology(
+  model: Pick<WorkspaceModel, 'projectTopology' | 'graph'>
+): WorkspaceDependencyGraph | undefined {
+  return model.projectTopology ?? model.graph;
+}
+
+function hasCanonicalWorkspaceModelTopology(
+  model: Pick<WorkspaceModel, 'projectTopology' | 'graph'>
+): model is Pick<WorkspaceModel, 'projectTopology' | 'graph'> & {
+  projectTopology: WorkspaceDependencyGraph;
+  graph: WorkspaceDependencyGraph;
+} {
+  return Boolean(
+    model.projectTopology &&
+    model.graph &&
+    hashCanonicalJson(model.projectTopology) === hashCanonicalJson(model.graph)
+  );
+}
 
 export type BuildWorkspaceModelOptions = {
   workspacePath: string;
@@ -834,6 +854,21 @@ function validateWorkspaceModel(
       );
     }
   }
+  if (
+    model.projectTopology &&
+    model.graph &&
+    hashCanonicalJson({ ...model.projectTopology, generatedAt: '<ignored>' }) !==
+      hashCanonicalJson({ ...model.graph, generatedAt: '<ignored>' })
+  ) {
+    issues.push(
+      issue(
+        'error',
+        'workspace.project-topology.alias-mismatch',
+        'Deprecated model.graph must remain structurally identical to canonical model.projectTopology during the v1 migration window.',
+        'projectTopology'
+      )
+    );
+  }
 
   const errors = issues.filter((item) => item.severity === 'error').length;
   const warnings = issues.filter((item) => item.severity === 'warning').length;
@@ -953,20 +988,21 @@ export function buildWorkspaceModelFacts(model: WorkspaceModel, now: Date): Work
     }),
   ];
 
-  if (model.graph) {
+  const projectTopology = workspaceModelProjectTopology(model);
+  if (projectTopology) {
     facts.push(
       buildWorkspaceFact({
         id: 'graph.edgeCount',
         label: 'Dependency graph edge count',
         scope: 'graph',
-        value: model.graph.stats.edgeCount,
+        value: projectTopology.stats.edgeCount,
         freshness: {
           kind: 'derived',
           category: 'structure',
-          generatedAt: model.graph.generatedAt ?? generatedAt,
+          generatedAt: projectTopology.generatedAt ?? generatedAt,
           now,
           sourceArtifact,
-          sourcePath: modelFactSourcePath(['graph', 'stats', 'edgeCount']),
+          sourcePath: modelFactSourcePath(['projectTopology', 'stats', 'edgeCount']),
           reason: 'Graph topology is derived from manifests, imports, and workspace contracts.',
         },
       }),
@@ -974,14 +1010,14 @@ export function buildWorkspaceModelFacts(model: WorkspaceModel, now: Date): Work
         id: 'graph.evidenceCoverageRatio',
         label: 'Dependency graph evidence coverage',
         scope: 'graph',
-        value: model.graph.stats.evidenceCoverageRatio,
+        value: projectTopology.stats.evidenceCoverageRatio,
         freshness: {
           kind: 'derived',
           category: 'structure',
-          generatedAt: model.graph.generatedAt ?? generatedAt,
+          generatedAt: projectTopology.generatedAt ?? generatedAt,
           now,
           sourceArtifact,
-          sourcePath: modelFactSourcePath(['graph', 'stats', 'evidenceCoverageRatio']),
+          sourcePath: modelFactSourcePath(['projectTopology', 'stats', 'evidenceCoverageRatio']),
           reason:
             'Graph evidence coverage changes when dependency evidence or contract edges change.',
         },
@@ -1301,7 +1337,11 @@ export async function buildWorkspaceModel(
     now,
     incrementalGraph: input.incrementalGraph,
   });
-  const modelWithGraph: Omit<WorkspaceModel, 'validation'> = { ...model, graph };
+  const modelWithGraph: Omit<WorkspaceModel, 'validation'> = {
+    ...model,
+    projectTopology: graph,
+    graph,
+  };
 
   const validation = validateWorkspaceModel(modelWithGraph);
   const facts = buildWorkspaceModelFacts({ ...modelWithGraph, validation }, now);
@@ -1366,7 +1406,12 @@ export async function buildWorkspaceModelCached(
   });
 
   const cached = await readWorkspaceModelCache(workspacePath);
-  if (cached && cached.cliVersion === cliVersion && cached.inputsHash === inputsHash) {
+  if (
+    cached &&
+    cached.cliVersion === cliVersion &&
+    cached.inputsHash === inputsHash &&
+    hasCanonicalWorkspaceModelTopology(cached.model)
+  ) {
     return { model: cached.model, cache: 'hit' };
   }
 
@@ -1482,11 +1527,13 @@ export async function buildWorkspaceModelIncremental(
     return { model, mode: 'full' };
   };
 
+  const cachedTopology = cached ? workspaceModelProjectTopology(cached.model) : undefined;
   if (
     !cached ||
     cached.cliVersion !== cliVersion ||
     !cached.projectSignatures ||
-    !cached.model?.graph
+    !cachedTopology ||
+    !hasCanonicalWorkspaceModelTopology(cached.model)
   ) {
     return buildFull();
   }
@@ -1536,7 +1583,7 @@ export async function buildWorkspaceModelIncremental(
     cache: false,
     reuseProjectModels,
     incrementalGraph: {
-      previousGraph: cached.model.graph,
+      previousGraph: cachedTopology,
       changedProjectIds,
       structuralChange: structuralChange || renameDetected,
     },
@@ -1691,7 +1738,7 @@ export async function writeWorkspaceModel(
       ...(project.kit ? { kit: project.kit } : {}),
     })),
     projectTopology:
-      model.graph ??
+      workspaceModelProjectTopology(model) ??
       (await inferModelDependencyGraph(workspacePath, model, {
         contractExists: model.contracts.exists,
         now: new Date(model.generatedAt),

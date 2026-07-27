@@ -18,6 +18,7 @@ import { resolveWorkspaceRunStageReport } from './utils/workspace-run-evidence.j
 import type { WorkspaceRunStage } from './workspace-run.js';
 import {
   buildWorkspaceModel,
+  workspaceModelProjectTopology,
   type BuildWorkspaceModelOptions,
   type WorkspaceModel,
 } from './workspace-model.js';
@@ -204,7 +205,7 @@ async function readImpactFromPath(filePath: string): Promise<WorkspaceImpact> {
   if (impact.summary.blastRadius.maxDistance !== maxDistance) {
     semanticErrors.push('blastRadius.maxDistance does not match transitive impact distances');
   }
-  const graphEdges = impact.diff.currentModel.graph?.edges.length ?? 0;
+  const graphEdges = workspaceModelProjectTopology(impact.diff.currentModel)?.edges.length ?? 0;
   if (impact.summary.blastRadius.graphEdges !== graphEdges) {
     semanticErrors.push('blastRadius.graphEdges does not match the embedded model graph');
   }
@@ -980,7 +981,7 @@ async function resolveImpactForVerify(
           directlyAffected: 0,
           transitivelyAffected: 0,
           maxDistance: 0,
-          graphEdges: model.graph?.edges.length ?? 0,
+          graphEdges: workspaceModelProjectTopology(model)?.edges.length ?? 0,
         },
       },
       affectedProjects: [],
@@ -1127,7 +1128,9 @@ export async function buildWorkspaceVerify(
   }
 
   const subgraphGate = computeAffectedSubgraphGate(impact, steps);
-  const graphIntegrity = checkGraphIntegrity(model.graph ?? { nodes: [], edges: [] });
+  const graphIntegrity = checkGraphIntegrity(
+    workspaceModelProjectTopology(model) ?? { nodes: [], edges: [] }
+  );
 
   const freshnessHashes = computeProjectFreshnessHashes(model);
   const priorVerify = await readPriorVerifyReport(workspacePath);

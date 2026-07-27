@@ -224,6 +224,12 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Discover commands supported by the selected project runtime and its current capability tier.',
   'project coverage':
     'Run or inspect runtime-native test coverage and publish normalized, project-scoped evidence against an explicit target.',
+  'project workspace':
+    'Resolve or repair the machine-local binding from the current project to its canonical Workspai workspace.',
+  'project workspace status':
+    'Validate and report the canonical workspace currently bound to a Workspai project.',
+  'project workspace relink':
+    'Rebuild the machine-local project binding after validating canonical workspace contract membership.',
   'project delete':
     'Delete a registered project through guarded workspace safety and recovery checks.',
   'project restore':

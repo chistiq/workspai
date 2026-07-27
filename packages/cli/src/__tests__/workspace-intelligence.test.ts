@@ -8,6 +8,7 @@ import {
   buildWorkspaceImpact,
   buildWorkspaceModelSnapshot,
   diffWorkspaceModel,
+  migrateLegacyWorkspaceModelSnapshot,
   WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_MODEL_DIFF_REPORT_PATH,
   WORKSPACE_MODEL_DIFF_SCHEMA_VERSION,
@@ -17,6 +18,7 @@ import {
   writeWorkspaceModelSnapshot,
 } from '../workspace-intelligence.js';
 import { WORKSPACE_MODEL_REPORT_PATH, WORKSPACE_MODEL_SCHEMA_VERSION } from '../workspace-model.js';
+import { hashLegacyWorkspaceModelV1 } from '../workspace-model-hash.js';
 
 describe('workspace intelligence snapshots and diffs', () => {
   const tempDirs: string[] = [];
@@ -56,6 +58,31 @@ describe('workspace intelligence snapshots and diffs', () => {
     expect(snapshot.model.projects.map((project) => project.name)).toEqual(['api']);
     expect(outputPath).toBe(path.join(workspacePath, WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH));
     expect(await fsExtra.pathExists(outputPath)).toBe(true);
+  });
+
+  it('authenticates and migrates a legacy graph-only snapshot without losing its baseline', async () => {
+    const workspacePath = await makeTempDir('rk-intel-legacy-snapshot-');
+    await fsExtra.outputJson(path.join(workspacePath, 'api', '.rapidkit', 'project.json'), {
+      name: 'api',
+      runtime: 'python',
+      kit_name: 'fastapi.standard',
+    });
+    const current = await buildWorkspaceModelSnapshot({ workspacePath });
+    const legacyModel = { ...current.model, projectTopology: undefined };
+    const legacy = {
+      ...current,
+      model: legacyModel,
+      modelHash: hashLegacyWorkspaceModelV1(legacyModel),
+    };
+
+    const migrated = migrateLegacyWorkspaceModelSnapshot(legacy);
+
+    expect(migrated?.model.projectTopology).toEqual(current.model.graph);
+    expect(migrated?.model.graph).toEqual(migrated?.model.projectTopology);
+    expect(migrated?.generatedAt).toBe(legacy.generatedAt);
+    expect(
+      migrateLegacyWorkspaceModelSnapshot({ ...legacy, modelHash: '0'.repeat(64) })
+    ).toBeNull();
   });
 
   it('diffs the current model against a previous snapshot', async () => {

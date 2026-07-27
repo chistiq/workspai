@@ -39,6 +39,10 @@ import {
   type WorkspaceProfileCompatibilityResult,
   type WorkspaceProfilePolicyMode,
 } from './workspace-profile-compatibility.js';
+import {
+  syncProjectIntelligenceLens,
+  type ProjectGroundingMode,
+} from './project-intelligence-lens.js';
 
 export type ImportSourceType = 'local-folder' | 'git-url';
 
@@ -49,6 +53,7 @@ export interface ImportProjectIntoWorkspaceOptions {
   sourceType?: ImportSourceType;
   enableModules?: boolean;
   profilePolicyMode?: WorkspaceProfilePolicyMode;
+  projectGrounding?: ProjectGroundingMode;
 }
 
 export interface ImportedProjectResult {
@@ -511,11 +516,22 @@ export async function importProjectIntoWorkspace(
     };
 
     await writeImportedProjectRegistryEntry(workspacePath, importedProject);
+    const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
+    await syncWorkspaceContract({ workspacePath, strict: true });
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath: importedProject.path,
+      projectName: importedProject.name,
+      relationship: 'imported',
+      mode: options.projectGrounding ?? 'managed',
+    });
     return importedProject;
   } catch (error) {
     if (destinationPrepared) {
       try {
-        await rollbackImportedProject(destinationPath);
+        await cleanupImportedProjectImport(workspacePath, destinationPath);
+        const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
+        await syncWorkspaceContract({ workspacePath, strict: true });
       } catch (cleanupError) {
         const originalMessage = error instanceof Error ? error.message : String(error);
         const cleanupMessage =

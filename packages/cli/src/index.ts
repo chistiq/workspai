@@ -62,7 +62,11 @@ import {
 } from './utils/cli-lifecycle-contract.js';
 import { findRapidkitProjectRoot } from './utils/project-command-capabilities.js';
 import { canonicalizeProjectMetadata, readProjectMetadata } from './utils/project-metadata.js';
-import { findWorkspaceRootUp } from './utils/workspace-root.js';
+import {
+  ProjectWorkspaceResolutionError,
+  repairProjectWorkspaceLink,
+  resolveProjectWorkspaceSync,
+} from './project-workspace-link.js';
 import {
   resolveGovernanceRunId,
   withGovernanceRunMetadata,
@@ -142,6 +146,11 @@ import {
   captureAdoptProjectRollbackSnapshot,
   type AdoptProjectRollbackSnapshot,
 } from './adopt-project.js';
+import type { ProjectGroundingMode } from './project-intelligence-lens.js';
+import {
+  assertProjectWorkspaceResolutionContract,
+  type ProjectWorkspaceResolutionContract,
+} from './contracts/project-workspace-resolution-contract.js';
 import {
   collectWorkspaceProfileRuntimes,
   formatWorkspaceProfileCompatibilityHint,
@@ -169,6 +178,9 @@ import {
 } from './utils/platform-capabilities.js';
 import {
   MANAGED_DEFAULT_WORKSPACE_LABEL,
+  PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
+  PROJECT_GROUNDING_RELATIVE_PATH,
+  PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
   findExistingWorkspacePath,
   getCanonicalWorkspacesDirectory,
   projectMetadataCandidates,
@@ -787,6 +799,11 @@ async function beginProjectLifecycleTransaction(
     files.add(projectMetadataPath(options.projectPath, 'file-hashes.json'));
     files.add(projectMetadataPath(options.projectPath, 'adopt.json'));
     files.add(projectMetadataPath(options.projectPath, 'adopt-readiness.json'));
+    files.add(path.join(options.projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH));
+    files.add(path.join(options.projectPath, PROJECT_GROUNDING_RELATIVE_PATH));
+    files.add(path.join(options.projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH));
+    files.add(path.join(options.projectPath, 'AGENTS.md'));
+    files.add(path.join(options.projectPath, '.gitignore'));
   }
 
   try {
@@ -892,6 +909,14 @@ async function finalizeCreatedProjectWorkspace(
     await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
     await registerProjectInWorkspaceStrict(workspacePath, projectName, projectPath);
     await syncWorkspaceContract({ workspacePath, strict: true });
+    const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName,
+      relationship: relationship === 'adopted' ? 'adopted' : 'managed',
+      mode: 'managed',
+    });
     await transaction.commit();
   } catch (error) {
     await rollbackProjectLifecycleTransaction(transaction, error);
@@ -2044,21 +2069,37 @@ export function findWorkspaceMarkerUp(start: string): string | null {
  * Returns the directory containing a Workspai workspace marker.
  */
 export function findWorkspaceUp(start: string): string | null {
-  let p = start;
-  const tempRoot = path.resolve(tmpdir());
+  const resolved = resolveProjectWorkspaceSync({ startPath: start });
+  if (!resolved || path.resolve(resolved.workspacePath) === path.resolve(tmpdir())) return null;
+  return resolved.workspacePath;
+}
 
-  while (true) {
-    const markerExists =
-      fs.existsSync(path.join(p, '.workspai-workspace')) ||
-      fs.existsSync(path.join(p, '.workspai', 'workspace.json')) ||
-      fs.existsSync(path.join(p, '.rapidkit-workspace')) ||
-      fs.existsSync(path.join(p, '.rapidkit', 'workspace.json'));
-    if (markerExists && path.resolve(p) !== tempRoot) return p; // Return directory, not file
-    const parent = path.dirname(p);
-    if (parent === p) break;
-    p = parent;
+function resolveWorkspaceForIngestion(startPath: string): {
+  workspacePath: string | null;
+  error: ProjectWorkspaceResolutionError | null;
+} {
+  try {
+    const resolution = resolveProjectWorkspaceSync({ startPath, strict: true });
+    const workspacePath = resolution?.workspacePath ?? null;
+    return {
+      workspacePath:
+        workspacePath && path.resolve(workspacePath) !== path.resolve(tmpdir())
+          ? workspacePath
+          : null,
+      error: null,
+    };
+  } catch (error) {
+    if (
+      error instanceof ProjectWorkspaceResolutionError &&
+      error.code === 'project.workspace.unlinked'
+    ) {
+      return { workspacePath: null, error: null };
+    }
+    if (error instanceof ProjectWorkspaceResolutionError) {
+      return { workspacePath: null, error };
+    }
+    throw error;
   }
-  return null;
 }
 
 async function syncWorkspaceContractAfterProjectChange(
@@ -2686,6 +2727,7 @@ export async function handleImportCommand(
     git?: boolean;
     json?: boolean;
     enableModules?: boolean;
+    projectGrounding?: ProjectGroundingMode;
   },
   dependencies?: {
     syncWorkspaceProjects?: (workspacePath: string) => Promise<void>;
@@ -2699,10 +2741,33 @@ export async function handleImportCommand(
       process.env.NODE_ENV === 'test');
 
   const explicitWorkspace = options.workspace ? path.resolve(options.workspace) : null;
-  let workspacePath = explicitWorkspace ?? findWorkspaceUp(process.cwd());
+  const ingestionResolution = explicitWorkspace
+    ? { workspacePath: explicitWorkspace, error: null }
+    : resolveWorkspaceForIngestion(process.cwd());
+  let workspacePath = ingestionResolution.workspacePath;
   let usedDefaultWorkspace = false;
   let createdDefaultWorkspace = false;
   let willCreateDefaultWorkspace = false;
+
+  if (ingestionResolution.error) {
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          cliOperationError({
+            operation: 'import',
+            code: ingestionResolution.error.code,
+            message: ingestionResolution.error.message,
+            context: ingestionResolution.error.context,
+          }),
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(chalk.red(`❌ ${ingestionResolution.error.message}`));
+    }
+    return 1;
+  }
 
   if (explicitWorkspace) {
     if (!hasWorkspaceRootMarkers(explicitWorkspace)) {
@@ -2733,7 +2798,7 @@ export async function handleImportCommand(
     return 1;
   }
 
-  const suggestedCdCommand = `cd ${workspacePath}`;
+  const projectWorkspaceCommand = 'npx workspai project workspace status --json';
 
   let transaction: ProjectLifecycleTransaction | undefined;
   try {
@@ -2757,6 +2822,7 @@ export async function handleImportCommand(
       name: options.name,
       sourceType: options.git === true ? 'git-url' : undefined,
       enableModules: options.enableModules,
+      projectGrounding: options.projectGrounding,
     });
 
     if (importedProject.path !== ownedDestination) {
@@ -2781,6 +2847,14 @@ export async function handleImportCommand(
         );
         await syncWorkspaceContract({ workspacePath, strict: true });
       }
+      const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
+      await syncProjectIntelligenceLens({
+        workspacePath,
+        projectPath: importedProject.path,
+        projectName: importedProject.name,
+        relationship: 'imported',
+        mode: options.projectGrounding ?? 'managed',
+      });
       await transaction.commit();
     } catch (syncError) {
       try {
@@ -2804,7 +2878,8 @@ export async function handleImportCommand(
                 ? 'explicit'
                 : 'nearest',
             defaultWorkspaceCreated: usedDefaultWorkspace ? createdDefaultWorkspace : false,
-            suggestedCdCommand,
+            projectWorkspaceCommand,
+            commandsResolveWorkspaceFromProject: true,
             importedProject,
           },
           null,
@@ -2840,7 +2915,12 @@ export async function handleImportCommand(
         console.log(chalk.gray(`   ${hint}`));
       }
     }
-    console.log(chalk.gray(`   Next shell step: ${suggestedCdCommand}`));
+    console.log(
+      chalk.gray(
+        `   Workspai commands now resolve this workspace directly from the imported project.`
+      )
+    );
+    console.log(chalk.gray(`   Check: ${projectWorkspaceCommand}`));
     return 0;
   } catch (error) {
     if (transaction) {
@@ -2870,6 +2950,7 @@ export async function handleAdoptCommand(
     dryRun?: boolean;
     json?: boolean;
     enableModules?: boolean;
+    projectGrounding?: ProjectGroundingMode;
   },
   dependencies?: {
     syncWorkspaceProjects?: (workspacePath: string) => Promise<void>;
@@ -2888,10 +2969,33 @@ export async function handleAdoptCommand(
 ): Promise<number> {
   const sourcePath = path.resolve(source || process.cwd());
   const explicitWorkspace = options.workspace ? path.resolve(options.workspace) : null;
-  let workspacePath = explicitWorkspace ?? findWorkspaceUp(process.cwd());
+  const ingestionResolution = explicitWorkspace
+    ? { workspacePath: explicitWorkspace, error: null }
+    : resolveWorkspaceForIngestion(process.cwd());
+  let workspacePath = ingestionResolution.workspacePath;
   let usedDefaultWorkspace = false;
   let createdDefaultWorkspace = false;
   let willCreateDefaultWorkspace = false;
+
+  if (ingestionResolution.error) {
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          cliOperationError({
+            operation: 'adopt',
+            code: ingestionResolution.error.code,
+            message: ingestionResolution.error.message,
+            context: ingestionResolution.error.context,
+          }),
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(chalk.red(`❌ ${ingestionResolution.error.message}`));
+    }
+    return 1;
+  }
 
   if (explicitWorkspace) {
     if (!hasWorkspaceRootMarkers(explicitWorkspace)) {
@@ -2959,9 +3063,10 @@ export async function handleAdoptCommand(
       name: options.name,
       dryRun: options.dryRun === true,
       enableModules: options.enableModules,
+      projectGrounding: options.projectGrounding,
       rollbackSnapshot,
     });
-    const suggestedCdCommand = `cd ${workspacePath}`;
+    const projectWorkspaceCommand = 'npx workspai project workspace status --json';
 
     if (options.dryRun !== true) {
       try {
@@ -2998,6 +3103,14 @@ export async function handleAdoptCommand(
           }
           await syncWorkspaceContract({ workspacePath, strict: true });
         }
+        const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
+        await syncProjectIntelligenceLens({
+          workspacePath,
+          projectPath: adoptedProject.path,
+          projectName: adoptedProject.name,
+          relationship: 'adopted',
+          mode: options.projectGrounding ?? 'managed',
+        });
         await transaction?.commit();
       } catch (syncError) {
         if (transaction) {
@@ -3028,7 +3141,8 @@ export async function handleAdoptCommand(
               usedDefaultWorkspace && options.dryRun === true
                 ? !hasWorkspaceRootMarkers(workspacePath)
                 : false,
-            suggestedCdCommand,
+            projectWorkspaceCommand,
+            commandsResolveWorkspaceFromProject: options.dryRun !== true,
             dryRun: options.dryRun === true,
             adoptedProject,
           },
@@ -3066,7 +3180,10 @@ export async function handleAdoptCommand(
     }
     console.log(chalk.gray(`   Report: ${adoptedProject.adoptReadinessPath}`));
     if (options.dryRun !== true) {
-      console.log(chalk.gray(`   Next shell step: ${suggestedCdCommand}`));
+      console.log(
+        chalk.gray(`   Workspai commands now resolve this workspace directly from the project.`)
+      );
+      console.log(chalk.gray(`   Check: ${projectWorkspaceCommand}`));
       console.log(
         chalk.gray(
           `   Then: npx workspai workspace intelligence run --for-agent generic --strict --json`
@@ -7100,6 +7217,11 @@ program
     '--enable-modules',
     'Preserve Core module/template commands only when imported RapidKit metadata already supports them'
   )
+  .addOption(
+    new Option('--project-grounding <mode>', 'Project entrypoint policy: managed, local, or off')
+      .choices(['managed', 'local', 'off'])
+      .default('managed')
+  )
   .option('--git', 'Force source to be treated as a git repository URL')
   .option('--json', 'Emit machine-readable JSON output')
   .action(
@@ -7111,6 +7233,7 @@ program
         git?: boolean;
         json?: boolean;
         enableModules?: boolean;
+        projectGrounding?: ProjectGroundingMode;
       }
     ) => {
       const code = await handleImportCommand(source, options);
@@ -7131,6 +7254,11 @@ program
     '--enable-modules',
     'Preserve Core module/template commands only when adopted RapidKit metadata already supports them'
   )
+  .addOption(
+    new Option('--project-grounding <mode>', 'Project entrypoint policy: managed, local, or off')
+      .choices(['managed', 'local', 'off'])
+      .default('managed')
+  )
   .option('--dry-run', 'Preview adoption without writing project or registry metadata')
   .option('--json', 'Emit machine-readable JSON output')
   .action(
@@ -7142,6 +7270,7 @@ program
         dryRun?: boolean;
         json?: boolean;
         enableModules?: boolean;
+        projectGrounding?: ProjectGroundingMode;
       }
     ) => {
       const code = await handleAdoptCommand(source, {
@@ -7322,6 +7451,108 @@ projectCommand
   .action(async (options: { json?: boolean }) => {
     printProjectCommandCapabilities({ json: options.json });
   });
+
+projectCommand
+  .command('workspace [action]')
+  .description('Show or repair the canonical workspace binding for the current Workspai project')
+  .option('--workspace <path>', 'Explicit workspace for relink or validation')
+  .option('--project <path>', 'Project path (defaults to the current or nearest parent project)')
+  .option('--json', 'Emit machine-readable JSON output')
+  .action(
+    async (
+      action: string | undefined,
+      options: { workspace?: string; project?: string; json?: boolean }
+    ) => {
+      const normalizedAction = action ?? 'status';
+      if (!['status', 'relink'].includes(normalizedAction)) {
+        const message = `Unknown project workspace action: ${normalizedAction}`;
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'project workspace',
+                code: 'project.workspace.action.invalid',
+                message,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ ${message}`));
+          console.log(
+            chalk.gray(
+              '   npx workspai project workspace [status|relink] [--workspace <path>] [--json]'
+            )
+          );
+        }
+        process.exit(1);
+      }
+
+      try {
+        const resolution = resolveProjectWorkspaceSync({
+          startPath: path.resolve(options.project ?? process.cwd()),
+          explicitWorkspacePath: options.workspace,
+          strict: true,
+          requireProjectMembership: true,
+        });
+        if (!resolution || !resolution.projectPath) {
+          throw new ProjectWorkspaceResolutionError(
+            'project.workspace.unlinked',
+            'No Workspai project metadata was found from the requested path.'
+          );
+        }
+        const repaired =
+          normalizedAction === 'relink' || resolution.source === 'registry' || resolution.recovered
+            ? await repairProjectWorkspaceLink(resolution)
+            : null;
+        const payload: ProjectWorkspaceResolutionContract = {
+          schemaVersion: 'project-workspace-resolution.v1',
+          status: 'resolved',
+          workspacePath: resolution.workspacePath,
+          projectPath: resolution.projectPath,
+          source: repaired ? 'local-link' : resolution.source,
+          recovered: resolution.recovered || repaired !== null,
+          linkPath:
+            repaired?.linkPath ??
+            resolution.linkPath ??
+            path.join(resolution.projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
+          nextCommand:
+            'npx workspai workspace intelligence run --for-agent generic --strict --json',
+        };
+        assertProjectWorkspaceResolutionContract(payload);
+        if (options.json) {
+          console.log(JSON.stringify(payload, null, 2));
+          return;
+        }
+        console.log(chalk.green('✔ Project workspace resolved'));
+        console.log(chalk.gray(`   Workspace: ${payload.workspacePath}`));
+        console.log(chalk.gray(`   Project: ${payload.projectPath}`));
+        console.log(chalk.gray(`   Resolution: ${payload.source}`));
+        if (repaired) console.log(chalk.gray(`   Local link repaired: ${repaired.linkPath}`));
+      } catch (error) {
+        const resolutionError = error instanceof ProjectWorkspaceResolutionError ? error : null;
+        const message = error instanceof Error ? error.message : String(error);
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'project workspace',
+                code: resolutionError?.code ?? 'project.workspace.resolve.failed',
+                message,
+                context: resolutionError?.context,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ ${message}`));
+        }
+        process.exit(1);
+      }
+    }
+  );
 
 projectCommand
   .command('coverage')
@@ -7802,6 +8033,14 @@ program
     '--preset <preset>',
     'Agent customization pack preset for agent-sync (minimal|enterprise)'
   )
+  .addOption(
+    new Option(
+      '--project-grounding <mode>',
+      'Project entrypoint policy for sync/agent-sync: managed, local, or off'
+    )
+      .choices(['managed', 'local', 'off'])
+      .default('managed')
+  )
   .option('--refresh-context', 'Rebuild workspace-context-agent.json during agent-sync')
   .option(
     '--experimental-hooks',
@@ -7889,6 +8128,7 @@ See the command reference for action-specific required inputs and output artifac
       noAgentSync?: boolean;
       target?: string;
       preset?: string;
+      projectGrounding?: ProjectGroundingMode;
       refreshContext?: boolean;
       experimentalHooks?: boolean;
       hydratePrompts?: boolean;
@@ -7925,21 +8165,38 @@ See the command reference for action-specific required inputs and output artifac
       const requestedWorkspace = actionOptions.workspace
         ? path.resolve(actionOptions.workspace)
         : null;
-      const workspacePath =
-        requestedWorkspace ?? findWorkspaceRootUp(process.cwd()) ?? findWorkspaceUp(process.cwd());
+      let workspacePath: string | null = null;
+      let resolutionError: ProjectWorkspaceResolutionError | null = null;
+      try {
+        workspacePath =
+          resolveProjectWorkspaceSync({
+            startPath: process.cwd(),
+            explicitWorkspacePath: requestedWorkspace,
+            strict: true,
+          })?.workspacePath ?? null;
+      } catch (error) {
+        if (error instanceof ProjectWorkspaceResolutionError) {
+          resolutionError = error;
+        } else {
+          throw error;
+        }
+      }
 
       if (!workspacePath || !hasWorkspaceRootMarkers(workspacePath)) {
+        const message =
+          resolutionError?.message ??
+          'Not inside a Workspai workspace. Run from a workspace/project directory or pass --workspace <path>.';
         if (actionOptions.json === true || process.argv.includes('--json')) {
           console.log(
             JSON.stringify(
               cliOperationError({
                 operation: `workspace ${actionName}`,
-                code: 'workspace.root.required',
-                message:
-                  'Not inside a Workspai workspace. Run from a workspace directory or pass --workspace <path>.',
+                code: resolutionError?.code ?? 'workspace.root.required',
+                message,
                 context: {
                   cwd: path.resolve(process.cwd()),
                   ...(requestedWorkspace ? { requestedWorkspace } : {}),
+                  ...(resolutionError?.context ?? {}),
                 },
               }),
               null,
@@ -7948,8 +8205,12 @@ See the command reference for action-specific required inputs and output artifac
           );
           process.exit(1);
         }
-        console.log(chalk.red('❌ Not inside a Workspai workspace'));
-        console.log(chalk.gray('💡 Run from a workspace directory or pass --workspace <path>.'));
+        console.log(chalk.red(`❌ ${message}`));
+        console.log(
+          chalk.gray(
+            '💡 Run from a workspace/project directory, or pass --workspace <path> to resolve ambiguity.'
+          )
+        );
         process.exit(1);
       }
 
@@ -8198,6 +8459,7 @@ See the command reference for action-specific required inputs and output artifac
         experimentalHooks:
           actionOptions.experimentalHooks === true || hasRawFlag('--experimental-hooks'),
         hydratePrompts: actionOptions.hydratePrompts === true || hasRawFlag('--hydrate-prompts'),
+        projectGrounding: actionOptions.projectGrounding ?? 'managed',
         staleAfterHours: 24,
       });
 
@@ -8331,6 +8593,7 @@ See the command reference for action-specific required inputs and output artifac
             strict: strictRequested,
             preset: actionOptions.preset === 'minimal' ? 'minimal' : 'enterprise',
             targets: parseAgentGroundingTargets(actionOptions.target),
+            projectGrounding: actionOptions.projectGrounding ?? 'managed',
           });
           if (!actionOptions.json) {
             console.log(
@@ -8695,7 +8958,8 @@ See the command reference for action-specific required inputs and output artifac
       }
     } else if (action === 'graph') {
       const workspacePath = requireWorkspaceRootForAction('graph');
-      const { buildWorkspaceModel } = await import('./workspace-model.js');
+      const { buildWorkspaceModel, workspaceModelProjectTopology } =
+        await import('./workspace-model.js');
       const { buildGraphEmit, renderGraphDot, renderGraphMermaid, explainGraphNode } =
         await import('./workspace-graph.js');
       const model = await buildWorkspaceModel({
@@ -8704,7 +8968,7 @@ See the command reference for action-specific required inputs and output artifac
         includeEvidence: actionOptions.includeEvidence === true || hasRawFlag('--include-evidence'),
         observableScanDepth: workspaceModelScanDepth(),
       });
-      const graph = model.graph;
+      const graph = workspaceModelProjectTopology(model);
       const mode = (subaction || 'emit').toLowerCase();
       if (!graph) {
         if (actionOptions.json) {
@@ -9198,7 +9462,10 @@ See the command reference for action-specific required inputs and output artifac
         },
         onModel: graphPublisher
           ? async (model) => {
-              if (!model.graph) {
+              const projectTopology = (
+                await import('./workspace-model.js')
+              ).workspaceModelProjectTopology(model);
+              if (!projectTopology) {
                 return;
               }
               const { buildWorkspaceKnowledgeGraph } =
@@ -9224,7 +9491,7 @@ See the command reference for action-specific required inputs and output artifac
                   framework: project.framework,
                   ...(project.kit ? { kit: project.kit } : {}),
                 })),
-                projectTopology: model.graph,
+                projectTopology,
                 contract,
                 now: new Date(model.generatedAt),
                 source: {
@@ -9298,6 +9565,11 @@ See the command reference for action-specific required inputs and output artifac
       await syncWorkspaceContractAfterProjectChange(workspacePath, {
         silent: actionOptions.json === true,
       });
+      const { syncWorkspaceProjectLenses } = await import('./project-intelligence-lens.js');
+      const projectLenses = await syncWorkspaceProjectLenses({
+        workspacePath,
+        mode: actionOptions.projectGrounding ?? 'managed',
+      });
       const { readWorkspaceRegistrySummary } =
         await import('./utils/workspace-registry-summary.js');
       const registrySummary = await readWorkspaceRegistrySummary(workspacePath);
@@ -9309,6 +9581,10 @@ See the command reference for action-specific required inputs and output artifac
               workspacePath,
               registry: syncResult,
               contractSynced: true,
+              projectLenses: {
+                synced: projectLenses.projects.length,
+                skipped: projectLenses.skipped,
+              },
               registrySummary,
             },
             null,

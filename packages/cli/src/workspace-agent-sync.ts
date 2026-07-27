@@ -66,6 +66,16 @@ import {
   writeWorkspaceAgentContext,
   type WorkspaceContextAgent,
 } from './workspace-context.js';
+import {
+  resolveWorkspaceProjectLensTargets,
+  syncWorkspaceProjectLenses,
+  type SyncWorkspaceProjectLensesResult,
+} from './project-intelligence-lens.js';
+import {
+  PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
+  PROJECT_GROUNDING_RELATIVE_PATH,
+  PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
+} from './utils/workspace-paths.js';
 
 export const AGENT_REPORTS_INDEX_SCHEMA = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.agentIndex;
 export const AGENT_CUSTOMIZATION_PACK_SCHEMA =
@@ -311,6 +321,7 @@ export type AgentGroundingSyncResult = {
   missingRequired: string[];
   staleReports: string[];
   strictViolations: string[];
+  projectLenses?: SyncWorkspaceProjectLensesResult;
 };
 
 export type SyncWorkspaceAgentGroundingOptions = {
@@ -329,6 +340,8 @@ export type SyncWorkspaceAgentGroundingOptions = {
   experimentalHooks?: boolean;
   /** Hydrate matching Workspai prompts, while keeping legacy rapidkit prompt mirrors available. */
   hydratePrompts?: boolean;
+  /** Project-level portable grounding policy. */
+  projectGrounding?: 'managed' | 'local' | 'off';
 };
 
 function displayRapidkitCommand(args: string): string {
@@ -1906,6 +1919,21 @@ async function syncWorkspaceAgentGroundingUnsafe(
     }
   }
 
+  const projectLenses = write
+    ? await syncWorkspaceProjectLenses({
+        workspacePath,
+        mode: options.projectGrounding ?? 'managed',
+        now,
+      })
+    : undefined;
+  if (strict && projectLenses && projectLenses.skipped.length > 0) {
+    strictViolations.push(
+      `Project grounding incomplete: ${projectLenses.skipped
+        .map((project) => `${project.name} (${project.reason})`)
+        .join(', ')}`
+    );
+  }
+
   const pack = buildAgentCustomizationPackReport({
     workspacePath,
     generatedAt: now.toISOString(),
@@ -1953,6 +1981,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
     missingRequired,
     staleReports,
     strictViolations,
+    projectLenses,
   };
 }
 
@@ -1984,6 +2013,18 @@ export async function syncWorkspaceAgentGrounding(
         throw new Error(`Agent-sync output escapes workspace root: ${relativePath}`);
       }
       await transaction.captureFile(absolutePath);
+    }
+    const projectTargets = await resolveWorkspaceProjectLensTargets(workspacePath);
+    for (const project of projectTargets.resolved) {
+      for (const relativePath of [
+        PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
+        PROJECT_GROUNDING_RELATIVE_PATH,
+        PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
+        'AGENTS.md',
+        '.gitignore',
+      ]) {
+        await transaction.captureFile(path.join(project.projectPath, relativePath));
+      }
     }
     const result = await syncWorkspaceAgentGroundingUnsafe(options);
     await transaction.commit();

@@ -70,4 +70,16 @@ describe('workspace model cache (1.15)', () => {
     const next = await buildWorkspaceModelCached({ workspacePath, cache: true });
     expect(next.cache).toBe('miss');
   });
+
+  it('rebuilds a legacy cache that lacks the canonical projectTopology field', async () => {
+    await buildWorkspaceModelCached({ workspacePath, cache: true });
+    const cachePath = path.join(workspacePath, WORKSPACE_MODEL_CACHE_PATH);
+    const envelope = await fsExtra.readJson(cachePath);
+    delete envelope.model.projectTopology;
+    await fsExtra.writeJson(cachePath, envelope, { spaces: 2 });
+
+    const next = await buildWorkspaceModelCached({ workspacePath, cache: true });
+    expect(next.cache).toBe('miss');
+    expect(next.model.projectTopology).toEqual(next.model.graph);
+  });
 });

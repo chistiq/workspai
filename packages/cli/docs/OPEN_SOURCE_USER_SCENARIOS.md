@@ -17,10 +17,10 @@ Goal: connect code you already have without reshuffling repositories.
 ### Adopt in place (keep source where it is)
 
 ```bash
-npx workspai adopt /path/to/existing-app --workspace /path/to/workspace --json
-cd /path/to/workspace
-npx workspai workspace intelligence run --for-agent generic --strict --json
 cd /path/to/existing-app
+npx workspai adopt . --workspace /path/to/workspace --json
+npx workspai project workspace status --json
+npx workspai workspace intelligence run --for-agent generic --strict --json
 npx workspai doctor project --json
 ```
 

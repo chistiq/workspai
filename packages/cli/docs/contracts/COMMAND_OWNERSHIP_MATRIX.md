@@ -63,6 +63,7 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `project archive`
 - `project restore`
 - `project delete`
+- `project workspace`
 - `snapshot create`
 - `snapshot inspect`
 - `snapshot list`

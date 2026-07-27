@@ -241,10 +241,19 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(await fsExtra.readJson(path.join(projectPath, '.workspai', 'adopt.json'))).toMatchObject(
       {
         mode: 'linked',
-        workspace: { path: workspacePath },
+        workspace: {
+          name: 'workspai',
+          contract: '.workspai/workspace.contract.json',
+        },
         policy: { moved_source: false, copied_source: false },
       }
     );
+    expect(
+      await fsExtra.readJson(path.join(projectPath, '.workspai', 'workspace-link.local.json'))
+    ).toMatchObject({
+      workspace: { name: 'workspai', root: workspacePath },
+      project: { name: 'managed-api', relationship: 'adopted' },
+    });
   });
 
   it('routes `create` without subcommand to workspace flow in non-interactive mode', async () => {

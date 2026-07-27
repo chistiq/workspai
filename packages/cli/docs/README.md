@@ -19,13 +19,16 @@ npx workspai adopt .
 ```
 
 `adopt` keeps the project in place and creates or reuses the minimal default
-workspace. Without the VS Code extension, copy the exact `Next shell step`
-printed by the CLI and continue in that workspace terminal:
+workspace. Continue from the same project terminal:
 
 ```bash
-cd ~/.workspai/workspaces/workspai
+npx workspai project workspace status --json
 npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
+
+The first command proves which canonical workspace owns the project. Workspai
+uses a gitignored machine-local binding and portable project grounding, so
+workspace commands and compatible agents do not need a manual `cd`.
 
 Use `generic` for a vendor-neutral context pack, or select `codex`, `claude`,
 `cursor`, or `orca`. Agent Sync also publishes shared files for GitHub Copilot,

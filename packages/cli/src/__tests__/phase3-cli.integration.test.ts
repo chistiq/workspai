@@ -188,7 +188,8 @@ describe('Phase 3 commands - CLI process integration', () => {
           workspacePath: managedWorkspace,
           workspaceResolution: 'default-auto',
           defaultWorkspaceCreated: true,
-          suggestedCdCommand: `cd ${managedWorkspace}`,
+          projectWorkspaceCommand: 'npx workspai project workspace status --json',
+          commandsResolveWorkspaceFromProject: true,
           dryRun: false,
           adoptedProject: {
             path: canonicalProjectDir,
@@ -347,7 +348,9 @@ describe('Phase 3 commands - CLI process integration', () => {
 
       expect(run.status).toBe(1);
       const output = `${run.stdout || ''}\n${run.stderr || ''}`;
-      expect(output).toContain('Not inside a Workspai workspace');
+      expect(output).toContain(
+        'No Workspai project or workspace could be resolved from the current directory.'
+      );
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }

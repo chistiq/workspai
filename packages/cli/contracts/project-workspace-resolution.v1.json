@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/project-workspace-resolution.v1.json",
+  "title": "Workspai Project Workspace Resolution",
+  "description": "Machine-readable result of resolving or repairing a project's canonical Workspai workspace binding.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "status",
+    "workspacePath",
+    "projectPath",
+    "source",
+    "recovered",
+    "linkPath",
+    "nextCommand"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "project-workspace-resolution.v1" },
+    "status": { "const": "resolved" },
+    "workspacePath": { "type": "string", "minLength": 1 },
+    "projectPath": { "type": "string", "minLength": 1 },
+    "source": { "enum": ["explicit", "parent", "local-link", "registry"] },
+    "recovered": { "type": "boolean" },
+    "linkPath": { "type": "string", "minLength": 1 },
+    "nextCommand": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

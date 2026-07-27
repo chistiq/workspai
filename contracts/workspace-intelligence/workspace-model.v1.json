@@ -46,9 +46,15 @@
       "items": { "type": "object", "additionalProperties": true }
     },
     "contracts": { "type": "object", "additionalProperties": true },
+    "projectTopology": {
+      "type": "object",
+      "description": "Canonical compact project dependency topology (workspace-dependency-graph.v1).",
+      "additionalProperties": true
+    },
     "graph": {
       "type": "object",
-      "description": "First-class inferred dependency graph (workspace-dependency-graph.v1). Additive/optional.",
+      "deprecated": true,
+      "description": "Deprecated compatibility alias for projectTopology. Producers must emit identical content during the v1 migration window.",
       "additionalProperties": true
     },
     "evidence": { "type": "object", "additionalProperties": true },

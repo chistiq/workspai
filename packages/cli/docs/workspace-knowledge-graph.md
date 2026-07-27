@@ -193,10 +193,13 @@ derived graph; it does not flow back into the model during that run. A future
 fact-first package may make normalized facts the shared input to both
 representations, but that is not the shipped contract today.
 
-The model also contains a smaller project dependency graph. That projection is
-used for impact, blast radius, verify, explain, watch, and affected fleet runs.
-The richer Knowledge Graph is used for proof-backed retrieval and cross-domain
-understanding.
+The model also contains a smaller project dependency graph under the canonical
+`projectTopology` field. That projection is used for impact, blast radius,
+verify, explain, watch, and affected fleet runs. The richer Knowledge Graph is
+used for proof-backed retrieval and cross-domain understanding. The deprecated
+`graph` field is emitted only as a v1 compatibility alias and must remain
+structurally identical to `projectTopology`; new consumers must not depend on
+the alias.
 
 These rules are machine-owned, not Markdown conventions:
 

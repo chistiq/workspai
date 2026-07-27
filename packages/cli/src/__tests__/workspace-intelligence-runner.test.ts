@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   pathExists: vi.fn(),
+  readJson: vi.fn(),
   syncWorkspaceProjects: vi.fn(),
   syncWorkspaceContract: vi.fn(),
   buildWorkspaceModel: vi.fn(),
   createWorkspaceModelBuildProvenance: vi.fn(),
   writeWorkspaceModel: vi.fn(),
   buildWorkspaceModelSnapshot: vi.fn(),
+  migrateLegacyWorkspaceModelSnapshot: vi.fn(),
   writeWorkspaceModelSnapshot: vi.fn(),
   diffWorkspaceModel: vi.fn(),
   writeWorkspaceModelDiff: vi.fn(),
@@ -33,7 +35,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('fs-extra', () => ({
-  default: { pathExists: mocks.pathExists },
+  default: { pathExists: mocks.pathExists, readJson: mocks.readJson },
 }));
 vi.mock('../workspace.js', () => ({ syncWorkspaceProjects: mocks.syncWorkspaceProjects }));
 vi.mock('../workspace-model.js', () => ({
@@ -44,6 +46,7 @@ vi.mock('../workspace-model.js', () => ({
 vi.mock('../workspace-intelligence.js', () => ({
   buildWorkspaceImpact: mocks.buildWorkspaceImpact,
   buildWorkspaceModelSnapshot: mocks.buildWorkspaceModelSnapshot,
+  migrateLegacyWorkspaceModelSnapshot: mocks.migrateLegacyWorkspaceModelSnapshot,
   diffWorkspaceModel: mocks.diffWorkspaceModel,
   writeWorkspaceImpact: mocks.writeWorkspaceImpact,
   writeWorkspaceModelDiff: mocks.writeWorkspaceModelDiff,
@@ -92,6 +95,7 @@ import {
 
 function configurePassingChain(): void {
   mocks.pathExists.mockResolvedValue(false);
+  mocks.readJson.mockResolvedValue({ schemaVersion: 'workspace-model-snapshot.v1' });
   mocks.syncWorkspaceProjects.mockResolvedValue({ added: ['api'], skipped: 1 });
   mocks.syncWorkspaceContract.mockResolvedValue({ contract: { projects: [{ slug: 'api' }] } });
   mocks.buildWorkspaceModel.mockResolvedValue({ summary: { projectCount: 1 } });
@@ -104,6 +108,7 @@ function configurePassingChain(): void {
   mocks.buildWorkspaceModelSnapshot.mockResolvedValue({
     schemaVersion: 'workspace-model-snapshot.v1',
   });
+  mocks.migrateLegacyWorkspaceModelSnapshot.mockReturnValue(null);
   mocks.diffWorkspaceModel.mockResolvedValue({ summary: { changed: false } });
   mocks.buildWorkspaceImpact.mockResolvedValue({
     summary: { risk: 'low', affectedProjects: 0 },
@@ -210,6 +215,31 @@ describe('unified Workspace Intelligence runner', () => {
     expect(report.stages.find((stage) => stage.id === 'agent-sync')?.status).toBe('passed');
     expect(report.stages.find((stage) => stage.id === 'explain')?.status).toBe('passed');
     expect(mocks.buildWorkspaceModelSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('migrates an authenticated legacy baseline before diffing without replacing it', async () => {
+    mocks.pathExists.mockResolvedValue(true);
+    const legacy = { schemaVersion: 'workspace-model-snapshot.v1', modelHash: 'legacy' };
+    const migrated = { schemaVersion: 'workspace-model-snapshot.v1', modelHash: 'canonical' };
+    mocks.readJson.mockResolvedValue(legacy);
+    mocks.migrateLegacyWorkspaceModelSnapshot.mockReturnValue(migrated);
+
+    const report = await runWorkspaceIntelligenceChain({
+      workspacePath: '/tmp/workspai-intelligence-runner-legacy-baseline',
+      strict: true,
+    });
+
+    expect(report.preflight[1]).toMatchObject({
+      id: 'baseline',
+      result: 'reused',
+      message: 'legacy structural baseline migrated and reused',
+    });
+    expect(report.baselineCreated).toBe(false);
+    expect(mocks.writeWorkspaceModelSnapshot).toHaveBeenCalledWith(
+      migrated,
+      path.resolve('/tmp/workspai-intelligence-runner-legacy-baseline')
+    );
+    expect(mocks.diffWorkspaceModel).toHaveBeenCalled();
   });
 
   it('fails closed on preflight failure and deterministically skips all downstream stages', async () => {

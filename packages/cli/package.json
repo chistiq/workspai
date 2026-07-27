@@ -95,7 +95,7 @@
     "validate:contracts": "corepack npm run check:shared-contracts && vitest run src/__tests__/contracts/",
     "test:parity-contract": "corepack npm run check:shared-contracts && vitest run src/__tests__/contracts/import-stack-parity.snapshot.test.ts",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage --reporter=default --reporter=json --outputFile.json=test-results/vitest.json",
+    "test:coverage": "corepack npm run test:prebuild && vitest run --coverage --reporter=default --reporter=json --outputFile.json=test-results/vitest.json",
     "test:prepare-embeddings": "node scripts/prepare-mock-embeddings.mjs",
     "generate-embeddings": "npx tsx src/ai/generate-embeddings.ts",
     "verify:package-cli": "node scripts/verify-package-cli.mjs",

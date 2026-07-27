@@ -1,7 +1,7 @@
 import { computeInputsHash } from './contracts/freshness-metadata-contract.js';
 import { buildGraphTraversalIndex, traverseWithIndex } from './workspace-graph-traversal.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
-import type { WorkspaceModel } from './workspace-model.js';
+import { workspaceModelProjectTopology, type WorkspaceModel } from './workspace-model.js';
 
 /**
  * Graph-aware transitive freshness (roadmap 1.18).
@@ -44,7 +44,9 @@ export function computeProjectFreshnessHashes(
   model: WorkspaceModel
 ): Map<string, ProjectFreshnessHash> {
   const ownHashes = computeProjectOwnHashes(model);
-  const graph: Pick<WorkspaceDependencyGraph, 'nodes' | 'edges'> = model.graph ?? {
+  const graph: Pick<WorkspaceDependencyGraph, 'nodes' | 'edges'> = workspaceModelProjectTopology(
+    model
+  ) ?? {
     nodes: model.projects.map((project) => ({ id: project.name, path: project.path })),
     edges: [],
   };

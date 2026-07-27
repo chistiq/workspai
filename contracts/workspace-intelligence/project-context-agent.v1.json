@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/project-context-agent.v1.json",
+  "title": "Workspai Project Context for Agents",
+  "description": "Portable, bounded project lens derived from the canonical Workspace Model and evidence-backed Knowledge Graph.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "workspace",
+    "project",
+    "intelligence",
+    "evidence",
+    "blockers",
+    "commands",
+    "integrity"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "project-context-agent.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "workspace": {
+      "type": "object",
+      "required": ["name", "relationship", "contract", "model", "knowledgeGraph", "access"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "profile": { "type": "string" },
+        "relationship": {
+          "enum": ["managed", "adopted", "imported", "linked", "restored"]
+        },
+        "contract": { "const": ".workspai/workspace.contract.json" },
+        "model": { "const": ".workspai/reports/workspace-model.json" },
+        "knowledgeGraph": {
+          "const": ".workspai/reports/workspace-knowledge-graph.json"
+        },
+        "access": {
+          "type": "object",
+          "required": ["localBinding", "canonicalEvidenceAvailableAtGeneration"],
+          "properties": {
+            "localBinding": { "const": ".workspai/workspace-link.local.json" },
+            "canonicalEvidenceAvailableAtGeneration": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "relativePath", "commands", "importantFiles"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }
+        },
+        "kind": { "type": "string" },
+        "runtime": { "type": "string" },
+        "framework": { "type": "string" },
+        "kit": { "type": "string" },
+        "supportTier": { "type": "string" },
+        "commands": {
+          "type": "object",
+          "required": ["supported", "unsupported", "fleetStages"],
+          "properties": {
+            "supported": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "unsupported": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "fleetStages": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        },
+        "importantFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "intelligence": {
+      "type": "object",
+      "required": [
+        "entityCount",
+        "relationCount",
+        "proofCount",
+        "entitiesByKind",
+        "relationsByKind",
+        "relatedProjects",
+        "freshness",
+        "topology",
+        "surfaces",
+        "diagnostics"
+      ],
+      "properties": {
+        "modelGeneratedAt": { "type": "string", "format": "date-time" },
+        "graphGeneratedAt": { "type": "string", "format": "date-time" },
+        "graphModelHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "entityCount": { "type": "integer", "minimum": 0 },
+        "relationCount": { "type": "integer", "minimum": 0 },
+        "proofCount": { "type": "integer", "minimum": 0 },
+        "entitiesByKind": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "relationsByKind": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "relatedProjects": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "freshness": {
+          "type": "object",
+          "required": ["model", "graph", "graphMatchesModel"],
+          "properties": {
+            "model": { "enum": ["fresh", "stale", "unknown", "missing"] },
+            "graph": { "enum": ["fresh", "stale", "unknown", "missing"] },
+            "graphMatchesModel": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "topology": {
+          "type": "object",
+          "required": ["status", "dependencies", "dependents"],
+          "properties": {
+            "status": { "enum": ["proven", "unproven", "unavailable"] },
+            "dependencies": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/topologyRelation" },
+              "maxItems": 128
+            },
+            "dependents": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/topologyRelation" },
+              "maxItems": 128
+            }
+          },
+          "additionalProperties": false
+        },
+        "surfaces": {
+          "type": "object",
+          "required": [
+            "services",
+            "apis",
+            "endpoints",
+            "dataStores",
+            "deployments",
+            "pipelines",
+            "tests",
+            "owners",
+            "decisions",
+            "ports"
+          ],
+          "properties": {
+            "services": { "$ref": "#/$defs/entityList" },
+            "apis": { "$ref": "#/$defs/entityList" },
+            "endpoints": { "$ref": "#/$defs/entityList" },
+            "dataStores": { "$ref": "#/$defs/entityList" },
+            "deployments": { "$ref": "#/$defs/entityList" },
+            "pipelines": { "$ref": "#/$defs/entityList" },
+            "tests": { "$ref": "#/$defs/entityList" },
+            "owners": { "$ref": "#/$defs/entityList" },
+            "decisions": { "$ref": "#/$defs/entityList" },
+            "ports": {
+              "type": "array",
+              "maxItems": 32,
+              "items": { "$ref": "#/$defs/port" }
+            }
+          },
+          "additionalProperties": false
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code", "severity", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "severity": { "type": "string" },
+              "message": { "type": "string" },
+              "recommendation": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["readOrder", "projectProofArtifacts", "relations", "proofs"],
+      "properties": {
+        "readOrder": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "projectProofArtifacts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }
+          },
+          "uniqueItems": true
+        },
+        "relations": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/relation" }
+        },
+        "proofs": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/proof" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "blockers": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/blocker" }
+    },
+    "commands": {
+      "type": "object",
+      "required": ["refresh", "verify", "graphSearch", "doctor", "workspaceStatus"],
+      "properties": {
+        "refresh": { "type": "string", "minLength": 1 },
+        "verify": { "type": "string", "minLength": 1 },
+        "graphSearch": { "type": "string", "minLength": 1 },
+        "doctor": { "type": "string", "minLength": 1 },
+        "workspaceStatus": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "payloadHash", "portable", "absolutePathsEmitted"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "modelHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "payloadHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "portable": { "const": true },
+        "absolutePathsEmitted": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "portableString": {
+      "type": "string",
+      "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }
+    },
+    "topologyRelation": {
+      "type": "object",
+      "required": ["project", "kind", "source", "confidence", "evidence"],
+      "properties": {
+        "project": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/portableString" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "entityList": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "entity": {
+      "type": "object",
+      "required": ["id", "kind", "label", "attributes", "proofIds"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string" },
+        "label": { "type": "string" },
+        "attributes": { "type": "object", "additionalProperties": true },
+        "proofIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "port": {
+      "type": "object",
+      "required": ["entityId", "label", "attribute", "value"],
+      "properties": {
+        "entityId": { "type": "string" },
+        "label": { "type": "string" },
+        "attribute": { "type": "string" },
+        "value": true
+      },
+      "additionalProperties": false
+    },
+    "relation": {
+      "type": "object",
+      "required": [
+        "id",
+        "from",
+        "to",
+        "kind",
+        "derivation",
+        "trust",
+        "confidence",
+        "proofIds"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "kind": { "type": "string" },
+        "derivation": { "type": "string" },
+        "trust": { "type": "string" },
+        "confidence": { "type": "string" },
+        "proofIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "proof": {
+      "type": "object",
+      "required": [
+        "id",
+        "provider",
+        "artifact",
+        "derivation",
+        "trust",
+        "confidence",
+        "freshness"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "provider": { "type": "string" },
+        "artifact": { "$ref": "#/$defs/portableString" },
+        "pointer": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "derivation": { "type": "string" },
+        "trust": { "type": "string" },
+        "confidence": { "type": "string" },
+        "freshness": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "blocker": {
+      "type": "object",
+      "required": ["source", "severity", "message"],
+      "properties": {
+        "source": { "type": "string" },
+        "severity": { "enum": ["warning", "error"] },
+        "message": { "type": "string" },
+        "code": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

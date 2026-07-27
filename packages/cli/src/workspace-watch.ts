@@ -5,6 +5,7 @@ import { computeProjectOwnHashes } from './workspace-graph-freshness.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import {
   buildWorkspaceModelIncremental,
+  workspaceModelProjectTopology,
   type BuildWorkspaceModelOptions,
   type WorkspaceModel,
   type WorkspaceModelIncrementalMode,
@@ -71,7 +72,7 @@ function edgeKey(edge: WorkspaceWatchGraphEdgeRef): string {
 }
 
 function modelEdges(model: WorkspaceModel): WorkspaceWatchGraphEdgeRef[] {
-  return (model.graph?.edges ?? []).map((edge) => ({
+  return (workspaceModelProjectTopology(model)?.edges ?? []).map((edge) => ({
     from: edge.from,
     to: edge.to,
     kind: edge.kind,

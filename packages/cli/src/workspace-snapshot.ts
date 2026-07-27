@@ -1053,13 +1053,17 @@ async function resolveProjectPath(workspacePath: string, projectRef: string): Pr
   return matches[0];
 }
 
-async function syncWorkspaceProjectsBestEffort(workspacePath: string): Promise<void> {
-  try {
-    const { syncWorkspaceProjects } = await import('./workspace.js');
-    await syncWorkspaceProjects(workspacePath, true);
-  } catch {
-    // Registry sync is non-fatal; the project operation already committed.
-  }
+async function reconcileWorkspaceProjectsAfterLifecycle(workspacePath: string): Promise<void> {
+  const { syncWorkspaceProjects } = await import('./workspace.js');
+  await syncWorkspaceProjects(workspacePath, true);
+  const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
+  await syncWorkspaceContract({ workspacePath, strict: true });
+  const { syncWorkspaceProjectLenses } = await import('./project-intelligence-lens.js');
+  // Registry and contract reconciliation are the authoritative lifecycle
+  // transaction. Project lenses are portable convenience projections and may
+  // legitimately skip an unavailable external project. A skip must never turn
+  // an already completed archive/delete into a reported lifecycle failure.
+  await syncWorkspaceProjectLenses({ workspacePath, mode: 'managed' });
 }
 
 function archivedProjectPath(workspacePath: string, projectName: string): string {
@@ -1258,7 +1262,7 @@ export async function archiveWorkspaceProject(
     throw error;
   }
   await removeImportedProjectsRegistryEntries(workspacePath, [projectPath]);
-  await syncWorkspaceProjectsBestEffort(workspacePath);
+  await reconcileWorkspaceProjectsAfterLifecycle(workspacePath);
 
   await appendAuditEvent(workspacePath, {
     action: 'project.archive',
@@ -1331,7 +1335,7 @@ export async function deleteWorkspaceProject(
     moveSource: true,
   });
   await removeImportedProjectsRegistryEntries(workspacePath, [projectPath]);
-  await syncWorkspaceProjectsBestEffort(workspacePath);
+  await reconcileWorkspaceProjectsAfterLifecycle(workspacePath);
 
   await appendAuditEvent(workspacePath, {
     action: 'project.delete',
@@ -1447,7 +1451,7 @@ export async function restoreArchivedProject(
     }
     throw error;
   }
-  await syncWorkspaceProjectsBestEffort(workspacePath);
+  await reconcileWorkspaceProjectsAfterLifecycle(workspacePath);
 
   await appendAuditEvent(workspacePath, {
     action: 'project.restore',

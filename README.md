@@ -69,13 +69,20 @@ npx workspai adopt .
 ```
 
 Workspai keeps the project in place and creates or reuses a minimal workspace in
-the default system location. It prints the exact next shell step. Without the
-VS Code extension, copy that step and continue from the workspace terminal:
+the default system location. The project becomes a first-class entry point, so
+you can continue from the same terminal:
 
 ```bash
-cd ~/.workspai/workspaces/workspai
+npx workspai project workspace status --json
 npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
+
+The machine-local workspace binding is validated and gitignored. Portable
+project grounding and bounded agent context stay with the project. That lens
+includes current project identity, commands, topology, related projects,
+API/deployment/test surfaces, blockers, proof paths, and model/graph freshness;
+the canonical model, full graph, and decision evidence remain owned by the
+workspace.
 
 Use `generic` for vendor-neutral context, or choose `codex`, `claude`,
 `cursor`, or `orca`. The same run also syncs shared grounding for GitHub

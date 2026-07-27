@@ -35,6 +35,16 @@ const descriptors = Object.keys(WORKSPACE_INTELLIGENCE_ARTIFACTS).flatMap((id) =
 
 const supplementalDescriptors: WorkspaceArtifactContractInput[] = [
   {
+    artifactPath: '.workspai/workspace-link.local.json',
+    schemaVersion: 'project-workspace-link.v1',
+    contractPath: 'contracts/project-workspace-link.v1.json',
+  },
+  {
+    artifactPath: '.workspai/reports/project-context-agent.json',
+    schemaVersion: 'project-context-agent.v1',
+    contractPath: 'contracts/workspace-intelligence/project-context-agent.v1.json',
+  },
+  {
     artifactPath: '.workspai/workspace.contract.json',
     schemaVersion: 1,
     contractPath: 'contracts/workspace-contract.v1.json',
@@ -158,6 +168,18 @@ const supplementalDescriptors: WorkspaceArtifactContractInput[] = [
 ];
 
 const SUPPLEMENTAL_ARTIFACT_PRODUCERS: Readonly<Record<string, readonly string[][]>> = {
+  '.workspai/workspace-link.local.json': [
+    ['adopt'],
+    ['import'],
+    ['project', 'workspace', 'relink'],
+    ['workspace', 'sync'],
+  ],
+  '.workspai/reports/project-context-agent.json': [
+    ['adopt'],
+    ['import'],
+    ['workspace', 'sync'],
+    ['workspace', 'agent-sync', '--write'],
+  ],
   '.workspai/workspace.contract.json': [
     ['workspace', 'sync'],
     ['workspace', 'contract', 'sync'],

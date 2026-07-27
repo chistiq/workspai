@@ -46,6 +46,21 @@
       "contractPath": "contracts/project-entry-capability.v1.json",
       "publication": "json-schema"
     },
+    "projectWorkspaceLink": {
+      "schemaVersion": "project-workspace-link.v1",
+      "contractPath": "contracts/project-workspace-link.v1.json",
+      "publication": "json-schema"
+    },
+    "projectWorkspaceResolution": {
+      "schemaVersion": "project-workspace-resolution.v1",
+      "contractPath": "contracts/project-workspace-resolution.v1.json",
+      "publication": "json-schema"
+    },
+    "projectContextAgent": {
+      "schemaVersion": "project-context-agent.v1",
+      "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
+      "publication": "json-schema"
+    },
     "doctorProjectEvidence": {
       "schemaVersion": "doctor-project-evidence-v1",
       "contractPath": "contracts/doctor-project-evidence.v1.json",

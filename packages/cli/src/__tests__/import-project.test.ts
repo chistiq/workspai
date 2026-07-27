@@ -551,7 +551,7 @@ describe('import-project', () => {
     });
 
     expect(contractSync.verification.status).toBe('passed');
-    expect(contractSync.addedProjects).toEqual(['orders-api']);
+    expect(contractSync.addedProjects).toEqual([]);
     expect(contractSync.contract.projects).toEqual([
       expect.objectContaining({
         slug: 'orders-api',

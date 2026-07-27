@@ -6,6 +6,13 @@ export const WORKSPAI_METADATA_DIR = '.workspai';
 export const LEGACY_RAPIDKIT_METADATA_DIR = '.rapidkit';
 export const WORKSPAI_WORKSPACE_MARKER = '.workspai-workspace';
 export const LEGACY_RAPIDKIT_WORKSPACE_MARKER = '.rapidkit-workspace';
+export const PROJECT_WORKSPACE_LINK_FILE = 'workspace-link.local.json';
+export const PROJECT_GROUNDING_FILE = 'PROJECT-GROUNDING.md';
+export const PROJECT_CONTEXT_AGENT_REPORT_FILE = 'project-context-agent.json';
+
+export const PROJECT_WORKSPACE_LINK_RELATIVE_PATH = `${WORKSPAI_METADATA_DIR}/${PROJECT_WORKSPACE_LINK_FILE}`;
+export const PROJECT_GROUNDING_RELATIVE_PATH = `${WORKSPAI_METADATA_DIR}/${PROJECT_GROUNDING_FILE}`;
+export const PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH = `${WORKSPAI_METADATA_DIR}/reports/${PROJECT_CONTEXT_AGENT_REPORT_FILE}`;
 
 export const MANAGED_DEFAULT_WORKSPACE_NAME = 'workspai';
 export const MANAGED_DEFAULT_WORKSPACE_LABEL = 'Workspai';

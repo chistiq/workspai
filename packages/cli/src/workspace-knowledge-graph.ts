@@ -22,7 +22,7 @@ import {
   type WorkspaceKnowledgeTrust,
 } from './contracts/workspace-knowledge-graph-contract.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
-import type { WorkspaceModel } from './workspace-model.js';
+import { workspaceModelProjectTopology, type WorkspaceModel } from './workspace-model.js';
 
 export const WORKSPACE_KNOWLEDGE_GRAPH_REPORT_PATH =
   WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
@@ -80,7 +80,8 @@ export function assertWorkspaceKnowledgeGraphSourceBinding(
       'Workspace knowledge graph identity does not match the canonical workspace model.'
     );
   }
-  if (!model.graph) {
+  const modelProjectTopology = workspaceModelProjectTopology(model);
+  if (!modelProjectTopology) {
     throw new Error(
       'Canonical workspace model has no project topology for the workspace knowledge graph.'
     );
@@ -91,7 +92,7 @@ export function assertWorkspaceKnowledgeGraphSourceBinding(
   });
   if (
     hashCanonicalJson(normalizeTopology(graph.projectTopology)) !==
-    hashCanonicalJson(normalizeTopology(model.graph))
+    hashCanonicalJson(normalizeTopology(modelProjectTopology))
   ) {
     throw new Error(
       'Workspace knowledge graph project topology does not match the canonical workspace model.'

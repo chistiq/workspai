@@ -20,6 +20,28 @@ The canonical `.workspai-workspace` marker must remain trackable. Generated
 workspace `.gitignore` files exclude legacy/local engine state but do not
 exclude the canonical marker.
 
+## Project entry and grounding
+
+These paths are relative to each registered project root, not the workspace
+root:
+
+| Artifact | Writer | Schema / format | Portability and reader purpose |
+| --- | --- | --- | --- |
+| `.workspai/workspace-link.local.json` | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1` | Machine-local absolute binding; always gitignored and never an agent evidence payload |
+| `.workspai/reports/project-context-agent.json` | Project lens reconciliation and `workspace agent-sync --write` | `project-context-agent.v1` | Portable bounded model/graph/proof projection for project-local agents |
+| `.workspai/PROJECT-GROUNDING.md` | Project lens reconciliation | Markdown | Portable human/agent entry guide with path-free workspace references |
+| `AGENTS.md` managed section | Project lens reconciliation in `managed` mode | Managed Markdown block | Preserves user content and routes compatible agents to project/workspace evidence |
+
+The project link is validated against the canonical workspace contract and a
+SHA-256 binding over workspace identity, project identity, portable relative
+path, machine paths, and relationship. Project context generation rejects
+absolute paths before writing. `managed`, `local`, and `off` grounding modes
+control portable project surfaces and converge by removing stale managed
+sections and ignore rules during transitions; they never make the
+machine-local link publishable. The context is bounded but not count-only: it
+includes topology, API/deployment/test surfaces, blockers, portable proofs,
+and model/graph freshness for the selected project.
+
 ## Naming conventions
 
 | Pattern           | Meaning                                | Examples                                                     |
@@ -157,11 +179,13 @@ sources: package manifests (`package.json` deps, `pyproject.toml` path deps, `go
 replace → `package-dep`), cross-boundary JS/TS source imports (`code-import`), the
 workspace contract (`dependsOn` → `service-dependsOn`, matched `publishes`/`consumes`
 → `event-pub-sub`, env↔port references → `shared-resource`), and an optional manual
-override file. Node/edge ordering and `hashDependencyGraph` are stable, so the graph is
-embedded as a first-class field of `workspace-model.v1` (`model.graph`) on every
-`buildWorkspaceModel` run; `hashModel` normalizes the embedded `graph.generatedAt` so the
-structural graph participates in the model hash without causing timestamp drift.
-(`model.graph` is additive/optional for pre-graph readers.)
+override file. Node/edge ordering and `hashDependencyGraph` are stable, so the compact
+topology is embedded as the canonical `workspace-model.v1.projectTopology` field on every
+`buildWorkspaceModel` run. `hashWorkspaceModel` normalizes
+`projectTopology.generatedAt`, so the structural topology participates in the model hash
+without causing timestamp drift. During the v1 migration window the CLI also emits the
+deprecated `graph` compatibility alias. Consumers must read `projectTopology`; when both
+fields exist, validation requires them to be structurally identical.
 
 **Manual overrides.** `.workspai/workspace-graph.overrides.json` (`{ "edges": [{ "from",
 "to", "kind", "evidence" }] }`) declares authoritative edges that win over inference for

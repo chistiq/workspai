@@ -281,7 +281,7 @@ describe('adopt-project', () => {
     ]);
 
     const contractSync = await syncWorkspaceContract({ workspacePath });
-    expect(contractSync.addedProjects).toEqual(['orders-api']);
+    expect(contractSync.addedProjects).toEqual([]);
     expect(contractSync.contract.projects).toEqual([
       expect.objectContaining({
         slug: 'orders-api',

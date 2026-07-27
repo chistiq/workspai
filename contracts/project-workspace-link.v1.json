@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/project-workspace-link.v1.json",
+  "title": "Workspai Project Workspace Link",
+  "description": "Machine-local, gitignored binding from a Workspai project to its canonical workspace. Absolute paths are permitted only in this local contract.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "kind",
+    "generatedAt",
+    "state",
+    "workspace",
+    "project",
+    "integrity"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "project-workspace-link.v1" },
+    "kind": { "const": "workspai.project-workspace-link" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "state": { "const": "active" },
+    "workspace": {
+      "type": "object",
+      "required": ["name", "root", "marker", "contract"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:/|[A-Za-z]:[\\\\/])",
+          "description": "Machine-local absolute workspace path. This file must remain gitignored."
+        },
+        "marker": {
+          "enum": [".workspai-workspace", ".workspai/workspace.json"]
+        },
+        "contract": { "const": ".workspai/workspace.contract.json" }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "relativePath", "relationship"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)|^(?:/|[A-Za-z]:[\\\\/])" }
+        },
+        "relationship": {
+          "enum": ["managed", "adopted", "imported", "linked", "restored"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "binding"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "binding": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

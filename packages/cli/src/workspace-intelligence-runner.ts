@@ -13,9 +13,11 @@ import {
   buildWorkspaceImpact,
   buildWorkspaceModelSnapshot,
   diffWorkspaceModel,
+  migrateLegacyWorkspaceModelSnapshot,
   writeWorkspaceImpact,
   writeWorkspaceModelDiff,
   writeWorkspaceModelSnapshot,
+  type WorkspaceModelSnapshot,
 } from './workspace-intelligence.js';
 import {
   buildWorkspaceVerify,
@@ -181,6 +183,15 @@ export async function runWorkspaceIntelligenceChain(input: {
       await writeWorkspaceModelSnapshot(snapshot, workspacePath);
       baselineCreated = true;
       return { result: 'created', message: 'initial structural baseline created' };
+    }
+    const existing = (await fsExtra.readJson(snapshotPath)) as WorkspaceModelSnapshot;
+    const migrated = migrateLegacyWorkspaceModelSnapshot(existing);
+    if (migrated) {
+      await writeWorkspaceModelSnapshot(migrated, workspacePath);
+      return {
+        result: 'reused',
+        message: 'legacy structural baseline migrated and reused',
+      };
     }
     return { result: 'reused', message: 'existing structural baseline reused' };
   });

@@ -20,10 +20,17 @@ import {
 } from './utils/backend-framework-contract.js';
 import {
   hasWorkspaceRootMarkers,
+  PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
+  PROJECT_GROUNDING_RELATIVE_PATH,
+  PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
   projectMetadataCandidates,
   projectMetadataPath,
   workspaceMetadataPath,
 } from './utils/workspace-paths.js';
+import {
+  syncProjectIntelligenceLens,
+  type ProjectGroundingMode,
+} from './project-intelligence-lens.js';
 import {
   collectWorkspaceProfileRuntimes,
   readWorkspaceManifestProfile,
@@ -43,6 +50,7 @@ export interface AdoptProjectOptions {
   profilePolicyMode?: WorkspaceProfilePolicyMode;
   now?: Date;
   rollbackSnapshot?: AdoptProjectRollbackSnapshot;
+  projectGrounding?: ProjectGroundingMode;
 }
 
 interface AdoptProjectFilePreimage {
@@ -128,6 +136,11 @@ export async function captureAdoptProjectRollbackSnapshot(
     projectMetadataPath(resolvedProjectPath, 'project.json'),
     projectMetadataPath(resolvedProjectPath, 'adopt.json'),
     projectMetadataPath(resolvedProjectPath, 'adopt-readiness.json'),
+    path.join(resolvedProjectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
+    path.join(resolvedProjectPath, PROJECT_GROUNDING_RELATIVE_PATH),
+    path.join(resolvedProjectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
+    path.join(resolvedProjectPath, 'AGENTS.md'),
+    path.join(resolvedProjectPath, '.gitignore'),
     workspaceMetadataPath(resolvedWorkspacePath, 'imported-projects.json'),
   ];
 
@@ -152,6 +165,11 @@ function assertMatchingRollbackSnapshot(
     projectMetadataPath(projectPath, 'project.json'),
     projectMetadataPath(projectPath, 'adopt.json'),
     projectMetadataPath(projectPath, 'adopt-readiness.json'),
+    path.join(projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
+    path.join(projectPath, 'AGENTS.md'),
+    path.join(projectPath, '.gitignore'),
     workspaceMetadataPath(workspacePath, 'imported-projects.json'),
   ].map((filePath) => path.resolve(filePath));
   if (
@@ -230,7 +248,7 @@ function buildAdoptedProjectJson(input: {
       mode: 'linked',
       adopted_at: input.adoptedAt,
       relative_path: input.contractRelativePath,
-      discovered_relative_path: input.discoveredRelativePath,
+      ...(!input.isExternal ? { discovered_relative_path: input.discoveredRelativePath } : {}),
       is_external: input.isExternal,
       detection: {
         framework: input.detection.key,
@@ -356,13 +374,13 @@ export async function adoptProjectIntoWorkspace(
     managed_by: 'workspai',
     mode: 'linked',
     workspace: {
-      path: workspacePath,
+      name: path.basename(workspacePath),
+      contract: '.workspai/workspace.contract.json',
     },
     project: {
       name: projectName,
-      path: projectPath,
       relative_path: paths.contractRelativePath,
-      discovered_relative_path: paths.relativePath,
+      ...(!paths.isExternal ? { discovered_relative_path: paths.relativePath } : {}),
       is_external: paths.isExternal,
       kind: projectKind,
       module_support: moduleSupport,
@@ -427,9 +445,21 @@ export async function adoptProjectIntoWorkspace(
         importedAt: adoptedAt,
       };
       await upsertImportedProjectsRegistry(workspacePath, [entry]);
+      const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
+      await syncWorkspaceContract({ workspacePath, strict: true });
+      await syncProjectIntelligenceLens({
+        workspacePath,
+        projectPath,
+        projectName,
+        relationship: 'adopted',
+        mode: options.projectGrounding ?? 'managed',
+        now: new Date(adoptedAt),
+      });
     } catch (error) {
       try {
         await cleanupAdoptedProjectImport(workspacePath, projectPath, rollbackSnapshot);
+        const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
+        await syncWorkspaceContract({ workspacePath, strict: true });
       } catch (rollbackError) {
         throw new AggregateError(
           [error, rollbackError],

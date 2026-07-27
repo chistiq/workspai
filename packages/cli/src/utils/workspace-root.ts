@@ -6,28 +6,14 @@ import {
   WORKSPAI_METADATA_DIR,
   WORKSPAI_WORKSPACE_MARKER,
 } from './workspace-paths.js';
+import { resolveProjectWorkspaceSync } from '../project-workspace-link.js';
 
 /**
  * Walk upward from startPath and return the first Workspai workspace root.
  * Recognizes Workspai markers and RapidKit legacy markers while the ecosystem migrates.
  */
 export function findWorkspaceRootUp(startPath: string): string | null {
-  let current = path.resolve(startPath);
-
-  while (true) {
-    if (
-      fs.existsSync(path.join(current, WORKSPAI_WORKSPACE_MARKER)) ||
-      fs.existsSync(path.join(current, LEGACY_RAPIDKIT_WORKSPACE_MARKER)) ||
-      fs.existsSync(path.join(current, WORKSPAI_METADATA_DIR, 'workspace.json')) ||
-      fs.existsSync(path.join(current, LEGACY_RAPIDKIT_METADATA_DIR, 'workspace.json'))
-    ) {
-      return current;
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
+  return resolveProjectWorkspaceSync({ startPath })?.workspacePath ?? null;
 }
 
 /**
