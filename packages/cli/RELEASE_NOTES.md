@@ -5,7 +5,84 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.49.0 (July 25, 2026)
+## Latest Release: v0.50.0 (July 27, 2026)
+
+### Project-Native Workspace Intelligence
+
+This minor release makes every registered project a reliable entry point into
+its canonical workspace. Workspai now keeps machine-local resolution private,
+publishes a portable bounded project lens for humans and agents, connects
+Doctor findings to current graph evidence, and keeps downstream intelligence
+artifacts synchronized after project lifecycle changes.
+
+**What's New:**
+
+- **Work from an adopted or created project**
+  - Added a validated, gitignored machine-local workspace binding.
+  - Added portable project grounding and
+    `.workspai/reports/project-context-agent.json`.
+  - Workspace-aware commands launched from a project resolve the governing
+    workspace automatically.
+
+- **Deeper Doctor and Graph integration**
+  - Doctor reports evidence-backed project roots, structural paths, impact
+    candidates, proofs, and verification targets.
+  - Diagnosis distinguishes structural reachability from proven runtime
+    causality and reports stale, missing, or mismatched graph evidence.
+  - Model and Graph artifacts remain an atomic, hash-bound set with the Model
+    as the canonical source of truth.
+
+- **Clearer creation and ingestion**
+  - Interactive Create can scaffold new software or ingest a local path, Git
+    repository, project archive, or workspace archive through versioned plans.
+  - The picker groups kits as Backend, Frontend, Desktop, and Extension.
+  - Added Rust/Axum, Tauri, Electron Forge, VS Code Extension, and Laravel
+    flows with latest-stable upstream policy and recorded resolution evidence.
+  - Turning the current folder into a workspace is foundation-only and does not
+    install Python or Poetry.
+
+- **Governed project coverage and archives**
+  - Added `project coverage --run --target <percent> --strict --json`.
+  - Added explicit workspace archive capability, manifest, verification,
+    diagnosis, import, and hydration contracts.
+  - Successful create/adopt/import/connect/sync flows refresh the Model, Graph,
+    project lenses, report index, grounding, and supported agent surfaces.
+
+- **Focused Help and documentation**
+  - Root Help now explains the shortest lifecycle and canonical
+    Model-to-Graph architecture instead of repeating the complete catalog.
+  - Command-specific Help stays scoped, while `workspai commands --json`
+    provides exhaustive machine-readable discovery.
+  - Main READMEs explain project-native usage and the new capabilities in plain
+    language without moving detailed reference material into the quickstart.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Full CLI suite: 2,218 tests passed across 205 test files; 8 tests remain
+  explicitly skipped.
+- New suites cover project entry/resolution, portable grounding, graph-aware
+  Doctor, ingestion, archives, categorized kits, latest-stable policy,
+  project coverage, and Model/Graph artifact atomicity.
+- Contract, artifact, documentation, TypeScript, lint, format, package, and
+  cross-platform invariants remain part of release validation.
+- Enterprise prepack creation and registry smoke runs in an isolated home and
+  cannot alter the publisher's real Workspai registry.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.50.0
+workspai --version
+workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.50.0/packages/cli/releases/RELEASE_NOTES_v0.50.0.md)
+
+---
+
+## Previous Release: v0.49.0 (July 25, 2026)
 
 ### Live, Contract-Backed Workspace Graph Updates
 

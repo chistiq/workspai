@@ -37,14 +37,14 @@ Installing the alias also installs the exact matching `workspai` version. Both
 names use the same engine, configuration, `.workspai` files, and commands.
 
 ```bash
-npm install -g wspai@0.49.0
+npm install -g wspai@0.50.0
 wspai --version
 ```
 
 The main package remains available directly:
 
 ```bash
-npm install -g workspai@0.49.0
+npm install -g workspai@0.50.0
 workspai --help
 ```
 

@@ -106,16 +106,17 @@ describe('CLI Entry Point', () => {
       expect(stdout).toContain('One workspace. One truth. Humans and AI aligned.');
 
       // Core sections
-      expect(stdout).toContain('Workspace commands (inside a workspace):');
-      expect(stdout).toContain('Project commands (inside a project):');
+      expect(stdout).toContain('Find the right command');
+      expect(stdout).toContain('Canonical Workspace Model');
+      expect(stdout).toContain('Evidence-backed Knowledge Graph');
 
       // Known commands
       expect(stdout).toContain('workspai create');
-      expect(stdout).toContain('workspai init');
-      expect(stdout).toContain('workspai dev');
-      expect(stdout).toContain('workspai workspace list');
       expect(stdout).toContain('workspai import <path|git-url>');
-      expect(stdout).toContain('workspai adopt [path]');
+      expect(stdout).toContain('workspai adopt .');
+      expect(stdout).toContain('workspai workspace intelligence run');
+      expect(stdout).toContain('workspai project coverage');
+      expect(stdout).toContain('workspai commands --json');
       expect(stdout).toContain('mirror [status|sync|verify|rotate]');
       expect(stdout).toContain('cache [status|clear|prune|repair]');
 
@@ -151,23 +152,15 @@ describe('CLI Entry Point', () => {
 
       expect(stdout).toContain('Workspai');
       expect(stdout).toContain('Workspace Lifecycle');
-      expect(stdout).toContain('Workspace commands (inside a workspace):');
-      expect(stdout).toContain('Project commands (inside a project):');
-      expect(stdout).toContain('npx workspai workspace list');
+      expect(stdout).toContain('Find the right command');
+      expect(stdout).toContain('npx workspai workspace --help');
     });
 
     it('should keep workspace help command variants aligned with supported actions', async () => {
       const { stdout } = await execa('node', [CLI_PATH, '--help']);
 
-      expect(stdout).toContain(
-        'npx workspai workspace list               List registered workspaces'
-      );
-      expect(stdout).toContain(
-        'npx workspai mirror [status|sync|verify|rotate] Registry mirror management'
-      );
-      expect(stdout).toContain(
-        'npx workspai cache [status|clear|prune|repair]  Package cache management'
-      );
+      expect(stdout).toContain('npx workspai mirror [status|sync|verify|rotate]');
+      expect(stdout).toContain('npx workspai cache [status|clear|prune|repair]');
     });
 
     it('should render contract-backed help for individual workspace actions', async () => {
@@ -190,63 +183,22 @@ describe('CLI Entry Point', () => {
       expect(graph.stdout).toContain('workspai workspace graph [mode] [query|from] [to] [--json]');
     });
 
-    it('should match workspace command block snapshot', async () => {
+    it('should keep root help focused while preserving command discovery', async () => {
       const { stdout } = await execa('node', [CLI_PATH, '--help']);
-      const block = stdout.match(
-        /Workspace commands \(inside a workspace\):[\s\S]*?Options \(workspace creation\):/
-      );
+      const block = stdout.match(/Find the right command[\s\S]*?Flags clarification:/);
 
       expect(block?.[0].replace(/\r/g, '')).toMatchInlineSnapshot(`
-        "Workspace commands (inside a workspace):
-          npx workspai bootstrap [--profile <p>]   Re-bootstrap toolchains
-          npx workspai analyze [--json --strict]   Analyze workspace health and gaps
-          npx workspai pipeline [--json --strict --no-agent-sync]  Governance loop: sync → doctor → analyze → readiness → autopilot
-          npx workspai readiness [--workspace <path>] [--json --strict]  Release readiness gates (env/doctor/analyze/verify/deps)
-          npx workspai doctor workspace [--ci]     Workspace health with CI exit codes
-          npx workspai workspace list               List registered workspaces
-          npx workspai workspace model --json      Build workspace intelligence model
-          npx workspai workspace intelligence run [--strict] --json  Run the canonical contract-backed chain
-          npx workspai workspace context --for-agent --json --write  Build agent context + sync grounding
-          npx workspai workspace agent-sync --write --refresh-context  Sync the Agent Customization Pack
-          npx workspai workspace snapshot --json   Persist workspace intelligence snapshot
-          npx workspai workspace diff --from <file|git[:ref]> --json  Diff current model against a snapshot
-          npx workspai workspace impact --from <diff> --json  Build blast radius from model diff
-          npx workspai workspace verify [--strict] --json  Evaluate impact verification evidence
-          npx workspai workspace explain <target> [--write] --json  Narrative for blockers/projects (alias: why)
-          npx workspai workspace trace --from <diff> [--write] --json  Diff → blast radius → gates narrative
-          npx workspai workspace feedback record --json  Append agent action outcome to intelligence history
-          npx workspai workspace eval [init|record|status|report|compare]  Measure model usage and verified outcomes
-          npx workspai workspace mcp serve              Read-mostly stdio MCP over workspace evidence
-          npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf]  Query or export evidence graph
-          npx workspai workspace watch [--once] [--json]  Keep model+graph in memory; stream change events
-          npx workspai workspace run <stage> [--scope project:<name>] [--reuse-passed]  Fleet init/test/build/start or custom stage
-          npx workspai workspace sync [--json]      Sync registry + contract from projects
-          npx workspai workspace registry status [--refresh] [--json]  Canonical project registry summary
-          npx workspai import <path|git-url>        Copy or clone a project into this workspace
-          npx workspai adopt [path]                Link an existing local project to a workspace
-          npx workspai snapshot create [name]      Create a recoverable workspace snapshot
-          npx workspai snapshot restore <name>     Restore snapshot metadata with safety guard
-          npx workspai snapshot inspect <name>     Inspect snapshot manifest and size
-          npx workspai project archive <name>      Archive a project with a safety snapshot
-          npx workspai project restore <archive>   Restore an archived project safely
-          npx workspai workspace share [--output <file>] Export collaboration bundle
-          npx workspai workspace foundation ensure   Ensure workspace.json/policies/toolchain files
-          npx workspai workspace contract init     Create workspace service contract
-          npx workspai workspace contract verify   Verify service ports/dependencies
-          npx workspai workspace contract graph    Show service dependency graph
-          npx workspai workspace export --output <file> Export portable workspace archive
-          npx workspai workspace archive verify <file> Verify archive integrity
-          npx workspai workspace archive doctor <file> Diagnose archive readiness
-          npx workspai workspace hydrate <archive> --output <dir> Hydrate workspace archive
-          npx workspai workspace policy show        Show effective workspace policies
-          npx workspai workspace policy set <k> <v> Update workspace policy values
-          npx workspai setup python|node|go|java|dotnet|rust|php [--warm-deps]  Set up runtime (+ optional deps warm-up)
-          npx workspai mirror [status|sync|verify|rotate] Registry mirror management
-          npx workspai cache [status|clear|prune|repair]  Package cache management
-          npx workspai infra plan                     Discover and generate infra compose
-          npx workspai infra up|down|status           Manage Docker sidecar infrastructure
+        "Find the right command
+        ──────────────────────────────────────────────
 
-        Options (workspace creation):"
+          npx workspai create --help                                           Creation, adoption, import, and supported kits
+          npx workspai workspace --help                                        Model, graph, evidence, operations, and governance
+          npx workspai doctor --help                                           Project and workspace diagnosis
+          npx workspai commands --json                                         Complete machine-readable command inventory
+          npx workspai mirror [status|sync|verify|rotate]                      Registry mirror management
+          npx workspai cache [status|clear|prune|repair]                       Package cache management
+
+        Flags clarification:"
       `);
     });
 

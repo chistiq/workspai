@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-07-27
+
+### Added
+
+- Added first-class project entry contracts and a validated, gitignored
+  `.workspai/workspace-link.local.json` so workspace-aware commands can resolve
+  the canonical workspace from an adopted, imported, or created project.
+- Added portable project grounding and
+  `.workspai/reports/project-context-agent.json` with bounded identity,
+  commands, topology, related projects, APIs, deployment/test surfaces,
+  blockers, proof paths, and Model/Graph freshness.
+- Added graph-aware Doctor diagnosis with project roots, structural paths,
+  impact candidates, proofs, verification targets, and explicit evidence
+  freshness/availability states.
+- Added versioned ingestion plan/result contracts for local paths, Git
+  repositories, project archives, and workspace archives.
+- Added Backend, Frontend, Desktop, and Extension kit categories plus
+  Rust/Axum, Tauri, Electron Forge, VS Code Extension, and Laravel creation
+  flows.
+- Added `project coverage --run --target <percent> --strict --json` and a
+  versioned project test-coverage artifact contract.
+- Added explicit workspace archive capability, manifest, and operation-result
+  contracts for verify, doctor, import, and hydration flows.
+
+### Changed
+
+- Made successful workspace/project creation, adoption, import, connection, and
+  registry sync refresh the canonical Model, model-bound Knowledge Graph,
+  project lenses, report index, grounding, and supported agent surfaces.
+- Made official ecosystem generators request their latest stable channel while
+  recording resolved generator/runtime evidence and enforcing host
+  compatibility.
+- Made current-folder workspace registration foundation-only; non-Python
+  project creation no longer installs the optional Python engine or Poetry.
+- Deepened Doctor runtime-native dependency, security, test, quality,
+  deployment, migration, and health probes across supported project families.
+- Strengthened the Model/Graph artifact-set lock, structural hash binding,
+  rollback behavior, project topology, facts, proofs, and incremental
+  invalidation boundaries.
+- Simplified root CLI Help around the product lifecycle, canonical
+  Model-to-Graph architecture, and command discovery while keeping detailed
+  command help and `commands --json`.
+- Bumped the monorepo root, `workspai`, and `wspai` packages to `0.50.0`, and
+  aligned the alias dependency on `workspai@0.50.0`.
+
+### Fixed
+
+- Fixed project-local workflows that previously required users or agents to
+  discover and change into the workspace root manually.
+- Prevented machine-local absolute workspace paths from leaking into portable
+  grounding, project context, commits, or agent evidence.
+- Fixed lifecycle gaps where a newly created, adopted, or imported project
+  could be registered without refreshing downstream intelligence consumers.
+- Fixed nested workspace creation so a child workspace cannot be accidentally
+  created inside the active workspace boundary.
+- Fixed non-Python creation paths that incorrectly initialized Poetry or
+  installed RapidKit Core while only establishing a Workspai foundation.
+- Fixed ambiguous create/import/adopt routing with explicit ingestion
+  classification and deterministic project/workspace ownership decisions.
+- Fixed Help noise that repeated global setup, observability, project, and
+  quickstart sections under unrelated subcommands.
+- Isolated enterprise prepack creation and registry smoke tests from the
+  publisher's real home and Workspai registry.
+
+### Verification
+
+- Full CLI suite: 2,218 tests passed across 205 test files, with 8 explicit
+  skips and no failures.
+- Project-entry, graph-aware Doctor, ingestion, archive, categorized-kit,
+  latest-stable generator, project-coverage, project-grounding, and
+  Model/Graph atomicity suites cover the new public boundaries.
+- TypeScript, ESLint, format, documentation, package, generated/mirrored
+  contracts, runtime conformance, and cross-platform invariants remain in the
+  release validation path.
+
 ## [0.49.0] - 2026-07-25
 
 ### Added

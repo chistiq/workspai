@@ -1259,6 +1259,8 @@ Options:
 Notes:
   Outside a workspace, projects are linked to the managed default workspace.
   Interactive mode can instead turn the current folder into a workspace or opt out.
+  Turning the current folder into a workspace creates only the Workspai foundation;
+  it does not install the optional Python engine.
   Python-backed kits delegate execution to RapidKit Core when needed, but the
   Workspai CLI owns the command UX, workspace registration, and artifacts.`);
 }
@@ -6630,64 +6632,22 @@ program
   .description('Workspai workspace intelligence CLI')
   .version(getVersion());
 
-const quickStartInitDevNpx = isWindowsPlatform()
-  ? `${primaryNpxCommand} init; ${primaryNpxCommand} dev`
-  : `${primaryNpxCommand} init && ${primaryNpxCommand} dev`;
-
-const managedWorkspaceQuickStartPath = '~/.workspai/workspaces/my-workspace';
-
 // Add consistent help headings expected by the tests and UX consumers.
 program.addHelpText(
   'beforeAll',
   `Workspai CLI
 
-Create workspaces, scaffold projects, and manage your development toolchain.
+Workspace Intelligence for software systems.
 `
 );
 
 program.addHelpText(
   'afterAll',
   `
-Workspace Setup Commands
-  ${primaryCliName} bootstrap         Bootstrap projects in workspace (--profile java-only|python-only|node-only|go-only|dotnet-only|polyglot|enterprise)
-  ${primaryCliName} analyze           Analyze workspace/project health and generate enterprise evidence
-  ${primaryCliName} setup <runtime>   Set up runtime toolchain  (runtime: python | node | go | java | dotnet | rust | php)
-  ${primaryCliName} readiness         Build release-readiness evidence (use --json for CI)
-  ${primaryCliName} autopilot release Run end-to-end release gate orchestration (audit|safe-fix|enforce)
-  ${primaryCliName} workspace list    List registered workspaces on this system
-  ${primaryCliName} snapshot create   Create a recoverable workspace snapshot
-  ${primaryCliName} snapshot inspect  Inspect snapshot payload and manifest details
-  ${primaryCliName} project archive   Safely archive a workspace project
-  ${primaryCliName} project restore   Restore an archived workspace project
-  ${primaryCliName} mirror            Manage registry mirrors   (mirror status --json | sync | verify | rotate)
-  ${primaryCliName} cache             Manage package cache      (cache status | clear | prune | repair)
-
-Observability:
-  --log-format json          Emit structured NDJSON log events on stderr (or RAPIDKIT_LOG_FORMAT=json)
-  --log-json                 Alias for --log-format json
-
-Project Commands
-  ${primaryCliName} create            Scaffold a new project    (${primaryCliName} create project)
-  ${primaryCliName} init              Install project dependencies
-  ${primaryCliName} dev               Start dev server
-  ${primaryCliName} build             Build for production
-  ${primaryCliName} test              Run tests
-
-Quick start:
-  ${primaryNpxCommand} my-workspace              # Create workspace in ~/.workspai/workspaces
-  ${primaryNpxCommand} my-workspace --here       # Create workspace in the current directory
-  ${primaryNpxCommand} create workspace --output .
-  cd ${managedWorkspaceQuickStartPath}   # Or cd my-workspace when using --here
-  ${primaryNpxCommand} create project            # Interactive kit picker
-  ${quickStartInitDevNpx}  # Install deps + run
-
-Notes:
-  --here                     Create workspace in the current directory (alias for --output .)
-  --output <dir>             Parent directory for the new workspace folder
-  --skip-install (npm wrapper) enables fast-path for lock/dependency steps.
-  It is different from core --skip-essentials (essential module installation).
-
-Use "${primaryCliName} help <command>" for more information.
+Discover more:
+  ${primaryCliName} --help          Product overview and first steps
+  ${primaryCliName} commands --json Complete machine-readable command inventory
+  https://workspai.dev             Guides, contracts, and examples
 `
 );
 
@@ -10939,17 +10899,12 @@ function printHelpSectionDivider(title: string): void {
 export function printHelp() {
   const cmd = (text: string): string =>
     text.replace(/\bnpx (?:rapidkit|workspai)\b/g, primaryNpxCommand);
-  const grayCmd = (text: string): string => chalk.gray(cmd(text));
-  const cyanCmd = (text: string): string => chalk.cyan(cmd(text));
-  const quickStartInitDev = isWindowsPlatform()
-    ? `${primaryNpxCommand} init; ${primaryNpxCommand} dev`
-    : `${primaryNpxCommand} init && ${primaryNpxCommand} dev`;
+  const line = (command: string, description: string): void => {
+    console.log(chalk.cyan(`  ${cmd(command).padEnd(67)}  `) + chalk.gray(description));
+  };
 
   console.log(chalk.white('Usage:\n'));
-  console.log(chalk.cyan(`  ${primaryNpxCommand} <command> [options]`));
-  console.log(
-    chalk.gray(`  ${primaryNpxCommand} <workspace-name> [options]  # shortcut: create workspace`)
-  );
+  console.log(chalk.cyan(`  ${primaryNpxCommand} <command> [options]\n`));
   if (invokedCliName === 'rapidkit') {
     console.log(
       chalk.gray(`  You are using the legacy rapidkit alias. New docs use ${primaryNpxCommand}.\n`)
@@ -10957,375 +10912,48 @@ export function printHelp() {
   }
 
   console.log(chalk.bold('Open-Source Workspace Intelligence for Software Systems\n'));
-  console.log(chalk.white('Most AI tools understand files.'));
   console.log(
     chalk.white(
-      'Workspai helps developers, CI pipelines, IDEs, and AI agents share the same understanding of a software system.'
+      'Connect projects, contracts, evidence, and checks so developers, CI, IDEs, and AI agents share one current view of the system.'
     )
   );
   console.log(chalk.dim('One workspace. One truth. Humans and AI aligned.\n'));
 
   printHelpSectionDivider('Workspace Lifecycle');
-  console.log(chalk.white('\n1. Create or adopt a workspace\n'));
-  console.log(chalk.cyan(cmd('   npx workspai my-workspace')));
-  console.log(chalk.cyan(cmd('   npx workspai adopt /path/to/project')));
-  console.log(chalk.cyan(cmd('   npx workspai import <path|git-url>\n')));
-  console.log(chalk.white('2. Run the contract-backed intelligence chain\n'));
-  console.log(
-    chalk.cyan(cmd('   npx workspai workspace intelligence run --for-agent generic --json\n'))
-  );
-  console.log(chalk.white('3. Enforce enterprise gates in CI or before release\n'));
-  console.log(
-    chalk.cyan(
-      cmd('   npx workspai workspace intelligence run --for-agent generic --strict --json\n')
-    )
-  );
-  console.log(chalk.white('4. Explain blockers and trace change impact\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace explain release-blocked --json --write')));
-  console.log(
-    chalk.cyan(
-      cmd(
-        '   npx workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --json --write\n'
-      )
-    )
+  console.log('');
+  line('npx workspai create', 'Create a workspace/project or bring in existing software');
+  line('npx workspai adopt .', 'Link the current project without moving its source');
+  line('npx workspai import <path|git-url>', 'Copy or clone software into a workspace');
+  line(
+    'npx workspai workspace intelligence run --for-agent generic --strict --json',
+    'Refresh the canonical evidence chain'
   );
 
   printHelpSectionDivider('Workspace Intelligence');
-  console.log(chalk.white('\nRun the complete canonical chain?\n'));
-  console.log(
-    chalk.cyan(
-      cmd('   npx workspai workspace intelligence run --for-agent generic --strict --json\n')
-    )
-  );
-  console.log(chalk.white('What projects exist?\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace model --json\n')));
-  console.log(chalk.white('What should AI agents know?\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace context --for-agent --json --write\n')));
-  console.log(chalk.white('What breaks if this changes?\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace impact --from <diff>\n')));
-  console.log(chalk.white('Is this change safe?\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace verify --strict\n')));
-  console.log(chalk.white('Why is release blocked?\n'));
-  console.log(
-    chalk.cyan(cmd('   npx workspai workspace explain release-blocked --json --write\n'))
-  );
-  console.log(chalk.white('Trace a diff through blast radius and gates?\n'));
-  console.log(
-    chalk.cyan(
-      cmd(
-        '   npx workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --json --write\n'
-      )
-    )
-  );
-  console.log(chalk.white('How do I align AI tools and CI?\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace agent-sync --write\n')));
-  console.log(chalk.white('Expose evidence to MCP clients?\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace mcp serve\n')));
+  console.log(chalk.gray('\n  Code · APIs · infrastructure · docs · policies · runtime evidence'));
+  console.log(chalk.gray('                              ↓'));
+  console.log(chalk.gray('                   Canonical Workspace Model'));
+  console.log(chalk.gray('                              ↓'));
+  console.log(chalk.gray('                Evidence-backed Knowledge Graph'));
+  console.log(chalk.gray('                              ↓'));
+  console.log(chalk.gray('             Doctor · impact · verify · context · explain\n'));
 
-  printHelpSectionDivider('Workspace Operations');
-  console.log(chalk.white('\nCreate workspace\n'));
-  console.log(chalk.cyan(cmd('   npx workspai my-workspace\n')));
-  console.log(chalk.white('Bootstrap toolchains\n'));
-  console.log(chalk.cyan(cmd('   npx workspai bootstrap\n')));
-  console.log(chalk.white('Create project (backend or frontend)\n'));
-  console.log(chalk.cyan(cmd('   npx workspai create project fastapi.standard api\n')));
-  console.log(chalk.cyan(cmd('   npx workspai create project nextjs web\n')));
-  console.log(chalk.white('Adopt existing project\n'));
-  console.log(chalk.cyan(cmd('   npx workspai adopt /path/to/project\n')));
-  console.log(chalk.white('Import repository\n'));
-  console.log(chalk.cyan(cmd('   npx workspai import <path|git-url>\n')));
+  line('npx workspai workspace model --write --json', 'Build the canonical system model');
+  line('npx workspai workspace graph search <query> --json', 'Ask a bounded, proven question');
+  line('npx workspai doctor workspace --json', 'Diagnose projects and workspace health');
+  line('npx workspai project coverage --run --target 80 --json', 'Measure one project');
+  line('npx workspai workspace explain <target> --write --json', 'Explain a blocker or project');
 
-  printHelpSectionDivider('Governance & Release');
-  console.log(chalk.white('\nAnalyze workspace\n'));
-  console.log(chalk.cyan(cmd('   npx workspai analyze\n')));
-  console.log(chalk.white('Check readiness\n'));
-  console.log(chalk.cyan(cmd('   npx workspai readiness\n')));
-  console.log(chalk.white('Run governance pipeline\n'));
-  console.log(chalk.cyan(cmd('   npx workspai pipeline --strict\n')));
-  console.log(chalk.white('Create snapshot\n'));
-  console.log(chalk.cyan(cmd('   npx workspai snapshot create\n')));
-  console.log(chalk.white('Archive project\n'));
-  console.log(chalk.cyan(cmd('   npx workspai project archive\n')));
+  printHelpSectionDivider('Find the right command');
+  console.log('');
+  line('npx workspai create --help', 'Creation, adoption, import, and supported kits');
+  line('npx workspai workspace --help', 'Model, graph, evidence, operations, and governance');
+  line('npx workspai doctor --help', 'Project and workspace diagnosis');
+  line('npx workspai commands --json', 'Complete machine-readable command inventory');
+  line('npx workspai mirror [status|sync|verify|rotate]', 'Registry mirror management');
+  line('npx workspai cache [status|clear|prune|repair]', 'Package cache management');
 
-  printHelpSectionDivider('Agent Grounding');
-  console.log(chalk.white('\nGenerate context pack\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace context --for-agent\n')));
-  console.log(chalk.white('Sync agent surfaces\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace agent-sync --write\n')));
-  console.log(chalk.white('Serve read-mostly MCP bridge\n'));
-  console.log(chalk.cyan(cmd('   npx workspai workspace mcp serve\n')));
-  console.log(chalk.white('Supported ecosystems:\n'));
-  console.log(chalk.gray('   Copilot · Cursor · Claude Code · Codex · MCP-ready tools\n'));
-
-  printHelpSectionDivider('Mental Model');
-  console.log(chalk.gray('\n  Repository'));
-  console.log(chalk.gray('      ↓'));
-  console.log(chalk.gray('  Workspace Intelligence'));
-  console.log(chalk.gray('      ↓'));
-  console.log(chalk.gray('  Developers · CI · IDEs · AI Agents\n'));
-  console.log(
-    chalk.dim(
-      'Workspai turns projects and repositories into a shared, evidence-backed understanding of a software system.\n'
-    )
-  );
-
-  console.log(chalk.bold('Quick start — workspace workflow:'));
-  console.log(
-    chalk.cyan(`${primaryNpxCommand} my-workspace            `) +
-      chalk.gray('# Create workspace (interactive profile picker)')
-  );
-  console.log(
-    chalk.cyan('  cd ~/.workspai/workspaces/my-workspace') +
-      chalk.gray('  # default managed location')
-  );
-  console.log(
-    cyanCmd('  npx workspai my-workspace --here       ') +
-      chalk.gray('# Create in current directory, then cd my-workspace')
-  );
-  console.log(
-    cyanCmd('  npx workspai bootstrap                   ') +
-      chalk.gray('# Bootstrap all runtime toolchains')
-  );
-  console.log(
-    cyanCmd('  npx workspai create project nextjs web     ') + chalk.gray('# Frontend (Next.js)')
-  );
-  console.log(
-    cyanCmd('  npx workspai create project fastapi.standard api ') +
-      chalk.gray('# Backend (FastAPI)')
-  );
-  console.log(chalk.cyan('  cd api'));
-  console.log(chalk.cyan(`  ${quickStartInitDev}\n`));
-
-  console.log(chalk.bold('Installed command:'));
-  console.log(chalk.gray(`  npm install -g workspai`));
-  console.log(chalk.gray('  workspai create project     Scaffold a new project'));
-  console.log(chalk.gray('  workspai init               Install project dependencies'));
-  console.log(chalk.gray('  workspai dev                Start dev server'));
-  console.log(chalk.gray('  workspai workspace list     List registered workspaces'));
-  console.log(chalk.gray('  workspai import <path|git-url>        Copy or clone a project'));
-  console.log(
-    chalk.gray('  workspai adopt [path]                Link an existing local project\n')
-  );
-
-  console.log(chalk.bold('Workspace profiles (asked during creation):'));
-  console.log(chalk.gray('  minimal       Foundation files only — fastest bootstrap (default)'));
-  console.log(chalk.gray('  java-only     Java runtime      (Spring Boot services)'));
-  console.log(chalk.gray('  python-only   Python + Poetry  (FastAPI, Django, ML)'));
-  console.log(chalk.gray('  node-only     Node.js runtime   (NestJS, Express, Next.js)'));
-  console.log(chalk.gray('  go-only       Go runtime        (Fiber, Gin, gRPC)'));
-  console.log(chalk.gray('  dotnet-only   .NET runtime      (ASP.NET Core services)'));
-  console.log(chalk.gray('  polyglot      Python + Node.js + Go + Java + .NET multi-runtime'));
-  console.log(chalk.gray('  enterprise    Polyglot + governance + Sigstore\n'));
-  console.log(
-    chalk.gray(
-      '  Tip: use --skip-python-engine for a Python-aware Workspace Intelligence shell first; after creating a RapidKit Core module-enabled project, run workspace run init to install the local Python engine.\n'
-    )
-  );
-
-  console.log(chalk.bold('Workspace commands (inside a workspace):'));
-  console.log(grayCmd('  npx workspai bootstrap [--profile <p>]   Re-bootstrap toolchains'));
-  console.log(
-    grayCmd('  npx workspai analyze [--json --strict]   Analyze workspace health and gaps')
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai pipeline [--json --strict --no-agent-sync]  Governance loop: sync → doctor → analyze → readiness → autopilot'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai readiness [--workspace <path>] [--json --strict]  Release readiness gates (env/doctor/analyze/verify/deps)'
-    )
-  );
-  console.log(
-    grayCmd('  npx workspai doctor workspace [--ci]     Workspace health with CI exit codes')
-  );
-  console.log(grayCmd('  npx workspai workspace list               List registered workspaces'));
-  console.log(
-    grayCmd('  npx workspai workspace model --json      Build workspace intelligence model')
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace intelligence run [--strict] --json  Run the canonical contract-backed chain'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace context --for-agent --json --write  Build agent context + sync grounding'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace agent-sync --write --refresh-context  Sync the Agent Customization Pack'
-    )
-  );
-  console.log(
-    grayCmd('  npx workspai workspace snapshot --json   Persist workspace intelligence snapshot')
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace diff --from <file|git[:ref]> --json  Diff current model against a snapshot'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace impact --from <diff> --json  Build blast radius from model diff'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace verify [--strict] --json  Evaluate impact verification evidence'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace explain <target> [--write] --json  Narrative for blockers/projects (alias: why)'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace trace --from <diff> [--write] --json  Diff → blast radius → gates narrative'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace feedback record --json  Append agent action outcome to intelligence history'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace eval [init|record|status|report|compare]  Measure model usage and verified outcomes'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace mcp serve              Read-mostly stdio MCP over workspace evidence'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf]  Query or export evidence graph'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace watch [--once] [--json]  Keep model+graph in memory; stream change events'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace run <stage> [--scope project:<name>] [--reuse-passed]  Fleet init/test/build/start or custom stage'
-    )
-  );
-  console.log(
-    grayCmd('  npx workspai workspace sync [--json]      Sync registry + contract from projects')
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace registry status [--refresh] [--json]  Canonical project registry summary'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai import <path|git-url>        Copy or clone a project into this workspace'
-    )
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai adopt [path]                Link an existing local project to a workspace'
-    )
-  );
-  console.log(
-    grayCmd('  npx workspai snapshot create [name]      Create a recoverable workspace snapshot')
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai snapshot restore <name>     Restore snapshot metadata with safety guard'
-    )
-  );
-  console.log(
-    grayCmd('  npx workspai snapshot inspect <name>     Inspect snapshot manifest and size')
-  );
-  console.log(
-    grayCmd('  npx workspai project archive <name>      Archive a project with a safety snapshot')
-  );
-  console.log(
-    grayCmd('  npx workspai project restore <archive>   Restore an archived project safely')
-  );
-  console.log(
-    grayCmd('  npx workspai workspace share [--output <file>] Export collaboration bundle')
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai workspace foundation ensure   Ensure workspace.json/policies/toolchain files'
-    )
-  );
-  console.log(
-    grayCmd('  npx workspai workspace contract init     Create workspace service contract')
-  );
-  console.log(
-    grayCmd('  npx workspai workspace contract verify   Verify service ports/dependencies')
-  );
-  console.log(grayCmd('  npx workspai workspace contract graph    Show service dependency graph'));
-  console.log(
-    grayCmd('  npx workspai workspace export --output <file> Export portable workspace archive')
-  );
-  console.log(grayCmd('  npx workspai workspace archive verify <file> Verify archive integrity'));
-  console.log(grayCmd('  npx workspai workspace archive doctor <file> Diagnose archive readiness'));
-  console.log(
-    grayCmd('  npx workspai workspace hydrate <archive> --output <dir> Hydrate workspace archive')
-  );
-  console.log(
-    grayCmd('  npx workspai workspace policy show        Show effective workspace policies')
-  );
-  console.log(
-    grayCmd('  npx workspai workspace policy set <k> <v> Update workspace policy values')
-  );
-  console.log(
-    grayCmd(
-      '  npx workspai setup python|node|go|java|dotnet|rust|php [--warm-deps]  Set up runtime (+ optional deps warm-up)'
-    )
-  );
-  console.log(
-    grayCmd('  npx workspai mirror [status|sync|verify|rotate] Registry mirror management')
-  );
-  console.log(
-    grayCmd('  npx workspai cache [status|clear|prune|repair]  Package cache management')
-  );
-  console.log(
-    grayCmd('  npx workspai infra plan                     Discover and generate infra compose')
-  );
-  console.log(
-    grayCmd('  npx workspai infra up|down|status           Manage Docker sidecar infrastructure\n')
-  );
-
-  console.log(chalk.bold('Options (workspace creation):'));
-  console.log(chalk.gray('  -y, --yes                  Skip prompts and use defaults'));
-  console.log(chalk.gray('  --author <name>            Author/team name for workspace metadata'));
-  console.log(chalk.gray('  --skip-git                 Skip git initialization'));
-  console.log(chalk.gray('  --debug                    Enable debug logging'));
-  console.log(chalk.gray('  --dry-run                  Show what would be created'));
-  console.log(
-    chalk.gray(
-      '  --create-workspace         When creating a project outside a workspace: create and register a workspace in the current directory'
-    )
-  );
-  console.log(
-    chalk.gray(
-      '  --no-workspace             When creating a project outside a workspace: do not link it to any workspace'
-    )
-  );
-  console.log(chalk.gray('  --no-update-check          Skip checking for updates\n'));
-
-  console.log(chalk.bold('Project commands (inside a project):'));
-  console.log(grayCmd('  npx workspai create project     Scaffold a new project'));
-  console.log(chalk.gray('  cd my-project                Change directory to the new project'));
-  console.log(grayCmd('  npx workspai init               Install project dependencies'));
-  console.log(grayCmd('  npx workspai dev                Start dev server'));
-  console.log(grayCmd('  npx workspai build              Build for production'));
-  console.log(grayCmd('  npx workspai test               Run tests\n'));
-
-  console.log(chalk.bold('Flags clarification:'));
+  console.log(chalk.bold('\nFlags clarification:'));
   console.log(chalk.gray('  --skip-install              npm fast-path for lock/dependency steps'));
   console.log(
     chalk.gray(

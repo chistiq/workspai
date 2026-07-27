@@ -120,7 +120,7 @@ project in place or `import` to copy or clone one into the workspace.
 | What could break?                | The projects and dependencies that may be affected                                |
 | Can this proceed?                | Health, policy, analysis, release, and verification checks                        |
 | What should an AI tool read?     | Focused context, instructions, skills, and MCP tools                              |
-| Why is it blocked?               | A clear reason with supporting files and reports                                  |
+| Why is it blocked?               | A runtime-aware diagnosis with related graph evidence and verification targets    |
 | Is the context actually smaller? | A repeatable measurement instead of a marketing estimate                          |
 
 The first run produces a discoverable evidence set, including:

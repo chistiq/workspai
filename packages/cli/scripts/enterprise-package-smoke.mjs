@@ -8,6 +8,11 @@ import process from 'node:process';
 
 const repoRoot = process.cwd();
 const cliPath = path.join(repoRoot, 'dist', 'index.js');
+const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-enterprise-home-'));
+
+process.on('exit', () => {
+  fs.rmSync(isolatedHome, { recursive: true, force: true });
+});
 
 function fail(message) {
   console.error(`[enterprise-package-smoke] ${message}`);
@@ -19,7 +24,14 @@ function log(message) {
 }
 
 function cliEnv(extraEnv = {}) {
-  const env = { ...process.env, ...extraEnv };
+  const env = {
+    ...process.env,
+    HOME: isolatedHome,
+    USERPROFILE: isolatedHome,
+    XDG_CONFIG_HOME: path.join(isolatedHome, '.config'),
+    XDG_CACHE_HOME: path.join(isolatedHome, '.cache'),
+    ...extraEnv,
+  };
   delete env.NODE_ENV;
   delete env.NODE_OPTIONS;
   for (const key of Object.keys(env)) {

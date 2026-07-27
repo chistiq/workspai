@@ -208,10 +208,12 @@ describe('E2E Tests', () => {
 
   it('shows help correctly', async () => {
     const stdout = runCliCaptured(['--help']);
+    const createHelp = runCliCaptured(['create', 'project', '--help']);
 
     expect(stdout).toContain('Workspai');
     expect(stdout).toContain('npx workspai');
-    expect(stdout).toContain('--skip-git');
+    expect(stdout).toContain('Canonical Workspace Model');
+    expect(createHelp).toContain('--skip-git');
     expect(stdout).not.toContain('npx rapidkit');
   }, 5000);
 });

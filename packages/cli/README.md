@@ -208,6 +208,7 @@ Code · packages · APIs · infrastructure · docs · CI · policies
 | **Model**             | What projects, runtimes, frameworks, commands, policies, contracts, and dependencies exist? |
 | **Snapshot and diff** | What changed between two known workspace states?                                            |
 | **Impact**            | Which projects and transitive dependents are affected?                                      |
+| **Doctor**            | Which runtime check failed, what graph evidence is related, and what should verify the fix? |
 | **Evidence**          | What do health, analysis, contracts, and readiness reports prove?                           |
 | **Verify**            | Is the affected workspace ready, blocked, stale, or missing evidence?                       |
 | **Context**           | What should developers, IDEs, and AI agents know before acting?                             |
