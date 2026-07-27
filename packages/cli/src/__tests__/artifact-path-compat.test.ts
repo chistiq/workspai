@@ -48,7 +48,7 @@ describe('workspace artifact path compatibility', () => {
 
   it('writes JSON and text atomically without leaving temporary files', async () => {
     const root = await temporaryWorkspace();
-    const jsonPath = await writeWorkspaceArtifactJson(root, '.workspai/reports/example.json', {
+    const jsonPath = await writeWorkspaceArtifactJson(root, '.workspai/cache/example.json', {
       value: 1,
     });
     const textPath = await writeWorkspaceArtifactText(
@@ -56,7 +56,7 @@ describe('workspace artifact path compatibility', () => {
       '.workspai/reports/example.txt',
       'first'
     );
-    await writeWorkspaceArtifactJson(root, '.workspai/reports/example.json', { value: 2 });
+    await writeWorkspaceArtifactJson(root, '.workspai/cache/example.json', { value: 2 });
 
     expect(await fsExtra.readJson(jsonPath)).toEqual({ value: 2 });
     expect(await fsExtra.readFile(textPath, 'utf8')).toBe('first');
@@ -104,7 +104,7 @@ describe('workspace artifact path compatibility', () => {
       .mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
 
     try {
-      const jsonPath = await writeWorkspaceArtifactJson(root, '.workspai/reports/example.json', {
+      const jsonPath = await writeWorkspaceArtifactJson(root, '.workspai/cache/example.json', {
         value: 'windows-fsync-tolerated',
       });
 
@@ -159,6 +159,17 @@ describe('workspace artifact path compatibility', () => {
     ).toBe(false);
   });
 
+  it('rejects unregistered public JSON reports before writing', async () => {
+    const root = await temporaryWorkspace();
+
+    await expect(
+      writeWorkspaceArtifactJson(root, '.workspai/reports/uncontracted.json', { value: 1 })
+    ).rejects.toThrow(/without a registered artifact contract/i);
+    expect(await fsExtra.pathExists(path.join(root, '.workspai/reports/uncontracted.json'))).toBe(
+      false
+    );
+  });
+
   it('registers supplemental producer artifacts at the write boundary', () => {
     for (const artifactPath of [
       '.workspai/workspace.contract.json',
@@ -172,6 +183,8 @@ describe('workspace artifact path compatibility', () => {
       '.workspai/reports/doctor-project-last-run.json',
       '.workspai/reports/autopilot-release-last-run.json',
       '.workspai/reports/autopilot-release.json',
+      '.workspai/reports/workspai-mcp-design.json',
+      '.workspai/reports/rapidkit-mcp-design.json',
       '.workspai/reports/workspace-why-last-run.json',
       '.workspai/reports/workspace-trace-last-run.json',
     ]) {
@@ -208,9 +221,9 @@ describe('workspace artifact path compatibility', () => {
     await fsExtra.symlink(outside, path.join(root, '.workspai', 'reports'));
 
     await expect(
-      writeWorkspaceArtifactJson(root, '.workspai/reports/escape.json', { unsafe: true })
+      writeWorkspaceArtifactText(root, '.workspai/reports/escape.txt', 'unsafe')
     ).rejects.toThrow(/outside workspace root/i);
-    expect(await fsExtra.pathExists(path.join(outside, 'escape.json'))).toBe(false);
+    expect(await fsExtra.pathExists(path.join(outside, 'escape.txt'))).toBe(false);
   });
 
   it('prefers canonical artifacts and falls back to legacy artifacts', async () => {

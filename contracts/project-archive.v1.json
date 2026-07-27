@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/project-archive.v1.json",
+  "title": "Workspai Project Archive Manifest",
   "type": "object",
   "required": [
     "schema",

@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/autopilot-release.v1.json",
+  "title": "Workspai Autopilot Release Evidence",
   "type": "object",
   "required": [
     "schemaVersion",

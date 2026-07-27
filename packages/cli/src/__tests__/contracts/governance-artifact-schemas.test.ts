@@ -227,9 +227,9 @@ describe('governance artifact JSON schemas', () => {
     const canonical = readSchema('doctor-remediation-plan.v2.json');
     const legacyAlias = readSchema('doctor-remediation-plan.v1.json');
 
-    expect(canonical.$id).toBe('https://rapidkit.dev/contracts/doctor-remediation-plan.v2.json');
+    expect(canonical.$id).toBe('https://workspai.dev/contracts/doctor-remediation-plan.v2.json');
     expect(canonical.$ref).toBe('doctor-remediation-plan.v1.json');
-    expect(legacyAlias.$id).toBe('https://rapidkit.dev/contracts/doctor-remediation-plan.v1.json');
+    expect(legacyAlias.$id).toBe('https://workspai.dev/contracts/doctor-remediation-plan.v1.json');
     expect(schemaConst(legacyAlias)).toBe('doctor-remediation-plan-v2');
   });
 

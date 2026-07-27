@@ -76,6 +76,8 @@ const VSCODE_SRC_CONTRACT_FILES = [
   'workspace-archive-manifest.v1.json',
   'workspace-archive-operation-result.v1.json',
 ];
+const LEGACY_CONTRACT_PORTAL_PATTERN = /https:\/\/(?:www\.)?(?:getrapidkit\.com|rapidkit\.dev)\//i;
+const WORKSPAI_CONTRACT_TITLE_PATTERN = /^Workspai\b/;
 
 function runGenerator() {
   const scriptPath = path.resolve(cliRoot, 'scripts/run-generate-shared-contracts.ts');
@@ -132,6 +134,50 @@ function listJsonContracts(dir, prefix = '') {
       return entry.isFile() && entry.name.endsWith('.json') ? [relativePath] : [];
     })
     .sort();
+}
+
+function assertCanonicalContractPortal(relativePaths) {
+  const violations = [];
+  for (const relativePath of relativePaths) {
+    const canonicalPath = path.resolve(contractsDir, relativePath);
+    const content = fs.readFileSync(canonicalPath, 'utf-8');
+    if (LEGACY_CONTRACT_PORTAL_PATTERN.test(content)) {
+      violations.push(relativePath);
+      continue;
+    }
+
+    const schema = JSON.parse(content);
+    const title = typeof schema?.title === 'string' ? schema.title.trim() : '';
+    if (schema?.$schema && !WORKSPAI_CONTRACT_TITLE_PATTERN.test(title)) {
+      violations.push(
+        `${relativePath} (schema title must begin with Workspai; received: ${title || '<missing>'})`
+      );
+      continue;
+    }
+    const schemaId = typeof schema?.$id === 'string' ? schema.$id : '';
+    if (/^https?:\/\//i.test(schemaId)) {
+      const schemaUrl = new URL(schemaId);
+      const portableRelativePath = relativePath.split(path.sep).join('/');
+      const acceptedPaths = new Set([
+        `/schemas/${portableRelativePath}`,
+        `/contracts/${portableRelativePath}`,
+      ]);
+      if (
+        schemaUrl.hostname !== 'workspai.dev' ||
+        !acceptedPaths.has(decodeURIComponent(schemaUrl.pathname))
+      ) {
+        violations.push(relativePath);
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    console.error('Canonical contracts must publish Workspai-owned URLs on workspai.dev:');
+    for (const relativePath of violations) {
+      console.error(`- ${relativePath}`);
+    }
+    process.exit(1);
+  }
 }
 
 function snapshotGeneratedFiles() {
@@ -303,6 +349,7 @@ if (canonicalFiles.length === 0) {
   console.error(`No canonical contracts found in ${contractsDir}`);
   process.exit(1);
 }
+assertCanonicalContractPortal(canonicalFiles);
 
 for (const relativePath of canonicalFiles) {
   const { canonicalPath, content } = readCanonical(relativePath);

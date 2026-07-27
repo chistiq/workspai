@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/fact-freshness.v1.json",
-  "title": "RapidKit Fact Freshness Contract",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/fact-freshness.v1.json",
+  "title": "Workspai Fact Freshness Contract",
   "type": "object",
   "required": [
     "schemaVersion",

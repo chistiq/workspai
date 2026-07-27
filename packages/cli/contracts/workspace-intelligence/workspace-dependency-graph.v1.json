@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-dependency-graph.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-dependency-graph.v1.json",
   "title": "Workspai Workspace Dependency Graph",
   "description": "First-class, versioned dependency graph of inter-project relationships consumed by impact, verify, run --blast-radius, and risk weighting.",
   "type": "object",

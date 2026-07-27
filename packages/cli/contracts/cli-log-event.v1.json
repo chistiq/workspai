@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/cli-log-event.v1.json",
+  "$id": "https://workspai.dev/schemas/cli-log-event.v1.json",
   "title": "Workspai CLI Log Event",
   "description": "NDJSON stream events emitted on stderr when RAPIDKIT_LOG_FORMAT=json or --log-format json",
   "type": "object",

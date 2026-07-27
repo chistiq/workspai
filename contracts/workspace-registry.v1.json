@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-registry.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-registry.v1.json",
   "title": "Workspai Workspace Registry Summary",
   "type": "object",
   "required": [

@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-share-bundle.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-share-bundle.v1.json",
+  "title": "Workspai Workspace Share Bundle",
   "type": "object",
   "required": ["schema_version", "generated_at", "generated_by", "workspace", "summary", "reports", "projects"],
   "properties": {

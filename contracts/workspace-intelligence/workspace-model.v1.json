@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-model.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-model.v1.json",
   "title": "Workspai Workspace Intelligence Model",
   "type": "object",
   "required": [
@@ -54,9 +54,24 @@
     "evidence": { "type": "object", "additionalProperties": true },
     "discovery": { "type": "object", "additionalProperties": true },
     "policies": { "type": "object", "additionalProperties": true },
-    "validation": { "type": "object", "additionalProperties": true }
+    "validation": { "type": "object", "additionalProperties": true },
+    "build": { "$ref": "#/$defs/buildProvenance" }
   },
   "$defs": {
+    "buildProvenance": {
+      "type": "object",
+      "description": "Non-structural provenance for the model command execution. It is excluded from the canonical workspace-model hash.",
+      "required": ["schemaVersion", "mode", "outcome", "engineStatus"],
+      "properties": {
+        "schemaVersion": { "const": "workspace-model-build.v1" },
+        "mode": { "enum": ["full", "cache", "incremental"] },
+        "outcome": { "enum": ["rebuilt", "partially-reused", "reused"] },
+        "engineStatus": {
+          "enum": ["disabled", "miss", "hit", "full", "incremental", "unchanged"]
+        }
+      },
+      "additionalProperties": false
+    },
     "factFreshness": {
       "type": "object",
       "required": [

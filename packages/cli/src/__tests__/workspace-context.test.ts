@@ -8,6 +8,7 @@ import {
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
   writeWorkspaceAgentContext,
 } from '../workspace-context.js';
+import { buildWorkspaceModel } from '../workspace-model.js';
 
 describe('workspace agent context', () => {
   const tempDirs: string[] = [];
@@ -129,6 +130,33 @@ describe('workspace agent context', () => {
     expect(context.workspace.type).toBe('empty-workspace');
     expect(context.workspaceSummary).toContain('no runtime coverage');
     expect(context.workspaceSummary).not.toContain('no runtime runtime coverage');
+  });
+
+  it('refreshes evidence availability without rebuilding the supplied canonical model', async () => {
+    const workspacePath = await makeTempDir('rk-context-evidence-refresh-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'evidence-refresh',
+      profile: 'minimal',
+    });
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      includeEvidence: true,
+      now: new Date('2026-07-26T00:00:00.000Z'),
+    });
+    expect(model.evidence.doctor?.exists).toBe(false);
+
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      { generatedAt: '2026-07-26T00:01:00.000Z' }
+    );
+    const context = await buildWorkspaceAgentContext({
+      workspacePath,
+      model,
+      now: new Date('2026-07-26T00:02:00.000Z'),
+    });
+
+    expect(context.evidence.available).toContain('doctor: .workspai/reports/doctor-last-run.json');
+    expect(context.evidence.missing).not.toContain('doctor');
   });
 
   it('separates simple display commands from pinned execution commands', async () => {

@@ -119,6 +119,13 @@ export type WorkspaceModelValidationResult = {
   issues: WorkspaceModelValidationIssue[];
 };
 
+export type WorkspaceModelBuildProvenance = {
+  schemaVersion: 'workspace-model-build.v1';
+  mode: 'full' | 'cache' | 'incremental';
+  outcome: 'rebuilt' | 'partially-reused' | 'reused';
+  engineStatus: WorkspaceModelCacheStatus | WorkspaceModelIncrementalMode;
+};
+
 export type WorkspaceModel = {
   schemaVersion: typeof WORKSPACE_MODEL_SCHEMA_VERSION;
   generatedAt: string;
@@ -170,6 +177,12 @@ export type WorkspaceModel = {
   facts?: WorkspaceFact[];
   factFreshness?: FactFreshnessSummary;
   validation?: WorkspaceModelValidationResult;
+  /**
+   * Non-structural command provenance. This tells machine consumers whether
+   * the emitted model was rebuilt or safely reused without changing the
+   * canonical model hash.
+   */
+  build?: WorkspaceModelBuildProvenance;
 };
 
 export type BuildWorkspaceModelOptions = {
@@ -200,6 +213,24 @@ export type BuildWorkspaceModelOptions = {
 export type WorkspaceModelCacheStatus = 'hit' | 'miss' | 'disabled';
 
 export type WorkspaceModelIncrementalMode = 'full' | 'incremental' | 'unchanged';
+
+export function createWorkspaceModelBuildProvenance(input: {
+  mode: WorkspaceModelBuildProvenance['mode'];
+  engineStatus: WorkspaceModelBuildProvenance['engineStatus'];
+}): WorkspaceModelBuildProvenance {
+  const outcome =
+    input.engineStatus === 'hit' || input.engineStatus === 'unchanged'
+      ? 'reused'
+      : input.engineStatus === 'incremental'
+        ? 'partially-reused'
+        : 'rebuilt';
+  return {
+    schemaVersion: 'workspace-model-build.v1',
+    mode: input.mode,
+    outcome,
+    engineStatus: input.engineStatus,
+  };
+}
 
 const OBSERVABLE_PROJECT_MARKERS = [
   'package.json',
@@ -470,15 +501,20 @@ async function projectEvidenceRefs(
 async function buildProjectModel(
   workspacePath: string,
   projectPath: string,
-  options: Required<Pick<BuildWorkspaceModelOptions, 'includeAbsolutePaths' | 'includeEvidence'>>
+  options: Required<
+    Pick<BuildWorkspaceModelOptions, 'includeAbsolutePaths' | 'includeEvidence'>
+  > & {
+    contractProject?: WorkspaceContract['projects'][number];
+  }
 ): Promise<WorkspaceModelProject> {
   const projectJson = readRapidkitProjectJson(projectPath);
   const detection = detectBackendFrameworkFromProject(projectPath, projectJson);
   const capabilities = resolveProjectCommandCapabilities(projectPath);
   const runtimeSupport = getRuntimeSupport(detection.runtime);
   const kind = await inferWorkspaceProjectKind(projectPath, projectJson);
-  const projectName =
-    typeof projectJson?.name === 'string' && projectJson.name.trim()
+  const projectName = options.contractProject?.slug
+    ? options.contractProject.slug
+    : typeof projectJson?.name === 'string' && projectJson.name.trim()
       ? projectJson.name.trim()
       : path.basename(projectPath);
   const kit =
@@ -486,7 +522,7 @@ async function buildProjectModel(
       ? projectJson.kit_name
       : typeof projectJson?.kit === 'string'
         ? projectJson.kit
-        : undefined;
+        : options.contractProject?.kit;
   const engine =
     typeof projectJson?.engine === 'string'
       ? projectJson.engine
@@ -530,7 +566,9 @@ async function buildProjectModel(
     importantFiles: await collectImportantFiles(projectPath),
     evidence: await projectEvidenceRefs(workspacePath, projectPath, options.includeEvidence),
     provenance: {
-      path: 'filesystem discovery',
+      path: options.contractProject
+        ? 'workspace contract declaration reconciled with filesystem discovery'
+        : 'filesystem discovery',
       runtime: detection.source,
       framework: detection.source,
       commands: 'project command capability matrix',
@@ -655,6 +693,20 @@ function validateWorkspaceModel(
           'warning',
           'project.markers.missing',
           `Project ${project.name} has no important manifest files recorded.`,
+          project.path
+        )
+      );
+    }
+
+    const projectRoot = path.isAbsolute(project.path)
+      ? project.path
+      : path.resolve(model.workspace.root, project.path);
+    if (!fsExtra.existsSync(projectRoot)) {
+      issues.push(
+        issue(
+          'warning',
+          'project.path.missing',
+          `Registered project ${project.name} is not available at its declared path.`,
           project.path
         )
       );
@@ -1070,18 +1122,33 @@ export async function buildWorkspaceModel(
   const includeEvidence = input.includeEvidence === true;
   const observableScanDepth = resolveObservableScanDepth(input.observableScanDepth);
   const now = input.now ?? new Date();
-  const [marker, workspaceJson, importedProjects, rapidkitProjectPaths, observableProjectPaths] =
-    await Promise.all([
-      readWorkspaceMarker(workspacePath),
-      readWorkspaceJson(workspacePath),
-      readImportedProjectsRegistry(workspacePath),
-      discoverWorkspaceProjects(workspacePath, { descendIntoMatchedProjects: false }),
-      discoverObservableProjectRoots(workspacePath, observableScanDepth),
-    ]);
+  const [
+    marker,
+    workspaceJson,
+    workspaceContract,
+    importedProjects,
+    rapidkitProjectPaths,
+    observableProjectPaths,
+  ] = await Promise.all([
+    readWorkspaceMarker(workspacePath),
+    readWorkspaceJson(workspacePath),
+    loadWorkspaceContractSafely(workspacePath),
+    readImportedProjectsRegistry(workspacePath),
+    discoverWorkspaceProjects(workspacePath, { descendIntoMatchedProjects: false }),
+    discoverObservableProjectRoots(workspacePath, observableScanDepth),
+  ]);
 
+  const contractProjectPaths = new Map<string, WorkspaceContract['projects'][number]>();
+  for (const project of workspaceContract?.projects ?? []) {
+    const projectPath = project.externalPath
+      ? path.resolve(project.externalPath)
+      : path.resolve(workspacePath, project.relativePath);
+    contractProjectPaths.set(projectPath, project);
+  }
   const projectPaths = collectUniquePaths([
     ...rapidkitProjectPaths,
     ...observableProjectPaths,
+    ...contractProjectPaths.keys(),
     ...importedProjects.map((project) =>
       path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
     ),
@@ -1102,6 +1169,7 @@ export async function buildWorkspaceModel(
       return buildProjectModel(workspacePath, projectPath, {
         includeAbsolutePaths,
         includeEvidence,
+        contractProject: contractProjectPaths.get(path.resolve(projectPath)),
       });
     })
   );
@@ -1111,13 +1179,13 @@ export async function buildWorkspaceModel(
       ? workspaceJson.workspace_name
       : typeof workspaceJson?.name === 'string'
         ? workspaceJson.name
-        : marker?.name || path.basename(workspacePath);
+        : marker?.name || workspaceContract?.workspace.name || path.basename(workspacePath);
   const workspaceProfile =
     typeof workspaceJson?.profile === 'string'
       ? workspaceJson.profile
       : typeof workspaceJson?.mode === 'string'
         ? workspaceJson.mode
-        : undefined;
+        : workspaceContract?.workspace.profile;
   const surfaces = Array.from(new Set(projects.map((project) => project.kind))).sort();
   const runtimeFamilies = Array.from(new Set(projects.map((project) => project.runtime))).sort();
   const frameworks = Array.from(new Set(projects.map((project) => project.framework))).sort();

@@ -38,6 +38,10 @@ import {
 } from './cli-operation-result-contract.js';
 import { WORKSPACE_ARTIFACT_CONTRACTS } from './artifact-contract-registry.js';
 import { AGENT_ACTION_OUTCOME_SCHEMA_VERSION } from './agent-action-outcome-contract.js';
+import {
+  WORKSPACE_ACTION_CONTRACTS,
+  workspaceActionFlagDescription,
+} from './workspace-action-contract.js';
 
 export const RUNTIME_COMMAND_SURFACE_SCHEMA_VERSION = 'rapidkit-runtime-command-surface-v1';
 
@@ -91,6 +95,15 @@ export type RuntimeCommandSurfaceContract = {
     producerCommands: string[][];
   }>;
   workspaceSubcommands: string[];
+  workspaceActions: Array<{
+    id: string;
+    usage: string;
+    summary: string;
+    options: Array<{ flag: string; description: string }>;
+    subactions: string[];
+    artifact: string | null;
+    examples: string[];
+  }>;
   workspaceIntelligenceSubcommands: string[];
   workspaceIntelligenceRootCommands: string[];
   workspaceIntelligenceExecution: Array<{
@@ -209,6 +222,8 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   'project archives': 'List governed project archives and their available restoration metadata.',
   'project commands':
     'Discover commands supported by the selected project runtime and its current capability tier.',
+  'project coverage':
+    'Run or inspect runtime-native test coverage and publish normalized, project-scoped evidence against an explicit target.',
   'project delete':
     'Delete a registered project through guarded workspace safety and recovery checks.',
   'project restore':
@@ -573,6 +588,21 @@ export function buildRuntimeCommandSurfaceContract(): RuntimeCommandSurfaceContr
       producerCommands: descriptor.producerCommands.map((command) => [...command]),
     })),
     workspaceSubcommands: [...WORKSPACE_SUBCOMMANDS],
+    workspaceActions: WORKSPACE_SUBCOMMANDS.map((id) => {
+      const descriptor = WORKSPACE_ACTION_CONTRACTS[id];
+      return {
+        id,
+        usage: descriptor.usage,
+        summary: descriptor.summary,
+        options: descriptor.flags.map((flag) => ({
+          flag,
+          description: workspaceActionFlagDescription(flag),
+        })),
+        subactions: 'subactions' in descriptor ? [...descriptor.subactions] : [],
+        artifact: 'artifact' in descriptor ? descriptor.artifact : null,
+        examples: [...descriptor.examples],
+      };
+    }),
     workspaceIntelligenceSubcommands: [...WORKSPACE_INTELLIGENCE_SUBCOMMANDS],
     workspaceIntelligenceRootCommands: [...WORKSPACE_INTELLIGENCE_ROOT_COMMANDS],
     workspaceIntelligenceExecution: intelligenceExecutions.map(({ id, step }) => ({

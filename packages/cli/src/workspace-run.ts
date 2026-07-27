@@ -1294,7 +1294,13 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         }
       }
 
-      const dependencyStages = resolveStageDependencies(runtime, framework);
+      // Framework dependencies describe prerequisites for later lifecycle
+      // stages (for example test/build require init). A stage can never be its
+      // own prerequisite; otherwise the presence of any cached run artifact
+      // makes the first init permanently unreachable.
+      const dependencyStages = resolveStageDependencies(runtime, framework).filter(
+        (dependencyStage) => dependencyStage !== options.stage
+      );
       if (dependencyStages.length > 0 && cachedEvidence) {
         const missingDependency = dependencyStages.find((dependencyStage) => {
           const dependencyReport = cachedEvidence.stages[dependencyStage];

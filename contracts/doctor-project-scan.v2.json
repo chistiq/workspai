@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/doctor-project-scan.v2.json",
+  "title": "Workspai Doctor Project Scan",
   "type": "object",
   "required": [
     "schemaVersion",

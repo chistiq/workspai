@@ -839,6 +839,41 @@
     {
       "path": [
         "project",
+        "coverage"
+      ],
+      "command": "coverage",
+      "parent": "project",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Inspect or run runtime-native test coverage and publish normalized project evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--target <percent>",
+          "attributeName": "target"
+        },
+        {
+          "flags": "--run",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "project",
         "delete"
       ],
       "command": "delete",

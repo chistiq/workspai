@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-watch-event.v1.json",
+  "title": "Workspai Workspace Watch Event",
   "type": "object",
   "required": [
     "schemaVersion",

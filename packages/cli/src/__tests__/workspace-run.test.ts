@@ -1012,6 +1012,52 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(workspacePath);
   });
 
+  it('does not require a framework init stage to have passed before running init itself', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
+    const projectPath = await createProjectWithoutContext(workspacePath, 'fiber-api');
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'fiber-api',
+      runtime: 'go',
+      framework: 'gofiber',
+    });
+    await fsExtra.writeFile(
+      path.join(projectPath, 'go.mod'),
+      'module example.test/fiber-api\n\nrequire github.com/gofiber/fiber/v2 v2.52.5\n'
+    );
+    await fsExtra.outputJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-run-last.json'),
+      {
+        schemaVersion: 'workspace-run-v1',
+        generatedAt: new Date().toISOString(),
+        workspacePath,
+        latestStage: 'test',
+        stages: {},
+        enterpriseControls: {
+          jsonReady: true,
+          evidencePath: '.workspai/reports/workspace-run-last.json',
+        },
+      }
+    );
+    noGateMock();
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'init',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]).toMatchObject({
+      relativePath: 'fiber-api',
+      selected: true,
+    });
+    expect(report.projects[0].status).not.toBe('skipped');
+    expect(report.projects[0].reason?.includes('dependency stage') ?? false).toBe(false);
+
+    await fsExtra.remove(workspacePath);
+  });
+
   // ─── invalid stage validation ─────────────────────────────────────────────
 
   it('throws for invalid stage name', async () => {

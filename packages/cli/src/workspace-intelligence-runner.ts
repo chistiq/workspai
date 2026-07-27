@@ -4,7 +4,11 @@ import { runAnalyze } from './analyze.js';
 import { runDoctor } from './doctor.js';
 import { evaluateReleaseReadiness } from './readiness.js';
 import { syncWorkspaceProjects } from './workspace.js';
-import { buildWorkspaceModel, writeWorkspaceModel } from './workspace-model.js';
+import {
+  buildWorkspaceModel,
+  createWorkspaceModelBuildProvenance,
+  writeWorkspaceModel,
+} from './workspace-model.js';
 import {
   buildWorkspaceImpact,
   buildWorkspaceModelSnapshot,
@@ -158,7 +162,13 @@ export async function runWorkspaceIntelligenceChain(input: {
     return model;
   };
   await stage('model', async () => {
-    model = await buildWorkspaceModel({ workspacePath, includeEvidence: true });
+    model = {
+      ...(await buildWorkspaceModel({ workspacePath, includeEvidence: true })),
+      build: createWorkspaceModelBuildProvenance({
+        mode: 'full',
+        engineStatus: 'disabled',
+      }),
+    };
     await writeWorkspaceModel(model, workspacePath);
     return { message: `${model.summary.projectCount} projects modeled` };
   });
@@ -255,10 +265,9 @@ export async function runWorkspaceIntelligenceChain(input: {
   });
 
   await stage('context', async () => {
-    model = await buildWorkspaceModel({ workspacePath, includeEvidence: true });
     const context = await buildWorkspaceAgentContext({
       workspacePath,
-      model,
+      model: requireModel(),
       agent: input.agent ?? 'generic',
       includeEvidence: true,
     });

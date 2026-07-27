@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   buildWorkspaceModel,
+  createWorkspaceModelBuildProvenance,
   validateWorkspaceModelStrict,
   WORKSPACE_MODEL_REPORT_PATH,
   writeWorkspaceModel,
@@ -27,6 +28,39 @@ describe('workspace intelligence model', () => {
       const dir = tempDirs.pop();
       if (dir) await fsExtra.remove(dir);
     }
+  });
+
+  it('reports build reuse without changing the canonical model hash', async () => {
+    const workspacePath = await makeTempDir('rk-model-build-provenance-');
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-06-14T00:00:00.000Z'),
+    });
+    const canonicalHash = hashWorkspaceModel(model);
+    const cached = {
+      ...model,
+      build: createWorkspaceModelBuildProvenance({
+        mode: 'cache',
+        engineStatus: 'hit',
+      }),
+    };
+    const incremental = {
+      ...model,
+      build: createWorkspaceModelBuildProvenance({
+        mode: 'incremental',
+        engineStatus: 'incremental',
+      }),
+    };
+
+    expect(cached.build).toEqual({
+      schemaVersion: 'workspace-model-build.v1',
+      mode: 'cache',
+      outcome: 'reused',
+      engineStatus: 'hit',
+    });
+    expect(incremental.build.outcome).toBe('partially-reused');
+    expect(hashWorkspaceModel(cached)).toBe(canonicalHash);
+    expect(hashWorkspaceModel(incremental)).toBe(canonicalHash);
   });
 
   it('builds a stable model for an empty workspace', async () => {
@@ -67,6 +101,63 @@ describe('workspace intelligence model', () => {
     );
     expect(model.validation?.issues.map((issue) => issue.code)).toContain(
       'workspace.projects.empty'
+    );
+  });
+
+  it('treats contract-declared projects as canonical inventory and reports missing roots', async () => {
+    const workspacePath = await makeTempDir('rk-model-contract-inventory-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-07-26T00:00:00.000Z',
+      workspace: { name: 'contract-platform', profile: 'enterprise' },
+      projects: [
+        {
+          slug: 'orders-api',
+          relativePath: 'services/orders',
+          runtime: 'node',
+          framework: 'nestjs',
+          kit: 'nestjs.standard',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-07-26T01:00:00.000Z'),
+    });
+
+    expect(model.workspace).toMatchObject({
+      name: 'contract-platform',
+      profile: 'enterprise',
+    });
+    expect(model.projects).toHaveLength(1);
+    expect(model.projects[0]).toMatchObject({
+      name: 'orders-api',
+      path: 'services/orders',
+      kit: 'nestjs.standard',
+      provenance: {
+        path: 'workspace contract declaration reconciled with filesystem discovery',
+      },
+    });
+    expect(model.graph?.nodes.map((node) => node.id)).toEqual(['orders-api']);
+    expect(model.validation.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'project.path.missing',
+          target: 'services/orders',
+        }),
+      ])
     );
   });
 

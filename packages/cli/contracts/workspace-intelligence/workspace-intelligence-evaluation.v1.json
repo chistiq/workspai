@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-intelligence-evaluation.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-intelligence-evaluation.v1.json",
   "title": "Workspai Workspace Intelligence Evaluation",
   "description": "A live or finalized, provenance-aware measurement of model usage, agent activity, and verified task outcome.",
   "type": "object",

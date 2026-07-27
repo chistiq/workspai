@@ -5,22 +5,23 @@ CI workflows, and AI consumers.
 
 ## Core concepts
 
-| Term               | Plain-language meaning                                                                                                                                      |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace          | A governed collection of one or more registered projects. It is not required to be a Git monorepo.                                                          |
-| Project            | One registered application, service, library, or infrastructure unit inside or linked to a workspace.                                                       |
-| Workspace manifest | `.workspai/workspace.json`; workspace identity, profile, engine, and bootstrap metadata. It is not the project registry.                                    |
-| Workspace contract | `.workspai/workspace.contract.json`; the operational registry of projects and their declared ports, APIs, ownership, and relationships.                     |
-| Registry summary   | `.workspai/workspace-registry.v1.json`; the canonical lightweight project count and registry status for UI and CI.                                          |
-| Workspace Model    | The canonical, deterministic structural description produced from registered projects, manifests, contracts, policies, and detected facts.                  |
-| Knowledge Graph    | A proof-backed representation derived from the Workspace Model. It makes entities and relationships queryable; it is not the source of truth for the model. |
-| Dependency graph   | The project-to-project dependency subgraph embedded in the Workspace Model and used by impact and verification.                                             |
-| Provider           | A deterministic source adapter that emits facts from code, manifests, APIs, infrastructure, documentation, Git, or another supported source.                |
-| Fact               | A normalized observation about the workspace, such as a package, endpoint, import, deployment, or owner.                                                    |
-| Evidence / proof   | The source location and extraction details that justify a fact or relationship.                                                                             |
-| Proof path         | A traceable route from a query result or relationship back to its supporting evidence.                                                                      |
-| Artifact           | A versioned file written under `.workspai/`, usually `.workspai/reports/`, for people or automation to consume.                                             |
-| Command projection | The JSON returned on stdout for one command. It can include status and output metadata around a canonical artifact payload.                                 |
+| Term                  | Plain-language meaning                                                                                                                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace             | A governed collection of one or more registered projects. It is not required to be a Git monorepo.                                                                                                    |
+| Project               | One registered application, service, library, or infrastructure unit inside or linked to a workspace.                                                                                                 |
+| Workspace manifest    | `.workspai/workspace.json`; workspace identity, profile, engine, and bootstrap metadata. It is not the project registry.                                                                              |
+| Workspace contract    | `.workspai/workspace.contract.json`; the operational registry of projects and their declared ports, APIs, ownership, and relationships.                                                               |
+| Registry summary      | `.workspai/workspace-registry.v1.json`; the canonical lightweight project count and registry status for UI and CI.                                                                                    |
+| Workspace Model       | The canonical, deterministic structural description produced from registered projects, manifests, contracts, policies, and detected facts.                                                            |
+| Knowledge Graph       | A proof-backed representation derived from and structurally bound to the canonical Workspace Model. It makes entities and relationships queryable; it cannot replace or mutate the authorizing model. |
+| Structural model hash | A stable SHA-256 over model structure. Volatile timestamps, run correlation, live evidence references, and freshness fields are excluded so harmless refreshes do not create false graph drift.       |
+| Dependency graph      | The project-to-project dependency subgraph embedded in the Workspace Model and used by impact and verification.                                                                                       |
+| Provider              | A deterministic source adapter that emits facts from code, manifests, APIs, infrastructure, documentation, Git, or another supported source.                                                          |
+| Fact                  | A normalized observation about the workspace, such as a package, endpoint, import, deployment, or owner.                                                                                              |
+| Evidence / proof      | The source location and extraction details that justify a fact or relationship.                                                                                                                       |
+| Proof path            | A traceable route from a query result or relationship back to its supporting evidence.                                                                                                                |
+| Artifact              | A versioned file written under `.workspai/`, usually `.workspai/reports/`, for people or automation to consume.                                                                                       |
+| Command projection    | The JSON returned on stdout for one command. It can include status and output metadata around a canonical artifact payload.                                                                           |
 
 ## Intelligence and governance
 

@@ -38,6 +38,7 @@ import {
 import { discoverWorkspaceProjects } from './utils/workspace-discovery.js';
 import { getFrameworkSupportTier } from './utils/support-matrix.js';
 import {
+  assertDoctorEvidenceSemanticInvariants,
   DOCTOR_PROJECT_EVIDENCE_SCHEMA,
   DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
   isDoctorEvidencePayloadCompatible,
@@ -49,6 +50,7 @@ import {
 import {
   firstExistingWorkspaceArtifactPath,
   writeWorkspaceArtifactJson,
+  writeWorkspaceArtifactJsonSet,
 } from './utils/artifact-path-compat.js';
 import {
   hasWorkspaceRootMarkers as hasKnownWorkspaceRootMarkers,
@@ -72,6 +74,12 @@ import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './works
 import { isWorkspaceShellDirectory } from './utils/workspace-root.js';
 import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
+import {
+  collectDoctorDependencyAudit,
+  type DoctorDependencyAuditEvidence,
+} from './utils/doctor-dependency-audit.js';
+import { buildDoctorGraphDiagnosis } from './utils/doctor-graph-diagnosis.js';
+import type { DoctorGraphDiagnosis } from './contracts/doctor-graph-diagnosis-contract.js';
 
 export const DOCTOR_WORKSPACE_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor;
 
@@ -204,6 +212,8 @@ type DetectedFramework =
   | 'Clojure'
   | 'Scala'
   | 'Kotlin'
+  | 'C'
+  | 'C++'
   | 'Deno'
   | 'Bun'
   | 'PHP'
@@ -223,9 +233,14 @@ type ProjectRuntimeFamily =
   | 'elixir'
   | 'clojure'
   | 'deno'
+  | 'bun'
   | 'php'
   | 'ruby'
   | 'dotnet'
+  | 'scala'
+  | 'kotlin'
+  | 'c'
+  | 'cpp'
   | 'unknown';
 type ProjectKind = 'backend' | 'frontend' | 'fullstack' | 'generic';
 type FrameworkConfidence = 'high' | 'medium' | 'low';
@@ -261,13 +276,28 @@ interface ProjectHealth {
   hasDocker?: boolean;
   hasCodeQuality?: boolean;
   vulnerabilities?: number;
+  dependencyAudit?: DoctorDependencyAuditEvidence;
   probes?: ProjectProbeResult[];
+  verdict?: DoctorVerdict;
+  probeSummary?: DoctorProbeSummary;
   repairCapabilities?: DoctorRepairCapability[];
   commandCapabilities?: ProjectCommandCapabilities;
+  graphDiagnosis?: DoctorGraphDiagnosis;
 }
 
 type DoctorScopeLabel = 'host-system' | 'workspace-aggregate' | 'project-scoped';
 export type DoctorPolicyProfileName = 'local' | 'ci' | 'release' | 'enterprise-strict';
+type DoctorVerdict = 'passed' | 'attention' | 'blocked';
+
+interface DoctorProbeSummary {
+  total: number;
+  passed: number;
+  warnings: number;
+  failed: number;
+  blockingFindings: number;
+  advisoryFindings: number;
+  verdict: DoctorVerdict;
+}
 
 interface DoctorPolicyProfile {
   name: DoctorPolicyProfileName;
@@ -358,7 +388,7 @@ interface ScoreBreakdownItem {
 
 interface DoctorContractMetadata {
   version: 'doctor-evidence-v1';
-  scoringPolicyVersion: 'doctor-score-policy-v1';
+  scoringPolicyVersion: 'doctor-score-policy-v2';
   generatedBy: 'workspai';
   deterministicScoreBreakdown: true;
   scopeModel: 'workspace-aggregate-or-project-scoped';
@@ -369,6 +399,21 @@ interface HealthScore {
   passed: number;
   warnings: number;
   errors: number;
+  verdict: DoctorVerdict;
+  components: {
+    host: {
+      total: number;
+      passed: number;
+      warnings: number;
+      errors: number;
+    };
+    projects: {
+      total: number;
+      passed: number;
+      warnings: number;
+      errors: number;
+    };
+  };
 }
 
 interface WorkspaceHealth {
@@ -447,30 +492,31 @@ interface DoctorDriftDelta {
 }
 
 function getProjectAdvisoryWarningCount(project: ProjectHealth): number {
-  let advisoryWarnings = 0;
+  const probeWarnings = (project.probes ?? []).filter((probe) => probe.status === 'warn').length;
+  let advisoryWarnings = probeWarnings;
 
   const hasEnvIssue = project.issues.some((issue) =>
     issue.toLowerCase().includes('environment file missing')
   );
+  const hasEnvProbe = (project.probes ?? []).some((probe) => probe.id === 'surface-env-contract');
+  const hasSecurityProbe = (project.probes ?? []).some(
+    (probe) => probe.id === 'surface-security-hygiene'
+  );
 
   // `.env` absence is shown as a warning row in output; count it even when no fixable issue exists.
-  if (project.hasEnvFile === false && !hasEnvIssue) {
+  if (project.hasEnvFile === false && !hasEnvIssue && !hasEnvProbe) {
     advisoryWarnings += 1;
   }
 
-  if (typeof project.vulnerabilities === 'number' && project.vulnerabilities > 0) {
+  if (
+    typeof project.vulnerabilities === 'number' &&
+    project.vulnerabilities > 0 &&
+    !hasSecurityProbe
+  ) {
     advisoryWarnings += 1;
   }
 
   return advisoryWarnings;
-}
-
-function countProjectAdvisoryWarningProjects(projects: ProjectHealth[]): number {
-  return projects.filter((project) => getProjectAdvisoryWarningCount(project) > 0).length;
-}
-
-function countProjectAdvisoryWarnings(projects: ProjectHealth[]): number {
-  return projects.reduce((sum, project) => sum + getProjectAdvisoryWarningCount(project), 0);
 }
 
 function shouldWarnAboutDoctorVersionCompatibility(input: {
@@ -513,7 +559,7 @@ const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA = 'doctor-workspace-cache-v2';
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
   version: 'doctor-evidence-v1',
-  scoringPolicyVersion: 'doctor-score-policy-v1',
+  scoringPolicyVersion: 'doctor-score-policy-v2',
   generatedBy: 'workspai',
   deterministicScoreBreakdown: true,
   scopeModel: 'workspace-aggregate-or-project-scoped',
@@ -692,6 +738,16 @@ function classifyDoctorIssueClass(probe: ProjectProbeResult): DoctorIssueClass {
   if (id.includes('custom')) return 'custom';
   if (id.includes('script') || id.includes('config')) return 'configuration';
   return 'unknown';
+}
+
+function doctorGraphDiagnosisProbes(project: ProjectHealth) {
+  const dependencySubjects = project.dependencyAudit?.subjects.map((subject) => subject.name) ?? [];
+  return (project.probes ?? []).map((probe) => ({
+    ...probe,
+    ...(probe.id === 'surface-security-hygiene' && dependencySubjects.length > 0
+      ? { subjects: dependencySubjects }
+      : {}),
+  }));
 }
 
 function inferDoctorOperationalImpact(
@@ -1145,6 +1201,8 @@ function supportTierForFramework(framework: DetectedFramework): FrameworkSupport
     framework === 'Clojure' ||
     framework === 'Scala' ||
     framework === 'Kotlin' ||
+    framework === 'C' ||
+    framework === 'C++' ||
     framework === 'Deno' ||
     framework === 'Bun' ||
     framework === 'PHP' ||
@@ -1176,7 +1234,17 @@ function kindForFramework(framework: DetectedFramework): ProjectKind {
     return 'frontend';
   }
 
-  if (framework === 'Unknown' || framework === 'Node.js' || framework === 'Python') {
+  if (
+    framework === 'Unknown' ||
+    framework === 'Node.js' ||
+    framework === 'Python' ||
+    framework === 'Go' ||
+    framework === 'Java' ||
+    framework === 'Scala' ||
+    framework === 'Kotlin' ||
+    framework === 'C' ||
+    framework === 'C++'
+  ) {
     return 'generic';
   }
 
@@ -1197,13 +1265,16 @@ function runtimeForFramework(framework: DetectedFramework): ProjectRuntimeFamily
     framework === 'Vite' ||
     framework === 'Astro' ||
     framework === 'Solid' ||
-    framework === 'Bun' ||
     framework === 'Express' ||
     framework === 'Fastify' ||
     framework === 'Koa' ||
     framework === 'Node.js'
   ) {
     return 'node';
+  }
+
+  if (framework === 'Bun') {
+    return 'bun';
   }
 
   if (
@@ -1215,11 +1286,16 @@ function runtimeForFramework(framework: DetectedFramework): ProjectRuntimeFamily
     return 'python';
   }
 
-  if (framework === 'Go/Fiber' || framework === 'Go/Gin') {
+  if (
+    framework === 'Go/Fiber' ||
+    framework === 'Go/Gin' ||
+    framework === 'Go' ||
+    framework === 'Echo'
+  ) {
     return 'go';
   }
 
-  if (framework === 'Spring Boot') {
+  if (framework === 'Spring Boot' || framework === 'Java') {
     return 'java';
   }
 
@@ -1251,6 +1327,22 @@ function runtimeForFramework(framework: DetectedFramework): ProjectRuntimeFamily
     return 'dotnet';
   }
 
+  if (framework === 'Scala') {
+    return 'scala';
+  }
+
+  if (framework === 'Kotlin') {
+    return 'kotlin';
+  }
+
+  if (framework === 'C') {
+    return 'c';
+  }
+
+  if (framework === 'C++') {
+    return 'cpp';
+  }
+
   return 'unknown';
 }
 
@@ -1277,7 +1369,8 @@ function applyFrameworkMetadata(
 
 function toDoctorRuntimeFamily(runtime: BackendRuntimeFamily): ProjectRuntimeFamily {
   if (runtime === 'python') return 'python';
-  if (runtime === 'node' || runtime === 'bun') return 'node';
+  if (runtime === 'node') return 'node';
+  if (runtime === 'bun') return 'bun';
   if (runtime === 'go') return 'go';
   if (runtime === 'java') return 'java';
   if (runtime === 'rust') return 'rust';
@@ -1287,6 +1380,10 @@ function toDoctorRuntimeFamily(runtime: BackendRuntimeFamily): ProjectRuntimeFam
   if (runtime === 'php') return 'php';
   if (runtime === 'ruby') return 'ruby';
   if (runtime === 'dotnet') return 'dotnet';
+  if (runtime === 'scala') return 'scala';
+  if (runtime === 'kotlin') return 'kotlin';
+  if (runtime === 'c') return 'c';
+  if (runtime === 'cpp') return 'cpp';
   return 'unknown';
 }
 
@@ -1375,6 +1472,11 @@ function toDoctorFramework(detection: BackendFrameworkDetection): DetectedFramew
       return 'Rust';
     case 'sinatra':
     case 'symfony':
+      return detection.key === 'sinatra' ? 'Ruby' : 'PHP';
+    case 'c':
+      return 'C';
+    case 'cpp':
+      return 'C++';
     case 'unknown':
       return 'Unknown';
     default:
@@ -1719,6 +1821,11 @@ async function writeDoctorEvidence(
           blockers.push(`${project.name}: ${issue.trim()}`);
         }
       }
+      for (const probe of project.probes ?? []) {
+        if (probe.status === 'fail' && probe.reason.trim()) {
+          blockers.push(`${project.name}: ${probe.reason.trim()}`);
+        }
+      }
     }
     for (const [label, check] of [
       ['python', health.python],
@@ -1729,56 +1836,68 @@ async function writeDoctorEvidence(
         blockers.push(`${label}: ${message}`);
       }
     }
-    await writeWorkspaceArtifactJson(
-      workspacePath,
-      DOCTOR_WORKSPACE_REPORT_PATH,
-      withGovernanceRunMetadata(
-        {
-          schemaVersion: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
-          evidenceType: 'workspace',
-          contract: getDoctorContractMetadata(),
-          policyProfile: health.policyProfile,
-          workspacePath,
-          workspaceName: health.workspaceName,
-          projectScanCached: health.projectScanCached ?? false,
-          projectScanSignature: health.projectScanSignature,
-          cachePath,
-          healthScore: health.healthScore,
-          evidenceFreshness: health.evidenceFreshness,
-          system: {
-            python: health.python,
-            poetry: health.poetry,
-            pipx: health.pipx,
-            go: health.go,
-            rapidkitCore: health.rapidkitCore,
-            versions: {
-              core: health.coreVersion,
-              npm: health.npmVersion,
-            },
-          },
-          projects: health.projects,
-          summary: {
-            totalProjects: health.projects.length,
-            totalIssues: health.projects.reduce((sum, p) => sum + p.issues.length, 0),
-            projectAdvisoryWarningProjects: countProjectAdvisoryWarningProjects(health.projects),
-            projectAdvisoryWarnings: countProjectAdvisoryWarnings(health.projects),
-            hasSystemErrors: [health.python, health.rapidkitCore].some((c) => c.status === 'error'),
-            scopeProvenance: health.scopeProvenance,
-          },
-          driftDelta: health.driftDelta,
-          scoreBreakdown: health.scoreBreakdown ?? [],
-        },
-        {
-          commandId: 'checkWorkspaceHealth',
-          exitCode: computeDoctorGateExitCode(health.healthScore, {
-            profile: health.policyProfile?.name,
-          }),
-          generatedAt: new Date().toISOString(),
-          blockers: blockers.slice(0, 12),
-          runId: resolveGovernanceRunId(),
-        }
-      )
+    const projectSummaries = health.projects.map(buildDoctorProbeSummary);
+    const blockingFindings = projectSummaries.reduce(
+      (sum, summary) => sum + summary.blockingFindings,
+      0
     );
+    const advisoryFindings = projectSummaries.reduce(
+      (sum, summary) => sum + summary.advisoryFindings,
+      0
+    );
+    const payload = withGovernanceRunMetadata(
+      {
+        schemaVersion: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
+        evidenceType: 'workspace',
+        contract: getDoctorContractMetadata(),
+        policyProfile: health.policyProfile,
+        workspacePath,
+        workspaceName: health.workspaceName,
+        projectScanCached: health.projectScanCached ?? false,
+        projectScanSignature: health.projectScanSignature,
+        cachePath,
+        healthScore: health.healthScore,
+        evidenceFreshness: health.evidenceFreshness,
+        system: {
+          python: health.python,
+          poetry: health.poetry,
+          pipx: health.pipx,
+          go: health.go,
+          rapidkitCore: health.rapidkitCore,
+          versions: {
+            core: health.coreVersion,
+            npm: health.npmVersion,
+          },
+        },
+        projects: health.projects,
+        summary: {
+          totalProjects: health.projects.length,
+          totalIssues: health.projects.reduce((sum, p) => sum + p.issues.length, 0),
+          verdict: health.healthScore?.verdict ?? 'passed',
+          blockingFindings,
+          advisoryFindings,
+          projectAdvisoryWarningProjects: projectSummaries.filter(
+            (summary) => summary.advisoryFindings > 0
+          ).length,
+          projectAdvisoryWarnings: advisoryFindings,
+          hasSystemErrors: [health.python, health.rapidkitCore].some((c) => c.status === 'error'),
+          scopeProvenance: health.scopeProvenance,
+        },
+        driftDelta: health.driftDelta,
+        scoreBreakdown: health.scoreBreakdown ?? [],
+      },
+      {
+        commandId: 'checkWorkspaceHealth',
+        exitCode: computeDoctorGateExitCode(health.healthScore, {
+          profile: health.policyProfile?.name,
+        }),
+        generatedAt: new Date().toISOString(),
+        blockers: blockers.slice(0, 12),
+        runId: resolveGovernanceRunId(),
+      }
+    );
+    assertDoctorEvidenceSemanticInvariants(payload);
+    await writeWorkspaceArtifactJson(workspacePath, DOCTOR_WORKSPACE_REPORT_PATH, payload);
     return evidencePath;
   } catch (error) {
     if (error instanceof Error && error.message.includes('violates contracts/')) {
@@ -2189,12 +2308,12 @@ async function performCommonChecks(
   }
 
   health.hasTests = hasTestDir || hasGoTests;
-  if (health.runtimeFamily === 'node' && !health.hasTests) {
+  if ((health.runtimeFamily === 'node' || health.runtimeFamily === 'bun') && !health.hasTests) {
     health.hasTests = await detectNodeTestSurface(projectPath, packageJsonData);
   }
 
   // Code Quality checks
-  if (health.runtimeFamily === 'node') {
+  if (health.runtimeFamily === 'node' || health.runtimeFamily === 'bun') {
     health.hasCodeQuality = await detectNodeEslintConfigured(projectPath, packageJsonData);
   } else if (health.framework === 'Go/Fiber' || health.framework === 'Go/Gin') {
     // golangci-lint config or Makefile with lint target
@@ -2238,53 +2357,14 @@ async function performCommonChecks(
     }
   }
 
-  // Security check - try to detect vulnerabilities
-  try {
-    if (health.runtimeFamily === 'node') {
-      const { stdout } = await execa('npm', ['audit', '--json'], {
-        cwd: projectPath,
-        reject: false,
-      });
-
-      if (stdout) {
-        try {
-          const audit = JSON.parse(stdout);
-          const vulns = audit.metadata?.vulnerabilities;
-          if (vulns) {
-            health.vulnerabilities =
-              (vulns.high || 0) + (vulns.critical || 0) + (vulns.moderate || 0);
-          }
-        } catch {
-          // Ignore JSON parse errors
-        }
-      }
-    } else if (health.runtimeFamily === 'python') {
-      // Check for safety or pip-audit
-      const venvPath = path.join(projectPath, '.venv');
-      const pythonPath = getVenvPythonPath(venvPath);
-
-      if (await fsExtra.pathExists(pythonPath)) {
-        try {
-          const { stdout } = await execa(pythonPath, ['-m', 'pip', 'list', '--format=json'], {
-            timeout: 5000,
-            reject: false,
-          });
-
-          if (stdout) {
-            const packages = JSON.parse(stdout);
-            void packages; // Placeholder for future pip-audit integration
-            // Simple heuristic: flag if there are very old core packages
-            // In reality, you'd use safety or pip-audit here
-            health.vulnerabilities = 0; // Placeholder
-          }
-        } catch {
-          // Ignore if can't check
-        }
-      }
-    }
-  } catch {
-    // Ignore security check errors
-  }
+  health.dependencyAudit = await collectDoctorDependencyAudit({
+    projectPath,
+    runtime: health.runtimeFamily ?? 'unknown',
+  });
+  health.vulnerabilities =
+    health.dependencyAudit.status === 'vulnerable'
+      ? (health.dependencyAudit.blockingFindingCount ?? health.dependencyAudit.findingCount ?? 0)
+      : undefined;
 }
 
 function pythonEnvironmentInterpreterCandidates(environmentPath: string): string[] {
@@ -2811,6 +2891,7 @@ async function appendBuiltInBackendProbes(
   const migrationMarkersByRuntime: Record<ProjectRuntimeFamily, string[]> = {
     python: ['alembic.ini', 'migrations', 'versions'],
     node: ['prisma/schema.prisma', 'migrations', 'typeorm.config.ts', 'typeorm.config.js'],
+    bun: ['prisma/schema.prisma', 'migrations', 'typeorm.config.ts', 'typeorm.config.js'],
     go: ['migrations', 'db/migrations'],
     java: ['src/main/resources/db/migration', 'src/main/resources/liquibase'],
     rust: ['migrations', 'sqlx-data.json'],
@@ -2820,6 +2901,10 @@ async function appendBuiltInBackendProbes(
     php: ['database/migrations', 'migrations'],
     ruby: ['db/migrate'],
     dotnet: ['Migrations', 'Data/Migrations'],
+    scala: ['src/main/resources/db/migration', 'conf/evolutions'],
+    kotlin: ['src/main/resources/db/migration', 'src/main/resources/liquibase'],
+    c: ['migrations', 'db/migrations'],
+    cpp: ['migrations', 'db/migrations'],
     unknown: ['migrations'],
   };
 
@@ -2912,6 +2997,7 @@ async function appendEnterpriseSurfaceProbes(
     hasTests: health.hasTests,
     hasDocker: health.hasDocker,
     vulnerabilities: health.vulnerabilities,
+    dependencyAudit: health.dependencyAudit,
   });
 
   for (const probe of probes) {
@@ -4081,35 +4167,81 @@ function calculateHealthScore(
   systemChecks: HealthCheckResult[],
   projects: ProjectHealth[]
 ): HealthScore {
-  let passed = 0;
-  let warnings = 0;
-  let errors = 0;
+  const host = { total: 0, passed: 0, warnings: 0, errors: 0 };
+  const projectScore = { total: 0, passed: 0, warnings: 0, errors: 0 };
 
-  // Count system checks
   systemChecks.forEach((check) => {
-    if (check.status === 'ok') passed++;
-    else if (check.status === 'warn') warnings++;
-    else if (check.status === 'error') errors++;
+    host.total += 1;
+    if (check.status === 'ok') host.passed += 1;
+    else if (check.status === 'warn') host.warnings += 1;
+    else if (check.status === 'error') host.errors += 1;
   });
 
-  // Count project issues
   projects.forEach((project) => {
-    const advisoryWarnings = getProjectAdvisoryWarningCount(project);
-    // Go projects: venvActive is set true (N/A) — use depsInstalled + no issues
-    const isHealthy = project.isGoProject
-      ? project.issues.length === 0 && project.depsInstalled
-      : project.issues.length === 0 && project.venvActive && project.depsInstalled;
+    const probes = project.probes ?? [];
+    if (probes.length > 0) {
+      for (const probe of probes) {
+        projectScore.total += 1;
+        if (probe.status === 'pass') projectScore.passed += 1;
+        else if (probe.status === 'warn') projectScore.warnings += 1;
+        else projectScore.errors += 1;
+      }
 
-    if (project.issues.length > 0 || advisoryWarnings > 0 || !isHealthy) {
-      warnings++;
+      // Legacy runtime checks predate probe contracts. Preserve their blocking
+      // meaning until each one has a typed probe, without allowing a passing
+      // surface probe to hide an unresolved runtime issue.
+      if (project.issues.length > 0) {
+        projectScore.total += project.issues.length;
+        projectScore.errors += project.issues.length;
+      }
       return;
     }
 
-    passed++;
+    projectScore.total += 1;
+    const advisoryWarnings = getProjectAdvisoryWarningCount(project);
+    const isHealthy = project.isGoProject
+      ? project.issues.length === 0 && project.depsInstalled
+      : project.issues.length === 0 && project.venvActive && project.depsInstalled;
+    if (project.issues.length > 0 || !isHealthy) projectScore.errors += 1;
+    else if (advisoryWarnings > 0) projectScore.warnings += 1;
+    else projectScore.passed += 1;
   });
 
-  const total = passed + warnings + errors;
-  return { total, passed, warnings, errors };
+  const passed = host.passed + projectScore.passed;
+  const warnings = host.warnings + projectScore.warnings;
+  const errors = host.errors + projectScore.errors;
+  return {
+    total: host.total + projectScore.total,
+    passed,
+    warnings,
+    errors,
+    verdict: errors > 0 ? 'blocked' : warnings > 0 ? 'attention' : 'passed',
+    components: { host, projects: projectScore },
+  };
+}
+
+function buildDoctorProbeSummary(project: ProjectHealth): DoctorProbeSummary {
+  const probes = project.probes ?? [];
+  const passed = probes.filter((probe) => probe.status === 'pass').length;
+  const warnings = probes.filter((probe) => probe.status === 'warn').length;
+  const failed = probes.filter((probe) => probe.status === 'fail').length;
+  const blockingFindings = failed + project.issues.length;
+  const advisoryFindings = warnings;
+  return {
+    total: probes.length,
+    passed,
+    warnings,
+    failed,
+    blockingFindings,
+    advisoryFindings,
+    verdict: blockingFindings > 0 ? 'blocked' : advisoryFindings > 0 ? 'attention' : 'passed',
+  };
+}
+
+function applyProjectVerdict(project: ProjectHealth): void {
+  const summary = buildDoctorProbeSummary(project);
+  project.probeSummary = summary;
+  project.verdict = summary.verdict;
 }
 
 function buildScoreBreakdown(
@@ -4137,36 +4269,48 @@ function buildScoreBreakdown(
   });
 
   for (const project of sortedProjects) {
-    const hasBlockingIssue = project.issues.length > 0;
-    const advisoryWarnings = getProjectAdvisoryWarningCount(project);
-    const status: 'ok' | 'warn' | 'error' = hasBlockingIssue
-      ? 'warn'
-      : advisoryWarnings > 0
-        ? 'warn'
-        : 'ok';
-    const reason = hasBlockingIssue
-      ? `${project.issues.length} blocking issue(s)`
-      : advisoryWarnings > 0
-        ? `${advisoryWarnings} advisory warning(s)`
-        : 'Project checks passed';
-
-    breakdown.push({
-      id: `project:${project.name}`,
-      label: `Project ${project.name}`,
-      status,
-      scope: 'project-scoped',
-      policyRuleId: hasBlockingIssue
-        ? 'project-blocking-issues'
-        : advisoryWarnings > 0
-          ? 'project-advisory-warnings'
-          : 'project-checks-passed',
-      reason,
-    });
+    applyProjectVerdict(project);
+    for (const probe of project.probes ?? []) {
+      breakdown.push({
+        id: `project:${project.name}:probe:${probe.id}`,
+        label: `${project.name} · ${probe.label}`,
+        status: probe.status === 'pass' ? 'ok' : probe.status === 'warn' ? 'warn' : 'error',
+        scope: 'project-scoped',
+        policyRuleId: `project-probe-${probe.id}`,
+        reason: probe.reason,
+      });
+    }
+    for (const [index, issue] of project.issues.entries()) {
+      breakdown.push({
+        id: `project:${project.name}:legacy:${index + 1}`,
+        label: `${project.name} · Runtime issue`,
+        status: 'error',
+        scope: 'project-scoped',
+        policyRuleId: 'project-runtime-issue',
+        reason: issue,
+      });
+    }
+    if ((project.probes?.length ?? 0) === 0 && project.issues.length === 0) {
+      breakdown.push({
+        id: `project:${project.name}`,
+        label: `Project ${project.name}`,
+        status: 'ok',
+        scope: 'project-scoped',
+        policyRuleId: 'project-checks-passed',
+        reason: 'Project checks passed',
+      });
+    }
   }
 
   if (options.includeWorkspaceAggregateRules) {
-    const totalProjectIssues = projects.reduce((sum, project) => sum + project.issues.length, 0);
-    const advisoryWarnings = countProjectAdvisoryWarnings(projects);
+    const totalProjectIssues = projects.reduce(
+      (sum, project) => sum + buildDoctorProbeSummary(project).blockingFindings,
+      0
+    );
+    const advisoryWarnings = projects.reduce(
+      (sum, project) => sum + buildDoctorProbeSummary(project).advisoryFindings,
+      0
+    );
     const systemErrors = systemChecks.filter((check) => check.result.status === 'error').length;
 
     breakdown.push({
@@ -4196,7 +4340,7 @@ function buildScoreBreakdown(
     breakdown.push({
       id: 'workspace:blocking-issues-gate',
       label: 'Workspace blocking issues gate',
-      status: totalProjectIssues > 0 ? 'warn' : 'ok',
+      status: totalProjectIssues > 0 ? 'error' : 'ok',
       scope: 'workspace-aggregate',
       policyRuleId: 'workspace-blocking-issues-gate',
       reason:
@@ -4304,6 +4448,18 @@ async function getWorkspaceHealth(
   health.projectScanSignature = projectSignature;
   health.projectScanCachePath = cachePath;
 
+  await Promise.all(
+    health.projects.map(async (projectHealth) => {
+      projectHealth.graphDiagnosis = await buildDoctorGraphDiagnosis({
+        workspacePath,
+        projectPath: projectHealth.path,
+        projectName: projectHealth.name,
+        probes: doctorGraphDiagnosisProbes(projectHealth),
+        issues: projectHealth.issues,
+      });
+    })
+  );
+
   // Calculate health score
   const healthChecks = [health.python, health.poetry, health.pipx, health.go, health.rapidkitCore];
   health.healthScore = calculateHealthScore(healthChecks, health.projects);
@@ -4367,6 +4523,7 @@ function serializeDoctorProjectForOutput(project: ProjectHealth): Record<string,
     hasDocker: project.hasDocker,
     hasCodeQuality: project.hasCodeQuality,
     vulnerabilities: project.vulnerabilities,
+    dependencyAudit: project.dependencyAudit,
     coreInstalled: project.coreInstalled,
     coreVersion: project.coreVersion,
     lastModified: project.lastModified,
@@ -4374,9 +4531,30 @@ function serializeDoctorProjectForOutput(project: ProjectHealth): Record<string,
     issues: project.issues,
     fixCommands: project.fixCommands,
     probes: project.probes,
+    verdict: project.verdict ?? buildDoctorProbeSummary(project).verdict,
+    probeSummary: project.probeSummary ?? buildDoctorProbeSummary(project),
     repairCapabilities: project.repairCapabilities,
     commandCapabilities: project.commandCapabilities,
+    graphDiagnosis: project.graphDiagnosis,
   };
+}
+
+function projectDoctorEvidenceRelativePath(
+  workspacePath: string | undefined,
+  projectPath: string
+): string {
+  const identity = workspacePath
+    ? path.relative(workspacePath, projectPath).split(path.sep).join('/')
+    : path.resolve(projectPath);
+  const readable =
+    path
+      .basename(projectPath)
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'project';
+  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);
+  return `.workspai/reports/projects/${readable}--${digest}/doctor-project-last-run.json`;
 }
 
 async function writeProjectDoctorEvidence(
@@ -4384,65 +4562,79 @@ async function writeProjectDoctorEvidence(
   envelope: ProjectHealthEnvelope
 ): Promise<string | undefined> {
   const evidenceRoot = workspacePath || envelope.projectPath;
-  const evidencePath = path.join(
-    evidenceRoot,
-    '.workspai',
-    'reports',
-    'doctor-project-last-run.json'
+  const latestRelativePath = '.workspai/reports/doctor-project-last-run.json';
+  const namespacedRelativePath = projectDoctorEvidenceRelativePath(
+    workspacePath,
+    envelope.projectPath
   );
+  const evidencePath = path.join(evidenceRoot, latestRelativePath);
 
   try {
-    const blockers = envelope.project.issues
+    const blockers = [
+      ...envelope.project.issues,
+      ...(envelope.project.probes ?? [])
+        .filter((probe) => probe.status === 'fail')
+        .map((probe) => probe.reason),
+    ]
       .filter((issue): issue is string => typeof issue === 'string' && issue.trim().length > 0)
       .slice(0, 12);
-    await writeWorkspaceArtifactJson(
-      evidenceRoot,
-      '.workspai/reports/doctor-project-last-run.json',
-      withGovernanceRunMetadata(
-        {
-          schemaVersion: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
-          evidenceType: 'project',
-          contract: getDoctorContractMetadata(),
-          policyProfile: envelope.policyProfile,
-          workspacePath: workspacePath || null,
-          projectPath: envelope.projectPath,
-          projectName: envelope.projectName,
-          healthScore: envelope.healthScore,
-          evidenceFreshness: envelope.evidenceFreshness,
-          system: {
-            python: envelope.python,
-            poetry: envelope.poetry,
-            pipx: envelope.pipx,
-            go: envelope.go,
-            rapidkitCore: envelope.rapidkitCore,
-          },
-          project: envelope.project,
-          driftDelta: envelope.driftDelta,
-          summary: {
-            scopeProvenance: envelope.scopeProvenance,
-          },
-          scoreBreakdown: envelope.scoreBreakdown ?? [],
+    const probeSummary = buildDoctorProbeSummary(envelope.project);
+    const payload = withGovernanceRunMetadata(
+      {
+        schemaVersion: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
+        evidenceType: 'project',
+        contract: getDoctorContractMetadata(),
+        policyProfile: envelope.policyProfile,
+        workspacePath: workspacePath || null,
+        projectPath: envelope.projectPath,
+        projectName: envelope.projectName,
+        healthScore: envelope.healthScore,
+        evidenceFreshness: envelope.evidenceFreshness,
+        system: {
+          python: envelope.python,
+          poetry: envelope.poetry,
+          pipx: envelope.pipx,
+          go: envelope.go,
+          rapidkitCore: envelope.rapidkitCore,
         },
-        {
-          commandId: 'projectDoctor',
-          exitCode: computeDoctorGateExitCode(envelope.healthScore, {
-            profile: envelope.policyProfile?.name,
-          }),
-          generatedAt: new Date().toISOString(),
-          blockers,
-          runId: resolveGovernanceRunId(),
-        }
-      )
+        project: envelope.project,
+        driftDelta: envelope.driftDelta,
+        summary: {
+          scopeProvenance: envelope.scopeProvenance,
+          verdict: probeSummary.verdict,
+          probeSummary,
+          blockingFindings: probeSummary.blockingFindings,
+          advisoryFindings: probeSummary.advisoryFindings,
+        },
+        scoreBreakdown: envelope.scoreBreakdown ?? [],
+      },
+      {
+        commandId: 'projectDoctor',
+        exitCode: computeDoctorGateExitCode(envelope.healthScore, {
+          profile: envelope.policyProfile?.name,
+        }),
+        generatedAt: new Date().toISOString(),
+        blockers,
+        runId: resolveGovernanceRunId(),
+      }
     );
+    assertDoctorEvidenceSemanticInvariants(payload);
+    if (workspacePath) {
+      await writeWorkspaceArtifactJsonSet(workspacePath, latestRelativePath, [
+        { relativePath: latestRelativePath, payload },
+        { relativePath: namespacedRelativePath, payload },
+      ]);
+    } else {
+      await writeWorkspaceArtifactJson(evidenceRoot, latestRelativePath, payload);
+    }
     if (workspacePath && path.resolve(workspacePath) !== path.resolve(envelope.projectPath)) {
-      await writeWorkspaceArtifactJson(
-        envelope.projectPath,
-        '.workspai/reports/doctor-project-last-run.json',
-        await fsExtra.readJson(evidencePath)
-      );
+      await writeWorkspaceArtifactJson(envelope.projectPath, latestRelativePath, payload);
     }
     return evidencePath;
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('violates contracts/')) {
+      throw error;
+    }
     return undefined;
   }
 }
@@ -4536,6 +4728,13 @@ async function getProjectHealthEnvelope(
   const systemHealth = await collectSystemChecks();
   const projectHealth = await checkProject(projectPath, { allowNonRapidkit: true });
   applyCommandCapabilities(projectHealth, projectPath);
+  projectHealth.graphDiagnosis = await buildDoctorGraphDiagnosis({
+    workspacePath: workspacePath || undefined,
+    projectPath,
+    projectName: projectHealth.name,
+    probes: doctorGraphDiagnosisProbes(projectHealth),
+    issues: projectHealth.issues,
+  });
   const healthScore = calculateHealthScore(
     [
       systemHealth.python,
@@ -4577,11 +4776,17 @@ async function getProjectHealthEnvelope(
     new Date().toISOString()
   );
 
-  const evidenceRoot = workspacePath || projectPath;
-  const previousEvidencePath = await firstExistingWorkspaceArtifactPath(
-    evidenceRoot,
+  const projectLocalEvidencePath = await firstExistingWorkspaceArtifactPath(
+    projectPath,
     '.workspai/reports/doctor-project-last-run.json'
   );
+  const workspaceProjectEvidencePath = workspacePath
+    ? await firstExistingWorkspaceArtifactPath(
+        workspacePath,
+        projectDoctorEvidenceRelativePath(workspacePath, projectPath)
+      )
+    : null;
+  const previousEvidencePath = projectLocalEvidencePath ?? workspaceProjectEvidencePath;
   const previousEvidence = previousEvidencePath
     ? await readDoctorEvidenceIfPresent(previousEvidencePath, 'project')
     : null;
@@ -4787,7 +4992,7 @@ function renderProjectHealth(project: ProjectHealth, hostCore?: HealthCheckResul
   }
   if (project.hasCodeQuality !== undefined) {
     const qualityTool =
-      project.runtimeFamily === 'node'
+      project.runtimeFamily === 'node' || project.runtimeFamily === 'bun'
         ? 'ESLint'
         : project.runtimeFamily === 'rust'
           ? 'clippy'
@@ -4844,6 +5049,26 @@ function renderProjectHealth(project: ProjectHealth, hostCore?: HealthCheckResul
         console.log(`       ${chalk.dim('↳')} ${chalk.gray(probe.recommendation)}`);
       }
     }
+  }
+
+  if (project.graphDiagnosis?.status === 'available') {
+    const summary = project.graphDiagnosis.summary;
+    console.log(`   ${chalk.bold('Graph-aware diagnosis:')}`);
+    console.log(
+      `     ${summary.findingCount} finding(s) • ${summary.affectedEntityCount} affected candidate(s) • ${summary.verificationTargetCount} verification target(s) • ${summary.proofPathCount} proof path(s)`
+    );
+    if (summary.unknownCount > 0) {
+      console.log(
+        `     ${chalk.dim('↳')} ${chalk.gray(`${summary.unknownCount} explicit unknown(s); inspect JSON evidence before expanding impact claims.`)}`
+      );
+    }
+  } else if (
+    project.graphDiagnosis &&
+    ['stale', 'invalid', 'project-unresolved'].includes(project.graphDiagnosis.status)
+  ) {
+    console.log(
+      `   ⚠️  Graph-aware diagnosis: ${chalk.yellow(project.graphDiagnosis.status)} ${chalk.dim('(refresh workspace model evidence)')}`
+    );
   }
 
   if (project.commandCapabilities) {
@@ -6991,7 +7216,6 @@ export function computeDoctorGateExitCode(
   options: { strict?: boolean; ci?: boolean; profile?: string }
 ): number {
   const profile = resolveDoctorPolicyProfile(options);
-  if (profile.name === 'local') return 0;
   const errors = Number(healthScore?.errors ?? 0);
   const warnings = Number(healthScore?.warnings ?? 0);
   if (profile.exitOnErrors && errors > 0) return 1;
@@ -7116,6 +7340,15 @@ export async function runDoctor(
         await recordDoctorFixHistory(workspacePath, fixResult, 'workspace');
       }
 
+      const projectSummaries = health.projects.map(buildDoctorProbeSummary);
+      const blockingFindings = projectSummaries.reduce(
+        (sum, summary) => sum + summary.blockingFindings,
+        0
+      );
+      const advisoryFindings = projectSummaries.reduce(
+        (sum, summary) => sum + summary.advisoryFindings,
+        0
+      );
       const output = {
         contract: getDoctorContractMetadata(),
         policyProfile,
@@ -7144,8 +7377,13 @@ export async function runDoctor(
         summary: {
           totalProjects: health.projects.length,
           totalIssues: health.projects.reduce((sum, p) => sum + p.issues.length, 0),
-          projectAdvisoryWarningProjects: countProjectAdvisoryWarningProjects(health.projects),
-          projectAdvisoryWarnings: countProjectAdvisoryWarnings(health.projects),
+          verdict: health.healthScore?.verdict ?? 'passed',
+          blockingFindings,
+          advisoryFindings,
+          projectAdvisoryWarningProjects: projectSummaries.filter(
+            (summary) => summary.advisoryFindings > 0
+          ).length,
+          projectAdvisoryWarnings: advisoryFindings,
           hasSystemErrors: [health.python, health.rapidkitCore].some((c) => c.status === 'error'),
           scopeProvenance: health.scopeProvenance,
         },
@@ -7221,17 +7459,22 @@ export async function runDoctor(
     }
 
     // Summary
-    const totalIssues = health.projects.reduce((sum, p) => sum + p.issues.length, 0);
-    const advisoryWarningProjects = countProjectAdvisoryWarningProjects(health.projects);
+    const projectSummaries = health.projects.map(buildDoctorProbeSummary);
+    const totalIssues = projectSummaries.reduce(
+      (sum, summary) => sum + summary.blockingFindings,
+      0
+    );
+    const advisoryWarningCount = projectSummaries.reduce(
+      (sum, summary) => sum + summary.advisoryFindings,
+      0
+    );
     const hasSystemIssues = [health.python, health.rapidkitCore].some((c) => c.status === 'error');
 
-    if (hasSystemIssues || totalIssues > 0 || advisoryWarningProjects > 0) {
-      const advisorySummary =
-        advisoryWarningProjects > 0
-          ? ` and ${advisoryWarningProjects} advisory warning project(s)`
-          : '';
+    if (hasSystemIssues || totalIssues > 0 || advisoryWarningCount > 0) {
       console.log(
-        chalk.bold.yellow(`\n⚠️  Found ${totalIssues} project issue(s)${advisorySummary}`)
+        chalk.bold.yellow(
+          `\n⚠️  Doctor verdict: ${health.healthScore?.verdict ?? 'attention'} · ${totalIssues} blocking finding(s) · ${advisoryWarningCount} advisory finding(s)`
+        )
       );
       if (hasSystemIssues) {
         console.log(chalk.bold.red('❌ System requirements not met'));
@@ -7256,10 +7499,9 @@ export async function runDoctor(
 
         if (!options.json) {
           const refreshedHealth = await getWorkspaceHealth(workspacePath, false, policyProfile);
-          const refreshedTotalIssues = refreshedHealth.projects.reduce(
-            (sum, p) => sum + p.issues.length,
-            0
-          );
+          const refreshedTotalIssues = refreshedHealth.projects
+            .map(buildDoctorProbeSummary)
+            .reduce((sum, summary) => sum + summary.blockingFindings, 0);
           const refreshedHasSystemIssues = [
             refreshedHealth.python,
             refreshedHealth.rapidkitCore,
@@ -7324,6 +7566,11 @@ export async function runDoctor(
             passed: 0,
             warnings: 0,
             errors: 1,
+            verdict: 'blocked',
+            components: {
+              host: { total: 0, passed: 0, warnings: 0, errors: 0 },
+              projects: { total: 1, passed: 0, warnings: 0, errors: 1 },
+            },
           },
           summary: {
             totalProjects: 0,
@@ -7412,6 +7659,7 @@ export async function runDoctor(
       }
 
       const reportedProjectPath = normalizeReportedPath(envelope.project.path);
+      const probeSummary = buildDoctorProbeSummary(envelope.project);
       const output = {
         contract: getDoctorContractMetadata(),
         policyProfile,
@@ -7439,9 +7687,12 @@ export async function runDoctor(
         summary: {
           totalProjects: 1,
           totalIssues: envelope.project.issues.length,
-          projectAdvisoryWarningProjects:
-            getProjectAdvisoryWarningCount(envelope.project) > 0 ? 1 : 0,
-          projectAdvisoryWarnings: getProjectAdvisoryWarningCount(envelope.project),
+          verdict: probeSummary.verdict,
+          probeSummary,
+          blockingFindings: probeSummary.blockingFindings,
+          advisoryFindings: probeSummary.advisoryFindings,
+          projectAdvisoryWarningProjects: probeSummary.advisoryFindings > 0 ? 1 : 0,
+          projectAdvisoryWarnings: probeSummary.advisoryFindings,
           hasSystemErrors: [envelope.python, envelope.rapidkitCore].some(
             (c) => c.status === 'error'
           ),
@@ -7505,14 +7756,15 @@ export async function runDoctor(
     const hasSystemIssues = [envelope.python, envelope.rapidkitCore].some(
       (c) => c.status === 'error'
     );
-    const issueCount = envelope.project.issues.length;
-    const advisoryWarningCount = getProjectAdvisoryWarningCount(envelope.project);
+    const probeSummary = buildDoctorProbeSummary(envelope.project);
+    const issueCount = probeSummary.blockingFindings;
+    const advisoryWarningCount = probeSummary.advisoryFindings;
 
     if (hasSystemIssues || issueCount > 0 || advisoryWarningCount > 0) {
-      const advisorySummary =
-        advisoryWarningCount > 0 ? ` and ${advisoryWarningCount} advisory warning(s)` : '';
       console.log(
-        chalk.bold.yellow(`\n⚠️  Found ${issueCount} project issue(s)${advisorySummary}`)
+        chalk.bold.yellow(
+          `\n⚠️  Doctor verdict: ${probeSummary.verdict} · ${issueCount} blocking finding(s) · ${advisoryWarningCount} advisory finding(s)`
+        )
       );
       if (hasSystemIssues) {
         console.log(chalk.bold.red('❌ System requirements not met'));

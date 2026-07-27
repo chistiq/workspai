@@ -1054,49 +1054,47 @@ export async function buildWorkspaceContractGraph(input: {
   const { contractPath, contract } = await readWorkspaceContract(input);
   const now = input.now ?? new Date();
   const generatedAt = now.toISOString();
-  let dependencyGraph: WorkspaceDependencyGraph;
-  try {
-    const { inferWorkspaceDependencyGraph } = await import('../workspace-dependency-graph.js');
-    dependencyGraph = await inferWorkspaceDependencyGraph({
-      workspacePath: input.workspacePath,
-      contract,
-      now,
-      model: {
-        projects: contract.projects.map((project) => ({
-          name: project.slug,
-          path: project.relativePath,
-          ...(project.externalPath ? { absolutePath: project.externalPath } : {}),
-          ...(project.runtime ? { runtime: project.runtime } : {}),
-          ...(project.framework ? { framework: project.framework } : {}),
-          ...(project.framework ? { kind: project.framework } : {}),
-        })),
-      },
-    });
-  } catch (error) {
-    dependencyGraph = emptyDependencyGraph(
+  const { buildWorkspaceModel } = await import('../workspace-model.js');
+  const { hashWorkspaceModel } = await import('../workspace-model-hash.js');
+  const model = await buildWorkspaceModel({
+    workspacePath: input.workspacePath,
+    includeEvidence: false,
+    now,
+  });
+  const dependencyGraph =
+    model.graph ??
+    emptyDependencyGraph(
       contract,
       generatedAt,
-      `Graph enrichment failed: ${error instanceof Error ? error.message : String(error)}`
+      'The canonical Workspace Model did not provide a project dependency topology.'
     );
-  }
   const operationalProfiles = new Map(
     dependencyGraph.nodes.map((node) => [node.id, node.operationalProfile])
   );
   const { buildWorkspaceKnowledgeGraph } = await import('../workspace-knowledge-graph.js');
   const knowledgeGraph = await buildWorkspaceKnowledgeGraph({
     workspacePath: input.workspacePath,
-    workspace: contract.workspace,
+    workspace: {
+      name: model.workspace.name,
+      ...(model.workspace.profile ? { profile: model.workspace.profile } : {}),
+    },
     contract,
     projectTopology: dependencyGraph,
     now,
-    projects: contract.projects.map((project) => ({
-      id: project.slug,
-      path: project.relativePath,
-      ...(project.externalPath ? { absolutePath: project.externalPath } : {}),
-      ...(project.runtime ? { runtime: project.runtime } : {}),
-      ...(project.framework ? { framework: project.framework } : {}),
+    projects: model.projects.map((project) => ({
+      id: project.name,
+      path: project.path,
+      ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+      runtime: project.runtime,
+      framework: project.framework,
       ...(project.kit ? { kit: project.kit } : {}),
     })),
+    source: {
+      kind: 'workspace-model',
+      artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
+      hashAlgorithm: 'sha256',
+      hash: hashWorkspaceModel(model),
+    },
   });
   const nodes: WorkspaceContractGraphNode[] = await Promise.all(
     contract.projects.map(async (project) => {

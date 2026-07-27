@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rapidkit.dev/contracts/workspace-intelligence/workspace-intelligence-run.v1.json",
-  "title": "Workspace Intelligence Run",
+  "$id": "https://workspai.dev/contracts/workspace-intelligence/workspace-intelligence-run.v1.json",
+  "title": "Workspai Workspace Intelligence Run",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -34,7 +34,8 @@ Checks:
 - all system checks
 - workspace marker resolution
 - project discovery and per-project health
-- dependency/env readiness by project type (Python/Node/Go)
+- dependency, environment, test, quality, security, deployment, and coverage readiness per project
+- runtime-native evidence without treating missing scanners as a clean result
 
 > Compatibility note: `npx workspai doctor --workspace` still works, but `doctor workspace` is the canonical form.
 
@@ -53,6 +54,8 @@ Checks:
 - dependency/env readiness for the selected project
 - enterprise probes (config contract, migration surface, runtime health surface)
 - score explainability breakdown for audit trails
+- normalized dependency-audit and test-coverage evidence for CI, IDEs, and agents
+- graph-aware root, impact-candidate, proof-path, and verification-target context
 
 > Compatibility note: `npx workspai doctor --project` also works.
 
@@ -83,6 +86,108 @@ npx workspai doctor project --json
 # Release-grade policy profile
 npx workspai doctor workspace --profile enterprise-strict --json
 ```
+
+## One verdict, backed by every probe
+
+Doctor calculates one verdict from the host and every project probe:
+
+- **Passed** means no blocking probe failed.
+- **Needs attention** means the current profile found advisory work.
+- **Blocked** means at least one error-level probe failed.
+
+The score and verdict use the same counts. A failed security, coverage, or
+runtime probe cannot be hidden behind a high percentage or a healthy host. New
+evidence includes the host/project score components and per-project probe
+summary; semantic validation rejects contradictory artifacts before they are
+written. Older v1 evidence remains readable so existing workspaces and IDEs do
+not break during migration.
+
+## Graph-aware diagnosis
+
+When the project belongs to a workspace with a current model and Knowledge
+Graph, Doctor enriches every warning or failure with evidence-backed structural
+context:
+
+- the package, file, service, deployment, or other graph entity nearest to the
+  finding;
+- reachable APIs, services, infrastructure, owners, and other affected
+  candidates;
+- connected test suites or CI pipelines that can verify the repair;
+- the exact proof path and source artifacts supporting each connection;
+- explicit unknowns when the graph cannot prove an effect or verification path.
+
+Runtime-native dependency audits preserve the affected package names,
+versions, advisory identifiers, and available severity/directness metadata.
+Doctor uses those subjects to select the corresponding package or module
+entity in the current project's graph neighborhood. If an audit names a
+dependency that the graph cannot resolve, the diagnosis reports it under
+`unresolvedSubjects`; it does not silently attach the finding to an unrelated
+package.
+
+This data is available under `project.graphDiagnosis` in project and workspace
+Doctor JSON evidence. Doctor rejects stale, invalid, or model-unbound graph
+evidence instead of presenting it as current.
+
+Graph reachability is deliberately described as a **structural impact
+candidate**, not runtime causality. It narrows investigation and gives Studio a
+proof-carrying starting point; final verification still comes from the
+runtime-owned checks.
+
+## Multi-runtime dependency evidence
+
+Doctor selects the audit adapter from the detected runtime and lockfile:
+
+| Ecosystem                            | Runtime-native evidence                                            |
+| ------------------------------------ | ------------------------------------------------------------------ |
+| npm                                  | npm, pnpm, Yarn Classic/Berry, Bun, or Deno audit                  |
+| Python                               | `pip-audit` through the project virtual environment when available |
+| Go                                   | `govulncheck`                                                      |
+| Rust                                 | `cargo audit`                                                      |
+| PHP                                  | `composer audit`                                                   |
+| Ruby                                 | `bundler-audit`                                                    |
+| .NET                                 | vulnerable transitive package report                               |
+| Elixir                               | `mix hex.audit`                                                    |
+| Java, Scala, Kotlin, Clojure, C, C++ | project/organization-owned scanner contract                        |
+
+Every result records the exact executable, arguments, ecosystem, severity
+counts, and limitations. A missing tool, timeout, registry failure,
+unparseable response, or unsupported zero-configuration workflow is explicit
+evidence—not a zero-vulnerability result. Compatible automatic fixes never use
+force; unresolved findings move to a targeted upgrade and verification plan.
+
+## Coverage goals that Doctor can verify
+
+Generate a normalized baseline from the current project:
+
+```bash
+npx workspai project coverage --run --target 80 --strict --json
+```
+
+Workspai detects the runtime-owned runner, reads machine-readable coverage, and
+normalizes lines, branches, functions, statements, low-coverage files, source
+hash, and the requested target. It understands Istanbul/LCOV, coverage.py,
+Go coverprofiles, JaCoCo/Cobertura/Clover, scoverage, SimpleCov, and LLVM
+coverage. Runtime plans cover Node/Bun/Deno, Python, Go, JVM, .NET, Rust, PHP,
+Ruby, Elixir, Clojure, Scala, Kotlin, C, and C++; if a project-owned runner does
+not emit one of those portable formats, the result is explicitly `unavailable`
+with setup guidance rather than an invented percentage.
+
+Doctor consumes the resulting
+`.workspai/reports/project-test-coverage-last-run.json`. If it is missing,
+below target, unavailable, or failed, the probe tells Studio what evidence to
+generate or which low-coverage source paths need source-aware tests. The repair
+contract explicitly forbids lowering the target, excluding difficult files,
+skipping tests, or removing assertions to manufacture a pass.
+
+When the project belongs to a workspace, Workspai also writes:
+
+```text
+<workspace>/.workspai/reports/project-test-coverage-last-run.json
+<workspace>/.workspai/reports/projects/<slug>--<hash>/project-test-coverage-last-run.json
+```
+
+The same namespaced layout is used for project Doctor evidence, preventing
+same-name projects from overwriting each other.
 
 ## Enterprise Fix Pipeline
 
@@ -283,15 +388,17 @@ change is safe enough for Doctor to apply with approval and post-fix verificatio
 
 Runtime-native probes add a second layer on top of the generic surface checks:
 
-| Runtime family | Native signals sampled by Doctor                                      |
-| -------------- | --------------------------------------------------------------------- |
-| Node/Bun/Deno  | test runners, ESLint/Prettier/Biome markers, audit script/tooling     |
-| Python         | pytest/tox/nox, Ruff/Black/Mypy, pip-audit/Safety/Bandit markers      |
-| Go             | `*_test.go`, golangci-lint/Makefile quality, govulncheck/gosec hints  |
-| Java           | Maven/Gradle tests, Checkstyle/Spotless/PMD, OWASP dependency checks  |
-| .NET           | test projects, `.editorconfig`, NuGet audit and vulnerable checks     |
-| Rust           | test/Cargo markers, rustfmt/clippy, cargo-audit hints                 |
-| PHP/Ruby/etc.  | PHPUnit/Pint/PHPStan, RSpec/RuboCop/Bundler-audit and ecosystem hints |
+| Runtime family    | Native signals sampled by Doctor                                                 |
+| ----------------- | -------------------------------------------------------------------------------- |
+| Node/Bun/Deno     | Jest/Vitest/native tests, ESLint/Prettier/Biome, package-manager audit           |
+| Python            | pytest/tox/nox, Ruff/Black/Mypy, pip-audit/Safety/Bandit                         |
+| Go                | `*_test.go`, golangci-lint, govulncheck/gosec                                    |
+| Java/Kotlin/Scala | Maven/Gradle/sbt tests, Checkstyle/Spotless/Detekt/Scalafmt, declared JVM audit  |
+| .NET              | test projects, `.editorconfig`, NuGet audit                                      |
+| Rust              | Cargo tests, rustfmt/clippy, cargo-audit                                         |
+| PHP/Ruby          | PHPUnit/Pest/PHPStan and RSpec/Minitest/RuboCop/Bundler-audit                    |
+| Elixir/Clojure    | ExUnit/Credo/Hex and clojure.test/Kaocha/clj-kondo                               |
+| C/C++             | CTest/native test markers, clang tooling, declared SBOM or vulnerability scanner |
 
 ## CI Example
 

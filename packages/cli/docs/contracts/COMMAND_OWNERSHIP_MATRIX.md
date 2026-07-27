@@ -58,6 +58,7 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `product manifest create`
 - `product plan`
 - `project commands`
+- `project coverage`
 - `project archives`
 - `project archive`
 - `project restore`

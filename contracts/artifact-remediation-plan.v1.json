@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rapidkit.dev/contracts/artifact-remediation-plan.v1.json",
-  "title": "RapidKit Artifact Remediation Plan",
+  "$id": "https://workspai.dev/contracts/artifact-remediation-plan.v1.json",
+  "title": "Workspai Artifact Remediation Plan",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "generatedAt", "workspace", "source", "summary", "actions"],
@@ -35,13 +35,7 @@
     "summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "artifactsScanned",
-        "cardsCovered",
-        "totalActions",
-        "executableActions",
-        "risk"
-      ],
+      "required": ["artifactsScanned", "cardsCovered", "totalActions", "executableActions", "risk"],
       "properties": {
         "artifactsScanned": { "type": "integer", "minimum": 0 },
         "cardsCovered": { "type": "integer", "minimum": 0 },

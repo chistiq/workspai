@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/analyze-last-run.v1.json",
-  "title": "RapidKit Analyze Last Run Evidence",
+  "$id": "https://workspai.dev/schemas/analyze-last-run.v1.json",
+  "title": "Workspai Analyze Last Run Evidence",
   "type": "object",
   "required": [
     "schemaVersion",

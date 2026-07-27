@@ -1169,7 +1169,7 @@ describe('Doctor Command', () => {
       expect(jsonLine).toBeDefined();
       const payload = JSON.parse(jsonLine as string);
       expect(payload.contract?.version).toBe('doctor-evidence-v1');
-      expect(payload.contract?.scoringPolicyVersion).toBe('doctor-score-policy-v1');
+      expect(payload.contract?.scoringPolicyVersion).toBe('doctor-score-policy-v2');
       expect(payload.projects[0].framework).toBe('Next.js');
       expect(payload.projects[0].framework).not.toBe('NestJS');
       expect(payload.projects[0].runtimeFamily).toBe('node');
@@ -2458,7 +2458,17 @@ describe('Doctor Command', () => {
       const payload = JSON.parse(jsonLine as string);
       expect(payload.scope).toBe('project');
       expect(payload.contract?.version).toBe('doctor-evidence-v1');
-      expect(payload.contract?.scoringPolicyVersion).toBe('doctor-score-policy-v1');
+      expect(payload.contract?.scoringPolicyVersion).toBe('doctor-score-policy-v2');
+      expect(payload.project.probeSummary).toMatchObject({
+        total: expect.any(Number),
+        blockingFindings: expect.any(Number),
+        advisoryFindings: expect.any(Number),
+        verdict: expect.stringMatching(/^(passed|attention|blocked)$/),
+      });
+      expect(payload.healthScore.verdict).toMatch(/^(passed|attention|blocked)$/);
+      expect(payload.healthScore.total).toBe(
+        payload.healthScore.passed + payload.healthScore.warnings + payload.healthScore.errors
+      );
       expect(payload.project.name).toBe('my-nest-services');
       expect(payload.project.framework).toBe('NestJS');
       expect(payload.project.frameworkKey).toBe('nestjs');
@@ -2479,6 +2489,22 @@ describe('Doctor Command', () => {
       );
       expect(projectEvidence.schemaVersion).toBe('doctor-project-evidence-v1');
       expect(projectEvidence.evidenceType).toBe('project');
+      const namespacedEvidenceFiles = await fsExtra.readdir(
+        path.join(workspacePath, '.workspai', 'reports', 'projects')
+      );
+      expect(namespacedEvidenceFiles).toHaveLength(1);
+      expect(namespacedEvidenceFiles[0]).toMatch(/^my-nest-services--[a-f0-9]{12}$/);
+      const namespacedEvidence = await fsExtra.readJSON(
+        path.join(
+          workspacePath,
+          '.workspai',
+          'reports',
+          'projects',
+          namespacedEvidenceFiles[0] as string,
+          'doctor-project-last-run.json'
+        )
+      );
+      expect(namespacedEvidence).toEqual(projectEvidence);
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();
@@ -3805,7 +3831,7 @@ describe('Doctor Command', () => {
       const { runDoctor } = await import('../doctor.js');
       const exitCode = await runDoctor({ json: true, apply: true });
 
-      expect(exitCode).toBe(0);
+      expect(exitCode).toBe(1);
       const poetryCalls = mockedExeca.mock.calls.filter(([cmd]) => cmd === 'poetry');
       expect(poetryCalls.map(([, args]) => args)).not.toContainEqual(['install', '--no-root']);
 

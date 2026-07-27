@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/agent-hooks.v1.json",
+  "title": "Workspai Agent Hooks",
   "type": "object",
   "required": [
     "schemaVersion",

@@ -326,6 +326,39 @@ describe('workspace agent sync', () => {
     expect(result.staleReports).not.toContain('.workspai/reports/workspace-model-snapshot.json');
   });
 
+  it('uses the newest append-only history entry as the history freshness boundary', async () => {
+    const workspacePath = await makeWorkspace();
+    const now = new Date('2026-07-27T12:00:00.000Z');
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-intelligence-history.json'),
+      {
+        schemaVersion: 'workspace-intelligence-history.v1',
+        retention: 50,
+        entries: [
+          { generatedAt: '2020-01-01T00:00:00.000Z', kind: 'verify' },
+          { generatedAt: '2026-07-27T11:55:00.000Z', kind: 'verify' },
+        ],
+      }
+    );
+
+    const result = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: false,
+      staleAfterHours: 1,
+      now,
+    });
+    const index = await buildWorkspaceAgentReportsIndex({
+      workspacePath,
+      staleAfterHours: 1,
+      now,
+    });
+    const historyPath = '.workspai/reports/workspace-intelligence-history.json';
+    const history = index.reports.find((report) => report.path === historyPath);
+
+    expect(history?.generatedAt).toBe('2026-07-27T11:55:00.000Z');
+    expect(result.staleReports).not.toContain(historyPath);
+  });
+
   it('rolls back every generated surface when agent-sync fails before its pack commit', async () => {
     const workspacePath = await makeWorkspace();
     const agentsPath = path.join(workspacePath, 'AGENTS.md');

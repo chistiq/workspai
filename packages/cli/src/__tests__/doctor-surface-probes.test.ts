@@ -493,4 +493,103 @@ describe('doctor enterprise surface probes', () => {
     expect(probes.find((probe) => probe.id === 'surface-test-contract')?.status).toBe('pass');
     expect(probes.find((probe) => probe.id === 'runtime-test-depth')?.status).toBe('warn');
   });
+
+  it('recognizes real NestJS Jest and ESLint flat-config surfaces', async () => {
+    const packageJsonData = {
+      name: 'polyglot-api',
+      scripts: {
+        test: 'jest',
+        'test:cov': 'jest --coverage',
+        lint: 'eslint "{src,apps,libs,test}/**/*.ts"',
+        format: 'prettier --write "src/**/*.ts"',
+      },
+      devDependencies: {
+        '@nestjs/testing': '^11.0.0',
+        eslint: '^9.0.0',
+        jest: '^30.0.0',
+      },
+    };
+    const projectPath = await makeProject({
+      'package.json': packageJsonData,
+      'package-lock.json': '{}',
+      'jest.config.ts': 'export default { collectCoverage: true };\n',
+      'eslint.config.cjs': 'module.exports = [];\n',
+      'test/app.e2e-spec.ts': 'describe("app", () => undefined);\n',
+      '.gitignore': '.env\n.env.*\n!.env.example\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'node',
+      projectKind: 'backend',
+      framework: 'NestJS',
+      packageJsonData,
+      hasTests: true,
+      dependencyAudit: {
+        schemaVersion: 'doctor-dependency-audit-v1',
+        runtime: 'node',
+        ecosystem: 'npm',
+        tool: 'npm audit',
+        status: 'clean',
+        generatedAt: new Date().toISOString(),
+        findingCount: 0,
+        blockingFindingCount: 0,
+        severityCounts: { low: 0, moderate: 0, high: 0, critical: 0, unknown: 0 },
+        subjects: [],
+        reason: 'npm audit completed without known findings.',
+        limitations: [],
+      },
+    });
+
+    expect(probes.find((probe) => probe.id === 'runtime-test-depth')?.status).toBe('pass');
+    expect(probes.find((probe) => probe.id === 'runtime-quality-tooling')?.status).toBe('pass');
+    expect(probes.find((probe) => probe.id === 'surface-security-hygiene')?.status).toBe('pass');
+  });
+
+  it.each([
+    ['python', 'pip-audit'],
+    ['go', 'govulncheck'],
+    ['java', 'OWASP Dependency-Check'],
+    ['rust', 'cargo-audit'],
+    ['elixir', 'mix hex.audit'],
+    ['clojure', 'organization-selected Clojure audit'],
+    ['deno', 'deno audit'],
+    ['bun', 'bun audit'],
+    ['php', 'Composer audit'],
+    ['ruby', 'bundler-audit'],
+    ['dotnet', '.NET package audit'],
+  ] as const)(
+    'does not claim a clean %s security surface when %s evidence is unavailable',
+    async (runtime, tool) => {
+      const projectPath = await makeProject({
+        '.gitignore': '.env\n.env.*\n!.env.example\n',
+      });
+      const probes = await buildEnterpriseSurfaceProbes({
+        projectPath,
+        runtimeFamily: runtime,
+        projectKind: 'backend',
+        hasTests: true,
+        dependencyAudit: {
+          schemaVersion: 'doctor-dependency-audit-v1',
+          runtime,
+          ecosystem: runtime,
+          tool,
+          status: runtime === 'java' || runtime === 'clojure' ? 'unsupported' : 'tool-unavailable',
+          generatedAt: new Date().toISOString(),
+          findingCount: null,
+          blockingFindingCount: null,
+          severityCounts: { low: 0, moderate: 0, high: 0, critical: 0, unknown: 0 },
+          subjects: [],
+          reason: `${tool} is unavailable.`,
+          limitations: [],
+        },
+      });
+
+      expect(probes.find((probe) => probe.id === 'surface-security-hygiene')).toMatchObject({
+        status: 'warn',
+        severity: 'warn',
+        reason: expect.stringContaining('did not treat unavailable audit evidence as a clean'),
+      });
+    }
+  );
 });

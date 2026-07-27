@@ -24,7 +24,10 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
-import { writeWorkspaceArtifactJson } from './utils/artifact-path-compat.js';
+import {
+  firstExistingWorkspaceArtifactPath,
+  writeWorkspaceArtifactJson,
+} from './utils/artifact-path-compat.js';
 import { assertWorkspaceKnowledgeGraphSourceBinding } from './workspace-knowledge-graph.js';
 import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
 
@@ -339,11 +342,14 @@ function buildContextValidation(
   };
 }
 
-function evidenceState(model: WorkspaceModel): { available: string[]; missing: string[] } {
+async function evidenceState(
+  model: WorkspaceModel,
+  workspacePath: string
+): Promise<{ available: string[]; missing: string[] }> {
   const available: string[] = [];
   const missing: string[] = [];
   for (const [key, ref] of Object.entries(model.evidence)) {
-    if (ref?.exists) {
+    if (ref && (await firstExistingWorkspaceArtifactPath(workspacePath, ref.path)) !== null) {
       available.push(`${key}: ${ref.path}`);
     } else {
       missing.push(key);
@@ -427,7 +433,7 @@ export async function buildWorkspaceAgentContext(
       facts: projectFacts,
     };
   });
-  const evidence = evidenceState(model);
+  const evidence = await evidenceState(model, input.workspacePath);
   const knowledgeGraphPath = path.join(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph

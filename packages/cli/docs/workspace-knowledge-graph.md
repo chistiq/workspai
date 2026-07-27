@@ -138,13 +138,76 @@ CLI queries · Context · MCP · Agents · IDEs · CI
 ```
 
 The graph does not rewrite or replace the canonical Workspace Model. It is a
-derived representation bound to an exact model revision by SHA-256. Context and
-MCP consumers reject a graph whose source hash no longer matches the model.
+derived representation bound to an exact model revision by the SHA-256 hash of
+the model's stable structural projection. Volatile timestamps, run correlation,
+live evidence references, and freshness fields are intentionally excluded from
+that structural identity. Context, Doctor, MCP, and graph-stream consumers
+reject a graph whose source binding no longer matches the current model.
+
+### Model and graph relationship
+
+The current integrated CLI follows this order:
+
+```text
+workspace files + registered projects + contracts + selected evidence
+                              |
+                              v
+                 canonical Workspace Model
+                    |                 |
+                    |                 +-- compact project dependency topology
+                    |
+                    v
+       provider scan + facts/proofs + identity reconciliation
+                              |
+                              v
+                  Workspace Knowledge Graph
+```
+
+The model owns the canonical workspace boundary: project identity, runtime and
+framework observations, policies, contract state, evidence references, and the
+compact project topology used by the intelligence loop. The Knowledge Graph
+receives that project inventory and topology, then enriches it from bounded
+source providers. It can add files, symbols, packages, APIs, infrastructure,
+tests, owners, decisions, and proof-carrying relations, but it cannot mutate the
+model that authorized the build.
+
+The canonical project inventory reconciles filesystem discovery, imported and
+adopted registries, and `workspace.contract.json` declarations. A project that
+is still declared by the contract but missing on disk is preserved in the
+model and reported as `project.path.missing`; it is never silently removed from
+the graph boundary. A persisted Knowledge Graph is accepted only when its
+workspace identity and project topology also match that model.
+
+The two artifacts are published under one workspace lock using a
+rollback-capable artifact transaction. Each file replacement is atomic; if any
+write fails, Workspai restores both preimages. `graph.source.kind` is fixed to
+`workspace-model`, `graph.source.artifact` is fixed to
+`.workspai/reports/workspace-model.json`, and `graph.source.hash` contains the
+stable structural hash of the persisted model. A current-state consumer must
+reject the graph when that binding no longer matches `workspace-model.json`.
+
+This is therefore not a circular source-of-truth relationship. In the current
+CLI, the direction is **Model → Knowledge Graph**. Providers may use the same
+workspace sources that informed the model, but their output enriches the
+derived graph; it does not flow back into the model during that run. A future
+fact-first package may make normalized facts the shared input to both
+representations, but that is not the shipped contract today.
 
 The model also contains a smaller project dependency graph. That projection is
 used for impact, blast radius, verify, explain, watch, and affected fleet runs.
 The richer Knowledge Graph is used for proof-backed retrieval and cross-domain
 understanding.
+
+These rules are machine-owned, not Markdown conventions:
+
+- `workspace-intelligence-architecture.v1.json` declares the one-way direction,
+  artifact authority, mutation rule, publication rule, and stale-consumer rule;
+- `workspace-knowledge-graph.v1.json` permits only the canonical model source
+  kind and artifact path;
+- `workspace-intelligence-chain.v1.json` requires the Model stage to produce
+  both artifacts;
+- runtime source-binding guards enforce the structural hash before persisted
+  graph consumption.
 
 ## Sources and providers
 
@@ -161,9 +224,32 @@ deduplication, typed relations, reconciliation, quality metrics, diagnostics,
 and deterministic ordering. Regex-backed source observations are explicitly
 marked as observed/medium-confidence; authored contracts remain authoritative.
 
+Local source imports are resolved to indexed file entities when the target can
+be proven. External packages remain module entities, while unresolved relative
+imports are labelled `unresolved-local` and produce a diagnostic. This prevents
+an unknown local path from being silently presented as a third-party
+dependency.
+
+### Binding quality, not just graph size
+
+Entity and relation counts do not tell you whether a graph can answer useful
+engineering questions. `graph.quality.bindingCoverage` therefore reports four
+independent dimensions:
+
+- authored or observed endpoints connected to implementation evidence;
+- registered projects connected to test evidence;
+- registered projects connected to deployment evidence;
+- registered projects connected to ownership evidence.
+
+Each dimension reports eligible, bound, and unknown counts plus a ratio. A
+`null` ratio means the dimension was not applicable; zero means applicable
+surfaces were found but none were bound. Consumers must not turn either state
+into a false “complete” claim.
+
 ## Outputs and consumers
 
-`workspace model --write` publishes these two artifacts atomically:
+`workspace model --write` publishes these two artifacts as one locked,
+rollback-capable artifact set:
 
 ```text
 .workspai/reports/workspace-model.json
@@ -173,6 +259,12 @@ marked as observed/medium-confidence; authored contracts remain authoritative.
 The Knowledge Graph is consumed by:
 
 - `workspace graph search|entities|evidence|path|overlay`;
+- `doctor workspace|project`, which maps unresolved probes to structural root
+  candidates, reachable affected surfaces, proof paths, and graph-connected
+  test/pipeline verification targets. When a runtime audit names affected
+  dependencies, Doctor binds those subjects to exact package/module entities
+  instead of selecting an arbitrary project package. Names that cannot be
+  resolved remain explicit unknowns;
 - `workspace context`, which validates the model hash and publishes graph
   availability and query commands;
 - `workspace agent-sync`, which places it in the evidence index and generated

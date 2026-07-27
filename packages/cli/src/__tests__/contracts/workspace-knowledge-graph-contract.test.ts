@@ -109,6 +109,17 @@ describe('workspace-knowledge-graph.v1 contract', () => {
       diagnostics: [],
     };
     expect(validate(minimal), JSON.stringify(validate.errors)).toBe(true);
+
+    const sourceKindsThatBypassTheModel = ['workspace-contract', 'workspace-sources'];
+    for (const kind of sourceKindsThatBypassTheModel) {
+      const invalid = structuredClone(minimal);
+      invalid.source.kind = kind;
+      expect(validate(invalid)).toBe(false);
+    }
+
+    const wrongArtifact = structuredClone(minimal);
+    wrongArtifact.source.artifact = '.workspai/workspace.contract.json';
+    expect(validate(wrongArtifact)).toBe(false);
   });
 
   it('publishes strict contracts for bounded retrieval and its token-efficiency report', () => {

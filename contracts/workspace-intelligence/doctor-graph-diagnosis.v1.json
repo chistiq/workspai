@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/doctor-graph-diagnosis.v1.json",
+  "title": "Workspai Doctor Graph Diagnosis",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "status",
+    "claimBoundary",
+    "graph",
+    "project",
+    "summary",
+    "findings",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "doctor-graph-diagnosis.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "status": {
+      "enum": [
+        "available",
+        "graph-missing",
+        "model-missing",
+        "stale",
+        "project-unresolved",
+        "invalid"
+      ]
+    },
+    "claimBoundary": { "type": "string", "minLength": 1 },
+    "graph": {
+      "type": "object",
+      "required": ["artifact"],
+      "properties": {
+        "artifact": { "const": ".workspai/reports/workspace-knowledge-graph.json" },
+        "schemaVersion": { "type": "string" },
+        "sourceArtifact": { "type": "string" },
+        "sourceHash": { "type": "string" },
+        "entityCount": { "type": "integer", "minimum": 0 },
+        "relationCount": { "type": "integer", "minimum": 0 },
+        "proofCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "path"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string" },
+        "entityId": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "findingCount",
+        "rootEntityCount",
+        "affectedEntityCount",
+        "verificationTargetCount",
+        "proofPathCount",
+        "subjectCount",
+        "unresolvedSubjectCount",
+        "unknownCount"
+      ],
+      "properties": {
+        "findingCount": { "type": "integer", "minimum": 0 },
+        "rootEntityCount": { "type": "integer", "minimum": 0 },
+        "affectedEntityCount": { "type": "integer", "minimum": 0 },
+        "verificationTargetCount": { "type": "integer", "minimum": 0 },
+        "proofPathCount": { "type": "integer", "minimum": 0 },
+        "subjectCount": { "type": "integer", "minimum": 0 },
+        "unresolvedSubjectCount": { "type": "integer", "minimum": 0 },
+        "unknownCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "diagnostics": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "entityRef": {
+      "type": "object",
+      "required": ["id", "kind", "label"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "workspace",
+            "project",
+            "service",
+            "api",
+            "endpoint",
+            "schema",
+            "package",
+            "module",
+            "file",
+            "symbol",
+            "database",
+            "queue",
+            "container",
+            "deployment",
+            "pipeline",
+            "environment",
+            "document",
+            "decision",
+            "test-suite",
+            "owner"
+          ]
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "projectId": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "hop": {
+      "type": "object",
+      "required": ["from", "to", "relationId", "kind", "direction", "proofIds"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "relationId": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "contains",
+            "defines",
+            "imports",
+            "depends-on",
+            "exposes",
+            "implements",
+            "calls",
+            "reads-from",
+            "writes-to",
+            "publishes",
+            "consumes",
+            "deploys",
+            "runs-on",
+            "routes-to",
+            "documents",
+            "decided-by",
+            "tests",
+            "owns",
+            "generated-by",
+            "configured-by",
+            "references"
+          ]
+        },
+        "direction": { "enum": ["forward", "reverse"] },
+        "proofIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "proofPath": {
+      "type": "object",
+      "required": ["from", "to", "entityPath", "hops", "proofIds"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "entityPath": { "type": "array", "items": { "type": "string" } },
+        "hops": { "type": "array", "items": { "$ref": "#/$defs/hop" } },
+        "proofIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "issueId",
+        "issueClass",
+        "status",
+        "reason",
+        "scope",
+        "subjects",
+        "unresolvedSubjects",
+        "rootEntities",
+        "affectedEntities",
+        "verificationTargets",
+        "proofPaths",
+        "sourceArtifacts",
+        "unknowns"
+      ],
+      "properties": {
+        "issueId": { "type": "string", "minLength": 1 },
+        "issueClass": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["warn", "fail"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "scope": { "const": "structural-impact-candidates" },
+        "subjects": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "unresolvedSubjects": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "rootEntities": { "type": "array", "items": { "$ref": "#/$defs/entityRef" } },
+        "affectedEntities": { "type": "array", "items": { "$ref": "#/$defs/entityRef" } },
+        "verificationTargets": { "type": "array", "items": { "$ref": "#/$defs/entityRef" } },
+        "proofPaths": { "type": "array", "items": { "$ref": "#/$defs/proofPath" } },
+        "sourceArtifacts": { "type": "array", "items": { "type": "string" } },
+        "unknowns": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

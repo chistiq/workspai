@@ -46,6 +46,26 @@
       "contractPath": "contracts/project-entry-capability.v1.json",
       "publication": "json-schema"
     },
+    "doctorProjectEvidence": {
+      "schemaVersion": "doctor-project-evidence-v1",
+      "contractPath": "contracts/doctor-project-evidence.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorWorkspaceEvidence": {
+      "schemaVersion": "doctor-workspace-evidence-v1",
+      "contractPath": "contracts/doctor-workspace-evidence.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorGraphDiagnosis": {
+      "schemaVersion": "doctor-graph-diagnosis.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-graph-diagnosis.v1.json",
+      "publication": "json-schema"
+    },
+    "projectTestCoverage": {
+      "schemaVersion": "workspai.project-test-coverage.v1",
+      "contractPath": "contracts/project-test-coverage.v1.json",
+      "publication": "json-schema"
+    },
     "workspaceIntelligenceArchitecture": {
       "schemaVersion": "workspai-workspace-intelligence-architecture-v1",
       "contractPath": "contracts/workspace-intelligence-architecture.v1.json",

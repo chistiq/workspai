@@ -1,7 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://getrapidkit.com/schemas/rapidkit-cli-contracts.json",
-    "title": "RapidKit Core CLI Contracts",
+    "$id": "https://workspai.dev/schemas/rapidkit-cli-contracts.json",
+    "title": "Workspai CLI Contracts (RapidKit Core Compatibility)",
     "type": "object",
     "definitions": {
         "VersionResponse": {

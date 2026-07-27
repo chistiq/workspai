@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-intelligence-evaluation-comparison.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-intelligence-evaluation-comparison.v1.json",
   "title": "Workspai Workspace Intelligence Evaluation Comparison",
   "description": "A task-aligned comparison between two provenance-aware Workspace Intelligence evaluation runs.",
   "type": "object",

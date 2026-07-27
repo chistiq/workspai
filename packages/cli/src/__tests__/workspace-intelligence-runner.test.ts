@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   syncWorkspaceProjects: vi.fn(),
   syncWorkspaceContract: vi.fn(),
   buildWorkspaceModel: vi.fn(),
+  createWorkspaceModelBuildProvenance: vi.fn(),
   writeWorkspaceModel: vi.fn(),
   buildWorkspaceModelSnapshot: vi.fn(),
   writeWorkspaceModelSnapshot: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('fs-extra', () => ({
 vi.mock('../workspace.js', () => ({ syncWorkspaceProjects: mocks.syncWorkspaceProjects }));
 vi.mock('../workspace-model.js', () => ({
   buildWorkspaceModel: mocks.buildWorkspaceModel,
+  createWorkspaceModelBuildProvenance: mocks.createWorkspaceModelBuildProvenance,
   writeWorkspaceModel: mocks.writeWorkspaceModel,
 }));
 vi.mock('../workspace-intelligence.js', () => ({
@@ -93,6 +95,12 @@ function configurePassingChain(): void {
   mocks.syncWorkspaceProjects.mockResolvedValue({ added: ['api'], skipped: 1 });
   mocks.syncWorkspaceContract.mockResolvedValue({ contract: { projects: [{ slug: 'api' }] } });
   mocks.buildWorkspaceModel.mockResolvedValue({ summary: { projectCount: 1 } });
+  mocks.createWorkspaceModelBuildProvenance.mockReturnValue({
+    schemaVersion: 'workspace-model-build.v1',
+    mode: 'full',
+    outcome: 'rebuilt',
+    engineStatus: 'disabled',
+  });
   mocks.buildWorkspaceModelSnapshot.mockResolvedValue({
     schemaVersion: 'workspace-model-snapshot.v1',
   });
@@ -137,9 +145,29 @@ describe('unified Workspace Intelligence runner', () => {
     expect(report.stages.map((stage) => stage.id)).toEqual(WORKSPACE_INTELLIGENCE_STEP_IDS);
     expect(report.preflight.every((step) => step.status === 'passed')).toBe(true);
     expect(report.stages.every((stage) => stage.status === 'passed')).toBe(true);
-    expect(mocks.buildWorkspaceModel).toHaveBeenCalledTimes(2);
+    expect(mocks.buildWorkspaceModel).toHaveBeenCalledTimes(1);
+    expect(mocks.createWorkspaceModelBuildProvenance).toHaveBeenCalledWith({
+      mode: 'full',
+      engineStatus: 'disabled',
+    });
+    expect(mocks.writeWorkspaceModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        build: {
+          schemaVersion: 'workspace-model-build.v1',
+          mode: 'full',
+          outcome: 'rebuilt',
+          engineStatus: 'disabled',
+        },
+      }),
+      workspacePath
+    );
     expect(mocks.buildWorkspaceAgentContext).toHaveBeenCalledWith(
-      expect.objectContaining({ workspacePath, agent: 'codex', includeEvidence: true })
+      expect.objectContaining({
+        workspacePath,
+        agent: 'codex',
+        includeEvidence: true,
+        model: expect.objectContaining({ summary: { projectCount: 1 } }),
+      })
     );
     expect(mocks.syncWorkspaceAgentGrounding).toHaveBeenCalledWith(
       expect.objectContaining({ agent: 'codex', preset: 'enterprise', write: true })

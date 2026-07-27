@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-graph-token-efficiency.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-graph-token-efficiency.v1.json",
   "title": "Workspai Graph Retrieval Token-Efficiency Report",
   "description": "A reproducible character-based estimate comparing readable proof-source text with one bounded graph retrieval payload. It is not an answer-quality or billing claim.",
   "type": "object",

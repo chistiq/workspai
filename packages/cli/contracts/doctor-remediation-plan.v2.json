@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rapidkit.dev/contracts/doctor-remediation-plan.v2.json",
-  "title": "RapidKit Doctor Remediation Plan v2",
+  "$id": "https://workspai.dev/contracts/doctor-remediation-plan.v2.json",
+  "title": "Workspai Doctor Remediation Plan v2",
   "description": "Canonical v2 contract. The referenced v1 path is retained as a deprecated compatibility alias.",
   "$ref": "doctor-remediation-plan.v1.json"
 }

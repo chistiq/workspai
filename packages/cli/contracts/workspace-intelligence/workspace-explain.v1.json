@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-explain.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-explain.v1.json",
   "title": "Workspai Workspace Explain Report",
   "type": "object",
   "required": ["schemaVersion", "generatedAt", "workspacePath", "target", "summary", "sections"],

@@ -58,10 +58,18 @@ as one undifferentiated command wall.
 ## Architectural statements that must remain true
 
 - The **Workspace Model is the canonical source of truth**.
-- The Knowledge Graph is a **derived, revision-bound representation** of
-  governed workspace knowledge.
+- The Knowledge Graph is a **derived, structurally bound representation** of
+  governed workspace knowledge. Its source kind and source artifact are fixed
+  to the canonical Workspace Model contract.
 - Providers emit facts and proofs; they do not independently own the canonical
   graph.
+- Graph enrichment must not mutate the authorizing model during the same run.
+- The canonical project inventory must reconcile discovered, imported,
+  adopted, and contract-declared projects. A missing contract-declared path is
+  a validation warning, not a silently deleted project.
+- Persisted current-state consumers must reject a graph whose structural model
+  hash, workspace identity, or project topology no longer matches the current
+  model.
 - Missing relationships mean **not proven**, not independent.
 - The graph is broader than a code graph, but it is not the entire product.
 - The canonical runner is
@@ -74,13 +82,14 @@ as one undifferentiated command wall.
 
 Normative machine sources:
 
-| Statement                      | Source of truth                                         |
-| ------------------------------ | ------------------------------------------------------- |
-| Ordered intelligence chain     | `contracts/workspace-intelligence-chain.v1.json`        |
-| Runtime commands and flags     | `contracts/runtime-command-surface.v1.json`             |
-| Published schemas and paths    | `contracts/published-contract-catalog.v1.json`          |
-| Architecture boundaries        | `contracts/workspace-intelligence-architecture.v1.json` |
-| Artifact writers and consumers | `docs/contracts/ARTIFACT_CATALOG.md`                    |
+| Statement                      | Source of truth                                                      |
+| ------------------------------ | -------------------------------------------------------------------- |
+| Ordered intelligence chain     | `contracts/workspace-intelligence-chain.v1.json`                     |
+| Runtime commands and flags     | `contracts/runtime-command-surface.v1.json`                          |
+| Published schemas and paths    | `contracts/published-contract-catalog.v1.json`                       |
+| Architecture boundaries        | `contracts/workspace-intelligence-architecture.v1.json`              |
+| Model → Graph source binding   | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json` |
+| Artifact writers and consumers | `docs/contracts/ARTIFACT_CATALOG.md`                                 |
 
 Markdown summarizes these contracts; it does not redefine them.
 

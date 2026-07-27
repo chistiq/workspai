@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "workspace-contract-verify.v1",
-  "title": "Workspace contract verify evidence",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-contract-verify.v1.json",
+  "title": "Workspai Workspace Contract Verify Evidence",
   "type": "object",
   "additionalProperties": true,
   "required": [

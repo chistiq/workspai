@@ -49,6 +49,7 @@ npx workspai workspace policy set <key> <value>
 npx workspai doctor
 npx workspai doctor workspace [--json] [--strict] [--ci] [--fix] [--plan] [--apply]
 npx workspai doctor project [--json] [--strict] [--ci] [--fix] [--plan] [--apply]
+npx workspai project coverage [--project <path>] [--target <0-100>] [--run] [--strict] [--json]
 npx workspai workspace list
 npx workspai workspace foundation ensure [--force] [--json]
 npx workspai workspace share [--output <file>] [--include-paths] [--no-doctor]
@@ -95,6 +96,17 @@ npx workspai infra down [--workspace <path>] [--volumes]
 npx workspai infra status [--workspace <path>] [--json] [--strict]
 ```
 
+Every workspace action has action-scoped help generated from the same contract
+that governs its accepted flags. For example:
+
+```bash
+npx workspai workspace impact --help
+npx workspai workspace graph search --help
+```
+
+This avoids guessing whether an option such as `--write`, `--from`, or
+`--output` belongs to a particular action.
+
 The contract graph includes its backward-compatible service projection, the
 canonical `workspace-dependency-graph.v1` project topology, and the portable
 `workspace-knowledge-graph.v1` evidence graph. The knowledge projection covers
@@ -137,6 +149,12 @@ false change noise. Query indexes are cached
 per immutable graph object and invalidated automatically when a new graph is
 built. `dot` and `mermaid` intentionally remain project-topology renderers and
 emit raw text for direct piping.
+
+Every integrated `workspace graph` Knowledge Graph is derived from the
+canonical Workspace Model. Its contract fixes the source artifact to
+`.workspai/reports/workspace-model.json` and binds the graph to the model's
+stable structural SHA-256. Graph providers enrich that model-owned inventory;
+they never write facts back into the authorizing model during the same run.
 
 `workspace graph search <query> --limit <n> --json` returns bounded entities,
 one-hop relations, related entity summaries, and portable proofs instead of the

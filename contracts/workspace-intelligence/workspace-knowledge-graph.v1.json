@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-knowledge-graph.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-knowledge-graph.v1.json",
   "title": "Workspai Evidence-backed Workspace Knowledge Graph",
-  "description": "Portable, provider-neutral workspace entities, relations and proof paths with the canonical project dependency topology embedded as a projection.",
+  "description": "Portable, provider-neutral workspace entities, relations and proof paths derived from and structurally bound to the canonical Workspace Model. The embedded project topology is the model's graph projection.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -24,10 +24,20 @@
       "type": "object",
       "required": ["kind", "artifact", "hashAlgorithm", "hash"],
       "properties": {
-        "kind": { "enum": ["workspace-model", "workspace-contract", "workspace-sources"] },
-        "artifact": { "type": "string", "minLength": 1 },
+        "kind": {
+          "const": "workspace-model",
+          "description": "The canonical Workspace Model is the sole source-of-truth authority for an integrated CLI knowledge graph."
+        },
+        "artifact": {
+          "const": ".workspai/reports/workspace-model.json",
+          "description": "Canonical model artifact whose stable structural projection is identified by source.hash."
+        },
         "hashAlgorithm": { "const": "sha256" },
-        "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        "hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of the stable structural Workspace Model projection. Volatile timestamps, run correlation, live evidence and freshness fields are intentionally excluded."
+        }
       },
       "additionalProperties": false
     },
@@ -234,6 +244,22 @@
         "providerSuccessRatio": { "type": "number", "minimum": 0, "maximum": 1 },
         "conflictCount": { "type": "integer", "minimum": 0 },
         "unknownCount": { "type": "integer", "minimum": 0 },
+        "bindingCoverage": {
+          "type": "object",
+          "required": [
+            "apiImplementation",
+            "projectTests",
+            "projectDeployment",
+            "projectOwnership"
+          ],
+          "properties": {
+            "apiImplementation": { "$ref": "#/$defs/bindingCoverage" },
+            "projectTests": { "$ref": "#/$defs/bindingCoverage" },
+            "projectDeployment": { "$ref": "#/$defs/bindingCoverage" },
+            "projectOwnership": { "$ref": "#/$defs/bindingCoverage" }
+          },
+          "additionalProperties": false
+        },
         "portable": { "const": true },
         "secretValuesEmitted": { "const": false }
       },
@@ -254,6 +280,23 @@
         },
         "additionalProperties": false
       }
+    }
+  },
+  "$defs": {
+    "bindingCoverage": {
+      "type": "object",
+      "required": ["eligibleCount", "boundCount", "unknownCount", "coverageRatio"],
+      "properties": {
+        "eligibleCount": { "type": "integer", "minimum": 0 },
+        "boundCount": { "type": "integer", "minimum": 0 },
+        "unknownCount": { "type": "integer", "minimum": 0 },
+        "coverageRatio": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

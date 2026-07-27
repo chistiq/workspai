@@ -1,6 +1,9 @@
 import type { WorkspaceDependencyGraph } from './workspace-dependency-graph-contract.js';
 
-import { WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS } from './workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
+} from './workspace-intelligence-runtime-registry.js';
 
 export const WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION =
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.knowledgeGraph;
@@ -138,13 +141,24 @@ export type WorkspaceKnowledgeDiagnostic = {
   recommendation?: string;
 };
 
+export type WorkspaceKnowledgeBindingCoverage = {
+  eligibleCount: number;
+  boundCount: number;
+  unknownCount: number;
+  /** Null means the binding dimension is not applicable to the observed workspace. */
+  coverageRatio: number | null;
+};
+
 export type WorkspaceKnowledgeGraph = {
   schemaVersion: typeof WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION;
   generatedAt: string;
   source: {
-    kind: 'workspace-model' | 'workspace-contract' | 'workspace-sources';
-    artifact: string;
+    /** The integrated CLI always derives the graph from the canonical Workspace Model. */
+    kind: 'workspace-model';
+    /** Canonical model artifact whose structural identity authorizes this graph. */
+    artifact: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model'];
     hashAlgorithm: 'sha256';
+    /** SHA-256 of the model's stable structural projection, not its raw file bytes. */
     hash: string;
   };
   workspace: { name: string; profile?: string };
@@ -163,6 +177,12 @@ export type WorkspaceKnowledgeGraph = {
     providerSuccessRatio: number;
     conflictCount: number;
     unknownCount: number;
+    bindingCoverage?: {
+      apiImplementation: WorkspaceKnowledgeBindingCoverage;
+      projectTests: WorkspaceKnowledgeBindingCoverage;
+      projectDeployment: WorkspaceKnowledgeBindingCoverage;
+      projectOwnership: WorkspaceKnowledgeBindingCoverage;
+    };
     portable: boolean;
     secretValuesEmitted: false;
   };

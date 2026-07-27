@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/mirror-ops.v1.json",
+  "$id": "https://workspai.dev/schemas/mirror-ops.v1.json",
+  "title": "Workspai Mirror Operation Evidence",
   "type": "object",
   "required": ["schemaVersion", "command", "action", "result", "timestamp", "workspacePath", "mirror"],
   "properties": {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/doctor-workspace-evidence.v1.json",
-  "title": "RapidKit Doctor Workspace Evidence",
+  "$id": "https://workspai.dev/schemas/doctor-workspace-evidence.v1.json",
+  "title": "Workspai Doctor Workspace Evidence",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -27,7 +27,7 @@
     "projectScanCached": { "type": "boolean" },
     "projectScanSignature": { "type": "string" },
     "cachePath": { "type": ["string", "null"] },
-    "healthScore": { "type": "object", "additionalProperties": true },
+    "healthScore": { "$ref": "#/$defs/healthScore" },
     "evidenceFreshness": { "$ref": "#/$defs/evidenceFreshness" },
     "system": { "type": "object", "additionalProperties": true },
     "projects": {
@@ -42,7 +42,13 @@
           "repairCapabilities": {
             "type": "array",
             "items": { "$ref": "#/$defs/repairCapability" }
-          }
+          },
+          "dependencyAudit": { "$ref": "#/$defs/dependencyAudit" },
+          "graphDiagnosis": {
+            "$ref": "https://workspai.dev/schemas/workspace-intelligence/doctor-graph-diagnosis.v1.json"
+          },
+          "verdict": { "enum": ["passed", "attention", "blocked"] },
+          "probeSummary": { "$ref": "#/$defs/probeSummary" }
         },
         "additionalProperties": true
       }
@@ -55,6 +61,9 @@
         "totalIssues": { "type": "integer", "minimum": 0 },
         "projectAdvisoryWarningProjects": { "type": "integer", "minimum": 0 },
         "projectAdvisoryWarnings": { "type": "integer", "minimum": 0 },
+        "verdict": { "enum": ["passed", "attention", "blocked"] },
+        "blockingFindings": { "type": "integer", "minimum": 0 },
+        "advisoryFindings": { "type": "integer", "minimum": 0 },
         "hasSystemErrors": { "type": "boolean" },
         "scopeProvenance": { "type": "object", "additionalProperties": true }
       },
@@ -69,16 +78,154 @@
     "policyProfile": { "$ref": "#/$defs/policyProfile" }
   },
   "$defs": {
-    "freshness": {
+    "dependencyAudit": {
       "type": "object",
       "required": [
-        "category",
-        "generatedAt",
-        "ttlSeconds",
+        "schemaVersion",
+        "runtime",
+        "ecosystem",
+        "tool",
         "status",
-        "verifyBeforeUse",
-        "reason"
+        "generatedAt",
+        "findingCount",
+        "blockingFindingCount",
+        "severityCounts",
+        "reason",
+        "limitations"
       ],
+      "properties": {
+        "schemaVersion": { "const": "doctor-dependency-audit-v1" },
+        "runtime": {
+          "enum": [
+            "node",
+            "bun",
+            "deno",
+            "python",
+            "go",
+            "java",
+            "rust",
+            "elixir",
+            "clojure",
+            "php",
+            "ruby",
+            "dotnet",
+            "scala",
+            "kotlin",
+            "c",
+            "cpp",
+            "unknown"
+          ]
+        },
+        "ecosystem": { "type": "string", "minLength": 1 },
+        "tool": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": ["clean", "vulnerable", "tool-unavailable", "unsupported", "failed"]
+        },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "invocation": { "$ref": "#/$defs/commandInvocation" },
+        "exitCode": { "type": "integer" },
+        "findingCount": { "type": ["integer", "null"], "minimum": 0 },
+        "blockingFindingCount": { "type": ["integer", "null"], "minimum": 0 },
+        "severityCounts": {
+          "type": "object",
+          "required": ["low", "moderate", "high", "critical", "unknown"],
+          "properties": {
+            "low": { "type": "integer", "minimum": 0 },
+            "moderate": { "type": "integer", "minimum": 0 },
+            "high": { "type": "integer", "minimum": 0 },
+            "critical": { "type": "integer", "minimum": 0 },
+            "unknown": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "subjects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependencyAuditSubject" }
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "limitations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "dependencyAuditSubject": {
+      "type": "object",
+      "required": ["name", "advisoryIds", "severities"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "direct": { "type": "boolean" },
+        "advisoryIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "severities": {
+          "type": "array",
+          "items": { "enum": ["low", "moderate", "high", "critical", "unknown"] },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "scoreComponent": {
+      "type": "object",
+      "required": ["errors"],
+      "properties": {
+        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "healthScore": {
+      "type": "object",
+      "required": ["errors"],
+      "properties": {
+        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 },
+        "verdict": { "enum": ["passed", "attention", "blocked"] },
+        "components": {
+          "type": "object",
+          "required": ["host", "projects"],
+          "properties": {
+            "host": { "$ref": "#/$defs/scoreComponent" },
+            "projects": { "$ref": "#/$defs/scoreComponent" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "probeSummary": {
+      "type": "object",
+      "required": [
+        "total",
+        "passed",
+        "warnings",
+        "failed",
+        "blockingFindings",
+        "advisoryFindings",
+        "verdict"
+      ],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "blockingFindings": { "type": "integer", "minimum": 0 },
+        "advisoryFindings": { "type": "integer", "minimum": 0 },
+        "verdict": { "enum": ["passed", "attention", "blocked"] }
+      },
+      "additionalProperties": false
+    },
+    "freshness": {
+      "type": "object",
+      "required": ["category", "generatedAt", "ttlSeconds", "status", "verifyBeforeUse", "reason"],
       "properties": {
         "category": { "enum": ["structure", "verification", "state"] },
         "generatedAt": { "type": "string", "format": "date-time" },
@@ -248,6 +395,11 @@
         "requiresReview": { "type": "boolean" },
         "files": { "type": "array", "items": { "type": "string" } },
         "command": { "type": "string" },
+        "invocation": { "$ref": "#/$defs/commandInvocation" },
+        "strategy": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repairStrategyStage" }
+        },
         "operation": { "$ref": "#/$defs/repairOperation" },
         "verifyCommand": { "type": "string" },
         "refreshCommands": { "type": "array", "items": { "type": "string" } },
@@ -255,6 +407,33 @@
         "limitations": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": true
+    },
+    "commandInvocation": {
+      "type": "object",
+      "required": ["cwd", "executable", "args"],
+      "properties": {
+        "cwd": { "type": "string", "minLength": 1 },
+        "executable": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "repairStrategyStage": {
+      "type": "object",
+      "required": ["id", "kind", "description", "risk", "continueWhen"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["diagnose", "safe-fix", "targeted-upgrade", "verify", "exception-review"]
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "risk": { "enum": ["safe", "guarded", "invasive"] },
+        "invocation": { "$ref": "#/$defs/commandInvocation" },
+        "continueWhen": {
+          "enum": ["always", "previous-passed", "blocker-remains", "manual-decision"]
+        }
+      },
+      "additionalProperties": false
     },
     "repairOperation": {
       "type": "object",

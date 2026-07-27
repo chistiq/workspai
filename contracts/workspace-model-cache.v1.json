@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-model-cache.v1.json",
+  "title": "Workspai Workspace Model Cache",
   "type": "object",
   "required": [
     "schemaVersion",

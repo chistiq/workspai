@@ -130,6 +130,10 @@
     ],
     [
       "project",
+      "coverage"
+    ],
+    [
+      "project",
       "archives"
     ],
     [
@@ -609,6 +613,14 @@
       "canonicalArgv": [
         "project",
         "commands"
+      ]
+    },
+    {
+      "invocation": "project coverage",
+      "summary": "Run or inspect runtime-native test coverage and publish normalized, project-scoped evidence against an explicit target.",
+      "canonicalArgv": [
+        "project",
+        "coverage"
       ]
     },
     {
@@ -1674,6 +1686,17 @@
       ]
     },
     {
+      "artifactPath": ".workspai/reports/project-test-coverage-last-run.json",
+      "schemaVersion": "workspai.project-test-coverage.v1",
+      "contractPath": "contracts/project-test-coverage.v1.json",
+      "producerCommands": [
+        [
+          "project",
+          "coverage"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/reports/doctor-remediation-plan-last-run.json",
       "schemaVersion": "doctor-remediation-plan-v2",
       "contractPath": "contracts/doctor-remediation-plan.v2.json",
@@ -1762,6 +1785,18 @@
       ]
     },
     {
+      "artifactPath": ".workspai/reports/rapidkit-mcp-design.json",
+      "schemaVersion": "workspai-mcp-design.v1",
+      "contractPath": "contracts/workspace-intelligence/mcp-design.v1.json",
+      "producerCommands": [
+        [
+          "workspace",
+          "agent-sync",
+          "--write"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/reports/workspace-why-last-run.json",
       "schemaVersion": "workspace-explain.v1",
       "contractPath": "contracts/workspace-intelligence/workspace-explain.v1.json",
@@ -1837,6 +1872,1139 @@
     "import",
     "run",
     "init"
+  ],
+  "workspaceActions": [
+    {
+      "id": "list",
+      "usage": "workspai workspace list [--json]",
+      "summary": "List registered Workspai workspaces.",
+      "options": [
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace list",
+        "workspai workspace list --json"
+      ]
+    },
+    {
+      "id": "sync",
+      "usage": "workspai workspace sync [--json]",
+      "summary": "Synchronize canonical workspace registration and project metadata.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace sync --json"
+      ]
+    },
+    {
+      "id": "registry",
+      "usage": "workspai workspace registry [--refresh] [--json]",
+      "summary": "Inspect the canonical workspace registry summary.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--refresh",
+          "description": "Refresh the underlying registry or context before reading it."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace registry --refresh --json"
+      ]
+    },
+    {
+      "id": "foundation",
+      "usage": "workspai workspace foundation [--force] [--json]",
+      "summary": "Create or repair the standard workspace foundation files.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--force",
+          "description": "Replace an existing generated target where supported."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace foundation --json"
+      ]
+    },
+    {
+      "id": "intelligence",
+      "usage": "workspai workspace intelligence run [--for-agent <agent>] [--strict] [--json]",
+      "summary": "Run the canonical Workspace Intelligence chain in contract order.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--for-agent",
+          "description": "Build output for an agent surface (for example codex, copilot, or cursor)."
+        }
+      ],
+      "subactions": [
+        "run"
+      ],
+      "artifact": ".workspai/reports/workspace-intelligence-run-last-run.json",
+      "examples": [
+        "workspai workspace intelligence run --strict",
+        "workspai workspace intelligence run --for-agent codex --json"
+      ]
+    },
+    {
+      "id": "model",
+      "usage": "workspai workspace model [--cache|--incremental] [--write] [--strict] [--json]",
+      "summary": "Build the canonical workspace model from registered and observed sources.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--include-evidence",
+          "description": "Read and include referenced evidence metadata."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        },
+        {
+          "flag": "--cache",
+          "description": "Reuse the model cache when the structural inputs are unchanged."
+        },
+        {
+          "flag": "--incremental",
+          "description": "Reuse unchanged projects and rebuild affected graph relations."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-model.json",
+      "examples": [
+        "workspai workspace model --write --json",
+        "workspai workspace model --incremental --write --json"
+      ]
+    },
+    {
+      "id": "snapshot",
+      "usage": "workspai workspace snapshot [--json]",
+      "summary": "Persist the current model as the comparison baseline.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--include-evidence",
+          "description": "Read and include referenced evidence metadata."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-model-snapshot.json",
+      "examples": [
+        "workspai workspace snapshot --json"
+      ]
+    },
+    {
+      "id": "diff",
+      "usage": "workspai workspace diff [--from <snapshot>] [--strict] [--json]",
+      "summary": "Compare the current model with a trusted model baseline.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--from",
+          "description": "Read the specified baseline, report, or graph artifact."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--include-evidence",
+          "description": "Read and include referenced evidence metadata."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-model-diff-last-run.json",
+      "examples": [
+        "workspai workspace diff --json",
+        "workspai workspace diff --from .workspai/reports/workspace-model-snapshot.json --json"
+      ]
+    },
+    {
+      "id": "impact",
+      "usage": "workspai workspace impact [--from <diff>] [--scope <scope>] [--strict] [--json]",
+      "summary": "Calculate the evidence-backed blast radius of the current model change.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--from",
+          "description": "Read the specified baseline, report, or graph artifact."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--include-evidence",
+          "description": "Read and include referenced evidence metadata."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-impact-last-run.json",
+      "examples": [
+        "workspai workspace impact --json",
+        "workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --strict --json"
+      ]
+    },
+    {
+      "id": "verify",
+      "usage": "workspai workspace verify [--from-impact <impact-report>] [--scope <scope>] [--strict] [--json]",
+      "summary": "Verify the selected change against contracts, gates, and current evidence.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--from-impact",
+          "description": "Read the specified impact report for verification."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--include-evidence",
+          "description": "Read and include referenced evidence metadata."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-verify-last-run.json",
+      "examples": [
+        "workspai workspace verify --strict --json",
+        "workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json"
+      ]
+    },
+    {
+      "id": "graph",
+      "usage": "workspai workspace graph [mode] [query|from] [to] [--json]",
+      "summary": "Build, query, prove, compare, or export the workspace graph.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--output",
+          "description": "Write the requested export or report to this path."
+        },
+        {
+          "flag": "--from",
+          "description": "Read the specified baseline, report, or graph artifact."
+        },
+        {
+          "flag": "--limit",
+          "description": "Bound graph query results (1–100)."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--include-evidence",
+          "description": "Read and include referenced evidence metadata."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        }
+      ],
+      "subactions": [
+        "emit",
+        "explain",
+        "entities",
+        "search",
+        "evidence",
+        "path",
+        "overlay",
+        "benchmark",
+        "dot",
+        "mermaid",
+        "jsonld",
+        "graphml",
+        "gexf"
+      ],
+      "artifact": null,
+      "examples": [
+        "workspai workspace graph search \"authentication endpoint\" --limit 12 --json",
+        "workspai workspace graph evidence \"GET /users\" --json",
+        "workspai workspace graph mermaid"
+      ]
+    },
+    {
+      "id": "watch",
+      "usage": "workspai workspace watch [--once] [--graph-stream] [--json]",
+      "summary": "Observe model changes and optionally stream graph deltas.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--once",
+          "description": "Build the initial observed state and exit."
+        },
+        {
+          "flag": "--graph-stream",
+          "description": "Emit graph snapshot/delta events as NDJSON."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace watch --once --json",
+        "workspai workspace watch --graph-stream"
+      ]
+    },
+    {
+      "id": "context",
+      "usage": "workspai workspace context [--for-agent <agent>] [--scope <scope>] [--write] [--json]",
+      "summary": "Build a bounded, evidence-backed context pack for people and agents.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--for-agent",
+          "description": "Build output for an agent surface (for example codex, copilot, or cursor)."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--include-evidence",
+          "description": "Read and include referenced evidence metadata."
+        },
+        {
+          "flag": "--scan-depth",
+          "description": "Set the bounded observable-project discovery depth."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
+        },
+        {
+          "flag": "--agent-sync",
+          "description": "Synchronize agent grounding after writing the context artifact."
+        },
+        {
+          "flag": "--no-agent-sync",
+          "description": "Do not synchronize agent grounding after writing context."
+        },
+        {
+          "flag": "--preset",
+          "description": "Select the generated agent customization preset."
+        },
+        {
+          "flag": "--target",
+          "description": "Select one or more agent customization targets."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-context-agent.json",
+      "examples": [
+        "workspai workspace context --for-agent codex --write --json",
+        "workspai workspace context --scope project:api --json"
+      ]
+    },
+    {
+      "id": "agent-sync",
+      "usage": "workspai workspace agent-sync [--for-agent <agent>] [--target <targets>] [--write]",
+      "summary": "Synchronize bounded workspace grounding for supported agent surfaces.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--for-agent",
+          "description": "Build output for an agent surface (for example codex, copilot, or cursor)."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
+        },
+        {
+          "flag": "--dry-run",
+          "description": "Preview the operation without applying writes."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--preset",
+          "description": "Select the generated agent customization preset."
+        },
+        {
+          "flag": "--refresh-context",
+          "description": "Rebuild agent context before synchronization."
+        },
+        {
+          "flag": "--refresh",
+          "description": "Refresh the underlying registry or context before reading it."
+        },
+        {
+          "flag": "--target",
+          "description": "Select one or more agent customization targets."
+        },
+        {
+          "flag": "--experimental-hooks",
+          "description": "Generate advisory VS Code agent hook design files."
+        },
+        {
+          "flag": "--hydrate-prompts",
+          "description": "Add workspace-specific verification steps to supported prompts."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/agent-customization-pack.json",
+      "examples": [
+        "workspai workspace agent-sync --target all --write --strict",
+        "workspai workspace agent-sync --for-agent copilot --dry-run --json"
+      ]
+    },
+    {
+      "id": "remediation-plan",
+      "usage": "workspai workspace remediation-plan [--ci] [--write] [--json]",
+      "summary": "Build a governed repair plan from current workspace evidence.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--ci",
+          "description": "Produce a CI-oriented command plan."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/artifact-remediation-plan-last-run.json",
+      "examples": [
+        "workspai workspace remediation-plan --write --json",
+        "workspai workspace remediation-plan --ci --json"
+      ]
+    },
+    {
+      "id": "explain",
+      "usage": "workspai workspace explain [target] [--scope <scope>] [--write] [--json]",
+      "summary": "Explain current blockers or a selected workspace target from evidence.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-explain-last-run.json",
+      "examples": [
+        "workspai workspace explain --write --json"
+      ]
+    },
+    {
+      "id": "why",
+      "usage": "workspai workspace why [target] [--scope <scope>] [--write] [--json]",
+      "summary": "Alias the evidence-backed workspace explanation flow.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-why-last-run.json",
+      "examples": [
+        "workspai workspace why readiness --json"
+      ]
+    },
+    {
+      "id": "trace",
+      "usage": "workspai workspace trace --from <diff-artifact> [--write] [--json]",
+      "summary": "Trace a model change through blast radius and decision gates.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--from",
+          "description": "Read the specified baseline, report, or graph artifact."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-trace-last-run.json",
+      "examples": [
+        "workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --write --json"
+      ]
+    },
+    {
+      "id": "feedback",
+      "usage": "echo '<event-json>' | workspai workspace feedback record --json",
+      "summary": "Record a structured outcome event for the workspace intelligence history.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        }
+      ],
+      "subactions": [
+        "record"
+      ],
+      "artifact": null,
+      "examples": [
+        "echo '{\"actionId\":\"fix\",\"summary\":\"ok\",\"outcome\":\"ok\"}' | workspai workspace feedback record --json"
+      ]
+    },
+    {
+      "id": "eval",
+      "usage": "workspai workspace eval [init|record|status|report|compare] [arguments] [--json]",
+      "summary": "Measure agent/model calls, tool use, tokens, latency, and verified outcome.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--from",
+          "description": "Read the specified baseline, report, or graph artifact."
+        },
+        {
+          "flag": "--output",
+          "description": "Write the requested export or report to this path."
+        }
+      ],
+      "subactions": [
+        "init",
+        "record",
+        "status",
+        "report",
+        "compare"
+      ],
+      "artifact": ".workspai/reports/workspace-intelligence-evaluation-last-run.json",
+      "examples": [
+        "workspai workspace eval init repair-readiness workspace-intelligence --json",
+        "workspai workspace eval report --output ./evaluation.json --json"
+      ]
+    },
+    {
+      "id": "mcp",
+      "usage": "workspai workspace mcp serve",
+      "summary": "Serve bounded, read-mostly workspace evidence over stdio MCP.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        }
+      ],
+      "subactions": [
+        "serve"
+      ],
+      "artifact": null,
+      "examples": [
+        "workspai workspace mcp serve"
+      ]
+    },
+    {
+      "id": "policy",
+      "usage": "workspai workspace policy [show|status|get|set] [key] [value] [--json]",
+      "summary": "Inspect or update workspace governance policy.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        }
+      ],
+      "subactions": [
+        "show",
+        "status",
+        "get",
+        "set"
+      ],
+      "artifact": null,
+      "examples": [
+        "workspai workspace policy get --json"
+      ]
+    },
+    {
+      "id": "contract",
+      "usage": "workspai workspace contract [init|inspect|verify|graph] [--strict] [--json]",
+      "summary": "Create, inspect, verify, or project the workspace contract.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--output",
+          "description": "Write the requested export or report to this path."
+        },
+        {
+          "flag": "--force",
+          "description": "Replace an existing generated target where supported."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        }
+      ],
+      "subactions": [
+        "init",
+        "inspect",
+        "verify",
+        "graph"
+      ],
+      "artifact": ".workspai/workspace.contract.json",
+      "examples": [
+        "workspai workspace contract verify --strict --json",
+        "workspai workspace contract graph --json"
+      ]
+    },
+    {
+      "id": "share",
+      "usage": "workspai workspace share [--output <file>] [--json]",
+      "summary": "Create a bounded, shareable workspace evidence bundle.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--output",
+          "description": "Write the requested export or report to this path."
+        },
+        {
+          "flag": "--include-paths",
+          "description": "Include absolute filesystem paths."
+        },
+        {
+          "flag": "--no-doctor",
+          "description": "Exclude Doctor evidence from a share bundle."
+        },
+        {
+          "flag": "--no-blueprint",
+          "description": "Exclude the reproducibility blueprint from a share bundle."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace share --output workspace-share.json --json"
+      ]
+    },
+    {
+      "id": "export",
+      "usage": "workspai workspace export [--output <archive>] [--archive-compression <format>]",
+      "summary": "Export a portable workspace archive.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--output",
+          "description": "Write the requested export or report to this path."
+        },
+        {
+          "flag": "--include-env",
+          "description": "Include private environment files in an export archive."
+        },
+        {
+          "flag": "--archive-compression",
+          "description": "Select the archive compression format."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace export --output workspace.tar.gz"
+      ]
+    },
+    {
+      "id": "archive",
+      "usage": "workspai workspace archive <inspect|verify|doctor> <source> [safety options] [--json]",
+      "summary": "Inspect, verify, or diagnose a portable workspace archive without materializing it.",
+      "options": [
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--max-download-size",
+          "description": "Bound a remote archive download."
+        },
+        {
+          "flag": "--max-expanded-size",
+          "description": "Bound the expanded archive size."
+        },
+        {
+          "flag": "--download-timeout-ms",
+          "description": "Bound remote archive download time."
+        },
+        {
+          "flag": "--allow-private-network",
+          "description": "Allow private-network archive sources explicitly."
+        }
+      ],
+      "subactions": [
+        "inspect",
+        "verify",
+        "doctor"
+      ],
+      "artifact": null,
+      "examples": [
+        "workspai workspace archive inspect ./workspace.tar.gz --json",
+        "workspai workspace archive verify ./workspace.tar.gz --strict --json",
+        "workspai workspace archive doctor ./workspace.tar.gz --json"
+      ]
+    },
+    {
+      "id": "hydrate",
+      "usage": "workspai workspace hydrate <source> [--output <directory>] [--dry-run] [--json]",
+      "summary": "Hydrate a portable workspace into a controlled destination.",
+      "options": [
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--output",
+          "description": "Write the requested export or report to this path."
+        },
+        {
+          "flag": "--force",
+          "description": "Replace an existing generated target where supported."
+        },
+        {
+          "flag": "--dry-run",
+          "description": "Preview the operation without applying writes."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--max-download-size",
+          "description": "Bound a remote archive download."
+        },
+        {
+          "flag": "--max-expanded-size",
+          "description": "Bound the expanded archive size."
+        },
+        {
+          "flag": "--download-timeout-ms",
+          "description": "Bound remote archive download time."
+        },
+        {
+          "flag": "--allow-private-network",
+          "description": "Allow private-network archive sources explicitly."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace hydrate workspace.tar.gz --output ./restored --dry-run --json"
+      ]
+    },
+    {
+      "id": "import",
+      "usage": "workspai workspace import <source> [--output <directory>] [--dry-run] [--json]",
+      "summary": "Import and register a portable workspace safely.",
+      "options": [
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--output",
+          "description": "Write the requested export or report to this path."
+        },
+        {
+          "flag": "--force",
+          "description": "Replace an existing generated target where supported."
+        },
+        {
+          "flag": "--dry-run",
+          "description": "Preview the operation without applying writes."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--max-download-size",
+          "description": "Bound a remote archive download."
+        },
+        {
+          "flag": "--max-expanded-size",
+          "description": "Bound the expanded archive size."
+        },
+        {
+          "flag": "--download-timeout-ms",
+          "description": "Bound remote archive download time."
+        },
+        {
+          "flag": "--allow-private-network",
+          "description": "Allow private-network archive sources explicitly."
+        }
+      ],
+      "subactions": [],
+      "artifact": null,
+      "examples": [
+        "workspai workspace import workspace.tar.gz --output ./imported --json"
+      ]
+    },
+    {
+      "id": "run",
+      "usage": "workspai workspace run <stage> [selection and concurrency options] [--json]",
+      "summary": "Run a lifecycle stage across selected workspace projects.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--affected",
+          "description": "Run only projects affected by the selected Git change."
+        },
+        {
+          "flag": "--blast-radius",
+          "description": "Include transitive downstream dependents."
+        },
+        {
+          "flag": "--since",
+          "description": "Select the Git baseline used for affected-project discovery."
+        },
+        {
+          "flag": "--parallel",
+          "description": "Run selected projects concurrently."
+        },
+        {
+          "flag": "--max-workers",
+          "description": "Bound concurrent project workers."
+        },
+        {
+          "flag": "--continue-on-error",
+          "description": "Continue remaining projects after a project failure."
+        },
+        {
+          "flag": "--reuse-passed",
+          "description": "Reuse successful project-stage results where safe."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--no-gates",
+          "description": "Skip Doctor and Readiness pre-run gates."
+        }
+      ],
+      "subactions": [
+        "init",
+        "test",
+        "build",
+        "start",
+        "<custom-from-context>"
+      ],
+      "artifact": ".workspai/reports/workspace-run-last.json",
+      "examples": [
+        "workspai workspace run test --affected --blast-radius --strict",
+        "workspai workspace run build --parallel --max-workers 4 --json"
+      ]
+    },
+    {
+      "id": "init",
+      "usage": "workspai workspace init [selection and concurrency options] [--json]",
+      "summary": "Initialize all selected projects through the workspace fleet runner.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--parallel",
+          "description": "Run selected projects concurrently."
+        },
+        {
+          "flag": "--max-workers",
+          "description": "Bound concurrent project workers."
+        },
+        {
+          "flag": "--continue-on-error",
+          "description": "Continue remaining projects after a project failure."
+        },
+        {
+          "flag": "--reuse-passed",
+          "description": "Reuse successful project-stage results where safe."
+        },
+        {
+          "flag": "--strict",
+          "description": "Return a non-zero exit when governed evidence blocks the result."
+        },
+        {
+          "flag": "--no-gates",
+          "description": "Skip Doctor and Readiness pre-run gates."
+        }
+      ],
+      "subactions": [],
+      "artifact": ".workspai/reports/workspace-run-last.json",
+      "examples": [
+        "workspai workspace init --parallel --strict"
+      ]
+    }
   ],
   "workspaceIntelligenceSubcommands": [
     "intelligence",
@@ -2353,6 +3521,26 @@
       ]
     },
     "bun": {
+      "tier": "observed",
+      "scaffold": false,
+      "import": true,
+      "moduleCommands": false,
+      "doctor": "observed",
+      "lifecycleCommands": [
+        "help"
+      ]
+    },
+    "c": {
+      "tier": "observed",
+      "scaffold": false,
+      "import": true,
+      "moduleCommands": false,
+      "doctor": "observed",
+      "lifecycleCommands": [
+        "help"
+      ]
+    },
+    "cpp": {
       "tier": "observed",
       "scaffold": false,
       "import": true,

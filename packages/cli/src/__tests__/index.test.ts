@@ -170,6 +170,26 @@ describe('CLI Entry Point', () => {
       );
     });
 
+    it('should render contract-backed help for individual workspace actions', async () => {
+      const impact = await execa('node', [CLI_PATH, 'workspace', 'impact', '--help']);
+      expect(impact.stdout).toContain(
+        'Calculate the evidence-backed blast radius of the current model change.'
+      );
+      expect(impact.stdout).toContain(
+        'Usage:\n  workspai workspace impact [--from <diff>] [--scope <scope>] [--strict] [--json]'
+      );
+      expect(impact.stdout).toContain(
+        'Evidence:\n  .workspai/reports/workspace-impact-last-run.json'
+      );
+      expect(impact.stdout).not.toContain('Workspace actions:');
+
+      const graph = await execa('node', [CLI_PATH, 'workspace', 'graph', '--help']);
+      expect(graph.stdout).toContain(
+        'emit | explain | entities | search | evidence | path | overlay | benchmark | dot | mermaid | jsonld | graphml | gexf'
+      );
+      expect(graph.stdout).toContain('workspai workspace graph [mode] [query|from] [to] [--json]');
+    });
+
     it('should match workspace command block snapshot', async () => {
       const { stdout } = await execa('node', [CLI_PATH, '--help']);
       const block = stdout.match(
@@ -464,6 +484,46 @@ describe('CLI Entry Point', () => {
   });
 
   describe('Error Handling', () => {
+    it('routes Doctor policy profiles to Doctor instead of the root workspace profile option', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'doctor-policy-profile-'));
+      await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
+      await fs.writeFile(
+        path.join(workspaceRoot, '.workspai-workspace'),
+        `${JSON.stringify({
+          schemaVersion: 'workspai-workspace-marker-v1',
+          workspace_name: 'doctor-policy-workspace',
+          profile: 'minimal',
+        })}\n`
+      );
+      await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
+        workspace_name: 'doctor-policy-workspace',
+        profile: 'minimal',
+      });
+
+      const result = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'doctor',
+          'workspace',
+          '--workspace',
+          workspaceRoot,
+          '--profile',
+          'enterprise-strict',
+          '--json',
+        ],
+        {
+          cwd: workspaceRoot,
+          reject: false,
+        }
+      );
+
+      expect([0, 1, 2]).toContain(result.exitCode);
+      expect(JSON.parse(result.stdout).policyProfile).toMatchObject({
+        name: 'enterprise-strict',
+      });
+    }, 30_000);
+
     it('should roll back imported files when workspace sync fails after import', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-import-fail-'));
       const sourceDir = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-fail-'));

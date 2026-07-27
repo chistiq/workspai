@@ -32,7 +32,10 @@ flowchart TB
 1. **Connect your software.** Create something new, adopt an existing project
    without moving it, or import a repository.
 2. **Understand the workspace.** Workspai builds one model of the projects and
-   how they relate.
+   how they relate. That Workspace Model is canonical. Workspai then derives a
+   proof-backed Knowledge Graph from the model-owned project inventory so tools
+   can query files, APIs, packages, infrastructure, tests, ownership, and
+   decisions without creating a second source of truth.
 3. **Understand change and verify it.** Workspai shows affected areas and checks
    the evidence needed for a safe decision.
 4. **Share the result.** Developers, CI, IDEs, AI agents, and MCP clients consume

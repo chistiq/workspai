@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/agent-action-outcome.v1.json",
-  "title": "RapidKit Agent Action Outcome",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/agent-action-outcome.v1.json",
+  "title": "Workspai Agent Action Outcome",
   "type": "object",
   "required": ["schemaVersion", "generatedAt", "actionId", "scope", "summary", "outcome"],
   "properties": {

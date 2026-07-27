@@ -30,18 +30,19 @@ exclude the canonical marker.
 
 ## Governance evidence loop
 
-| Command                              | Primary artifact                                            | Schema version                  | JSON Schema                                                  |
-| ------------------------------------ | ----------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------ |
-| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`  | `contracts/doctor-workspace-evidence.v1.json`                |
-| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`    | `contracts/doctor-project-evidence.v1.json`                  |
-| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`    | `contracts/doctor-remediation-plan.v2.json`                  |
-| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1` | `contracts/workspace-intelligence/doctor-fix-result.v1.json` |
-| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`  | `contracts/artifact-remediation-plan.v1.json`                |
-| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`           | `contracts/analyze-last-run.v1.json`                         |
-| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`          | `contracts/release-readiness.v1.json`                        |
-| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`          | `contracts/pipeline-last-run.v1.json`                        |
-| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`          | `contracts/autopilot-release.v1.json`                        |
-|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)           | `contracts/autopilot-release.v1.json`                        |
+| Command                              | Primary artifact                                            | Schema version                      | JSON Schema                                                  |
+| ------------------------------------ | ----------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------ |
+| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`      | `contracts/doctor-workspace-evidence.v1.json`                |
+| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`        | `contracts/doctor-project-evidence.v1.json`                  |
+| `project coverage`                   | `.workspai/reports/project-test-coverage-last-run.json`     | `workspai.project-test-coverage.v1` | `contracts/project-test-coverage.v1.json`                    |
+| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`        | `contracts/doctor-remediation-plan.v2.json`                  |
+| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1`     | `contracts/workspace-intelligence/doctor-fix-result.v1.json` |
+| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`      | `contracts/artifact-remediation-plan.v1.json`                |
+| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`               | `contracts/analyze-last-run.v1.json`                         |
+| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`              | `contracts/release-readiness.v1.json`                        |
+| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`              | `contracts/pipeline-last-run.v1.json`                        |
+| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`              | `contracts/autopilot-release.v1.json`                        |
+|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)               | `contracts/autopilot-release.v1.json`                        |
 
 Side/cache (not gates): `.workspai/reports/doctor-workspace-cache.json` (`doctor-workspace-cache-v2`).
 
@@ -64,11 +65,13 @@ this plan before inventing per-card repair logic. The plan carries ordered actio
 operations where deterministic, refresh/verify commands, risk, approval state, and rollback
 strategy.
 
-When `doctor project` runs inside a workspace, the workspace report remains the canonical
-governance artifact and Doctor mirrors `doctor-project-last-run.json`,
-`doctor-remediation-plan-last-run.json`, and `doctor-fix-result-last-run.json` into the scoped
-project's `.workspai/reports/` directory. This keeps Studio, agents, and project-local operators on
-the same evidence without losing the workspace source of truth.
+When `doctor project` runs inside a workspace, the project-local report is written beside the
+project and the workspace receives both a latest alias and a collision-safe project copy under
+`.workspai/reports/projects/<project-slug>--<identity-hash>/`. Coverage evidence follows the same
+three-location rule. The hash is derived from workspace-relative identity, so projects with the
+same folder name cannot overwrite each other. Remediation plans and fix results are also mirrored
+into the scoped project. Studio, CI, and project-local tools can therefore use the same evidence
+without guessing which project produced a latest alias.
 
 ## Workspace intelligence
 
@@ -108,10 +111,14 @@ status/exit coherence, hard-failure skip propagation, and the aggregate verdict.
 See [Unified Workspace Intelligence Runner](../workspace-intelligence-runner.md)
 for the normative user and integration semantics.
 
-`workspace-model.json` and `workspace-knowledge-graph.json` are published as one
-recoverable artifact transaction. The graph carries a SHA-256 `source` binding
-to the canonical model, so consumers must reject a graph whose source hash does
-not equal the current structural model hash.
+`workspace-model.json` and `workspace-knowledge-graph.json` are published under
+one workspace lock as a rollback-capable artifact transaction. Individual file
+replacement is atomic, and a partial set failure restores both preimages. The
+model is canonical; the graph is derived and cannot mutate it during the run.
+The graph contract fixes `source.kind` to `workspace-model`,
+`source.artifact` to `.workspai/reports/workspace-model.json`, and `source.hash`
+to the model's stable structural SHA-256. Current-state consumers must reject a
+graph whose binding does not match the current model.
 
 `workspace graph jsonld|graphml|gexf --output <path>` creates explicit interchange
 projections from that bound graph. These files are portable exports, not competing
@@ -244,6 +251,14 @@ reused and the dependency graph re-infers only edges incident to changed project
 (`inferWorkspaceDependencyGraphIncremental`). It falls back to a full rebuild on workspace-file
 changes or project renames, and rescans code-imports fully when the node set changes. Reported
 modes: `full` / `incremental` / `unchanged`.
+
+The model command adds a non-structural `build` object to its JSON output and,
+when `--write` is used, to the persisted model result. `mode`, `outcome`, and
+`engineStatus` tell IDE/CI consumers
+whether the result was rebuilt, partially reused, or fully reused. This
+provenance is deliberately excluded from the canonical workspace-model hash,
+so switching between full, cached, and incremental execution cannot make the
+paired knowledge graph appear stale.
 
 ### Freshness metadata (`rapidkit-freshness-metadata-v1`)
 

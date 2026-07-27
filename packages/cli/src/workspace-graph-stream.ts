@@ -8,6 +8,7 @@ import type {
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 import type { WorkspaceModel } from './workspace-model.js';
+import { assertWorkspaceKnowledgeGraphSourceBinding } from './workspace-knowledge-graph.js';
 
 export const WORKSPACE_GRAPH_STREAM_SCHEMA_VERSION = 'workspace-graph-stream.v1' as const;
 
@@ -114,6 +115,7 @@ export class WorkspaceGraphStreamPublisher {
   }
 
   publish(model: WorkspaceModel, graph: WorkspaceKnowledgeGraph): WorkspaceGraphStreamEvent {
+    assertWorkspaceKnowledgeGraphSourceBinding(graph, model);
     const generatedAt = this.now().toISOString();
     const modelHash = hashWorkspaceModel(model);
     const graphHash = stableGraphHash(graph);

@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-snapshot.v1.json",
+  "title": "Workspai Workspace Snapshot v1",
   "type": "object",
   "required": [
     "schema",

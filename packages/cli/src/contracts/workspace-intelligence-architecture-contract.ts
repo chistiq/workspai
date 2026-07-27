@@ -8,6 +8,10 @@ import {
   WORKSPACE_INTELLIGENCE_CHAIN_CONTRACT_PATH,
   WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION,
 } from './workspace-intelligence-chain-contract.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
+} from './workspace-intelligence-runtime-registry.js';
 
 export const WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION =
   'workspai-workspace-intelligence-architecture-v1';
@@ -50,6 +54,29 @@ export type WorkspaceIntelligenceArchitectureContract = {
       artifacts: string[];
     }>;
     evidencePrinciples: string[];
+    modelGraphRelationship: {
+      direction: 'workspace-sources -> workspace-model -> workspace-knowledge-graph';
+      canonicalAuthority: {
+        artifact: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model'];
+        schemaVersion: (typeof WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS)['model'];
+      };
+      derivedRepresentation: {
+        artifact: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph'];
+        schemaVersion: (typeof WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS)['knowledgeGraph'];
+      };
+      sourceBinding: {
+        kind: 'workspace-model';
+        artifact: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model'];
+        hashAlgorithm: 'sha256';
+        hashSemantics: 'stable structural model projection';
+      };
+      inventoryRule: 'reconcile discovered, imported, adopted, and contract-declared projects';
+      missingProjectRule: 'preserve a contract-declared missing project as a validation warning';
+      topologyRule: 'knowledge graph project topology must match the canonical model topology';
+      publication: 'one locked rollback-capable artifact transaction';
+      mutationRule: 'knowledge graph enrichment never mutates the authorizing model during a run';
+      staleConsumerRule: 'reject a graph whose source binding does not match the current model';
+    };
   };
   consumers: Array<{
     id: string;
@@ -117,6 +144,29 @@ export function buildWorkspaceIntelligenceArchitectureContract(): WorkspaceIntel
         'Facts should be marked or treated as verified, observed, inferred, or unknown based on available evidence.',
         'Marketing and integration surfaces must not claim native, doctor depth, module support, or agent grounding beyond the generated contracts.',
       ],
+      modelGraphRelationship: {
+        direction: 'workspace-sources -> workspace-model -> workspace-knowledge-graph',
+        canonicalAuthority: {
+          artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
+          schemaVersion: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.model,
+        },
+        derivedRepresentation: {
+          artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+          schemaVersion: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.knowledgeGraph,
+        },
+        sourceBinding: {
+          kind: 'workspace-model',
+          artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
+          hashAlgorithm: 'sha256',
+          hashSemantics: 'stable structural model projection',
+        },
+        inventoryRule: 'reconcile discovered, imported, adopted, and contract-declared projects',
+        missingProjectRule: 'preserve a contract-declared missing project as a validation warning',
+        topologyRule: 'knowledge graph project topology must match the canonical model topology',
+        publication: 'one locked rollback-capable artifact transaction',
+        mutationRule: 'knowledge graph enrichment never mutates the authorizing model during a run',
+        staleConsumerRule: 'reject a graph whose source binding does not match the current model',
+      },
     },
     consumers: [
       {

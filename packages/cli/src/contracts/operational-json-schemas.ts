@@ -21,6 +21,25 @@ export const OPERATIONAL_JSON_SCHEMA_VERSIONS = {
   doctorWorkspaceCache: 'doctor-workspace-cache-v2',
 } as const;
 
+const OPERATIONAL_JSON_SCHEMA_TITLES: Record<string, string> = {
+  'autopilot-release.v1.json': 'Workspai Autopilot Release Evidence',
+  'workspace-list.v1.json': 'Workspai Workspace List',
+  'workspace-sync.v1.json': 'Workspai Workspace Sync Evidence',
+  'compatibility-matrix.v1.json': 'Workspai Compatibility Matrix',
+  'workspace-intelligence/mcp-design.v1.json': 'Workspai MCP Design',
+  'workspace-intelligence/agent-hooks.v1.json': 'Workspai Agent Hooks',
+  'project-archive.v1.json': 'Workspai Project Archive Manifest',
+  'workspace-snapshot.v1.json': 'Workspai Workspace Snapshot v1',
+  'workspace-snapshot.v2.json': 'Workspai Workspace Snapshot v2',
+  'infra-plan.v1.json': 'Workspai Infrastructure Plan',
+  'private-product-manifest.v1.json': 'Workspai Private Product Manifest',
+  'product-factory-plan.v1.json': 'Workspai Product Factory Plan',
+  'workspace-model-cache.v1.json': 'Workspai Workspace Model Cache',
+  'workspace-watch-event.v1.json': 'Workspai Workspace Watch Event',
+  'doctor-project-scan.v2.json': 'Workspai Doctor Project Scan',
+  'doctor-workspace-cache.v2.json': 'Workspai Doctor Workspace Cache',
+};
+
 function objectSchema(
   schemaVersion: string,
   required: string[],
@@ -51,7 +70,7 @@ function legacySchemaObject(
 
 export function buildOperationalJsonSchemas(): Record<string, JsonSchema> {
   const versions = OPERATIONAL_JSON_SCHEMA_VERSIONS;
-  return {
+  const schemas = {
     'autopilot-release.v1.json': objectSchema(
       versions.autopilotRelease,
       [
@@ -624,4 +643,18 @@ export function buildOperationalJsonSchemas(): Record<string, JsonSchema> {
       }
     ),
   };
+  return Object.fromEntries(
+    Object.entries(schemas).map(([fileName, schema]) => {
+      const { $schema, ...schemaBody } = schema;
+      return [
+        fileName,
+        {
+          $schema,
+          $id: `https://workspai.dev/schemas/${fileName}`,
+          title: OPERATIONAL_JSON_SCHEMA_TITLES[fileName],
+          ...schemaBody,
+        },
+      ];
+    })
+  );
 }

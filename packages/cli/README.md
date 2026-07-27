@@ -151,18 +151,16 @@ Workspai is the deterministic layer between source code and its consumers:
 ```text
 Code · packages · APIs · infrastructure · docs · CI · policies
                               │
-                   deterministic providers
-                              │
-                       facts + proofs
+             registration · detection · contract reconciliation
                               │
                   Canonical Workspace Model
-                       │              │
-                       │              └── Evidence-backed Knowledge Graph
-                       │                         │
-                       └──────────┬──────────────┘
-                                  │
+                              │
+               bounded providers · facts · proofs
+                              │
+               Evidence-backed Knowledge Graph
+                              │
                 diff · impact · verify · context · explain
-                                  │
+                              │
                Developers · CI · IDEs · MCP · AI agents
 ```
 
@@ -285,6 +283,8 @@ reruns.
 | What you need                        | Command                                                                       |
 | ------------------------------------ | ----------------------------------------------------------------------------- |
 | Run affected project tests           | `npx workspai workspace run test --affected --blast-radius --json`            |
+| Measure one project's test coverage  | `npx workspai project coverage --run --target 80 --strict --json`             |
+| Diagnose one project                 | `npx workspai doctor project --json`                                          |
 | Run the release/governance gate      | `npx workspai pipeline --json --strict`                                       |
 | Run the canonical intelligence chain | `npx workspai workspace intelligence run --for-agent generic --strict --json` |
 
@@ -345,6 +345,15 @@ For a user-focused graph quickstart, AI output paths, performance boundaries,
 and reproducible token-efficiency methodology, see the
 [Workspace Knowledge Graph guide](docs/workspace-knowledge-graph.md) and
 [Graph Benchmark Methodology](docs/graph-benchmark-methodology.md).
+
+The integrated CLI has one canonical direction: **Workspace Model → Knowledge
+Graph**. The model owns the workspace boundary and compact project topology;
+bounded providers enrich that inventory into proof-backed cross-domain
+relationships without writing back into the model. Both artifacts are published
+under one lock with rollback, and the graph contract fixes its source to
+`.workspai/reports/workspace-model.json` plus the model's stable structural
+SHA-256. Doctor, Context, MCP, and graph streaming reject a mismatched persisted
+graph.
 
 ## Outputs and Consumers
 

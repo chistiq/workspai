@@ -200,6 +200,32 @@ export const RUNTIME_SUPPORT_MATRIX: Record<string, RuntimeSupportMatrixEntry> =
     doctorSupport: 'observed',
     notes: ['Bun projects are importable and governed as observed projects until a kit exists.'],
   },
+  c: {
+    runtime: 'c',
+    displayName: 'C',
+    tier: 'observed',
+    scaffoldSupport: false,
+    importSupport: true,
+    lifecycleCommands: ['help'],
+    moduleCommands: false,
+    doctorSupport: 'observed',
+    notes: [
+      'C projects are importable and receive manifest, test, quality, security, and coverage evidence without assuming a package manager.',
+    ],
+  },
+  cpp: {
+    runtime: 'cpp',
+    displayName: 'C++',
+    tier: 'observed',
+    scaffoldSupport: false,
+    importSupport: true,
+    lifecycleCommands: ['help'],
+    moduleCommands: false,
+    doctorSupport: 'observed',
+    notes: [
+      'C++ projects are importable and receive manifest, test, quality, security, and coverage evidence without assuming a package manager.',
+    ],
+  },
   unknown: {
     runtime: 'unknown',
     displayName: 'Unknown',
@@ -250,6 +276,8 @@ const EXTENDED_FRAMEWORKS: BackendPlatformKey[] = [
   'kotlin',
   'deno',
   'bun',
+  'c',
+  'cpp',
 ];
 
 export function getRuntimeSupport(runtime: string | undefined): RuntimeSupportMatrixEntry {

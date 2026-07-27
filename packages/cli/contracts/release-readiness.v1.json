@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/release-readiness.v1.json",
-  "title": "RapidKit Release Readiness Evidence",
+  "$id": "https://workspai.dev/schemas/release-readiness.v1.json",
+  "title": "Workspai Release Readiness Evidence",
   "type": "object",
   "required": [
     "schemaVersion",

@@ -146,24 +146,30 @@ contract, the graph is a derived, revision-bound representation of the model.
 ```text
 Code · packages · APIs · infra · docs · CI · policies · runtime evidence
                                 │
-                     deterministic providers
-                                │
-                         facts + proofs
+               registration · detection · contract reconciliation
                                 │
                     Canonical Workspace Model
-                         │              │
-                         │              └── Evidence-backed Knowledge Graph
-                         │                         │
-                         └──────────┬──────────────┘
-                                    │
+                                │
+                 bounded providers · facts · proofs
+                                │
+                 Evidence-backed Knowledge Graph
+                                │
                   diff · impact · verify · context · explain
-                                    │
+                                │
                  Developers · CI · IDEs · MCP · AI agents
 ```
 
 This separation keeps Workspai database-agnostic and model-agnostic. JSON,
 JSON-LD, Mermaid, DOT, GraphML, GEXF, MCP responses, IDE views, and agent context
 are projections of governed data; none silently replaces the model.
+
+The direction is contract-enforced: **Workspace Model → Knowledge Graph**. The
+model owns project identity, runtime/framework observations, policies,
+contracts, evidence references, and compact project topology. Graph providers
+enrich that inventory with files, symbols, packages, APIs, infrastructure,
+tests, ownership, decisions, and proofs without mutating the model. The
+persisted graph is bound to the model's stable structural SHA-256, and
+current-state consumers reject a stale or differently sourced graph.
 
 ### Why this is more than a repository graph
 

@@ -5,7 +5,10 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildWorkspaceKnowledgeGraph } from '../workspace-knowledge-graph.js';
+import {
+  assertWorkspaceKnowledgeGraphSourceBinding,
+  buildWorkspaceKnowledgeGraph,
+} from '../workspace-knowledge-graph.js';
 import {
   queryKnowledgeEntities,
   queryKnowledgeEvidence,
@@ -16,6 +19,8 @@ import type { WorkspaceDependencyGraph } from '../contracts/workspace-dependency
 import { buildWorkspaceKnowledgeGraphChangeOverlay } from '../workspace-knowledge-graph-change-overlay.js';
 import { buildWorkspaceGraphTokenEfficiencyReport } from '../workspace-graph-token-efficiency.js';
 import type { WorkspaceContract } from '../utils/workspace-contract.js';
+import { buildWorkspaceModel } from '../workspace-model.js';
+import { hashWorkspaceModel } from '../workspace-model-hash.js';
 
 const NOW = new Date('2026-07-21T12:00:00.000Z');
 
@@ -57,7 +62,11 @@ describe('workspace knowledge graph', () => {
     );
     await fsExtra.outputFile(
       path.join(root, 'api', 'src', 'health.controller.ts'),
-      "import { Controller, Get } from '@nestjs/common';\nexport class HealthController {\n  @Get('/health')\n  health() { return 'ok'; }\n}\n"
+      "import { Controller, Get } from '@nestjs/common';\nimport { healthValue } from './health.service';\nexport class HealthController {\n  @Get('/health')\n  health() { return healthValue; }\n}\n"
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', 'health.service.ts'),
+      "export const healthValue = 'ok';\n"
     );
     await fsExtra.outputFile(
       path.join(root, 'api', '.rapidkit', 'vendor', 'generated.controller.ts'),
@@ -202,6 +211,15 @@ describe('workspace knowledge graph', () => {
     };
   }
 
+  function modelSource() {
+    return {
+      kind: 'workspace-model',
+      artifact: '.workspai/reports/workspace-model.json',
+      hashAlgorithm: 'sha256',
+      hash: 'a'.repeat(64),
+    } as const;
+  }
+
   function contract(): WorkspaceContract {
     return {
       schemaVersion: 1,
@@ -245,6 +263,48 @@ describe('workspace knowledge graph', () => {
     };
   }
 
+  it('binds identity, structural hash, and project topology to the canonical model', async () => {
+    const root = await fixture();
+    const model = await buildWorkspaceModel({ workspacePath: root, now: NOW });
+    expect(model.graph).toBeDefined();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: {
+        name: model.workspace.name,
+        ...(model.workspace.profile ? { profile: model.workspace.profile } : {}),
+      },
+      projects: model.projects.map((project) => ({
+        id: project.name,
+        path: project.path,
+        runtime: project.runtime,
+        framework: project.framework,
+      })),
+      projectTopology: model.graph!,
+      contract: contract(),
+      now: NOW,
+      source: {
+        kind: 'workspace-model',
+        artifact: '.workspai/reports/workspace-model.json',
+        hashAlgorithm: 'sha256',
+        hash: hashWorkspaceModel(model),
+      },
+    });
+
+    expect(() => assertWorkspaceKnowledgeGraphSourceBinding(graph, model)).not.toThrow();
+
+    const mismatchedTopology = structuredClone(graph);
+    mismatchedTopology.projectTopology.nodes = mismatchedTopology.projectTopology.nodes.slice(1);
+    expect(() => assertWorkspaceKnowledgeGraphSourceBinding(mismatchedTopology, model)).toThrow(
+      'project topology does not match'
+    );
+
+    const mismatchedIdentity = structuredClone(graph);
+    mismatchedIdentity.workspace.name = 'different-workspace';
+    expect(() => assertWorkspaceKnowledgeGraphSourceBinding(mismatchedIdentity, model)).toThrow(
+      'identity does not match'
+    );
+  });
+
   it('returns bounded proof-carrying search context without emitting the whole graph', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -257,6 +317,7 @@ describe('workspace knowledge graph', () => {
       projectTopology: topology(),
       contract: contract(),
       now: NOW,
+      source: modelSource(),
     });
 
     const result = searchKnowledgeGraph(graph, { query: 'health endpoint', limit: 2 });
@@ -280,6 +341,7 @@ describe('workspace knowledge graph', () => {
       projectTopology: topology(),
       contract: contract(),
       now: NOW,
+      source: modelSource(),
     });
 
     const report = await buildWorkspaceGraphTokenEfficiencyReport({
@@ -318,6 +380,7 @@ describe('workspace knowledge graph', () => {
       projectTopology: topology(),
       contract: contract(),
       now: NOW,
+      source: modelSource(),
     });
 
     expect(graph.schemaVersion).toBe('workspace-knowledge-graph.v1');
@@ -374,7 +437,35 @@ describe('workspace knowledge graph', () => {
       entityProofCoverageRatio: 1,
       relationProofCoverageRatio: 1,
       providerSuccessRatio: 1,
+      bindingCoverage: {
+        apiImplementation: {
+          eligibleCount: 2,
+          boundCount: 0,
+          unknownCount: 2,
+          coverageRatio: 0,
+        },
+        projectTests: {
+          eligibleCount: 2,
+          boundCount: 1,
+          unknownCount: 1,
+          coverageRatio: 0.5,
+        },
+      },
     });
+    const localImport = graph.relations.find((relation) => {
+      if (relation.kind !== 'imports') return false;
+      const target = graph.entities.find((entity) => entity.id === relation.to);
+      return target?.kind === 'file' && target.label === 'api/src/health.service.ts';
+    });
+    expect(localImport).toMatchObject({ confidence: 'high' });
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.kind === 'module' &&
+          entity.attributes.specifier === './health.service' &&
+          entity.attributes.resolution === 'unresolved-local'
+      )
+    ).toBe(false);
     expect(graph.proofs.every((proof) => !path.isAbsolute(proof.artifact))).toBe(true);
     expect(JSON.stringify(graph)).not.toContain('never-export-this');
     expect(JSON.stringify(graph)).not.toContain('postgres://user:secret');
@@ -408,6 +499,7 @@ describe('workspace knowledge graph', () => {
       projectTopology: topology(),
       contract: contract(),
       now: NOW,
+      source: modelSource(),
     });
     const openApiPath = path.join(workspacePath, 'api', 'openapi.yaml');
     const openApi = await fsExtra.readFile(openApiPath, 'utf8');
@@ -428,6 +520,7 @@ describe('workspace knowledge graph', () => {
       projectTopology: topology(),
       contract: contract(),
       now: new Date('2026-07-21T12:01:00.000Z'),
+      source: modelSource(),
     });
     const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(base, head, NOW);
 
@@ -484,6 +577,7 @@ describe('workspace knowledge graph', () => {
       projectTopology: topology(),
       contract: contract(),
       now: NOW,
+      source: modelSource(),
     });
 
     expect(queryKnowledgeEntities(graph, 'endpoint').map((entity) => entity.label)).toEqual([

@@ -116,6 +116,7 @@ export const NPM_ONLY_SCOPED_COMMANDS = [
   ['product', 'manifest', 'create'],
   ['product', 'plan'],
   ['project', 'commands'],
+  ['project', 'coverage'],
   ['project', 'archives'],
   ['project', 'archive'],
   ['project', 'restore'],

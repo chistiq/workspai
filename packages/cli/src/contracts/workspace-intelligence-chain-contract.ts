@@ -197,7 +197,8 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
       produces: [...runtime.model.produces],
       dependsOn: [],
       exitPolicy: 'stop-on-error',
-      purpose: 'Build the canonical current model of the software system.',
+      purpose:
+        'Build the canonical current model and its structurally bound, derived Knowledge Graph.',
     },
     {
       id: 'diff',

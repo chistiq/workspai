@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeDoctorGateExitCode, resolveDoctorPolicyProfile } from '../doctor.js';
 
 describe('computeDoctorGateExitCode', () => {
-  it('returns 0 when strict/ci are disabled', () => {
-    expect(computeDoctorGateExitCode({ errors: 3, warnings: 2 }, {})).toBe(0);
+  it('returns 1 for blocking errors even when strict/ci are disabled', () => {
+    expect(computeDoctorGateExitCode({ errors: 3, warnings: 2 }, {})).toBe(1);
   });
 
   it('returns 1 on errors under strict mode', () => {

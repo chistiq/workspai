@@ -44,7 +44,7 @@ export type BuildWorkspaceKnowledgeGraphOptions = {
   contract?: WorkspaceContract | null;
   now?: Date;
   maxFilesPerProject?: number;
-  source?: WorkspaceKnowledgeGraph['source'];
+  source: WorkspaceKnowledgeGraph['source'];
 };
 
 export function assertWorkspaceKnowledgeGraphSourceBinding(
@@ -61,10 +61,40 @@ export function assertWorkspaceKnowledgeGraphSourceBinding(
       `Workspace knowledge graph source artifact is ${graph.source.artifact}; expected ${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}.`
     );
   }
+  if (graph.source.hashAlgorithm !== 'sha256') {
+    throw new Error(
+      `Workspace knowledge graph source hash algorithm is ${graph.source.hashAlgorithm}; expected sha256.`
+    );
+  }
   const expectedHash = hashWorkspaceModel(model);
   if (graph.source.hash !== expectedHash) {
     throw new Error(
       'Workspace knowledge graph is stale: its source hash does not match the canonical workspace model.'
+    );
+  }
+  if (
+    graph.workspace.name !== model.workspace.name ||
+    (graph.workspace.profile ?? undefined) !== (model.workspace.profile ?? undefined)
+  ) {
+    throw new Error(
+      'Workspace knowledge graph identity does not match the canonical workspace model.'
+    );
+  }
+  if (!model.graph) {
+    throw new Error(
+      'Canonical workspace model has no project topology for the workspace knowledge graph.'
+    );
+  }
+  const normalizeTopology = (topology: WorkspaceDependencyGraph) => ({
+    ...topology,
+    generatedAt: '<ignored>',
+  });
+  if (
+    hashCanonicalJson(normalizeTopology(graph.projectTopology)) !==
+    hashCanonicalJson(normalizeTopology(model.graph))
+  ) {
+    throw new Error(
+      'Workspace knowledge graph project topology does not match the canonical workspace model.'
     );
   }
 }
@@ -263,6 +293,32 @@ const IMPORT_PATTERNS = [
   { pattern: /^\s*(?:import|using|use)\s+([A-Za-z0-9_:.*\\/.-]+)/, detail: 'import' },
   { pattern: /^\s*require(?:_relative)?\s+["']([^"']+)["']/, detail: 'require' },
 ] as const;
+
+function resolveLocalImportTarget(
+  importerPath: string,
+  specifier: string,
+  candidateFiles: ReadonlySet<string>
+): string | null {
+  if (!specifier.startsWith('.')) return null;
+  const base = path.resolve(path.dirname(importerPath), specifier);
+  const extension = path.extname(base).toLowerCase();
+  const hasSourceExtension = SOURCE_EXTENSIONS.has(extension);
+  const candidates = new Set<string>([base]);
+  if (hasSourceExtension) {
+    const withoutExtension = base.slice(0, -extension.length);
+    if (['.js', '.jsx', '.mjs'].includes(extension)) {
+      for (const replacement of ['.ts', '.tsx', '.js', '.jsx', '.mjs']) {
+        candidates.add(`${withoutExtension}${replacement}`);
+      }
+    }
+  } else {
+    for (const sourceExtension of SOURCE_EXTENSIONS) {
+      candidates.add(`${base}${sourceExtension}`);
+      candidates.add(path.join(base, `index${sourceExtension}`));
+    }
+  }
+  return [...candidates].find((candidate) => candidateFiles.has(path.resolve(candidate))) ?? null;
+}
 
 const ROUTE_PATTERNS = [
   {
@@ -914,7 +970,21 @@ const sourceStructureProvider: Provider = {
       const files = (context.filesByProject.get(project.id) ?? [])
         .filter((file) => SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()))
         .slice(0, 1_000);
+      const usableFiles = new Set<string>();
+      await Promise.all(
+        files.map(async (file) => {
+          try {
+            const stats = await fsExtra.stat(file);
+            if (stats.isFile() && stats.size <= 2 * 1024 * 1024) {
+              usableFiles.add(path.resolve(file));
+            }
+          } catch {
+            // Unreadable files are excluded from local import resolution.
+          }
+        })
+      );
       let symbolCount = 0;
+      let unresolvedLocalImports = 0;
       for (const file of files) {
         let contents: string;
         try {
@@ -966,22 +1036,39 @@ const sourceStructureProvider: Provider = {
             confidence: 'medium',
             detail: `${imported.detail}: ${imported.name}`,
           });
-          const module = context.state.addEntity({
-            kind: 'module',
-            key: `module:${project.id}:${imported.name}`,
-            label: imported.name,
-            projectId: project.id,
-            aliases: [imported.name],
-            attributes: { specifier: imported.name },
-            proofIds: [proof],
-          });
-          context.state.addRelation({
-            from: fileEntity,
-            to: module,
-            kind: 'imports',
-            confidence: 'medium',
-            proofIds: [proof],
-          });
+          const localTarget = resolveLocalImportTarget(file, imported.name, usableFiles);
+          if (localTarget) {
+            const targetArtifact = context.state.artifactPath(localTarget, project);
+            context.state.addRelation({
+              from: fileEntity,
+              to: stableId('file', `file:${project.id}:${targetArtifact}`),
+              kind: 'imports',
+              confidence: 'high',
+              proofIds: [proof],
+            });
+          } else {
+            const unresolvedLocal = imported.name.startsWith('.');
+            if (unresolvedLocal) unresolvedLocalImports += 1;
+            const module = context.state.addEntity({
+              kind: 'module',
+              key: `module:${project.id}:${imported.name}`,
+              label: imported.name,
+              projectId: project.id,
+              aliases: [imported.name],
+              attributes: {
+                specifier: imported.name,
+                resolution: unresolvedLocal ? 'unresolved-local' : 'external',
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: fileEntity,
+              to: module,
+              kind: 'imports',
+              confidence: unresolvedLocal ? 'low' : 'medium',
+              proofIds: [proof],
+            });
+          }
         }
 
         if (symbolCount < 500) {
@@ -1060,6 +1147,15 @@ const sourceStructureProvider: Provider = {
           message: `Source extraction for ${project.id} reached its bounded inventory limit.`,
           recommendation:
             'Use the standalone graph package provider configuration for deeper symbol indexing.',
+        });
+      }
+      if (unresolvedLocalImports > 0) {
+        context.state.diagnostics.push({
+          code: 'graph.provider.source_structure.unresolved_local_imports',
+          severity: 'warning',
+          message: `${unresolvedLocalImports} local import(s) in ${project.id} could not be resolved to an indexed source file.`,
+          recommendation:
+            'Check path aliases, generated sources, extension mapping, or provider limits before treating the import graph as complete.',
         });
       }
     }
@@ -2129,6 +2225,58 @@ function reconcileCrossProviderEvidence(state: KnowledgeGraphState): void {
   }
 }
 
+function bindingCoverage(eligibleIds: readonly string[], boundIds: ReadonlySet<string>) {
+  const eligible = [...new Set(eligibleIds)];
+  const boundCount = eligible.filter((id) => boundIds.has(id)).length;
+  return {
+    eligibleCount: eligible.length,
+    boundCount,
+    unknownCount: eligible.length - boundCount,
+    coverageRatio: eligible.length === 0 ? null : boundCount / eligible.length,
+  };
+}
+
+function calculateBindingCoverage(
+  entities: readonly WorkspaceKnowledgeEntity[],
+  relations: readonly WorkspaceKnowledgeRelation[]
+): NonNullable<WorkspaceKnowledgeGraph['quality']['bindingCoverage']> {
+  const projectIds = entities
+    .filter((entity) => entity.kind === 'project')
+    .map((entity) => entity.id);
+  const endpointIds = entities
+    .filter((entity) => entity.kind === 'endpoint')
+    .map((entity) => entity.id);
+  const implementedEndpoints = new Set(
+    relations
+      .filter((relation) => relation.kind === 'implements')
+      .flatMap((relation) => [relation.from, relation.to])
+  );
+  const testedProjects = new Set(
+    relations
+      .filter((relation) => relation.kind === 'tests')
+      .flatMap((relation) => [relation.from, relation.to])
+      .filter((id) => projectIds.includes(id))
+  );
+  const deployedProjects = new Set(
+    relations
+      .filter((relation) => relation.kind === 'deploys')
+      .flatMap((relation) => [relation.from, relation.to])
+      .filter((id) => projectIds.includes(id))
+  );
+  const ownedProjects = new Set(
+    relations
+      .filter((relation) => relation.kind === 'owns')
+      .flatMap((relation) => [relation.from, relation.to])
+      .filter((id) => projectIds.includes(id))
+  );
+  return {
+    apiImplementation: bindingCoverage(endpointIds, implementedEndpoints),
+    projectTests: bindingCoverage(projectIds, testedProjects),
+    projectDeployment: bindingCoverage(projectIds, deployedProjects),
+    projectOwnership: bindingCoverage(projectIds, ownedProjects),
+  };
+}
+
 export async function buildWorkspaceKnowledgeGraph(
   options: BuildWorkspaceKnowledgeGraphOptions
 ): Promise<WorkspaceKnowledgeGraph> {
@@ -2230,17 +2378,7 @@ export async function buildWorkspaceKnowledgeGraph(
   return {
     schemaVersion: WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
     generatedAt: now.toISOString(),
-    source: options.source ?? {
-      kind: 'workspace-sources',
-      artifact: '.',
-      hashAlgorithm: 'sha256',
-      hash: hashCanonicalJson({
-        workspace: options.workspace,
-        projects: options.projects,
-        projectTopology: options.projectTopology,
-        contract: options.contract ?? null,
-      }),
-    },
+    source: options.source,
     workspace: options.workspace,
     projectTopology: options.projectTopology,
     entities,
@@ -2259,6 +2397,7 @@ export async function buildWorkspaceKnowledgeGraph(
         .length,
       unknownCount: state.diagnostics.filter((diagnostic) => diagnostic.code.includes('unknown'))
         .length,
+      bindingCoverage: calculateBindingCoverage(entities, relations),
       portable: true,
       secretValuesEmitted: false,
     },

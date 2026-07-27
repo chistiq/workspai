@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-run-last.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-run-last.v1.json",
   "title": "Workspai Workspace Run Evidence",
   "type": "object",
   "required": [

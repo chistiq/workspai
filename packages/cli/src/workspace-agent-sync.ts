@@ -323,6 +323,8 @@ export type SyncWorkspaceAgentGroundingOptions = {
   dryRun?: boolean;
   strict?: boolean;
   staleAfterHours?: number;
+  /** Injectable clock for deterministic freshness evaluation and transactional previews. */
+  now?: Date;
   refreshContext?: boolean;
   experimentalHooks?: boolean;
   /** Hydrate matching Workspai prompts, while keeping legacy rapidkit prompt mirrors available. */
@@ -363,12 +365,28 @@ function extractBlockersFromReport(raw: Record<string, unknown>): string[] {
 }
 
 function reportGeneratedAt(raw: Record<string, unknown>): string | undefined {
-  for (const key of ['generatedAt', 'timestamp'] as const) {
+  for (const key of ['generatedAt', 'updatedAt', 'timestamp'] as const) {
     const value = raw[key];
     if (typeof value === 'string' && value.trim()) {
       return value.trim();
     }
   }
+
+  // History is an append-only evidence ledger. By contract its freshness is
+  // carried by the newest entry, not by a mutable top-level timestamp.
+  if (Array.isArray(raw.entries)) {
+    const timestamps = raw.entries
+      .map((entry) => asRecord(entry)?.generatedAt)
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => value.trim())
+      .filter((value) => Number.isFinite(Date.parse(value)));
+    if (timestamps.length > 0) {
+      return timestamps.reduce((latest, candidate) =>
+        Date.parse(candidate) > Date.parse(latest) ? candidate : latest
+      );
+    }
+  }
+
   return undefined;
 }
 
@@ -1330,7 +1348,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
   options: SyncWorkspaceAgentGroundingOptions
 ): Promise<AgentGroundingSyncResult> {
   const workspacePath = path.resolve(options.workspacePath);
-  const now = new Date();
+  const now = options.now ?? new Date();
   const staleAfterHours = options.staleAfterHours ?? 24;
   const selectedTargets = normalizeTargets(options.targets);
   const selectedTargetList = [...selectedTargets].sort();

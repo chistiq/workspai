@@ -13,6 +13,21 @@ export type DoctorRepairRisk = 'safe' | 'guarded' | 'invasive';
 
 export type DoctorRepairCapabilityStatus = 'available' | 'manual' | 'blocked';
 
+export interface DoctorCommandInvocation {
+  cwd: string;
+  executable: string;
+  args: string[];
+}
+
+export interface DoctorRepairStrategyStage {
+  id: string;
+  kind: 'diagnose' | 'safe-fix' | 'targeted-upgrade' | 'verify' | 'exception-review';
+  description: string;
+  risk: DoctorRepairRisk;
+  invocation?: DoctorCommandInvocation;
+  continueWhen: 'always' | 'previous-passed' | 'blocker-remains' | 'manual-decision';
+}
+
 export type DoctorRepairOperation =
   | {
       type: 'file-create';
@@ -76,6 +91,8 @@ export interface DoctorRepairCapability {
   requiresReview: boolean;
   files: string[];
   command?: string;
+  invocation?: DoctorCommandInvocation;
+  strategy?: DoctorRepairStrategyStage[];
   operation?: DoctorRepairOperation;
   verifyCommand?: string;
   refreshCommands: string[];
@@ -386,6 +403,11 @@ export function buildCommandRepairCapability(input: {
   title: string;
   projectPath: string;
   command: string;
+  invocation?: {
+    executable: string;
+    args: string[];
+  };
+  strategy?: DoctorRepairStrategyStage[];
   files: string[];
   reason: string;
   fixKind?: DoctorRepairFixKind;
@@ -406,6 +428,16 @@ export function buildCommandRepairCapability(input: {
     requiresReview: input.requiresReview ?? true,
     files: input.files.map((file) => path.join(input.projectPath, file)),
     command: `cd ${quoteForShell(input.projectPath)} && ${input.command}`,
+    ...(input.invocation
+      ? {
+          invocation: {
+            cwd: input.projectPath,
+            executable: input.invocation.executable,
+            args: [...input.invocation.args],
+          },
+        }
+      : {}),
+    ...(input.strategy ? { strategy: input.strategy.map((stage) => ({ ...stage })) } : {}),
     verifyCommand: 'npx workspai doctor project --json',
     refreshCommands: ['npx workspai doctor project --json', 'npx workspai workspace verify --json'],
     reason: input.reason,

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://workspai.dev/schemas/agent-customization-pack-report.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/agent-customization-pack-report.v1.json",
   "title": "Workspai Agent Customization Pack Report",
   "type": "object",
   "additionalProperties": false,

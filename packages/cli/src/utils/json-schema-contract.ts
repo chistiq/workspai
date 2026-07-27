@@ -8,6 +8,36 @@ import addFormats from 'ajv-formats';
 import type { AnySchema, ErrorObject, ValidateFunction } from 'ajv';
 
 const validatorCache = new Map<string, ValidateFunction>();
+const WORKSPAI_CONTRACT_BASE_URLS = [
+  'https://workspai.dev/schemas/',
+  'https://workspai.dev/contracts/',
+] as const;
+
+function localContractReference(
+  reference: string,
+  relativeContractPath: string
+): string | undefined {
+  const workspaiBaseUrl = WORKSPAI_CONTRACT_BASE_URLS.find((baseUrl) =>
+    reference.startsWith(baseUrl)
+  );
+  if (workspaiBaseUrl) {
+    const contractPath = decodeURIComponent(reference.slice(workspaiBaseUrl.length));
+    const pathSegments = contractPath.split('/');
+    if (
+      !contractPath ||
+      path.isAbsolute(contractPath) ||
+      contractPath.includes('\\') ||
+      contractPath.includes('\0') ||
+      contractPath.includes('?') ||
+      pathSegments.some((segment) => segment === '..' || segment === '.')
+    ) {
+      throw new Error(`Unsafe Workspai JSON Schema reference: ${reference}`);
+    }
+    return `contracts/${contractPath}`;
+  }
+  if (/^https?:\/\//i.test(reference)) return undefined;
+  return path.join(path.dirname(relativeContractPath), reference).split(path.sep).join('/');
+}
 
 function externalSchemaRefs(value: unknown, refs = new Set<string>()): Set<string> {
   if (Array.isArray(value)) {
@@ -32,11 +62,9 @@ function registerReferencedSchemas(
   visited = new Set<string>()
 ): void {
   for (const reference of externalSchemaRefs(schema)) {
-    if (!reference || /^https?:\/\//i.test(reference)) continue;
-    const referencedRelativePath = path
-      .join(path.dirname(relativeContractPath), reference)
-      .split(path.sep)
-      .join('/');
+    if (!reference) continue;
+    const referencedRelativePath = localContractReference(reference, relativeContractPath);
+    if (!referencedRelativePath) continue;
     const referencedPath = resolveContractPath(referencedRelativePath);
     if (visited.has(referencedPath)) continue;
     visited.add(referencedPath);
@@ -70,13 +98,15 @@ function validatorFor(relativeContractPath: string): ValidateFunction {
     $ref?: string;
   };
   if (typeof schema.$ref === 'string' && !schema.$ref.startsWith('#')) {
-    const referencedRelativePath = path
-      .join(path.dirname(relativeContractPath), schema.$ref)
-      .split(path.sep)
-      .join('/');
-    const validator = validatorFor(referencedRelativePath);
-    validatorCache.set(contractPath, validator);
-    return validator;
+    const referencedRelativePath = localContractReference(
+      schema.$ref.split('#', 1)[0] ?? schema.$ref,
+      relativeContractPath
+    );
+    if (referencedRelativePath) {
+      const validator = validatorFor(referencedRelativePath);
+      validatorCache.set(contractPath, validator);
+      return validator;
+    }
   }
   const AjvConstructor = schema.$schema?.includes('2020-12') ? Ajv2020 : Ajv;
   const ajv = new AjvConstructor({ allErrors: true, strict: true, allowUnionTypes: true });

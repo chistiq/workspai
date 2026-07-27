@@ -13,6 +13,7 @@ import addFormats from 'ajv-formats';
 const packageRoot = process.cwd();
 const cliPath = path.join(packageRoot, 'dist', 'index.js');
 const chainPath = path.join(packageRoot, 'contracts', 'workspace-intelligence-chain.v1.json');
+const contractsRoot = path.join(packageRoot, 'contracts');
 
 function fail(message) {
   throw new Error(`[workspace-intelligence-runtime] ${message}`);
@@ -22,17 +23,46 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function buildSchemaPathIndex(directory) {
+  const schemas = new Map();
+  const visit = (currentDirectory) => {
+    for (const entry of fs.readdirSync(currentDirectory, { withFileTypes: true })) {
+      const absolutePath = path.join(currentDirectory, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolutePath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      const schema = readJson(absolutePath);
+      if (typeof schema.$id !== 'string' || schema.$id.length === 0) continue;
+      const existing = schemas.get(schema.$id);
+      if (existing && existing !== absolutePath) {
+        fail(
+          `duplicate schema $id ${schema.$id}: ${path.relative(packageRoot, existing)} and ${path.relative(packageRoot, absolutePath)}`
+        );
+      }
+      schemas.set(schema.$id, absolutePath);
+    }
+  };
+  visit(directory);
+  return schemas;
+}
+
+const schemaPathById = buildSchemaPathIndex(contractsRoot);
+
 function registerRelativeSchemaDependencies(ajv, schema, schemaPath, visited = new Set()) {
   const visit = (value) => {
     if (!value || typeof value !== 'object') return;
     if (typeof value.$ref === 'string' && !value.$ref.startsWith('#')) {
-      let referencePath;
+      let referenceId;
       try {
-        const referenceUrl = new URL(value.$ref, schema.$id);
-        referencePath = path.join(path.dirname(schemaPath), path.basename(referenceUrl.pathname));
+        referenceId = new URL(value.$ref, schema.$id).href.split('#')[0];
       } catch {
-        referencePath = path.resolve(path.dirname(schemaPath), value.$ref.split('#')[0]);
+        referenceId = value.$ref.split('#')[0];
       }
+      const referencePath =
+        schemaPathById.get(referenceId) ??
+        path.resolve(path.dirname(schemaPath), value.$ref.split('#')[0]);
       if (fs.existsSync(referencePath)) {
         const normalizedPath = path.resolve(referencePath);
         if (!visited.has(normalizedPath)) {

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import type { Command } from 'commander';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { syncWorkspaceFoundationFiles } from '../create.js';
@@ -63,6 +64,15 @@ import {
 } from '../workspace.js';
 
 const temporaryDirectories: string[] = [];
+
+function resetProgramOptionState(command: Command = program): void {
+  for (const option of command.options) {
+    command.setOptionValueWithSource(option.attributeName(), option.defaultValue, 'default');
+  }
+  for (const child of command.commands) {
+    resetProgramOptionState(child);
+  }
+}
 
 async function createWorkspaceFixture(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-index-coverage-'));
@@ -132,6 +142,7 @@ async function createWorkspaceFixture(): Promise<string> {
 }
 
 async function runWorkspaceCommand(root: string, args: string[]): Promise<void> {
+  resetProgramOptionState();
   process.argv = ['node', 'workspai', 'workspace', ...args];
   await program.parseAsync(['workspace', ...args], { from: 'user' });
 }
@@ -147,6 +158,7 @@ async function runWorkspaceCommandExpectExit(
 }
 
 async function runTopLevelCommand(args: string[]): Promise<void> {
+  resetProgramOptionState();
   process.argv = ['node', 'workspai', ...args];
   await program.parseAsync(args, { from: 'user' });
 }
@@ -362,8 +374,10 @@ describe.sequential('in-process workspace Commander coverage', () => {
     await runWorkspaceCommand(root, ['graph', 'explain', 'api', '--workspace', root]);
     await runWorkspaceCommand(root, ['graph', 'explain', 'api', '--workspace', root, '--json']);
     await runWorkspaceCommand(root, ['watch', '--workspace', root, '--once']);
+    await runWorkspaceCommand(root, ['watch', '--workspace', root, '--once', '--graph-stream']);
     await runWorkspaceCommand(root, ['sync', '--workspace', root]);
     await runWorkspaceCommand(root, ['explain', 'release-blocked', '--workspace', root, '--write']);
+    await runWorkspaceCommand(root, ['explain', '--workspace', root, '--write', '--json']);
     await runWorkspaceCommand(root, ['trace', '--workspace', root, '--from', diff, '--write']);
     await runWorkspaceCommand(root, ['agent-sync', '--workspace', root, '--dry-run']);
 
@@ -437,7 +451,7 @@ describe.sequential('in-process workspace Commander coverage', () => {
     await runWorkspaceCommandExpectExit(root, ['unknown', '--workspace', root, '--json'], 1);
   }, 60_000);
 
-  it('executes top-level governance, snapshot, project, and validation callbacks', async () => {
+  it('executes top-level dry-run and workspace creation callbacks', async () => {
     await runTopLevelCommand([
       'coverage-dry-run',
       '--dry-run',
@@ -455,6 +469,9 @@ describe.sequential('in-process workspace Commander coverage', () => {
       '--output',
       root,
     ]);
+  }, 30_000);
+
+  it('executes top-level project creation callbacks', async () => {
     await runTopLevelCommand([
       'legacy-go-coverage',
       '--template',
@@ -465,6 +482,9 @@ describe.sequential('in-process workspace Commander coverage', () => {
       '--no-workspace',
       '--no-update-check',
     ]);
+  }, 30_000);
+
+  it('executes top-level discovery, help, configuration, and AI callbacks', async () => {
     await runTopLevelCommand(['commands', '--json']);
     await runTopLevelCommand(['commands']);
     printHelp();
@@ -474,11 +494,17 @@ describe.sequential('in-process workspace Commander coverage', () => {
     await runTopLevelCommand(['config', 'show']);
     await runTopLevelCommand(['ai', 'info']);
     await runTopLevelCommand(['ai', 'recommend', 'authentication api', '--number', '3', '--json']);
+  }, 30_000);
+
+  it('executes top-level infrastructure and governance callbacks', async () => {
     await runTopLevelCommand(['infra', 'plan', '--json']);
     await runTopLevelCommandAllowExit(['infra', 'status', '--json'], [1]);
     await runTopLevelCommand(['analyze', '--workspace', root, '--json']);
     await runTopLevelCommand(['readiness', '--workspace', root, '--json', '--skip-verify']);
-    await runTopLevelCommand(['doctor', 'workspace', '--workspace', root, '--json']);
+  }, 30_000);
+
+  it('executes top-level doctor profiles and shell callbacks', async () => {
+    await runTopLevelCommandAllowExit(['doctor', 'workspace', '--workspace', root, '--json'], [1]);
     for (const profile of ['local', 'ci', 'release', 'enterprise-strict']) {
       await runTopLevelCommandAllowExit(
         ['doctor', 'workspace', '--workspace', root, '--json', '--profile', profile],
@@ -489,9 +515,9 @@ describe.sequential('in-process workspace Commander coverage', () => {
       ['doctor', 'workspace', '--workspace', root, '--json', '--plan'],
       [1, 2]
     );
-    await runTopLevelCommand(['doctor', '--json']);
+    await runTopLevelCommandAllowExit(['doctor', '--json'], [1]);
     process.chdir(path.join(root, 'api'));
-    await runTopLevelCommand(['doctor', 'project', '--json']);
+    await runTopLevelCommandAllowExit(['doctor', 'project', '--json'], [1]);
     process.chdir(root);
     await runTopLevelCommandExpectExit(['shell', 'unknown'], 1);
     await runTopLevelCommandExpectExit(['shell', 'activate'], 1);
@@ -500,7 +526,9 @@ describe.sequential('in-process workspace Commander coverage', () => {
     await fs.mkdir(path.dirname(venvActivate), { recursive: true });
     await fs.writeFile(venvActivate, '# fixture\n');
     await runTopLevelCommand(['shell', 'activate']);
+  }, 60_000);
 
+  it('executes top-level snapshot, project lifecycle, and validation callbacks', async () => {
     await runTopLevelCommand([
       'snapshot',
       'create',
@@ -1274,6 +1302,28 @@ describe.sequential('in-process workspace Commander coverage', () => {
     ]);
     await expect(fs.stat(path.join(root, 'imported-app'))).rejects.toThrow();
   }, 60_000);
+
+  it('copies a finalized evaluation to the requested output and reports that path', async () => {
+    await runWorkspaceCommand(root, [
+      'eval',
+      'init',
+      'custom-output-contract',
+      'workspace-intelligence',
+      '--json',
+    ]);
+    const relativeOutput = '.workspai/reports/custom-evaluation.json';
+    logSpy.mockClear();
+
+    await runWorkspaceCommand(root, ['eval', 'report', '--output', relativeOutput, '--json']);
+
+    const expectedOutput = path.join(root, relativeOutput);
+    await expect(fs.stat(expectedOutput)).resolves.toBeDefined();
+    const jsonOutput = logSpy.mock.calls
+      .map(([value]) => String(value))
+      .find((value) => value.includes('"operation": "workspace eval report"'));
+    expect(jsonOutput).toBeTruthy();
+    expect(JSON.parse(jsonOutput!)).toMatchObject({ outputPath: expectedOutput });
+  });
 
   it('audits a heterogeneous enterprise workspace across every supported runtime', async () => {
     const fixtures = [

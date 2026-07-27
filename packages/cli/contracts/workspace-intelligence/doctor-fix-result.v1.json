@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "rapidkit-doctor-fix-result-v1",
-  "title": "Doctor fix execution result",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/doctor-fix-result.v1.json",
+  "title": "Workspai Doctor Fix Execution Result",
   "type": "object",
   "additionalProperties": true,
   "required": [

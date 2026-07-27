@@ -30,6 +30,29 @@ describe('workspace intelligence architecture contract', () => {
       'agent-sync',
       'explain',
     ]);
+    expect(contract.architectureCore.modelGraphRelationship).toEqual({
+      direction: 'workspace-sources -> workspace-model -> workspace-knowledge-graph',
+      canonicalAuthority: {
+        artifact: '.workspai/reports/workspace-model.json',
+        schemaVersion: 'workspace-model.v1',
+      },
+      derivedRepresentation: {
+        artifact: '.workspai/reports/workspace-knowledge-graph.json',
+        schemaVersion: 'workspace-knowledge-graph.v1',
+      },
+      sourceBinding: {
+        kind: 'workspace-model',
+        artifact: '.workspai/reports/workspace-model.json',
+        hashAlgorithm: 'sha256',
+        hashSemantics: 'stable structural model projection',
+      },
+      inventoryRule: 'reconcile discovered, imported, adopted, and contract-declared projects',
+      missingProjectRule: 'preserve a contract-declared missing project as a validation warning',
+      topologyRule: 'knowledge graph project topology must match the canonical model topology',
+      publication: 'one locked rollback-capable artifact transaction',
+      mutationRule: 'knowledge graph enrichment never mutates the authorizing model during a run',
+      staleConsumerRule: 'reject a graph whose source binding does not match the current model',
+    });
 
     expect(contract.workspaceLifecycle.ingestionRoutes.map((route) => route.id)).toEqual([
       'create',

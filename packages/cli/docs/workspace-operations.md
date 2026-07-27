@@ -137,6 +137,14 @@ queryable through the read-mostly MCP server. This keeps CLI, CI, IDE and agent
 consumers on one contract revision without injecting the full graph into every
 agent prompt.
 
+The relationship is one-way and contract-enforced: the Workspace Model owns the
+canonical project boundary and compact dependency topology; providers enrich
+that inventory into the Knowledge Graph. The graph source kind and artifact
+path are fixed to the model, its source hash identifies the stable structural
+model projection, and persisted current-state consumers reject a mismatched
+graph. `workspace contract graph` follows the same model-first build path; it
+does not create a competing contract- or source-owned Knowledge Graph.
+
 The overlay follows
 `workspace-knowledge-graph-change-overlay.v1`: graph revisions are identified
 by content-derived fingerprints (timestamps do not create false changes), and

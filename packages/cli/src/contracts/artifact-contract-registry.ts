@@ -86,6 +86,11 @@ const supplementalDescriptors: WorkspaceArtifactContractInput[] = [
     contractPath: 'contracts/doctor-project-evidence.v1.json',
   },
   {
+    artifactPath: '.workspai/reports/project-test-coverage-last-run.json',
+    schemaVersion: 'workspai.project-test-coverage.v1',
+    contractPath: 'contracts/project-test-coverage.v1.json',
+  },
+  {
     artifactPath: '.workspai/reports/doctor-remediation-plan-last-run.json',
     schemaVersion: 'doctor-remediation-plan-v2',
     contractPath: 'contracts/doctor-remediation-plan.v2.json',
@@ -122,6 +127,11 @@ const supplementalDescriptors: WorkspaceArtifactContractInput[] = [
   },
   {
     artifactPath: '.workspai/reports/workspai-mcp-design.json',
+    schemaVersion: 'workspai-mcp-design.v1',
+    contractPath: 'contracts/workspace-intelligence/mcp-design.v1.json',
+  },
+  {
+    artifactPath: '.workspai/reports/rapidkit-mcp-design.json',
     schemaVersion: 'workspai-mcp-design.v1',
     contractPath: 'contracts/workspace-intelligence/mcp-design.v1.json',
   },
@@ -169,6 +179,7 @@ const SUPPLEMENTAL_ARTIFACT_PRODUCERS: Readonly<Record<string, readonly string[]
   '.workspai/reports/transparency-evidence.latest.json': [['mirror', 'sync']],
   '.workspai/reports/share-bundle.json': [['workspace', 'share']],
   '.workspai/reports/doctor-project-last-run.json': [['doctor', 'project']],
+  '.workspai/reports/project-test-coverage-last-run.json': [['project', 'coverage']],
   '.workspai/reports/doctor-remediation-plan-last-run.json': [['workspace', 'remediation-plan']],
   '.workspai/reports/artifact-remediation-plan-last-run.json': [['workspace', 'remediation-plan']],
   '.workspai/reports/doctor-fix-result-last-run.json': [['doctor', 'workspace']],
@@ -177,6 +188,7 @@ const SUPPLEMENTAL_ARTIFACT_PRODUCERS: Readonly<Record<string, readonly string[]
   '.workspai/reports/autopilot-release.json': [['autopilot', 'release']],
   '.workspai/reports/workspace-run-last.json': [['workspace', 'run']],
   '.workspai/reports/workspai-mcp-design.json': [['workspace', 'agent-sync', '--write']],
+  '.workspai/reports/rapidkit-mcp-design.json': [['workspace', 'agent-sync', '--write']],
   '.workspai/reports/workspace-why-last-run.json': [['workspace', 'why']],
   '.workspai/reports/workspace-trace-last-run.json': [['workspace', 'trace']],
   '.vscode/workspai-agent-hooks.json': [['workspace', 'agent-sync']],
@@ -220,6 +232,14 @@ const WORKSPACE_ARTIFACT_PATTERN_CONTRACTS = [
     pattern: /^\.workspai\/reports\/transparency-evidence-[^/]+\.json$/,
     canonicalPath: '.workspai/reports/transparency-evidence.latest.json',
   },
+  {
+    pattern: /^\.workspai\/reports\/projects\/[^/]+\/doctor-project-last-run\.json$/,
+    canonicalPath: '.workspai/reports/doctor-project-last-run.json',
+  },
+  {
+    pattern: /^\.workspai\/reports\/projects\/[^/]+\/project-test-coverage-last-run\.json$/,
+    canonicalPath: '.workspai/reports/project-test-coverage-last-run.json',
+  },
 ] as const;
 
 export function workspaceArtifactContractFor(
@@ -239,8 +259,16 @@ export function assertWorkspaceArtifactContract(
   payload: unknown,
   artifactLabel = artifactPath
 ): void {
+  const normalized = normalizeArtifactPath(artifactPath);
   const descriptor = workspaceArtifactContractFor(artifactPath);
-  if (!descriptor) return;
+  if (!descriptor) {
+    if (normalized.startsWith('.workspai/reports/') && normalized.endsWith('.json')) {
+      throw new Error(
+        `${artifactLabel} is a public workspace report without a registered artifact contract`
+      );
+    }
+    return;
+  }
 
   const schemaVersionField = descriptor.schemaVersionField ?? 'schemaVersion';
   const schemaVersion =

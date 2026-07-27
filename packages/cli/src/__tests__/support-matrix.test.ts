@@ -62,6 +62,8 @@ describe('support matrix', () => {
       'kotlin',
       'deno',
       'bun',
+      'c',
+      'cpp',
     ]) {
       const support = getRuntimeSupport(runtime);
       const commands = buildRuntimeCommandSupport({ runtime, moduleSupport: false });

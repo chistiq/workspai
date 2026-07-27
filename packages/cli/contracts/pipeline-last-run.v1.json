@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/pipeline-last-run.v1.json",
-  "title": "RapidKit Governance Pipeline Last Run",
+  "$id": "https://workspai.dev/schemas/pipeline-last-run.v1.json",
+  "title": "Workspai Governance Pipeline Last Run",
   "type": "object",
   "required": [
     "schemaVersion",

@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/compatibility-matrix.v1.json",
+  "title": "Workspai Compatibility Matrix",
   "type": "object",
   "required": [
     "schemaVersion",

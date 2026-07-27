@@ -11,6 +11,10 @@ import {
   WORKSPACE_INTELLIGENCE_SUBCOMMANDS,
   WORKSPACE_SUBCOMMANDS,
 } from '../../utils/workspace-command-surface';
+import {
+  WORKSPACE_ACTION_CONTRACTS,
+  workspaceActionFlagDescription,
+} from '../../contracts/workspace-action-contract';
 
 type RuntimeSurfaceContract = {
   schemaVersion: string;
@@ -42,6 +46,15 @@ type RuntimeSurfaceContract = {
     producerCommands: string[][];
   }>;
   workspaceSubcommands: string[];
+  workspaceActions: Array<{
+    id: string;
+    usage: string;
+    summary: string;
+    options: Array<{ flag: string; description: string }>;
+    subactions: string[];
+    artifact: string | null;
+    examples: string[];
+  }>;
   workspaceIntelligenceSubcommands: string[];
   moduleMutationCommands: string[];
   globalCommands: string[];
@@ -135,6 +148,29 @@ describe('shared runtime command surface contract (npm)', () => {
         'mcp',
       ])
     );
+  });
+
+  it('publishes command-specific workspace usage, options, modes, and evidence from one registry', () => {
+    const contract = readContract();
+
+    expect(contract.workspaceActions).toEqual(
+      WORKSPACE_SUBCOMMANDS.map((id) => {
+        const descriptor = WORKSPACE_ACTION_CONTRACTS[id];
+        return {
+          id,
+          usage: descriptor.usage,
+          summary: descriptor.summary,
+          options: descriptor.flags.map((flag) => ({
+            flag,
+            description: workspaceActionFlagDescription(flag),
+          })),
+          subactions: 'subactions' in descriptor ? [...descriptor.subactions] : [],
+          artifact: 'artifact' in descriptor ? descriptor.artifact : null,
+          examples: [...descriptor.examples],
+        };
+      })
+    );
+    expect(contract.workspaceActions.map((entry) => entry.id)).toEqual([...WORKSPACE_SUBCOMMANDS]);
   });
 
   it('publishes the complete npm-owned root and scoped command surface', async () => {

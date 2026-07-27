@@ -1,15 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/blocker-resolution.v1.json",
-  "title": "RapidKit Blocker Resolution Hint",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/blocker-resolution.v1.json",
+  "title": "Workspai Blocker Resolution Hint",
   "type": "object",
-  "required": [
-    "schemaVersion",
-    "blockerId",
-    "resolutionClass",
-    "blockerSignature",
-    "fixHints"
-  ],
+  "required": ["schemaVersion", "blockerId", "resolutionClass", "blockerSignature", "fixHints"],
   "properties": {
     "schemaVersion": {
       "const": "rapidkit-blocker-resolution-v1"

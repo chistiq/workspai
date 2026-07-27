@@ -10,7 +10,9 @@ import {
   buildMakefileTargetRepairCapability,
   buildPackageScriptRepairCapability,
   type DoctorRepairCapability,
+  type DoctorRepairStrategyStage,
 } from './doctor-repair-capabilities.js';
+import type { DoctorDependencyAuditEvidence } from './doctor-dependency-audit.js';
 
 export type DoctorSurfaceRuntimeFamily =
   | 'python'
@@ -25,6 +27,10 @@ export type DoctorSurfaceRuntimeFamily =
   | 'php'
   | 'ruby'
   | 'dotnet'
+  | 'scala'
+  | 'kotlin'
+  | 'c'
+  | 'cpp'
   | 'unknown';
 
 export type DoctorSurfaceProjectKind = 'backend' | 'frontend' | 'fullstack' | 'generic';
@@ -49,6 +55,7 @@ type SurfaceInput = {
   hasTests?: boolean;
   hasDocker?: boolean;
   vulnerabilities?: number;
+  dependencyAudit?: DoctorDependencyAuditEvidence;
 };
 
 const DEPENDENCY_LOCKFILES: Record<DoctorSurfaceRuntimeFamily, string[]> = {
@@ -64,6 +71,10 @@ const DEPENDENCY_LOCKFILES: Record<DoctorSurfaceRuntimeFamily, string[]> = {
   php: ['composer.lock'],
   ruby: ['Gemfile.lock'],
   dotnet: ['packages.lock.json', 'Directory.Packages.props'],
+  scala: ['project/build.properties', 'project/plugins.sbt'],
+  kotlin: ['gradle.lockfile', 'gradle/libs.versions.toml'],
+  c: ['conan.lock', 'vcpkg-lock.json'],
+  cpp: ['conan.lock', 'vcpkg-lock.json'],
   unknown: [],
 };
 
@@ -80,6 +91,10 @@ const DEPENDENCY_MANIFESTS: Record<DoctorSurfaceRuntimeFamily, string[]> = {
   php: ['composer.json'],
   ruby: ['Gemfile'],
   dotnet: ['*.csproj', '*.sln'],
+  scala: ['build.sbt'],
+  kotlin: ['build.gradle', 'build.gradle.kts', 'pom.xml'],
+  c: ['CMakeLists.txt', 'meson.build', 'Makefile'],
+  cpp: ['CMakeLists.txt', 'meson.build', 'Makefile'],
   unknown: [],
 };
 
@@ -117,7 +132,6 @@ type RuntimeCommandContract = {
 
 function normalizeRuntime(runtime: string | undefined): DoctorSurfaceRuntimeFamily {
   if (!runtime) return 'unknown';
-  if (runtime === 'bun') return 'node';
   if (
     runtime === 'python' ||
     runtime === 'node' ||
@@ -127,9 +141,14 @@ function normalizeRuntime(runtime: string | undefined): DoctorSurfaceRuntimeFami
     runtime === 'elixir' ||
     runtime === 'clojure' ||
     runtime === 'deno' ||
+    runtime === 'bun' ||
     runtime === 'php' ||
     runtime === 'ruby' ||
-    runtime === 'dotnet'
+    runtime === 'dotnet' ||
+    runtime === 'scala' ||
+    runtime === 'kotlin' ||
+    runtime === 'c' ||
+    runtime === 'cpp'
   ) {
     return runtime;
   }
@@ -273,6 +292,25 @@ async function inferDependencyBaselineRepair(input: {
     };
   }
 
+  if (input.runtime === 'scala') {
+    return {
+      command: 'sbt update',
+      title: 'Prepare Scala dependency baseline',
+      files: ['build.sbt', 'project/build.properties', 'project/plugins.sbt'],
+      limitations: ['Review resolved dependency and plugin changes before committing.'],
+    };
+  }
+
+  if (input.runtime === 'kotlin') {
+    return {
+      command:
+        process.platform === 'win32' ? '.\\gradlew.bat dependencies' : './gradlew dependencies',
+      title: 'Prepare Kotlin dependency baseline',
+      files: ['build.gradle', 'build.gradle.kts', 'gradle.lockfile'],
+      limitations: ['Review resolved dependency and lockfile changes before committing.'],
+    };
+  }
+
   if (input.runtime === 'rust') {
     return {
       command: 'cargo fetch',
@@ -408,6 +446,50 @@ function runtimeCommandContract(input: {
   const makefileByRuntime: Partial<
     Record<DoctorSurfaceRuntimeFamily, Record<RuntimeCommandContractKind, RuntimeCommandContract>>
   > = {
+    deno: {
+      test: {
+        command: 'deno test --allow-none',
+        title: 'Define Deno test command',
+        targetName: 'test',
+        files: ['Makefile', 'deno.json', 'deno.jsonc'],
+      },
+      quality: {
+        command: 'deno fmt --check && deno lint',
+        title: 'Define Deno quality command',
+        targetName: 'quality',
+        files: ['Makefile', 'deno.json', 'deno.jsonc'],
+      },
+      security: {
+        command: 'deno info --json',
+        title: 'Define Deno dependency inspection command',
+        targetName: 'security',
+        files: ['Makefile', 'deno.json', 'deno.jsonc', 'deno.lock'],
+        limitations: [
+          'Pair dependency inspection with the organization vulnerability service used by CI.',
+        ],
+      },
+    },
+    bun: {
+      test: {
+        command: 'bun test',
+        title: 'Define Bun test script',
+        targetName: 'test',
+        files: ['package.json', 'bun.lock', 'bun.lockb'],
+      },
+      quality: {
+        command: 'bunx eslint .',
+        title: 'Define Bun quality script',
+        targetName: 'quality',
+        files: ['package.json'],
+        limitations: ['Ensure ESLint is declared before enforcing this command in CI.'],
+      },
+      security: {
+        command: 'bun audit',
+        title: 'Define Bun security audit script',
+        targetName: 'audit',
+        files: ['package.json', 'bun.lock', 'bun.lockb'],
+      },
+    },
     python: {
       test: {
         command: 'python -m pytest',
@@ -569,6 +651,139 @@ function runtimeCommandContract(input: {
         ],
       },
     },
+    elixir: {
+      test: {
+        command: 'mix test',
+        title: 'Define Elixir test command',
+        targetName: 'test',
+        files: ['Makefile', 'mix.exs'],
+      },
+      quality: {
+        command: 'mix format --check-formatted && mix credo --strict',
+        title: 'Define Elixir quality command',
+        targetName: 'quality',
+        files: ['Makefile', 'mix.exs', '.formatter.exs', 'credo.exs'],
+        limitations: ['Ensure Credo is declared before enforcing the strict quality command.'],
+      },
+      security: {
+        command: 'mix hex.audit',
+        title: 'Define Hex dependency audit command',
+        targetName: 'security',
+        files: ['Makefile', 'mix.exs', 'mix.lock'],
+      },
+    },
+    clojure: {
+      test: {
+        command: 'clojure -M:test',
+        title: 'Define Clojure test command',
+        targetName: 'test',
+        files: ['Makefile', 'deps.edn', 'project.clj'],
+        limitations: ['Align the alias with the test runner declared by the project.'],
+      },
+      quality: {
+        command: 'clj-kondo --lint src test',
+        title: 'Define Clojure quality command',
+        targetName: 'quality',
+        files: ['Makefile', 'deps.edn', 'project.clj'],
+        limitations: ['Ensure clj-kondo is provisioned before enforcing this command in CI.'],
+      },
+      security: {
+        command: 'clojure -Stree',
+        title: 'Define Clojure dependency inspection command',
+        targetName: 'security',
+        files: ['Makefile', 'deps.edn', 'project.clj'],
+        limitations: [
+          'Pair dependency-tree inspection with the vulnerability scanner selected by the organization.',
+        ],
+      },
+    },
+    scala: {
+      test: {
+        command: 'sbt test',
+        title: 'Define Scala test command',
+        targetName: 'test',
+        files: ['Makefile', 'build.sbt'],
+      },
+      quality: {
+        command: 'sbt scalafmtCheckAll scalafixAll',
+        title: 'Define Scala quality command',
+        targetName: 'quality',
+        files: ['Makefile', 'build.sbt', '.scalafmt.conf'],
+        limitations: ['Declare Scalafmt and Scalafix plugins before enforcing this command.'],
+      },
+      security: {
+        command: 'sbt dependencyTree',
+        title: 'Define Scala dependency inspection command',
+        targetName: 'security',
+        files: ['Makefile', 'build.sbt'],
+        limitations: ['Pair dependency inspection with the organization vulnerability scanner.'],
+      },
+    },
+    kotlin: {
+      test: {
+        command: './gradlew test',
+        title: 'Define Kotlin test command',
+        targetName: 'test',
+        files: ['Makefile', 'build.gradle', 'build.gradle.kts'],
+      },
+      quality: {
+        command: './gradlew check',
+        title: 'Define Kotlin quality command',
+        targetName: 'quality',
+        files: ['Makefile', 'build.gradle', 'build.gradle.kts'],
+      },
+      security: {
+        command: './gradlew dependencies',
+        title: 'Define Kotlin dependency inspection command',
+        targetName: 'security',
+        files: ['Makefile', 'build.gradle', 'build.gradle.kts'],
+        limitations: ['Pair dependency inspection with the organization vulnerability scanner.'],
+      },
+    },
+    c: {
+      test: {
+        command: 'ctest --test-dir build --output-on-failure',
+        title: 'Define C test command',
+        targetName: 'test',
+        files: ['Makefile', 'CMakeLists.txt'],
+      },
+      quality: {
+        command: 'clang-tidy src/**/*.c --',
+        title: 'Define C quality command',
+        targetName: 'quality',
+        files: ['Makefile', 'CMakeLists.txt', '.clang-tidy'],
+        limitations: ['Align source globs and compile database with the project build.'],
+      },
+      security: {
+        command: 'cmake --build build --target sbom',
+        title: 'Define C dependency evidence command',
+        targetName: 'security',
+        files: ['Makefile', 'CMakeLists.txt'],
+        limitations: ['Declare the SBOM target or replace it with the organization scanner.'],
+      },
+    },
+    cpp: {
+      test: {
+        command: 'ctest --test-dir build --output-on-failure',
+        title: 'Define C++ test command',
+        targetName: 'test',
+        files: ['Makefile', 'CMakeLists.txt'],
+      },
+      quality: {
+        command: 'clang-tidy src/**/*.cpp --',
+        title: 'Define C++ quality command',
+        targetName: 'quality',
+        files: ['Makefile', 'CMakeLists.txt', '.clang-tidy'],
+        limitations: ['Align source globs and compile database with the project build.'],
+      },
+      security: {
+        command: 'cmake --build build --target sbom',
+        title: 'Define C++ dependency evidence command',
+        targetName: 'security',
+        files: ['Makefile', 'CMakeLists.txt'],
+        limitations: ['Declare the SBOM target or replace it with the organization scanner.'],
+      },
+    },
   };
 
   return makefileByRuntime[input.runtime]?.[input.kind] ?? null;
@@ -609,7 +824,7 @@ async function buildRuntimeCommandRepairCapability(input: {
   });
   if (!contract) return undefined;
 
-  if (input.runtime === 'node' && input.packageJsonData) {
+  if ((input.runtime === 'node' || input.runtime === 'bun') && input.packageJsonData) {
     return buildPackageScriptRepairCapability({
       issueId: input.issueId,
       title: contract.title,
@@ -851,15 +1066,39 @@ async function buildKubernetesProbe(input: SurfaceInput): Promise<DoctorSurfaceP
   ];
   const hasSurface = await anyPathExists(input.projectPath, manifestCandidates);
   if (!hasSurface) {
+    const documentedOrManagedDeployment = [
+      'DEPLOYMENT.md',
+      'docs/deployment.md',
+      'docs/deploy.md',
+      'Procfile',
+      'fly.toml',
+      'render.yaml',
+      'railway.json',
+      'vercel.json',
+      'netlify.toml',
+      'serverless.yml',
+      'serverless.yaml',
+      'sst.config.ts',
+      'cdk.json',
+      'terraform',
+      'infra',
+    ];
+    const hasAlternativeSurface = await anyPathExists(
+      input.projectPath,
+      documentedOrManagedDeployment
+    );
     return {
       id: 'surface-deploy-contract',
       label: 'Deployment contract',
-      status: 'warn',
+      status: hasAlternativeSurface ? 'pass' : 'warn',
       severity: 'warn',
       scope: 'project-scoped',
-      reason: 'No Kubernetes/Helm/Kustomize deployment surface detected.',
-      recommendation:
-        input.projectKind === 'backend' || input.projectKind === 'fullstack'
+      reason: hasAlternativeSurface
+        ? 'A documented or provider-managed non-Kubernetes deployment surface was detected.'
+        : 'No declared deployment surface or deployment-path documentation was detected.',
+      recommendation: hasAlternativeSurface
+        ? undefined
+        : input.projectKind === 'backend' || input.projectKind === 'fullstack'
           ? 'Add deployment manifests or document the non-Kubernetes deployment path.'
           : 'Document the deployment path when this frontend is production-hosted.',
     };
@@ -918,19 +1157,115 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
     packageScripts['audit:security'] ||
     packageScripts['npm:audit']
   );
-  const vulnerabilityCount = Number(input.vulnerabilities ?? 0);
+  const dependencyAudit = input.dependencyAudit;
+  const vulnerabilityCount = Number(
+    dependencyAudit?.blockingFindingCount ??
+      dependencyAudit?.findingCount ??
+      input.vulnerabilities ??
+      0
+  );
   const hasVulnerabilities = vulnerabilityCount > 0;
+  const auditIsClean = dependencyAudit?.status === 'clean';
+  const auditIsUnavailable =
+    dependencyAudit?.status === 'tool-unavailable' ||
+    dependencyAudit?.status === 'unsupported' ||
+    dependencyAudit?.status === 'failed';
   const runtime = normalizeRuntime(input.runtimeFamily);
+  const npmShrinkwrapExists = await fsExtra.pathExists(
+    path.join(input.projectPath, 'npm-shrinkwrap.json')
+  );
+  const vulnerabilityFiles = [
+    'package.json',
+    'package-lock.json',
+    ...(npmShrinkwrapExists ? ['npm-shrinkwrap.json'] : []),
+  ];
+  const auditInvocation = dependencyAudit?.invocation;
+  const safeFixInvocation =
+    hasVulnerabilities &&
+    (dependencyAudit?.tool === 'npm audit' || (!dependencyAudit && runtime === 'node'))
+      ? {
+          cwd: input.projectPath,
+          executable: 'npm',
+          args: ['audit', 'fix', '--audit-level=moderate'],
+        }
+      : hasVulnerabilities && dependencyAudit?.tool === 'bun audit'
+        ? {
+            cwd: input.projectPath,
+            executable: 'bun',
+            args: ['update'],
+          }
+        : hasVulnerabilities && dependencyAudit?.tool === 'deno audit'
+          ? {
+              cwd: input.projectPath,
+              executable: 'deno',
+              args: ['audit', '--fix'],
+            }
+          : undefined;
+  const vulnerabilityStrategy: DoctorRepairStrategyStage[] | undefined = hasVulnerabilities
+    ? [
+        {
+          id: 'audit-live-state',
+          kind: 'diagnose' as const,
+          description:
+            'Read the current advisory graph and classify direct, transitive, fixable, and breaking findings.',
+          risk: 'safe' as const,
+          invocation: auditInvocation,
+          continueWhen: 'always',
+        },
+        ...(safeFixInvocation
+          ? [
+              {
+                id: 'apply-compatible-fixes',
+                kind: 'safe-fix' as const,
+                description:
+                  'Apply runtime-authored compatible dependency and lockfile updates without forcing breaking upgrades.',
+                risk: 'guarded' as const,
+                invocation: safeFixInvocation,
+                continueWhen: 'previous-passed' as const,
+              },
+            ]
+          : []),
+        {
+          id: 'upgrade-owning-dependencies',
+          kind: 'targeted-upgrade' as const,
+          description:
+            'Upgrade the smallest set of direct dependencies that own unresolved advisory paths, then run tests and build.',
+          risk: 'guarded' as const,
+          continueWhen: safeFixInvocation ? 'blocker-remains' : 'always',
+        },
+        {
+          id: 'recheck-advisory-graph',
+          kind: 'verify' as const,
+          description: 'Re-run the runtime-native audit and retain only unresolved advisory paths.',
+          risk: 'safe' as const,
+          invocation: auditInvocation,
+          continueWhen: 'blocker-remains',
+        },
+        {
+          id: 'review-unfixable-advisories',
+          kind: 'exception-review' as const,
+          description:
+            'For advisories without a compatible fix, require a time-bounded policy exception or an explicit replacement plan.',
+          risk: 'invasive' as const,
+          continueWhen: 'manual-decision',
+        },
+      ]
+    : undefined;
   const vulnerabilityRepair =
-    hasVulnerabilities && runtime === 'node'
+    hasVulnerabilities && safeFixInvocation
       ? buildCommandRepairCapability({
           issueId: 'surface-security-hygiene',
-          title: 'Apply non-breaking npm vulnerability fixes',
+          title: `Apply compatible ${dependencyAudit?.ecosystem ?? runtime} vulnerability fixes`,
           projectPath: input.projectPath,
-          command: 'npm audit fix --audit-level=moderate',
-          files: ['package.json', 'package-lock.json', 'npm-shrinkwrap.json'],
+          command: [safeFixInvocation.executable, ...safeFixInvocation.args].join(' '),
+          invocation: {
+            executable: safeFixInvocation.executable,
+            args: safeFixInvocation.args,
+          },
+          strategy: vulnerabilityStrategy,
+          files: vulnerabilityFiles,
           reason:
-            'Apply npm-authored vulnerability remediations without --force, then regenerate Doctor and release-readiness evidence.',
+            'Apply runtime-authored compatible vulnerability remediations, then regenerate Doctor and release-readiness evidence.',
           risk: 'guarded',
           requiresReview: true,
           limitations: [
@@ -940,7 +1275,8 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
         })
       : undefined;
 
-  const pass = gitignoreCoversSecrets && !hasVulnerabilities;
+  const pass = gitignoreCoversSecrets && auditIsClean;
+  const auditReason = dependencyAudit?.reason;
   return {
     id: 'surface-security-hygiene',
     label: 'Security hygiene surface',
@@ -949,31 +1285,52 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
     scope: 'project-scoped',
     reason: hasVulnerabilities
       ? `${vulnerabilityCount} moderate/high/critical dependency vulnerability(ies) reported.`
-      : gitignoreCoversSecrets
-        ? 'Repository ignore baseline covers env-file secrets and no dependency vulnerabilities were reported by Doctor.'
-        : gitignoreExists
-          ? 'Repository ignore baseline exists, but env-file secret rules are incomplete.'
-          : 'No .gitignore baseline detected for local secrets/build artifacts.',
+      : auditIsUnavailable
+        ? `${auditReason} Doctor did not treat unavailable audit evidence as a clean result.`
+        : gitignoreCoversSecrets && auditIsClean
+          ? 'Repository ignore baseline covers env-file secrets and the runtime-native dependency audit is clean.'
+          : gitignoreCoversSecrets
+            ? 'Repository ignore baseline covers env-file secrets, but no current dependency audit evidence is available.'
+            : gitignoreExists
+              ? 'Repository ignore baseline exists, but env-file secret rules are incomplete.'
+              : 'No .gitignore baseline detected for local secrets/build artifacts.',
     recommendation: hasVulnerabilities
       ? 'Run the runtime-native audit fix path without force, review lockfile changes, then rerun Doctor.'
-      : gitignoreCoversSecrets
-        ? hasAuditScript
-          ? undefined
-          : 'Consider adding a security audit script for CI parity.'
-        : 'Add .gitignore entries for env files, build output, dependency directories, and local reports.',
+      : auditIsUnavailable
+        ? 'Install or declare the runtime-native audit tool, rerun Doctor, and keep the command available to CI and Studio.'
+        : gitignoreCoversSecrets
+          ? hasAuditScript
+            ? undefined
+            : 'Consider adding a security audit script for CI parity.'
+          : 'Add .gitignore entries for env files, build output, dependency directories, and local reports.',
     repairCapability: hasVulnerabilities
-      ? (vulnerabilityRepair ??
-        buildManualRepair({
-          issueId: 'surface-security-hygiene',
-          title: 'Review dependency vulnerability fix',
-          projectPath: input.projectPath,
-          files: ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'],
-          reason:
-            'Dependency vulnerability remediation can change transitive dependency graphs and must be reviewed.',
-          limitations: [
-            'Avoid npm audit fix --force unless a maintainer explicitly accepts breaking changes.',
-          ],
-        }))
+      ? (vulnerabilityRepair ?? {
+          ...buildManualRepair({
+            issueId: 'surface-security-hygiene',
+            title: `Resolve ${dependencyAudit?.ecosystem ?? runtime} dependency vulnerabilities`,
+            projectPath: input.projectPath,
+            files: [
+              'package.json',
+              'package-lock.json',
+              'pnpm-lock.yaml',
+              'yarn.lock',
+              'pyproject.toml',
+              'requirements.txt',
+              'go.mod',
+              'Cargo.toml',
+              'composer.json',
+              'Gemfile',
+              'Directory.Packages.props',
+            ],
+            reason:
+              'Dependency remediation can change direct and transitive graphs; use the audit evidence to upgrade the owning dependencies.',
+            limitations: [
+              'Never force a breaking dependency upgrade automatically.',
+              'Review lock or baseline changes, run project tests/build, then rerun the complete Workspace Intelligence verification loop.',
+            ],
+          }),
+          strategy: vulnerabilityStrategy,
+        })
       : gitignoreCoversSecrets
         ? undefined
         : await buildGitignoreRepair(input.projectPath),
@@ -1021,6 +1378,107 @@ async function buildTestSurfaceProbe(input: SurfaceInput): Promise<DoctorSurface
   };
 }
 
+async function buildTestCoverageEvidenceProbe(input: SurfaceInput): Promise<DoctorSurfaceProbe> {
+  const evidencePath = path.join(
+    input.projectPath,
+    '.workspai',
+    'reports',
+    'project-test-coverage-last-run.json'
+  );
+  const evidence = (await fsExtra.readJson(evidencePath).catch(() => null)) as {
+    schemaVersion?: string;
+    status?: 'passed' | 'below-target' | 'unavailable' | 'failed';
+    target?: { metric?: string; percent?: number };
+    metrics?: Record<string, { percent?: number | null }>;
+    lowCoverageFiles?: Array<{ path?: string; percent?: number | null }>;
+  } | null;
+  const valid = evidence?.schemaVersion === 'workspai.project-test-coverage.v1';
+  if (!valid) {
+    return {
+      id: 'test-coverage-evidence',
+      label: 'Test coverage evidence',
+      status: 'warn',
+      severity: 'warn',
+      scope: 'project-scoped',
+      reason: 'No normalized project coverage evidence has been generated yet.',
+      recommendation:
+        'Run project coverage once to establish a measurable baseline before selecting a coverage goal.',
+      repairCapability: buildCommandRepairCapability({
+        issueId: 'test-coverage-evidence',
+        title: 'Generate project coverage baseline',
+        projectPath: input.projectPath,
+        command: 'npx workspai project coverage --run --json',
+        invocation: {
+          executable: 'npx',
+          args: ['workspai', 'project', 'coverage', '--run', '--json'],
+        },
+        files: ['.workspai/reports/project-test-coverage-last-run.json'],
+        reason:
+          'Run the runtime-native test coverage adapter and publish normalized evidence for Doctor, CI, Studio, and IDE consumers.',
+        risk: 'safe',
+        requiresReview: false,
+      }),
+    };
+  }
+
+  const metricName = evidence.target?.metric ?? 'lines';
+  const target = finiteNumber(evidence.target?.percent);
+  const percent = evidence.metrics?.[metricName]?.percent;
+  const display = typeof percent === 'number' ? `${percent}%` : 'unavailable';
+  const status =
+    evidence.status === 'passed'
+      ? 'pass'
+      : evidence.status === 'below-target' || evidence.status === 'failed'
+        ? 'fail'
+        : 'warn';
+  return {
+    id: 'test-coverage-evidence',
+    label: 'Test coverage evidence',
+    status,
+    severity: status === 'fail' ? 'error' : 'warn',
+    scope: 'project-scoped',
+    reason:
+      evidence.status === 'passed'
+        ? `${metricName} coverage ${display} satisfies the ${target}% project target.`
+        : evidence.status === 'below-target'
+          ? `${metricName} coverage ${display} is below the ${target}% project target.`
+          : evidence.status === 'failed'
+            ? 'The runtime-native coverage command failed; the target cannot be verified.'
+            : 'Coverage evidence exists, but no supported metric could be normalized.',
+    recommendation:
+      evidence.status === 'passed'
+        ? undefined
+        : evidence.status === 'below-target'
+          ? `Add targeted tests for the lowest-coverage source paths, then rerun project coverage with target ${target}%.`
+          : 'Repair the runtime-native coverage command or reporter and regenerate evidence.',
+    repairCapability:
+      evidence.status === 'passed'
+        ? undefined
+        : buildManualRepair({
+            issueId: 'test-coverage-evidence',
+            title: 'Reach the project coverage goal',
+            projectPath: input.projectPath,
+            files: [
+              '.workspai/reports/project-test-coverage-last-run.json',
+              ...(evidence.lowCoverageFiles ?? [])
+                .map((file) => file.path)
+                .filter((file): file is string => typeof file === 'string')
+                .slice(0, 20),
+            ],
+            reason:
+              'Test creation requires source-aware assertions. Studio should use the normalized low-coverage paths, edit tests, and rerun the same target until verified.',
+            limitations: [
+              'Do not lower thresholds, exclude difficult source files, remove assertions, or skip failing tests to satisfy the goal.',
+            ],
+          }),
+  };
+}
+
+function finiteNumber(value: unknown): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
 function buildFormatSurfaceProbe(input: SurfaceInput): DoctorSurfaceProbe {
   const scripts = scriptsFromPackageJson(input.packageJsonData);
   const hasFormatScript = Boolean(scripts.format || scripts['format:check'] || scripts.prettier);
@@ -1042,25 +1500,84 @@ function buildFormatSurfaceProbe(input: SurfaceInput): DoctorSurfaceProbe {
 async function buildRuntimeTestDepthProbe(input: SurfaceInput): Promise<DoctorSurfaceProbe | null> {
   const runtime = normalizeRuntime(input.runtimeFamily);
   const markersByRuntime: Record<DoctorSurfaceRuntimeFamily, string[]> = {
-    node: ['vitest.config.ts', 'jest.config.js', 'playwright.config.ts', 'cypress.config.ts'],
+    node: [
+      'test',
+      'tests',
+      '__tests__',
+      'vitest.config.ts',
+      'vitest.config.js',
+      'vitest.config.mts',
+      'vitest.config.mjs',
+      'jest.config.ts',
+      'jest.config.js',
+      'jest.config.cjs',
+      'jest.config.mjs',
+      'playwright.config.ts',
+      'playwright.config.js',
+      'cypress.config.ts',
+      'cypress.config.js',
+      '*.spec.ts',
+      '*.spec.js',
+      '*.test.ts',
+      '*.test.js',
+    ],
     deno: ['deno.json', 'deno.jsonc'],
-    bun: ['bunfig.toml'],
-    python: ['pytest.ini', 'tox.ini', 'noxfile.py', 'tests', 'pyproject.toml'],
+    bun: ['bunfig.toml', 'test', 'tests', '*.test.ts', '*.spec.ts'],
+    python: ['pytest.ini', 'tox.ini', 'noxfile.py', 'tests', 'test', 'conftest.py', '*_test.py'],
     go: ['*_test.go'],
-    java: ['src/test', 'pom.xml', 'build.gradle', 'build.gradle.kts'],
-    rust: ['tests', 'Cargo.toml'],
-    elixir: ['test', 'mix.exs'],
-    clojure: ['test', 'deps.edn', 'project.clj'],
+    java: ['src/test', '*Test.java', '*Tests.java', '*IT.java'],
+    rust: ['tests', '*_test.rs'],
+    elixir: ['test', '*_test.exs'],
+    clojure: ['test', '*_test.clj', '*_test.cljc'],
     php: ['phpunit.xml', 'phpunit.xml.dist', 'tests'],
     ruby: ['spec', 'test', '.rspec'],
-    dotnet: ['*.Tests.csproj', '*.Test.csproj', '*.sln'],
+    dotnet: ['*.Tests.csproj', '*.Test.csproj', '*Tests.cs'],
+    scala: ['src/test', '*Spec.scala', '*Suite.scala'],
+    kotlin: ['src/test', '*Test.kt', '*Tests.kt'],
+    c: ['test', 'tests', '*_test.c', 'test_*.c'],
+    cpp: ['test', 'tests', '*_test.cpp', 'test_*.cpp', '*Test.cpp'],
     unknown: [],
   };
   const markers = markersByRuntime[runtime] ?? [];
   if (markers.length === 0) return null;
 
   const hasRuntimeMarker = await anyPathExists(input.projectPath, markers);
-  const pass = input.hasTests === true && hasRuntimeMarker;
+  const scripts = scriptsFromPackageJson(input.packageJsonData);
+  const scriptText = Object.values(scripts).join('\n');
+  const manifestText = await collectTextFromExisting(input.projectPath, [
+    'pyproject.toml',
+    'Cargo.toml',
+    'mix.exs',
+    'deps.edn',
+    'project.clj',
+    'composer.json',
+    'Gemfile',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'deno.json',
+    'deno.jsonc',
+  ]);
+  const commandSignalByRuntime: Partial<Record<DoctorSurfaceRuntimeFamily, RegExp>> = {
+    node: /\b(jest|vitest|mocha|ava|tap|playwright|cypress|node\s+--test|bun\s+test)\b/i,
+    bun: /\bbun\s+test\b/i,
+    deno: /\bdeno\s+test\b/i,
+    python: /\b(pytest|unittest|tox|nox)\b/i,
+    java: /\b(junit|testng|surefire|failsafe|gradle[^]*\btest\b)\b/i,
+    rust: /\b(cargo\s+test|dev-dependencies)\b/i,
+    elixir: /\b(ex_unit|mix\s+test)\b/i,
+    clojure: /\b(clojure\.test|kaocha|eftest)\b/i,
+    php: /\b(phpunit|pestphp|pest)\b/i,
+    ruby: /\b(rspec|minitest)\b/i,
+    dotnet: /\b(Microsoft\.NET\.Test\.Sdk|xunit|nunit|mstest)\b/i,
+    scala: /\b(scalatest|munit|specs2|sbt\s+test)\b/i,
+    kotlin: /\b(kotest|junit|gradle[^]*\btest\b)\b/i,
+    c: /\b(ctest|cmocka|criterion|unity)\b/i,
+    cpp: /\b(ctest|catch2|gtest|googletest|doctest)\b/i,
+  };
+  const commandSignal =
+    commandSignalByRuntime[runtime]?.test(`${scriptText}\n${manifestText}`) ?? false;
+  const pass = input.hasTests === true && (hasRuntimeMarker || commandSignal);
   return {
     id: 'runtime-test-depth',
     label: 'Runtime-native test depth',
@@ -1081,7 +1598,24 @@ async function buildRuntimeTestDepthProbe(input: SurfaceInput): Promise<DoctorSu
 async function buildRuntimeQualityProbe(input: SurfaceInput): Promise<DoctorSurfaceProbe | null> {
   const runtime = normalizeRuntime(input.runtimeFamily);
   const markersByRuntime: Record<DoctorSurfaceRuntimeFamily, string[]> = {
-    node: ['eslint.config.js', 'eslint.config.mjs', '.eslintrc.json', 'prettier.config.js'],
+    node: [
+      'eslint.config.js',
+      'eslint.config.cjs',
+      'eslint.config.mjs',
+      'eslint.config.ts',
+      'eslint.config.mts',
+      '.eslintrc',
+      '.eslintrc.js',
+      '.eslintrc.cjs',
+      '.eslintrc.json',
+      'prettier.config.js',
+      'prettier.config.cjs',
+      'prettier.config.mjs',
+      '.prettierrc',
+      '.prettierrc.json',
+      'biome.json',
+      'biome.jsonc',
+    ],
     deno: ['deno.json', 'deno.jsonc'],
     bun: ['eslint.config.js', 'biome.json', 'bunfig.toml'],
     python: ['ruff.toml', 'pyproject.toml', '.flake8', 'mypy.ini', 'Makefile'],
@@ -1093,16 +1627,41 @@ async function buildRuntimeQualityProbe(input: SurfaceInput): Promise<DoctorSurf
     php: ['phpcs.xml', 'phpstan.neon', 'pint.json', 'composer.json'],
     ruby: ['.rubocop.yml', 'Gemfile'],
     dotnet: ['.editorconfig', 'Directory.Build.props', 'global.json'],
+    scala: ['.scalafmt.conf', '.scalafix.conf', 'build.sbt'],
+    kotlin: ['.editorconfig', 'detekt.yml', 'build.gradle', 'build.gradle.kts'],
+    c: ['.clang-format', '.clang-tidy', 'CMakeLists.txt'],
+    cpp: ['.clang-format', '.clang-tidy', 'CMakeLists.txt'],
     unknown: [],
   };
   const markers = markersByRuntime[runtime] ?? [];
   if (markers.length === 0) return null;
 
-  const text = await collectTextFromExisting(input.projectPath, markers);
+  const text = await collectTextFromExisting(input.projectPath, [
+    ...markers,
+    'package.json',
+    'pyproject.toml',
+    'Makefile',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'Cargo.toml',
+    'mix.exs',
+    'deps.edn',
+    'project.clj',
+    'composer.json',
+    'Gemfile',
+    'Directory.Build.props',
+  ]);
+  const scripts = scriptsFromPackageJson(input.packageJsonData);
+  const scriptText = Object.entries(scripts)
+    .filter(([name]) => /lint|format|quality|check|typecheck|static/i.test(name))
+    .map(([, value]) => value)
+    .join('\n');
+  const hasConfigMarker = await anyPathExists(input.projectPath, markers);
   const hasToolSignal =
-    /eslint|prettier|biome|ruff|black|mypy|golangci|checkstyle|spotless|pmd|clippy|rustfmt|credo|clj-kondo|phpstan|phpcs|pint|rubocop|editorconfig|dotnet format/i.test(
-      text
-    );
+    /eslint|prettier|biome|ruff|black|mypy|golangci|checkstyle|spotless|pmd|clippy|rustfmt|credo|clj-kondo|phpstan|phpcs|pint|rubocop|editorconfig|dotnet format|scalafmt|scalafix|detekt|ktlint|clang-tidy|clang-format/i.test(
+      `${text}\n${scriptText}`
+    ) || hasConfigMarker;
   const repairCapability = hasToolSignal
     ? undefined
     : await buildRuntimeCommandRepairCapability({
@@ -1146,6 +1705,10 @@ async function buildRuntimeSecurityProbe(input: SurfaceInput): Promise<DoctorSur
     php: ['composer.json'],
     ruby: ['Gemfile', '.bundler-audit.yml'],
     dotnet: ['Directory.Build.props', '*.csproj'],
+    scala: ['build.sbt', 'project/plugins.sbt'],
+    kotlin: ['build.gradle', 'build.gradle.kts', 'pom.xml'],
+    c: ['CMakeLists.txt', 'conanfile.py', 'conanfile.txt', 'vcpkg.json'],
+    cpp: ['CMakeLists.txt', 'conanfile.py', 'conanfile.txt', 'vcpkg.json'],
     unknown: [],
   };
   const markers = markersByRuntime[runtime] ?? [];
@@ -1153,7 +1716,7 @@ async function buildRuntimeSecurityProbe(input: SurfaceInput): Promise<DoctorSur
 
   const text = await collectTextFromExisting(input.projectPath, markers);
   const hasSecurityTool =
-    /npm audit|pnpm audit|yarn audit|bun audit|pip[-_]audit|safety|bandit|govulncheck|gosec|dependency-check|owasp|cargo audit|mix hex.audit|composer audit|bundler-audit|brakeman|NuGetAudit|dotnet list package --vulnerable/i.test(
+    /npm audit|pnpm audit|yarn audit|bun audit|pip[-_]audit|safety|bandit|govulncheck|gosec|dependency-check|owasp|cargo audit|mix hex.audit|composer audit|bundler-audit|brakeman|NuGetAudit|dotnet list package --vulnerable|dependencyCheck|dependency-check|snyk|trivy|osv-scanner|cyclonedx|sbom/i.test(
       text
     );
   const repairCapability = hasSecurityTool
@@ -1212,8 +1775,9 @@ export async function buildEnterpriseSurfaceProbes(
   probes.push(await buildKubernetesProbe(input));
   probes.push(await buildSecurityHygieneProbe(input));
   probes.push(await buildTestSurfaceProbe(input));
+  probes.push(await buildTestCoverageEvidenceProbe(input));
 
-  if (runtime === 'node') {
+  if (runtime === 'node' || runtime === 'bun') {
     probes.push(buildFormatSurfaceProbe(input));
   }
 

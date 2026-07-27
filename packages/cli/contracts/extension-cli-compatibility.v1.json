@@ -12,6 +12,10 @@
     "workspaceArchiveManifest": "workspai-workspace-archive-manifest-v1",
     "workspaceArchiveOperationResult": "workspai-workspace-archive-operation-result-v1",
     "projectEntryCapability": "workspai-project-entry-capability-v1",
+    "doctorProjectEvidence": "doctor-project-evidence-v1",
+    "doctorWorkspaceEvidence": "doctor-workspace-evidence-v1",
+    "doctorGraphDiagnosis": "doctor-graph-diagnosis.v1",
+    "projectTestCoverage": "workspai.project-test-coverage.v1",
     "workspaceIntelligenceArchitecture": "workspai-workspace-intelligence-architecture-v1",
     "workspaceIntelligenceChain": "workspai-workspace-intelligence-chain-v1",
     "workspaceIntelligenceArtifacts": {

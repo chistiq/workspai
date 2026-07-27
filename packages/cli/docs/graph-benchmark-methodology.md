@@ -27,8 +27,8 @@ The result conforms to
 It records:
 
 - the query and result limit;
-- the graph schema, entity/relation/proof counts, source artifact, and source
-  model SHA-256;
+- the graph schema, entity/relation/proof counts, source artifact, and stable
+  structural model SHA-256;
 - the number and size of readable, deduplicated proof-source artifacts;
 - the bounded retrieval size and match count;
 - unreadable artifacts rather than silently excluding them;

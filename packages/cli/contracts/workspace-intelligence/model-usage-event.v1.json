@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/model-usage-event.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/model-usage-event.v1.json",
   "title": "Workspai Model and Agent Usage Event",
   "description": "A privacy-bounded usage observation. Prompt and response bodies are deliberately excluded; consumers may provide hashes instead.",
   "type": "object",

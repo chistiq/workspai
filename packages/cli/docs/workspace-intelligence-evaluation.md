@@ -94,6 +94,7 @@ Event bodies conform to
 ```bash
 npx workspai workspace eval status --json
 npx workspai workspace eval report --json
+npx workspai workspace eval report --output ./evidence/my-evaluation.json --json
 ```
 
 Finalization writes:
@@ -101,6 +102,10 @@ Finalization writes:
 ```text
 .workspai/reports/workspace-intelligence-evaluation-last-run.json
 ```
+
+`--output` keeps that governed last-run artifact and also copies the finalized
+report to the requested workspace-relative or absolute path. JSON output reports
+the path that was actually requested, so automation does not need to infer it.
 
 Both live and final reports conform to
 [`workspace-intelligence-evaluation.v1.json`](../contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json).

@@ -106,6 +106,11 @@ import {
   WORKSPACE_INTELLIGENCE_ROOT_COMMANDS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import {
+  isWorkspaceActionHelpRequest,
+  renderWorkspaceActionHelp,
+  WORKSPACE_ACTION_CONTRACTS,
+} from './contracts/workspace-action-contract.js';
+import {
   buildCliRuntimeCommandInventory,
   formatCliCommandSurfaceIntegrityError,
   NPM_ONLY_CREATE_HANDLER_COMMAND,
@@ -6253,6 +6258,13 @@ const invokedCliName = resolveInvokedCliName();
 const primaryCliName = 'workspai';
 const primaryNpxCommand = 'npx workspai';
 export const program = new Command();
+// Keep options that follow a subcommand owned by that subcommand. Several
+// command surfaces intentionally reuse familiar flag names (for example,
+// workspace creation's --profile and Doctor's policy --profile). Without
+// positional option parsing Commander lets the parent option consume the
+// child's value, which both applies the wrong choices and silently drops valid
+// Doctor policy profiles.
+program.enablePositionalOptions();
 
 // Legacy flags are intentionally hidden by default. Tests and current UX
 // expect legacy template-related flags to remain out of the primary help
@@ -6612,6 +6624,7 @@ program
             kit,
             name,
             ...(options.skipGit ? ['--skip-git'] : []),
+            ...(options.skipInstall ? ['--skip-install'] : []),
           ]);
           if (code !== 0) {
             process.exit(code);
@@ -7311,6 +7324,114 @@ projectCommand
   });
 
 projectCommand
+  .command('coverage')
+  .description(
+    'Inspect or run runtime-native test coverage and publish normalized project evidence'
+  )
+  .option('--project <path>', 'Project path (defaults to the current or nearest parent project)')
+  .option('--target <percent>', 'Required coverage target from 0 to 100', '80')
+  .option('--run', 'Run the detected runtime-native coverage command before reading evidence')
+  .option('--strict', 'Return exit 2 when coverage is unavailable or below the selected target')
+  .option('--json', 'Emit machine-readable JSON output')
+  .action(
+    async (options: {
+      project?: string;
+      target?: string;
+      run?: boolean;
+      strict?: boolean;
+      json?: boolean;
+    }) => {
+      const target = Number(options.target ?? 80);
+      if (!Number.isFinite(target) || target < 0 || target > 100) {
+        const message = '--target must be a number from 0 to 100.';
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'project coverage',
+                code: 'project.coverage.target.invalid',
+                message,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ ${message}`));
+        }
+        process.exit(1);
+      }
+
+      try {
+        const { collectProjectTestCoverage } = await import('./project-test-coverage.js');
+        const result = await collectProjectTestCoverage({
+          projectPath: options.project,
+          target,
+          run: options.run === true,
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          const selected = result.metrics[result.target.metric];
+          const percent = selected?.percent;
+          const display = percent === null || percent === undefined ? 'unavailable' : `${percent}%`;
+          const color =
+            result.status === 'passed'
+              ? chalk.green
+              : result.status === 'failed'
+                ? chalk.red
+                : chalk.yellow;
+          console.log(color(`Project coverage: ${result.status}`));
+          console.log(chalk.gray(`   Project: ${result.project.name}`));
+          console.log(chalk.gray(`   Runtime: ${result.runtime}`));
+          console.log(
+            chalk.gray(`   ${result.target.metric}: ${display} · target ${result.target.percent}%`)
+          );
+          console.log(chalk.gray(`   Evidence: ${result.artifactPaths.project}`));
+          if (result.lowCoverageFiles.length > 0) {
+            console.log(chalk.gray('   Lowest coverage files:'));
+            for (const file of result.lowCoverageFiles.slice(0, 10)) {
+              console.log(
+                chalk.gray(
+                  `   • ${file.path}: ${file.percent === null ? 'unknown' : `${file.percent}%`} (${file.uncovered} uncovered)`
+                )
+              );
+            }
+          }
+          for (const diagnostic of result.diagnostics) {
+            console.log(chalk.gray(`   ${diagnostic}`));
+          }
+        }
+        if (result.status === 'failed') process.exit(1);
+        if (
+          options.strict &&
+          (result.status === 'below-target' || result.status === 'unavailable')
+        ) {
+          process.exit(2);
+        }
+      } catch (error) {
+        const message = (error as Error).message;
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'project coverage',
+                code: 'project.coverage.failed',
+                message,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ Project coverage failed: ${message}`));
+        }
+        process.exit(1);
+      }
+    }
+  );
+
+projectCommand
   .command('archives')
   .description('List archived workspace projects')
   .option('--workspace <path>', 'Workspace root path (defaults to nearest Workspai workspace)')
@@ -7898,170 +8019,8 @@ See the command reference for action-specific required inputs and output artifac
       };
     };
 
-    const allowedWorkspaceFlagsByAction: Record<string, readonly string[]> = {
-      list: ['--json'],
-      intelligence: ['--workspace', '--json', '--strict', '--for-agent'],
-      model: [
-        '--workspace',
-        '--json',
-        '--include-paths',
-        '--include-evidence',
-        '--scan-depth',
-        '--cache',
-        '--incremental',
-        '--write',
-        '--strict',
-      ],
-      'agent-sync': [
-        '--workspace',
-        '--json',
-        '--scope',
-        '--for-agent',
-        '--write',
-        '--dry-run',
-        '--strict',
-        '--preset',
-        '--refresh-context',
-        '--refresh',
-        '--target',
-        '--experimental-hooks',
-        '--hydrate-prompts',
-      ],
-      'remediation-plan': ['--workspace', '--json', '--include-paths', '--ci', '--write'],
-      context: [
-        '--workspace',
-        '--json',
-        '--for-agent',
-        '--scope',
-        '--include-evidence',
-        '--scan-depth',
-        '--write',
-        '--agent-sync',
-        '--no-agent-sync',
-        '--preset',
-        '--target',
-        '--strict',
-      ],
-      snapshot: ['--workspace', '--json', '--include-paths', '--include-evidence', '--scan-depth'],
-      diff: [
-        '--workspace',
-        '--json',
-        '--from',
-        '--include-paths',
-        '--include-evidence',
-        '--scan-depth',
-        '--strict',
-      ],
-      impact: [
-        '--workspace',
-        '--json',
-        '--from',
-        '--scope',
-        '--include-paths',
-        '--include-evidence',
-        '--scan-depth',
-        '--strict',
-      ],
-      verify: [
-        '--workspace',
-        '--json',
-        '--from-impact',
-        '--scope',
-        '--include-paths',
-        '--include-evidence',
-        '--scan-depth',
-        '--strict',
-      ],
-      graph: [
-        '--workspace',
-        '--json',
-        '--output',
-        '--from',
-        '--limit',
-        '--include-paths',
-        '--include-evidence',
-        '--scan-depth',
-        '--scope',
-      ],
-      watch: ['--workspace', '--json', '--once', '--scan-depth'],
-      sync: ['--workspace', '--json'],
-      registry: ['--workspace', '--json', '--refresh'],
-      foundation: ['--workspace', '--json', '--force'],
-      policy: ['--workspace', '--json'],
-      contract: ['--workspace', '--json', '--output', '--force', '--strict'],
-      share: [
-        '--workspace',
-        '--json',
-        '--output',
-        '--include-paths',
-        '--no-doctor',
-        '--no-blueprint',
-      ],
-      export: ['--workspace', '--json', '--output', '--include-env', '--archive-compression'],
-      archive: [
-        '--json',
-        '--strict',
-        '--max-download-size',
-        '--max-expanded-size',
-        '--download-timeout-ms',
-        '--allow-private-network',
-      ],
-      hydrate: [
-        '--json',
-        '--output',
-        '--force',
-        '--dry-run',
-        '--strict',
-        '--max-download-size',
-        '--max-expanded-size',
-        '--download-timeout-ms',
-        '--allow-private-network',
-      ],
-      import: [
-        '--json',
-        '--output',
-        '--force',
-        '--dry-run',
-        '--strict',
-        '--max-download-size',
-        '--max-expanded-size',
-        '--download-timeout-ms',
-        '--allow-private-network',
-      ],
-      run: [
-        '--workspace',
-        '--json',
-        '--scope',
-        '--affected',
-        '--blast-radius',
-        '--since',
-        '--parallel',
-        '--max-workers',
-        '--continue-on-error',
-        '--reuse-passed',
-        '--strict',
-        '--no-gates',
-      ],
-      explain: ['--workspace', '--json', '--scope', '--write'],
-      why: ['--workspace', '--json', '--scope', '--write'],
-      trace: ['--workspace', '--json', '--from', '--write'],
-      feedback: ['--workspace', '--json'],
-      eval: ['--workspace', '--json', '--from', '--output'],
-      mcp: ['--workspace', '--json'],
-      init: [
-        '--workspace',
-        '--json',
-        '--scope',
-        '--parallel',
-        '--max-workers',
-        '--continue-on-error',
-        '--reuse-passed',
-        '--strict',
-        '--no-gates',
-      ],
-    };
-    const allKnownWorkspaceFlags = new Set(
-      Object.values(allowedWorkspaceFlagsByAction).flatMap((flags) => [...flags])
+    const allKnownWorkspaceFlags = new Set<string>(
+      Object.values(WORKSPACE_ACTION_CONTRACTS).flatMap((contract) => [...contract.flags])
     );
     const presentedWorkspaceFlags = new Set(
       process.argv
@@ -8070,7 +8029,8 @@ See the command reference for action-specific required inputs and output artifac
         .map((token) => token.split('=', 1)[0])
         .filter((flag) => allKnownWorkspaceFlags.has(flag))
     );
-    const allowedFlags = allowedWorkspaceFlagsByAction[action];
+    const allowedFlags: readonly string[] | undefined =
+      WORKSPACE_ACTION_CONTRACTS[action as keyof typeof WORKSPACE_ACTION_CONTRACTS]?.flags;
     const unsupportedFlags = allowedFlags
       ? [...presentedWorkspaceFlags].filter((flag) => !allowedFlags.includes(flag))
       : [];
@@ -8145,8 +8105,12 @@ See the command reference for action-specific required inputs and output artifac
       if (result.exitCode !== 0) process.exit(result.exitCode);
     } else if (action === 'model') {
       const workspacePath = requireWorkspaceRootForAction('model');
-      const { buildWorkspaceModelCached, buildWorkspaceModelIncremental, writeWorkspaceModel } =
-        await import('./workspace-model.js');
+      const {
+        buildWorkspaceModelCached,
+        buildWorkspaceModelIncremental,
+        createWorkspaceModelBuildProvenance,
+        writeWorkspaceModel,
+      } = await import('./workspace-model.js');
       const useIncremental = actionOptions.incremental === true || hasRawFlag('--incremental');
       const useCache = actionOptions.cache === true || hasRawFlag('--cache') || useIncremental;
       const modelBuildOptions = {
@@ -8157,7 +8121,7 @@ See the command reference for action-specific required inputs and output artifac
         strict: actionOptions.strict === true || hasRawFlag('--strict'),
       };
       let model: Awaited<ReturnType<typeof buildWorkspaceModelCached>>['model'];
-      let cacheStatus: string;
+      let cacheStatus: 'hit' | 'miss' | 'disabled' | 'full' | 'incremental' | 'unchanged';
       if (useIncremental) {
         const incremental = await buildWorkspaceModelIncremental(modelBuildOptions);
         model = incremental.model;
@@ -8167,6 +8131,13 @@ See the command reference for action-specific required inputs and output artifac
         model = cached.model;
         cacheStatus = cached.cache;
       }
+      model = {
+        ...model,
+        build: createWorkspaceModelBuildProvenance({
+          mode: useIncremental ? 'incremental' : useCache ? 'cache' : 'full',
+          engineStatus: cacheStatus,
+        }),
+      };
       let outputPath: string | undefined;
       if (actionOptions.write === true || hasRawFlag('--write')) {
         outputPath = await writeWorkspaceModel(model, workspacePath);
@@ -9193,11 +9164,11 @@ See the command reference for action-specific required inputs and output artifac
       const workspacePath = requireWorkspaceRootForAction('watch');
       const { runWorkspaceWatch } = await import('./workspace-watch.js');
       const once = actionOptions.once === true || hasRawFlag('--once');
-      const emitJson = actionOptions.json === true;
       const emitGraphStream = actionOptions.graphStream === true || hasRawFlag('--graph-stream');
-      if (emitGraphStream && !emitJson) {
-        throw new Error('workspace watch --graph-stream requires --json.');
-      }
+      // --graph-stream is already a machine-readable NDJSON mode. Treat it as
+      // JSON output implicitly so the documented `watch --graph-stream`
+      // command never emits human prose into the stream.
+      const emitJson = actionOptions.json === true || emitGraphStream;
       const graphPublisher = emitGraphStream
         ? new (await import('./workspace-graph-stream.js')).WorkspaceGraphStreamPublisher({
             workspacePath,
@@ -9999,14 +9970,10 @@ See the command reference for action-specific required inputs and output artifac
           : `project:${actionOptions.scope}`;
       }
       if (!targetRaw) {
-        console.log(chalk.red(`❌ workspace ${action} requires a target.`));
-        console.log(
-          chalk.gray(
-            '   npx workspai workspace explain project:<name>|release-blocked [--json] [--write]'
-          )
-        );
-        console.log(chalk.gray('   npx workspai workspace why <project>|release-blocked [--json]'));
-        process.exit(1);
+        // The public command contract intentionally makes the target optional.
+        // Default to the current release decision so a user can ask for the
+        // workspace explanation without first learning an internal target id.
+        targetRaw = 'release-blocked';
       }
 
       const target = parseWorkspaceExplainTarget(targetRaw);
@@ -10188,13 +10155,19 @@ See the command reference for action-specific required inputs and output artifac
 
       if (mode === 'report') {
         const result = await finalizeWorkspaceEvaluation({ workspacePath });
-        if (actionOptions.output) {
-          await fsExtra.copy(result.outputPath, path.resolve(workspacePath, actionOptions.output));
+        const requestedOutput = workspaceOutputPath();
+        let outputPath = result.outputPath;
+        if (requestedOutput) {
+          const requestedOutputPath = path.resolve(workspacePath, requestedOutput);
+          if (path.resolve(result.outputPath) !== requestedOutputPath) {
+            await fsExtra.copy(result.outputPath, requestedOutputPath, { overwrite: true });
+          }
+          outputPath = requestedOutputPath;
         }
         if (actionOptions.json) {
           console.log(
             JSON.stringify(
-              cliOperationSuccess('workspace eval report', result.report, result.outputPath),
+              cliOperationSuccess('workspace eval report', result.report, outputPath),
               null,
               2
             )
@@ -10212,7 +10185,7 @@ See the command reference for action-specific required inputs and output artifac
             `   Outcome: ${result.report.summary.outcome.status}${result.report.summary.outcome.verified ? ' (verified)' : ' (unverified)'}`
           )
         );
-        console.log(chalk.gray(`   Written: ${result.outputPath}`));
+        console.log(chalk.gray(`   Written: ${outputPath}`));
         return;
       }
 
@@ -11040,6 +11013,10 @@ export async function bootstrapCli(): Promise<void> {
   const shouldRenderCustomRootHelp =
     preArgs.length === 0 ||
     (preArgs.length === 1 && (preFirst === '--help' || preFirst === '-h' || preFirst === 'help'));
+
+  if (isWorkspaceActionHelpRequest(preArgs)) {
+    await writeStdoutAndExit(`${renderWorkspaceActionHelp(preArgs[1])}\n`);
+  }
 
   if (shouldRenderCustomRootHelp) {
     showIntro('npm cli');

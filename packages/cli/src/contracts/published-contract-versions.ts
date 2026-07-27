@@ -14,6 +14,7 @@ import { WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION } from './workspace-skills-index-
 import { AGENT_CUSTOMIZATION_PACK_SCHEMA_VERSION } from './agent-customization-pack-contract.js';
 import { WORKSPACE_DEPENDENCY_GRAPH_SCHEMA_VERSION } from './workspace-dependency-graph-contract.js';
 import { WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION } from './workspace-knowledge-graph-contract.js';
+import { DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION } from './doctor-graph-diagnosis-contract.js';
 import { WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION } from './workspace-knowledge-graph-change-overlay-contract.js';
 import { WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION } from './workspace-intelligence-architecture-contract.js';
 import { WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION } from './workspace-intelligence-chain-contract.js';
@@ -42,6 +43,10 @@ import {
   WORKSPACE_INTELLIGENCE_EVALUATION_COMPARISON_SCHEMA_VERSION,
   WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
 } from './workspace-intelligence-evaluation-contract.js';
+import {
+  DOCTOR_PROJECT_EVIDENCE_SCHEMA,
+  DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
+} from '../utils/doctor-evidence-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -59,6 +64,10 @@ export function getPublishedContractVersions() {
     workspaceArchiveManifest: WORKSPACE_ARCHIVE_MANIFEST_SCHEMA_VERSION,
     workspaceArchiveOperationResult: WORKSPACE_ARCHIVE_OPERATION_RESULT_SCHEMA_VERSION,
     projectEntryCapability: PROJECT_ENTRY_CAPABILITY_SCHEMA_VERSION,
+    doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
+    doctorWorkspaceEvidence: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
+    doctorGraphDiagnosis: DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION,
+    projectTestCoverage: 'workspai.project-test-coverage.v1',
     workspaceIntelligenceArchitecture: WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION,
     workspaceIntelligenceChain: WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION,
     workspaceIntelligenceArtifacts: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
@@ -118,6 +127,10 @@ export function getPublishedContractCatalog() {
     workspaceArchiveManifest: 'contracts/workspace-archive-manifest.v1.json',
     workspaceArchiveOperationResult: 'contracts/workspace-archive-operation-result.v1.json',
     projectEntryCapability: 'contracts/project-entry-capability.v1.json',
+    doctorProjectEvidence: 'contracts/doctor-project-evidence.v1.json',
+    doctorWorkspaceEvidence: 'contracts/doctor-workspace-evidence.v1.json',
+    doctorGraphDiagnosis: 'contracts/workspace-intelligence/doctor-graph-diagnosis.v1.json',
+    projectTestCoverage: 'contracts/project-test-coverage.v1.json',
     workspaceIntelligenceArchitecture: 'contracts/workspace-intelligence-architecture.v1.json',
     workspaceIntelligenceChain: 'contracts/workspace-intelligence-chain.v1.json',
     workspaceIntelligenceArtifacts: null,

@@ -137,4 +137,18 @@ describe('WorkspaceGraphStreamPublisher', () => {
     const delta = publisher.publish(currentModel, second);
     expect(delta.payload.proofsUpdated).toEqual([]);
   });
+
+  it('rejects a stream graph that is not bound to the supplied model', () => {
+    const publisher = new WorkspaceGraphStreamPublisher({
+      workspacePath: '/workspace',
+      sessionId: 'session-1',
+    });
+    const currentModel = model(['api']);
+    const staleGraph = graph(currentModel, ['project:api']);
+    staleGraph.source.hash = '0'.repeat(64);
+
+    expect(() => publisher.publish(currentModel, staleGraph)).toThrow(
+      'source hash does not match the canonical workspace model'
+    );
+  });
 });

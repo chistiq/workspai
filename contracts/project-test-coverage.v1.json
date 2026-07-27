@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/project-test-coverage.v1.json",
+  "title": "Workspai Project Test Coverage Evidence",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "status",
+    "project",
+    "runtime",
+    "runner",
+    "target",
+    "metrics",
+    "files",
+    "lowCoverageFiles",
+    "source",
+    "execution",
+    "diagnostics",
+    "artifactPaths"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.project-test-coverage.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["passed", "below-target", "unavailable", "failed"] },
+    "project": {
+      "type": "object",
+      "required": ["id", "name", "path", "workspacePath"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "workspacePath": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "enum": [
+        "node",
+        "bun",
+        "deno",
+        "python",
+        "go",
+        "java",
+        "dotnet",
+        "rust",
+        "php",
+        "ruby",
+        "elixir",
+        "clojure",
+        "scala",
+        "kotlin",
+        "c",
+        "cpp",
+        "unknown"
+      ]
+    },
+    "runner": { "type": ["string", "null"] },
+    "target": {
+      "type": "object",
+      "required": ["metric", "percent"],
+      "properties": {
+        "metric": { "enum": ["lines", "branches", "functions", "statements"] },
+        "percent": { "type": "integer", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "lines": { "$ref": "#/$defs/metric" },
+        "branches": { "$ref": "#/$defs/metric" },
+        "functions": { "$ref": "#/$defs/metric" },
+        "statements": { "$ref": "#/$defs/metric" }
+      },
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "metrics"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "lines": { "$ref": "#/$defs/metric" },
+              "branches": { "$ref": "#/$defs/metric" },
+              "functions": { "$ref": "#/$defs/metric" },
+              "statements": { "$ref": "#/$defs/metric" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "lowCoverageFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "percent", "uncovered"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "uncovered": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["format", "path", "sha256"],
+      "properties": {
+        "format": {
+          "enum": [
+            "istanbul-json",
+            "coverage-py-json",
+            "lcov",
+            "go-coverprofile",
+            "jacoco-xml",
+            "cobertura-xml",
+            "clover-xml",
+            "scoverage-xml",
+            "simplecov-json",
+            "llvm-cov-json",
+            "unknown"
+          ]
+        },
+        "path": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": ["requested", "invocations", "exitCodes", "durationMs"],
+      "properties": {
+        "requested": { "type": "boolean" },
+        "invocations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/invocation" }
+        },
+        "exitCodes": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "diagnostics": { "type": "array", "items": { "type": "string" } },
+    "artifactPaths": {
+      "type": "object",
+      "required": ["project", "workspaceLatest", "workspaceProject"],
+      "properties": {
+        "project": { "type": "string", "minLength": 1 },
+        "workspaceLatest": { "type": ["string", "null"] },
+        "workspaceProject": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "metric": {
+      "type": "object",
+      "required": ["total", "covered", "skipped", "percent"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "covered": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "invocation": {
+      "type": "object",
+      "required": ["cwd", "executable", "args"],
+      "properties": {
+        "cwd": { "type": "string", "minLength": 1 },
+        "executable": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

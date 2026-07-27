@@ -28,6 +28,7 @@ export function hashWorkspaceModel(model: WorkspaceModel): string {
     evidence: _ignoredEvidence,
     facts: _ignoredFacts,
     factFreshness: _ignoredFactFreshness,
+    build: _ignoredBuildProvenance,
     projects,
     ...modelWithoutLiveState
   } = model as WorkspaceModel & { runId?: string };

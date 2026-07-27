@@ -91,6 +91,11 @@ The canonical durable outputs are `.workspai/reports/workspace-model.json`,
 Use `npx workspai pipeline --json --strict` separately as the broader governance
 and release gate.
 
+The model is the canonical workspace boundary. The Knowledge Graph is generated
+from that model-owned inventory, structurally hash-bound to it, and enriched
+with provider facts and proofs. Consumers must not treat the graph as a second
+source of truth.
+
 Success check: the application starts locally, project Doctor reports the
 expected runtime, and the unified run report contains all 11 ordered stages.
 
