@@ -62,7 +62,6 @@ import {
   listWorkspaces,
   registerWorkspaceStrict,
 } from '../workspace.js';
-import { normalizeRegistryPath } from '../utils/registry-path.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -1349,8 +1348,20 @@ describe.sequential('in-process workspace Commander coverage', () => {
       .map(([value]) => String(value))
       .find((value) => value.includes('"operation": "workspace eval report"'));
     expect(jsonOutput).toBeTruthy();
-    expect(JSON.parse(jsonOutput!)).toMatchObject({
-      outputPath: normalizeRegistryPath(expectedOutput),
+    const payload = JSON.parse(jsonOutput!) as { outputPath?: unknown };
+    expect(payload.outputPath).toEqual(expect.any(String));
+
+    // Windows may expose the same temp directory through both its long name
+    // (RunnerAdmin) and its 8.3 alias (RUNNER~1). String normalization cannot
+    // make those representations equal, so assert the actual filesystem
+    // identity promised by this contract.
+    const [reportedStat, expectedStat] = await Promise.all([
+      fs.stat(payload.outputPath as string, { bigint: true }),
+      fs.stat(expectedOutput, { bigint: true }),
+    ]);
+    expect({ dev: reportedStat.dev, ino: reportedStat.ino }).toEqual({
+      dev: expectedStat.dev,
+      ino: expectedStat.ino,
     });
   });
 
