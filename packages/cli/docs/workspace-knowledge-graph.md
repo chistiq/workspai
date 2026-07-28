@@ -91,6 +91,12 @@ The response is intentionally bounded. `totalMatches` tells the consumer more
 results exist, `truncated` prevents silent omission, and every returned claim can
 be traced through `proofIds`.
 
+Search remains deterministic, local, and offline. Natural-language filler words
+are removed before ranking, and the remaining terms are weighted by how rare
+they are in the current graph. Exact labels and identities still win. This keeps
+a common word such as `check` from outranking a rarer term such as `user` merely
+because it appears in more files. No embedding service or model call is involved.
+
 ## Pick the command by question
 
 | You want to know…                                    | Use                                                     |
@@ -122,6 +128,31 @@ Every entity and relation carries portable proof references. A proof records its
 provider, source artifact, optional pointer/line, content hash, freshness,
 derivation, trust, and confidence. Secret values and machine-local absolute
 paths are excluded from the portable graph contract.
+
+## Read graph quality correctly
+
+Provider execution and graph completeness are separate signals:
+
+| Provider status | Meaning                                                                     |
+| --------------- | --------------------------------------------------------------------------- |
+| `passed`        | A matching source surface was found and graph evidence was produced.        |
+| `partial`       | The provider found applicable input but produced incomplete or no evidence. |
+| `skipped`       | No applicable source surface was present in this workspace.                 |
+| `failed`        | The provider could not complete its bounded scan.                           |
+
+`quality.providerSuccessRatio` is an execution-health ratio, not a completeness
+claim. A skipped provider is healthy but not applicable. Applicable providers
+that emit no evidence become `partial` and add an explicit unknown diagnostic,
+which contributes to `quality.unknownCount`. Bounded-scan limits and unresolved
+source relationships also contribute unknowns instead of being presented as
+complete coverage. Binding coverage remains the dimension-specific source for
+API implementation, tests, deployment, and ownership gaps; its unknowns are
+included in the aggregate count.
+
+Profiles govern workspace policy and verification expectations; they do not hide
+source providers. Running the same unchanged workspace with `minimal` and
+`polyglot` can therefore produce identical graph content. Changing a profile
+does update the canonical workspace manifest and contract identity.
 
 ## Model first, graph second
 
@@ -177,6 +208,14 @@ is still declared by the contract but missing on disk is preserved in the
 model and reported as `project.path.missing`; it is never silently removed from
 the graph boundary. A persisted Knowledge Graph is accepted only when its
 workspace identity and project topology also match that model.
+
+An adopted monorepo remains one canonical project unless its internal projects
+are separately registered, discovered inside the workspace boundary, or
+declared by contract. The model still records bounded nested runtime manifests
+in `project.runtimeCandidates` and aggregates them into
+`workspace.identity.runtimeFamilies`. Graph providers can then discover the
+monorepo's internal services, contracts, delivery surfaces, and proofs without
+pretending that the primary runtime describes the whole repository.
 
 The two artifacts are published under one workspace lock using a
 rollback-capable artifact transaction. Each file replacement is atomic; if any

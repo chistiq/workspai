@@ -37,6 +37,13 @@ const NPM_KITS = [
     tier: 'extended',
     owner: 'npm',
   },
+  {
+    id: 'rust.axum',
+    project: 'matrix-rust-axum',
+    runtime: 'rust',
+    tier: 'extended',
+    owner: 'npm',
+  },
 ];
 
 const CORE_KITS = [
@@ -62,6 +69,14 @@ const CORE_KITS = [
     owner: 'core',
   },
 ];
+
+if (process.argv.includes('--list-kits')) {
+  fs.writeFileSync(
+    process.stdout.fd,
+    `${JSON.stringify([...NPM_KITS, ...CORE_KITS].map((kit) => kit.id).sort())}\n`
+  );
+  process.exit(0);
+}
 
 const PROJECT_COMMAND_CONTRACT = [
   'version',
@@ -158,6 +173,7 @@ const RUNTIME_HINTS = {
   dotnet: ['dotnet', '--version'],
   python: ['python3', '--version'],
   node: [process.execPath, '--version'],
+  rust: ['rustc', '--version'],
 };
 
 const args = parseArgs(process.argv.slice(2));

@@ -171,6 +171,27 @@ describe('project taxonomy and expanded kit families', () => {
     ).rejects.toThrow(/Unavailable fixture tool/);
   });
 
+  it('fails early with actionable Node guidance when the latest VS Code generator drifts', () => {
+    const definition = resolveOfficialProjectGenerator('extension.vscode');
+    expect(definition?.nodeSupport?.requirement).toBe('^22.22.2 || ^24.15.0 || >=26.0.0');
+
+    expect(() =>
+      officialProjectTestApi.assertOfficialGeneratorNodeSupport(definition!, '24.13.0')
+    ).toThrow(/24\.15\.0/);
+    expect(() =>
+      officialProjectTestApi.assertOfficialGeneratorNodeSupport(definition!, '22.22.2')
+    ).not.toThrow();
+    expect(() =>
+      officialProjectTestApi.assertOfficialGeneratorNodeSupport(definition!, '24.15.0')
+    ).not.toThrow();
+    expect(() =>
+      officialProjectTestApi.assertOfficialGeneratorNodeSupport(definition!, '26.0.0')
+    ).not.toThrow();
+    expect(() =>
+      officialProjectTestApi.assertOfficialGeneratorNodeSupport(definition!, '23.9.0')
+    ).toThrow(/requires Node\.js/);
+  });
+
   it('records declared and lock-resolved upstream versions in official create evidence', async () => {
     const root = await tempRoot('workspai-official-version-evidence-');
     const definition = resolveOfficialProjectGenerator('desktop.electron');

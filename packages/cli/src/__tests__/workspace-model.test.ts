@@ -104,6 +104,77 @@ describe('workspace intelligence model', () => {
     );
   });
 
+  it('preserves all bounded runtime surfaces for one adopted polyglot project', async () => {
+    const fixtureRoot = await makeTempDir('rk-model-polyglot-adopted-');
+    const workspacePath = path.join(fixtureRoot, 'workspace');
+    const projectPath = path.join(fixtureRoot, 'platform');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'polyglot-platform',
+      profile: 'polyglot',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-07-28T00:00:00.000Z',
+      workspace: { name: 'polyglot-platform', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'platform',
+          relativePath: '../platform',
+          externalPath: projectPath,
+          runtime: 'node',
+          framework: 'node',
+          kit: 'node',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'platform',
+      runtime: 'node',
+      framework: 'node',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'services', 'frontend', 'package.json'), {
+      name: 'frontend',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'services', 'checkout', 'go.mod'),
+      'module checkout\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'services', 'recommendation', 'requirements.txt'),
+      'flask\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'services', 'cart', 'cart.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n'
+    );
+
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-07-28T00:00:00.000Z'),
+    });
+
+    expect(model.projects).toHaveLength(1);
+    expect(model.projects[0]).toMatchObject({
+      name: 'platform',
+      runtime: 'node',
+      runtimeCandidates: ['node', 'go', 'dotnet', 'python'],
+    });
+    expect(model.identity.runtimeFamilies).toEqual(['dotnet', 'go', 'node', 'python']);
+    expect(model.summary.runtimes).toEqual(['dotnet', 'go', 'node', 'python']);
+  });
+
   it('treats contract-declared projects as canonical inventory and reports missing roots', async () => {
     const workspacePath = await makeTempDir('rk-model-contract-inventory-');
     await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {

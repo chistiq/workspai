@@ -653,9 +653,9 @@ export async function syncWorkspaceContract(input: {
     kind: 'rapidkit.workspace.contract',
     generatedAt: (input.now ?? new Date()).toISOString(),
     workspace: {
-      ...discovered.workspace,
       ...(existing?.workspace || {}),
-      name: existing?.workspace?.name || discovered.workspace.name,
+      ...discovered.workspace,
+      name: discovered.workspace.name || existing?.workspace?.name || path.basename(workspacePath),
     },
     projects: projects.sort((a, b) => a.slug.localeCompare(b.slug)),
   };
@@ -1087,6 +1087,7 @@ export async function buildWorkspaceContractGraph(input: {
       path: project.path,
       ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
       runtime: project.runtime,
+      runtimeCandidates: project.runtimeCandidates,
       framework: project.framework,
       ...(project.kit ? { kit: project.kit } : {}),
     })),

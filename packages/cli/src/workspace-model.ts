@@ -4,6 +4,7 @@ import fsExtra from 'fs-extra';
 import { readImportedProjectsRegistry } from './imported-projects-registry.js';
 import {
   detectBackendFrameworkFromProject,
+  detectNestedRuntimeCandidatesFromProject,
   detectRuntimeCandidatesFromProject,
   type BackendConfidence,
   type BackendRuntimeFamily,
@@ -562,7 +563,12 @@ async function buildProjectModel(
     framework: detection.key,
     runtime: detection.runtime,
   });
-  const detectedRuntimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  const relativeProjectPath = path.relative(workspacePath, projectPath);
+  const isExternalProject =
+    relativeProjectPath === '..' || relativeProjectPath.startsWith(`..${path.sep}`);
+  const detectedRuntimeCandidates = isExternalProject
+    ? detectNestedRuntimeCandidatesFromProject(projectPath)
+    : detectRuntimeCandidatesFromProject(projectPath);
   const runtimeCandidates = [
     detection.runtime,
     ...detectedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
@@ -1261,7 +1267,13 @@ export async function buildWorkspaceModel(
         : workspaceContract?.workspace.profile;
   const surfaces = Array.from(new Set(projects.map((project) => project.kind))).sort();
   const categories = Array.from(new Set(projects.map((project) => project.category))).sort();
-  const runtimeFamilies = Array.from(new Set(projects.map((project) => project.runtime))).sort();
+  const runtimeFamilies = Array.from(
+    new Set(
+      projects.flatMap((project) =>
+        project.runtimeCandidates.length > 0 ? project.runtimeCandidates : [project.runtime]
+      )
+    )
+  ).sort();
   const frameworks = Array.from(new Set(projects.map((project) => project.framework))).sort();
   const policiesSource = [
     '.workspai/policies.yml',
@@ -1773,6 +1785,7 @@ export async function writeWorkspaceModel(
       path: project.path,
       ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
       runtime: project.runtime,
+      runtimeCandidates: project.runtimeCandidates,
       framework: project.framework,
       kind: project.kind,
       category: project.category,

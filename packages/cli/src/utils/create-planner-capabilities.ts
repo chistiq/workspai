@@ -14,6 +14,7 @@ export interface OfficialCreateCandidate {
   versionPolicy: 'latest-stable' | 'planned';
   officialCommands: string[];
   adoptAfterCreate: true;
+  runtimeRequirements?: Record<string, string>;
 }
 
 export interface CreatePlannerCapability {
@@ -39,6 +40,11 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     versionPolicy: definition.versionPolicy,
     officialCommands: [definition.commandDisplay('<name>', { skipGit: false, skipInstall: false })],
     adoptAfterCreate: true as const,
+    ...(definition.minNodeVersion
+      ? { runtimeRequirements: { node: `>=${definition.minNodeVersion}` } }
+      : definition.minNodeMajor
+        ? { runtimeRequirements: { node: `>=${definition.minNodeMajor}` } }
+        : {}),
   })),
   ...listOfficialProjectGenerators().map((definition) => ({
     id: definition.kitId,
@@ -49,6 +55,9 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     versionPolicy: definition.versionPolicy,
     officialCommands: [definition.commandDisplay('<name>', { skipGit: false, skipInstall: false })],
     adoptAfterCreate: true as const,
+    ...(definition.nodeSupport
+      ? { runtimeRequirements: { node: definition.nodeSupport.requirement } }
+      : {}),
   })),
   {
     id: 'wordpress-site',

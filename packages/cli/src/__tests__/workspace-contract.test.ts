@@ -184,6 +184,30 @@ describe('workspace contract registry', () => {
     expect(result.contract.projects.map((project) => project.slug)).toEqual(['manual-service']);
   });
 
+  it('treats the current workspace manifest profile as authoritative during contract sync', async () => {
+    const workspacePath = await makeTempDir('rk-contract-profile-sync-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'profile-ws',
+      profile: 'polyglot',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-07-13T00:00:00.000Z',
+      workspace: { name: 'profile-ws', profile: 'minimal' },
+      projects: [],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+
+    expect(result.contract.workspace).toEqual({ name: 'profile-ws', profile: 'polyglot' });
+    expect(await fsExtra.readJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH))).toMatchObject(
+      {
+        workspace: { name: 'profile-ws', profile: 'polyglot' },
+      }
+    );
+  });
+
   it('writes and verifies a valid workspace contract', async () => {
     const workspacePath = await makeTempDir('rk-contract-write-');
     await fsExtra.outputJson(path.join(workspacePath, 'api', '.rapidkit', 'project.json'), {

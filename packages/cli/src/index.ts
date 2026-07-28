@@ -4038,8 +4038,21 @@ export async function handleBootstrapCommand(
           JSON.stringify(manifest, null, 2) + '\n',
           'utf-8'
         );
-      } catch {
-        // Non-fatal — bootstrap continues even if workspace.json sync fails
+        const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
+        await syncWorkspaceContract({ workspacePath });
+        checks.push({
+          id: 'workspace.profile.sync',
+          status: 'passed',
+          message: `Workspace profile synchronized to ${selectedProfile} across canonical artifacts.`,
+        });
+      } catch (error) {
+        checks.push({
+          id: 'workspace.profile.sync',
+          status: 'failed',
+          message: `Failed to synchronize workspace profile across canonical artifacts: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
       }
     }
 
@@ -9133,6 +9146,7 @@ See the command reference for action-specific required inputs and output artifac
             path: project.path,
             ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
             runtime: project.runtime,
+            runtimeCandidates: project.runtimeCandidates,
             framework: project.framework,
             ...(project.kit ? { kit: project.kit } : {}),
           })),
@@ -9605,6 +9619,7 @@ See the command reference for action-specific required inputs and output artifac
                   path: project.path,
                   ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
                   runtime: project.runtime,
+                  runtimeCandidates: project.runtimeCandidates,
                   framework: project.framework,
                   ...(project.kit ? { kit: project.kit } : {}),
                 })),

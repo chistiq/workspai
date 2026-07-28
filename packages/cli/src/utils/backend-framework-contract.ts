@@ -584,6 +584,24 @@ function readJsonIfExists(filePath: string): Record<string, unknown> | null {
   }
 }
 
+const NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  '.workspai',
+  '.rapidkit',
+  '.venv',
+  'venv',
+  'node_modules',
+  'vendor',
+  'dist',
+  'build',
+  'target',
+  'coverage',
+  '.next',
+  '.cache',
+]);
+
 function listFilesRecursive(dirPath: string, maxDepth: number): string[] {
   if (maxDepth < 0 || !fs.existsSync(dirPath)) {
     return [];
@@ -606,6 +624,31 @@ function listFilesRecursive(dirPath: string, maxDepth: number): string[] {
     }
   }
 
+  return results;
+}
+
+function listNestedRuntimeFiles(dirPath: string, maxDepth: number): string[] {
+  if (maxDepth < 0 || !fs.existsSync(dirPath)) {
+    return [];
+  }
+
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const results: string[] = [];
+  for (const entry of entries) {
+    const nextPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      if (NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES.has(entry.name)) continue;
+      results.push(...listNestedRuntimeFiles(nextPath, maxDepth - 1));
+    } else {
+      results.push(nextPath);
+    }
+  }
   return results;
 }
 
@@ -989,6 +1032,52 @@ export function detectRuntimeCandidatesFromProject(projectPath: string): Backend
   ) {
     push('kotlin');
   }
+
+  return candidates;
+}
+
+/**
+ * Discovers runtime manifests below one already-authorized external project
+ * boundary. This must not decide project roots: doing so would turn a monorepo
+ * container such as `apps/` into a project and hide its child projects.
+ */
+export function detectNestedRuntimeCandidatesFromProject(
+  projectPath: string,
+  maxDepth = 4
+): BackendRuntimeFamily[] {
+  const files = listNestedRuntimeFiles(projectPath, Math.max(0, Math.min(12, maxDepth)));
+  const names = new Set(files.map((filePath) => path.basename(filePath)));
+  const lowerFiles = files.map((filePath) => filePath.toLowerCase());
+  const candidates: BackendRuntimeFamily[] = [];
+  const push = (runtime: BackendRuntimeFamily): void => {
+    if (!candidates.includes(runtime)) candidates.push(runtime);
+  };
+  const hasName = (...fileNames: string[]): boolean =>
+    fileNames.some((fileName) => names.has(fileName));
+  const hasSuffix = (...suffixes: string[]): boolean =>
+    lowerFiles.some((filePath) => suffixes.some((suffix) => filePath.endsWith(suffix)));
+
+  if (hasName('go.mod')) push('go');
+  if (hasName('Cargo.toml')) push('rust');
+  if (hasName('pom.xml', 'build.gradle', 'build.gradle.kts')) push('java');
+  if (hasName('mix.exs')) push('elixir');
+  if (hasName('composer.json')) push('php');
+  if (hasSuffix('.csproj', '.sln')) push('dotnet');
+  if (hasName('package.json')) push('node');
+  if (hasName('Gemfile')) push('ruby');
+  if (hasName('pyproject.toml', 'setup.py', 'requirements.txt', 'requirements.in')) push('python');
+  if (hasName('deps.edn', 'project.clj')) push('clojure');
+  if (hasName('build.sbt')) push('scala');
+  if (hasName('deno.json', 'deno.jsonc')) push('deno');
+  if (hasName('bun.lockb', 'bun.lock')) push('bun');
+  if (
+    hasName('CMakeLists.txt', 'meson.build') ||
+    hasSuffix('.cpp', '.cc', '.cxx', '.hpp', '.hh', '.hxx')
+  ) {
+    push('cpp');
+  }
+  if (hasSuffix('.c', '.h')) push('c');
+  if (hasName('settings.gradle.kts') || hasSuffix('.kt')) push('kotlin');
 
   return candidates;
 }

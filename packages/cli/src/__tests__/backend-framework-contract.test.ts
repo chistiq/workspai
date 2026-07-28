@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   detectBackendFrameworkFromHints,
   detectBackendFrameworkFromProject,
+  detectNestedRuntimeCandidatesFromProject,
   detectRuntimeCandidatesFromProject,
   getBackendFrameworkContract,
   normalizeBackendPlatformKey,
@@ -184,6 +185,33 @@ describe('backend-framework-contract', () => {
     );
 
     expect(detectRuntimeCandidatesFromProject(tauriProject)).toEqual(['rust', 'node']);
+  });
+
+  it('discovers bounded nested runtime manifests in an adopted polyglot repository', async () => {
+    const monorepo = await createTempProject('nested-polyglot');
+    await fs.outputFile(path.join(monorepo, 'services', 'checkout', 'go.mod'), 'module checkout\n');
+    await fs.outputJson(path.join(monorepo, 'services', 'frontend', 'package.json'), {
+      name: 'frontend',
+    });
+    await fs.outputFile(
+      path.join(monorepo, 'services', 'recommendation', 'requirements.txt'),
+      'flask\n'
+    );
+    await fs.outputFile(
+      path.join(monorepo, 'services', 'cart', 'cart.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n'
+    );
+    await fs.outputFile(
+      path.join(monorepo, 'node_modules', 'ignored', 'Cargo.toml'),
+      '[package]\nname = "ignored"\n'
+    );
+
+    expect(detectNestedRuntimeCandidatesFromProject(monorepo)).toEqual([
+      'go',
+      'dotnet',
+      'node',
+      'python',
+    ]);
   });
 
   it('pins unknown normalization and returns immutable public descriptors', () => {

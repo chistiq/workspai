@@ -38,6 +38,11 @@ export interface OfficialProjectGeneratorDefinition {
   supportsSkipInstall: boolean;
   requiredTools: ToolRequirement[];
   recommendedTools?: ToolRequirement[];
+  nodeSupport?: {
+    requirement: string;
+    ranges: Array<{ major?: number; minVersion: string }>;
+    guidance: string;
+  };
   commandDisplay: (name: string, options: GeneratorFlags) => string;
   commandExec: (name: string, options: GeneratorFlags) => CommandPlan;
   requiredArtifacts: string[];
@@ -150,6 +155,16 @@ const OFFICIAL_PROJECT_GENERATORS: OfficialProjectGeneratorDefinition[] = [
     versionPolicy: 'latest-stable',
     officialSource: 'generator-code',
     supportsSkipInstall: false,
+    nodeSupport: {
+      requirement: '^22.22.2 || ^24.15.0 || >=26.0.0',
+      ranges: [
+        { major: 22, minVersion: '22.22.2' },
+        { major: 24, minVersion: '24.15.0' },
+        { minVersion: '26.0.0' },
+      ],
+      guidance:
+        'Install Node.js 22.22.2+, 24.15.0+, or 26+ before running the latest stable VS Code Extension generator.',
+    },
     requiredTools: [
       {
         command: 'git',
@@ -318,6 +333,7 @@ export async function createOfficialProject(args: string[]): Promise<CreateOffic
     };
   }
 
+  assertOfficialGeneratorNodeSupport(definition);
   await assertOfficialGeneratorToolSupport(definition, flags);
   await fsExtra.ensureDir(path.dirname(projectPath));
   try {
@@ -530,6 +546,38 @@ async function assertOfficialGeneratorToolSupport(
   }
 }
 
+function assertOfficialGeneratorNodeSupport(
+  definition: OfficialProjectGeneratorDefinition,
+  currentVersion = process.versions.node
+): void {
+  const support = definition.nodeSupport;
+  if (!support) return;
+
+  const currentMajor = Number.parseInt(currentVersion.split('.')[0] ?? '', 10);
+  const supported = support.ranges.some(
+    (range) =>
+      (range.major === undefined || range.major === currentMajor) &&
+      compareNumericVersions(currentVersion, range.minVersion) >= 0
+  );
+  if (supported) return;
+
+  throw new Error(
+    `${definition.displayName} requires Node.js ${support.requirement} ` +
+      `(current: ${currentVersion}). ${support.guidance}`
+  );
+}
+
+function compareNumericVersions(left: string, right: string): number {
+  const leftParts = left.split('.').map((value) => Number.parseInt(value, 10) || 0);
+  const rightParts = right.split('.').map((value) => Number.parseInt(value, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
 async function canRunTool(requirement: ToolRequirement): Promise<boolean> {
   const invocation = resolvePackageRunnerInvocation(requirement.command);
   return await new Promise<boolean>((resolve) => {
@@ -587,6 +635,7 @@ function readFlagValue(argv: readonly string[], flag: string): string | undefine
 
 export const __test__ = {
   assertOfficialScaffold,
+  assertOfficialGeneratorNodeSupport,
   assertOfficialGeneratorToolSupport,
   canRunTool,
   writeOfficialProjectMetadata,

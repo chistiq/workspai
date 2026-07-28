@@ -1138,6 +1138,15 @@ describe('CLI Entry Point', () => {
           runtime: 'node',
           kit_name: 'vite-react',
         });
+        await fs.outputJson(path.join(workspaceRoot, name, '.workspai', 'context.json'), {
+          engine: 'npm',
+          runtime: 'node',
+          commands: {
+            // Exercise the real parallel fleet scheduler without nesting
+            // Workspai -> npm -> Node subprocess chains under the full test pool.
+            test: 'node --version',
+          },
+        });
       }
 
       const result = await execa(

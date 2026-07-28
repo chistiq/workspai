@@ -37,6 +37,7 @@ export type CreatePlannerCapabilitiesContract = {
     versionPolicy: 'latest-stable' | 'planned';
     officialCommands: string[];
     adoptAfterCreate: true;
+    runtimeRequirements?: Record<string, string>;
   }>;
   existingRuntimeSignals: string[];
   productRules: string[];

@@ -32,6 +32,7 @@ export type WorkspaceKnowledgeProjectInput = {
   path: string;
   absolutePath?: string;
   runtime?: string;
+  runtimeCandidates?: string[];
   framework?: string;
   kit?: string;
   kind?: string;
@@ -114,7 +115,18 @@ type ProviderContext = {
   state: KnowledgeGraphState;
 };
 type ResolvedProject = WorkspaceKnowledgeProjectInput & { root: string; artifactPrefix: string };
-type Provider = { id: string; version: string; run(context: ProviderContext): Promise<void> };
+type Provider = {
+  id: string;
+  version: string;
+  /**
+   * Applicability is deliberately separate from execution success. A provider
+   * that has no matching source surface is skipped; a provider that has a
+   * matching source but emits nothing is partial and contributes an explicit
+   * unknown.
+   */
+  applicable?(context: ProviderContext): boolean | Promise<boolean>;
+  run(context: ProviderContext): Promise<void>;
+};
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -439,9 +451,131 @@ async function readStructuredDocuments(filePath: string): Promise<JsonRecord[]> 
     const record = asRecord(parsed);
     return record ? [record] : [];
   }
-  return parseAllDocuments(contents)
+  return parseAllDocuments(contents, { logLevel: 'silent' })
     .map((document) => asRecord(document.toJSON()))
     .filter((document): document is JsonRecord => document !== null);
+}
+
+function uniqueInventoryFiles(context: ProviderContext): string[] {
+  return [
+    ...new Set([
+      ...context.workspaceFiles,
+      ...context.projects.flatMap((project) => context.filesByProject.get(project.id) ?? []),
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+function isOpenApiCandidate(file: string): boolean {
+  return /^(?:openapi|swagger)(?:\.[^.]+)?\.(?:json|ya?ml)$/i.test(path.basename(file));
+}
+
+function isInterfaceContractCandidate(file: string): boolean {
+  const base = path.basename(file).toLowerCase();
+  return (
+    /\.(?:graphql|gql|proto)$/.test(base) || /^asyncapi(?:\.[^.]+)?\.(?:json|ya?ml)$/.test(base)
+  );
+}
+
+function isInfrastructureCandidate(file: string): boolean {
+  const base = path.basename(file);
+  return /^Dockerfile(?:\..+)?$/i.test(base) || /\.tf$/i.test(base) || base === 'Chart.yaml';
+}
+
+function isDocumentationCandidate(file: string): boolean {
+  return /(?:^|[\\/])(?:README|ARCHITECTURE|CONTRIBUTING|SECURITY)\.md$/i.test(file);
+}
+
+function isCiWorkflowCandidate(root: string, file: string): boolean {
+  const relative = toPosix(path.relative(root, file));
+  return (
+    /^\.github\/workflows\/.+\.ya?ml$/i.test(relative) ||
+    /^(?:\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|Jenkinsfile|bitbucket-pipelines\.ya?ml|\.woodpecker\.ya?ml)$/i.test(
+      relative
+    ) ||
+    /^\.circleci\/config\.ya?ml$/i.test(relative)
+  );
+}
+
+function isDecisionCandidate(root: string, file: string): boolean {
+  const relative = toPosix(path.relative(root, file));
+  return (
+    /(?:^|\/)(?:adr|adrs|decisions)(?:\/).+\.md$/i.test(relative) ||
+    /(?:^|\/)ADR[-_0-9].+\.md$/i.test(relative)
+  );
+}
+
+async function composeCandidateFiles(context: ProviderContext): Promise<string[]> {
+  const candidates = new Set<string>();
+  for (const root of [context.workspacePath, ...context.projects.map((project) => project.root)]) {
+    for (const name of [
+      'compose.yml',
+      'compose.yaml',
+      'docker-compose.yml',
+      'docker-compose.yaml',
+    ]) {
+      const candidate = path.join(root, name);
+      if (await fsExtra.pathExists(candidate)) candidates.add(candidate);
+    }
+  }
+  return [...candidates].sort((a, b) => a.localeCompare(b));
+}
+
+async function ownershipCandidateFiles(context: ProviderContext): Promise<string[]> {
+  const roots = [context.workspacePath, ...context.projects.map((project) => project.root)];
+  const candidates = roots.flatMap((root) => [
+    path.join(root, 'CODEOWNERS'),
+    path.join(root, '.github', 'CODEOWNERS'),
+    path.join(root, 'docs', 'CODEOWNERS'),
+  ]);
+  const existing = await Promise.all(
+    candidates.map(async (candidate) => ((await fsExtra.pathExists(candidate)) ? candidate : null))
+  );
+  return [...new Set(existing.filter((candidate): candidate is string => Boolean(candidate)))].sort(
+    (a, b) => a.localeCompare(b)
+  );
+}
+
+function ciCandidateFiles(context: ProviderContext): string[] {
+  const inventories = [
+    { root: context.workspacePath, files: context.workspaceFiles },
+    ...context.projects.map((project) => ({
+      root: project.root,
+      files: context.filesByProject.get(project.id) ?? [],
+    })),
+  ];
+  return [
+    ...new Set(
+      inventories.flatMap((inventory) =>
+        inventory.files.filter((file) => isCiWorkflowCandidate(inventory.root, file))
+      )
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+async function kubernetesCandidateFiles(context: ProviderContext): Promise<string[]> {
+  const candidates: string[] = [];
+  for (const file of uniqueInventoryFiles(context)) {
+    if (!/\.ya?ml$/i.test(file)) continue;
+    try {
+      const documents = await readStructuredDocuments(file);
+      if (
+        documents.some((document) => {
+          const metadata = asRecord(document.metadata);
+          return Boolean(
+            stringValue(document.apiVersion) &&
+            stringValue(document.kind) &&
+            stringValue(metadata?.name)
+          );
+        })
+      ) {
+        candidates.push(file);
+      }
+    } catch {
+      // Parse failures are handled by the provider when a path-based manifest
+      // candidate reaches execution.
+    }
+  }
+  return candidates.sort((a, b) => a.localeCompare(b));
 }
 
 function projectForFile(projects: ResolvedProject[], filePath: string): ResolvedProject | null {
@@ -462,6 +596,7 @@ class KnowledgeGraphState {
   readonly providers: WorkspaceKnowledgeProviderRun[] = [];
   readonly diagnostics: WorkspaceKnowledgeDiagnostic[] = [];
   private readonly contentHashes = new Map<string, string | null>();
+  private readonly attributeConflicts = new Set<string>();
 
   constructor(
     readonly workspacePath: string,
@@ -548,14 +683,18 @@ class KnowledgeGraphState {
         attribute in mergedAttributes &&
         JSON.stringify(mergedAttributes[attribute]) !== JSON.stringify(value)
       ) {
-        this.diagnostics.push({
-          code: 'graph.knowledge.attribute_conflict',
-          severity: 'warning',
-          message: `Conflicting ${attribute} values were observed for ${input.kind} ${input.label}.`,
-          entityIds: [id],
-          recommendation:
-            'Inspect the entity proof paths and make the authoritative source explicit.',
-        });
+        const conflictKey = `${id}\0${attribute}`;
+        if (!this.attributeConflicts.has(conflictKey)) {
+          this.attributeConflicts.add(conflictKey);
+          this.diagnostics.push({
+            code: 'graph.knowledge.attribute_conflict',
+            severity: 'warning',
+            message: `Conflicting ${attribute} values were observed for ${input.kind} ${input.label}.`,
+            entityIds: [id],
+            recommendation:
+              'Inspect the entity proof paths and make the authoritative source explicit.',
+          });
+        }
         continue;
       }
       mergedAttributes[attribute] = value;
@@ -828,6 +967,7 @@ const foundationProvider: Provider = {
         attributes: {
           path: project.path,
           runtime: project.runtime,
+          runtimeCandidates: project.runtimeCandidates,
           framework: project.framework,
           kit: project.kit,
           kind: project.kind,
@@ -970,6 +1110,13 @@ const foundationProvider: Provider = {
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
   version: '1.0.0',
+  applicable(context) {
+    return context.projects.some((project) =>
+      (context.filesByProject.get(project.id) ?? []).some((file) =>
+        SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())
+      )
+    );
+  },
   async run(context) {
     for (const project of context.projects) {
       const files = (context.filesByProject.get(project.id) ?? [])
@@ -1170,6 +1317,9 @@ const sourceStructureProvider: Provider = {
 const serviceContractProvider: Provider = {
   id: 'workspace-service-contract',
   version: '1.0.0',
+  applicable(context) {
+    return Boolean(context.contract?.projects.length);
+  },
   async run(context) {
     if (!context.contract) return;
     const events = new Map<string, string>();
@@ -1270,11 +1420,14 @@ const serviceContractProvider: Provider = {
 const openApiProvider: Provider = {
   id: 'openapi',
   version: '1.0.0',
+  applicable(context) {
+    return context.projects.some((project) =>
+      (context.filesByProject.get(project.id) ?? []).some(isOpenApiCandidate)
+    );
+  },
   async run(context) {
     for (const project of context.projects) {
-      const files = (context.filesByProject.get(project.id) ?? []).filter((file) =>
-        /^(?:openapi|swagger)(?:\.[^.]+)?\.(?:json|ya?ml)$/i.test(path.basename(file))
-      );
+      const files = (context.filesByProject.get(project.id) ?? []).filter(isOpenApiCandidate);
       for (const file of files) {
         let documents: JsonRecord[];
         try {
@@ -1411,15 +1564,16 @@ const openApiProvider: Provider = {
 const interfaceContractProvider: Provider = {
   id: 'interface-contracts',
   version: '1.0.0',
+  applicable(context) {
+    return context.projects.some((project) =>
+      (context.filesByProject.get(project.id) ?? []).some(isInterfaceContractCandidate)
+    );
+  },
   async run(context) {
     for (const project of context.projects) {
-      const files = (context.filesByProject.get(project.id) ?? []).filter((file) => {
-        const base = path.basename(file).toLowerCase();
-        return (
-          /\.(?:graphql|gql|proto)$/.test(base) ||
-          /^asyncapi(?:\.[^.]+)?\.(?:json|ya?ml)$/.test(base)
-        );
-      });
+      const files = (context.filesByProject.get(project.id) ?? []).filter(
+        isInterfaceContractCandidate
+      );
       for (const file of files) {
         const artifact = context.state.artifactPath(file, project);
         const extension = path.extname(file).toLowerCase();
@@ -1472,6 +1626,9 @@ const interfaceContractProvider: Provider = {
         }
         if (extension === '.proto') {
           const contents = await fsExtra.readFile(file, 'utf8');
+          const contractFingerprint = hash(contents.replace(/\r\n/g, '\n').trim());
+          const packageName = contents.match(/^\s*package\s+([A-Za-z_][\w.]*)\s*;/m)?.[1];
+          const identityNamespace = packageName || `unscoped:${contractFingerprint.slice(0, 16)}`;
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
@@ -1483,10 +1640,17 @@ const interfaceContractProvider: Provider = {
           for (const serviceMatch of contents.matchAll(/^\s*service\s+([A-Za-z_]\w*)/gm)) {
             const api = context.state.addEntity({
               kind: 'api',
-              key: `protobuf-service:${project.id}:${artifact}:${serviceMatch[1]}`,
+              key: `protobuf-service:${identityNamespace}:${serviceMatch[1]}`,
               label: serviceMatch[1],
-              projectId: project.id,
-              attributes: { specification: 'protobuf', artifact },
+              aliases: [
+                ...(packageName ? [`${packageName}.${serviceMatch[1]}`] : []),
+                serviceMatch[1],
+              ],
+              attributes: {
+                specification: 'protobuf',
+                package: packageName,
+                definitionHash: contractFingerprint,
+              },
               proofIds: [proof],
             });
             context.state.addRelation({
@@ -1501,10 +1665,17 @@ const interfaceContractProvider: Provider = {
           for (const messageMatch of contents.matchAll(/^\s*message\s+([A-Za-z_]\w*)/gm)) {
             context.state.addEntity({
               kind: 'schema',
-              key: `protobuf-message:${project.id}:${artifact}:${messageMatch[1]}`,
+              key: `protobuf-message:${identityNamespace}:${messageMatch[1]}`,
               label: messageMatch[1],
-              projectId: project.id,
-              attributes: { specification: 'protobuf', artifact },
+              aliases: [
+                ...(packageName ? [`${packageName}.${messageMatch[1]}`] : []),
+                messageMatch[1],
+              ],
+              attributes: {
+                specification: 'protobuf',
+                package: packageName,
+                definitionHash: contractFingerprint,
+              },
               proofIds: [proof],
             });
           }
@@ -1566,11 +1737,11 @@ const interfaceContractProvider: Provider = {
 const infrastructureProvider: Provider = {
   id: 'infrastructure-as-code',
   version: '1.0.0',
+  applicable(context) {
+    return uniqueInventoryFiles(context).some(isInfrastructureCandidate);
+  },
   async run(context) {
-    const files = context.workspaceFiles.filter((file) => {
-      const base = path.basename(file);
-      return /^Dockerfile(?:\..+)?$/i.test(base) || /\.tf$/i.test(base) || base === 'Chart.yaml';
-    });
+    const files = uniqueInventoryFiles(context).filter(isInfrastructureCandidate);
     for (const file of files) {
       const project = projectForFile(context.projects, file);
       const scopeId = project?.id ?? context.state.workspaceName;
@@ -1667,23 +1838,11 @@ function classifyImage(image: string): WorkspaceKnowledgeEntityKind {
 const composeProvider: Provider = {
   id: 'compose',
   version: '1.0.0',
+  async applicable(context) {
+    return (await composeCandidateFiles(context)).length > 0;
+  },
   async run(context) {
-    const candidates = new Set<string>();
-    for (const root of [
-      context.workspacePath,
-      ...context.projects.map((project) => project.root),
-    ]) {
-      for (const name of [
-        'compose.yml',
-        'compose.yaml',
-        'docker-compose.yml',
-        'docker-compose.yaml',
-      ]) {
-        const candidate = path.join(root, name);
-        if (await fsExtra.pathExists(candidate)) candidates.add(candidate);
-      }
-    }
-    for (const file of [...candidates].sort()) {
+    for (const file of await composeCandidateFiles(context)) {
       let document: JsonRecord | undefined;
       try {
         document = (await readStructuredDocuments(file))[0];
@@ -1795,6 +1954,9 @@ const composeProvider: Provider = {
 const documentationProvider: Provider = {
   id: 'documentation',
   version: '1.0.0',
+  applicable(context) {
+    return uniqueInventoryFiles(context).some(isDocumentationCandidate);
+  },
   async run(context) {
     const seen = new Set<string>();
     const inventories = [
@@ -1802,9 +1964,7 @@ const documentationProvider: Provider = {
       ...context.projects.map((project) => context.filesByProject.get(project.id) ?? []),
     ];
     for (const inventory of inventories) {
-      const files = inventory.filter((file) =>
-        /(?:^|[\\/])(?:README|ARCHITECTURE|CONTRIBUTING|SECURITY)\.md$/i.test(file)
-      );
+      const files = inventory.filter(isDocumentationCandidate);
       for (const file of files) {
         if (seen.has(file)) continue;
         seen.add(file);
@@ -1847,84 +2007,80 @@ const documentationProvider: Provider = {
 const kubernetesProvider: Provider = {
   id: 'kubernetes',
   version: '1.0.0',
+  async applicable(context) {
+    return (await kubernetesCandidateFiles(context)).length > 0;
+  },
   async run(context) {
-    for (const project of context.projects) {
-      const files = (context.filesByProject.get(project.id) ?? []).filter((file) =>
-        /(?:^|[\\/])(?:k8s|kubernetes|deploy|manifests)(?:[\\/]).+\.ya?ml$/i.test(file)
-      );
-      for (const file of files) {
-        let documents: JsonRecord[];
-        try {
-          documents = await readStructuredDocuments(file);
-        } catch {
-          continue;
-        }
-        for (let index = 0; index < documents.length; index += 1) {
-          const document = documents[index];
-          const kind = stringValue(document.kind);
-          const metadata = asRecord(document.metadata);
-          const name = stringValue(metadata?.name);
-          if (!kind || !name) continue;
-          const namespace = stringValue(metadata?.namespace) ?? 'default';
-          const entityKind: WorkspaceKnowledgeEntityKind = /Deployment|StatefulSet|DaemonSet/i.test(
-            kind
-          )
-            ? 'deployment'
-            : /Service|Ingress/i.test(kind)
-              ? 'service'
-              : /ConfigMap|Secret/i.test(kind)
-                ? 'environment'
-                : 'deployment';
-          const proof = await context.state.addProof({
-            provider: this.id,
-            artifact: context.state.artifactPath(file, project),
-            absolutePath: file,
-            pointer: `/documents/${index}`,
-            trust: 'authoritative',
-            derivation: 'authored',
-            detail: `${kind} ${namespace}/${name}`,
-          });
-          const entity = context.state.addEntity({
-            kind: entityKind,
-            key: `kubernetes:${kind}:${namespace}:${name}`,
-            label: `${kind}/${name}`,
-            projectId: project.id,
-            attributes: {
-              resourceKind: kind,
-              namespace,
-              secret: kind === 'Secret',
-              keys:
-                kind === 'Secret' || kind === 'ConfigMap'
-                  ? Object.keys(asRecord(document.data) ?? {}).sort()
-                  : undefined,
-            },
-            proofIds: [proof],
-          });
-          context.state.addRelation({
-            from: stableId('project', `project:${project.id}`),
-            to: entity,
-            kind: entityKind === 'deployment' ? 'deploys' : 'contains',
-            trust: 'authoritative',
-            derivation: 'authored',
-            proofIds: [proof],
-          });
-          const environment = context.state.addEntity({
-            kind: 'environment',
-            key: `kubernetes-namespace:${namespace}`,
-            label: `Kubernetes namespace ${namespace}`,
-            projectId: project.id,
-            attributes: { namespace },
-            proofIds: [proof],
-          });
-          context.state.addRelation({
-            from: entity,
-            to: environment,
-            kind: 'runs-on',
-            trust: 'authoritative',
-            derivation: 'authored',
-            proofIds: [proof],
-          });
-        }
+    for (const file of await kubernetesCandidateFiles(context)) {
+      const project = projectForFile(context.projects, file);
+      const subject = project
+        ? stableId('project', `project:${project.id}`)
+        : stableId('workspace', `workspace:${context.state.workspaceName}`);
+      const documents = await readStructuredDocuments(file);
+      for (let index = 0; index < documents.length; index += 1) {
+        const document = documents[index];
+        const kind = stringValue(document.kind);
+        const metadata = asRecord(document.metadata);
+        const name = stringValue(metadata?.name);
+        if (!kind || !name) continue;
+        const namespace = stringValue(metadata?.namespace) ?? 'default';
+        const entityKind: WorkspaceKnowledgeEntityKind = /Deployment|StatefulSet|DaemonSet/i.test(
+          kind
+        )
+          ? 'deployment'
+          : /Service|Ingress/i.test(kind)
+            ? 'service'
+            : /ConfigMap|Secret/i.test(kind)
+              ? 'environment'
+              : 'deployment';
+        const proof = await context.state.addProof({
+          provider: this.id,
+          artifact: context.state.artifactPath(file, project),
+          absolutePath: file,
+          pointer: `/documents/${index}`,
+          trust: 'authoritative',
+          derivation: 'authored',
+          detail: `${kind} ${namespace}/${name}`,
+        });
+        const entity = context.state.addEntity({
+          kind: entityKind,
+          key: `kubernetes:${kind}:${namespace}:${name}`,
+          label: `${kind}/${name}`,
+          ...(project ? { projectId: project.id } : {}),
+          attributes: {
+            resourceKind: kind,
+            namespace,
+            secret: kind === 'Secret',
+            keys:
+              kind === 'Secret' || kind === 'ConfigMap'
+                ? Object.keys(asRecord(document.data) ?? {}).sort()
+                : undefined,
+          },
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: subject,
+          to: entity,
+          kind: entityKind === 'deployment' ? 'deploys' : 'contains',
+          trust: 'authoritative',
+          derivation: 'authored',
+          proofIds: [proof],
+        });
+        const environment = context.state.addEntity({
+          kind: 'environment',
+          key: `kubernetes-namespace:${namespace}`,
+          label: `Kubernetes namespace ${namespace}`,
+          attributes: { namespace },
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: entity,
+          to: environment,
+          kind: 'runs-on',
+          trust: 'authoritative',
+          derivation: 'authored',
+          proofIds: [proof],
+        });
       }
     }
   },
@@ -1933,19 +2089,14 @@ const kubernetesProvider: Provider = {
 const ciProvider: Provider = {
   id: 'ci-workflow',
   version: '1.0.0',
+  applicable(context) {
+    return ciCandidateFiles(context).length > 0;
+  },
   async run(context) {
-    const files = context.workspaceFiles.filter((file) => {
-      const relative = toPosix(path.relative(context.workspacePath, file));
-      return (
-        /^\.github\/workflows\/.+\.ya?ml$/i.test(relative) ||
-        /^(?:\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|Jenkinsfile|bitbucket-pipelines\.ya?ml|\.woodpecker\.ya?ml)$/i.test(
-          relative
-        ) ||
-        /^\.circleci\/config\.ya?ml$/i.test(relative)
-      );
-    });
+    const files = ciCandidateFiles(context);
     for (const file of files) {
-      const artifact = context.state.artifactPath(file);
+      const project = projectForFile(context.projects, file);
+      const artifact = context.state.artifactPath(file, project);
       const isJenkins = path.basename(file) === 'Jenkinsfile';
       let label = path.basename(file);
       let jobs: string[] = [];
@@ -1962,7 +2113,7 @@ const ciProvider: Provider = {
         }
         if (!document) continue;
         label = stringValue(document.name) ?? label;
-        const relative = toPosix(path.relative(context.workspacePath, file));
+        const relative = toPosix(path.relative(project?.root ?? context.workspacePath, file));
         if (/^\.gitlab-ci\./i.test(relative)) {
           const reserved = new Set([
             'stages',
@@ -2008,7 +2159,9 @@ const ciProvider: Provider = {
         proofIds: [proof],
       });
       context.state.addRelation({
-        from: stableId('workspace', `workspace:${context.state.workspaceName}`),
+        from: project
+          ? stableId('project', `project:${project.id}`)
+          : stableId('workspace', `workspace:${context.state.workspaceName}`),
         to: pipeline,
         kind: 'contains',
         trust: 'authoritative',
@@ -2022,14 +2175,12 @@ const ciProvider: Provider = {
 const ownershipProvider: Provider = {
   id: 'codeowners',
   version: '1.0.0',
+  async applicable(context) {
+    return (await ownershipCandidateFiles(context)).length > 0;
+  },
   async run(context) {
-    const candidates = [
-      path.join(context.workspacePath, 'CODEOWNERS'),
-      path.join(context.workspacePath, '.github', 'CODEOWNERS'),
-      path.join(context.workspacePath, 'docs', 'CODEOWNERS'),
-    ];
-    for (const file of candidates) {
-      if (!(await fsExtra.pathExists(file))) continue;
+    for (const file of await ownershipCandidateFiles(context)) {
+      const owningProject = projectForFile(context.projects, file);
       const contents = await fsExtra.readFile(file, 'utf8');
       const lines = contents.split(/\r?\n/);
       for (let index = 0; index < lines.length; index += 1) {
@@ -2039,7 +2190,7 @@ const ownershipProvider: Provider = {
         for (const owner of owners.filter((value) => value.startsWith('@'))) {
           const proof = await context.state.addProof({
             provider: this.id,
-            artifact: context.state.artifactPath(file),
+            artifact: context.state.artifactPath(file, owningProject),
             absolutePath: file,
             line: index + 1,
             trust: 'authoritative',
@@ -2055,14 +2206,24 @@ const ownershipProvider: Provider = {
           });
           const matchedProjects = context.projects.filter((project) => {
             const normalizedPattern = pattern.replace(/^\//, '').replace(/\*.*$/, '');
+            const codeownersDirectory = path.dirname(file);
+            const codeownersRoot = ['.github', 'docs'].includes(path.basename(codeownersDirectory))
+              ? path.dirname(codeownersDirectory)
+              : codeownersDirectory;
+            const relativeProjectPath = toPosix(path.relative(codeownersRoot, project.root));
             return (
-              normalizedPattern && project.path.startsWith(normalizedPattern.replace(/\/$/, ''))
+              normalizedPattern &&
+              (relativeProjectPath === '.' ||
+                relativeProjectPath.startsWith(normalizedPattern.replace(/\/$/, '')) ||
+                project.path.startsWith(normalizedPattern.replace(/\/$/, '')))
             );
           });
           const targets =
             matchedProjects.length > 0
               ? matchedProjects.map((project) => stableId('project', `project:${project.id}`))
-              : [stableId('workspace', `workspace:${context.state.workspaceName}`)];
+              : owningProject
+                ? [stableId('project', `project:${owningProject.id}`)]
+                : [stableId('workspace', `workspace:${context.state.workspaceName}`)];
           for (const target of targets) {
             context.state.addRelation({
               from: ownerEntity,
@@ -2082,6 +2243,17 @@ const ownershipProvider: Provider = {
 const decisionProvider: Provider = {
   id: 'architecture-decisions',
   version: '1.0.0',
+  applicable(context) {
+    return [
+      { root: context.workspacePath, files: context.workspaceFiles },
+      ...context.projects.map((project) => ({
+        root: project.root,
+        files: context.filesByProject.get(project.id) ?? [],
+      })),
+    ].some((inventory) =>
+      inventory.files.some((file) => isDecisionCandidate(inventory.root, file))
+    );
+  },
   async run(context) {
     const seen = new Set<string>();
     const inventories = [
@@ -2092,13 +2264,7 @@ const decisionProvider: Provider = {
       })),
     ];
     for (const inventory of inventories) {
-      const files = inventory.files.filter((file) => {
-        const relative = toPosix(path.relative(inventory.root, file));
-        return (
-          /(?:^|\/)(?:adr|adrs|decisions)(?:\/).+\.md$/i.test(relative) ||
-          /(?:^|\/)ADR[-_0-9].+\.md$/i.test(relative)
-        );
-      });
+      const files = inventory.files.filter((file) => isDecisionCandidate(inventory.root, file));
       for (const file of files) {
         if (seen.has(file)) continue;
         seen.add(file);
@@ -2328,20 +2494,45 @@ export async function buildWorkspaceKnowledgeGraph(
       diagnostics: state.diagnostics.length,
     };
     let status: WorkspaceKnowledgeProviderRun['status'] = 'passed';
-    const diagnostics: string[] = [];
+    let executionError: string | null = null;
     try {
-      await provider.run(context);
-      if (state.diagnostics.length > before.diagnostics) status = 'partial';
+      const applicable = provider.applicable ? await provider.applicable(context) : true;
+      if (!applicable) {
+        status = 'skipped';
+      } else {
+        await provider.run(context);
+        const discoveredEntities = state.entities.size - before.entities;
+        const discoveredRelations = state.relations.size - before.relations;
+        const discoveredProofs = state.proofs.size - before.proofs;
+        if (discoveredEntities === 0 && discoveredRelations === 0 && discoveredProofs === 0) {
+          status = 'partial';
+          state.diagnostics.push({
+            code: `graph.provider.${provider.id}.empty_result`,
+            severity: 'warning',
+            message: `${provider.id} found an applicable source surface but produced no graph evidence.`,
+            recommendation:
+              'Inspect the matching source format or extend the provider before treating this graph dimension as complete.',
+          });
+        } else if (state.diagnostics.length > before.diagnostics) {
+          status = 'partial';
+        }
+      }
     } catch (error) {
       status = 'failed';
       const message = error instanceof Error ? error.message : String(error);
-      diagnostics.push(message);
+      executionError = message;
       state.diagnostics.push({
         code: `graph.provider.${provider.id}.failed`,
         severity: 'warning',
         message: `${provider.id} provider failed: ${message}`,
         recommendation: 'Repair the referenced source artifact and rerun workspace graph emit.',
       });
+    }
+    const providerDiagnostics = state.diagnostics
+      .slice(before.diagnostics)
+      .map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`);
+    if (executionError && providerDiagnostics.length === 0) {
+      providerDiagnostics.push(executionError);
     }
     state.providers.push({
       id: provider.id,
@@ -2351,7 +2542,7 @@ export async function buildWorkspaceKnowledgeGraph(
       discoveredEntities: state.entities.size - before.entities,
       discoveredRelations: state.relations.size - before.relations,
       proofCount: state.proofs.size - before.proofs,
-      diagnostics,
+      diagnostics: providerDiagnostics,
     });
   }
   reconcileCrossProviderEvidence(state);
@@ -2362,8 +2553,11 @@ export async function buildWorkspaceKnowledgeGraph(
   const proofs = [...state.proofs.values()].sort((a, b) => a.id.localeCompare(b.id));
   const entityProofed = entities.filter((entity) => entity.proofIds.length > 0).length;
   const relationProofed = relations.filter((relation) => relation.proofIds.length > 0).length;
-  const successfulProviders = state.providers.filter((provider) =>
-    ['passed', 'partial'].includes(provider.status)
+  // This is deliberately an execution-success ratio, not a completeness
+  // score. Skipped means not applicable; partial and explicit unknowns are
+  // represented separately in provider status and quality.unknownCount.
+  const successfulProviders = state.providers.filter(
+    (provider) => provider.status !== 'failed'
   ).length;
   const orphanIds =
     options.projectTopology.diagnostics
@@ -2379,6 +2573,24 @@ export async function buildWorkspaceKnowledgeGraph(
         'Author service contracts or add OpenAPI, Compose, Kubernetes, package or import evidence.',
     });
   }
+  const explicitUnknownCount = state.diagnostics
+    .filter(
+      (diagnostic) =>
+        diagnostic.code.includes('unknown') ||
+        diagnostic.code.includes('unresolved') ||
+        diagnostic.code.includes('limit_reached') ||
+        diagnostic.code.endsWith('.empty_result')
+    )
+    .reduce(
+      (count, diagnostic) =>
+        count + Math.max(diagnostic.entityIds?.length ?? 0, diagnostic.relationIds?.length ?? 0, 1),
+      0
+    );
+  const bindingCoverage = calculateBindingCoverage(entities, relations);
+  const bindingUnknownCount = Object.values(bindingCoverage).reduce(
+    (count, dimension) => count + dimension.unknownCount,
+    0
+  );
 
   return {
     schemaVersion: WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
@@ -2400,9 +2612,8 @@ export async function buildWorkspaceKnowledgeGraph(
         state.providers.length === 0 ? 1 : successfulProviders / state.providers.length,
       conflictCount: state.diagnostics.filter((diagnostic) => diagnostic.code.includes('conflict'))
         .length,
-      unknownCount: state.diagnostics.filter((diagnostic) => diagnostic.code.includes('unknown'))
-        .length,
-      bindingCoverage: calculateBindingCoverage(entities, relations),
+      unknownCount: explicitUnknownCount + bindingUnknownCount,
+      bindingCoverage,
       portable: true,
       secretValuesEmitted: false,
     },

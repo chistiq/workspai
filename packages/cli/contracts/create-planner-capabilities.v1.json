@@ -131,6 +131,9 @@
         "npx create-react-router@latest <name>"
       ],
       "adoptAfterCreate": true,
+      "runtimeRequirements": {
+        "node": ">=22.22.0"
+      },
       "category": "frontend"
     },
     {
@@ -257,6 +260,9 @@
         "npx @angular/cli@latest new <name>"
       ],
       "adoptAfterCreate": true,
+      "runtimeRequirements": {
+        "node": ">=20"
+      },
       "category": "frontend"
     },
     {
@@ -342,6 +348,9 @@
         "npx --package yo@latest --package generator-code@latest -- yo code <name> --quick --extensionType ts --pkgManager npm --bundle esbuild"
       ],
       "adoptAfterCreate": true,
+      "runtimeRequirements": {
+        "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+      },
       "category": "extension"
     },
     {

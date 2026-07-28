@@ -376,6 +376,17 @@ function smokeCreateNpmBackedKits() {
         'rapidkit',
       ],
     },
+    {
+      kit: 'rust.axum',
+      name: 'enterprise-rust-axum',
+      extraArgs: [],
+      expectedFiles: [
+        'Cargo.toml',
+        'src/main.rs',
+        '.workspai/project.json',
+        'rapidkit',
+      ],
+    },
   ];
 
   try {

@@ -1,14 +1,48 @@
-name: Frontend Generator Smoke
+name: Official Generator Smoke
 
 on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'packages/cli/src/frontend-project.ts'
+      - 'packages/cli/src/official-project.ts'
+      - 'packages/cli/src/generators/**'
+      - 'packages/cli/src/utils/create-planner-capabilities.ts'
+      - 'packages/cli/src/utils/kit-registry.ts'
+      - 'packages/cli/contracts/create-planner-capabilities.v1.json'
+      - 'contracts/create-planner-capabilities.v1.json'
+      - 'packages/cli/scripts/smoke-**-generators.mjs'
+      - 'packages/cli/scripts/check-generator-smoke-coverage.mjs'
+      - 'packages/cli/scripts/enterprise-package-smoke.mjs'
+      - 'packages/cli/scripts/runtime-acceptance-matrix.mjs'
+      - 'packages/cli/package.json'
+      - 'package-lock.json'
+      - '.github/workflows/frontend-generator-smoke.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'packages/cli/src/frontend-project.ts'
+      - 'packages/cli/src/official-project.ts'
+      - 'packages/cli/src/generators/**'
+      - 'packages/cli/src/utils/create-planner-capabilities.ts'
+      - 'packages/cli/src/utils/kit-registry.ts'
+      - 'packages/cli/contracts/create-planner-capabilities.v1.json'
+      - 'contracts/create-planner-capabilities.v1.json'
+      - 'packages/cli/scripts/smoke-**-generators.mjs'
+      - 'packages/cli/scripts/check-generator-smoke-coverage.mjs'
+      - 'packages/cli/scripts/enterprise-package-smoke.mjs'
+      - 'packages/cli/scripts/runtime-acceptance-matrix.mjs'
+      - 'packages/cli/package.json'
+      - 'package-lock.json'
+      - '.github/workflows/frontend-generator-smoke.yml'
   workflow_dispatch:
     inputs:
       generators:
-        description: 'Comma-separated generator list, or empty for all'
+        description: 'Comma-separated contracted generator IDs, or empty for all'
         required: false
         default: ''
       execute:
-        description: 'Run official generators instead of dry-run contract checks'
+        description: 'Run official generators instead of contract-only dry runs'
         required: true
         type: boolean
         default: true
@@ -19,10 +53,10 @@ permissions:
   contents: read
 
 jobs:
-  smoke:
-    name: Official frontend generator smoke
+  contract:
+    name: Contract coverage and dry runs
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -31,30 +65,119 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.15.0'
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Dry-run contract smoke
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.execute == 'false' }}
-        run: |
-          if [ -n "${{ github.event.inputs.generators }}" ]; then
-            npm --workspace workspai run smoke:frontend-generators -- --generators "${{ github.event.inputs.generators }}"
-          else
-            npm --workspace workspai run smoke:frontend-generators
-          fi
+      - name: Verify canonical smoke coverage
+        run: npm --workspace workspai run check:generator-smoke-coverage
 
-      - name: Network official generator smoke
-        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.execute == 'true' }}
+      - name: Dry-run every available official generator
         env:
-          RAPIDKIT_FRONTEND_GENERATOR_SMOKE: network
-          RAPIDKIT_FRONTEND_GENERATOR_TIMEOUT_MS: '240000'
+          RAPIDKIT_OFFICIAL_GENERATORS: ${{ github.event.inputs.generators || '' }}
+          RAPIDKIT_OFFICIAL_GENERATOR_REPORT: ${{ runner.temp }}/official-generator-contract-report.json
+        run: npm --workspace workspai run smoke:official-generators
+
+      - name: Verify native generator artifact coverage
+        run: npm --workspace workspai run smoke:enterprise-package
+
+      - name: Upload contract smoke report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-generator-contract-report
+          path: ${{ runner.temp }}/official-generator-contract-report.json
+          if-no-files-found: warn
+
+  matrix:
+    name: Build network matrix
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.execute == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      generators: ${{ steps.plan.outputs.generators }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build matrix from canonical contract
+        id: plan
+        working-directory: packages/cli
+        env:
+          GENERATORS: ${{ github.event.inputs.generators || '' }}
+        shell: bash
         run: |
-          if [ -n "${{ github.event.inputs.generators }}" ]; then
-            npm --workspace workspai run smoke:frontend-generators:network -- --generators "${{ github.event.inputs.generators }}"
-          else
-            npm --workspace workspai run smoke:frontend-generators:network
-          fi
+          MATRIX="$(node scripts/smoke-official-generators.mjs --matrix --generators "$GENERATORS")"
+          echo "generators=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  network:
+    name: ${{ matrix.generator }} (${{ matrix.os }})
+    needs: [contract, matrix]
+    if: ${{ needs.matrix.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.matrix.outputs.generators) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust for Tauri
+        if: ${{ matrix.generator == 'desktop.tauri' }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies for Tauri
+        if: ${{ matrix.generator == 'desktop.tauri' && runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+
+      - name: Setup PHP and Composer for Laravel
+        if: ${{ matrix.generator == 'php.laravel' }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+
+      - name: Install Workspai dependencies
+        run: npm ci
+
+      - name: Execute and verify official generator
+        env:
+          RAPIDKIT_OFFICIAL_GENERATOR_SMOKE: network
+          RAPIDKIT_OFFICIAL_GENERATOR_TIMEOUT_MS: '600000'
+          RAPIDKIT_OFFICIAL_GENERATOR_REPORT: ${{ runner.temp }}/official-generator-smoke-report.json
+        run: npm --workspace workspai run smoke:official-generators:network -- --generators "${{ matrix.generator }}"
+
+      - name: Upload generator smoke report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-generator-${{ matrix.generator }}-${{ runner.os }}
+          path: ${{ runner.temp }}/official-generator-smoke-report.json
+          if-no-files-found: warn

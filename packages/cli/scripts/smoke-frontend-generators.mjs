@@ -8,20 +8,6 @@ const repoRoot = process.cwd();
 const cliPath = path.join(repoRoot, 'dist', 'index.js');
 const nodeBin = resolveNodeBin();
 
-const generatorIds = [
-  'nextjs',
-  'remix',
-  'vite-react',
-  'vite-vue',
-  'vite-svelte',
-  'vite-solid',
-  'vite-vanilla',
-  'nuxt',
-  'angular',
-  'astro',
-  'sveltekit',
-];
-
 const createPlannerContract = JSON.parse(
   readFileSync(path.join(repoRoot, 'contracts', 'create-planner-capabilities.v1.json'), 'utf8')
 );
@@ -30,6 +16,7 @@ const officialFrontendByGenerator = new Map(
     .filter((entry) => entry.id.startsWith('frontend.'))
     .map((entry) => [entry.id.slice('frontend.'.length), entry])
 );
+const generatorIds = [...officialFrontendByGenerator.keys()];
 
 const args = process.argv.slice(2);
 const execute =

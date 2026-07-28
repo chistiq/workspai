@@ -264,21 +264,141 @@ function searchableEntityText(entity: WorkspaceKnowledgeEntity): string {
     .toLowerCase();
 }
 
-function searchScore(entity: WorkspaceKnowledgeEntity, query: string, terms: string[]): number {
+const NATURAL_LANGUAGE_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'been',
+  'being',
+  'by',
+  'can',
+  'check',
+  'could',
+  'did',
+  'do',
+  'does',
+  'find',
+  'for',
+  'from',
+  'give',
+  'had',
+  'has',
+  'have',
+  'how',
+  'i',
+  'in',
+  'into',
+  'is',
+  'it',
+  'its',
+  'may',
+  'might',
+  'of',
+  'on',
+  'or',
+  'our',
+  'show',
+  'should',
+  'that',
+  'the',
+  'their',
+  'them',
+  'then',
+  'there',
+  'these',
+  'they',
+  'this',
+  'those',
+  'tell',
+  'to',
+  'was',
+  'we',
+  'were',
+  'what',
+  'when',
+  'where',
+  'which',
+  'who',
+  'why',
+  'will',
+  'with',
+  'would',
+  'you',
+  'your',
+]);
+
+function searchTokens(value: string): string[] {
+  return normalized(value.replace(/([a-z0-9])([A-Z])/g, '$1 $2'))
+    .split(/[^a-z0-9]+/u)
+    .filter((term) => term.length > 1);
+}
+
+type SearchDocument = {
+  entity: WorkspaceKnowledgeEntity;
+  label: string;
+  identity: string;
+  aliases: string[];
+  haystack: string;
+  labelTokens: Set<string>;
+  identityTokens: Set<string>;
+  aliasTokens: Set<string>;
+  allTokens: Set<string>;
+};
+
+function searchDocument(entity: WorkspaceKnowledgeEntity): SearchDocument {
   const label = normalized(entity.label);
   const identity = normalized(entity.identity.key);
   const aliases = entity.identity.aliases.map(normalized);
   const haystack = searchableEntityText(entity);
+  return {
+    entity,
+    label,
+    identity,
+    aliases,
+    haystack,
+    labelTokens: new Set(searchTokens(label)),
+    identityTokens: new Set(searchTokens(identity)),
+    aliasTokens: new Set(aliases.flatMap(searchTokens)),
+    allTokens: new Set(searchTokens(haystack)),
+  };
+}
+
+function containsTokenOrPrefix(tokens: ReadonlySet<string>, term: string): boolean {
+  return (
+    tokens.has(term) || (term.length >= 3 && [...tokens].some((token) => token.startsWith(term)))
+  );
+}
+
+function searchScore(
+  document: SearchDocument,
+  query: string,
+  terms: string[],
+  inverseDocumentFrequency: ReadonlyMap<string, number>
+): number {
+  const { label, identity, aliases, haystack } = document;
   let score = 0;
   if (label === query || identity === query || aliases.includes(query)) score += 1_000;
   if (label.startsWith(query) || identity.startsWith(query)) score += 250;
   if (haystack.includes(query)) score += 100;
+  let matchedTerms = 0;
   for (const term of terms) {
-    if (label === term) score += 80;
-    else if (label.includes(term)) score += 30;
-    if (identity.includes(term)) score += 20;
-    if (haystack.includes(term)) score += 10;
+    const weight = inverseDocumentFrequency.get(term) ?? 1;
+    const labelMatch = containsTokenOrPrefix(document.labelTokens, term);
+    const identityMatch = containsTokenOrPrefix(document.identityTokens, term);
+    const aliasMatch = containsTokenOrPrefix(document.aliasTokens, term);
+    const anyMatch = containsTokenOrPrefix(document.allTokens, term);
+    if (anyMatch) matchedTerms += 1;
+    if (label === term) score += 80 * weight;
+    else if (labelMatch) score += 36 * weight;
+    if (identityMatch) score += 24 * weight;
+    if (aliasMatch) score += 20 * weight;
+    if (anyMatch) score += 10 * weight;
   }
+  if (terms.length > 0) score += (matchedTerms / terms.length) * 120;
   return score;
 }
 
@@ -291,12 +411,27 @@ export function searchKnowledgeGraph(
   options: WorkspaceKnowledgeSearchOptions
 ): WorkspaceKnowledgeSearchResult {
   const query = normalized(options.query);
-  const terms = [...new Set(query.split(/[^a-z0-9_.:/@-]+/u).filter((term) => term.length > 1))];
+  const rawTerms = [...new Set(searchTokens(query))];
+  const meaningfulTerms = rawTerms.filter((term) => !NATURAL_LANGUAGE_STOPWORDS.has(term));
+  const terms = meaningfulTerms.length > 0 ? meaningfulTerms : rawTerms;
   const limit = Math.max(1, Math.min(Math.trunc(options.limit ?? 12), 100));
   const relationsPerEntity = Math.max(0, Math.min(Math.trunc(options.relationsPerEntity ?? 4), 20));
-  const ranked = graph.entities
+  const documents = graph.entities
     .filter((entity) => !options.kind || entity.kind === options.kind)
-    .map((entity) => ({ entity, score: searchScore(entity, query, terms) }))
+    .map(searchDocument);
+  const inverseDocumentFrequency = new Map(
+    terms.map((term) => {
+      const documentFrequency = documents.filter((document) =>
+        containsTokenOrPrefix(document.allTokens, term)
+      ).length;
+      return [term, Math.log((documents.length + 1) / (documentFrequency + 1)) + 1] as const;
+    })
+  );
+  const ranked = documents
+    .map((document) => ({
+      entity: document.entity,
+      score: searchScore(document, query, terms, inverseDocumentFrequency),
+    }))
     .filter((entry) => query.length === 0 || entry.score > 0)
     .sort(
       (a, b) =>
