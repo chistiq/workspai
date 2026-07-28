@@ -90,9 +90,6 @@ function resolveNodeBin() {
   }
 
   const candidates = [
-    process.env.HOME
-      ? path.join(process.env.HOME, '.nvm', 'versions', 'node', 'v20.20.0', 'bin', 'node')
-      : null,
     process.env.npm_node_execpath,
     process.execPath,
   ].filter(Boolean);

@@ -36,6 +36,7 @@ export interface FrontendGeneratorDefinition {
   framework: string;
   defaultPort: number;
   versionPolicy: 'latest-stable';
+  minNodeVersion?: string;
   minNodeMajor?: number;
   minNodeMessage?: string;
   commandDisplay: (
@@ -133,6 +134,9 @@ const FRONTEND_GENERATORS: FrontendGeneratorDefinition[] = [
     framework: 'remix',
     defaultPort: 5173,
     versionPolicy: 'latest-stable',
+    minNodeVersion: '22.22.0',
+    minNodeMessage:
+      'The latest stable React Router generator requires Node.js 22.22.0 or newer. Upgrade Node.js, then retry.',
     commandDisplay: (name) => `npx create-react-router@latest ${name}`,
     commandExec: (name, options) => ({
       command: 'npx',
@@ -395,8 +399,6 @@ export async function createFrontendProject(
   }
   validateProjectName(projectName);
 
-  assertFrontendGeneratorNodeSupport(definition);
-
   const outputDir = readFlagValue(args, '--output') || process.cwd();
   const projectPath = path.resolve(outputDir, projectName);
   const dryRun = options.dryRun === true || args.includes('--dry-run');
@@ -420,6 +422,8 @@ export async function createFrontendProject(
       commandExec: [commandPlan.command, ...commandPlan.args],
     };
   }
+
+  assertFrontendGeneratorNodeSupport(definition);
 
   await fsExtra.ensureDir(path.dirname(projectPath));
   try {
@@ -598,17 +602,33 @@ function getNodeMajorVersion(): number {
 }
 
 function assertFrontendGeneratorNodeSupport(definition: FrontendGeneratorDefinition): void {
-  if (!definition.minNodeMajor) {
+  if (!definition.minNodeVersion && !definition.minNodeMajor) {
     return;
   }
-  const nodeMajor = getNodeMajorVersion();
-  if (nodeMajor >= definition.minNodeMajor) {
+  const supported = definition.minNodeVersion
+    ? compareNumericVersions(process.versions.node, definition.minNodeVersion) >= 0
+    : getNodeMajorVersion() >= (definition.minNodeMajor ?? 0);
+  if (supported) {
     return;
   }
+  const requirement = definition.minNodeVersion ?? `${definition.minNodeMajor}+`;
   throw new Error(
     definition.minNodeMessage ??
-      `${definition.displayName} requires Node.js ${definition.minNodeMajor}+ (current: ${process.versions.node}).`
+      `${definition.displayName} requires Node.js ${requirement} (current: ${process.versions.node}).`
   );
+}
+
+function compareNumericVersions(left: string, right: string): number {
+  const leftParts = left.split('.').map((value) => Number.parseInt(value, 10) || 0);
+  const rightParts = right.split('.').map((value) => Number.parseInt(value, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
 }
 
 async function hasFrontendScaffoldArtifacts(projectPath: string): Promise<boolean> {

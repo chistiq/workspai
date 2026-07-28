@@ -5,6 +5,7 @@ import { resolveFrontendGenerator } from '../frontend-project.js';
 describe('frontend scaffold generator hardening', () => {
   it('keeps react-router generator non-interactive and git-safe by default', () => {
     const remix = resolveFrontendGenerator('frontend.remix');
+    expect(remix?.minNodeVersion).toBe('22.22.0');
     expect(remix?.commandExec('atlas-app', { skipGit: false, skipInstall: false }).args).toEqual([
       '--yes',
       'create-react-router@latest',
