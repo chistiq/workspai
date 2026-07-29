@@ -1,11 +1,4 @@
-import {
-  existsSync,
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -74,9 +67,13 @@ if (argv.includes('--list')) {
 }
 
 if (argv.includes('--matrix')) {
-  const platforms = (
-    readListOption('--platforms') ?? 'ubuntu-latest,macos-latest,windows-latest'
-  )
+  const matrixMode = readListOption('--matrix-mode') ?? 'full';
+  if (!['primary', 'full'].includes(matrixMode)) {
+    fail(`unsupported matrix mode "${matrixMode}"; expected primary or full`);
+  }
+  const defaultPlatforms =
+    matrixMode === 'primary' ? 'ubuntu-latest' : 'ubuntu-latest,macos-latest,windows-latest';
+  const platforms = (readListOption('--platforms') ?? defaultPlatforms)
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
@@ -91,7 +88,11 @@ if (!existsSync(cliPath)) {
   fail(`missing built CLI at ${cliPath}; run npm run build first`);
 }
 
-const workspaceDir = mkdtempSync(path.join(tmpdir(), 'workspai-official-generator-smoke-'));
+const workspaceRoot = path.resolve(
+  process.env.RAPIDKIT_OFFICIAL_GENERATOR_WORKSPACE_ROOT || tmpdir()
+);
+mkdirSync(workspaceRoot, { recursive: true });
+const workspaceDir = mkdtempSync(path.join(workspaceRoot, 'workspai-official-generator-smoke-'));
 writeWorkspaceFoundation(workspaceDir);
 const mode = execute ? 'network execute' : 'dry-run contract';
 console.log(`[official-generator-smoke] mode=${mode}`);
@@ -113,10 +114,16 @@ try {
       '--output',
       workspaceDir,
       '--skip-git',
+      // Separate scaffold generation from dependency installation. This keeps
+      // upstream generator diagnostics visible and lets the common build stage
+      // verify installation consistently across operating systems.
+      ...(execute && shouldDeferInstall(generator.id) ? ['--skip-install'] : []),
       ...(execute ? [] : ['--dry-run']),
     ];
 
-    console.log(`[official-generator-smoke] ${generator.id}: ${process.execPath} ${command.join(' ')}`);
+    console.log(
+      `[official-generator-smoke] ${generator.id}: ${process.execPath} ${command.join(' ')}`
+    );
     const result = run(process.execPath, command, workspaceDir, timeoutMs);
     if (result.status !== 0) {
       printFailure(result);
@@ -200,7 +207,26 @@ function run(command, args, cwd, timeout) {
   });
 }
 
+function shouldDeferInstall(generatorId) {
+  return generatorId.startsWith('frontend.') || generatorId === 'desktop.tauri';
+}
+
 function validateBuild(projectPath, generatorId) {
+  if (generatorId === 'php.laravel') {
+    const artisan = run(
+      process.platform === 'win32' ? 'php.exe' : 'php',
+      ['artisan', '--version'],
+      projectPath,
+      timeoutMs
+    );
+    if (artisan.status !== 0) {
+      printFailure(artisan);
+      fail(`${generatorId} final Artisan bootstrap exited with ${artisan.status}`);
+    }
+    console.log(`[official-generator-smoke] ${generatorId}: final Artisan bootstrap passed`);
+    return;
+  }
+
   const manifestPath = path.join(projectPath, 'package.json');
   if (!existsSync(manifestPath)) {
     fail(`${generatorId} did not produce package.json for final build verification`);
@@ -258,9 +284,7 @@ function assertDryRunContract(generator, output) {
     fail(`${generator.id} dry-run did not describe a no-write plan`);
   }
   const expectedTokens = [...(generator.officialCommands ?? [])]
-    .flatMap((command) => [
-      ...command.matchAll(/(?:@[\w.-]+\/)?[\w.-]+@(?:latest|stable)\b/g),
-    ])
+    .flatMap((command) => [...command.matchAll(/(?:@[\w.-]+\/)?[\w.-]+@(?:latest|stable)\b/g)])
     .map((match) => match[0]);
   for (const token of expectedTokens) {
     if (!output.includes(token)) {
@@ -316,7 +340,12 @@ function validateGeneratedProject(input) {
 }
 
 function validateDoctor(projectPath, workspaceDir, generatorId) {
-  const result = run(process.execPath, [cliPath, 'doctor', 'project', '--json'], projectPath, timeoutMs);
+  const result = run(
+    process.execPath,
+    [cliPath, 'doctor', 'project', '--json'],
+    projectPath,
+    timeoutMs
+  );
   if (result.error || result.status === null || ![0, 1, 2].includes(result.status)) {
     printFailure(result);
     fail(`${generatorId} Doctor verification exited with ${result.status}`);
@@ -328,7 +357,12 @@ function validateDoctor(projectPath, workspaceDir, generatorId) {
   if (!payload.project || path.resolve(payload.project.path ?? '') !== path.resolve(projectPath)) {
     fail(`${generatorId} Doctor evidence does not identify the generated project`);
   }
-  const doctorArtifact = path.join(workspaceDir, '.workspai', 'reports', 'doctor-project-last-run.json');
+  const doctorArtifact = path.join(
+    workspaceDir,
+    '.workspai',
+    'reports',
+    'doctor-project-last-run.json'
+  );
   if (!existsSync(doctorArtifact)) {
     fail(`${generatorId} Doctor did not persist ${doctorArtifact}`);
   }

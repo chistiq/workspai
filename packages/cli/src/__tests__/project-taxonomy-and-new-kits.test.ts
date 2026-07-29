@@ -96,6 +96,22 @@ describe('project taxonomy and expanded kit families', () => {
       args: ['--yes', 'create-electron-app@latest', 'nova-desktop', '--template=vite-typescript'],
     });
 
+    const tauri = resolveOfficialProjectGenerator('desktop.tauri');
+    expect(tauri?.commandExec('nova-tauri', { skipGit: false, skipInstall: false })).toEqual({
+      command: 'npm',
+      args: [
+        'create',
+        'tauri-app@latest',
+        'nova-tauri',
+        '--',
+        '--manager',
+        'npm',
+        '--template',
+        'vanilla-ts',
+        '--yes',
+      ],
+    });
+
     const vscode = resolveOfficialProjectGenerator('extension.vscode');
     expect(
       vscode?.commandExec('nova-extension', { skipGit: false, skipInstall: false }).args

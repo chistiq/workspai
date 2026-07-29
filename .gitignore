@@ -35,6 +35,7 @@ coverage/
 .vitest/
 test-cli-output/
 test-results/
+.official-generator-smoke/
 
 # Test workspaces created during manual testing
 test-workspace/

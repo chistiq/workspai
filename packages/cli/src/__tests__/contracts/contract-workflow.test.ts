@@ -41,4 +41,20 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(preCommit).toContain('sync:shared-contracts -- --stage-git');
     expect(preCommit).toContain('run validate:contracts');
   });
+
+  it('keeps official generator drift coverage release-safe and cost bounded', () => {
+    const smokeWorkflow = readMonorepo('.github/workflows/frontend-generator-smoke.yml');
+    const releaseWorkflow = readMonorepo('.github/workflows/release-npm-manual.yml');
+
+    expect(smokeWorkflow).toContain('name: Official Generator Smoke');
+    expect(releaseWorkflow).toContain("'Official Generator Smoke'");
+    expect(smokeWorkflow).toContain('cancel-in-progress: true');
+    expect(smokeWorkflow).toContain('MATRIX_MODE="primary"');
+    expect(smokeWorkflow).toContain('MATRIX_MODE="full"');
+    expect(smokeWorkflow).toContain("github.event.inputs.generators == ''");
+    expect(smokeWorkflow).toContain('RAPIDKIT_OFFICIAL_GENERATOR_WORKSPACE_ROOT');
+    expect(smokeWorkflow).toContain('Restore Composer download cache');
+    expect(releaseWorkflow).toContain("run.event !== 'workflow_dispatch'");
+    expect(releaseWorkflow).toContain("run.display_title?.endsWith('· full')");
+  });
 });

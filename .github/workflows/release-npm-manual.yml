@@ -58,7 +58,7 @@ jobs:
               'Bridge Regression Smoke',
               'Workspace E2E Matrix',
               'Windows Bridge E2E',
-              'Frontend Generator Smoke'
+              'Official Generator Smoke'
             ];
 
             const { owner, repo } = context.repo;
@@ -73,6 +73,16 @@ jobs:
             const latestByName = new Map();
             for (const run of runs) {
               if (!required.includes(run.name)) continue;
+              // Push/PR generator smoke intentionally uses the primary Linux
+              // lane. Releases require the manually dispatched full
+              // Linux/macOS/Windows matrix for this exact SHA.
+              if (
+                run.name === 'Official Generator Smoke' &&
+                (
+                  run.event !== 'workflow_dispatch' ||
+                  !run.display_title?.endsWith('· full')
+                )
+              ) continue;
               const current = latestByName.get(run.name);
               if (!current || new Date(run.created_at) > new Date(current.created_at)) {
                 latestByName.set(run.name, run);

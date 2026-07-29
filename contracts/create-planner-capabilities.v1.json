@@ -310,7 +310,7 @@
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
       "officialCommands": [
-        "npm create tauri-app@latest <name> -- --template vanilla-ts"
+        "npm create tauri-app@latest <name> -- --manager npm --template vanilla-ts --yes"
       ],
       "adoptAfterCreate": true,
       "category": "desktop"

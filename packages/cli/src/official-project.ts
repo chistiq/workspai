@@ -12,6 +12,7 @@ import { buildCleanGitEnv } from './utils/git-worktree.js';
 import {
   buildLatestStableGeneratorEnv,
   resolvePackageRunnerInvocation,
+  shouldUseShellExecution,
 } from './utils/platform-capabilities.js';
 import type { WorkspaceProjectCategory, WorkspaceProjectKind } from './utils/project-kind.js';
 import { projectMetadataPath } from './utils/workspace-paths.js';
@@ -105,10 +106,21 @@ const OFFICIAL_PROJECT_GENERATORS: OfficialProjectGeneratorDefinition[] = [
         guidance: 'Install Cargo through the current stable Rust toolchain and retry.',
       },
     ],
-    commandDisplay: (name) => `npm create tauri-app@latest ${name} -- --template vanilla-ts`,
+    commandDisplay: (name) =>
+      `npm create tauri-app@latest ${name} -- --manager npm --template vanilla-ts --yes`,
     commandExec: (name) => ({
       command: 'npm',
-      args: ['create', 'tauri-app@latest', name, '--', '--template', 'vanilla-ts'],
+      args: [
+        'create',
+        'tauri-app@latest',
+        name,
+        '--',
+        '--manager',
+        'npm',
+        '--template',
+        'vanilla-ts',
+        '--yes',
+      ],
     }),
     requiredArtifacts: ['package.json', 'src-tauri/Cargo.toml', 'src-tauri/tauri.conf.json'],
   },
@@ -510,7 +522,13 @@ async function runCommand(plan: CommandPlan, cwd: string): Promise<number> {
     const child = spawn(invocation.command, [...invocation.prefixArgs, ...plan.args], {
       cwd,
       stdio: 'inherit',
-      shell: false,
+      // Windows ecosystem tools such as Composer are commonly exposed through
+      // .cmd/.bat shims. npm-family runners are resolved to executable Node
+      // entrypoints above; non-package tools need the native Windows shell.
+      shell:
+        shouldUseShellExecution() &&
+        invocation.command === plan.command &&
+        invocation.prefixArgs.length === 0,
       env:
         plan.command === 'git'
           ? buildCleanGitEnv({ ...baseEnv, ...plan.env })
@@ -596,7 +614,10 @@ async function canRunTool(requirement: ToolRequirement): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const child = spawn(invocation.command, [...invocation.prefixArgs, ...requirement.args], {
       stdio: 'ignore',
-      shell: false,
+      shell:
+        shouldUseShellExecution() &&
+        invocation.command === requirement.command &&
+        invocation.prefixArgs.length === 0,
       env: buildLatestStableGeneratorEnv(),
     });
     let settled = false;
