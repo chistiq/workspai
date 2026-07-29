@@ -73,15 +73,12 @@ jobs:
             const latestByName = new Map();
             for (const run of runs) {
               if (!required.includes(run.name)) continue;
-              // Push/PR generator smoke intentionally uses the primary Linux
-              // lane. Releases require the manually dispatched full
-              // Linux/macOS/Windows matrix for this exact SHA.
+              // Publishing is gated by the cost-bounded primary Linux lane for
+              // this exact SHA. The full Linux/macOS/Windows matrix remains a
+              // scheduled/manual compatibility signal and does not block npm.
               if (
                 run.name === 'Official Generator Smoke' &&
-                (
-                  run.event !== 'workflow_dispatch' ||
-                  !run.display_title?.endsWith('· full')
-                )
+                !run.display_title?.endsWith('· primary')
               ) continue;
               const current = latestByName.get(run.name);
               if (!current || new Date(run.created_at) > new Date(current.created_at)) {

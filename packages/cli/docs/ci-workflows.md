@@ -16,16 +16,18 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 | Contributor onboarding   | `.github/workflows/contributor-onboarding.yml`   | Accepted-contributor onboarding automation                                |
 | Welcome                  | `.github/workflows/welcome.yml`                  | First-issue and first-contribution messages                               |
 
-The release workflow requires `Official Generator Smoke` for the exact release
-SHA. Maintainers must dispatch that workflow against the intended release ref
-before starting a manual npm release if no matching run exists.
+The release workflow requires the cost-bounded
+`Official Generator Smoke · primary` Linux run for the exact release SHA. A
+normal push that touches the contracted generator surface produces this gate;
+maintainers do not need to run the full cross-platform matrix before publishing.
 
 Pushes and pull requests run every contracted generator on the primary Linux
-lane. The weekly schedule and manual dispatch run the complete Linux, macOS,
-and Windows matrix. npm and Composer download caches reduce repeated network
-work without caching generated projects; every smoke run still exercises the
-current upstream generator, generated artifacts, build surface, registry, and
-Doctor evidence.
+lane. The weekly schedule and manual dispatch can run the complete Linux,
+macOS, and Windows matrix as a non-blocking compatibility and upstream-drift
+signal. npm and Composer download caches reduce repeated network work without
+caching generated projects; every smoke run still exercises the current
+upstream generator, generated artifacts, build surface, registry, and Doctor
+evidence.
 
 ## Consumer workspace: agent grounding CI
 
