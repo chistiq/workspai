@@ -4,21 +4,6 @@ run-name: Official Generator Smoke · ${{ github.event_name == 'workflow_dispatc
 on:
   push:
     branches: [main, develop]
-    paths:
-      - 'packages/cli/src/frontend-project.ts'
-      - 'packages/cli/src/official-project.ts'
-      - 'packages/cli/src/generators/**'
-      - 'packages/cli/src/utils/create-planner-capabilities.ts'
-      - 'packages/cli/src/utils/kit-registry.ts'
-      - 'packages/cli/contracts/create-planner-capabilities.v1.json'
-      - 'contracts/create-planner-capabilities.v1.json'
-      - 'packages/cli/scripts/smoke-**-generators.mjs'
-      - 'packages/cli/scripts/check-generator-smoke-coverage.mjs'
-      - 'packages/cli/scripts/enterprise-package-smoke.mjs'
-      - 'packages/cli/scripts/runtime-acceptance-matrix.mjs'
-      - 'packages/cli/package.json'
-      - 'package-lock.json'
-      - '.github/workflows/frontend-generator-smoke.yml'
   pull_request:
     branches: [main, develop]
     paths:

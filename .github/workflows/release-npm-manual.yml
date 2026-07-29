@@ -58,7 +58,7 @@ jobs:
               'Bridge Regression Smoke',
               'Workspace E2E Matrix',
               'Windows Bridge E2E',
-              'Official Generator Smoke'
+              'Official Generator Smoke · primary'
             ];
 
             const { owner, repo } = context.repo;
@@ -73,12 +73,13 @@ jobs:
             const latestByName = new Map();
             for (const run of runs) {
               if (!required.includes(run.name)) continue;
-              // Publishing is gated by the cost-bounded primary Linux lane for
-              // this exact SHA. The full Linux/macOS/Windows matrix remains a
-              // scheduled/manual compatibility signal and does not block npm.
+              // The Actions API exposes the configured run-name in run.name.
+              // Require the push-triggered, cost-bounded primary lane for this
+              // exact SHA. Scheduled/manual full and targeted runs remain
+              // compatibility signals and cannot satisfy the release gate.
               if (
-                run.name === 'Official Generator Smoke' &&
-                !run.display_title?.endsWith('· primary')
+                run.name === 'Official Generator Smoke · primary' &&
+                run.event !== 'push'
               ) continue;
               const current = latestByName.get(run.name);
               if (!current || new Date(run.created_at) > new Date(current.created_at)) {
