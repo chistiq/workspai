@@ -115,7 +115,7 @@ export function buildPackageScriptRepairCommand(input: {
 
 export function buildDoctorInternalRepairCommand(operation: DoctorRepairOperation): string {
   const encoded = Buffer.from(JSON.stringify(operation), 'utf8').toString('base64url');
-  return `rapidkit:doctor:repair ${encoded}`;
+  return `workspai:doctor:repair ${encoded}`;
 }
 
 export function buildFileCreateRepairCapability(input: {

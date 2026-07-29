@@ -34,33 +34,24 @@ const repoRootCandidates = [root, path.resolve(root, '..', '..')];
 
 const requiredSnippets = [
   'workspai doctor workspace',
-  'workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]',
-  'workspai workspace list',
-  'workspai cache <status|clear|prune|repair>',
-  'workspai mirror <status|sync|verify|rotate>',
-  '.github/workflows/ci.yml',
-  '.github/workflows/workspace-e2e-matrix.yml',
-  '.github/workflows/windows-bridge-e2e.yml',
-  '.github/workflows/e2e-smoke.yml',
-  '.github/workflows/security.yml',
+  'workspai workspace graph search',
+  'workspai workspace agent-sync',
 ];
 
 const errors = [];
 
 const requiredCliReadmeHeadings = [
   '## Workspace Intelligence for software systems',
-  '## Understand Workspai in one minute',
   '## Start in two minutes',
-  '## From Code to Shared Understanding',
-  '## One Intelligence Chain',
-  '## Evidence and measurable context',
-  '## Core Workflows',
-  '## Outputs and Consumers',
-  '## Onboard Software',
-  '## Integrations',
+  '## What happens after the first run',
+  '## How Workspace Intelligence works',
+  '## Everyday workflows',
+  '## Outputs and integrations',
   '## Requirements',
   '## Documentation',
   '## Troubleshooting',
+  '## Contributing',
+  '## License',
 ];
 let previousCliReadmeHeadingIndex = -1;
 for (const heading of requiredCliReadmeHeadings) {
@@ -75,17 +66,16 @@ for (const heading of requiredCliReadmeHeadings) {
   previousCliReadmeHeadingIndex = index;
 }
 
-const normalizedCliReadme = readme.replace(/\s+/g, ' ');
+const normalizedCliReadme = readme.replace(/[*`]/g, '').replace(/\s+/g, ' ');
 for (const semantic of [
   'Workspai is an open-source CLI',
   'The Workspace Model is the canonical source of truth.',
   'derived, revision-bound representation',
   'not "these projects are independent."',
-  'create workspace my-workspace --profile minimal --yes',
-  'cd ~/.workspai/workspaces/my-workspace',
+  'npx workspai create',
+  'npx workspai adopt .',
   'A blocked result is useful evidence, not a crashed command.',
-  'not a universal token-cost, answer-quality, or task-success claim',
-  'The canonical persisted graph is JSON.',
+  'do not require an AI API key',
 ]) {
   if (!normalizedCliReadme.includes(semantic)) {
     errors.push(`CLI README is missing required product truth: ${semantic}`);
@@ -150,17 +140,15 @@ for (const selector of [
 
 const requiredRepositoryReadmeHeadings = [
   '## Workspace Intelligence for software systems',
-  '## See your workspace as a system',
-  '## Start in two minutes',
+  '## Start with your software',
   '## What Workspai gives you',
-  '## How Workspace Intelligence works',
-  '## Evidence, not guesses',
-  '## Measure context honestly',
-  '## One contract-backed intelligence chain',
-  '## Choose your workflow',
-  '## Open outputs for every consumer',
-  '## Documentation',
+  '## How it works',
+  '## One foundation, many consumers',
+  '## Go deeper',
   '## Packages',
+  '## Develop',
+  '## Community',
+  '## License',
 ];
 let previousReadmeHeadingIndex = -1;
 for (const heading of requiredRepositoryReadmeHeadings) {
@@ -175,14 +163,15 @@ for (const heading of requiredRepositoryReadmeHeadings) {
   previousReadmeHeadingIndex = index;
 }
 
-const normalizedRepositoryReadme = repositoryReadme.replace(/\s+/g, ' ');
+const normalizedRepositoryReadme = repositoryReadme
+  .replace(/[*`]/g, '')
+  .replace(/\s+/g, ' ');
 for (const semantic of [
   'One workspace. One truth. Humans and AI aligned.',
   'The Workspace Model is the canonical source of truth.',
   'derived, revision-bound representation',
   'not “these projects are independent.”',
-  'not a universal billing, quality, or token-saving claim',
-  'they do not represent missing CLI features',
+  'not a list of missing',
   'README_CONTENT_CONTRACT.md',
 ]) {
   if (!normalizedRepositoryReadme.includes(semantic)) {
@@ -201,7 +190,7 @@ if (!fs.existsSync(readmeContentContractPath)) {
     'runtime-command-surface.v1.json',
     'published-contract-catalog.v1.json',
     'workspace-intelligence-architecture.v1.json',
-    'results vary by workspace and query',
+    'Results vary by workspace and query',
   ]) {
     if (!readmeContentContract.includes(semantic)) {
       errors.push(`README content contract is missing required policy: ${semantic}`);

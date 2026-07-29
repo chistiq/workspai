@@ -360,8 +360,21 @@ export async function createOfficialProject(args: string[]): Promise<CreateOffic
     throw error;
   }
 
-  console.log(chalk.green(`✅ ${definition.displayName} project created at ${projectPath}`));
-  console.log(chalk.gray(`   Next: cd ${projectName} && npx workspai doctor project`));
+  console.log(chalk.green(`\n✓ ${definition.displayName} scaffold ready`));
+  console.log(chalk.gray(`  Location   ${projectPath}`));
+  console.log(
+    chalk.gray(`  Generator  ${definition.officialSource} · ${definition.versionPolicy}`)
+  );
+  console.log(chalk.green('  ✓ Required scaffold files verified'));
+  console.log(chalk.green('  ✓ Generator and version evidence recorded in .workspai/'));
+  if (definition.id === 'vscode-extension') {
+    console.log(
+      chalk.yellow(
+        '  Note       Dependency warnings above come from the official generated project; Workspai keeps them visible for Doctor and CI.'
+      )
+    );
+  }
+  console.log(chalk.gray(`  Next       cd ${projectName} && npx workspai doctor project`));
   return {
     definition,
     projectName,

@@ -76,6 +76,7 @@ describe('doctor enterprise surface probes', () => {
         issueId: 'surface-dockerignore',
         fixKind: 'file-create',
         status: 'available',
+        command: expect.stringMatching(/^workspai:doctor:repair\s/),
         operation: {
           type: 'file-create',
         },

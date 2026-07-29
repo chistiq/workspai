@@ -197,7 +197,6 @@ import {
   workspaceMetadataPath,
 } from './utils/workspace-paths.js';
 import {
-  formatWorkspaceCdCommand,
   resolveWorkspaceOutputParent,
   resolveWorkspaceTargetPath,
   shouldBlockExistingWorkspaceName,
@@ -1589,14 +1588,6 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         parentDirectory: path.dirname(targetPath),
       });
 
-      if (!hasDryRun) {
-        console.log(chalk.gray(`ℹ️  Workspace root: ${targetPath}`));
-        console.log(
-          chalk.gray(
-            `   Next: ${formatWorkspaceCdCommand(targetPath)} && npx workspai create project`
-          )
-        );
-      }
       return 0;
     } catch (e) {
       process.stderr.write(
@@ -7016,12 +7007,6 @@ program
           profile: options.profile,
           parentDirectory: path.dirname(targetPath),
         });
-        console.log(chalk.gray(`ℹ️  Workspace root: ${targetPath}`));
-        console.log(
-          chalk.gray(
-            `   Next: ${formatWorkspaceCdCommand(targetPath)} && npx workspai create project`
-          )
-        );
       }
     } catch (error) {
       if (error instanceof RapidKitError) {

@@ -84,6 +84,8 @@ describe.sequential('doctor typed repair operations', () => {
     ] as const;
     for (const operation of operations) {
       const encoded = Buffer.from(JSON.stringify(operation)).toString('base64url');
+      expect(parseInternalRepairCommand(`workspai:doctor:repair ${encoded}`)).toEqual(operation);
+      // Keep legacy tokens readable so durable remediation plans remain resumable.
       expect(parseInternalRepairCommand(`rapidkit:doctor:repair ${encoded}`)).toEqual(operation);
       expect(buildRepairOperationIdentity(operation)).toContain(operation.type);
     }
@@ -101,9 +103,11 @@ describe.sequential('doctor typed repair operations', () => {
       { type: 'unknown' },
     ];
     expect(parseInternalRepairCommand('not-a-repair')).toBeNull();
+    expect(parseInternalRepairCommand('workspai:doctor:repair !!!')).toBeNull();
     expect(parseInternalRepairCommand('rapidkit:doctor:repair !!!')).toBeNull();
     for (const value of invalidValues) {
       const encoded = Buffer.from(JSON.stringify(value)).toString('base64url');
+      expect(parseInternalRepairCommand(`workspai:doctor:repair ${encoded}`)).toBeNull();
       expect(parseInternalRepairCommand(`rapidkit:doctor:repair ${encoded}`)).toBeNull();
     }
   });

@@ -3141,7 +3141,7 @@ async function appendCustomConfiguredProbes(
   await appendCustomAdapterChecks(projectPath, health);
 }
 
-async function checkProject(
+async function checkProjectUnnormalized(
   projectPath: string,
   options: { allowNonRapidkit?: boolean } = {}
 ): Promise<ProjectHealth> {
@@ -3657,13 +3657,16 @@ async function checkProject(
         projectPath,
         projectJsonData ?? null
       );
-      const explicitBackendNodeFramework =
+      const explicitNonFrontendNodeFramework =
         backendDetection.key === 'nestjs' ||
         backendDetection.key === 'express' ||
         backendDetection.key === 'fastify' ||
-        backendDetection.key === 'koa';
+        backendDetection.key === 'koa' ||
+        backendDetection.key === 'tauri' ||
+        backendDetection.key === 'electron' ||
+        backendDetection.key === 'vscode-extension';
 
-      if (explicitBackendNodeFramework) {
+      if (explicitNonFrontendNodeFramework) {
         applyBackendFrameworkDetection(health, backendDetection);
       } else if (frontendDetection.key !== 'unknown') {
         applyFrontendFrameworkDetection(health, frontendDetection);
@@ -3968,6 +3971,26 @@ async function checkProject(
   await appendBuiltInBackendProbes(projectPath, health);
   await appendCustomConfiguredProbes(projectPath, health);
   return health;
+}
+
+function normalizeProjectFixCommands(health: ProjectHealth): ProjectHealth {
+  if (!health.fixCommands) return health;
+
+  const seen = new Set<string>();
+  health.fixCommands = health.fixCommands.filter((command) => {
+    const normalized = command.trim();
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+  return health;
+}
+
+async function checkProject(
+  projectPath: string,
+  options: { allowNonRapidkit?: boolean } = {}
+): Promise<ProjectHealth> {
+  return normalizeProjectFixCommands(await checkProjectUnnormalized(projectPath, options));
 }
 
 async function listDirectories(basePath: string): Promise<string[]> {
@@ -4866,7 +4889,7 @@ function renderHealthCheck(check: HealthCheckResult, label: string): void {
 
 function humanFixDescription(project: ProjectHealth, command: string): string {
   const capability = findRepairCapabilityForCommand(project, command);
-  if (command.startsWith('rapidkit:doctor:repair ')) {
+  if (/^(?:workspai|rapidkit):doctor:repair\s/.test(command)) {
     return capability?.title ?? 'Apply Doctor-managed project repair';
   }
   if (/^https?:\/\//i.test(command.trim())) return `Open: ${command.trim()}`;
@@ -5360,7 +5383,7 @@ export function parsePackageScriptFix(
 }
 
 export function parseInternalRepairCommand(cmd: string): DoctorRepairOperation | null {
-  const match = cmd.trim().match(/^rapidkit:doctor:repair\s+([A-Za-z0-9_-]+)$/);
+  const match = cmd.trim().match(/^(?:workspai|rapidkit):doctor:repair\s+([A-Za-z0-9_-]+)$/);
   if (!match?.[1]) return null;
 
   try {

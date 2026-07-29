@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-07-28
+
+### Added
+
+- Added explicit Knowledge Graph provider applicability so current runs
+  distinguish `passed`, `partial`, `skipped`, and `failed` providers without
+  presenting non-applicable sources as discovered evidence.
+- Added deterministic stopword filtering and inverse-document-frequency
+  weighting to bounded graph search while preserving exact identity, label,
+  alias, proof, and stable-order guarantees.
+- Added logical interface reconciliation for duplicated contract copies while
+  retaining separate source-file entities and proofs.
+- Added nested runtime-candidate discovery for adopted polyglot monorepos.
+- Added a contract-driven official-generator smoke matrix with per-generator
+  artifact, metadata, registry, build, and Doctor validation.
+- Added a profile-aware, lifecycle-synchronized workspace `README.md` and a
+  concise terminal receipt for workspace creation.
+
+### Changed
+
+- Made graph quality count applicable-but-empty providers, bounded scans,
+  unresolved source relations, and binding gaps as explicit unknowns.
+- Made workspace creation and lifecycle sync source the displayed
+  `Understand → Change → Evidence → Gate → Ground → Distribute → Explain`
+  sequence directly from the versioned chain contract.
+- Made workspace README synchronization preserve user-authored content and
+  update only the Workspai-managed section.
+- Made Doctor preserve Electron as `desktop` and VS Code extensions as
+  `extension` instead of applying unrelated frontend gates.
+- Made newly generated typed Doctor repairs use the `workspai:` namespace while
+  retaining legacy-token parsing for durable-session compatibility.
+- Synchronized canonical FastAPI and NestJS template changes from RapidKit
+  Core.
+- Bumped the monorepo root, `workspai`, and `wspai` packages to `0.51.0`, and
+  aligned the alias dependency on `workspai@0.51.0`.
+
+### Fixed
+
+- Fixed graph quality reports that could show complete provider execution while
+  applicable Kubernetes, CODEOWNERS, CI, infrastructure, or decision sources
+  produced no evidence.
+- Fixed natural-language graph queries where common words could outrank rare,
+  relevant project terms.
+- Fixed repeated logical API/service results consuming a disproportionate
+  share of bounded retrieval results.
+- Fixed profile changes that updated workspace registry identity without
+  synchronizing the canonical workspace contract profile.
+- Fixed Electron Doctor output that reported a Vite frontend and warned about
+  missing `dev`/`build` scripts despite valid Electron Forge
+  `start`/`package`/`make` commands.
+- Fixed repeated Doctor Quick Fix commands in human and machine-readable
+  outputs.
+- Removed duplicated, runtime-specific post-create guidance that obscured the
+  Workspace Intelligence result.
+
+### Verification
+
+- Graph suites cover provider applicability, unknown accounting, identity
+  reconciliation, natural-language ranking, nested runtime discovery,
+  profile synchronization, and model/hash binding.
+- Creation and Doctor suites cover the managed README, compact receipt,
+  lifecycle refresh, desktop/extension taxonomy, repair compatibility, and
+  deduplicated fixes.
+- A real 10-project polyglot workspace exercised Model, Graph search/evidence,
+  project and workspace Doctor, sync, and the strict intelligence chain.
+- TypeScript, lint, format, documentation, contract, package, and full CLI
+  suites remain release gates.
+
 ## [0.50.0] - 2026-07-27
 
 ### Added

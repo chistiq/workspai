@@ -149,6 +149,13 @@ describe('workspace create registry integration', () => {
       await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.impact))
     ).toBe(true);
     expect(await fsExtra.pathExists(path.join(workspacePath, 'AGENTS.md'))).toBe(true);
+    const initialReadme = await fsExtra.readFile(path.join(workspacePath, 'README.md'), 'utf-8');
+    expect(initialReadme).toContain(`# ${workspaceName}`);
+    expect(initialReadme).toContain('| Profile | `minimal` |');
+    expect(initialReadme).toContain('| Registered projects | 0 projects |');
+    expect(initialReadme).toContain(
+      'Understand → Change → Evidence → Gate → Ground → Distribute → Explain'
+    );
 
     const projectPath = path.join(workspacePath, 'api');
     await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
@@ -178,6 +185,8 @@ describe('workspace create registry integration', () => {
         runtime: 'node',
       }),
     ]);
+    const refreshedReadme = await fsExtra.readFile(path.join(workspacePath, 'README.md'), 'utf-8');
+    expect(refreshedReadme).toContain('| Registered projects | 1 project |');
     expect(
       await fsExtra.pathExists(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))
     ).toBe(true);

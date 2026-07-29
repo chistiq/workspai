@@ -5,7 +5,7 @@ Complete CLI syntax for the Workspai CLI. For behavior and workflows, see [works
 ## Workspace lifecycle
 
 ```bash
-npx workspai create # Prompts: workspace | project
+npx workspai create # Guided create or existing-software ingestion
 npx workspai create workspace <name> [--profile <profile>] [--yes] [--here|--output <parent-dir>] [--skip-python-engine] [--skip-git] [--dry-run] [--install-method <poetry|venv|pipx>]
 npx workspai bootstrap [--profile <profile>] [--ci] [--json] [--compliance-only]
 npx workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]

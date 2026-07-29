@@ -81,12 +81,15 @@ versioned archive operation result instead.
 ### Automatic consumer sync
 
 Workspace creation publishes the initial contract, canonical model, Knowledge
-Graph, structural baseline, context, report index, `AGENTS.md`, operational
-skills, and supported IDE/agent surfaces—even before the first project exists.
-Successful project creation, adoption, import, workspace connection, and
-workspace import refresh those same projections in the background. The
-structural baseline is created once and preserved; current model, graph, diff,
-impact, context, and project grounding move forward with workspace membership.
+Graph, structural baseline, context, report index, profile-aware `README.md`,
+`AGENTS.md`, operational skills, and supported IDE/agent surfaces—even before
+the first project exists. The README's Workspai-managed section shows the
+current profile, project count, canonical intelligence loop, and consumer entry
+points while preserving user-authored content. Successful project creation,
+adoption, import, workspace connection, and workspace import refresh those same
+projections in the background. The structural baseline is created once and
+preserved; current model, graph, diff, impact, context, README, and project
+grounding move forward with workspace membership.
 
 Doctor, Analyze, Readiness, and Verify remain explicit checks because they may
 run project tools or enforce release policy. Use `workspace intelligence run`

@@ -39,7 +39,18 @@ export async function syncWorkspaceConsumerArtifacts(
     verifyWorkspaceContract,
     writeWorkspaceContractVerifyEvidence,
   } = await import('./workspace-contract.js');
-  await syncWorkspaceContract({ workspacePath: resolvedPath, strict: true });
+  const contractSync = await syncWorkspaceContract({
+    workspacePath: resolvedPath,
+    strict: true,
+  });
+
+  const { syncWorkspaceReadme, WORKSPACE_README_PATH } = await import('./workspace-readme.js');
+  const readmePath = await syncWorkspaceReadme({
+    workspacePath: resolvedPath,
+    workspaceName: contractSync.contract.workspace.name,
+    profile: contractSync.contract.workspace.profile ?? 'minimal',
+    projectCount: contractSync.contract.projects.length,
+  });
 
   const { buildWorkspaceModel, writeWorkspaceModel } = await import('../workspace-model.js');
   const model = await buildWorkspaceModel({
@@ -105,6 +116,7 @@ export async function syncWorkspaceConsumerArtifacts(
   const writtenFiles = [
     WORKSPACE_CONTRACT_PATH,
     (await import('./workspace-registry-summary.js')).WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH,
+    path.relative(resolvedPath, readmePath).split(path.sep).join('/') || WORKSPACE_README_PATH,
     path.relative(resolvedPath, modelPath).split(path.sep).join('/'),
     WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
     ...(baselineCreated ? [WORKSPACE_INTELLIGENCE_ARTIFACTS.snapshot] : []),
@@ -117,7 +129,7 @@ export async function syncWorkspaceConsumerArtifacts(
   if (!options.silent) {
     console.log(
       chalk.gray(
-        `ℹ️  Workspace consumers synced (model + graph + agent context, ${model.summary.projectCount} project(s), ${writtenFiles.length} artifact(s)).`
+        `✓ Workspace Intelligence synced · ${model.summary.projectCount} project(s) · model + graph + agent grounding`
       )
     );
   }
@@ -139,12 +151,12 @@ export async function syncWorkspaceConsumerArtifacts(
 export async function finalizeWorkspaceOnboarding(
   workspacePath: string,
   options: FinalizeWorkspaceOnboardingOptions = {}
-): Promise<void> {
+): Promise<WorkspaceConsumerArtifactSyncResult> {
   const resolvedPath = path.resolve(workspacePath);
   const workspaceName = options.workspaceName ?? path.basename(resolvedPath);
 
   const { registerWorkspaceStrict } = await import('../workspace.js');
   await registerWorkspaceStrict(resolvedPath, workspaceName);
 
-  await syncWorkspaceConsumerArtifacts(resolvedPath, { silent: options.silent });
+  return syncWorkspaceConsumerArtifacts(resolvedPath, { silent: options.silent });
 }

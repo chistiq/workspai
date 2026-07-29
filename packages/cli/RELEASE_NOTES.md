@@ -5,7 +5,69 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.50.0 (July 27, 2026)
+## Latest Release: v0.51.0 (July 28, 2026)
+
+### Trustworthy Graph Retrieval and Clearer Workspace Onboarding
+
+This minor release makes graph quality more honest, bounded natural-language
+retrieval more relevant, and workspace creation easier to understand. It also
+turns official-generator smoke coverage into a contract-driven matrix and
+corrects Doctor taxonomy for desktop and extension projects.
+
+**What's New:**
+
+- **Truthful graph quality**
+  - Providers distinguish applicable evidence, partial extraction,
+    non-applicable skips, and execution failures.
+  - Applicable-but-empty sources, bounded scans, unresolved relationships, and
+    binding gaps contribute explicit unknowns.
+  - Nested runtime candidates improve polyglot monorepo understanding.
+
+- **Better bounded search**
+  - Deterministic stopword filtering and inverse-document-frequency weighting
+    keep rare project terms above conversational filler.
+  - Duplicated logical interfaces are reconciled without discarding their
+    source-file proofs.
+
+- **A workspace that explains itself**
+  - Creation ends with one compact receipt for profile, runtime foundation,
+    synchronized intelligence surfaces, and next actions.
+  - A managed `README.md` section stays aligned with the workspace profile,
+    project count, canonical contract-backed loop, and consumer entry points
+    while preserving user content.
+
+- **Stronger official generators and Doctor**
+  - Official generator smoke is derived from the canonical capability contract
+    and validates artifacts, metadata, registry, build, and Doctor stages.
+  - Electron remains `desktop`; VS Code extensions remain `extension`.
+  - Typed repairs now use `workspai:` while legacy durable repair tokens remain
+    readable, and duplicate Quick Fix commands are removed.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Graph, creation, Doctor, official-generator, contract, and documentation
+  suites cover the new boundaries.
+- A real 10-project polyglot workspace exercised Model, bounded Graph
+  search/evidence, Doctor, lifecycle sync, and the strict intelligence chain.
+- TypeScript, lint, format, package, cross-platform, and complete CLI checks
+  remain release gates.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.51.0
+workspai --version
+workspai workspace sync --json
+workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.51.0/packages/cli/releases/RELEASE_NOTES_v0.51.0.md)
+
+---
+
+## Previous Release: v0.50.0 (July 27, 2026)
 
 ### Project-Native Workspace Intelligence
 

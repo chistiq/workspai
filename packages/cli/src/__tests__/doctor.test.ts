@@ -4075,4 +4075,64 @@ describe('Doctor Command', () => {
       await fsExtra.remove(tempRoot);
     }
   });
+
+  it('keeps Electron projects in the desktop taxonomy instead of applying Vite frontend gates', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-electron-'));
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'project.json'), {
+      name: 'desktop-app',
+      runtime: 'node',
+      framework: 'electron',
+      kit_name: 'desktop.electron',
+      kind: 'desktop',
+    });
+    await fsExtra.writeJSON(path.join(tempRoot, 'package.json'), {
+      name: 'desktop-app',
+      version: '1.0.0',
+      main: '.vite/build/main.js',
+      scripts: {
+        start: 'electron-forge start',
+        package: 'electron-forge package',
+        make: 'electron-forge make',
+        lint: 'eslint .',
+      },
+      devDependencies: {
+        '@electron-forge/cli': '^7.0.0',
+        '@electron-forge/plugin-vite': '^7.0.0',
+        electron: '^40.0.0',
+        vite: '^7.0.0',
+      },
+    });
+    await fsExtra.writeFile(path.join(tempRoot, 'package-lock.json'), '{}\n');
+    await fsExtra.ensureDir(path.join(tempRoot, 'node_modules', 'electron'));
+    await fsExtra.ensureDir(path.join(tempRoot, 'src'));
+    await fsExtra.writeFile(path.join(tempRoot, 'src', 'main.ts'), 'export {};\n');
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.project).toMatchObject({
+        framework: 'Electron',
+        frameworkKey: 'electron',
+        runtimeFamily: 'node',
+        projectKind: 'desktop',
+      });
+      expect(payload.project.probes.map((probe: { id: string }) => probe.id)).not.toEqual(
+        expect.arrayContaining(['frontend-vite-config', 'frontend-script-dev'])
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
 });

@@ -2,6 +2,7 @@ import { promises as fsPromises } from 'fs';
 import * as fsExtra from 'fs-extra';
 import path from 'path';
 import { prompt } from './cli-ui/index.js';
+import { printWorkspaceCreationReceipt } from './cli-ui/workspace-creation-receipt.js';
 import {
   assertIndependentWorkspaceTarget,
   formatWorkspaceCdCommand,
@@ -1334,31 +1335,6 @@ export async function createProject(
           };
         })();
 
-  // Show version pinning hints
-  if (needsPythonInstallPrompts) {
-    console.log(chalk.gray(`\n📌 Configuration notes:`));
-    if (pythonAnswers.pythonVersion === '3.10') {
-      console.log(chalk.gray(`  • Python 3.10: Latest stable with widespread compatibility`));
-    } else if (pythonAnswers.pythonVersion === '3.11') {
-      console.log(chalk.gray(`  • Python 3.11: Newer, faster (3.10-3.11: ~10% speed improvement)`));
-    } else if (pythonAnswers.pythonVersion === '3.12') {
-      console.log(chalk.gray(`  • Python 3.12: Cutting edge, excellent for performance`));
-    }
-
-    if (pythonAnswers.installMethod === 'poetry') {
-      console.log(
-        chalk.gray(`  • Poetry: Dependency management + virtual env (recommended for teams)`)
-      );
-    } else if (pythonAnswers.installMethod === 'venv') {
-      console.log(
-        chalk.gray(`  • venv: Standard library approach, lightweight, zero dependencies`)
-      );
-    } else {
-      console.log(chalk.gray(`  • pipx: Global isolated, RapidKit Core only, no local venv`));
-    }
-    console.log('');
-  }
-
   // ── Lite workspace fast path ─────────────────────────────────────────────────
   // Profiles that don't involve a Python engine skip Poetry/venv/pipx entirely.
   // Go kits are 100% npm-level. Node-only workspaces can scaffold Go projects or
@@ -1387,54 +1363,9 @@ export async function createProject(
       await writeWorkspaceFoundationFiles(projectPath, name, 'venv', undefined, resolvedProfile);
       await writeWorkspaceGitignore(projectPath);
 
-      // Lean README for Python-free workspaces
-      const profileLabel: Record<string, string> = {
-        'go-only': 'Go-only',
-        'java-only': 'Java-only',
-        'dotnet-only': '.NET-only',
-        'node-only': 'Node.js-only',
-        minimal: 'Minimal',
-      };
-      await fsExtra.outputFile(
-        path.join(projectPath, 'README.md'),
-        `# ${name}\n\nWorkspai **${profileLabel[resolvedProfile]}** workspace.\n\n` +
-          `## Quick start\n\n` +
-          `\`\`\`bash\n` +
-          (resolvedProfile === 'go-only'
-            ? `npx workspai create project gofiber.standard my-api\n` +
-              `cd my-api\n` +
-              `npx workspai init\n` +
-              `npx workspai dev\n`
-            : resolvedProfile === 'java-only'
-              ? `npx workspai create project springboot.standard my-service\n` +
-                `cd my-service\n` +
-                `npx workspai init\n` +
-                `npx workspai dev\n`
-              : resolvedProfile === 'dotnet-only'
-                ? `npx workspai create project dotnet.webapi.clean my-api\n` +
-                  `cd my-api\n` +
-                  `npx workspai init\n` +
-                  `npx workspai dev\n`
-                : resolvedProfile === 'node-only'
-                  ? `npx workspai create project nestjs.standard my-app\n` +
-                    `cd my-app\n` +
-                    `npx workspai init\n` +
-                    `npx workspai dev\n`
-                  : `npx workspai create project\ncd <project-name>\nnpx workspai init\nnpx workspai dev\n`) +
-          `\`\`\`\n\n` +
-          `## Workspace Intelligence\n\n` +
-          `\`\`\`bash\n` +
-          `npx workspai workspace model --json --write\n` +
-          `npx workspai workspace context --for-agent --json --write\n` +
-          `npx workspai pipeline --json --strict\n` +
-          `\`\`\`\n\n` +
-          `Durable evidence is written to \`.workspai/reports/\`; generated agent instructions start at \`AGENTS.md\`.\n`,
-        'utf-8'
-      );
-
-      await finalizeWorkspaceOnboarding(projectPath, {
+      const onboarding = await finalizeWorkspaceOnboarding(projectPath, {
         workspaceName: name,
-        silent: testMode,
+        silent: true,
       });
       await commitLifecycleTransaction(transaction);
 
@@ -1446,94 +1377,12 @@ export async function createProject(
         );
       }
 
-      // Profile-specific success message
-      console.log(chalk.green('\n✨ Workspace created!\n'));
-      console.log(chalk.cyan('📂 Location:'), chalk.white(projectPath));
-      console.log(chalk.cyan('\n🚀 Get started:\n'));
-      console.log(chalk.white(`   ${formatWorkspaceCdCommand(projectPath)}`));
-
-      if (resolvedProfile === 'go-only') {
-        console.log(chalk.white('   npx workspai create project gofiber.standard my-api'));
-        console.log(chalk.white('   cd my-api'));
-        console.log(chalk.white('   npx workspai init'));
-        console.log(chalk.white('   npx workspai dev\n'));
-        console.log(
-          chalk.gray('💡 No Python required — Go kits run entirely through the npm package.')
-        );
-        try {
-          const { stdout: goOut } = await execa('go', ['version'], { timeout: 3000 });
-          const goMatch = goOut.match(/go version go(\d+\.\d+(?:\.\d+)?)/);
-          const goVer = goMatch ? goMatch[1] : 'unknown';
-          console.log(
-            chalk.gray(
-              `🐹 Go ${goVer} detected — ready for gofiber.standard / gogin.standard projects`
-            )
-          );
-        } catch {
-          console.log(
-            chalk.yellow('\n⚠️  Go is not installed — install it from https://go.dev/dl/')
-          );
-        }
-      } else if (resolvedProfile === 'java-only') {
-        console.log(chalk.white('   npx workspai create project springboot.standard my-service'));
-        console.log(chalk.white('   cd my-service'));
-        console.log(chalk.white('   npx workspai init'));
-        console.log(chalk.white('   npx workspai dev\n'));
-        console.log(
-          chalk.gray(
-            '💡 No Python required — Spring Boot kit runs through the npm package with Java tooling.'
-          )
-        );
-      } else if (resolvedProfile === 'dotnet-only') {
-        console.log(chalk.white('   npx workspai create project dotnet.webapi.clean my-api'));
-        console.log(chalk.white('   cd my-api'));
-        console.log(chalk.white('   npx workspai init'));
-        console.log(chalk.white('   npx workspai dev\n'));
-        console.log(
-          chalk.gray(
-            '💡 No Python required — ASP.NET Core kit runs through the npm package with .NET tooling.'
-          )
-        );
-        try {
-          const { stdout } = await execa('dotnet', ['--version'], { timeout: 3000 });
-          console.log(
-            chalk.gray(`⚙️  .NET SDK ${stdout.trim()} detected — ready for ASP.NET Core projects`)
-          );
-        } catch {
-          console.log(
-            chalk.yellow(
-              '\n⚠️  .NET SDK is not installed — install it from https://dotnet.microsoft.com/download'
-            )
-          );
-        }
-      } else if (resolvedProfile === 'node-only') {
-        console.log(chalk.white('   npx workspai create project nestjs.standard my-app'));
-        console.log(chalk.white('   cd my-app'));
-        console.log(chalk.white('   npx workspai init'));
-        console.log(chalk.white('   npx workspai dev\n'));
-        console.log(
-          chalk.gray(
-            '💡 Node lifecycle commands run through Node tooling. RapidKit Core module commands for module-enabled kits can install the local Python engine later with workspace run init.'
-          )
-        );
-      } else {
-        // minimal
-        console.log(chalk.white('   npx workspai create project'));
-        console.log(chalk.white('   cd <project-name>'));
-        console.log(chalk.white('   npx workspai init'));
-        console.log(chalk.white('   npx workspai dev\n'));
-        console.log(
-          chalk.gray(
-            '💡 Bootstrap a specific runtime: workspai bootstrap --profile java-only|python-only|node-only|go-only|dotnet-only|polyglot|enterprise'
-          )
-        );
-      }
-
-      console.log(chalk.cyan('\n📚 More info:'));
-      console.log(chalk.gray('  • Change profile anytime: workspai bootstrap --profile <profile>'));
-      console.log(chalk.gray('  • View config: cat ' + name + '/.workspai-workspace'));
-      console.log(chalk.gray('  • Check health: workspai doctor'));
-      console.log('');
+      printWorkspaceCreationReceipt({
+        workspaceName: name,
+        workspacePath: projectPath,
+        profile: resolvedProfile,
+        projectCount: onboarding?.projectCount ?? 0,
+      });
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
       console.error(chalk.red('\n❌ Error:'), _err);
@@ -1569,34 +1418,9 @@ export async function createProject(
       await writeWorkspaceGitignore(projectPath);
       await writeWorkspaceLauncher(projectPath, 'venv', { pythonEngineSkipped: true });
 
-      const profileLabel: Record<string, string> = {
-        'python-only': 'Python-aware',
-        polyglot: 'Polyglot',
-        enterprise: 'Enterprise',
-      };
-      await fsExtra.outputFile(
-        path.join(projectPath, 'README.md'),
-        `# ${name}\n\nWorkspai **${profileLabel[resolvedProfile] ?? resolvedProfile}** workspace with Workspace Intelligence enabled and Python engine installation skipped.\n\n` +
-          `## Quick start\n\n` +
-          `\`\`\`bash\n` +
-          `npx workspai workspace model --json --write\n` +
-          `npx workspai workspace context --for-agent --json --write\n` +
-          `npx workspai adopt /path/to/project\n` +
-          `npx workspai workspace verify --json\n` +
-          `npx workspai pipeline --json --strict\n` +
-          `\`\`\`\n\n` +
-          `Durable evidence is written to \`.workspai/reports/\`; generated agent instructions start at \`AGENTS.md\`.\n\n` +
-          `## Add the Python engine later\n\n` +
-          `\`\`\`bash\n` +
-          `npx workspai create project fastapi.standard api --yes\n` +
-          `npx workspai workspace run init\n` +
-          `\`\`\`\n`,
-        'utf-8'
-      );
-
-      await finalizeWorkspaceOnboarding(projectPath, {
+      const onboarding = await finalizeWorkspaceOnboarding(projectPath, {
         workspaceName: name,
-        silent: testMode,
+        silent: true,
       });
       await commitLifecycleTransaction(transaction);
 
@@ -1608,20 +1432,14 @@ export async function createProject(
         );
       }
 
-      console.log(chalk.green('\n✨ Workspace created!\n'));
-      console.log(chalk.cyan('📂 Location:'), chalk.white(projectPath));
-      console.log(chalk.cyan('⚙️  Configuration:'));
-      console.log(chalk.gray(`  • Profile: ${resolvedProfile}`));
-      console.log(chalk.gray('  • Python engine: skipped'));
-      console.log(chalk.gray('  • Workspace Intelligence: enabled'));
-      console.log(chalk.cyan('\n🚀 Get started:\n'));
-      console.log(chalk.white(`   ${formatWorkspaceCdCommand(projectPath)}`));
-      console.log(chalk.white('   npx workspai workspace model --json'));
-      console.log(chalk.white('   npx workspai adopt /path/to/project'));
-      console.log(chalk.white('   npx workspai workspace verify --json\n'));
-      console.log(chalk.cyan('💡 Add Python-backed kits/modules later:\n'));
-      console.log(chalk.gray('   npx workspai create project fastapi.standard api --yes'));
-      console.log(chalk.gray('   npx workspai workspace run init\n'));
+      printWorkspaceCreationReceipt({
+        workspaceName: name,
+        workspacePath: projectPath,
+        profile: resolvedProfile,
+        projectCount: onboarding?.projectCount ?? 0,
+        pythonEngine: 'skipped',
+        note: 'Install the optional Python engine later only when a Python-backed kit needs it.',
+      });
       return;
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
@@ -1729,46 +1547,9 @@ export async function createProject(
               });
               await writeWorkspaceGitignore(projectPath);
 
-              const profileLabel: Record<string, string> = {
-                'go-only': 'Go-only',
-                'java-only': 'Java-only',
-                'dotnet-only': '.NET-only',
-                'node-only': 'Node.js-only',
-                minimal: 'Minimal',
-              };
-              await fsExtra.outputFile(
-                path.join(projectPath, 'README.md'),
-                `# ${name}\n\nWorkspai **${profileLabel[fallback]}** workspace (switched from ${originalProfile} due to missing Python).\n\n` +
-                  `## Quick start\n\n` +
-                  `\`\`\`bash\n` +
-                  (fallback === 'go-only'
-                    ? `npx workspai create project gofiber.standard my-api\n` +
-                      `cd my-api\n` +
-                      `npx workspai init\n` +
-                      `npx workspai dev\n`
-                    : fallback === 'java-only'
-                      ? `npx workspai create project springboot.standard my-service\n` +
-                        `cd my-service\n` +
-                        `npx workspai init\n` +
-                        `npx workspai dev\n`
-                      : fallback === 'dotnet-only'
-                        ? `npx workspai create project dotnet.webapi.clean my-api\n` +
-                          `cd my-api\n` +
-                          `npx workspai init\n` +
-                          `npx workspai dev\n`
-                        : fallback === 'node-only'
-                          ? `npx workspai create project nestjs.standard my-app\n` +
-                            `cd my-app\n` +
-                            `npx workspai init\n` +
-                            `npx workspai dev\n`
-                          : `npx workspai create project\ncd <project-name>\nnpx workspai init\nnpx workspai dev\n`) +
-                  `\`\`\`\n`,
-                'utf-8'
-              );
-
-              await finalizeWorkspaceOnboarding(projectPath, {
+              const onboarding = await finalizeWorkspaceOnboarding(projectPath, {
                 workspaceName: name,
-                silent: testMode,
+                silent: true,
               });
               await commitLifecycleTransaction(transaction);
 
@@ -1780,20 +1561,13 @@ export async function createProject(
                 );
               }
 
-              console.log(chalk.green('\n✨ Workspace created with fallback profile!\n'));
-              console.log(chalk.cyan('📂 Location:'), chalk.white(projectPath));
-              console.log(chalk.cyan('\n🚀 Get started:\n'));
-              console.log(chalk.white(`   ${formatWorkspaceCdCommand(projectPath)}`));
-              console.log(chalk.white('   npx workspai create project'));
-              console.log(chalk.white('   cd <project-name>'));
-              console.log(chalk.white('   npx workspai init'));
-              console.log(chalk.white('   npx workspai dev\n'));
-              console.log(chalk.cyan('💡 To use Python later:\n'));
-              console.log(chalk.gray('   1. Install Python 3.10+'));
-              console.log(
-                chalk.gray(`   2. Run: workspai bootstrap --profile ${originalProfile}\n`)
-              );
-              console.log('');
+              printWorkspaceCreationReceipt({
+                workspaceName: name,
+                workspacePath: projectPath,
+                profile: fallback,
+                projectCount: onboarding?.projectCount ?? 0,
+                note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
+              });
               return; // Exit successfully with fallback profile
             } catch (_err) {
               spinner2.fail('Failed to create workspace');
@@ -1828,9 +1602,9 @@ export async function createProject(
             });
             await writeWorkspaceGitignore(projectPath);
 
-            await finalizeWorkspaceOnboarding(projectPath, {
+            const onboarding = await finalizeWorkspaceOnboarding(projectPath, {
               workspaceName: name,
-              silent: testMode,
+              silent: true,
             });
             await commitLifecycleTransaction(transaction);
 
@@ -1842,27 +1616,13 @@ export async function createProject(
               );
             }
 
-            console.log(chalk.green('\n✨ Workspace created (auto-fallback profile)!\n'));
-            console.log(chalk.cyan('📂 Location:'), chalk.white(projectPath));
-            console.log(chalk.cyan('📦 Profile:'), chalk.yellow(fallback));
-            console.log(
-              chalk.cyan('💡 Reason:'),
-              chalk.gray(`Python not detected; switched from ${originalProfile}`)
-            );
-            console.log(chalk.cyan('\n🚀 Get started:\n'));
-            console.log(chalk.white(`   ${formatWorkspaceCdCommand(projectPath)}`));
-            console.log(chalk.white('   npx workspai create project'));
-            console.log(chalk.white('   cd <project-name>'));
-            console.log(chalk.white('   npx workspai init'));
-            console.log(chalk.white('   npx workspai dev\n'));
-            console.log(chalk.cyan('💡 Add Python later:\n'));
-            console.log(chalk.gray('   1. Install Python 3.10+'));
-            console.log(
-              chalk.gray(
-                `   2. Run: ${formatWorkspaceCdCommand(projectPath)} && workspai bootstrap --profile ${originalProfile}\n`
-              )
-            );
-            console.log('');
+            printWorkspaceCreationReceipt({
+              workspaceName: name,
+              workspacePath: projectPath,
+              profile: fallback,
+              projectCount: onboarding?.projectCount ?? 0,
+              note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
+            });
             return; // Exit successfully
           } catch (_err) {
             spinner2.fail('Failed to create workspace');
@@ -1875,7 +1635,6 @@ export async function createProject(
   }
 
   // ── Python-required profiles (python-only / polyglot / enterprise) ──────────
-  logger.step(1, 3, 'Setting up Workspai environment');
   const spinner = createCliSpinner('Creating directory', {
     component: 'create',
     phase: 'workspace.directory',
@@ -2004,14 +1763,11 @@ export async function createProject(
     // Create a local launcher so users can run RapidKit without activating the env.
     await writeWorkspaceLauncher(projectPath, pythonAnswers.installMethod);
 
-    // Create README with instructions
-    await createReadme(projectPath, pythonAnswers.installMethod);
-
     spinner.succeed('Workspai environment ready!');
 
-    await finalizeWorkspaceOnboarding(projectPath, {
+    const onboarding = await finalizeWorkspaceOnboarding(projectPath, {
       workspaceName: name,
-      silent: testMode,
+      silent: true,
     });
     await commitLifecycleTransaction(transaction);
 
@@ -2023,102 +1779,15 @@ export async function createProject(
       );
     }
 
-    // Success message
-    console.log(chalk.green('\n✨ Workspai environment created successfully!\n'));
-    console.log(chalk.cyan('📂 Location:'), chalk.white(projectPath));
-    console.log(chalk.cyan('⚙️  Configuration:'));
-    console.log(chalk.gray(`  • Profile: ${resolvedProfile}`));
-    console.log(chalk.gray(`  • Python: ${pythonAnswers.pythonVersion}`));
-    console.log(chalk.gray(`  • Install method: ${pythonAnswers.installMethod}`));
-    console.log(chalk.cyan('\n🚀 Get started:\n'));
-    console.log(chalk.white(`   ${formatWorkspaceCdCommand(projectPath)}`));
-
-    if (pythonAnswers.installMethod === 'poetry') {
-      // Check Poetry version for activation command
-      let activateCmd = 'source $(poetry env info --path)/bin/activate';
-      try {
-        ensureUserLocalBinOnPath();
-        const { stdout } = await execa('poetry', ['--version']);
-        const versionMatch = stdout.match(/Poetry.*?(\d+)\.(\d+)/);
-        if (versionMatch) {
-          const majorVersion = parseInt(versionMatch[1]);
-          if (majorVersion >= 2) {
-            // Poetry 2.0+: use env activate
-            activateCmd = 'source $(poetry env info --path)/bin/activate';
-          } else {
-            // Poetry 1.x: use shell
-            activateCmd = 'poetry shell';
-          }
-        }
-      } catch (_error) {
-        // Default to Poetry 2.0+ syntax
-      }
-
-      console.log(chalk.white(`   ${activateCmd}  # Or: poetry run rapidkit`));
-      console.log(chalk.white('   workspai create  # Interactive mode'));
-      console.log(chalk.white('   cd <project-name>'));
-      console.log(chalk.white('   workspai init'));
-      console.log(chalk.white('   workspai dev'));
-      console.log(
-        chalk.gray('\n   📦 Why Poetry? Includes dependency management + virtual environment')
-      );
-    } else if (pythonAnswers.installMethod === 'venv') {
-      console.log(
-        chalk.white('   source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate')
-      );
-      console.log(chalk.white('   workspai create  # Interactive mode'));
-      console.log(chalk.white('   cd <project-name>'));
-      console.log(chalk.white('   workspai init'));
-      console.log(chalk.white('   workspai dev'));
-      console.log(chalk.gray('\n   📦 Why venv? Standard, zero extra tools, lightweight'));
-    } else {
-      console.log(chalk.white('   workspai create  # Interactive mode'));
-      console.log(chalk.white('   cd <project-name>'));
-      console.log(chalk.white('   workspai init'));
-      console.log(chalk.white('   workspai dev'));
-      console.log(chalk.gray('\n   📦 Why pipx? Global isolated install, no local venv'));
-    }
-
-    console.log(chalk.cyan('\n📚 Next steps:'));
-    console.log(chalk.gray('  1. Check README.md for workspace details'));
-    console.log(chalk.gray('  2. Create your first project: workspai create project'));
-    console.log(
-      chalk.gray(
-        `  3. See all runtimes: workspai list  # Shows: fastapi, nestjs, springboot, gofiber, gogin, dotnet`
-      )
-    );
-
-    console.log(chalk.cyan('\n💡 Profile management:'));
-    console.log(chalk.gray(`  • Add Python? → workspai bootstrap --profile python-only|polyglot`));
-    console.log(chalk.gray(`  • Add Node.js? → workspai bootstrap --profile node-only|polyglot`));
-    console.log(chalk.gray(`  • Add Go? → workspai bootstrap --profile go-only|polyglot`));
-    console.log(chalk.gray(`  • Add .NET? → workspai bootstrap --profile dotnet-only|polyglot`));
-    console.log(chalk.gray(`  • Full setup? → workspai bootstrap --profile enterprise`));
-
-    console.log(chalk.cyan('\n📖 Common commands:'));
-    console.log(
-      chalk.white('   workspai create              - Create a new project (interactive)')
-    );
-    console.log(chalk.white('   workspai list                - List available kits'));
-    console.log(chalk.white('   workspai modules             - List available modules'));
-    console.log(chalk.white('   workspai doctor              - Check workspace health'));
-    console.log(
-      chalk.white('   workspai bootstrap --help    - Advanced workspace configuration\n')
-    );
-
-    // Go toolchain check — informational note for gofiber.standard projects
-    try {
-      const { stdout: goOut } = await execa('go', ['version'], { timeout: 3000 });
-      const goMatch = goOut.match(/go version go(\d+\.\d+(?:\.\d+)?)/);
-      const goVer = goMatch ? goMatch[1] : 'unknown';
-      console.log(chalk.gray(`🐹 Go ${goVer} detected — ready for gofiber.standard projects`));
-    } catch {
-      console.log(
-        chalk.yellow('⚠️  Go not installed — needed for gofiber.standard/gogin.standard projects')
-      );
-      console.log(chalk.gray('   Install: https://go.dev/dl/'));
-    }
-    console.log('');
+    printWorkspaceCreationReceipt({
+      workspaceName: name,
+      workspacePath: projectPath,
+      profile: resolvedProfile,
+      projectCount: onboarding?.projectCount ?? 0,
+      pythonEngine: 'installed',
+      pythonVersion: pythonAnswers.pythonVersion,
+      installMethod: pythonAnswers.installMethod,
+    });
   } catch (_error) {
     spinner.fail('Failed to create Workspai environment');
     console.error(chalk.red('\n❌ Error:'), _error);
@@ -2894,7 +2563,6 @@ export async function registerWorkspaceAtPath(
 
     if (installPythonEngine) {
       await writeWorkspaceLauncher(workspacePath, resolvedMethod);
-      await createReadme(workspacePath, resolvedMethod);
     }
 
     spinner.succeed(
@@ -2918,142 +2586,6 @@ export async function registerWorkspaceAtPath(
     spinner.fail('Failed to register workspace');
     return rollbackLifecycleTransaction(transaction, e);
   }
-}
-
-// Create README with usage instructions
-async function createReadme(projectPath: string, installMethod: string) {
-  const activationCmd =
-    installMethod === 'poetry'
-      ? 'source $(poetry env info --path)/bin/activate\n# Or simply use: poetry run rapidkit <command>'
-      : installMethod === 'venv'
-        ? 'source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate'
-        : 'N/A (globally installed)';
-
-  const noActivateCmd =
-    installMethod === 'poetry'
-      ? '# No activation needed (recommended):\n./rapidkit --help\n# or:\npoetry run rapidkit --help'
-      : installMethod === 'venv'
-        ? '# No activation needed (recommended):\n./rapidkit --help\n# or direct:\n./.venv/bin/rapidkit --help'
-        : '# Optional: use the local launcher\n./rapidkit --help\n# (pipx installs may require Poetry/venv to be present in this folder)';
-
-  const pythonVersionCheckCmd = isWindowsPlatform()
-    ? 'python --version (or: py -3 --version)'
-    : 'python3 --version (or: python --version)';
-
-  const readmeContent = `# Workspai Workspace
-
-This directory contains a Workspai development environment.
-
-## Installation Method
-
-**${installMethod === 'poetry' ? 'Poetry' : installMethod === 'venv' ? 'Python venv + pip' : 'pipx (global)'}**
-
-## Getting Started
-
-### 0. Run Without Activation (Recommended)
-
-This workspace includes a local launcher script so you can run the Python Core CLI without activating the environment:
-
-\`\`\`bash
-${noActivateCmd}
-\`\`\`
-
-### 1. Activate Environment
-
-\`\`\`bash
-${activationCmd}
-\`\`\`
-
-### 2. Create Your First Project
-
-\`\`\`bash
-# Interactive mode (recommended):
-workspai create
-# Follow the prompts to choose kit and project name
-
-# Or specify directly:
-workspai create project fastapi.standard my-project
-
-# Advanced / Python Core only:
-poetry run rapidkit --help
-\`\`\`
-
-Interactive mode will guide you through selecting a kit and configuring your project.
-
-### 3. Navigate and Run
-
-\`\`\`bash
-cd my-project
-# Install dependencies (preferred):
-workspai init
-
-# Run the server (project-aware):
-workspai dev
-
-# Direct Python Core entrypoint (advanced / only when rapidkit-core is installed in Poetry):
-poetry run rapidkit dev
-
-# Or manually:
-uvicorn src.main:app --reload
-\`\`\`
-
-### 4. Add Modules (Optional)
-
-\`\`\`bash
-# Add common modules to your project:
-workspai add module settings
-workspai add module logging
-workspai add module database
-
-# List available modules:
-workspai modules list
-\`\`\`
-
-## Available Commands
-
-- \`workspai create\` - Create a new project (interactive)
-- \`workspai create project <kit> <name>\` - Create project with specific kit
-- \`workspai dev\` - Run development server
-- \`workspai add module <name>\` - Add a module (e.g., \`workspai add module settings\`)
-- \`workspai list\` - List available kits
-- \`workspai modules\` - List available modules
-- \`workspai upgrade\` - Upgrade project templates
-- \`workspai doctor\` - Check system requirements
-- \`workspai --help\` - Show all commands
-
-## Workspace Intelligence
-
-\`\`\`bash
-workspai workspace model --json --write
-workspai workspace context --for-agent --json --write
-workspai pipeline --json --strict
-\`\`\`
-
-Durable evidence is written to \`.workspai/reports/\`; generated agent instructions start at \`AGENTS.md\`.
-
-## Workspai Documentation
-
-For full documentation, visit: [Workspai Docs](https://workspai.dev/docs)
-
-## Workspace Structure
-
-\`\`\`
-${installMethod === 'venv' ? '.venv/          # Python virtual environment' : ''}
-${installMethod === 'poetry' ? 'pyproject.toml  # Poetry configuration' : ''}
-my-project/     # Your Workspai projects go here
-README.md       # This file
-\`\`\`
-
-## Troubleshooting
-
-If you encounter issues:
-
-1. Ensure Python 3.10+ is installed: \`${pythonVersionCheckCmd}\`
-2. Check Workspai installation: \`workspai --version\`
-3. Run diagnostics: \`workspai doctor\`
-4. Visit Workspai documentation or GitHub issues
-`;
-  await fsPromises.writeFile(path.join(projectPath, 'README.md'), readmeContent, 'utf-8');
 }
 
 /**
