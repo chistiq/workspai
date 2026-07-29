@@ -54,6 +54,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(smokeWorkflow).toContain("github.event.inputs.generators == ''");
     expect(smokeWorkflow).toContain('RAPIDKIT_OFFICIAL_GENERATOR_WORKSPACE_ROOT');
     expect(smokeWorkflow).toContain('Restore Composer download cache');
+    expect(smokeWorkflow).toContain('extensions: fileinfo');
     expect(releaseWorkflow).toContain("run.display_title?.endsWith('· primary')");
     expect(releaseWorkflow).not.toContain("run.display_title?.endsWith('· full')");
   });
