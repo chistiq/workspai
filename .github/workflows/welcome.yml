@@ -17,18 +17,16 @@ jobs:
       - name: First issue / PR welcome
         uses: actions/first-interaction@v3
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          issue-message: |
-            Hi @${{ github.actor }},
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          issue_message: |
+            Hey @${{ github.actor }} — welcome to Workspai! 👋
 
-            Thanks for opening your first issue in Workspai.
+            Thanks for taking the time to open your first issue. Clear reports and focused ideas help us make Workspai more useful for developers and AI tools working across real software workspaces.
 
-            We appreciate your report and will review it shortly.
-            If you can share reproduction details and environment info, that helps us resolve faster.
+            A maintainer will review the scope and labels. If you would like to work on this issue yourself, leave a comment and we’ll help you find the relevant contracts, code, and tests.
 
-            Best regards,
-            The Workspai Team
-          pr-message: |
+            Glad to have you here.
+          pr_message: |
             Hi @${{ github.actor }},
 
             Thank you for your first contribution to Workspai.

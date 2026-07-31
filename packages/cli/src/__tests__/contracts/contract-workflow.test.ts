@@ -61,4 +61,16 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(releaseWorkflow).not.toContain('run.display_title?.endsWith');
     expect(releaseWorkflow).not.toContain("'Official Generator Smoke · full'");
   });
+
+  it('uses the current first-interaction input contract for contributor onboarding', () => {
+    const welcomeWorkflow = readMonorepo('.github/workflows/welcome.yml');
+
+    expect(welcomeWorkflow).toContain('uses: actions/first-interaction@v3');
+    expect(welcomeWorkflow).toContain('repo_token:');
+    expect(welcomeWorkflow).toContain('issue_message:');
+    expect(welcomeWorkflow).toContain('pr_message:');
+    expect(welcomeWorkflow).not.toContain('repo-token:');
+    expect(welcomeWorkflow).not.toContain('issue-message:');
+    expect(welcomeWorkflow).not.toContain('pr-message:');
+  });
 });
