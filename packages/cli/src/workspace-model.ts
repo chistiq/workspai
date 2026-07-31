@@ -21,6 +21,7 @@ import {
   type WorkspaceProjectCategory,
   type WorkspaceProjectKind,
 } from './utils/project-kind.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import {
   resolveCreatePlannerCapability,
   type CreatePlannerCapability,
@@ -375,7 +376,11 @@ async function discoverObservableProjectRoots(
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory() || SKIP_DIRS.has(entry.name)) {
+      if (
+        !entry.isDirectory() ||
+        SKIP_DIRS.has(entry.name) ||
+        isPythonVirtualEnvironmentDirectory(entry.name)
+      ) {
         continue;
       }
       if (entry.name.startsWith('.') && entry.name !== '.config') {

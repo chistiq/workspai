@@ -27,6 +27,7 @@ import {
   workspaceMetadataPath,
 } from './workspace-paths.js';
 import type { WorkspaceContract } from './workspace-contract.js';
+import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
 
 export const WORKSPACE_ARCHIVE_MANIFEST_PATH = '.workspai/archive-manifest.json';
 const LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH = '.rapidkit/archive-manifest.json';
@@ -368,7 +369,11 @@ export function shouldExcludeWorkspaceArchivePath(
   ) {
     return true;
   }
-  if (segments.some((segment) => EXCLUDED_SEGMENTS.has(segment))) {
+  if (
+    segments.some(
+      (segment) => EXCLUDED_SEGMENTS.has(segment) || isPythonVirtualEnvironmentDirectory(segment)
+    )
+  ) {
     return true;
   }
 

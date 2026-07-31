@@ -233,6 +233,7 @@ describe('workspace archive export/hydrate', () => {
     );
     expect(shouldExcludeWorkspaceArchivePath('.rapidkit/workspace.json')).toBe(false);
     expect(shouldExcludeWorkspaceArchivePath('api/.venv/bin/python')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('api/.venv.broken/bin/python')).toBe(true);
     expect(shouldExcludeWorkspaceArchivePath('api/.env')).toBe(true);
     expect(shouldExcludeWorkspaceArchivePath('api/.env.example')).toBe(false);
     expect(shouldExcludeWorkspaceArchivePath('api/src/main.py')).toBe(false);

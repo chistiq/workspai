@@ -122,7 +122,7 @@ describe('artifact remediation plan', () => {
             dependsOn: [],
             projectName: 'api',
             projectPath,
-            originalCommand: 'npm audit fix --audit-level=moderate',
+            originalCommand: `cd "${projectPath}" && npm audit fix --audit-level=moderate`,
             kind: 'shell',
             risk: 'guarded',
             executable: true,
@@ -193,10 +193,181 @@ describe('artifact remediation plan', () => {
         ],
         transaction: expect.objectContaining({
           schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+          projectPath: 'api',
           requiredStages: ['reconcile', 'audit', 'test', 'build'],
         }),
+        rollback: { available: true, strategy: 'manual' },
       }),
     ]);
+    expect(JSON.stringify(plan)).not.toContain(projectPath);
+  });
+
+  it('derives a portable dependency transaction from normal Doctor evidence', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'api');
+    const copyOperation = {
+      type: 'file-copy',
+      sourcePath: path.join(projectPath, '.env.example'),
+      path: path.join(projectPath, '.env'),
+      overwrite: false,
+    } as const;
+    const copyCommand = `workspai:doctor:repair ${Buffer.from(
+      JSON.stringify(copyOperation)
+    ).toString('base64url')}`;
+    await fsExtra.ensureDir(projectPath);
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        schemaVersion: 'doctor-workspace-evidence-v1',
+        projects: [
+          {
+            name: 'api',
+            path: projectPath,
+            repairCapabilities: [
+              {
+                id: 'surface-security-hygiene.command',
+                title: 'Repair dependency security baseline',
+                status: 'available',
+                risk: 'guarded',
+                canAutoFix: true,
+                reason: 'Dependency vulnerabilities require a package-manager transaction.',
+                files: [
+                  path.join(projectPath, 'package.json'),
+                  path.join(projectPath, 'package-lock.json'),
+                ],
+                command: `cd "${projectPath}" && npm audit fix --audit-level=moderate`,
+                invocation: {
+                  cwd: projectPath,
+                  executable: 'npm',
+                  args: ['audit', 'fix', '--audit-level=moderate'],
+                },
+                verifyCommand: 'npx workspai doctor project --json',
+                strategy: [
+                  {
+                    id: 'reconcile',
+                    kind: 'safe-fix',
+                    description: 'Reconcile manifest, lockfile, and installed tree.',
+                    risk: 'guarded',
+                    continueWhen: 'always',
+                    invocation: {
+                      cwd: projectPath,
+                      executable: 'npm',
+                      args: ['install'],
+                    },
+                  },
+                ],
+                transaction: {
+                  schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+                  kind: 'dependency-security',
+                  state: 'planned',
+                  projectPath,
+                  ecosystem: 'npm',
+                  requiredStages: ['reconcile', 'audit', 'test', 'build'],
+                  completion: {
+                    manifestLockConsistent: true,
+                    auditClean: true,
+                    declaredTestsPass: true,
+                    declaredBuildPass: true,
+                    canonicalVerificationRequired: true,
+                  },
+                },
+              },
+              {
+                id: 'surface-env-contract.file-copy',
+                title: 'Create local environment file',
+                status: 'available',
+                risk: 'safe',
+                canAutoFix: true,
+                canEditFiles: true,
+                reason: 'Copy the reviewed environment example without overwriting user data.',
+                files: [copyOperation.sourcePath, copyOperation.path],
+                command: copyCommand,
+                operation: copyOperation,
+                verifyCommand: 'npx workspai doctor project --json',
+              },
+              {
+                id: 'surface-security-hygiene.command-alias',
+                title: 'Repair the same dependency baseline alias',
+                status: 'available',
+                risk: 'guarded',
+                canAutoFix: true,
+                reason: 'A second probe owns the same executable repair.',
+                files: [path.join(projectPath, 'package.json')],
+                invocation: {
+                  cwd: projectPath,
+                  executable: 'npm',
+                  args: ['audit', 'fix', '--audit-level=moderate'],
+                },
+                verifyCommand: 'npx workspai doctor project --json',
+              },
+            ],
+          },
+        ],
+      }
+    );
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'release-readiness-last-run.json'),
+      {
+        schemaVersion: 'release-readiness-v1',
+        blockers: [
+          'dependency: 2 dependency vulnerabilities reported',
+          'dependency: api remains blocked by security audit',
+        ],
+      }
+    );
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-verify-last-run.json'),
+      {
+        schemaVersion: 'workspace-verify.v1',
+        blockers: ['api verification is blocked', 'api evidence is stale'],
+      }
+    );
+
+    const plan = await buildArtifactRemediationPlan({ workspacePath });
+    const serialized = JSON.stringify(plan);
+
+    const dependencyAction = plan.actions.find(
+      (action) => action.id === 'doctor.api.surface-security-hygiene.command'
+    );
+    expect(dependencyAction).toEqual(
+      expect.objectContaining({
+        projectName: 'api',
+        projectPath: 'api',
+        command: 'npm audit fix --audit-level=moderate',
+        files: ['api/package.json', 'api/package-lock.json'],
+        strategy: [
+          expect.objectContaining({
+            invocation: expect.objectContaining({ cwd: '.' }),
+          }),
+        ],
+        transaction: expect.objectContaining({
+          schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+          projectPath: 'api',
+          requiredStages: ['reconcile', 'audit', 'test', 'build'],
+        }),
+      })
+    );
+    expect(dependencyAction?.notes).toContain(
+      'Also satisfies Doctor capability: surface-security-hygiene.command-alias'
+    );
+    expect(
+      plan.actions.filter((action) => action.command === 'npm audit fix --audit-level=moderate')
+    ).toHaveLength(1);
+    const fileAction = plan.actions.find(
+      (action) => action.id === 'doctor.api.surface-env-contract.file-copy'
+    );
+    const portableToken = fileAction?.command?.split(' ')[1];
+    expect(portableToken).toBeTruthy();
+    expect(JSON.parse(Buffer.from(portableToken as string, 'base64url').toString('utf8'))).toEqual({
+      type: 'file-copy',
+      sourcePath: '.env.example',
+      path: '.env',
+      overwrite: false,
+    });
+    expect(fileAction?.rollback).toEqual({ available: true, strategy: 'manual' });
+    expect(plan.actions.some((action) => action.id.includes('doctor-owner'))).toBe(false);
+    expect(plan.actions.filter((action) => action.cardId === 'workspaceVerify')).toHaveLength(1);
+    expect(serialized).not.toContain(projectPath);
   });
 
   it('builds CI-oriented verify commands when requested', async () => {

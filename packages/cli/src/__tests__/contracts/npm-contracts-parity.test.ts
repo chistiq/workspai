@@ -4,14 +4,9 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 const NPM_CONTRACTS_DIR = path.resolve(process.cwd(), 'contracts');
-const VSCODE_CONTRACTS_DIR = path.resolve(
-  process.cwd(),
-  '..',
-  '..',
-  '..',
-  'rapidkit-vscode',
-  'contracts'
-);
+const VSCODE_CONTRACTS_DIR = process.env.WORKSPAI_VSCODE_CONTRACTS_DIR
+  ? path.resolve(process.env.WORKSPAI_VSCODE_CONTRACTS_DIR)
+  : path.resolve(process.cwd(), '..', '..', '..', 'rapidkit-vscode', 'contracts');
 
 const CLI_EXTENSION_CONTRACT_FILES = [
   'extension-cli-compatibility.v1.json',
@@ -46,21 +41,26 @@ function readJson(filePath: string): unknown {
 }
 
 describe('CLI ↔ extension contract parity', () => {
-  it('keeps rapidkit-npm contracts aligned with rapidkit-vscode/contracts', () => {
-    expect(
-      fs.existsSync(VSCODE_CONTRACTS_DIR),
-      'rapidkit-vscode/contracts directory is missing'
-    ).toBe(true);
-
+  it('publishes every contract in the shared CLI/extension inventory', () => {
     for (const fileName of CLI_EXTENSION_CONTRACT_FILES) {
-      const npmPath = path.join(NPM_CONTRACTS_DIR, fileName);
-      const extensionPath = path.join(VSCODE_CONTRACTS_DIR, fileName);
-
-      expect(fs.existsSync(npmPath), `${fileName} missing in rapidkit-npm`).toBe(true);
-      expect(fs.existsSync(extensionPath), `${fileName} missing in rapidkit-vscode/contracts`).toBe(
-        true
-      );
-      expect(readJson(npmPath)).toEqual(readJson(extensionPath));
+      const cliPath = path.join(NPM_CONTRACTS_DIR, fileName);
+      expect(fs.existsSync(cliPath), `${fileName} missing in Workspai CLI contracts`).toBe(true);
     }
   });
+
+  it.skipIf(!fs.existsSync(VSCODE_CONTRACTS_DIR))(
+    'keeps Workspai CLI contracts aligned with rapidkit-vscode/contracts',
+    () => {
+      for (const fileName of CLI_EXTENSION_CONTRACT_FILES) {
+        const cliPath = path.join(NPM_CONTRACTS_DIR, fileName);
+        const extensionPath = path.join(VSCODE_CONTRACTS_DIR, fileName);
+
+        expect(
+          fs.existsSync(extensionPath),
+          `${fileName} missing in rapidkit-vscode/contracts`
+        ).toBe(true);
+        expect(readJson(cliPath)).toEqual(readJson(extensionPath));
+      }
+    }
+  );
 });

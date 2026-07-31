@@ -413,6 +413,87 @@ describe('Doctor Command', () => {
     }
   });
 
+  it('resolves workspace RapidKit Core from a nested project instead of process cwd', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-doctor-project-venv-'));
+    const workspacePath = path.join(tempRoot, 'workspace');
+    const projectPath = path.join(workspacePath, 'api');
+    const tempHome = path.join(tempRoot, 'home');
+    const workspaceRapidkitPath = path.join(
+      workspacePath,
+      '.venv',
+      process.platform === 'win32' ? 'Scripts' : 'bin',
+      process.platform === 'win32' ? 'rapidkit.exe' : 'rapidkit'
+    );
+
+    await fsExtra.ensureDir(path.dirname(workspaceRapidkitPath));
+    await fsExtra.writeFile(workspaceRapidkitPath, 'workspace rapidkit launcher\n');
+    await fsExtra.writeJSON(path.join(workspacePath, '.rapidkit-workspace'), {
+      name: 'workspace',
+      version: '1.0',
+    });
+    await fsExtra.outputJSON(path.join(projectPath, '.rapidkit', 'project.json'), {
+      name: 'api',
+      kit_name: 'nestjs.standard',
+      runtime: 'node',
+    });
+    await fsExtra.outputJSON(path.join(projectPath, 'package.json'), {
+      name: 'api',
+      scripts: { test: 'node --test', build: 'tsc' },
+    });
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === 'poetry') {
+        return { stdout: 'Poetry version 2.3.2', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === 'pipx' && args?.[0] === '--version') {
+        return { stdout: '1.8.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === 'go' && args?.[0] === 'version') {
+        return { stdout: 'go version go1.22.0 linux/amd64', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === workspaceRapidkitPath && args?.[0] === '--version') {
+        return { stdout: 'RapidKit Version: 0.6.0', stderr: '', exitCode: 0 } as any;
+      }
+      throw new Error('Command not found');
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    const originalHome = process.env.HOME;
+
+    try {
+      process.env.HOME = tempHome;
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string | undefined;
+      const payload = JSON.parse(jsonLine as string);
+
+      expect(payload.system.rapidkitCore.message).toContain('0.6.0');
+      expect(payload.system.rapidkitCore.paths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            location: 'Workspace (.venv)',
+            path: workspaceRapidkitPath,
+            version: '0.6.0',
+          }),
+        ])
+      );
+    } finally {
+      process.chdir(originalCwd);
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
   it('should run workspace doctor from an explicit workspace path outside cwd', async () => {
     const tempRoot = await fsExtra.mkdtemp(
       path.join(os.tmpdir(), 'rapidkit-doctor-explicit-workspace-')
@@ -2762,6 +2843,7 @@ describe('Doctor Command', () => {
 
       expect(jsonLine).toBeDefined();
       const payload = JSON.parse(jsonLine as string);
+      expect(payload.project.projectKind).toBe('backend');
       expect(payload.project.frameworkKey).toBe('dotnet');
       expect(payload.project.runtimeFamily).toBe('dotnet');
       expect(payload.project.commandCapabilities.runtime).toBe('dotnet');
@@ -2898,7 +2980,7 @@ describe('Doctor Command', () => {
       expect(payload.project.frameworkKey).toBe('deno');
       expect(payload.project.importStack).toBe('unknown');
       expect(payload.project.runtimeFamily).toBe('deno');
-      expect(payload.project.projectKind).toBe('generic');
+      expect(payload.project.projectKind).toBe('backend');
       expect(payload.project.supportTier).toBe('extended');
       expect(payload.project.frameworkConfidence).toBe('high');
     } finally {

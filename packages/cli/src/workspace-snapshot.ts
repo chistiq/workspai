@@ -8,6 +8,7 @@ import fsExtra from 'fs-extra';
 import { removeImportedProjectsRegistryEntries } from './imported-projects-registry.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { discoverWorkspaceProjects } from './utils/workspace-discovery.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import {
   hasWorkspaceRootMarkers,
   toWorkspaiArtifactPath,
@@ -404,7 +405,9 @@ function shouldCopyPath(workspacePath: string, sourcePath: string): boolean {
     return false;
   }
 
-  return !segments.some((segment) => EXCLUDED_DIR_NAMES.has(segment));
+  return !segments.some(
+    (segment) => EXCLUDED_DIR_NAMES.has(segment) || isPythonVirtualEnvironmentDirectory(segment)
+  );
 }
 
 async function collectProjects(workspacePath: string): Promise<WorkspaceSnapshotProject[]> {

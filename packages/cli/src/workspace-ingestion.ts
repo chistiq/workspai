@@ -20,6 +20,7 @@ import { hydrateWorkspaceArchive } from './utils/workspace-archive.js';
 import { syncWorkspaceConsumerArtifacts } from './utils/workspace-onboarding.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { hasWorkspaceRootMarkers, PROJECT_WORKSPACE_LINK_FILE } from './utils/workspace-paths.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 
 export interface ConnectWorkspaceOptions {
   workspacePath: string;
@@ -71,7 +72,10 @@ async function removeMachineLocalProjectLinks(workspacePath: string): Promise<st
       if (entry.isSymbolicLink()) continue;
       const candidate = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (['.git', 'node_modules', '.venv', 'dist', 'build', 'target'].includes(entry.name)) {
+        if (
+          ['.git', 'node_modules', '.venv', 'dist', 'build', 'target'].includes(entry.name) ||
+          isPythonVirtualEnvironmentDirectory(entry.name)
+        ) {
           continue;
         }
         queue.push(candidate);

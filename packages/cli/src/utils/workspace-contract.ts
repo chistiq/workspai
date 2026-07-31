@@ -32,6 +32,7 @@ import {
   type WorkspaceGraphNodeOperationalProfile,
 } from '../contracts/workspace-dependency-graph-contract.js';
 import type { WorkspaceKnowledgeGraph } from '../contracts/workspace-knowledge-graph-contract.js';
+import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
 
 export const WORKSPACE_CONTRACT_PATH = '.workspai/workspace.contract.json';
 export const WORKSPACE_CONTRACT_VERIFY_REPORT_PATH =
@@ -357,7 +358,12 @@ export async function discoverProjectJsonFiles(workspacePath: string): Promise<s
       continue;
     }
     for (const entry of entries) {
-      if (!entry.isDirectory() || ignored.has(entry.name)) continue;
+      if (
+        !entry.isDirectory() ||
+        ignored.has(entry.name) ||
+        isPythonVirtualEnvironmentDirectory(entry.name)
+      )
+        continue;
       queue.push(path.join(current, entry.name));
     }
   }

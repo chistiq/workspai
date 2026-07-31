@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { computeInputsHash } from './contracts/freshness-metadata-contract.js';
 import { computeProjectOwnHashes } from './workspace-graph-freshness.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import {
   buildWorkspaceModelIncremental,
   workspaceModelProjectTopology,
@@ -268,7 +269,12 @@ const WORKSPAI_GENERATED_SUBDIRS = new Set(['reports', 'cache', 'tmp', '.cache']
 export function isWatchRelevantPath(relativePath: string): boolean {
   if (!relativePath) return false;
   const segments = relativePath.split(/[\\/]/).filter(Boolean);
-  if (segments.some((segment) => WATCH_IGNORED_SEGMENTS.has(segment))) {
+  if (
+    segments.some(
+      (segment) =>
+        WATCH_IGNORED_SEGMENTS.has(segment) || isPythonVirtualEnvironmentDirectory(segment)
+    )
+  ) {
     return false;
   }
   for (let i = 0; i < segments.length - 1; i += 1) {

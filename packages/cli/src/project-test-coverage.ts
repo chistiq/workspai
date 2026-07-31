@@ -9,6 +9,7 @@ import {
   writeWorkspaceArtifactJsonSet,
 } from './utils/artifact-path-compat.js';
 import { findWorkspaceRootUp } from './utils/workspace-root.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 
 export const PROJECT_TEST_COVERAGE_SCHEMA = 'workspai.project-test-coverage.v1';
 export const PROJECT_TEST_COVERAGE_ARTIFACT =
@@ -257,7 +258,7 @@ async function findFiles(
     if (!current) break;
     const entries = await fsExtra.readdir(current.dir, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
-      if (ignored.has(entry.name)) continue;
+      if (ignored.has(entry.name) || isPythonVirtualEnvironmentDirectory(entry.name)) continue;
       const absolute = path.join(current.dir, entry.name);
       const relative = path.relative(root, absolute).split(path.sep).join('/');
       if (entry.isFile() && predicate(entry.name, relative)) result.push(absolute);

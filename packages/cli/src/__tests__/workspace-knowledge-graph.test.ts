@@ -166,6 +166,17 @@ describe('workspace knowledge graph', () => {
       path.join(root, '.github', 'CODEOWNERS'),
       'api/** @platform/backend\n'
     );
+    await fsExtra.outputFile(
+      path.join(
+        root,
+        '.venv.broken',
+        'lib',
+        'python3.12',
+        'site-packages',
+        'private_recovery_package.py'
+      ),
+      'RECOVERY_ENVIRONMENT_SECRET = "must-never-enter-the-graph"\n'
+    );
     return root;
   }
 
@@ -621,6 +632,8 @@ describe('workspace knowledge graph', () => {
 
     expect(graph.schemaVersion).toBe('workspace-knowledge-graph.v1');
     expect(graph.generatedAt).toBe(NOW.toISOString());
+    expect(JSON.stringify(graph)).not.toContain('.venv.broken');
+    expect(JSON.stringify(graph)).not.toContain('private_recovery_package');
     expect(graph.providers.map((provider) => provider.id)).toEqual([
       'architecture-decisions',
       'ci-workflow',

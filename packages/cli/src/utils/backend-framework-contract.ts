@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
 
 import { detectFrontendFrameworkFromProject } from './frontend-framework-contract.js';
 
@@ -643,7 +644,12 @@ function listNestedRuntimeFiles(dirPath: string, maxDepth: number): string[] {
   for (const entry of entries) {
     const nextPath = path.join(dirPath, entry.name);
     if (entry.isDirectory()) {
-      if (NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES.has(entry.name)) continue;
+      if (
+        NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES.has(entry.name) ||
+        isPythonVirtualEnvironmentDirectory(entry.name)
+      ) {
+        continue;
+      }
       results.push(...listNestedRuntimeFiles(nextPath, maxDepth - 1));
     } else {
       results.push(nextPath);

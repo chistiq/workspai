@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'path';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import { createRequire } from 'module';
 
 import fsExtra from 'fs-extra';
@@ -166,7 +167,11 @@ async function projectSignature(projectDir: string): Promise<string> {
     const dirs: string[] = [];
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        if (SOURCE_FINGERPRINT_SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) {
+        if (
+          SOURCE_FINGERPRINT_SKIP_DIRS.has(entry.name) ||
+          isPythonVirtualEnvironmentDirectory(entry.name) ||
+          entry.name.startsWith('.')
+        ) {
           continue;
         }
         dirs.push(path.join(current, entry.name));

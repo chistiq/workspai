@@ -128,6 +128,33 @@ describe('workspace agent sync', () => {
     ).toBe(true);
   });
 
+  it('prefers project-scoped blockers over duplicate aggregate wording', async () => {
+    const workspacePath = await makeWorkspace();
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-context-agent.json'),
+      {
+        schemaVersion: 'workspace-context.v1',
+        generatedAt: new Date().toISOString(),
+        blockers: ['12 moderate/high/critical dependency vulnerability(ies) reported.'],
+      }
+    );
+    const pipelinePath = path.join(workspacePath, '.workspai', 'reports', 'pipeline-last-run.json');
+    const pipeline = await fsExtra.readJson(pipelinePath);
+    pipeline.blockingReasons = [
+      'canvas-web: 12 moderate/high/critical dependency vulnerability(ies) reported.',
+    ];
+    await fsExtra.writeJson(pipelinePath, pipeline);
+
+    const index = await buildWorkspaceAgentReportsIndex({ workspacePath });
+
+    expect(index.blockers).toContain(
+      'canvas-web: 12 moderate/high/critical dependency vulnerability(ies) reported.'
+    );
+    expect(index.blockers).not.toContain(
+      '12 moderate/high/critical dependency vulnerability(ies) reported.'
+    );
+  });
+
   it('writes cross-tool grounding files', async () => {
     const workspacePath = await makeWorkspace();
     const result = await syncWorkspaceAgentGrounding({

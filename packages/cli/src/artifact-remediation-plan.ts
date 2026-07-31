@@ -10,8 +10,10 @@ import {
 } from './utils/artifact-path-compat.js';
 import type {
   DoctorDependencyRepairTransaction,
+  DoctorRepairOperation,
   DoctorRepairStrategyStage,
 } from './utils/doctor-repair-capabilities.js';
+import { buildDoctorInternalRepairCommand } from './utils/doctor-repair-capabilities.js';
 
 export type ArtifactRemediationRisk = 'safe' | 'guarded' | 'invasive';
 export type ArtifactRemediationMode =
@@ -108,7 +110,7 @@ const REPORT_CANDIDATES: Array<{
   {
     artifactKind: 'doctor-workspace',
     cardId: 'doctor',
-    fileNames: ['doctor-remediation-plan-last-run.json'],
+    fileNames: ['doctor-remediation-plan-last-run.json', 'doctor-last-run.json'],
   },
   {
     artifactKind: 'analyze',
@@ -276,6 +278,7 @@ function actionBase(input: {
   strategy?: DoctorRepairStrategyStage[];
   transaction?: DoctorDependencyRepairTransaction;
   cwd?: ArtifactRemediationAction['cwd'];
+  rollback?: ArtifactRemediationAction['rollback'];
 }): ArtifactRemediationAction {
   return {
     id: input.id,
@@ -302,10 +305,11 @@ function actionBase(input: {
     cwd: input.cwd ?? 'workspace',
     files: input.files ?? [],
     ...(input.operation ? { operation: input.operation } : {}),
-    rollback: {
-      available: Boolean(input.operation),
-      strategy: input.operation ? 'idempotent' : 'none',
-    },
+    rollback:
+      input.rollback ??
+      (input.operation
+        ? { available: true, strategy: 'idempotent' }
+        : { available: false, strategy: 'none' }),
     notes: input.notes ?? [],
   };
 }
@@ -346,15 +350,24 @@ function doctorPlanActions(input: {
       absoluteProjectPath,
       input.includeAbsolutePaths
     );
-    const executable = step.executableInCurrentEnvironment === true && originalCommand.length > 0;
-    const strategy = Array.isArray(step.strategy)
-      ? (structuredClone(step.strategy) as DoctorRepairStrategyStage[])
-      : undefined;
+    const command = portableCommandFromCapability({
+      capability: { ...step, command: originalCommand },
+      absoluteProjectPath,
+      includeAbsolutePaths: input.includeAbsolutePaths,
+    });
+    const executable = step.executableInCurrentEnvironment === true && Boolean(command);
+    const strategy = portableDoctorStrategy({
+      strategy: step.strategy,
+      includeAbsolutePaths: input.includeAbsolutePaths,
+    });
     const transactionRecord = asRecord(step.transaction);
     const transaction =
       transactionRecord?.schemaVersion === 'workspai.doctor-dependency-repair-transaction.v1'
         ? (structuredClone(transactionRecord) as unknown as DoctorDependencyRepairTransaction)
         : undefined;
+    if (transaction) {
+      transaction.projectPath = projectPath;
+    }
     return [
       actionBase({
         id: `doctor.${id}`,
@@ -377,12 +390,21 @@ function doctorPlanActions(input: {
         mode: executable ? 'run-command' : 'manual-guidance',
         risk,
         status: studioState,
-        ...(executable ? { command: originalCommand } : {}),
+        ...(executable && command ? { command } : {}),
         verifyCommand:
           typeof step.verifyCommand === 'string' && step.verifyCommand.trim()
             ? step.verifyCommand.trim()
             : 'npx workspai doctor project --json',
-        files: asStringArray(step.files),
+        files: asStringArray(step.files).map((filePath) => {
+          const absoluteFilePath = path.isAbsolute(filePath)
+            ? filePath
+            : path.resolve(absoluteProjectPath, filePath);
+          return relativeOrAbsolute(
+            input.workspacePath,
+            absoluteFilePath,
+            input.includeAbsolutePaths
+          );
+        }),
         notes: [
           `Source Doctor step: ${id}`,
           ...(typeof studioStatus?.reason === 'string' ? [studioStatus.reason] : []),
@@ -395,9 +417,234 @@ function doctorPlanActions(input: {
         strategy,
         transaction,
         cwd: 'project',
+        ...(asRecord(step.rollback)?.available === true
+          ? { rollback: { available: true, strategy: 'manual' as const } }
+          : {}),
       }),
     ];
   });
+}
+
+function portableCommandFromCapability(input: {
+  capability: ReportRecord;
+  absoluteProjectPath: string;
+  includeAbsolutePaths: boolean;
+}): string | undefined {
+  const original =
+    typeof input.capability.command === 'string' ? input.capability.command.trim() : '';
+  if (input.includeAbsolutePaths && original) return original;
+
+  const operation = portableDoctorOperation({
+    operation: input.capability.operation,
+    absoluteProjectPath: input.absoluteProjectPath,
+  });
+  if (operation) {
+    return buildDoctorInternalRepairCommand(operation);
+  }
+
+  const invocation = asRecord(input.capability.invocation);
+  const executable = typeof invocation?.executable === 'string' ? invocation.executable.trim() : '';
+  const args = asStringArray(invocation?.args);
+  if (executable) {
+    return [executable, ...args]
+      .map((part) => (/^[a-zA-Z0-9_./:@=+-]+$/.test(part) ? part : JSON.stringify(part)))
+      .join(' ');
+  }
+
+  if (!original) return undefined;
+
+  const escapedProjectPath = input.absoluteProjectPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return original
+    .replace(new RegExp(`^cd\\s+["']?${escapedProjectPath}["']?\\s*&&\\s*`, 'i'), '')
+    .replaceAll(input.absoluteProjectPath, '.');
+}
+
+function portableDoctorOperation(input: {
+  operation: unknown;
+  absoluteProjectPath: string;
+}): DoctorRepairOperation | undefined {
+  const operation = asRecord(input.operation);
+  if (!operation || typeof operation.type !== 'string') return undefined;
+
+  const portable = structuredClone(operation);
+  for (const key of ['path', 'sourcePath'] as const) {
+    const value = portable[key];
+    if (typeof value !== 'string') continue;
+    const relativePath = path.isAbsolute(value)
+      ? path.relative(input.absoluteProjectPath, value)
+      : value;
+    if (
+      !relativePath ||
+      relativePath === '..' ||
+      relativePath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativePath)
+    ) {
+      return undefined;
+    }
+    portable[key] = relativePath.split(path.sep).join('/');
+  }
+  return portable as unknown as DoctorRepairOperation;
+}
+
+function portableDoctorStrategy(input: {
+  strategy: unknown;
+  includeAbsolutePaths: boolean;
+}): DoctorRepairStrategyStage[] | undefined {
+  if (!Array.isArray(input.strategy)) return undefined;
+  const strategy = structuredClone(input.strategy) as DoctorRepairStrategyStage[];
+  if (!input.includeAbsolutePaths) {
+    for (const stage of strategy) {
+      if (stage.invocation) stage.invocation.cwd = '.';
+    }
+  }
+  return strategy;
+}
+
+function doctorEvidenceActions(input: {
+  report: CandidateReport;
+  workspacePath: string;
+  includeAbsolutePaths: boolean;
+  startOrder: number;
+}): ArtifactRemediationAction[] {
+  const projects = Array.isArray(input.report.payload.projects)
+    ? input.report.payload.projects
+    : input.report.payload.project
+      ? [input.report.payload.project]
+      : [];
+  const seen = new Set<string>();
+  const actions: ArtifactRemediationAction[] = [];
+
+  for (const rawProject of projects) {
+    const project = asRecord(rawProject);
+    if (!project) continue;
+    const projectName = typeof project.name === 'string' ? project.name.trim() : '';
+    const absoluteProjectPath = typeof project.path === 'string' ? project.path.trim() : '';
+    if (!projectName || !absoluteProjectPath) continue;
+
+    const capabilities = Array.isArray(project.repairCapabilities)
+      ? project.repairCapabilities
+      : Array.isArray(project.probes)
+        ? project.probes
+            .map((probe) => asRecord(probe)?.repairCapability)
+            .filter((capability) => capability !== undefined)
+        : [];
+
+    for (const rawCapability of capabilities) {
+      const capability = asRecord(rawCapability);
+      const capabilityId = typeof capability?.id === 'string' ? capability.id.trim() : '';
+      if (!capability || !capabilityId) continue;
+      const identity = `${projectName}:${capabilityId}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+
+      const risk =
+        capability.risk === 'safe' ||
+        capability.risk === 'guarded' ||
+        capability.risk === 'invasive'
+          ? capability.risk
+          : 'guarded';
+      const command = portableCommandFromCapability({
+        capability,
+        absoluteProjectPath,
+        includeAbsolutePaths: input.includeAbsolutePaths,
+      });
+      const canExecute = capability.status === 'available' && Boolean(command);
+      const transactionRecord = asRecord(capability.transaction);
+      const transaction =
+        transactionRecord?.schemaVersion === 'workspai.doctor-dependency-repair-transaction.v1'
+          ? (structuredClone(transactionRecord) as unknown as DoctorDependencyRepairTransaction)
+          : undefined;
+      if (transaction) {
+        transaction.projectPath = relativeOrAbsolute(
+          input.workspacePath,
+          absoluteProjectPath,
+          input.includeAbsolutePaths
+        );
+      }
+      const strategy = portableDoctorStrategy({
+        strategy: capability.strategy,
+        includeAbsolutePaths: input.includeAbsolutePaths,
+      });
+      const files = asStringArray(capability.files).map((filePath) =>
+        relativeOrAbsolute(input.workspacePath, filePath, input.includeAbsolutePaths)
+      );
+      const duplicateAction = command
+        ? actions.find(
+            (action) =>
+              action.projectName === projectName &&
+              action.command === command &&
+              action.cwd === 'project'
+          )
+        : undefined;
+      if (duplicateAction) {
+        duplicateAction.files = uniqueStrings([...duplicateAction.files, ...files]);
+        duplicateAction.notes = uniqueStrings([
+          ...duplicateAction.notes,
+          `Also satisfies Doctor capability: ${capabilityId}`,
+        ]);
+        continue;
+      }
+
+      actions.push(
+        actionBase({
+          id: `doctor.${projectName}.${capabilityId}`,
+          artifactKind: input.report.artifactKind,
+          cardId: input.report.cardId,
+          title:
+            typeof capability.title === 'string' && capability.title.trim()
+              ? capability.title.trim()
+              : `Repair ${projectName}`,
+          order: input.startOrder + actions.length,
+          phase: transaction ? 'dependency-remediation' : 'doctor-remediation',
+          blocker:
+            typeof capability.reason === 'string' && capability.reason.trim()
+              ? capability.reason.trim()
+              : `Doctor remediation is pending for ${projectName}.`,
+          summary:
+            typeof capability.reason === 'string' && capability.reason.trim()
+              ? capability.reason.trim()
+              : `Execute the Doctor-authored repair capability for ${projectName}.`,
+          mode: canExecute
+            ? capability.canEditFiles === true
+              ? 'edit-file'
+              : 'run-command'
+            : 'manual-guidance',
+          risk,
+          status: canExecute
+            ? 'ready'
+            : capability.status === 'manual'
+              ? 'guidance-only'
+              : 'blocked',
+          ...(command ? { command } : {}),
+          verifyCommand:
+            typeof capability.verifyCommand === 'string' && capability.verifyCommand.trim()
+              ? capability.verifyCommand.trim()
+              : 'npx workspai doctor project --json',
+          files,
+          notes: [
+            `Source Doctor capability: ${capabilityId}`,
+            ...asStringArray(capability.limitations),
+          ],
+          scope: 'project',
+          projectName,
+          projectPath: relativeOrAbsolute(
+            input.workspacePath,
+            absoluteProjectPath,
+            input.includeAbsolutePaths
+          ),
+          sourceStepId: capabilityId,
+          strategy,
+          transaction,
+          cwd: 'project',
+          ...(capability.operation
+            ? { rollback: { available: true, strategy: 'manual' as const } }
+            : {}),
+        })
+      );
+    }
+  }
+
+  return actions;
 }
 
 function bootstrapActions(input: {
@@ -621,6 +868,7 @@ async function readCandidateReports(workspacePath: string): Promise<CandidateRep
           absolutePath,
           payload: record,
         });
+        break;
       } catch {
         reports.push({
           artifactKind: candidate.artifactKind,
@@ -631,6 +879,7 @@ async function readCandidateReports(workspacePath: string): Promise<CandidateRep
             blockers: [`${candidate.artifactKind}: report exists but could not be parsed.`],
           },
         });
+        break;
       }
     }
   }
@@ -653,12 +902,19 @@ export async function buildArtifactRemediationPlan(input: {
 
   for (const report of reports) {
     if (report.artifactKind === 'doctor-workspace') {
-      const doctorActions = doctorPlanActions({
-        report,
-        workspacePath,
-        includeAbsolutePaths,
-        startOrder: order,
-      });
+      const doctorActions = Array.isArray(report.payload.steps)
+        ? doctorPlanActions({
+            report,
+            workspacePath,
+            includeAbsolutePaths,
+            startOrder: order,
+          })
+        : doctorEvidenceActions({
+            report,
+            workspacePath,
+            includeAbsolutePaths,
+            startOrder: order,
+          });
       actions.push(...doctorActions);
       order += doctorActions.length;
       continue;
@@ -672,10 +928,27 @@ export async function buildArtifactRemediationPlan(input: {
       order = actions.length + 1;
       continue;
     }
-    for (const blocker of blockers.slice(0, 8)) {
-      actions.push(genericActionForReport({ report, blocker, order, ciMode }));
-      order += 1;
+    const dependencyTransactionExists = actions.some(
+      (action) => action.transaction?.kind === 'dependency-security'
+    );
+    const dependencyReadinessBlocker =
+      report.artifactKind === 'readiness' &&
+      blockers.some((blocker) =>
+        /dependenc(?:y|ies).*vulnerabil|vulnerabil.*dependenc(?:y|ies)|security audit/i.test(
+          blocker
+        )
+      );
+    if (dependencyTransactionExists && dependencyReadinessBlocker) {
+      continue;
     }
+
+    const primaryBlocker = blockers[0];
+    const action = genericActionForReport({ report, blocker: primaryBlocker, order, ciMode });
+    if (blockers.length > 1) {
+      action.notes.push(...blockers.slice(1, 8).map((blocker) => `Related blocker: ${blocker}`));
+    }
+    actions.push(action);
+    order += 1;
   }
 
   const risk: Record<ArtifactRemediationRisk, number> = {

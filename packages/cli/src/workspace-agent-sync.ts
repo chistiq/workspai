@@ -379,6 +379,21 @@ function extractBlockersFromReport(raw: Record<string, unknown>): string[] {
   return [];
 }
 
+function coalesceAgentBlockers(values: string[]): string[] {
+  const unique = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  return unique.filter((candidate) => {
+    const normalizedCandidate = candidate.toLowerCase();
+    return !unique.some((other) => {
+      if (other === candidate || !other.includes(':')) return false;
+      const normalizedOther = other.toLowerCase();
+      return (
+        normalizedOther.length > normalizedCandidate.length &&
+        normalizedOther.endsWith(normalizedCandidate)
+      );
+    });
+  });
+}
+
 function reportGeneratedAt(raw: Record<string, unknown>): string | undefined {
   for (const key of ['generatedAt', 'updatedAt', 'timestamp'] as const) {
     const value = raw[key];
@@ -671,10 +686,7 @@ export async function buildWorkspaceAgentReportsIndex(input: {
     });
   }
 
-  const uniqueBlockers = [...new Set(blockers.map((item) => item.trim()).filter(Boolean))].slice(
-    0,
-    16
-  );
+  const uniqueBlockers = coalesceAgentBlockers(blockers).slice(0, 16);
   const intelligenceChain = buildWorkspaceIntelligenceChainContract();
 
   return {

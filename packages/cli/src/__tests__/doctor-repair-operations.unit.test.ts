@@ -155,6 +155,21 @@ describe.sequential('doctor typed repair operations', () => {
     ).rejects.toThrow('Repair source file not found');
   });
 
+  it('resolves portable operation paths against the governed project boundary', async () => {
+    const relativeTarget = 'nested/portable.txt';
+    await applyFileCreateFix({
+      projectPath: projectRoot,
+      operation: {
+        type: 'file-create',
+        path: relativeTarget,
+        content: 'portable',
+        overwrite: false,
+      },
+    });
+
+    expect(await fs.readFile(path.join(projectRoot, relativeTarget), 'utf8')).toBe('portable');
+  });
+
   it('repairs package scripts without replacing an existing command', async () => {
     const packageJsonPath = path.join(projectRoot, 'package.json');
     await fs.writeFile(packageJsonPath, '{"name":"fixture","scripts":{"test":"existing"}}\n');

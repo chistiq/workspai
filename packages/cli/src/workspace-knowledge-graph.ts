@@ -1,6 +1,7 @@
 import path from 'path';
 import { createHash } from 'crypto';
 import fsExtra from 'fs-extra';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import { parseAllDocuments } from 'yaml';
 
 import type { WorkspaceContract } from './utils/workspace-contract.js';
@@ -435,7 +436,12 @@ async function listFiles(root: string, maxFiles: number): Promise<string[]> {
       if (entry.isSymbolicLink()) continue;
       const candidate = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) queue.push(candidate);
+        if (
+          !IGNORED_DIRECTORIES.has(entry.name) &&
+          !isPythonVirtualEnvironmentDirectory(entry.name)
+        ) {
+          queue.push(candidate);
+        }
       } else if (entry.isFile()) {
         files.push(candidate);
       }

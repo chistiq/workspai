@@ -6,6 +6,7 @@ import {
   hasWorkspaceRootMarkers,
   projectMetadataCandidates,
 } from './workspace-paths.js';
+import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
 
 export interface WorkspaceDiscoveryOptions {
   skipDirs?: Set<string>;
@@ -27,7 +28,7 @@ const DEFAULT_SKIP_DIRS = new Set([
 ]);
 
 function shouldSkipDirectory(dirName: string, skipDirs: Set<string>): boolean {
-  if (skipDirs.has(dirName)) {
+  if (skipDirs.has(dirName) || isPythonVirtualEnvironmentDirectory(dirName)) {
     return true;
   }
 

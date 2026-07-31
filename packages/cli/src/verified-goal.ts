@@ -17,6 +17,7 @@ import { runWorkspaceIntelligenceChain } from './workspace-intelligence-runner.j
 import { buildWorkspaceModel, type WorkspaceModelProject } from './workspace-model.js';
 import { runWorkspaceStage } from './workspace-run.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 
 export const VERIFIED_GOAL_SCHEMA_VERSION = 'workspai.verified-goal.v1' as const;
 export const VERIFIED_GOAL_STATUS_SCHEMA_VERSION =
@@ -256,7 +257,10 @@ async function discoverDependencyManifestPaths(projectPath: string): Promise<str
     for (const entry of entries) {
       const absolutePath = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        if (!DEPENDENCY_SCAN_EXCLUDED_DIRECTORIES.has(entry.name.toLowerCase())) {
+        if (
+          !DEPENDENCY_SCAN_EXCLUDED_DIRECTORIES.has(entry.name.toLowerCase()) &&
+          !isPythonVirtualEnvironmentDirectory(entry.name)
+        ) {
           queue.push(absolutePath);
         }
         continue;

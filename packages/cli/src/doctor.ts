@@ -8,6 +8,7 @@ import { logger } from './logger.js';
 import { prompt } from './cli-ui/prompts.js';
 import { readImportedProjectsRegistry } from './imported-projects-registry.js';
 import { buildCleanGitEnv } from './utils/git-worktree.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import {
   getPythonCommandCandidates,
   getRapidkitLocalScriptCandidates,
@@ -82,6 +83,7 @@ import {
 } from './utils/doctor-dependency-audit.js';
 import { buildDoctorGraphDiagnosis } from './utils/doctor-graph-diagnosis.js';
 import type { DoctorGraphDiagnosis } from './contracts/doctor-graph-diagnosis-contract.js';
+import { inferWorkspaceProjectKind } from './utils/project-kind.js';
 
 export const DOCTOR_WORKSPACE_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor;
 
@@ -118,7 +120,10 @@ function getPoetryPathCandidates(): string[] {
   return uniquePaths([...fromLocalBins, ...windowsExtras, ...unixExtras]);
 }
 
-function getRapidkitBinaryCandidates(homeDir: string): Array<{ location: string; path: string }> {
+function getRapidkitBinaryCandidates(
+  homeDir: string,
+  workspacePath: string = process.cwd()
+): Array<{ location: string; path: string }> {
   const localBinCandidates = getUserLocalBinCandidates().map((dir) => ({
     location: 'Global (user-local)',
     path: path.join(dir, isWindowsPlatform() ? 'rapidkit.exe' : 'rapidkit'),
@@ -135,8 +140,8 @@ function getRapidkitBinaryCandidates(homeDir: string): Array<{ location: string;
     { location: 'Global (system)', path: '/usr/bin/rapidkit' },
   ];
 
-  const workspaceVenvPath = getVenvRapidkitPath(path.join(process.cwd(), '.venv'));
-  const workspaceLaunchers = getRapidkitLocalScriptCandidates(process.cwd());
+  const workspaceVenvPath = getVenvRapidkitPath(path.join(workspacePath, '.venv'));
+  const workspaceLaunchers = getRapidkitLocalScriptCandidates(workspacePath);
 
   const workspaceCandidates = [
     { location: 'Workspace (.venv)', path: workspaceVenvPath },
@@ -1936,7 +1941,7 @@ async function writeDoctorEvidence(
   }
 }
 
-async function collectSystemChecks(): Promise<{
+async function collectSystemChecks(workspacePath: string = process.cwd()): Promise<{
   python: HealthCheckResult;
   poetry: HealthCheckResult;
   pipx: HealthCheckResult;
@@ -1948,7 +1953,7 @@ async function collectSystemChecks(): Promise<{
     checkPoetry(),
     checkPipx(),
     checkGo(),
-    checkRapidKitCore(),
+    checkRapidKitCore(workspacePath),
   ]);
 
   return { python, poetry, pipx, go, rapidkitCore };
@@ -2122,11 +2127,13 @@ async function checkGo(): Promise<HealthCheckResult> {
   }
 }
 
-async function checkRapidKitCore(): Promise<HealthCheckResult> {
+async function checkRapidKitCore(
+  workspacePath: string = process.cwd()
+): Promise<HealthCheckResult> {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const foundPaths: { location: string; path: string; version: string }[] = [];
 
-  const candidates = getRapidkitBinaryCandidates(homeDir);
+  const candidates = getRapidkitBinaryCandidates(homeDir, workspacePath);
 
   // Check all paths
   for (const { location, path: rapidkitPath } of candidates) {
@@ -3992,7 +3999,20 @@ async function checkProject(
   projectPath: string,
   options: { allowNonRapidkit?: boolean } = {}
 ): Promise<ProjectHealth> {
-  return normalizeProjectFixCommands(await checkProjectUnnormalized(projectPath, options));
+  const health = normalizeProjectFixCommands(await checkProjectUnnormalized(projectPath, options));
+  const canonicalKind = await inferWorkspaceProjectKind(projectPath);
+  if (canonicalKind === 'backend' || canonicalKind === 'service' || canonicalKind === 'worker') {
+    health.projectKind = 'backend';
+  } else if (
+    canonicalKind === 'frontend' ||
+    canonicalKind === 'desktop' ||
+    canonicalKind === 'extension'
+  ) {
+    health.projectKind = canonicalKind;
+  } else if (!health.projectKind) {
+    health.projectKind = 'generic';
+  }
+  return health;
 }
 
 async function listDirectories(basePath: string): Promise<string[]> {
@@ -4054,7 +4074,11 @@ async function hasFileWithSuffixWithinDepth(
         return true;
       }
 
-      if (entry.isDirectory() && !ignoredDirs.has(entry.name)) {
+      if (
+        entry.isDirectory() &&
+        !ignoredDirs.has(entry.name) &&
+        !isPythonVirtualEnvironmentDirectory(entry.name)
+      ) {
         queue.push({ dir: path.join(current.dir, entry.name), depth: current.depth + 1 });
       }
     }
@@ -4077,7 +4101,7 @@ async function hasRapidkitProjectMarkers(projectPath: string): Promise<boolean> 
 }
 
 function shouldIgnoreWorkspaceDir(dirName: string, ignoredDirs: Set<string>): boolean {
-  if (ignoredDirs.has(dirName)) {
+  if (ignoredDirs.has(dirName) || isPythonVirtualEnvironmentDirectory(dirName)) {
     return true;
   }
 
@@ -4460,7 +4484,7 @@ async function getWorkspaceHealth(
   }
 
   const [systemHealth, projectPaths] = await Promise.all([
-    collectSystemChecks(),
+    collectSystemChecks(workspacePath),
     collectWorkspaceProjectPaths(workspacePath),
   ]);
 
@@ -4796,7 +4820,7 @@ async function getProjectHealthEnvelope(
   policyProfile: DoctorPolicyProfile = resolveDoctorPolicyProfile({})
 ): Promise<ProjectHealthEnvelope> {
   const workspacePath = await findWorkspace(projectPath);
-  const systemHealth = await collectSystemChecks();
+  const systemHealth = await collectSystemChecks(workspacePath || projectPath);
   const projectHealth = await checkProject(projectPath, { allowNonRapidkit: true });
   applyCommandCapabilities(projectHealth, projectPath);
   projectHealth.graphDiagnosis = await buildDoctorGraphDiagnosis({
@@ -5528,7 +5552,9 @@ export function buildRepairOperationIdentity(operation: DoctorRepairOperation): 
 
 export function assertOperationPathInsideProject(projectPath: string, targetPath: string): string {
   const resolvedProjectPath = path.resolve(projectPath);
-  const resolvedTargetPath = path.resolve(targetPath);
+  const resolvedTargetPath = path.isAbsolute(targetPath)
+    ? path.resolve(targetPath)
+    : path.resolve(resolvedProjectPath, targetPath);
   const relative = path.relative(resolvedProjectPath, resolvedTargetPath);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`Repair target escapes project boundary: ${targetPath}`);

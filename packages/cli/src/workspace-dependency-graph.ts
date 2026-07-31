@@ -24,6 +24,7 @@ import {
   type WorkspaceContract,
   type WorkspaceContractProject,
 } from './utils/workspace-contract.js';
+import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 
 /**
  * Deterministic, multi-source dependency-graph inference engine.
@@ -361,7 +362,11 @@ async function collectSourceFiles(dir: string, max: number): Promise<string[]> {
     const localFiles: string[] = [];
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        if (IMPORT_SCAN_SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) {
+        if (
+          IMPORT_SCAN_SKIP_DIRS.has(entry.name) ||
+          isPythonVirtualEnvironmentDirectory(entry.name) ||
+          entry.name.startsWith('.')
+        ) {
           continue;
         }
         dirs.push(path.join(current, entry.name));
