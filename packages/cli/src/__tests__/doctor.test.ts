@@ -481,15 +481,30 @@ describe('Doctor Command', () => {
       const payload = JSON.parse(jsonLine as string);
 
       expect(payload.system.rapidkitCore.message).toContain('0.6.0');
-      expect(payload.system.rapidkitCore.paths).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            location: 'Workspace (.venv)',
-            path: realpathForAssertion(workspaceRapidkitPath),
-            version: '0.6.0',
-          }),
-        ])
+      const workspaceInstallation = (
+        payload.system.rapidkitCore.paths as Array<{
+          location: string;
+          path: string;
+          version: string;
+        }>
+      ).find((entry) => entry.location === 'Workspace (.venv)');
+      expect(workspaceInstallation).toEqual(
+        expect.objectContaining({
+          location: 'Workspace (.venv)',
+          version: '0.6.0',
+        })
       );
+
+      // Windows can report the same file using a long path (RunnerAdmin) or
+      // its 8.3 alias (RUNNER~1). Compare filesystem identity, not spelling.
+      const [reportedStat, expectedStat] = await Promise.all([
+        fs.promises.stat(workspaceInstallation?.path as string, { bigint: true }),
+        fs.promises.stat(workspaceRapidkitPath, { bigint: true }),
+      ]);
+      expect({ dev: reportedStat.dev, ino: reportedStat.ino }).toEqual({
+        dev: expectedStat.dev,
+        ino: expectedStat.ino,
+      });
     } finally {
       process.chdir(originalCwd);
       if (originalHome === undefined) delete process.env.HOME;
