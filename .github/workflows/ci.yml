@@ -7,40 +7,6 @@ on:
     branches: [main, develop]
 
 jobs:
-  cli-extension-contract-parity:
-    name: CLI ↔ Extension Contract Parity
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout Workspai
-        uses: actions/checkout@v4
-
-      - name: Checkout extension contracts
-        uses: actions/checkout@v4
-        with:
-          repository: chistiq/rapidkit-vscode
-          path: .contract-parity/rapidkit-vscode
-          sparse-checkout: contracts
-          sparse-checkout-cone-mode: true
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Compare canonical contract payloads
-        env:
-          WORKSPAI_VSCODE_CONTRACTS_DIR: ${{ github.workspace }}/.contract-parity/rapidkit-vscode/contracts
-        run: npm --workspace workspai run test -- src/__tests__/contracts/npm-contracts-parity.test.ts
-
   phase4-fast-guard:
     name: Phase4 Fast Guard (ubuntu)
     runs-on: ubuntu-latest

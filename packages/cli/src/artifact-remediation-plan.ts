@@ -160,7 +160,9 @@ function relativeOrAbsolute(
   filePath: string,
   includeAbsolutePaths: boolean
 ): string {
-  return includeAbsolutePaths ? filePath : path.relative(workspacePath, filePath);
+  return includeAbsolutePaths
+    ? filePath
+    : path.relative(workspacePath, filePath).split(path.sep).join('/');
 }
 
 function normalizeBootstrapCommand(command?: string): string {

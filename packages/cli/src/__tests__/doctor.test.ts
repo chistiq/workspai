@@ -454,7 +454,12 @@ describe('Doctor Command', () => {
       if (cmd === 'go' && args?.[0] === 'version') {
         return { stdout: 'go version go1.22.0 linux/amd64', stderr: '', exitCode: 0 } as any;
       }
-      if (cmd === workspaceRapidkitPath && args?.[0] === '--version') {
+      if (
+        typeof cmd === 'string' &&
+        fs.existsSync(cmd) &&
+        realpathForAssertion(cmd) === realpathForAssertion(workspaceRapidkitPath) &&
+        args?.[0] === '--version'
+      ) {
         return { stdout: 'RapidKit Version: 0.6.0', stderr: '', exitCode: 0 } as any;
       }
       throw new Error('Command not found');
@@ -480,7 +485,7 @@ describe('Doctor Command', () => {
         expect.arrayContaining([
           expect.objectContaining({
             location: 'Workspace (.venv)',
-            path: workspaceRapidkitPath,
+            path: realpathForAssertion(workspaceRapidkitPath),
             version: '0.6.0',
           }),
         ])
