@@ -181,6 +181,7 @@ modules; Workspai remains the workspace-level CLI.
 | Create, adopt, import, or connect software | [Creating workspaces and projects](docs/creating-workspaces-and-projects.md) |
 | Query Graph and inspect proof | [Workspace Knowledge Graph](docs/workspace-knowledge-graph.md) |
 | Understand the exact decision loop | [Workspace Intelligence runner](docs/workspace-intelligence-runner.md) |
+| Set a release, security, or coverage outcome | [Verified engineering goals](docs/workspace-intelligence-runner.md#verified-engineering-goals) |
 | Integrate CI | [CI workflows](docs/ci-workflows.md) |
 | Find generated files and schemas | [Artifact Catalog](docs/contracts/ARTIFACT_CATALOG.md) |
 | Browse all documentation | [Documentation index](docs/README.md) |

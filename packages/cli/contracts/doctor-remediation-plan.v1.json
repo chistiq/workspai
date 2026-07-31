@@ -140,6 +140,81 @@
         }
       }
     },
+    "commandInvocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd", "executable", "args"],
+      "properties": {
+        "cwd": { "type": "string", "minLength": 1 },
+        "executable": { "type": "string", "minLength": 1 },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "repairStrategyStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "description", "risk", "continueWhen"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["diagnose", "safe-fix", "targeted-upgrade", "verify", "exception-review"]
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "risk": { "enum": ["safe", "guarded", "invasive"] },
+        "invocation": { "$ref": "#/$defs/commandInvocation" },
+        "continueWhen": {
+          "enum": ["always", "previous-passed", "blocker-remains", "manual-decision"]
+        }
+      }
+    },
+    "dependencyRepairTransaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "state",
+        "projectPath",
+        "ecosystem",
+        "requiredStages",
+        "completion"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspai.doctor-dependency-repair-transaction.v1"
+        },
+        "kind": { "const": "dependency-security" },
+        "state": { "const": "planned" },
+        "projectPath": { "type": "string", "minLength": 1 },
+        "ecosystem": { "type": "string", "minLength": 1 },
+        "requiredStages": {
+          "type": "array",
+          "items": { "enum": ["reconcile", "audit", "test", "build"] },
+          "uniqueItems": true
+        },
+        "completion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "manifestLockConsistent",
+            "auditClean",
+            "declaredTestsPass",
+            "declaredBuildPass",
+            "canonicalVerificationRequired"
+          ],
+          "properties": {
+            "manifestLockConsistent": { "const": true },
+            "auditClean": { "const": true },
+            "declaredTestsPass": { "const": true },
+            "declaredBuildPass": { "const": true },
+            "canonicalVerificationRequired": { "const": true }
+          }
+        }
+      }
+    },
     "repairIntent": {
       "type": "object",
       "additionalProperties": false,
@@ -477,6 +552,13 @@
         },
         "operation": {
           "$ref": "#/$defs/repairOperation"
+        },
+        "strategy": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repairStrategyStage" }
+        },
+        "transaction": {
+          "$ref": "#/$defs/dependencyRepairTransaction"
         },
         "preview": {
           "$ref": "#/$defs/preview"

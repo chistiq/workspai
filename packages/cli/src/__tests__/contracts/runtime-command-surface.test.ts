@@ -162,7 +162,7 @@ describe('shared runtime command surface contract (npm)', () => {
           summary: descriptor.summary,
           options: descriptor.flags.map((flag) => ({
             flag,
-            description: workspaceActionFlagDescription(flag),
+            description: workspaceActionFlagDescription(flag, id),
           })),
           subactions: 'subactions' in descriptor ? [...descriptor.subactions] : [],
           artifact: 'artifact' in descriptor ? descriptor.artifact : null,

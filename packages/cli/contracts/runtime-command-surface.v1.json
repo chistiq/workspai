@@ -1046,6 +1046,32 @@
       ]
     },
     {
+      "invocation": "workspace goal",
+      "summary": "Plan, resume, and evidence-verify a durable engineering goal with explicit scope, constraints, and success criteria.",
+      "canonicalArgv": [
+        "workspace",
+        "goal"
+      ]
+    },
+    {
+      "invocation": "workspace goal plan",
+      "summary": "Create or deterministically resume a goal contract and capture its current baseline.",
+      "canonicalArgv": [
+        "workspace",
+        "goal",
+        "plan"
+      ]
+    },
+    {
+      "invocation": "workspace goal verify",
+      "summary": "Run the goal-specific checks and publish an evidence-derived verified, blocked, or failed state.",
+      "canonicalArgv": [
+        "workspace",
+        "goal",
+        "verify"
+      ]
+    },
+    {
       "invocation": "workspace graph",
       "summary": "Query or export the evidence-backed workspace graph derived from the canonical model.",
       "canonicalArgv": [
@@ -1602,6 +1628,23 @@
       ]
     },
     {
+      "artifactPath": ".workspai/reports/verified-goal-last-run.json",
+      "schemaVersion": "workspai.verified-goal-status.v1",
+      "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json",
+      "producerCommands": [
+        [
+          "workspace",
+          "goal",
+          "plan"
+        ],
+        [
+          "workspace",
+          "goal",
+          "verify"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/workspace-link.local.json",
       "schemaVersion": "project-workspace-link.v1",
       "contractPath": "contracts/project-workspace-link.v1.json",
@@ -1925,6 +1968,7 @@
     "diff",
     "impact",
     "verify",
+    "goal",
     "graph",
     "watch",
     "context",
@@ -2278,6 +2322,65 @@
       "examples": [
         "workspai workspace verify --strict --json",
         "workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json"
+      ]
+    },
+    {
+      "id": "goal",
+      "usage": "workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--target <percent>] [--json]",
+      "summary": "Plan, resume, and evidence-verify a durable engineering goal for people and agents.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--scope",
+          "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--target",
+          "description": "Set the required test coverage percentage (0–100)."
+        },
+        {
+          "flag": "--allow-breaking",
+          "description": "Allow a verified goal to use breaking dependency changes."
+        },
+        {
+          "flag": "--allow-force",
+          "description": "Allow a verified goal to use force-based repair commands."
+        },
+        {
+          "flag": "--no-build",
+          "description": "Do not require build validation for the selected verified goal."
+        },
+        {
+          "flag": "--no-tests",
+          "description": "Do not require test validation for the selected verified goal."
+        },
+        {
+          "flag": "--no-run",
+          "description": "Read current goal evidence without executing verification commands."
+        },
+        {
+          "flag": "--reuse-intelligence",
+          "description": "Reuse a just-completed canonical intelligence run while executing goal-specific checks."
+        }
+      ],
+      "subactions": [
+        "plan",
+        "status",
+        "verify"
+      ],
+      "artifact": ".workspai/reports/verified-goal-last-run.json",
+      "examples": [
+        "workspai workspace goal plan release-readiness --json",
+        "workspai workspace goal plan dependency-security --scope project:api --json",
+        "workspai workspace goal plan test-coverage --scope project:web --target 75 --json",
+        "workspai workspace goal verify <goal-id> --json"
       ]
     },
     {
@@ -3124,6 +3227,7 @@
     "impact",
     "contract",
     "verify",
+    "goal",
     "graph",
     "watch",
     "context",

@@ -9,6 +9,7 @@ export type WorkspaceActionContract = {
   usage: string;
   summary: string;
   flags: readonly string[];
+  flagDescriptions?: Readonly<Partial<Record<string, string>>>;
   subactions?: readonly string[];
   artifact?: string;
   examples: readonly string[];
@@ -60,6 +61,13 @@ export const WORKSPACE_ACTION_FLAG_DESCRIPTIONS: Readonly<Record<string, string>
   '--continue-on-error': 'Continue remaining projects after a project failure.',
   '--reuse-passed': 'Reuse successful project-stage results where safe.',
   '--no-gates': 'Skip Doctor and Readiness pre-run gates.',
+  '--allow-breaking': 'Allow a verified goal to use breaking dependency changes.',
+  '--allow-force': 'Allow a verified goal to use force-based repair commands.',
+  '--no-build': 'Do not require build validation for the selected verified goal.',
+  '--no-tests': 'Do not require test validation for the selected verified goal.',
+  '--no-run': 'Read current goal evidence without executing verification commands.',
+  '--reuse-intelligence':
+    'Reuse a just-completed canonical intelligence run while executing goal-specific checks.',
 };
 
 export const WORKSPACE_ACTION_CONTRACTS = {
@@ -222,6 +230,34 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     examples: [
       'workspai workspace verify --strict --json',
       'workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json',
+    ],
+  },
+  goal: {
+    usage:
+      'workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--target <percent>] [--json]',
+    summary: 'Plan, resume, and evidence-verify a durable engineering goal for people and agents.',
+    flags: [
+      '--workspace',
+      '--json',
+      '--scope',
+      '--target',
+      '--allow-breaking',
+      '--allow-force',
+      '--no-build',
+      '--no-tests',
+      '--no-run',
+      '--reuse-intelligence',
+    ],
+    flagDescriptions: {
+      '--target': 'Set the required test coverage percentage (0–100).',
+    },
+    subactions: ['plan', 'status', 'verify'],
+    artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.verifiedGoalStatus,
+    examples: [
+      'workspai workspace goal plan release-readiness --json',
+      'workspai workspace goal plan dependency-security --scope project:api --json',
+      'workspai workspace goal plan test-coverage --scope project:web --target 75 --json',
+      'workspai workspace goal verify <goal-id> --json',
     ],
   },
   graph: {
@@ -489,8 +525,10 @@ export function isWorkspaceActionHelpRequest(args: readonly string[]): boolean {
   );
 }
 
-export function workspaceActionFlagDescription(flag: string): string {
-  const description = WORKSPACE_ACTION_FLAG_DESCRIPTIONS[flag];
+export function workspaceActionFlagDescription(flag: string, action?: string): string {
+  const description =
+    getWorkspaceActionContract(action)?.flagDescriptions?.[flag] ??
+    WORKSPACE_ACTION_FLAG_DESCRIPTIONS[flag];
   if (!description) {
     throw new Error(`Workspace action flag has no description: ${flag}`);
   }
@@ -516,7 +554,8 @@ export function renderWorkspaceActionHelp(action: string): string {
   if (contract.flags.length > 0) {
     lines.push('', 'Options:');
     for (const flag of contract.flags) {
-      lines.push(`  ${flag.padEnd(24)} ${workspaceActionFlagDescription(flag)}`.trimEnd());
+      const description = workspaceActionFlagDescription(flag, action);
+      lines.push(`  ${flag.padEnd(24)} ${description}`.trimEnd());
     }
   }
   if (contract.artifact) {

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "rapidkit-extension-cli-compatibility.v1",
   "cli": "workspai",
-  "minimumVerifiedCliVersion": "0.51.0",
+  "minimumVerifiedCliVersion": "0.52.0",
   "publishedContractSchemas": {
     "workspaceContract": 1,
     "runtimeCommandSurface": "rapidkit-runtime-command-surface-v1",
@@ -21,6 +21,8 @@
     "doctorWorkspaceEvidence": "doctor-workspace-evidence-v1",
     "doctorGraphDiagnosis": "doctor-graph-diagnosis.v1",
     "projectTestCoverage": "workspai.project-test-coverage.v1",
+    "verifiedGoal": "workspai.verified-goal.v1",
+    "verifiedGoalStatus": "workspai.verified-goal-status.v1",
     "workspaceIntelligenceArchitecture": "workspai-workspace-intelligence-architecture-v1",
     "workspaceIntelligenceChain": "workspai-workspace-intelligence-chain-v1",
     "workspaceIntelligenceArtifacts": {
@@ -43,7 +45,8 @@
       "explain": "workspace-explain.v1",
       "intelligenceRun": "workspace-intelligence-run.v1",
       "evaluationLive": "workspace-intelligence-evaluation.v1",
-      "evaluationLastRun": "workspace-intelligence-evaluation.v1"
+      "evaluationLastRun": "workspace-intelligence-evaluation.v1",
+      "verifiedGoalStatus": "workspai.verified-goal-status.v1"
     },
     "cliLogEvent": "cli-log-event-v1",
     "freshnessMetadata": "rapidkit-freshness-metadata-v1",
@@ -71,6 +74,7 @@
     "workspaceExplain": "workspace-explain.v1",
     "agentActionOutcome": "agent-action-outcome.v1",
     "doctorRemediationPlan": "doctor-remediation-plan-v2",
+    "doctorDependencyRepairTransaction": "workspai.doctor-dependency-repair-transaction.v1",
     "artifactRemediationPlan": "artifact-remediation-plan-v1",
     "doctorFixResult": "rapidkit-doctor-fix-result-v1",
     "autopilotRelease": "autopilot-release-v1",

@@ -27,6 +27,7 @@ export const WORKSPACE_INTELLIGENCE_ARTIFACTS = {
   intelligenceRun: '.workspai/reports/workspace-intelligence-run-last-run.json',
   evaluationLive: '.workspai/reports/workspace-intelligence-evaluation-live.json',
   evaluationLastRun: '.workspai/reports/workspace-intelligence-evaluation-last-run.json',
+  verifiedGoalStatus: '.workspai/reports/verified-goal-last-run.json',
 } as const;
 
 export type WorkspaceIntelligenceArtifactId = keyof typeof WORKSPACE_INTELLIGENCE_ARTIFACTS;
@@ -54,6 +55,7 @@ export const WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS = {
   intelligenceRun: 'workspace-intelligence-run.v1',
   evaluationLive: 'workspace-intelligence-evaluation.v1',
   evaluationLastRun: 'workspace-intelligence-evaluation.v1',
+  verifiedGoalStatus: 'workspai.verified-goal-status.v1',
 } as const satisfies Record<WorkspaceIntelligenceArtifactId, string | null>;
 
 export const WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS = {
@@ -78,6 +80,7 @@ export const WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS = {
   intelligenceRun: 'contracts/workspace-intelligence/workspace-intelligence-run.v1.json',
   evaluationLive: 'contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json',
   evaluationLastRun: 'contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json',
+  verifiedGoalStatus: 'contracts/workspace-intelligence/verified-goal-status.v1.json',
 } as const satisfies Record<WorkspaceIntelligenceArtifactId, string | null>;
 
 export const WORKSPACE_INTELLIGENCE_COMMAND_SIGNATURES = {

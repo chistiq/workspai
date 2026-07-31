@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/verified-goal.v1.json",
+  "title": "Workspai Verified Goal",
+  "description": "A durable, deterministic success contract for an agent-executed engineering goal.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "fingerprint",
+    "createdAt",
+    "updatedAt",
+    "workspace",
+    "scope",
+    "kind",
+    "summary",
+    "constraints",
+    "criteria",
+    "baseline",
+    "artifactPaths"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.verified-goal.v1" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,95}$" },
+    "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "workspace": {
+      "type": "object",
+      "required": ["name", "path"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["workspace", "project"] },
+        "projectName": { "type": "string", "minLength": 1 },
+        "projectPath": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "project" } } },
+          "then": {
+            "properties": {
+              "projectName": { "type": "string", "minLength": 1 },
+              "projectPath": { "type": "string", "minLength": 1 }
+            },
+            "required": ["projectName", "projectPath"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "kind": { "enum": ["release-readiness", "dependency-security", "test-coverage"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "constraints": {
+      "type": "object",
+      "required": ["allowBreakingChanges", "allowForce", "requireBuild", "requireTests"],
+      "properties": {
+        "allowBreakingChanges": { "type": "boolean" },
+        "allowForce": { "type": "boolean" },
+        "requireBuild": { "type": "boolean" },
+        "requireTests": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "criteria": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "readiness", "workspaceVerify"],
+          "properties": {
+            "kind": { "const": "release-readiness" },
+            "readiness": { "const": "pass" },
+            "workspaceVerify": { "const": "ready" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "maximumBlockingVulnerabilities", "requireFreshAudit"],
+          "properties": {
+            "kind": { "const": "dependency-security" },
+            "maximumBlockingVulnerabilities": { "const": 0 },
+            "requireFreshAudit": { "const": true }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "metric", "minimumPercent"],
+          "properties": {
+            "kind": { "const": "test-coverage" },
+            "metric": { "const": "auto" },
+            "minimumPercent": { "type": "number", "minimum": 0, "maximum": 100 }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "baseline": { "$ref": "#/$defs/measurement" },
+    "dependencySafetyBaseline": {
+      "type": "object",
+      "required": ["manifests"],
+      "properties": {
+        "manifests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "ecosystem", "sha256"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "ecosystem": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "dependencies": {
+                "type": "object",
+                "additionalProperties": { "type": "string", "minLength": 1 }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifactPaths": {
+      "type": "object",
+      "required": ["goal", "status", "latestReport"],
+      "properties": {
+        "goal": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "latestReport": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "measurement": {
+      "type": "object",
+      "required": ["measuredAt", "value", "target", "unit", "status", "evidencePaths", "message"],
+      "properties": {
+        "measuredAt": { "type": "string", "format": "date-time" },
+        "value": { "type": ["number", "null"] },
+        "target": { "type": ["number", "null"] },
+        "unit": { "enum": ["percent", "blocking-vulnerabilities", "gates", "unknown"] },
+        "status": { "enum": ["satisfied", "unsatisfied", "unavailable"] },
+        "evidencePaths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

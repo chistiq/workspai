@@ -457,6 +457,21 @@ describe('doctor enterprise surface probes', () => {
         risk: 'guarded',
         canAutoFix: true,
         command: `cd "${projectPath}" && npm audit fix --audit-level=moderate`,
+        transaction: {
+          schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+          kind: 'dependency-security',
+          state: 'planned',
+          projectPath,
+          ecosystem: 'npm',
+          requiredStages: ['reconcile', 'audit', 'test', 'build'],
+          completion: {
+            manifestLockConsistent: true,
+            auditClean: true,
+            declaredTestsPass: true,
+            declaredBuildPass: true,
+            canonicalVerificationRequired: true,
+          },
+        },
       },
     });
     expect(

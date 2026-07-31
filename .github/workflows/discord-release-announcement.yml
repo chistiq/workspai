@@ -1,0 +1,72 @@
+name: Discord Release Announcement
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published GitHub release tag to preview or announce"
+        required: true
+        type: string
+      product:
+        description: "Release product id from release-products.v1.json"
+        required: true
+        default: "auto"
+        type: string
+      send:
+        description: "Send or update the Discord announcement"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: discord-release-${{ github.event.release.tag_name || inputs.tag }}-${{ inputs.product || 'auto' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  announce:
+    name: Generate and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELEASE_PRODUCT: ${{ inputs.product || 'auto' }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Checkout trusted announcement source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+
+      - name: Generate and validate announcement
+        run: |
+          node packages/cli/scripts/discord-release-announcement.mjs \
+            --product "$RELEASE_PRODUCT" \
+            --tag "$RELEASE_TAG" \
+            --check \
+            --output "$RUNNER_TEMP/discord-announcement.json" \
+            --markdown-output "$RUNNER_TEMP/discord-announcement.md"
+
+      - name: Add preview to workflow summary
+        shell: bash
+        run: |
+          {
+            echo "## Discord announcement preview"
+            echo
+            cat "$RUNNER_TEMP/discord-announcement.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish or update Discord announcement
+        if: ${{ github.event_name == 'release' || inputs.send == true }}
+        env:
+          ANNOUNCEMENTS_WEBHOOK_URL: ${{ secrets.ANNOUNCEMENTS_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node packages/cli/scripts/discord-release-announcement.mjs \
+            --product "$RELEASE_PRODUCT" \
+            --tag "$RELEASE_TAG" \
+            --send

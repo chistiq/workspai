@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/workspace-intelligence/doctor-dependency-repair-transaction.v1.json",
+  "title": "Workspai Doctor Dependency Repair Transaction v1",
+  "description": "The portable closure contract a consumer must satisfy after changing a dependency manifest or lockfile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "state",
+    "projectPath",
+    "ecosystem",
+    "requiredStages",
+    "completion"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "workspai.doctor-dependency-repair-transaction.v1"
+    },
+    "kind": {
+      "const": "dependency-security"
+    },
+    "state": {
+      "const": "planned"
+    },
+    "projectPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ecosystem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requiredStages": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "reconcile" },
+        { "const": "audit" },
+        { "const": "test" },
+        { "const": "build" }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestLockConsistent",
+        "auditClean",
+        "declaredTestsPass",
+        "declaredBuildPass",
+        "canonicalVerificationRequired"
+      ],
+      "properties": {
+        "manifestLockConsistent": { "const": true },
+        "auditClean": { "const": true },
+        "declaredTestsPass": { "const": true },
+        "declaredBuildPass": { "const": true },
+        "canonicalVerificationRequired": { "const": true }
+      }
+    }
+  }
+}

@@ -49,6 +49,7 @@ import {
 } from './contracts/workspace-intelligence-run-contract.js';
 import { historyEntryFromVerify, recordWorkspaceHistory } from './workspace-history.js';
 import { writeWorkspaceArtifactJson } from './utils/artifact-path-compat.js';
+import { emitWorkspacePhase } from './observability/cli-progress.js';
 
 export type { WorkspaceIntelligenceRunReport } from './contracts/workspace-intelligence-run-contract.js';
 
@@ -56,6 +57,35 @@ export const WORKSPACE_INTELLIGENCE_RUN_REPORT_PATH = A.intelligenceRun;
 export const WORKSPACE_INTELLIGENCE_RUN_SCHEMA_VERSION =
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.intelligenceRun;
 const REPORT_PATH = WORKSPACE_INTELLIGENCE_RUN_REPORT_PATH;
+
+type IntelligenceMilestoneKind = 'preflight' | 'stage';
+type IntelligenceMilestoneStatus = 'started' | 'passed' | 'blocked' | 'failed' | 'skipped';
+
+function emitIntelligenceMilestone(input: {
+  id: WorkspaceIntelligencePreflightId | WorkspaceIntelligenceStepId;
+  kind: IntelligenceMilestoneKind;
+  status: IntelligenceMilestoneStatus;
+  message: string;
+}): void {
+  emitWorkspacePhase({
+    action: 'intelligence',
+    status:
+      input.status === 'started'
+        ? 'started'
+        : input.status === 'passed'
+          ? 'succeeded'
+          : input.status === 'failed'
+            ? 'failed'
+            : 'warn',
+    message: input.message,
+    metadata: {
+      phase: `workspace.intelligence.${input.kind}.${input.id}`,
+      intelligenceMilestoneId: input.id,
+      intelligenceMilestoneKind: input.kind,
+      intelligenceMilestoneStatus: input.status,
+    },
+  });
+}
 
 export async function runWorkspaceIntelligenceChain(input: {
   workspacePath: string;
@@ -75,6 +105,12 @@ export async function runWorkspaceIntelligenceChain(input: {
   ): Promise<void> => {
     const artifacts = [...WORKSPACE_INTELLIGENCE_PREFLIGHT_ARTIFACTS[id]];
     if (hardFailure) {
+      emitIntelligenceMilestone({
+        id,
+        kind: 'preflight',
+        status: 'skipped',
+        message: `${id} prerequisite skipped after an upstream failure`,
+      });
       preflight.push({
         id,
         status: 'skipped',
@@ -86,8 +122,20 @@ export async function runWorkspaceIntelligenceChain(input: {
       return;
     }
     const started = Date.now();
+    emitIntelligenceMilestone({
+      id,
+      kind: 'preflight',
+      status: 'started',
+      message: `${id} prerequisite started`,
+    });
     try {
       const result = await operation();
+      emitIntelligenceMilestone({
+        id,
+        kind: 'preflight',
+        status: 'passed',
+        message: result.message,
+      });
       preflight.push({
         id,
         status: 'passed',
@@ -98,13 +146,20 @@ export async function runWorkspaceIntelligenceChain(input: {
       });
     } catch (error) {
       hardFailure = true;
+      const message = error instanceof Error ? error.message : String(error);
+      emitIntelligenceMilestone({
+        id,
+        kind: 'preflight',
+        status: 'failed',
+        message,
+      });
       preflight.push({
         id,
         status: 'failed',
         result: 'failed',
         durationMs: Date.now() - started,
         artifacts,
-        message: error instanceof Error ? error.message : String(error),
+        message,
       });
     }
   };
@@ -114,6 +169,12 @@ export async function runWorkspaceIntelligenceChain(input: {
   ): Promise<void> => {
     const artifacts = [...WORKSPACE_INTELLIGENCE_RUNTIME_STEPS[id].produces];
     if (hardFailure) {
+      emitIntelligenceMilestone({
+        id,
+        kind: 'stage',
+        status: 'skipped',
+        message: `${id} skipped after an upstream failure`,
+      });
       stages.push({
         id,
         status: 'skipped',
@@ -125,12 +186,25 @@ export async function runWorkspaceIntelligenceChain(input: {
       return;
     }
     const started = Date.now();
+    emitIntelligenceMilestone({
+      id,
+      kind: 'stage',
+      status: 'started',
+      message: `${id} started`,
+    });
     try {
       const result = await operation();
       const exitCode = result.exitCode ?? 0;
+      const status = result.blocked || exitCode !== 0 ? 'blocked' : 'passed';
+      emitIntelligenceMilestone({
+        id,
+        kind: 'stage',
+        status,
+        message: result.message,
+      });
       stages.push({
         id,
-        status: result.blocked || exitCode !== 0 ? 'blocked' : 'passed',
+        status,
         durationMs: Date.now() - started,
         artifacts,
         exitCode,
@@ -138,13 +212,20 @@ export async function runWorkspaceIntelligenceChain(input: {
       });
     } catch (error) {
       hardFailure = true;
+      const message = error instanceof Error ? error.message : String(error);
+      emitIntelligenceMilestone({
+        id,
+        kind: 'stage',
+        status: 'failed',
+        message,
+      });
       stages.push({
         id,
         status: 'failed',
         durationMs: Date.now() - started,
         artifacts,
         exitCode: 1,
-        message: error instanceof Error ? error.message : String(error),
+        message,
       });
     }
   };

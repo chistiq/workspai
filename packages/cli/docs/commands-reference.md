@@ -58,6 +58,9 @@ npx workspai workspace contract inspect [--json]
 npx workspai workspace contract verify [--strict] [--json]
 npx workspai workspace contract graph [--json]
 npx workspai workspace intelligence run [--workspace <path>] [--for-agent <agent>] [--strict] [--json]
+npx workspai workspace goal plan <release-readiness|dependency-security|test-coverage> [--scope project:<name>] [--target <0-100>] [--allow-breaking] [--allow-force] [--no-build] [--no-tests] [--json]
+npx workspai workspace goal status <goal-id> [--json]
+npx workspai workspace goal verify <goal-id> [--no-run] [--reuse-intelligence] [--json]
 npx workspai workspace model [--workspace <path>] [--json] [--write] [--strict] [--cache] [--incremental] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace context --for-agent [codex|claude|cursor|orca] [--workspace <path>] [--json] [--write] [--agent-sync|--no-agent-sync] [--target <targets>] [--preset minimal|enterprise] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace agent-sync [--workspace <path>] [--write] [--refresh-context] [--strict] [--json] [--preset minimal|enterprise] [--target all|vscode|agents,copilot,cursor,claude,codex,orca] [--project-grounding managed|local|off] [--experimental-hooks] [--hydrate-prompts]
@@ -131,6 +134,15 @@ execution failures. See
 [Unified Workspace Intelligence Runner](./workspace-intelligence-runner.md) for
 baseline creation/reuse, JSON fields, artifact invariants, skip propagation, and
 CI handling.
+
+`workspace goal` turns a user outcome into a durable success contract. Plan a
+release-readiness, dependency-security, or test-coverage goal once; Studio or
+another agent can then work toward it and ask the CLI to verify current
+evidence. Goal definitions live under `.workspai/goals/`, while the latest
+portable verdict is written to
+`.workspai/reports/verified-goal-last-run.json`. See
+[Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals)
+for the supported scopes, safety constraints, and verification boundary.
 
 `workspace feedback record` is a non-interactive machine interface. It requires
 exactly one JSON object on stdin and `--json`; an empty stdin or interactive TTY

@@ -4,17 +4,18 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 
 ## Workflows
 
-| Workflow                 | Path                                             | Purpose                                                                   |
-| ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------- |
-| Build / test matrix      | `.github/workflows/ci.yml`                       | Build, lint, typecheck, tests, coverage, contract gates                   |
-| Workspace E2E matrix     | `.github/workflows/workspace-e2e-matrix.yml`     | Cross-OS workspace lifecycle smoke; setup `--warm-deps`; cache/mirror ops |
-| Windows bridge E2E       | `.github/workflows/windows-bridge-e2e.yml`       | Native Windows bridge and lifecycle checks                                |
-| E2E smoke                | `.github/workflows/e2e-smoke.yml`                | Focused bridge regression smoke                                           |
-| Official generator smoke | `.github/workflows/frontend-generator-smoke.yml` | Contract-driven official-generator drift gate                             |
-| Security                 | `.github/workflows/security.yml`                 | Security scanning and policy checks                                       |
-| Manual npm release       | `.github/workflows/release-npm-manual.yml`       | Maintainer-only release gate and publish workflow                         |
-| Contributor onboarding   | `.github/workflows/contributor-onboarding.yml`   | Accepted-contributor onboarding automation                                |
-| Welcome                  | `.github/workflows/welcome.yml`                  | First-issue and first-contribution messages                               |
+| Workflow                 | Path                                                 | Purpose                                                                   |
+| ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| Build / test matrix      | `.github/workflows/ci.yml`                           | Build, lint, typecheck, tests, coverage, contract gates                   |
+| Workspace E2E matrix     | `.github/workflows/workspace-e2e-matrix.yml`         | Cross-OS workspace lifecycle smoke; setup `--warm-deps`; cache/mirror ops |
+| Windows bridge E2E       | `.github/workflows/windows-bridge-e2e.yml`           | Native Windows bridge and lifecycle checks                                |
+| E2E smoke                | `.github/workflows/e2e-smoke.yml`                    | Focused bridge regression smoke                                           |
+| Official generator smoke | `.github/workflows/frontend-generator-smoke.yml`     | Contract-driven official-generator drift gate                             |
+| Security                 | `.github/workflows/security.yml`                     | Security scanning and policy checks                                       |
+| Manual npm release       | `.github/workflows/release-npm-manual.yml`           | Maintainer-only release gate and publish workflow                         |
+| Discord announcement     | `.github/workflows/discord-release-announcement.yml` | Preview and publish one idempotent product-aware release announcement     |
+| Contributor onboarding   | `.github/workflows/contributor-onboarding.yml`       | Accepted-contributor onboarding automation                                |
+| Welcome                  | `.github/workflows/welcome.yml`                      | First-issue and first-contribution messages                               |
 
 The release workflow requires the cost-bounded
 `Official Generator Smoke · primary` Linux run for the exact release SHA. A
@@ -28,6 +29,34 @@ signal. npm and Composer download caches reduce repeated network work without
 caching generated projects; every smoke run still exercises the current
 upstream generator, generated artifacts, build surface, registry, and Doctor
 evidence.
+
+## Release announcements
+
+`packages/cli/releases/release-products.v1.json` maps a release product to its
+display name, package version, tag template, notes path, repository, and upgrade
+command. Release-event runs resolve the product from its tag, so future
+independently versioned monorepo packages do not require a new workflow.
+Each versioned release-note file carries one hidden
+`workspai-release-announcement` JSON block with its public headline, summary,
+and two to five highlights.
+
+Validate or preview the current CLI announcement locally:
+
+```bash
+npm --workspace workspai run check:release-announcement
+npm --workspace workspai run release:announcement -- \
+  --product workspai-cli \
+  --tag v0.51.0 \
+  --markdown-output /tmp/workspai-discord-announcement.md
+```
+
+Publishing a GitHub Release sends the generated embed to Discord. Configure the
+repository Actions secret `ANNOUNCEMENTS_WEBHOOK_URL` with the incoming
+webhook for `#announcements`. Manual workflow dispatch defaults to preview-only.
+When send is explicitly enabled, an existing message for the same product and
+tag is updated rather than duplicated. The workflow stores the Discord message
+id in a hidden marker on the GitHub Release. Release events read automation
+from the released tag; manual previews use the selected branch commit.
 
 ## Consumer workspace: agent grounding CI
 

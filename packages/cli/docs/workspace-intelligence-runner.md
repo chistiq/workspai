@@ -184,6 +184,54 @@ Automation must distinguish:
 Do not parse terminal prose. Read `status`, `exitCode`, `preflight`, `stages`,
 and their registered artifacts from the JSON report.
 
+## Verified engineering goals
+
+The intelligence runner answers what is true now. A verified goal adds the
+durable definition of what must become true, so a person or agent can resume
+work without changing the success criteria between attempts.
+
+```bash
+# Prepare the whole workspace for release.
+npx workspai workspace goal plan release-readiness --json
+
+# Remove blocking dependency vulnerabilities from one registered project.
+npx workspai workspace goal plan dependency-security --scope project:api --json
+
+# Raise one project's measured coverage to at least 75%.
+npx workspai workspace goal plan test-coverage --scope project:web --target 75 --json
+
+# Re-measure the goal against current source and evidence.
+npx workspai workspace goal verify <goal-id> --json
+```
+
+Planning writes an immutable goal definition and its current status under
+`.workspai/goals/<goal-id>/`. Verification also refreshes the canonical latest
+verdict at `.workspai/reports/verified-goal-last-run.json`. Consumers must read
+the JSON verdict; they must not infer success from an agent message or a source
+edit alone.
+
+The three shipped goal kinds have explicit completion rules:
+
+| Goal kind             | Completion boundary                                                            |
+| --------------------- | ------------------------------------------------------------------------------ |
+| `release-readiness`   | Readiness passes and Workspace Verify reports ready.                            |
+| `dependency-security` | A fresh audit reports zero blocking vulnerabilities and required checks pass.  |
+| `test-coverage`       | Runtime-owned coverage reaches the selected percentage and required checks pass. |
+
+Goals are workspace-scoped by default. Use `--scope project:<registered-name>`
+when the requested outcome belongs to one project. Dependency goals preserve a
+hash baseline for recognized manifests and lockfiles across supported
+ecosystems. Breaking or force-based changes remain forbidden unless the goal
+explicitly records `--allow-breaking` or `--allow-force`; changing a manifest
+alone never satisfies the goal.
+
+`--no-run` only reads current goal evidence. `--reuse-intelligence` may reuse a
+just-completed canonical run, but it does not waive goal-specific measurement.
+The goal schemas are
+[`verified-goal.v1.json`](../contracts/workspace-intelligence/verified-goal.v1.json)
+and
+[`verified-goal-status.v1.json`](../contracts/workspace-intelligence/verified-goal-status.v1.json).
+
 ## Relationship to other commands
 
 `workspace intelligence run` is the canonical Workspace Intelligence chain.

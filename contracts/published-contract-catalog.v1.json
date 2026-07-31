@@ -91,6 +91,16 @@
       "contractPath": "contracts/project-test-coverage.v1.json",
       "publication": "json-schema"
     },
+    "verifiedGoal": {
+      "schemaVersion": "workspai.verified-goal.v1",
+      "contractPath": "contracts/workspace-intelligence/verified-goal.v1.json",
+      "publication": "json-schema"
+    },
+    "verifiedGoalStatus": {
+      "schemaVersion": "workspai.verified-goal-status.v1",
+      "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json",
+      "publication": "json-schema"
+    },
     "workspaceIntelligenceArchitecture": {
       "schemaVersion": "workspai-workspace-intelligence-architecture-v1",
       "contractPath": "contracts/workspace-intelligence-architecture.v1.json",
@@ -122,7 +132,8 @@
         "explain": "workspace-explain.v1",
         "intelligenceRun": "workspace-intelligence-run.v1",
         "evaluationLive": "workspace-intelligence-evaluation.v1",
-        "evaluationLastRun": "workspace-intelligence-evaluation.v1"
+        "evaluationLastRun": "workspace-intelligence-evaluation.v1",
+        "verifiedGoalStatus": "workspai.verified-goal-status.v1"
       },
       "contractPath": null,
       "publication": "embedded-type",
@@ -226,6 +237,11 @@
           "path": ".workspai/reports/workspace-intelligence-evaluation-last-run.json",
           "schemaVersion": "workspace-intelligence-evaluation.v1",
           "contractPath": "contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json"
+        },
+        "verifiedGoalStatus": {
+          "path": ".workspai/reports/verified-goal-last-run.json",
+          "schemaVersion": "workspai.verified-goal-status.v1",
+          "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json"
         }
       }
     },
@@ -357,6 +373,11 @@
     "doctorRemediationPlan": {
       "schemaVersion": "doctor-remediation-plan-v2",
       "contractPath": "contracts/doctor-remediation-plan.v2.json",
+      "publication": "json-schema"
+    },
+    "doctorDependencyRepairTransaction": {
+      "schemaVersion": "workspai.doctor-dependency-repair-transaction.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-dependency-repair-transaction.v1.json",
       "publication": "json-schema"
     },
     "artifactRemediationPlan": {

@@ -8,6 +8,10 @@ import {
   resolveWorkspaceArtifactPath,
   writeWorkspaceArtifactJson,
 } from './utils/artifact-path-compat.js';
+import type {
+  DoctorDependencyRepairTransaction,
+  DoctorRepairStrategyStage,
+} from './utils/doctor-repair-capabilities.js';
 
 export type ArtifactRemediationRisk = 'safe' | 'guarded' | 'invasive';
 export type ArtifactRemediationMode =
@@ -34,6 +38,12 @@ export type ArtifactRemediationAction = {
   order: number;
   phase: string;
   scope: 'workspace' | 'project';
+  projectName?: string;
+  projectPath?: string;
+  sourceStepId?: string;
+  dependsOn?: string[];
+  strategy?: DoctorRepairStrategyStage[];
+  transaction?: DoctorDependencyRepairTransaction;
   status: 'ready' | 'review-required' | 'blocked' | 'guidance-only';
   mode: ArtifactRemediationMode;
   risk: ArtifactRemediationRisk;
@@ -258,6 +268,14 @@ function actionBase(input: {
   files?: string[];
   operation?: ArtifactRemediationOperation;
   notes?: string[];
+  scope?: ArtifactRemediationAction['scope'];
+  projectName?: string;
+  projectPath?: string;
+  sourceStepId?: string;
+  dependsOn?: string[];
+  strategy?: DoctorRepairStrategyStage[];
+  transaction?: DoctorDependencyRepairTransaction;
+  cwd?: ArtifactRemediationAction['cwd'];
 }): ArtifactRemediationAction {
   return {
     id: input.id,
@@ -266,7 +284,13 @@ function actionBase(input: {
     title: input.title,
     order: input.order,
     phase: input.phase,
-    scope: 'workspace',
+    scope: input.scope ?? 'workspace',
+    ...(input.projectName ? { projectName: input.projectName } : {}),
+    ...(input.projectPath ? { projectPath: input.projectPath } : {}),
+    ...(input.sourceStepId ? { sourceStepId: input.sourceStepId } : {}),
+    ...(input.dependsOn ? { dependsOn: input.dependsOn } : {}),
+    ...(input.strategy ? { strategy: structuredClone(input.strategy) } : {}),
+    ...(input.transaction ? { transaction: structuredClone(input.transaction) } : {}),
     status: input.status ?? 'ready',
     mode: input.mode,
     risk: input.risk,
@@ -275,7 +299,7 @@ function actionBase(input: {
     summary: input.summary,
     ...(input.command ? { command: input.command } : {}),
     verifyCommand: input.verifyCommand,
-    cwd: 'workspace',
+    cwd: input.cwd ?? 'workspace',
     files: input.files ?? [],
     ...(input.operation ? { operation: input.operation } : {}),
     rollback: {
@@ -284,6 +308,96 @@ function actionBase(input: {
     },
     notes: input.notes ?? [],
   };
+}
+
+function doctorPlanActions(input: {
+  report: CandidateReport;
+  workspacePath: string;
+  includeAbsolutePaths: boolean;
+  startOrder: number;
+}): ArtifactRemediationAction[] {
+  const steps = Array.isArray(input.report.payload.steps) ? input.report.payload.steps : [];
+  return steps.flatMap((rawStep, index) => {
+    const step = asRecord(rawStep);
+    const id = typeof step?.id === 'string' ? step.id.trim() : '';
+    const projectName = typeof step?.projectName === 'string' ? step.projectName.trim() : '';
+    const absoluteProjectPath =
+      typeof step?.projectPath === 'string' ? step.projectPath.trim() : '';
+    const originalCommand =
+      typeof step?.originalCommand === 'string' ? step.originalCommand.trim() : '';
+    if (!step || !id || !projectName || !absoluteProjectPath) {
+      return [];
+    }
+    const studioStatus = asRecord(step.studioStatus);
+    const studioState =
+      studioStatus?.state === 'ready' ||
+      studioStatus?.state === 'review-required' ||
+      studioStatus?.state === 'blocked' ||
+      studioStatus?.state === 'guidance-only'
+        ? studioStatus.state
+        : 'guidance-only';
+    const risk =
+      step.risk === 'safe' || step.risk === 'guarded' || step.risk === 'invasive'
+        ? step.risk
+        : 'guarded';
+    const preview = asRecord(step.preview);
+    const projectPath = relativeOrAbsolute(
+      input.workspacePath,
+      absoluteProjectPath,
+      input.includeAbsolutePaths
+    );
+    const executable = step.executableInCurrentEnvironment === true && originalCommand.length > 0;
+    const strategy = Array.isArray(step.strategy)
+      ? (structuredClone(step.strategy) as DoctorRepairStrategyStage[])
+      : undefined;
+    const transactionRecord = asRecord(step.transaction);
+    const transaction =
+      transactionRecord?.schemaVersion === 'workspai.doctor-dependency-repair-transaction.v1'
+        ? (structuredClone(transactionRecord) as unknown as DoctorDependencyRepairTransaction)
+        : undefined;
+    return [
+      actionBase({
+        id: `doctor.${id}`,
+        artifactKind: input.report.artifactKind,
+        cardId: input.report.cardId,
+        title:
+          typeof preview?.title === 'string' && preview.title.trim()
+            ? preview.title.trim()
+            : `Repair ${projectName}`,
+        order: input.startOrder + index,
+        phase: typeof step.phase === 'string' ? step.phase : 'doctor-remediation',
+        blocker:
+          typeof preview?.summary === 'string' && preview.summary.trim()
+            ? preview.summary.trim()
+            : `Doctor remediation is pending for ${projectName}.`,
+        summary:
+          typeof preview?.summary === 'string' && preview.summary.trim()
+            ? preview.summary.trim()
+            : `Execute the CLI-authored Doctor step for ${projectName}.`,
+        mode: executable ? 'run-command' : 'manual-guidance',
+        risk,
+        status: studioState,
+        ...(executable ? { command: originalCommand } : {}),
+        verifyCommand:
+          typeof step.verifyCommand === 'string' && step.verifyCommand.trim()
+            ? step.verifyCommand.trim()
+            : 'npx workspai doctor project --json',
+        files: asStringArray(step.files),
+        notes: [
+          `Source Doctor step: ${id}`,
+          ...(typeof studioStatus?.reason === 'string' ? [studioStatus.reason] : []),
+        ],
+        scope: 'project',
+        projectName,
+        projectPath,
+        sourceStepId: id,
+        dependsOn: asStringArray(step.dependsOn).map((dependency) => `doctor.${dependency}`),
+        strategy,
+        transaction,
+        cwd: 'project',
+      }),
+    ];
+  });
 }
 
 function bootstrapActions(input: {
@@ -538,6 +652,17 @@ export async function buildArtifactRemediationPlan(input: {
   let order = 1;
 
   for (const report of reports) {
+    if (report.artifactKind === 'doctor-workspace') {
+      const doctorActions = doctorPlanActions({
+        report,
+        workspacePath,
+        includeAbsolutePaths,
+        startOrder: order,
+      });
+      actions.push(...doctorActions);
+      order += doctorActions.length;
+      continue;
+    }
     const blockers = blockerListForReport(report);
     if (blockers.length === 0) {
       continue;

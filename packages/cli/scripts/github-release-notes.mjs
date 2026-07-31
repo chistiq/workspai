@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readReleaseDocument } from './release-document.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CLI_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -75,9 +76,9 @@ export async function renderGitHubReleaseBody(tag) {
   const version = tag.slice(1);
   const sourcePath = path.join(CLI_ROOT, 'releases', `RELEASE_NOTES_v${version}.md`);
 
-  let markdown;
+  let releaseDocument;
   try {
-    markdown = await fs.readFile(sourcePath, 'utf8');
+    releaseDocument = await readReleaseDocument(sourcePath);
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
       throw new Error(`Missing versioned release notes: ${repositoryRelativePath(sourcePath)}`);
@@ -85,6 +86,7 @@ export async function renderGitHubReleaseBody(tag) {
     throw error;
   }
 
+  const markdown = releaseDocument.body;
   const rendered = rewriteReleaseBodyLinks(markdown.trim(), { tag, sourcePath });
   const sourceRelativePath = repositoryRelativePath(sourcePath);
   const canonicalUrl = `${REPOSITORY_URL}/blob/${tag}/${sourceRelativePath}`;

@@ -66,8 +66,10 @@ import {
   type DoctorFixExecutionResult,
 } from './contracts/doctor-fix-result-contract.js';
 import type {
+  DoctorDependencyRepairTransaction,
   DoctorRepairCapability,
   DoctorRepairOperation,
+  DoctorRepairStrategyStage,
 } from './utils/doctor-repair-capabilities.js';
 import { buildEnterpriseSurfaceProbes } from './utils/doctor-surface-probes.js';
 import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './workspace-history.js';
@@ -5230,6 +5232,8 @@ interface PlannedFixStep extends FixPlanStep {
   repairIntent?: DoctorRepairIntent;
   files: string[];
   operation?: DoctorRepairOperation;
+  strategy?: DoctorRepairStrategyStage[];
+  transaction?: DoctorDependencyRepairTransaction;
   preview: {
     title: string;
     summary: string;
@@ -6402,6 +6406,10 @@ async function buildRemediationPlan(
       repairIntent,
       files,
       ...(operation ? { operation } : {}),
+      ...(capability?.strategy
+        ? { strategy: capability.strategy.map((stage) => structuredClone(stage)) }
+        : {}),
+      ...(capability?.transaction ? { transaction: structuredClone(capability.transaction) } : {}),
       preview: buildRemediationPreview({ step, capability, operation }),
       diffPreview: buildRemediationDiffPreview({ step, operation }),
       verifyCommand: capability?.verifyCommand,

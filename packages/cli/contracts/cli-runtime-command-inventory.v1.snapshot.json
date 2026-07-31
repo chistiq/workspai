@@ -1423,6 +1423,30 @@
         {
           "flags": "--no-gates",
           "attributeName": "gates"
+        },
+        {
+          "flags": "--allow-breaking",
+          "attributeName": "allowBreaking"
+        },
+        {
+          "flags": "--allow-force",
+          "attributeName": "allowForce"
+        },
+        {
+          "flags": "--no-build",
+          "attributeName": "build"
+        },
+        {
+          "flags": "--no-tests",
+          "attributeName": "tests"
+        },
+        {
+          "flags": "--no-run",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--reuse-intelligence",
+          "attributeName": "reuseIntelligence"
         }
       ]
     }

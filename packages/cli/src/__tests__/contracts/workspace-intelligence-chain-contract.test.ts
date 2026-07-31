@@ -61,6 +61,10 @@ import {
   WORKSPACE_EVALUATION_LIVE_PATH,
 } from '../../workspace-intelligence-evaluation';
 import { WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION } from '../../contracts/workspace-intelligence-evaluation-contract';
+import {
+  VERIFIED_GOAL_LAST_RUN_REPORT_PATH,
+  VERIFIED_GOAL_STATUS_SCHEMA_VERSION,
+} from '../../verified-goal';
 
 describe('workspace intelligence chain contract', () => {
   it('forbids canonical report path literals outside the runtime registry', () => {
@@ -261,6 +265,7 @@ describe('workspace intelligence chain contract', () => {
       intelligenceRun: WORKSPACE_INTELLIGENCE_RUN_REPORT_PATH,
       evaluationLive: WORKSPACE_EVALUATION_LIVE_PATH,
       evaluationLastRun: WORKSPACE_EVALUATION_LAST_RUN_PATH,
+      verifiedGoalStatus: VERIFIED_GOAL_LAST_RUN_REPORT_PATH,
     }).toEqual(WORKSPACE_INTELLIGENCE_ARTIFACTS);
   });
 
@@ -286,6 +291,7 @@ describe('workspace intelligence chain contract', () => {
       intelligenceRun: WORKSPACE_INTELLIGENCE_RUN_SCHEMA_VERSION,
       evaluationLive: WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
       evaluationLastRun: WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
+      verifiedGoalStatus: VERIFIED_GOAL_STATUS_SCHEMA_VERSION,
     }).toEqual(WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS);
   });
 

@@ -34,6 +34,11 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "affectedProjectNames": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
     "artifactPath": {
       "type": "string"
     },

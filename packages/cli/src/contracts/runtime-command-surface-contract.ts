@@ -309,6 +309,14 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Inspect or establish the foundational metadata required by workspace operations.',
   'workspace snapshot':
     'Capture a versioned workspace or model baseline for comparison and recovery.',
+  'workspace goal':
+    'Plan, resume, and evidence-verify a durable engineering goal with explicit scope, constraints, and success criteria.',
+  'workspace goal plan':
+    'Create or deterministically resume a goal contract and capture its current baseline.',
+  'workspace goal status':
+    'Read the durable progress, checks, blockers, and next actions for an existing goal.',
+  'workspace goal verify':
+    'Run the goal-specific checks and publish an evidence-derived verified, blocked, or failed state.',
   'workspace graph':
     'Query or export the evidence-backed workspace graph derived from the canonical model.',
   'workspace watch': 'Observe relevant workspace changes and publish versioned watch events.',
@@ -603,7 +611,7 @@ export function buildRuntimeCommandSurfaceContract(): RuntimeCommandSurfaceContr
         summary: descriptor.summary,
         options: descriptor.flags.map((flag) => ({
           flag,
-          description: workspaceActionFlagDescription(flag),
+          description: workspaceActionFlagDescription(flag, id),
         })),
         subactions: 'subactions' in descriptor ? [...descriptor.subactions] : [],
         artifact: 'artifact' in descriptor ? descriptor.artifact : null,

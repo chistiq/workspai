@@ -215,6 +215,12 @@
         "path": ".workspai/reports/workspace-intelligence-evaluation-last-run.json",
         "schemaVersion": "workspace-intelligence-evaluation.v1",
         "schemaContract": "contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json"
+      },
+      {
+        "id": "verifiedGoalStatus",
+        "path": ".workspai/reports/verified-goal-last-run.json",
+        "schemaVersion": "workspai.verified-goal-status.v1",
+        "schemaContract": "contracts/workspace-intelligence/verified-goal-status.v1.json"
       }
     ]
   },

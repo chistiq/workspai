@@ -5,7 +5,67 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.51.0 (July 28, 2026)
+## Latest Release: v0.52.0 (July 31, 2026)
+
+### Verified Engineering Goals and Transaction-Safe Repair
+
+This minor release lets Workspai turn release-readiness, dependency-security,
+and test-coverage requests into durable goals with measurable success criteria.
+It also prevents dependency repairs from being declared complete until the
+manifest, lockfile, audit, tests, build, and canonical workspace verification
+all agree.
+
+**What's New:**
+
+- **Durable engineering goals**
+  - Added `workspace goal plan|status|verify` for release readiness, dependency
+    security, and coverage targets.
+  - Goals preserve scope, safety constraints, baselines, progress, evidence,
+    and the final governed verdict across CLI, CI, IDE, and agent sessions.
+
+- **Transaction-safe dependency repair**
+  - Doctor and remediation plans now describe project-level dependency work as
+    an ordered reconcile, audit, test, build, and verification transaction.
+  - A manifest edit alone is progress, not a completed repair.
+
+- **One evidence contract**
+  - Verified-goal paths and schemas are bound to the canonical Workspace
+    Intelligence artifact registry and published consumer contracts.
+  - Agent handoff carries the active goal and dependency transaction without
+    creating a competing source of truth.
+
+- **Release announcements from versioned notes**
+  - Added validated release metadata and a shared GitHub/Discord release
+    document pipeline.
+  - Product, tag, upgrade command, limits, URLs, and safe mention behavior are
+    checked before an announcement can be sent.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Full CLI suite: 2,248 tests passed across 209 test files; 8 tests remain
+  explicitly skipped.
+- Workspace Intelligence runtime conformance passed 11 stages and 16 governed
+  artifacts; all 12 adversarial groups passed.
+- TypeScript, ESLint, format, documentation, contracts, package size, alias,
+  CLI/extension parity, and security checks passed.
+- `npm audit --audit-level=moderate` reported zero vulnerabilities.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.52.0
+workspai --version
+workspai workspace sync --json
+workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.52.0/packages/cli/releases/RELEASE_NOTES_v0.52.0.md)
+
+---
+
+## Previous Release: v0.51.0 (July 28, 2026)
 
 ### Trustworthy Graph Retrieval and Clearer Workspace Onboarding
 

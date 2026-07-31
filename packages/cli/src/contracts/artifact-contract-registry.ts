@@ -192,6 +192,10 @@ const SUPPLEMENTAL_ARTIFACT_PRODUCERS: Readonly<Record<string, readonly string[]
     ['workspace', 'eval', 'record', '--json'],
   ],
   [WORKSPACE_INTELLIGENCE_ARTIFACTS.evaluationLastRun]: [['workspace', 'eval', 'report', '--json']],
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.verifiedGoalStatus]: [
+    ['workspace', 'goal', 'plan'],
+    ['workspace', 'goal', 'verify'],
+  ],
   '.workspai/cache/workspace-model.v1.json': [['workspace', 'model']],
   '.workspai/workspace-registry.v1.json': [['workspace', 'sync']],
   '.workspai/compatibility-matrix.json': [['bootstrap']],

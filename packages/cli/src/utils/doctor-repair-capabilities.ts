@@ -28,6 +28,22 @@ export interface DoctorRepairStrategyStage {
   continueWhen: 'always' | 'previous-passed' | 'blocker-remains' | 'manual-decision';
 }
 
+export interface DoctorDependencyRepairTransaction {
+  schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1';
+  kind: 'dependency-security';
+  state: 'planned';
+  projectPath: string;
+  ecosystem: string;
+  requiredStages: Array<'reconcile' | 'audit' | 'test' | 'build'>;
+  completion: {
+    manifestLockConsistent: true;
+    auditClean: true;
+    declaredTestsPass: true;
+    declaredBuildPass: true;
+    canonicalVerificationRequired: true;
+  };
+}
+
 export type DoctorRepairOperation =
   | {
       type: 'file-create';
@@ -93,6 +109,7 @@ export interface DoctorRepairCapability {
   command?: string;
   invocation?: DoctorCommandInvocation;
   strategy?: DoctorRepairStrategyStage[];
+  transaction?: DoctorDependencyRepairTransaction;
   operation?: DoctorRepairOperation;
   verifyCommand?: string;
   refreshCommands: string[];
@@ -408,6 +425,7 @@ export function buildCommandRepairCapability(input: {
     args: string[];
   };
   strategy?: DoctorRepairStrategyStage[];
+  transaction?: DoctorDependencyRepairTransaction;
   files: string[];
   reason: string;
   fixKind?: DoctorRepairFixKind;
@@ -438,6 +456,7 @@ export function buildCommandRepairCapability(input: {
         }
       : {}),
     ...(input.strategy ? { strategy: input.strategy.map((stage) => ({ ...stage })) } : {}),
+    ...(input.transaction ? { transaction: structuredClone(input.transaction) } : {}),
     verifyCommand: 'npx workspai doctor project --json',
     refreshCommands: ['npx workspai doctor project --json', 'npx workspai workspace verify --json'],
     reason: input.reason,

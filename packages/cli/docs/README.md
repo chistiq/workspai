@@ -77,6 +77,7 @@ or use `import` to copy or clone one into the workspace.
 | Create a workspace or project                     | [Creating workspaces and projects](./creating-workspaces-and-projects.md)   | A registered project with canonical `.workspai` metadata              |
 | Bring an existing repository under governance     | [Workspace operations](./workspace-operations.md#import-and-adoption)       | Source stays in place with `adopt`, or is copied/cloned with `import` |
 | Run the complete intelligence loop                | [Unified runner](./workspace-intelligence-runner.md)                        | One ordered run report with durable stage evidence                    |
+| Set a release, security, or coverage outcome       | [Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals) | A durable success contract with a current evidence-backed verdict     |
 | Ask an architecture or dependency question        | [Workspace Knowledge Graph](./workspace-knowledge-graph.md)                 | A bounded answer with proof references rather than the whole graph    |
 | Measure agent token, cost, and outcome efficiency | [Workspace Intelligence Evaluation](./workspace-intelligence-evaluation.md) | A live, provenance-aware report suitable for CLI, IDE, and CI         |
 | Integrate CI or release gates                     | [CI workflows](./ci-workflows.md)                                           | Machine-readable exit codes and uploadable evidence                   |

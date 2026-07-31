@@ -293,6 +293,22 @@ Workspai should use this contract to offer two clear actions for a blocked card:
 After either path, Studio should run the step `verifyCommand` when present, then refresh the card
 with `refreshCommands` before claiming the issue is resolved.
 
+Dependency repairs have an additional closure contract. Editing a manifest is
+only the start of the transaction; the consumer must complete these stages in
+order:
+
+```text
+reconcile manifest and lockfile -> audit -> declared tests -> declared build
+-> canonical Workspace Intelligence verification
+```
+
+Doctor exposes this requirement as
+`workspai.doctor-dependency-repair-transaction.v1`. Studio and other consumers
+must not mark a dependency card fixed while the installed tree or lockfile is
+stale, the focused audit is still blocked, or declared build/test validation
+has not completed. The portable schema is
+[`doctor-dependency-repair-transaction.v1.json`](../contracts/workspace-intelligence/doctor-dependency-repair-transaction.v1.json).
+
 In `enterprise-strict`, guarded and invasive fixes are exposed as `review-required` even when they
 are executable. That keeps Studio honest: it can preview and propose the change, but the operator
 must approve before Doctor mutates project files or runs a dependency command.

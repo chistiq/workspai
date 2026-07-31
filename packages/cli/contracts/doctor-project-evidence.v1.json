@@ -390,6 +390,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/repairStrategyStage" }
         },
+        "transaction": { "$ref": "#/$defs/dependencyRepairTransaction" },
         "operation": { "$ref": "#/$defs/repairOperation" },
         "verifyCommand": { "type": "string" },
         "refreshCommands": { "type": "array", "items": { "type": "string" } },
@@ -397,6 +398,51 @@
         "limitations": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": true
+    },
+    "dependencyRepairTransaction": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "kind",
+        "state",
+        "projectPath",
+        "ecosystem",
+        "requiredStages",
+        "completion"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspai.doctor-dependency-repair-transaction.v1"
+        },
+        "kind": { "const": "dependency-security" },
+        "state": { "const": "planned" },
+        "projectPath": { "type": "string", "minLength": 1 },
+        "ecosystem": { "type": "string", "minLength": 1 },
+        "requiredStages": {
+          "type": "array",
+          "items": { "enum": ["reconcile", "audit", "test", "build"] },
+          "uniqueItems": true
+        },
+        "completion": {
+          "type": "object",
+          "required": [
+            "manifestLockConsistent",
+            "auditClean",
+            "declaredTestsPass",
+            "declaredBuildPass",
+            "canonicalVerificationRequired"
+          ],
+          "properties": {
+            "manifestLockConsistent": { "const": true },
+            "auditClean": { "const": true },
+            "declaredTestsPass": { "const": true },
+            "declaredBuildPass": { "const": true },
+            "canonicalVerificationRequired": { "const": true }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "commandInvocation": {
       "type": "object",

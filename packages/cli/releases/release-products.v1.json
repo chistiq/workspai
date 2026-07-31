@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "defaultProductId": "workspai-cli",
+  "products": {
+    "workspai-cli": {
+      "displayName": "Workspai CLI",
+      "packagePath": "packages/cli/package.json",
+      "releaseNotesPattern": "packages/cli/releases/RELEASE_NOTES_v{version}.md",
+      "repository": "chistiq/workspai",
+      "tagTemplate": "v{version}",
+      "upgradeCommand": "npm install -g workspai@{version}"
+    }
+  }
+}

@@ -1,3 +1,29 @@
+<!-- workspai-release-announcement
+{
+  "productId": "workspai-cli",
+  "headline": "Trustworthy Graph Retrieval and Clearer Workspace Onboarding",
+  "summary": "Workspai now provides more honest graph quality, more relevant bounded search, clearer workspace onboarding, and stronger project diagnostics.",
+  "highlights": [
+    {
+      "icon": "🕸️",
+      "text": "More honest graph quality and unknown accounting"
+    },
+    {
+      "icon": "🔎",
+      "text": "Better deterministic search for natural-language questions"
+    },
+    {
+      "icon": "🧭",
+      "text": "Clearer, profile-aware workspace onboarding"
+    },
+    {
+      "icon": "🩺",
+      "text": "Stronger Doctor and official generator verification"
+    }
+  ]
+}
+-->
+
 # Workspai CLI v0.51.0
 
 Released July 28, 2026.

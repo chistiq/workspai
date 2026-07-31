@@ -4,7 +4,14 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 const NPM_CONTRACTS_DIR = path.resolve(process.cwd(), 'contracts');
-const VSCODE_CONTRACTS_DIR = path.resolve(process.cwd(), '..', 'rapidkit-vscode', 'contracts');
+const VSCODE_CONTRACTS_DIR = path.resolve(
+  process.cwd(),
+  '..',
+  '..',
+  '..',
+  'rapidkit-vscode',
+  'contracts'
+);
 
 const CLI_EXTENSION_CONTRACT_FILES = [
   'extension-cli-compatibility.v1.json',
@@ -29,6 +36,7 @@ const CLI_EXTENSION_CONTRACT_FILES = [
   'doctor-project-evidence.v1.json',
   'doctor-remediation-plan.v1.json',
   'doctor-remediation-plan.v2.json',
+  'workspace-intelligence/doctor-dependency-repair-transaction.v1.json',
   'artifact-remediation-plan.v1.json',
   'analyze-last-run.v1.json',
 ];
@@ -39,9 +47,10 @@ function readJson(filePath: string): unknown {
 
 describe('CLI ↔ extension contract parity', () => {
   it('keeps rapidkit-npm contracts aligned with rapidkit-vscode/contracts', () => {
-    if (!fs.existsSync(VSCODE_CONTRACTS_DIR)) {
-      return;
-    }
+    expect(
+      fs.existsSync(VSCODE_CONTRACTS_DIR),
+      'rapidkit-vscode/contracts directory is missing'
+    ).toBe(true);
 
     for (const fileName of CLI_EXTENSION_CONTRACT_FILES) {
       const npmPath = path.join(NPM_CONTRACTS_DIR, fileName);

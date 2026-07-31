@@ -8206,13 +8206,22 @@ program
   .option('--ci', 'Build CI-oriented command plans where supported')
   .option('--strict', 'Return non-zero exit on warn/fail gate outcomes')
   .option('--no-gates', 'Skip doctor/readiness pre-run gates')
+  .option('--allow-breaking', 'Allow breaking changes for a verified goal')
+  .option('--allow-force', 'Allow force-based repairs for a verified goal')
+  .option('--no-build', 'Do not require build validation for a verified goal')
+  .option('--no-tests', 'Do not require test validation for a verified goal')
+  .option('--no-run', 'Read current goal evidence without executing verification commands')
+  .option(
+    '--reuse-intelligence',
+    'Reuse a just-completed canonical intelligence run for verified goal checks'
+  )
   .addHelpText(
     'after',
     `
 Workspace Actions:
   Discovery & registry     list | sync | registry | foundation
   Intelligence loop       model | snapshot | diff | impact | verify | context
-  Intelligence consumers  agent-sync | remediation-plan | explain | why | trace | feedback | eval | mcp
+  Intelligence consumers  goal | agent-sync | remediation-plan | explain | why | trace | feedback | eval | mcp
   Graph & observation      graph | watch
   Contracts & policy      contract | policy
   Portability             share | export | archive | hydrate | import
@@ -8274,6 +8283,12 @@ See the command reference for action-specific required inputs and output artifac
       incremental?: boolean;
       once?: boolean;
       graphStream?: boolean;
+      allowBreaking?: boolean;
+      allowForce?: boolean;
+      build?: boolean;
+      tests?: boolean;
+      run?: boolean;
+      reuseIntelligence?: boolean;
     };
 
     const requireWorkspaceRootForAction = (actionName: string): string => {
@@ -10780,6 +10795,133 @@ See the command reference for action-specific required inputs and output artifac
         console.log(chalk.red(`❌ ${result.error ?? 'Failed to record feedback'}`));
       }
       if (!result.ok) {
+        process.exit(1);
+      }
+    } else if (action === 'goal') {
+      const workspacePath = requireWorkspaceRootForAction('goal');
+      const operation = (subaction || 'status').toLowerCase();
+      const goalArgument = key?.trim();
+      const {
+        planVerifiedGoal,
+        readVerifiedGoal,
+        verifyVerifiedGoal,
+        VERIFIED_GOAL_SCHEMA_VERSION,
+      } = await import('./verified-goal.js');
+      const printGoalStatus = (payload: {
+        goal?: { id: string; summary: string; baseline?: { message?: string } };
+        status: {
+          goalId: string;
+          state: string;
+          progress: { message: string };
+          blockingReasons: string[];
+          nextActions: string[];
+          artifactPath: string;
+        };
+        resumed?: boolean;
+      }): void => {
+        if (actionOptions.json) {
+          console.log(JSON.stringify(payload, null, 2));
+          return;
+        }
+        const goal = payload.goal;
+        console.log(
+          payload.status.state === 'verified'
+            ? chalk.green('✔ Verified goal satisfied')
+            : chalk.cyan(payload.resumed ? '↻ Verified goal resumed' : '◆ Verified goal ready')
+        );
+        if (goal) console.log(chalk.bold(`   ${goal.summary}`));
+        console.log(chalk.gray(`   Goal: ${payload.status.goalId}`));
+        console.log(chalk.gray(`   Progress: ${payload.status.progress.message}`));
+        console.log(chalk.gray(`   State: ${payload.status.state}`));
+        if (payload.status.blockingReasons.length > 0) {
+          console.log(chalk.gray(`   Remaining: ${payload.status.blockingReasons[0]}`));
+        }
+        if (payload.status.nextActions.length > 0) {
+          console.log(chalk.gray(`   Next: ${payload.status.nextActions[0]}`));
+        }
+        console.log(chalk.gray(`   Status: ${payload.status.artifactPath}`));
+      };
+
+      if (operation === 'plan') {
+        const allowedKinds = ['release-readiness', 'dependency-security', 'test-coverage'] as const;
+        if (
+          !goalArgument ||
+          !allowedKinds.includes(goalArgument as (typeof allowedKinds)[number])
+        ) {
+          const message =
+            'Goal kind must be release-readiness, dependency-security, or test-coverage.';
+          if (actionOptions.json) {
+            console.log(
+              JSON.stringify(
+                cliOperationError({
+                  operation: 'workspace goal plan',
+                  code: 'workspace.goal.kind.invalid',
+                  message,
+                }),
+                null,
+                2
+              )
+            );
+          } else {
+            console.log(chalk.red(`❌ ${message}`));
+          }
+          process.exit(1);
+        }
+        const parsedTarget = Number(actionOptions.target ?? 80);
+        if (!Number.isFinite(parsedTarget) || parsedTarget < 0 || parsedTarget > 100) {
+          throw new Error('--target must be a number from 0 to 100.');
+        }
+        const result = await planVerifiedGoal({
+          workspacePath,
+          kind: goalArgument as (typeof allowedKinds)[number],
+          scope: actionOptions.scope,
+          target: parsedTarget,
+          allowBreakingChanges: actionOptions.allowBreaking === true,
+          allowForce: actionOptions.allowForce === true,
+          requireBuild: actionOptions.build !== false,
+          requireTests: actionOptions.tests !== false,
+        });
+        printGoalStatus(result);
+      } else if (operation === 'status') {
+        if (!goalArgument) {
+          throw new Error('workspace goal status requires a goal id.');
+        }
+        const result = await readVerifiedGoal(workspacePath, goalArgument);
+        printGoalStatus({ ...result, resumed: result.status.state !== 'verified' });
+      } else if (operation === 'verify') {
+        if (!goalArgument) {
+          throw new Error('workspace goal verify requires a goal id.');
+        }
+        const goalResult = await readVerifiedGoal(workspacePath, goalArgument);
+        const status = await verifyVerifiedGoal({
+          workspacePath,
+          goalId: goalArgument,
+          run: actionOptions.run !== false,
+          runIntelligence: actionOptions.reuseIntelligence !== true,
+        });
+        printGoalStatus({ goal: goalResult.goal, status });
+        if (status.state !== 'verified') process.exit(2);
+      } else {
+        const message = `Unknown workspace goal action: ${operation}`;
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'workspace goal',
+                code: 'workspace.goal.action.invalid',
+                message,
+                context: {
+                  schemaVersion: VERIFIED_GOAL_SCHEMA_VERSION,
+                  availableActions: ['plan', 'status', 'verify'],
+                },
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ ${message}`));
+        }
         process.exit(1);
       }
     } else if (action === 'mcp') {

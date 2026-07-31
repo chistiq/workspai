@@ -70,4 +70,12 @@ describe('workspace action contract', () => {
       expect(output).toContain(mode);
     }
   });
+
+  it('describes the verified-goal coverage target without borrowing agent-sync wording', () => {
+    const output = renderWorkspaceActionHelp('goal');
+
+    expect(output).toContain('--target');
+    expect(output).toContain('Set the required test coverage percentage (0–100).');
+    expect(output).not.toContain('Select one or more agent customization targets.');
+  });
 });

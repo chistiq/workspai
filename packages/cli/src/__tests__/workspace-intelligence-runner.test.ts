@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   buildWorkspaceExplain: vi.fn(),
   writeWorkspaceExplainReport: vi.fn(),
   writeWorkspaceArtifactJson: vi.fn(),
+  emitWorkspacePhase: vi.fn(),
 }));
 
 vi.mock('fs-extra', () => ({
@@ -82,6 +83,9 @@ vi.mock('../workspace-history.js', () => ({
 }));
 vi.mock('../utils/artifact-path-compat.js', () => ({
   writeWorkspaceArtifactJson: mocks.writeWorkspaceArtifactJson,
+}));
+vi.mock('../observability/cli-progress.js', () => ({
+  emitWorkspacePhase: mocks.emitWorkspacePhase,
 }));
 
 import {
@@ -150,6 +154,26 @@ describe('unified Workspace Intelligence runner', () => {
     expect(report.stages.map((stage) => stage.id)).toEqual(WORKSPACE_INTELLIGENCE_STEP_IDS);
     expect(report.preflight.every((step) => step.status === 'passed')).toBe(true);
     expect(report.stages.every((stage) => stage.status === 'passed')).toBe(true);
+    expect(
+      mocks.emitWorkspacePhase.mock.calls
+        .map(([event]) => event.metadata)
+        .filter(
+          (metadata) =>
+            metadata?.intelligenceMilestoneKind === 'stage' &&
+            metadata?.intelligenceMilestoneStatus === 'started'
+        )
+        .map((metadata) => metadata.intelligenceMilestoneId)
+    ).toEqual(WORKSPACE_INTELLIGENCE_STEP_IDS);
+    expect(
+      mocks.emitWorkspacePhase.mock.calls
+        .map(([event]) => event.metadata)
+        .filter(
+          (metadata) =>
+            metadata?.intelligenceMilestoneKind === 'preflight' &&
+            metadata?.intelligenceMilestoneStatus === 'started'
+        )
+        .map((metadata) => metadata.intelligenceMilestoneId)
+    ).toEqual(WORKSPACE_INTELLIGENCE_PREFLIGHT_IDS);
     expect(mocks.buildWorkspaceModel).toHaveBeenCalledTimes(1);
     expect(mocks.createWorkspaceModelBuildProvenance).toHaveBeenCalledWith({
       mode: 'full',

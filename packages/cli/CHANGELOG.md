@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-07-31
+
+### Added
+
+- Added durable Verified Engineering Goals with `workspace goal
+  plan|status|verify` for `release-readiness`, `dependency-security`, and
+  `test-coverage` outcomes.
+- Added workspace- and project-scoped goal contracts that preserve success
+  criteria, safety constraints, baseline measurements, progress, evidence,
+  next actions, and a governed final verdict.
+- Added bounded multi-ecosystem dependency baselines with manifest and lockfile
+  hashes, Node dependency-range snapshots, path validation, and explicit
+  controls for breaking or forced changes.
+- Added the public
+  `workspai.doctor-dependency-repair-transaction.v1` contract with required
+  reconcile, audit, test, build, and canonical verification stages.
+- Added project-aware dependency repair transactions to Doctor evidence,
+  remediation plans, and Studio blocker handoff contracts.
+- Added contract-validated Discord release announcements, a shared release
+  document parser, a release-product catalog, and a GitHub Actions workflow
+  that can safely create or update one announcement per published release.
+
+### Changed
+
+- Made dependency repair completion require manifest/lockfile consistency,
+  clean focused audit evidence, declared tests, declared build, and canonical
+  Workspace Intelligence verification.
+- Made Verified Goal verification reuse the canonical intelligence chain and
+  publish `.workspai/reports/verified-goal-last-run.json` as part of the
+  governed artifact set.
+- Made remediation plans retain the affected project, ecosystem, commands,
+  ordered transaction, and verification requirements instead of reducing a
+  dependency blocker to generic evidence refreshes.
+- Extended runtime command, published-contract, extension-compatibility,
+  artifact, and Workspace Intelligence chain contracts with Verified Goal and
+  dependency-transaction capabilities.
+- Made GitHub release notes and Discord announcements consume the same
+  versioned release document and validated announcement metadata.
+- Kept the full official-generator matrix independent from npm publishing while
+  retaining the focused primary generator smoke as the required release gate.
+- Bumped the monorepo root, `workspai`, and `wspai` packages to `0.52.0`, and
+  aligned the alias dependency on `workspai@0.52.0`.
+
+### Fixed
+
+- Fixed dependency repair flows that could treat a manifest-only edit as a
+  completed source repair and run full workspace verification before the
+  lockfile and installed dependency tree were reconciled.
+- Fixed Doctor remediation output that omitted actionable, project-scoped
+  transaction state for dependency-security blockers.
+- Fixed canonical report-path and schema literals for Verified Goal status by
+  deriving them from the Workspace Intelligence artifact registry.
+- Fixed producer-binding guards so every canonical artifact path and schema is
+  represented exactly once in the runtime registry.
+- Fixed action-scoped Help so `workspace goal ... --target` describes a test
+  coverage percentage instead of inheriting an unrelated target description.
+
+### Verification
+
+- Full CLI suite: 2,248 tests passed across 209 test files, with 8 explicit
+  skips and no failures.
+- Verified-goal tests cover all goal kinds, workspace/project scope, coverage
+  targets, dependency safety baselines, breaking-change policy, persisted
+  status, resumption, and canonical chain integration.
+- Doctor and remediation tests cover transaction creation, project identity,
+  stage order, contract parity, and Studio handoff.
+- Workspace Intelligence runtime conformance passed 11 stages with 16 governed
+  artifacts; all 12 adversarial groups passed.
+- TypeScript, ESLint, format, Markdown links, documentation drift/examples,
+  GitHub release-note and Discord announcement validation, package size,
+  alias smoke, generated/mirrored contracts, and CLI/extension parity passed.
+- `npm audit --audit-level=moderate` reported zero vulnerabilities.
+
 ## [0.51.0] - 2026-07-28
 
 ### Added

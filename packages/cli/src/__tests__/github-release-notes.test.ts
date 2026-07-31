@@ -114,4 +114,16 @@ describe('GitHub release notes contract', () => {
     expect(releaseScript).toContain('github-release-notes.mjs --tag "$TAG" --check');
     expect(releaseScript).not.toContain('--generate-notes');
   });
+
+  it('does not expose machine-readable announcement metadata in the release body', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-release-metadata-'));
+    temporaryDirectories.push(directory);
+    const outputPath = path.join(directory, 'body.md');
+
+    await execa(process.execPath, [SCRIPT_PATH, '--tag', 'v0.51.0', '--output', outputPath]);
+
+    const body = await fs.readFile(outputPath, 'utf8');
+    expect(body).not.toContain('workspai-release-announcement');
+    expect(body).not.toContain('"productId": "workspai-cli"');
+  });
 });

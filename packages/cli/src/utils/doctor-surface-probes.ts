@@ -1264,6 +1264,21 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
             args: safeFixInvocation.args,
           },
           strategy: vulnerabilityStrategy,
+          transaction: {
+            schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+            kind: 'dependency-security',
+            state: 'planned',
+            projectPath: input.projectPath,
+            ecosystem: dependencyAudit?.ecosystem ?? safeFixInvocation.executable ?? runtime,
+            requiredStages: ['reconcile', 'audit', 'test', 'build'],
+            completion: {
+              manifestLockConsistent: true,
+              auditClean: true,
+              declaredTestsPass: true,
+              declaredBuildPass: true,
+              canonicalVerificationRequired: true,
+            },
+          },
           files: vulnerabilityFiles,
           reason:
             'Apply runtime-authored compatible vulnerability remediations, then regenerate Doctor and release-readiness evidence.',
@@ -1331,6 +1346,21 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
             ],
           }),
           strategy: vulnerabilityStrategy,
+          transaction: {
+            schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+            kind: 'dependency-security',
+            state: 'planned',
+            projectPath: input.projectPath,
+            ecosystem: dependencyAudit?.ecosystem ?? safeFixInvocation?.executable ?? runtime,
+            requiredStages: ['reconcile', 'audit', 'test', 'build'],
+            completion: {
+              manifestLockConsistent: true,
+              auditClean: true,
+              declaredTestsPass: true,
+              declaredBuildPass: true,
+              canonicalVerificationRequired: true,
+            },
+          },
         })
       : gitignoreCoversSecrets
         ? undefined
