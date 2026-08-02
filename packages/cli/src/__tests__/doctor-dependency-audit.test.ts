@@ -42,6 +42,11 @@ describe('Doctor dependency audit evidence', () => {
                 severity: 'high',
               },
             ],
+            fixAvailable: {
+              name: 'minimatch',
+              version: '10.2.0',
+              isSemVerMajor: true,
+            },
           },
         },
         metadata: {
@@ -77,6 +82,48 @@ describe('Doctor dependency audit evidence', () => {
         executable: 'npm',
         args: ['audit', '--json'],
       },
+      remediation: {
+        disposition: 'breaking-only',
+        compatibleFixAvailable: false,
+        breakingFixAvailable: true,
+        candidates: [{ packageName: 'minimatch', version: '10.2.0', breaking: true }],
+      },
+    });
+  });
+
+  it('distinguishes compatible boolean npm fixes from breaking-only candidates', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), { name: 'node-app' });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), { lockfileVersion: 3 });
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        vulnerabilities: {
+          compatible: {
+            name: 'compatible',
+            severity: 'high',
+            isDirect: true,
+            via: [],
+            fixAvailable: true,
+          },
+          transitive: {
+            name: 'transitive',
+            severity: 'high',
+            isDirect: false,
+            via: [],
+            fixAvailable: false,
+          },
+        },
+        metadata: { vulnerabilities: { high: 2, total: 2 } },
+      }),
+      stderr: '',
+      exitCode: 1,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+    expect(evidence.remediation).toEqual({
+      disposition: 'compatible',
+      compatibleFixAvailable: true,
+      breakingFixAvailable: false,
+      candidates: [{ packageName: 'compatible', breaking: false }],
     });
   });
 

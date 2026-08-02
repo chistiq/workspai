@@ -812,6 +812,20 @@ function buildDoctorRepairIntent(input: {
     };
   }
 
+  if (capability?.status === 'manual' || capability?.requiresReview) {
+    return {
+      mode: 'review-required',
+      confidence: 'medium',
+      primaryActionLabel: 'Review fix path',
+      requiresApproval: true,
+      requiresFreshEvidence: freshness.verifyBeforeUse,
+      reason: capability?.reason ?? probe.recommendation ?? probe.reason,
+      relatedCommands: uniqueStrings(
+        capability?.refreshCommands ?? ['npx workspai doctor project --json']
+      ),
+    };
+  }
+
   if (freshness.verifyBeforeUse && freshness.category === 'state') {
     return {
       mode: 'verify-before-fix',
@@ -838,20 +852,6 @@ function buildDoctorRepairIntent(input: {
         ...(capability.verifyCommand ? [capability.verifyCommand] : []),
         ...capability.refreshCommands,
       ]),
-    };
-  }
-
-  if (capability?.status === 'manual' || capability?.requiresReview) {
-    return {
-      mode: 'review-required',
-      confidence: 'medium',
-      primaryActionLabel: 'Review fix path',
-      requiresApproval: true,
-      requiresFreshEvidence: freshness.verifyBeforeUse,
-      reason: capability?.reason ?? probe.recommendation ?? probe.reason,
-      relatedCommands: uniqueStrings(
-        capability?.refreshCommands ?? ['npx workspai doctor project --json']
-      ),
     };
   }
 
@@ -886,14 +886,15 @@ function normalizeDoctorProbe(probe: ProjectProbeResult, generatedAt: string): P
   const issueClass = probe.issueClass ?? classifyDoctorIssueClass(probe);
   const operationalImpact =
     probe.operationalImpact ?? inferDoctorOperationalImpact(probe, issueClass);
-  const repairIntent =
-    probe.repairIntent ??
-    buildDoctorRepairIntent({
-      probe,
-      freshness,
-      issueClass,
-      operationalImpact,
-    });
+  // Repair intent is derived policy, not source evidence. Rebuild it on every
+  // Doctor run so cached project scans cannot retain an obsolete Studio action
+  // after capability classification or orchestration policy changes.
+  const repairIntent = buildDoctorRepairIntent({
+    probe,
+    freshness,
+    issueClass,
+    operationalImpact,
+  });
 
   return {
     ...probe,
@@ -5517,10 +5518,13 @@ function buildRemediationStepId(input: {
   kind: string;
   command: string;
   operation?: DoctorRepairOperation;
+  capabilityId?: string;
 }): string {
   const identity = input.operation
     ? buildRepairOperationIdentity(input.operation)
-    : `command:${input.command}`;
+    : input.capabilityId
+      ? `capability:${input.capabilityId}`
+      : `command:${input.command}`;
   const digest = createHash('sha256').update(identity).digest('base64url').slice(0, 16);
   return `${input.projectName}:${input.kind}:${digest}`;
 }
@@ -5992,6 +5996,22 @@ function buildRemediationPreview(input: {
       changes: [step.originalCommand],
     };
   }
+  if (capability?.status === 'manual' || capability?.requiresReview) {
+    const dependencyDecision = capability.transaction?.kind === 'dependency-security';
+    return {
+      title: capability.title,
+      summary: capability.reason,
+      changes: dependencyDecision
+        ? [
+            'review the dependency remediation candidates',
+            'approve a breaking change, replacement, exception, or upstream wait explicitly',
+          ]
+        : [
+            'review the project-specific requirements and proposed guidance',
+            'approve the intended source or configuration change explicitly',
+          ],
+    };
+  }
   return {
     title: capability?.title ?? 'Run remediation command',
     summary: step.reason ?? 'Run the planned remediation command.',
@@ -6140,16 +6160,22 @@ function buildStudioStatus(input: {
   blockedReason?: string;
   policyProfile: DoctorPolicyProfileName;
 }): PlannedFixStep['studioStatus'] {
+  if (!input.step.executable) {
+    if (input.capability?.status === 'manual' || input.capability?.requiresReview) {
+      return {
+        state: 'review-required',
+        reason: input.capability.reason,
+      };
+    }
+    return {
+      state: 'guidance-only',
+      reason: input.step.reason ?? 'This remediation is guidance-only.',
+    };
+  }
   if (!input.executableInCurrentEnvironment) {
     return {
       state: 'blocked',
       reason: input.blockedReason ?? 'Required tool or environment is not available.',
-    };
-  }
-  if (!input.step.executable) {
-    return {
-      state: 'guidance-only',
-      reason: input.step.reason ?? 'This remediation is guidance-only.',
     };
   }
   if (input.policyProfile === 'enterprise-strict' && input.step.risk !== 'safe') {
@@ -6178,15 +6204,15 @@ function getRemediationPhase(input: {
 }): RemediationPlanPhase {
   const { step, issueClass, repairIntent, operation } = input;
 
-  if (step.kind === 'manual-url' || repairIntent?.mode === 'manual-guidance') {
-    return 'manual-review';
-  }
   if (
     step.kind === 'dependency-sync' ||
     step.kind === 'go-mod-tidy' ||
     issueClass === 'dependency'
   ) {
     return 'dependency-baseline';
+  }
+  if (!step.executable || step.kind === 'manual-url' || repairIntent?.mode === 'manual-guidance') {
+    return 'manual-review';
   }
   if (step.kind === 'env-copy' || issueClass === 'environment') {
     return 'local-environment';
@@ -6333,15 +6359,50 @@ async function buildRemediationPlan(
   projects: ProjectHealth[],
   policyProfile: DoctorPolicyProfileName = 'local'
 ): Promise<RemediationPlan> {
-  const fixableProjects = projects.filter((p) => p.fixCommands && p.fixCommands.length > 0);
-  const rawBaseSteps = fixableProjects.flatMap((project) =>
-    (project.fixCommands ?? []).map((cmd) => ({
-      project,
-      step: classifyFixStep(project, cmd),
-      command: cmd,
-    }))
+  type RawRemediationStep = {
+    project: ProjectHealth;
+    step: FixPlanStep;
+    command: string;
+    capability?: DoctorRepairCapability;
+    probe?: ProjectProbeResult;
+  };
+
+  const planProjects = projects.filter(
+    (project) =>
+      (project.fixCommands?.length ?? 0) > 0 ||
+      (project.repairCapabilities ?? []).some((capability) => capability.status === 'manual')
   );
-  const dedupedSteps: typeof rawBaseSteps = [];
+  const rawBaseSteps: RawRemediationStep[] = planProjects.flatMap((project) => {
+    const executableSteps = (project.fixCommands ?? []).map((command) => {
+      const capability = findRepairCapabilityForCommand(project, command);
+      return {
+        project,
+        step: classifyFixStep(project, command),
+        command,
+        capability,
+        probe: findProbeForRepairCapability(project, capability),
+      };
+    });
+    const manualSteps = (project.repairCapabilities ?? [])
+      .filter((capability) => capability.status === 'manual')
+      .map((capability) => ({
+        project,
+        step: {
+          projectName: project.name,
+          projectPath: project.path,
+          originalCommand: capability.command ?? '',
+          kind: 'shell' as const,
+          risk: capability.risk,
+          executable: false,
+          reason: capability.reason,
+        },
+        command: capability.command ?? '',
+        capability,
+        probe: findProbeForRepairCapability(project, capability),
+      }));
+    return [...executableSteps, ...manualSteps];
+  });
+  const dedupedSteps: RawRemediationStep[] = [];
   const keyedSteps = new Map<string, { index: number; priority: number }>();
 
   for (const item of rawBaseSteps) {
@@ -6395,8 +6456,8 @@ async function buildRemediationPlan(
       if (step.risk === 'invasive') invasive += 1;
     }
 
-    const capability = findRepairCapabilityForCommand(project, command);
-    const probe = findProbeForRepairCapability(project, capability);
+    const capability = item.capability ?? findRepairCapabilityForCommand(project, command);
+    const probe = item.probe ?? findProbeForRepairCapability(project, capability);
     const operation = capability?.operation ?? parseInternalRepairCommand(command) ?? undefined;
     const files = capability?.files ?? (operation && 'path' in operation ? [operation.path] : []);
     const repairIntent = probe?.repairIntent;
@@ -6422,6 +6483,7 @@ async function buildRemediationPlan(
         kind: step.kind,
         command,
         operation,
+        capabilityId: capability?.id,
       }),
       phase,
       order: 0,
@@ -6448,12 +6510,13 @@ async function buildRemediationPlan(
   }
 
   const orderedSteps = applyRemediationDependencies(sortRemediationSteps(steps));
+  const fixableProjects = new Set(orderedSteps.map((step) => step.projectPath)).size;
 
   return {
     schemaVersion: 'doctor-remediation-plan-v2',
     generatedAt: new Date().toISOString(),
     policyProfile,
-    fixableProjects: fixableProjects.length,
+    fixableProjects,
     totalSteps: orderedSteps.length,
     executableSteps,
     risk: {

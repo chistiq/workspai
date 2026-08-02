@@ -142,8 +142,34 @@
           "type": "array",
           "items": { "$ref": "#/$defs/dependencyAuditSubject" }
         },
+        "remediation": { "$ref": "#/$defs/dependencyRemediation" },
         "reason": { "type": "string", "minLength": 1 },
         "limitations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "dependencyRemediation": {
+      "type": "object",
+      "required": ["disposition", "compatibleFixAvailable", "breakingFixAvailable", "candidates"],
+      "properties": {
+        "disposition": {
+          "enum": ["not-needed", "compatible", "breaking-only", "mixed", "none", "unknown"]
+        },
+        "compatibleFixAvailable": { "type": "boolean" },
+        "breakingFixAvailable": { "type": "boolean" },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["packageName", "breaking"],
+            "properties": {
+              "packageName": { "type": "string", "minLength": 1 },
+              "version": { "type": "string", "minLength": 1 },
+              "breaking": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },

@@ -1181,8 +1181,12 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
     ...(npmShrinkwrapExists ? ['npm-shrinkwrap.json'] : []),
   ];
   const auditInvocation = dependencyAudit?.invocation;
+  const remediationDisposition = dependencyAudit?.remediation?.disposition;
+  const compatibleFixAuthorized =
+    remediationDisposition !== 'breaking-only' && remediationDisposition !== 'none';
   const safeFixInvocation =
     hasVulnerabilities &&
+    compatibleFixAuthorized &&
     (dependencyAudit?.tool === 'npm audit' || (!dependencyAudit && runtime === 'node'))
       ? {
           cwd: input.projectPath,
@@ -1311,7 +1315,9 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
               ? 'Repository ignore baseline exists, but env-file secret rules are incomplete.'
               : 'No .gitignore baseline detected for local secrets/build artifacts.',
     recommendation: hasVulnerabilities
-      ? 'Run the runtime-native audit fix path without force, review lockfile changes, then rerun Doctor.'
+      ? remediationDisposition === 'breaking-only' || remediationDisposition === 'none'
+        ? 'No compatible automatic fix is currently available. Review an explicit replacement, a time-bounded exception, or wait for an upstream patch.'
+        : 'Run the runtime-native audit fix path without force, review lockfile changes, then rerun Doctor.'
       : auditIsUnavailable
         ? 'Install or declare the runtime-native audit tool, rerun Doctor, and keep the command available to CI and Studio.'
         : gitignoreCoversSecrets
@@ -1339,7 +1345,11 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
               'Directory.Packages.props',
             ],
             reason:
-              'Dependency remediation can change direct and transitive graphs; use the audit evidence to upgrade the owning dependencies.',
+              remediationDisposition === 'breaking-only'
+                ? 'The runtime-native audit exposes only breaking or downgrade remediation. Doctor requires an explicit engineering decision instead of presenting it as an automatic fix.'
+                : remediationDisposition === 'none'
+                  ? 'The runtime-native audit reports no available fix. Use an explicit replacement plan, time-bounded exception, or upstream patch.'
+                  : 'Dependency remediation can change direct and transitive graphs; use the audit evidence to upgrade the owning dependencies.',
             limitations: [
               'Never force a breaking dependency upgrade automatically.',
               'Review lock or baseline changes, run project tests/build, then rerun the complete Workspace Intelligence verification loop.',

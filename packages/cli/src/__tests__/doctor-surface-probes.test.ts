@@ -608,4 +608,54 @@ describe('doctor enterprise surface probes', () => {
       });
     }
   );
+
+  it('requires review instead of advertising an automatic fix for breaking-only npm remediation', async () => {
+    const packageJsonData = { name: 'web', scripts: { build: 'next build' } };
+    const projectPath = await makeProject({
+      'package.json': packageJsonData,
+      'package-lock.json': '{}',
+      '.gitignore': '.env\n.env.*\n!.env.example\n',
+    });
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'node',
+      projectKind: 'frontend',
+      packageJsonData,
+      hasTests: false,
+      dependencyAudit: {
+        schemaVersion: 'doctor-dependency-audit-v1',
+        runtime: 'node',
+        ecosystem: 'npm',
+        tool: 'npm audit',
+        status: 'vulnerable',
+        generatedAt: new Date().toISOString(),
+        findingCount: 2,
+        blockingFindingCount: 2,
+        severityCounts: { low: 0, moderate: 0, high: 2, critical: 0, unknown: 0 },
+        subjects: [],
+        remediation: {
+          disposition: 'breaking-only',
+          compatibleFixAvailable: false,
+          breakingFixAvailable: true,
+          candidates: [{ packageName: 'next', version: '9.3.3', breaking: true }],
+        },
+        reason: 'npm audit reported vulnerable dependencies.',
+        limitations: [],
+      },
+    });
+
+    const security = probes.find((probe) => probe.id === 'surface-security-hygiene');
+    expect(security).toMatchObject({
+      status: 'fail',
+      recommendation: expect.stringContaining('No compatible automatic fix'),
+      repairCapability: {
+        status: 'manual',
+        canAutoFix: false,
+        reason: expect.stringContaining('only breaking or downgrade remediation'),
+      },
+    });
+    expect(security?.repairCapability?.strategy?.some((stage) => stage.kind === 'safe-fix')).toBe(
+      false
+    );
+  });
 });

@@ -46,6 +46,22 @@ export interface DoctorDependencyAuditSubject {
   severities: Array<'low' | 'moderate' | 'high' | 'critical' | 'unknown'>;
 }
 
+export type DoctorDependencyRemediationDisposition =
+  'not-needed' | 'compatible' | 'breaking-only' | 'mixed' | 'none' | 'unknown';
+
+export interface DoctorDependencyRemediationCandidate {
+  packageName: string;
+  version?: string;
+  breaking: boolean;
+}
+
+export interface DoctorDependencyRemediationEvidence {
+  disposition: DoctorDependencyRemediationDisposition;
+  compatibleFixAvailable: boolean;
+  breakingFixAvailable: boolean;
+  candidates: DoctorDependencyRemediationCandidate[];
+}
+
 export interface DoctorDependencyAuditEvidence {
   schemaVersion: 'doctor-dependency-audit-v1';
   runtime: DoctorDependencyAuditRuntime;
@@ -59,6 +75,7 @@ export interface DoctorDependencyAuditEvidence {
   blockingFindingCount: number | null;
   severityCounts: DoctorDependencySeverityCounts;
   subjects: DoctorDependencyAuditSubject[];
+  remediation?: DoctorDependencyRemediationEvidence;
   reason: string;
   limitations: string[];
 }
@@ -74,6 +91,7 @@ interface ParsedAudit {
   findingCount: number;
   severityCounts: DoctorDependencySeverityCounts;
   subjects: DoctorDependencyAuditSubject[];
+  remediation?: DoctorDependencyRemediationEvidence;
 }
 
 const EMPTY_SEVERITIES: DoctorDependencySeverityCounts = {
@@ -265,6 +283,70 @@ function walkObjects(value: unknown, visitor: (record: Record<string, unknown>) 
   for (const child of Object.values(record)) walkObjects(child, visitor);
 }
 
+function npmRemediationEvidence(
+  vulnerabilityRecords: Array<[string, unknown]>,
+  findingCount: number
+): DoctorDependencyRemediationEvidence {
+  if (findingCount === 0) {
+    return {
+      disposition: 'not-needed',
+      compatibleFixAvailable: false,
+      breakingFixAvailable: false,
+      candidates: [],
+    };
+  }
+
+  let fixMetadataSeen = false;
+  let compatibleFixAvailable = false;
+  let breakingFixAvailable = false;
+  const candidates: DoctorDependencyRemediationCandidate[] = [];
+  for (const [name, value] of vulnerabilityRecords) {
+    const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+    if (!Object.prototype.hasOwnProperty.call(record, 'fixAvailable')) continue;
+    fixMetadataSeen = true;
+    const fix = record.fixAvailable;
+    if (fix === true) {
+      compatibleFixAvailable = true;
+      candidates.push({ packageName: name, breaking: false });
+      continue;
+    }
+    if (!fix || typeof fix !== 'object' || Array.isArray(fix)) continue;
+    const fixRecord = fix as Record<string, unknown>;
+    const packageName =
+      typeof fixRecord.name === 'string' && fixRecord.name.trim() ? fixRecord.name.trim() : name;
+    const breaking = fixRecord.isSemVerMajor === true;
+    compatibleFixAvailable ||= !breaking;
+    breakingFixAvailable ||= breaking;
+    candidates.push({
+      packageName,
+      ...(typeof fixRecord.version === 'string' && fixRecord.version.trim()
+        ? { version: fixRecord.version.trim() }
+        : {}),
+      breaking,
+    });
+  }
+
+  const disposition: DoctorDependencyRemediationDisposition = compatibleFixAvailable
+    ? breakingFixAvailable
+      ? 'mixed'
+      : 'compatible'
+    : breakingFixAvailable
+      ? 'breaking-only'
+      : fixMetadataSeen
+        ? 'none'
+        : 'unknown';
+  return {
+    disposition,
+    compatibleFixAvailable,
+    breakingFixAvailable,
+    candidates: candidates.sort((left, right) =>
+      `${left.packageName}@${left.version ?? ''}`.localeCompare(
+        `${right.packageName}@${right.version ?? ''}`
+      )
+    ),
+  };
+}
+
 function parseNpmCompatibleAudit(stdout: string): ParsedAudit | null {
   const payload = jsonObject(stdout);
   if (!payload) {
@@ -335,10 +417,12 @@ function parseNpmCompatibleAudit(stdout: string): ParsedAudit | null {
     })
   );
   if (severityTotal(severityCounts) > 0 || metadata?.vulnerabilities) {
+    const findingCount = severityTotal(severityCounts);
     return {
-      findingCount: severityTotal(severityCounts),
+      findingCount,
       severityCounts,
       subjects: vulnerabilitySubjects,
+      remediation: npmRemediationEvidence(vulnerabilityRecords, findingCount),
     };
   }
 
@@ -866,6 +950,21 @@ async function collectDoctorDependencyAuditUncached(input: {
       blockingFindingCount,
       severityCounts: parsed.severityCounts,
       subjects: parsed.subjects,
+      remediation:
+        parsed.remediation ??
+        (parsed.findingCount === 0
+          ? {
+              disposition: 'not-needed',
+              compatibleFixAvailable: false,
+              breakingFixAvailable: false,
+              candidates: [],
+            }
+          : {
+              disposition: 'unknown',
+              compatibleFixAvailable: false,
+              breakingFixAvailable: false,
+              candidates: [],
+            }),
       status: parsed.findingCount > 0 ? 'vulnerable' : 'clean',
       reason:
         parsed.findingCount > 0
