@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.1] - 2026-08-02
+
+### Changed
+
+- Made Doctor distinguish compatible dependency repairs from breaking-only,
+  mixed, unavailable, and unknown remediation paths.
+- Made dependency repair intent a freshly derived policy on every Doctor run,
+  preventing cached scans from retaining an obsolete automatic action.
+- Made remediation plans preserve non-executable dependency decisions as
+  explicit `manual-review` steps with project scope, risk, transaction, and
+  verification context.
+- Extended project and workspace Doctor evidence contracts with normalized
+  remediation disposition and candidate details for CLI, IDE, CI, and agent
+  consumers.
+
+### Fixed
+
+- Fixed npm audit payloads with boolean `fixAvailable` values being ignored or
+  misclassified.
+- Fixed breaking-only dependency paths being exposed as safe automatic fixes.
+- Fixed review-required Doctor capabilities being hidden from remediation
+  plans when no executable safe command existed.
+- Fixed stale derived repair intent taking precedence over the current Doctor
+  capability classification.
+
+### Verification
+
+- Full CLI suite: 2,257 tests passed across 210 test files, with 8 explicit
+  skips and no failures.
+- Doctor dependency-audit, surface-probe, remediation-plan, canary, and schema
+  suites cover compatible, mixed, breaking-only, unavailable, cached, and
+  manual-review outcomes.
+- Contract synchronization, shared-contract parity, and parity snapshots
+  passed.
+
 ## [0.52.0] - 2026-07-31
 
 ### Added

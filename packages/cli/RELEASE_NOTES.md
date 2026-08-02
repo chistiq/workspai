@@ -5,7 +5,54 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.52.0 (July 31, 2026)
+## Latest Release: v0.52.1 (August 2, 2026)
+
+### Safer Dependency Repair Decisions
+
+This patch makes Doctor and its consumers tell the difference between a safe
+dependency repair and a path that requires a breaking change or human choice.
+Workspai now keeps those decisions visible instead of presenting them as an
+automatic fix or dropping them from the remediation plan.
+
+**What's Improved:**
+
+- **Truthful dependency classification**
+  - npm audit results are normalized as compatible, mixed, breaking-only,
+    unavailable, or unknown repair paths.
+  - Boolean and object-shaped `fixAvailable` payloads are both handled.
+
+- **Review stays part of the plan**
+  - Breaking-only repairs become explicit project-scoped `manual-review`
+    steps with risk and transaction context.
+  - Cached Doctor evidence cannot retain a stale automatic repair decision.
+
+- **Stronger consumer contracts**
+  - Doctor project and workspace evidence expose the same normalized repair
+    disposition and candidates to CLI, CI, IDE, and agent consumers.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Full CLI suite: 2,257 tests passed across 210 test files; 8 tests remain
+  explicitly skipped.
+- Doctor dependency, remediation, canary, schema, and contract-parity suites
+  passed.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.52.1
+workspai --version
+workspai workspace sync --json
+workspai doctor workspace --plan --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.52.1/packages/cli/releases/RELEASE_NOTES_v0.52.1.md)
+
+---
+
+## Previous Release: v0.52.0 (July 31, 2026)
 
 ### Verified Engineering Goals and Transaction-Safe Repair
 

@@ -1021,6 +1021,17 @@ describe('workspace-run', { timeout: 30_000 }, () => {
       runtime: 'go',
       framework: 'gofiber',
     });
+    // This test owns the stage-dependency boundary, not the full interactive
+    // init bootstrap. Use a deterministic project command so a cold dynamic
+    // import of the complete CLI cannot turn suite contention into a timeout.
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'context.json'), {
+      name: 'fiber-api',
+      runtime: 'go',
+      framework: 'gofiber',
+      commands: {
+        init: 'go mod download',
+      },
+    });
     await fsExtra.writeFile(
       path.join(projectPath, 'go.mod'),
       'module example.test/fiber-api\n\nrequire github.com/gofiber/fiber/v2 v2.52.5\n'
