@@ -169,7 +169,64 @@
             },
             "additionalProperties": false
           }
+        },
+        "resolutionCandidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependencyResolutionCandidate" }
         }
+      },
+      "additionalProperties": false
+    },
+    "dependencyResolutionCandidate": {
+      "type": "object",
+      "required": [
+        "packageName",
+        "relationship",
+        "strategies",
+        "risk",
+        "autoExecutable",
+        "requiresCompatibilityVerification",
+        "ownerPackages",
+        "advisoryIds",
+        "reason"
+      ],
+      "properties": {
+        "packageName": { "type": "string", "minLength": 1 },
+        "relationship": { "enum": ["direct", "transitive", "unknown"] },
+        "strategies": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "direct-upgrade",
+              "owner-upgrade",
+              "constraint-update",
+              "transitive-override",
+              "replacement",
+              "policy-exception",
+              "upstream-wait"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "risk": { "enum": ["safe", "guarded", "breaking", "unknown"] },
+        "autoExecutable": { "type": "boolean" },
+        "requiresCompatibilityVerification": { "type": "boolean" },
+        "currentVersion": { "type": "string", "minLength": 1 },
+        "currentRange": { "type": "string", "minLength": 1 },
+        "vulnerableRange": { "type": "string", "minLength": 1 },
+        "safeVersionConstraint": { "type": "string", "minLength": 1 },
+        "ownerPackages": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "advisoryIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },

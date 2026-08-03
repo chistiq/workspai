@@ -70,7 +70,7 @@ describe('Discord release announcement contract', () => {
     expect(embed.title).toBe(`🚀 Workspai CLI v${CLI_VERSION} is here`);
     expect(embed.url).toBe(`https://github.com/chistiq/workspai/releases/tag/${CLI_TAG}`);
     expect(embed.fields[0].value).toContain(
-      '🛡️ Compatible and breaking-only dependency repairs are classified separately'
+      '🧹 Direct and transitive findings retain bounded owner, constraint, and replacement paths'
     );
     expect(embed.fields[1].value).toBe(`\`npm install -g workspai@${CLI_VERSION}\``);
     expect(payload.allowed_mentions).toEqual({ parse: [] });

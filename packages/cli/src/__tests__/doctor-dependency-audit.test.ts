@@ -127,6 +127,193 @@ describe('Doctor dependency audit evidence', () => {
     });
   });
 
+  it('deduplicates npm candidates and rejects downgrade-only remediation', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'node-app',
+      dependencies: { '@nestjs/swagger': '11.4.6' },
+    });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), {
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'node-app', dependencies: { '@nestjs/swagger': '11.4.6' } },
+        'node_modules/@nestjs/swagger': { version: '11.4.6' },
+      },
+    });
+    const downgrade = {
+      name: '@nestjs/swagger',
+      version: '11.4.5',
+      isSemVerMajor: true,
+    };
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        vulnerabilities: {
+          '@nestjs/swagger': {
+            name: '@nestjs/swagger',
+            severity: 'high',
+            isDirect: true,
+            via: ['js-yaml'],
+            fixAvailable: downgrade,
+          },
+          'js-yaml': {
+            name: 'js-yaml',
+            severity: 'high',
+            isDirect: false,
+            via: [],
+            fixAvailable: downgrade,
+          },
+        },
+        metadata: { vulnerabilities: { high: 2, total: 2 } },
+      }),
+      stderr: '',
+      exitCode: 1,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+    expect(evidence.remediation).toMatchObject({
+      disposition: 'none',
+      compatibleFixAvailable: false,
+      breakingFixAvailable: false,
+      candidates: [],
+    });
+    expect(evidence.remediation?.resolutionCandidates).toEqual([
+      expect.objectContaining({
+        packageName: '@nestjs/swagger',
+        relationship: 'direct',
+        risk: 'guarded',
+        autoExecutable: false,
+        requiresCompatibilityVerification: true,
+      }),
+      expect.objectContaining({
+        packageName: 'js-yaml',
+        relationship: 'transitive',
+        risk: 'guarded',
+        autoExecutable: false,
+        requiresCompatibilityVerification: true,
+      }),
+    ]);
+  });
+
+  it('preserves transitive resolution evidence when npm proposes an owner downgrade', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'next-app',
+      dependencies: { next: '16.2.12' },
+    });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), {
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'next-app', dependencies: { next: '16.2.12' } },
+        'node_modules/next': { version: '16.2.12' },
+        'node_modules/next/node_modules/postcss': { version: '8.4.31' },
+        'node_modules/sharp': { version: '0.34.5' },
+      },
+    });
+    const invalidOwnerFix = { name: 'next', version: '9.3.3', isSemVerMajor: true };
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        vulnerabilities: {
+          next: {
+            name: 'next',
+            severity: 'high',
+            isDirect: true,
+            range: '>=9.3.4',
+            via: ['postcss', 'sharp'],
+            fixAvailable: invalidOwnerFix,
+          },
+          postcss: {
+            name: 'postcss',
+            severity: 'high',
+            isDirect: false,
+            range: '<=8.5.17',
+            effects: ['next'],
+            via: [{ source: 1001, url: 'https://example.test/postcss' }],
+            fixAvailable: invalidOwnerFix,
+          },
+          sharp: {
+            name: 'sharp',
+            severity: 'high',
+            isDirect: false,
+            range: '<0.35.0',
+            effects: ['next'],
+            via: [{ source: 1002, url: 'https://example.test/sharp' }],
+            fixAvailable: invalidOwnerFix,
+          },
+        },
+        metadata: { vulnerabilities: { high: 3, total: 3 } },
+      }),
+      stderr: '',
+      exitCode: 1,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+
+    expect(evidence.remediation).toMatchObject({
+      disposition: 'none',
+      compatibleFixAvailable: false,
+      breakingFixAvailable: false,
+      candidates: [],
+      resolutionCandidates: [
+        expect.objectContaining({
+          packageName: 'next',
+          relationship: 'direct',
+          currentVersion: '16.2.12',
+          currentRange: '16.2.12',
+          strategies: expect.arrayContaining(['direct-upgrade', 'constraint-update']),
+        }),
+        expect.objectContaining({
+          packageName: 'postcss',
+          relationship: 'transitive',
+          currentVersion: '8.4.31',
+          vulnerableRange: '<=8.5.17',
+          safeVersionConstraint: '>=8.5.18',
+          ownerPackages: ['next'],
+          strategies: expect.arrayContaining(['owner-upgrade', 'transitive-override']),
+        }),
+        expect.objectContaining({
+          packageName: 'sharp',
+          relationship: 'transitive',
+          currentVersion: '0.34.5',
+          vulnerableRange: '<0.35.0',
+          safeVersionConstraint: '>=0.35.0',
+          ownerPackages: ['next'],
+        }),
+      ],
+    });
+  });
+
+  it('deduplicates repeated actionable npm remediation candidates', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), { name: 'node-app' });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), { lockfileVersion: 3 });
+    const upgrade = { name: 'root-package', version: '3.0.0', isSemVerMajor: true };
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        vulnerabilities: {
+          'root-package': {
+            name: 'root-package',
+            severity: 'high',
+            isDirect: true,
+            via: ['nested-package'],
+            fixAvailable: upgrade,
+          },
+          'nested-package': {
+            name: 'nested-package',
+            severity: 'high',
+            isDirect: false,
+            via: [],
+            fixAvailable: upgrade,
+          },
+        },
+        metadata: { vulnerabilities: { high: 2, total: 2 } },
+      }),
+      stderr: '',
+      exitCode: 1,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+    expect(evidence.remediation?.candidates).toEqual([
+      { packageName: 'root-package', version: '3.0.0', breaking: true },
+    ]);
+  });
+
   it('preserves dependency identity from legacy npm advisory payloads', async () => {
     await fsExtra.writeJSON(path.join(projectPath, 'package.json'), { name: 'node-app' });
     await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), { lockfileVersion: 1 });
@@ -160,6 +347,27 @@ describe('Doctor dependency audit evidence', () => {
           severities: ['high'],
         },
       ],
+      remediation: {
+        disposition: 'unknown',
+        compatibleFixAvailable: false,
+        breakingFixAvailable: false,
+        candidates: [],
+        resolutionCandidates: [
+          expect.objectContaining({
+            packageName: 'legacy-package',
+            relationship: 'unknown',
+            risk: 'guarded',
+            autoExecutable: false,
+            requiresCompatibilityVerification: true,
+            advisoryIds: ['1001', 'https://github.com/advisories/GHSA-legacy'],
+            strategies: expect.arrayContaining([
+              'owner-upgrade',
+              'constraint-update',
+              'replacement',
+            ]),
+          }),
+        ],
+      },
     });
   });
 
@@ -214,6 +422,49 @@ describe('Doctor dependency audit evidence', () => {
     ).toMatchObject({ executable: 'bun', args: ['audit', '--json'] });
   });
 
+  it('preserves guarded resolution candidates for pnpm instead of assuming npm owns Node', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'pnpm-app',
+      dependencies: { framework: '^4.0.0' },
+    });
+    await fsExtra.writeFile(path.join(projectPath, 'pnpm-lock.yaml'), 'lockfileVersion: 9');
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        vulnerabilities: {
+          transitive: {
+            name: 'transitive',
+            severity: 'high',
+            isDirect: false,
+            range: '<2.4.1',
+            effects: ['framework'],
+            fixAvailable: false,
+          },
+        },
+        metadata: { vulnerabilities: { high: 1, total: 1 } },
+      }),
+      stderr: '',
+      exitCode: 1,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+
+    expect(evidence).toMatchObject({
+      tool: 'pnpm audit',
+      remediation: {
+        compatibleFixAvailable: false,
+        resolutionCandidates: [
+          expect.objectContaining({
+            packageName: 'transitive',
+            relationship: 'transitive',
+            ownerPackages: ['framework'],
+            safeVersionConstraint: '>=2.4.1',
+            autoExecutable: false,
+          }),
+        ],
+      },
+    });
+  });
+
   it('does not report Python as clean when pip-audit is unavailable', async () => {
     execaMock.mockResolvedValue({
       stdout: '',
@@ -265,6 +516,28 @@ describe('Doctor dependency audit evidence', () => {
           severities: ['unknown'],
         },
       ],
+      remediation: {
+        disposition: 'unknown',
+        compatibleFixAvailable: false,
+        breakingFixAvailable: false,
+        candidates: [],
+        resolutionCandidates: [
+          expect.objectContaining({
+            packageName: 'unsafe',
+            relationship: 'unknown',
+            currentVersion: '1.0.0',
+            risk: 'guarded',
+            autoExecutable: false,
+            requiresCompatibilityVerification: true,
+            advisoryIds: ['GHSA-test', 'PYSEC-1'],
+            strategies: expect.arrayContaining([
+              'owner-upgrade',
+              'constraint-update',
+              'replacement',
+            ]),
+          }),
+        ],
+      },
     });
   });
 

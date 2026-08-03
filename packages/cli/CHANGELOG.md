@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.2] - 2026-08-02
+
+### Changed
+
+- Made npm dependency remediation compare exact candidate versions with the
+  installed versions recorded in the project lockfile before advertising a
+  repair path.
+- Made repeated npm audit records converge on one stable, sorted remediation
+  candidate while preserving the most conservative breaking-change risk.
+- Made unresolved direct and transitive advisories retain structured owner,
+  constraint, replacement, exception, and upstream-wait resolution evidence.
+- Made supported non-Node audit findings use the same guarded resolution model
+  while preserving each runtime's native manifest, lock/baseline, and scanner.
+
+### Fixed
+
+- Fixed downgrade-only or already-installed npm candidates being exposed to
+  Studio as actionable dependency repairs.
+- Fixed one logical npm repair candidate appearing multiple times when both a
+  direct package and a transitive advisory reported the same resolution.
+- Fixed invalid dependency candidates causing repeated Resume attempts even
+  though no compatible source repair could close the Doctor blocker.
+- Fixed Doctor treating “no direct automatic fix” as “no compatible source
+  path” before guarded compatibility discovery and transaction verification.
+
+### Verification
+
+- Dependency-audit tests cover downgrade-only, already-installed, duplicated,
+  transitive-owner, safe-range, multi-ecosystem, compatible, mixed,
+  breaking-only, unavailable, and clean outcomes.
+- Version alignment, release-document validation, type checking, formatting,
+  and focused Doctor dependency tests passed.
+
 ## [0.52.1] - 2026-08-02
 
 ### Changed
@@ -47,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added durable Verified Engineering Goals with `workspace goal
-  plan|status|verify` for `release-readiness`, `dependency-security`, and
+plan|status|verify` for `release-readiness`, `dependency-security`, and
   `test-coverage` outcomes.
 - Added workspace- and project-scoped goal contracts that preserve success
   criteria, safety constraints, baseline measurements, progress, evidence,

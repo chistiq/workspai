@@ -55,11 +55,45 @@ export interface DoctorDependencyRemediationCandidate {
   breaking: boolean;
 }
 
+export type DoctorDependencyResolutionStrategy =
+  | 'direct-upgrade'
+  | 'owner-upgrade'
+  | 'constraint-update'
+  | 'transitive-override'
+  | 'replacement'
+  | 'policy-exception'
+  | 'upstream-wait';
+
+/**
+ * A bounded resolution hypothesis, not permission to mutate source.
+ *
+ * Audit tools frequently expose the vulnerable transitive package while their
+ * `fixAvailable` field points at an invalid owner downgrade. Doctor preserves
+ * the useful causal evidence so consumers can investigate a compatible owner,
+ * constraint, or override transaction before asking for a breaking decision.
+ */
+export interface DoctorDependencyResolutionCandidate {
+  packageName: string;
+  relationship: 'direct' | 'transitive' | 'unknown';
+  strategies: DoctorDependencyResolutionStrategy[];
+  risk: 'safe' | 'guarded' | 'breaking' | 'unknown';
+  autoExecutable: boolean;
+  requiresCompatibilityVerification: boolean;
+  currentVersion?: string;
+  currentRange?: string;
+  vulnerableRange?: string;
+  safeVersionConstraint?: string;
+  ownerPackages: string[];
+  advisoryIds: string[];
+  reason: string;
+}
+
 export interface DoctorDependencyRemediationEvidence {
   disposition: DoctorDependencyRemediationDisposition;
   compatibleFixAvailable: boolean;
   breakingFixAvailable: boolean;
   candidates: DoctorDependencyRemediationCandidate[];
+  resolutionCandidates?: DoctorDependencyResolutionCandidate[];
 }
 
 export interface DoctorDependencyAuditEvidence {
@@ -172,6 +206,43 @@ function mergeSubjects(
   return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function genericResolutionCandidates(
+  subjects: DoctorDependencyAuditSubject[]
+): DoctorDependencyResolutionCandidate[] {
+  return subjects.map((entry) => {
+    const relationship =
+      entry.direct === true ? 'direct' : entry.direct === false ? 'transitive' : 'unknown';
+    return {
+      packageName: entry.name,
+      relationship,
+      strategies:
+        relationship === 'direct'
+          ? [
+              'direct-upgrade',
+              'constraint-update',
+              'replacement',
+              'policy-exception',
+              'upstream-wait',
+            ]
+          : [
+              'owner-upgrade',
+              'constraint-update',
+              'replacement',
+              'policy-exception',
+              'upstream-wait',
+            ],
+      risk: 'guarded',
+      autoExecutable: false,
+      requiresCompatibilityVerification: true,
+      ...(entry.version ? { currentVersion: entry.version } : {}),
+      ownerPackages: [],
+      advisoryIds: [...entry.advisoryIds],
+      reason:
+        'Resolve the advisory through the runtime-native dependency manifest and lock/baseline, then prove compatibility with audit, tests, build, and canonical verification.',
+    } satisfies DoctorDependencyResolutionCandidate;
+  });
+}
+
 const auditEvidenceCache = new Map<string, Promise<DoctorDependencyAuditEvidence>>();
 const AUDIT_INPUT_FILES = [
   'package.json',
@@ -263,6 +334,141 @@ function severityTotal(counts: DoctorDependencySeverityCounts): number {
   return counts.low + counts.moderate + counts.high + counts.critical + counts.unknown;
 }
 
+function npmSafeVersionConstraint(vulnerableRange: unknown): string | undefined {
+  if (typeof vulnerableRange !== 'string') return undefined;
+  const range = vulnerableRange.trim();
+  const lessThan = range.match(/^<\s*(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/);
+  if (lessThan) return `>=${lessThan[1]}`;
+  const lessThanOrEqual = range.match(/^<=\s*(\d+)\.(\d+)\.(\d+)$/);
+  if (lessThanOrEqual) {
+    return `>=${lessThanOrEqual[1]}.${lessThanOrEqual[2]}.${Number(lessThanOrEqual[3]) + 1}`;
+  }
+  return undefined;
+}
+
+async function npmManifestRanges(projectPath: string): Promise<Map<string, string>> {
+  const ranges = new Map<string, string>();
+  try {
+    const manifest = (await fsExtra.readJSON(path.join(projectPath, 'package.json'))) as Record<
+      string,
+      unknown
+    >;
+    for (const sectionName of [
+      'dependencies',
+      'devDependencies',
+      'optionalDependencies',
+      'peerDependencies',
+    ]) {
+      const section = manifest[sectionName];
+      if (!section || typeof section !== 'object' || Array.isArray(section)) continue;
+      for (const [packageName, value] of Object.entries(section as Record<string, unknown>)) {
+        if (typeof value === 'string' && value.trim()) {
+          ranges.set(packageName.toLowerCase(), value.trim());
+        }
+      }
+    }
+  } catch {
+    // Missing or malformed manifests are reported by other Doctor surfaces.
+  }
+  return ranges;
+}
+
+async function npmResolutionCandidates(
+  projectPath: string,
+  stdout: string
+): Promise<DoctorDependencyResolutionCandidate[]> {
+  const payload = jsonObject(stdout);
+  const vulnerabilities =
+    payload?.vulnerabilities &&
+    typeof payload.vulnerabilities === 'object' &&
+    !Array.isArray(payload.vulnerabilities)
+      ? (payload.vulnerabilities as Record<string, unknown>)
+      : undefined;
+  if (!vulnerabilities) return [];
+
+  const [installedVersions, manifestRanges] = await Promise.all([
+    npmInstalledVersions(projectPath),
+    npmManifestRanges(projectPath),
+  ]);
+  const results = new Map<string, DoctorDependencyResolutionCandidate>();
+  for (const [key, raw] of Object.entries(vulnerabilities)) {
+    const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    const packageName =
+      typeof record.name === 'string' && record.name.trim() ? record.name.trim() : key.trim();
+    if (!packageName) continue;
+    const relationship =
+      record.isDirect === true ? 'direct' : record.isDirect === false ? 'transitive' : 'unknown';
+    const ownerPackages = Array.isArray(record.effects)
+      ? [
+          ...new Set(
+            record.effects
+              .filter((value): value is string => typeof value === 'string')
+              .map((value) => value.trim())
+              .filter(Boolean)
+          ),
+        ].sort()
+      : [];
+    const via = Array.isArray(record.via) ? record.via : [];
+    const advisoryIds = [
+      ...new Set(
+        via.flatMap((entry) => {
+          const advisory =
+            entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
+          return [advisory.source, advisory.url]
+            .filter(
+              (value): value is string | number =>
+                typeof value === 'string' || typeof value === 'number'
+            )
+            .map(String);
+        })
+      ),
+    ].sort();
+    const vulnerableRange = typeof record.range === 'string' ? record.range.trim() : undefined;
+    const safeVersionConstraint = npmSafeVersionConstraint(vulnerableRange);
+    const currentRange = manifestRanges.get(packageName.toLowerCase());
+    const currentVersion = installedVersions.get(packageName.toLowerCase());
+    const strategies: DoctorDependencyResolutionStrategy[] =
+      relationship === 'direct'
+        ? [
+            'direct-upgrade',
+            'constraint-update',
+            'replacement',
+            'policy-exception',
+            'upstream-wait',
+          ]
+        : [
+            ...(ownerPackages.length > 0
+              ? (['owner-upgrade'] as DoctorDependencyResolutionStrategy[])
+              : []),
+            'transitive-override',
+            'replacement',
+            'policy-exception',
+            'upstream-wait',
+          ];
+    results.set(packageName.toLowerCase(), {
+      packageName,
+      relationship,
+      strategies,
+      risk: 'guarded',
+      autoExecutable: false,
+      requiresCompatibilityVerification: true,
+      ...(currentVersion ? { currentVersion } : {}),
+      ...(currentRange ? { currentRange } : {}),
+      ...(vulnerableRange ? { vulnerableRange } : {}),
+      ...(safeVersionConstraint ? { safeVersionConstraint } : {}),
+      ownerPackages,
+      advisoryIds,
+      reason:
+        relationship === 'direct'
+          ? 'Resolve the direct dependency inside its declared compatibility boundary, then reconcile and verify the complete dependency transaction.'
+          : 'Resolve the vulnerable transitive path through a compatible owner upgrade or a guarded package-manager constraint; never infer safety from an audit downgrade.',
+    });
+  }
+  return [...results.values()].sort((left, right) =>
+    left.packageName.localeCompare(right.packageName)
+  );
+}
+
 function addSeverity(counts: DoctorDependencySeverityCounts, severity: unknown, amount = 1): void {
   const normalized = String(severity ?? 'unknown').toLowerCase();
   if (normalized === 'low') counts.low += amount;
@@ -345,6 +551,118 @@ function npmRemediationEvidence(
       )
     ),
   };
+}
+
+function compareExactVersions(left: string, right: string): number | null {
+  const parse = (value: string): [number, number, number, string] | null => {
+    const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([^+]+))?(?:\+.+)?$/);
+    if (!match) return null;
+    return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] ?? ''];
+  };
+  const leftParts = parse(left);
+  const rightParts = parse(right);
+  if (!leftParts || !rightParts) return null;
+  for (let index = 0; index < 3; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return Number(leftParts[index]) > Number(rightParts[index]) ? 1 : -1;
+    }
+  }
+  if (leftParts[3] === rightParts[3]) return 0;
+  if (!leftParts[3]) return 1;
+  if (!rightParts[3]) return -1;
+  return leftParts[3].localeCompare(rightParts[3]);
+}
+
+async function npmInstalledVersions(projectPath: string): Promise<Map<string, string>> {
+  const versions = new Map<string, string>();
+  try {
+    const lock = (await fsExtra.readJSON(path.join(projectPath, 'package-lock.json'))) as Record<
+      string,
+      unknown
+    >;
+    const packages =
+      lock.packages && typeof lock.packages === 'object' && !Array.isArray(lock.packages)
+        ? (lock.packages as Record<string, unknown>)
+        : {};
+    for (const [packagePath, value] of Object.entries(packages)) {
+      if (!packagePath.startsWith('node_modules/')) continue;
+      const packageName =
+        packagePath
+          .replace(/^node_modules\//, '')
+          .split('/node_modules/')
+          .at(-1)
+          ?.trim() ?? '';
+      if (!packageName) continue;
+      const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+      if (
+        !versions.has(packageName.toLowerCase()) &&
+        typeof record.version === 'string' &&
+        record.version.trim()
+      ) {
+        versions.set(packageName.toLowerCase(), record.version.trim());
+      }
+    }
+    const dependencies =
+      lock.dependencies &&
+      typeof lock.dependencies === 'object' &&
+      !Array.isArray(lock.dependencies)
+        ? (lock.dependencies as Record<string, unknown>)
+        : {};
+    for (const [packageName, value] of Object.entries(dependencies)) {
+      if (versions.has(packageName.toLowerCase())) continue;
+      const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+      if (typeof record.version === 'string' && record.version.trim()) {
+        versions.set(packageName.toLowerCase(), record.version.trim());
+      }
+    }
+  } catch {
+    // A missing or unreadable npm lockfile leaves npm's own remediation metadata unchanged.
+  }
+  return versions;
+}
+
+async function normalizeNpmRemediationEvidence(
+  projectPath: string,
+  remediation: DoctorDependencyRemediationEvidence
+): Promise<DoctorDependencyRemediationEvidence> {
+  if (remediation.disposition === 'not-needed') return remediation;
+  const installedVersions = await npmInstalledVersions(projectPath);
+  const merged = new Map<string, DoctorDependencyRemediationCandidate>();
+  for (const candidate of remediation.candidates) {
+    const installedVersion = installedVersions.get(candidate.packageName.toLowerCase());
+    if (candidate.version && installedVersion) {
+      const ordering = compareExactVersions(candidate.version, installedVersion);
+      if (ordering !== null && ordering <= 0) {
+        // npm can advertise a downgrade or the already-installed release as a
+        // "fix" when an advisory has no compatible patched dependency tree.
+        // Such a candidate is not executable remediation and must not reach Studio.
+        continue;
+      }
+    }
+    const key = `${candidate.packageName.toLowerCase()}\0${candidate.version ?? ''}`;
+    const existing = merged.get(key);
+    merged.set(key, {
+      packageName: existing?.packageName ?? candidate.packageName,
+      ...(candidate.version ? { version: candidate.version } : {}),
+      // Conflicting audit records are classified conservatively.
+      breaking: Boolean(existing?.breaking || candidate.breaking),
+    });
+  }
+  const candidates = [...merged.values()].sort((left, right) =>
+    `${left.packageName}@${left.version ?? ''}`.localeCompare(
+      `${right.packageName}@${right.version ?? ''}`
+    )
+  );
+  const compatibleFixAvailable = candidates.some((candidate) => !candidate.breaking);
+  const breakingFixAvailable = candidates.some((candidate) => candidate.breaking);
+  const disposition: DoctorDependencyRemediationDisposition = compatibleFixAvailable
+    ? breakingFixAvailable
+      ? 'mixed'
+      : 'compatible'
+    : breakingFixAvailable
+      ? 'breaking-only'
+      : 'none';
+  return { disposition, compatibleFixAvailable, breakingFixAvailable, candidates };
 }
 
 function parseNpmCompatibleAudit(stdout: string): ParsedAudit | null {
@@ -937,11 +1255,43 @@ async function collectDoctorDependencyAuditUncached(input: {
       };
     }
 
+    if ((input.runtime === 'node' || input.runtime === 'bun') && parsed.remediation) {
+      parsed.remediation = await normalizeNpmRemediationEvidence(
+        input.projectPath,
+        parsed.remediation
+      );
+      if (parsed.findingCount > 0 && !parsed.remediation.compatibleFixAvailable) {
+        const structuredCandidates = await npmResolutionCandidates(
+          input.projectPath,
+          result.stdout
+        );
+        parsed.remediation.resolutionCandidates =
+          structuredCandidates.length > 0
+            ? structuredCandidates
+            : genericResolutionCandidates(parsed.subjects);
+      }
+    }
     const blockingFindingCount =
       parsed.severityCounts.moderate +
       parsed.severityCounts.high +
       parsed.severityCounts.critical +
       parsed.severityCounts.unknown;
+    const remediation =
+      parsed.remediation ??
+      (parsed.findingCount === 0
+        ? {
+            disposition: 'not-needed' as const,
+            compatibleFixAvailable: false,
+            breakingFixAvailable: false,
+            candidates: [],
+          }
+        : {
+            disposition: 'unknown' as const,
+            compatibleFixAvailable: false,
+            breakingFixAvailable: false,
+            candidates: [],
+            resolutionCandidates: genericResolutionCandidates(parsed.subjects),
+          });
     return {
       ...base,
       invocation: plan.invocation,
@@ -950,21 +1300,7 @@ async function collectDoctorDependencyAuditUncached(input: {
       blockingFindingCount,
       severityCounts: parsed.severityCounts,
       subjects: parsed.subjects,
-      remediation:
-        parsed.remediation ??
-        (parsed.findingCount === 0
-          ? {
-              disposition: 'not-needed',
-              compatibleFixAvailable: false,
-              breakingFixAvailable: false,
-              candidates: [],
-            }
-          : {
-              disposition: 'unknown',
-              compatibleFixAvailable: false,
-              breakingFixAvailable: false,
-              candidates: [],
-            }),
+      remediation,
       status: parsed.findingCount > 0 ? 'vulnerable' : 'clean',
       reason:
         parsed.findingCount > 0

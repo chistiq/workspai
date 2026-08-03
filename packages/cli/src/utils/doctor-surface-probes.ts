@@ -1182,8 +1182,11 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
   ];
   const auditInvocation = dependencyAudit?.invocation;
   const remediationDisposition = dependencyAudit?.remediation?.disposition;
+  const resolutionCandidateCount = dependencyAudit?.remediation?.resolutionCandidates?.length ?? 0;
   const compatibleFixAuthorized =
-    remediationDisposition !== 'breaking-only' && remediationDisposition !== 'none';
+    remediationDisposition === 'compatible' ||
+    remediationDisposition === 'mixed' ||
+    (!dependencyAudit && runtime === 'node');
   const safeFixInvocation =
     hasVulnerabilities &&
     compatibleFixAuthorized &&
@@ -1193,13 +1196,13 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
           executable: 'npm',
           args: ['audit', 'fix', '--audit-level=moderate'],
         }
-      : hasVulnerabilities && dependencyAudit?.tool === 'bun audit'
+      : hasVulnerabilities && compatibleFixAuthorized && dependencyAudit?.tool === 'bun audit'
         ? {
             cwd: input.projectPath,
             executable: 'bun',
             args: ['update'],
           }
-        : hasVulnerabilities && dependencyAudit?.tool === 'deno audit'
+        : hasVulnerabilities && compatibleFixAuthorized && dependencyAudit?.tool === 'deno audit'
           ? {
               cwd: input.projectPath,
               executable: 'deno',
@@ -1315,9 +1318,13 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
               ? 'Repository ignore baseline exists, but env-file secret rules are incomplete.'
               : 'No .gitignore baseline detected for local secrets/build artifacts.',
     recommendation: hasVulnerabilities
-      ? remediationDisposition === 'breaking-only' || remediationDisposition === 'none'
-        ? 'No compatible automatic fix is currently available. Review an explicit replacement, a time-bounded exception, or wait for an upstream patch.'
-        : 'Run the runtime-native audit fix path without force, review lockfile changes, then rerun Doctor.'
+      ? resolutionCandidateCount > 0 && !compatibleFixAuthorized
+        ? `No direct automatic fix is currently authorized. Evaluate the ${resolutionCandidateCount} structured dependency resolution candidate(s) through a guarded reconcile, audit, test, and build transaction before considering a breaking change.`
+        : remediationDisposition === 'breaking-only' || remediationDisposition === 'none'
+          ? resolutionCandidateCount > 0
+            ? `No direct automatic fix is currently available. Evaluate the ${resolutionCandidateCount} structured dependency resolution candidate(s) through a guarded install, audit, test, and build transaction before considering a breaking change.`
+            : 'No compatible automatic fix is currently available. Review an explicit replacement, a time-bounded exception, or wait for an upstream patch.'
+          : 'Run the runtime-native audit fix path without force, review lockfile changes, then rerun Doctor.'
       : auditIsUnavailable
         ? 'Install or declare the runtime-native audit tool, rerun Doctor, and keep the command available to CI and Studio.'
         : gitignoreCoversSecrets
@@ -1346,9 +1353,13 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
             ],
             reason:
               remediationDisposition === 'breaking-only'
-                ? 'The runtime-native audit exposes only breaking or downgrade remediation. Doctor requires an explicit engineering decision instead of presenting it as an automatic fix.'
+                ? resolutionCandidateCount > 0
+                  ? 'The runtime-native direct fix is breaking or a downgrade. Doctor preserved bounded owner, constraint, or transitive resolution candidates for guarded compatibility verification before requesting an engineering decision.'
+                  : 'The runtime-native audit exposes only breaking or downgrade remediation. Doctor requires an explicit engineering decision instead of presenting it as an automatic fix.'
                 : remediationDisposition === 'none'
-                  ? 'The runtime-native audit reports no available fix. Use an explicit replacement plan, time-bounded exception, or upstream patch.'
+                  ? resolutionCandidateCount > 0
+                    ? 'The runtime-native audit reports no direct fix. Evaluate its structured transitive or constraint resolution candidates through the dependency transaction before choosing replacement, exception, or upstream wait.'
+                    : 'The runtime-native audit reports no available fix. Use an explicit replacement plan, time-bounded exception, or upstream patch.'
                   : 'Dependency remediation can change direct and transitive graphs; use the audit evidence to upgrade the owning dependencies.',
             limitations: [
               'Never force a breaking dependency upgrade automatically.',

@@ -5,7 +5,62 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.52.1 (August 2, 2026)
+## Latest Release: v0.52.2 (August 2, 2026)
+
+### Guarded Dependency Resolution
+
+This patch prevents Doctor and Studio from treating a downgrade—or the version
+already installed—as an actionable dependency fix. When no direct automatic
+fix exists, Doctor now preserves structured, guarded resolution paths instead
+of prematurely declaring that only a breaking choice remains.
+
+**What's Improved:**
+
+- **Forward-only npm candidates**
+  - Exact candidate versions are compared with installed versions from the
+    project lockfile.
+  - Downgrade-only and already-installed candidates are rejected before they
+    reach Studio.
+
+- **One stable remediation choice**
+  - Duplicate direct and transitive audit records converge on one
+    package/version candidate.
+  - Conflicting records preserve the most conservative breaking-change risk.
+
+- **Structured source-resolution evidence**
+  - Direct and transitive findings retain owning packages, advisory identity,
+    vulnerable ranges, bounded safe constraints, and allowed strategies.
+  - Python, Go, Rust, PHP, Ruby, .NET, JVM, Elixir, Deno, Bun, and native audit
+    evidence follows the same guarded contract without npm assumptions.
+
+- **Truthful repair behavior**
+  - A missing direct fix delegates to a reconcile, audit, test, build, and
+    canonical verification transaction before a breaking decision is requested.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Dependency-audit tests cover downgrade-only, already-installed, duplicated,
+  transitive-owner, multi-ecosystem, compatible, mixed, unavailable, and clean
+  outcomes.
+- Version alignment, release-document validation, TypeScript, and formatting
+  checks passed.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.52.2
+workspai --version
+workspai workspace sync --json
+workspai doctor workspace --plan --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.52.2/packages/cli/releases/RELEASE_NOTES_v0.52.2.md)
+
+---
+
+## Previous Release: v0.52.1 (August 2, 2026)
 
 ### Safer Dependency Repair Decisions
 

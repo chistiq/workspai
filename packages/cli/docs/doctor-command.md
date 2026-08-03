@@ -153,7 +153,18 @@ Every result records the exact executable, arguments, ecosystem, severity
 counts, and limitations. A missing tool, timeout, registry failure,
 unparseable response, or unsupported zero-configuration workflow is explicit
 evidence—not a zero-vulnerability result. Compatible automatic fixes never use
-force; unresolved findings move to a targeted upgrade and verification plan.
+force.
+
+When a scanner has no direct automatic fix—or advertises a downgrade—Doctor
+does not conclude that the project has no compatible repair. It emits guarded
+`resolutionCandidates` for the affected direct or transitive dependency. Each
+candidate preserves the owning packages, current and vulnerable ranges when
+known, advisory identifiers, and the admissible next strategies: direct or
+owner upgrade, constraint/override investigation, replacement, time-bounded
+exception, or upstream wait. These are investigation inputs, not mutation
+permission. A repair is complete only after manifest/lock reconciliation,
+focused audit, declared tests, declared build, and canonical Workspace
+Intelligence verification all pass.
 
 ## Coverage goals that Doctor can verify
 
