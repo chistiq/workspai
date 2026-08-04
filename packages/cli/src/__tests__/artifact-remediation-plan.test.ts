@@ -410,6 +410,123 @@ describe('artifact remediation plan', () => {
     );
   });
 
+  it('turns missing project verification evidence into ordered scoped producers', async () => {
+    const workspacePath = await makeWorkspace();
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-verify-last-run.json'),
+      {
+        schemaVersion: 'workspace-verify.v1',
+        blockingReasons: [
+          'project.api.init: Workspace run evidence does not include project api.',
+          'project.api.test: Workspace run evidence does not include project api.',
+        ],
+        steps: [
+          {
+            id: 'workspace.readiness',
+            scope: 'workspace',
+            required: true,
+            status: 'fail',
+            message: 'Release readiness is blocked.',
+            command: { display: 'npx workspai readiness --json' },
+          },
+          {
+            id: 'project.api.init',
+            label: 'Run init for api',
+            scope: 'project',
+            project: 'api',
+            required: true,
+            status: 'missing',
+            message: 'Workspace run evidence does not include project api.',
+            command: {
+              display: 'npx workspai workspace run init --scope project:api --json',
+            },
+          },
+          {
+            id: 'project.api.test',
+            label: 'Run tests for api',
+            scope: 'project',
+            project: 'api',
+            required: true,
+            status: 'missing',
+            message: 'Workspace run evidence does not include project api.',
+            command: {
+              display: 'npx workspai workspace run test --scope project:api --json',
+            },
+          },
+        ],
+      }
+    );
+
+    const plan = await buildArtifactRemediationPlan({ workspacePath });
+    const projectActions = plan.actions.filter((action) => action.cardId === 'workspaceVerify');
+
+    expect(projectActions).toEqual([
+      expect.objectContaining({
+        id: 'workspaceVerify.project.api.init',
+        scope: 'project',
+        projectName: 'api',
+        command: 'npx workspai workspace run init --scope project:api --json --no-gates',
+      }),
+      expect.objectContaining({
+        id: 'workspaceVerify.project.api.test',
+        command: 'npx workspai workspace run test --scope project:api --json --no-gates',
+        dependsOn: ['workspaceVerify.project.api.init'],
+      }),
+    ]);
+    expect(projectActions[0].dependsOn).toBeUndefined();
+    expect(projectActions.some((action) => action.command?.includes('workspace verify'))).toBe(
+      false
+    );
+  });
+
+  it('creates runtime setup and bootstrap actions for readiness toolchain blockers', async () => {
+    const workspacePath = await makeWorkspace();
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'release-readiness-last-run.json'),
+      {
+        schemaVersion: 'release-readiness-v1',
+        blockingReasons: ['env: Project runtimes (node, python) are not pinned in toolchain.lock'],
+      }
+    );
+
+    const plan = await buildArtifactRemediationPlan({ workspacePath });
+
+    expect(plan.actions.map((action) => action.command)).toEqual([
+      'npx workspai setup node --json',
+      'npx workspai bootstrap --ci --json',
+      'npx workspai setup python --json',
+      'npx workspai bootstrap --ci --json',
+    ]);
+    expect(plan.actions[1].dependsOn).toEqual(['readiness.toolchain.node.setup']);
+    expect(plan.actions[3].dependsOn).toEqual(['readiness.toolchain.python.setup']);
+  });
+
+  it('binds aggregate pipeline reruns to their upstream remediation actions', async () => {
+    const workspacePath = await makeWorkspace();
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fsExtra.writeJSON(path.join(reportsPath, 'release-readiness-last-run.json'), {
+      schemaVersion: 'release-readiness-v1',
+      blockingReasons: ['env: Project runtime (node) is not pinned in toolchain.lock'],
+    });
+    await fsExtra.writeJSON(path.join(reportsPath, 'pipeline-last-run.json'), {
+      schemaVersion: 'rapidkit-pipeline-v1',
+      blockingReasons: ['readiness: Project runtime (node) is not pinned in toolchain.lock'],
+    });
+
+    const plan = await buildArtifactRemediationPlan({ workspacePath });
+    const pipelineAction = plan.actions.find((action) => action.cardId === 'pipeline');
+
+    expect(pipelineAction).toEqual(
+      expect.objectContaining({
+        command: 'npx workspai pipeline --json --strict',
+        dependsOn: ['readiness.toolchain.node.setup', 'readiness.toolchain.node.bootstrap'],
+      })
+    );
+    expect(pipelineAction?.notes).toContain(
+      'This aggregate gate must run after its contract-owned upstream remediation actions.'
+    );
+  });
+
   it('persists artifact remediation plan for IDE consumers', async () => {
     const workspacePath = await makeWorkspace();
     const plan = await buildArtifactRemediationPlan({ workspacePath });

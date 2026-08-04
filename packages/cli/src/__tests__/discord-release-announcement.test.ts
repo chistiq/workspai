@@ -8,6 +8,7 @@ import {
   markerFor,
   validateWebhookUrl,
 } from '../../scripts/discord-release-announcement.mjs';
+import { readReleaseDocument } from '../../scripts/release-document.mjs';
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 const SCRIPT_PATH = path.join(
@@ -20,6 +21,13 @@ const SCRIPT_PATH = path.join(
 const CLI_PACKAGE_PATH = path.join(REPOSITORY_ROOT, 'packages', 'cli', 'package.json');
 const CLI_VERSION = JSON.parse(await fs.readFile(CLI_PACKAGE_PATH, 'utf8')).version as string;
 const CLI_TAG = `v${CLI_VERSION}`;
+const CLI_RELEASE_PATH = path.join(
+  REPOSITORY_ROOT,
+  'packages',
+  'cli',
+  'releases',
+  `RELEASE_NOTES_${CLI_TAG}.md`
+);
 const GITHUB_RELEASE_SCRIPT_PATH = path.join(
   REPOSITORY_ROOT,
   'packages',
@@ -66,12 +74,12 @@ describe('Discord release announcement contract', () => {
     const payload = JSON.parse(await fs.readFile(jsonPath, 'utf8'));
     const markdown = await fs.readFile(markdownPath, 'utf8');
     const embed = payload.embeds[0];
+    const releaseDocument = await readReleaseDocument(CLI_RELEASE_PATH);
+    const firstHighlight = releaseDocument.metadata.announcement.highlights[0];
 
     expect(embed.title).toBe(`🚀 Workspai CLI v${CLI_VERSION} is here`);
     expect(embed.url).toBe(`https://github.com/chistiq/workspai/releases/tag/${CLI_TAG}`);
-    expect(embed.fields[0].value).toContain(
-      '🧹 Direct and transitive findings retain bounded owner, constraint, and replacement paths'
-    );
+    expect(embed.fields[0].value).toContain(`${firstHighlight.icon} ${firstHighlight.text}`);
     expect(embed.fields[1].value).toBe(`\`npm install -g workspai@${CLI_VERSION}\``);
     expect(payload.allowed_mentions).toEqual({ parse: [] });
     expect(markdown).toContain(`# 🚀 Workspai CLI v${CLI_VERSION} is here`);

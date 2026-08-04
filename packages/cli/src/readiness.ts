@@ -176,7 +176,13 @@ async function resolveRegisteredWorkspaceProjectCount(workspacePath: string): Pr
 
 function buildEnvGate(
   workspacePath: string,
-  projectRuntime: 'python' | 'node' | 'go' | 'java' | 'unknown',
+  projectRuntime:
+    | 'python'
+    | 'node'
+    | 'go'
+    | 'java'
+    | 'unknown'
+    | Array<'python' | 'node' | 'go' | 'java' | 'unknown'>,
   options?: { hasRegisteredProjects?: boolean }
 ): ReadinessGateResult {
   const lockPath = firstExistingWorkspaceMetadataPath(workspacePath, 'toolchain.lock');
@@ -214,20 +220,29 @@ function buildEnvGate(
       };
     }
 
-    if (projectRuntime !== 'unknown') {
-      const runtimeEntry = toObjectRecord(runtime[projectRuntime]);
-      if (typeof runtimeEntry.version !== 'string' || runtimeEntry.version.trim().length === 0) {
-        const runtimeScopeLabel = options?.hasRegisteredProjects ? 'Project runtime' : 'Workspace';
-        return {
-          gate: 'env',
-          status: 'fail',
-          summary: `${runtimeScopeLabel} (${projectRuntime}) is not pinned in toolchain.lock`,
-          details: [
-            `Run workspai setup ${projectRuntime} and workspai bootstrap to lock ${projectRuntime} for this workspace.`,
-          ],
-          evidencePath: lockPath,
-        };
-      }
+    const requiredRuntimes = [
+      ...new Set(
+        (Array.isArray(projectRuntime) ? projectRuntime : [projectRuntime]).filter(
+          (candidate): candidate is 'python' | 'node' | 'go' | 'java' => candidate !== 'unknown'
+        )
+      ),
+    ];
+    const missingRuntimes = requiredRuntimes.filter((requiredRuntime) => {
+      const runtimeEntry = toObjectRecord(runtime[requiredRuntime]);
+      return typeof runtimeEntry.version !== 'string' || runtimeEntry.version.trim().length === 0;
+    });
+    if (missingRuntimes.length > 0) {
+      const runtimeScopeLabel = options?.hasRegisteredProjects ? 'Project runtime' : 'Workspace';
+      return {
+        gate: 'env',
+        status: 'fail',
+        summary: `${runtimeScopeLabel}${missingRuntimes.length === 1 ? '' : 's'} (${missingRuntimes.join(', ')}) ${missingRuntimes.length === 1 ? 'is' : 'are'} not pinned in toolchain.lock`,
+        details: missingRuntimes.map(
+          (missingRuntime) =>
+            `Run workspai setup ${missingRuntime} and workspai bootstrap to lock ${missingRuntime} for this workspace.`
+        ),
+        evidencePath: lockPath,
+      };
     }
 
     return {
@@ -643,7 +658,23 @@ export async function evaluateReleaseReadiness(
       : resolveReadinessProjectPath(startPath, workspacePath);
   const projectRuntime =
     projectPath === workspacePath ? 'unknown' : detectProjectRuntime(projectPath);
-  const effectiveRuntime = hasRegisteredProjects ? projectRuntime : 'unknown';
+  let effectiveRuntime:
+    | 'python'
+    | 'node'
+    | 'go'
+    | 'java'
+    | 'unknown'
+    | Array<'python' | 'node' | 'go' | 'java' | 'unknown'> = hasRegisteredProjects
+    ? projectRuntime
+    : 'unknown';
+  if (hasRegisteredProjects && projectPath === workspacePath) {
+    const { resolveWorkspaceRegisteredProjects } =
+      await import('./utils/workspace-registry-summary.js');
+    const registered = await resolveWorkspaceRegisteredProjects(workspacePath);
+    effectiveRuntime = registered.summary.projects.map((project) =>
+      detectProjectRuntime(path.resolve(workspacePath, project.relativePath))
+    );
+  }
 
   const envGate = buildEnvGate(workspacePath, effectiveRuntime, { hasRegisteredProjects });
   const doctor = buildDoctorGate(workspacePath);

@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.3] - 2026-08-03
+
+### Changed
+
+- Made Governance Pipeline Doctor stages snapshot their exact policy profile
+  and project-level blockers before later stages can refresh shared evidence.
+- Made workspace Readiness evaluate every runtime represented by registered
+  projects instead of reducing a polyglot workspace root to an unknown runtime.
+- Made artifact remediation plans derive ordered project-scoped producers from
+  missing or stale Workspace Verify evidence and run them without recursively
+  re-entering blocked aggregate gates.
+- Made aggregate readiness, verification, and pipeline actions declare their
+  non-invasive upstream remediation dependencies.
+- Made long-lived `workspace run start` stages use bounded startup verification:
+  configured framework health checks when available and a finite liveness smoke
+  otherwise, followed by deterministic process cleanup.
+- Refreshed the release toolchain dependency graph to patched `brace-expansion`,
+  `fast-uri`, `ip-address`, and `postcss` releases.
+
+### Fixed
+
+- Fixed Pipeline evidence collapsing actionable Doctor failures into the
+  generic `doctor workspace gate failed` message.
+- Fixed Workspace Verify remediation plans that only reran the aggregate gate
+  instead of producing missing `init`, `test`, `build`, or `start` evidence for
+  the affected project.
+- Fixed runtime pin blockers that lacked explicit `setup` and ordered
+  `bootstrap` remediation actions.
+- Fixed aggregate gate reruns being presented before their contract-owned root
+  actions had been addressed.
+- Fixed service start verification waiting for a permanent process until the
+  generic stage timeout instead of producing bounded, reusable evidence.
+- Fixed exact root overrides retaining vulnerable transitive releases after a
+  normal `npm audit fix` transaction.
+
+### Verification
+
+- Full CLI suite completed across 214 test files; 207 files passed in the
+  restricted run, and the 3 local-HTTP files blocked by sandbox socket policy
+  passed 60/60 when rerun with loopback access. Four files remain explicitly
+  skipped.
+- TypeScript, focused Pipeline/Readiness/Workspace Run/remediation tests,
+  contract synchronization, CLI/extension contract parity, and production
+  build passed.
+- `npm audit --audit-level=high` reports zero known vulnerabilities.
+- The updated CLI was exercised against a real multi-project workspace: the
+  Pipeline persisted the `release` Doctor profile, ten project-level Doctor
+  blockers, and the separate Python toolchain readiness blocker.
+
 ## [0.52.2] - 2026-08-02
 
 ### Changed

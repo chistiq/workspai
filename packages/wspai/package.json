@@ -1,6 +1,6 @@
 {
   "name": "wspai",
-  "version": "0.52.2",
+  "version": "0.52.3",
   "type": "module",
   "description": "Short npm alias for the Workspai CLI.",
   "keywords": [
@@ -39,7 +39,7 @@
     "scripts"
   ],
   "dependencies": {
-    "workspai": "0.52.2"
+    "workspai": "0.52.3"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

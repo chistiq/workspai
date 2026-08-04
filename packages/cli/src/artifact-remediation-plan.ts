@@ -727,6 +727,146 @@ function bootstrapActions(input: {
   return actions;
 }
 
+function workspaceVerifyActions(input: {
+  report: CandidateReport;
+  startOrder: number;
+  ciMode: boolean;
+}): ArtifactRemediationAction[] {
+  const steps = Array.isArray(input.report.payload.steps) ? input.report.payload.steps : [];
+  const actions: ArtifactRemediationAction[] = [];
+  const lastProjectAction = new Map<string, string>();
+
+  for (const rawStep of steps) {
+    const step = asRecord(rawStep);
+    const command = asRecord(step?.command);
+    const id = typeof step?.id === 'string' ? step.id.trim() : '';
+    const projectName = typeof step?.project === 'string' ? step.project.trim() : '';
+    const status = typeof step?.status === 'string' ? step.status : '';
+    const display = typeof command?.display === 'string' ? command.display.trim() : '';
+    const required = step?.required === true;
+    if (
+      !id.startsWith('project.') ||
+      !projectName ||
+      !required ||
+      (status !== 'fail' && status !== 'missing') ||
+      !/^npx\s+workspai\s+workspace\s+run\s+/i.test(display)
+    ) {
+      continue;
+    }
+
+    const stage = id.split('.').at(-1) ?? 'stage';
+    const actionId = `workspaceVerify.${id}`;
+    const previousAction = lastProjectAction.get(projectName);
+    const commandText = /(?:^|\s)--no-gates(?:\s|$)/.test(display)
+      ? display
+      : `${display} --no-gates`;
+    actions.push(
+      actionBase({
+        id: actionId,
+        artifactKind: input.report.artifactKind,
+        cardId: input.report.cardId,
+        title:
+          typeof step.label === 'string' && step.label.trim()
+            ? step.label.trim()
+            : `Run ${stage} for ${projectName}`,
+        order: input.startOrder + actions.length,
+        phase: 'fleet-run',
+        blocker:
+          typeof step.message === 'string' && step.message.trim()
+            ? step.message.trim()
+            : `${stage} evidence is not current for ${projectName}.`,
+        summary: `Produce fresh ${stage} evidence for ${projectName} without re-entering the blocked aggregate gates.`,
+        mode: 'run-command',
+        risk: stage === 'start' ? 'guarded' : 'safe',
+        status: 'ready',
+        command: commandText,
+        verifyCommand: input.ciMode
+          ? 'npx workspai workspace verify --strict --json'
+          : 'npx workspai workspace verify --json',
+        scope: 'project',
+        projectName,
+        projectPath: projectName,
+        sourceStepId: id,
+        ...(previousAction ? { dependsOn: [previousAction] } : {}),
+        cwd: 'workspace',
+        notes: [
+          `Source Workspace Verify step: ${id}`,
+          'Aggregate verification must run only after this project evidence producer completes.',
+        ],
+      })
+    );
+    lastProjectAction.set(projectName, actionId);
+  }
+
+  return actions;
+}
+
+function readinessEnvironmentActions(input: {
+  report: CandidateReport;
+  blockers: string[];
+  startOrder: number;
+  ciMode: boolean;
+}): ArtifactRemediationAction[] {
+  const runtimes = uniqueStrings(
+    input.blockers.flatMap((blocker) => {
+      const match = blocker.match(
+        /(?:project runtimes?|workspace)\s*\(([^)]+)\)\s+(?:is|are) not pinned/i
+      );
+      return match?.[1]
+        ? match[1]
+            .split(',')
+            .map((runtime) => runtime.trim().toLowerCase())
+            .filter((runtime) => /^(python|node|go|java|dotnet|rust|php)$/.test(runtime))
+        : [];
+    })
+  );
+  const actions: ArtifactRemediationAction[] = [];
+
+  for (const runtime of runtimes) {
+    const setupId = `readiness.toolchain.${runtime}.setup`;
+    actions.push(
+      actionBase({
+        id: setupId,
+        artifactKind: input.report.artifactKind,
+        cardId: input.report.cardId,
+        title: `Pin ${runtime} in the workspace toolchain`,
+        order: input.startOrder + actions.length,
+        phase: 'toolchain-reconciliation',
+        blocker: input.blockers.find((blocker) => blocker.toLowerCase().includes(`(${runtime})`))!,
+        summary: `Detect and persist the current ${runtime} runtime in the canonical workspace toolchain lock.`,
+        mode: 'run-command',
+        risk: 'safe',
+        command: `npx workspai setup ${runtime} --json`,
+        verifyCommand: input.ciMode
+          ? 'npx workspai readiness --strict --json'
+          : 'npx workspai readiness --json',
+        notes: ['Run from the workspace root so the canonical toolchain.lock is updated.'],
+      })
+    );
+    actions.push(
+      actionBase({
+        id: `readiness.toolchain.${runtime}.bootstrap`,
+        artifactKind: input.report.artifactKind,
+        cardId: input.report.cardId,
+        title: `Reconcile the ${runtime} workspace foundation`,
+        order: input.startOrder + actions.length,
+        phase: 'toolchain-reconciliation',
+        blocker: `The ${runtime} runtime pin must be reconciled with the workspace foundation.`,
+        summary: 'Refresh the workspace foundation after the runtime pin is written.',
+        mode: 'run-command',
+        risk: 'guarded',
+        command: 'npx workspai bootstrap --ci --json',
+        verifyCommand: input.ciMode
+          ? 'npx workspai readiness --strict --json'
+          : 'npx workspai readiness --json',
+        dependsOn: [setupId],
+      })
+    );
+  }
+
+  return actions;
+}
+
 function genericActionForReport(input: {
   report: CandidateReport;
   blocker: string;
@@ -930,6 +1070,31 @@ export async function buildArtifactRemediationPlan(input: {
       order = actions.length + 1;
       continue;
     }
+    if (report.artifactKind === 'workspace-verify') {
+      const verifyActions = workspaceVerifyActions({
+        report,
+        startOrder: order,
+        ciMode,
+      });
+      if (verifyActions.length > 0) {
+        actions.push(...verifyActions);
+        order += verifyActions.length;
+        continue;
+      }
+    }
+    if (report.artifactKind === 'readiness') {
+      const environmentActions = readinessEnvironmentActions({
+        report,
+        blockers,
+        startOrder: order,
+        ciMode,
+      });
+      if (environmentActions.length > 0) {
+        actions.push(...environmentActions);
+        order += environmentActions.length;
+        continue;
+      }
+    }
     const dependencyTransactionExists = actions.some(
       (action) => action.transaction?.kind === 'dependency-security'
     );
@@ -946,6 +1111,37 @@ export async function buildArtifactRemediationPlan(input: {
 
     const primaryBlocker = blockers[0];
     const action = genericActionForReport({ report, blocker: primaryBlocker, order, ciMode });
+    const upstreamCardsByAggregate: Record<string, Set<string>> = {
+      readiness: new Set(['bootstrap', 'doctor']),
+      pipeline: new Set(['bootstrap', 'doctor', 'analyze', 'readiness']),
+      workspaceVerify: new Set(['bootstrap', 'doctor', 'readiness', 'workspaceRun']),
+    };
+    let upstreamCards = upstreamCardsByAggregate[report.cardId];
+    if (report.cardId === 'pipeline') {
+      const namedOwner = ['doctor', 'analyze', 'readiness'].find((cardId) =>
+        primaryBlocker.toLowerCase().includes(cardId)
+      );
+      if (namedOwner) {
+        upstreamCards = new Set([namedOwner]);
+      }
+    }
+    if (upstreamCards) {
+      const upstreamActionIds = actions
+        .filter(
+          (candidate) =>
+            upstreamCards.has(candidate.cardId) &&
+            candidate.risk !== 'invasive' &&
+            candidate.status !== 'blocked' &&
+            candidate.status !== 'guidance-only'
+        )
+        .map((candidate) => candidate.id);
+      if (upstreamActionIds.length > 0) {
+        action.dependsOn = uniqueStrings([...(action.dependsOn ?? []), ...upstreamActionIds]);
+        action.notes.push(
+          'This aggregate gate must run after its contract-owned upstream remediation actions.'
+        );
+      }
+    }
     if (blockers.length > 1) {
       action.notes.push(...blockers.slice(1, 8).map((blocker) => `Related blocker: ${blocker}`));
     }

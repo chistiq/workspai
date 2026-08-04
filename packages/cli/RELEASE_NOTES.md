@@ -5,7 +5,67 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.52.2 (August 2, 2026)
+## Latest Release: v0.52.3 (August 3, 2026)
+
+### Deterministic Governance Repair
+
+This patch makes blocked governance evidence actionable instead of reducing it
+to an aggregate retry. Pipeline now preserves the exact Doctor profile and
+project blockers, remediation plans expose ordered root actions, and Workspace
+Verify can request the missing project evidence without recursively invoking a
+gate that is already blocked.
+
+**What's Improved:**
+
+- **Actionable governance evidence**
+  - Pipeline snapshots exact Doctor blockers and its policy profile.
+  - Aggregate actions retain their contract-owned upstream dependencies.
+
+- **Project-aware verification repair**
+  - Missing or stale `init`, `test`, `build`, and `start` evidence becomes an
+    ordered, project-scoped remediation path.
+  - Producer commands use `--no-gates` until the required evidence is ready.
+
+- **Truthful polyglot readiness**
+  - Readiness checks every runtime represented by registered projects.
+  - Missing runtime pins produce explicit setup and bootstrap actions.
+
+- **Bounded startup evidence**
+  - Framework health contracts verify supported services.
+  - Other long-lived start commands use a finite liveness smoke and are cleaned
+    up instead of waiting for the generic stage timeout.
+
+- **Patched release dependencies**
+  - Security-sensitive transitive tooling dependencies are locked to patched
+    releases.
+  - The release dependency audit completes with zero known vulnerabilities.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- TypeScript, production build, contract synchronization, CLI/extension parity,
+  and focused governance/remediation suites passed.
+- Full CLI coverage completed; the three loopback-dependent files that the
+  restricted sandbox could not bind passed 60/60 with local socket access.
+- A real multi-project workspace run persisted exact Doctor and Readiness root
+  blockers in the Pipeline artifact.
+- `npm audit --audit-level=high` passed with zero known vulnerabilities.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.52.3
+workspai --version
+workspai pipeline --json --strict
+workspai workspace remediation-plan --write --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.52.3/packages/cli/releases/RELEASE_NOTES_v0.52.3.md)
+
+---
+
+## Previous Release: v0.52.2 (August 2, 2026)
 
 ### Guarded Dependency Resolution
 

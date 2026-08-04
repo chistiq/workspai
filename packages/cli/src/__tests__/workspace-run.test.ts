@@ -351,6 +351,53 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(workspacePath);
   });
 
+  it('treats a long-lived start command as a bounded startup smoke and terminates it', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
+    await createProject(workspacePath, 'services/api-a');
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    let settleStart:
+      ((value: { exitCode: number; stdout: string; stderr: string }) => void) | null = null;
+    const startProcess = new Promise<{ exitCode: number; stdout: string; stderr: string }>(
+      (resolve) => {
+        settleStart = resolve;
+      }
+    ) as Promise<{ exitCode: number; stdout: string; stderr: string }> & {
+      kill: ReturnType<typeof vi.fn>;
+    };
+    startProcess.kill = vi.fn(() => {
+      settleStart?.({ exitCode: 143, stdout: 'listening', stderr: '' });
+      return true;
+    });
+    execaMock.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.includes('start')) {
+        return startProcess;
+      }
+      return Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' });
+    });
+    process.env.WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS = '10';
+
+    try {
+      const report = await runWorkspaceStage({
+        workspacePath,
+        stage: 'start',
+        enforceGates: false,
+        json: true,
+      });
+
+      expect(report.summary).toMatchObject({ passed: 1, failed: 0, exitCode: 0 });
+      expect(report.projects[0]?.healthStatus).toEqual(
+        expect.objectContaining({
+          healthy: true,
+          reason: expect.stringContaining('bounded startup smoke'),
+        })
+      );
+      expect(startProcess.kill).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS;
+      await fsExtra.remove(workspacePath);
+    }
+  });
+
   it('expands affected set with blast-radius dependency graph', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
     await createProject(workspacePath, 'apps/api-a');

@@ -6,6 +6,7 @@ import { execa } from 'execa';
 import {
   detectRuntimeFromMarkers,
   categorizeError,
+  checkHealth,
   validateCommand,
   applyEnvironmentCommandVariant,
   resolveWorkspaceStageCommand,
@@ -599,6 +600,163 @@ function resolveWorkspaceRunStageTimeoutMs(stage: string): number {
   return stage === 'init' ? 120_000 : 90_000;
 }
 
+function resolvePositiveDuration(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+type StartupSubprocessResult = {
+  exitCode?: number | null;
+  stdout?: unknown;
+  stderr?: unknown;
+  timedOut?: boolean;
+};
+
+type StartupSubprocess = Promise<StartupSubprocessResult> & {
+  kill?: (signal?: NodeJS.Signals, options?: { forceKillAfterDelay?: number }) => boolean;
+};
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runStartupSmoke(input: {
+  projectPath: string;
+  finalCommand: string;
+  useRapidkitWrapper: boolean;
+  runtime: RuntimeFamily;
+  framework?: string;
+  timeoutMs: number;
+}): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  healthStatus: { healthy: boolean; reason?: string };
+  timedOut?: boolean;
+}> {
+  const entrypoint = process.argv[1];
+  if (input.useRapidkitWrapper && !entrypoint) {
+    return {
+      exitCode: 1,
+      stdout: '',
+      stderr: 'Workspai entrypoint is unavailable for startup verification.',
+      healthStatus: { healthy: false, reason: 'Workspai entrypoint is unavailable.' },
+    };
+  }
+
+  const subprocess = (input.useRapidkitWrapper
+    ? execa(process.execPath, [entrypoint!, 'start'], {
+        cwd: input.projectPath,
+        reject: false,
+        timeout: input.timeoutMs,
+        env: {
+          ...process.env,
+          RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
+        },
+      })
+    : execa(input.finalCommand, [], {
+        cwd: input.projectPath,
+        reject: false,
+        shell: true,
+        timeout: input.timeoutMs,
+      })) as unknown as StartupSubprocess;
+
+  const completion = Promise.resolve(subprocess).then(
+    (result) => ({ kind: 'exit' as const, result }),
+    (error: unknown) => ({ kind: 'error' as const, error })
+  );
+  const startupGraceMs = resolvePositiveDuration('WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS', 2_000);
+  const initial = await Promise.race([
+    completion,
+    delay(startupGraceMs).then(() => ({ kind: 'alive' as const })),
+  ]);
+
+  if (initial.kind === 'error') {
+    const timedOut =
+      typeof initial.error === 'object' &&
+      initial.error !== null &&
+      'timedOut' in initial.error &&
+      Boolean((initial.error as { timedOut?: unknown }).timedOut);
+    return {
+      exitCode: timedOut ? 124 : 1,
+      stdout: '',
+      stderr: initial.error instanceof Error ? initial.error.message : String(initial.error),
+      timedOut,
+      healthStatus: { healthy: false, reason: 'The start command failed before readiness.' },
+    };
+  }
+  if (initial.kind === 'exit') {
+    const exitCode = Number(initial.result.exitCode ?? 0);
+    return {
+      exitCode,
+      stdout: String(initial.result.stdout ?? ''),
+      stderr: String(initial.result.stderr ?? ''),
+      healthStatus: {
+        healthy: exitCode === 0,
+        reason:
+          exitCode === 0
+            ? 'The start command completed successfully.'
+            : `The start command exited with code ${exitCode} before readiness.`,
+      },
+    };
+  }
+
+  const healthConfig = resolveFrameworkRegistryEntry(input.runtime, input.framework)?.healthCheck;
+  let healthStatus: { healthy: boolean; reason?: string } = healthConfig
+    ? { healthy: false, reason: 'The configured health check has not passed yet.' }
+    : {
+        healthy: true,
+        reason: `The service remained alive for ${startupGraceMs}ms (bounded startup smoke).`,
+      };
+
+  if (healthConfig) {
+    const healthTimeoutMs = resolvePositiveDuration(
+      'WORKSPAI_WORKSPACE_RUN_STARTUP_HEALTH_TIMEOUT_MS',
+      15_000
+    );
+    const deadline = Date.now() + healthTimeoutMs;
+    while (Date.now() < deadline) {
+      const probe = await checkHealth(healthConfig, input.projectPath);
+      healthStatus = { healthy: probe.healthy, reason: probe.reason };
+      if (probe.healthy) {
+        break;
+      }
+      const processState = await Promise.race([
+        completion,
+        delay(350).then(() => ({ kind: 'alive' as const })),
+      ]);
+      if (processState.kind !== 'alive') {
+        healthStatus = {
+          healthy: false,
+          reason: 'The service exited before its configured health check passed.',
+        };
+        break;
+      }
+    }
+  }
+
+  try {
+    subprocess.kill?.('SIGTERM', { forceKillAfterDelay: 1_000 });
+  } catch {
+    try {
+      subprocess.kill?.();
+    } catch {
+      // Best-effort cleanup. The command timeout remains the final safety net.
+    }
+  }
+  const settled = await Promise.race([
+    completion,
+    delay(2_000).then(() => ({ kind: 'alive' as const })),
+  ]);
+  const result = settled.kind === 'exit' ? settled.result : undefined;
+  return {
+    exitCode: healthStatus.healthy ? 0 : 1,
+    stdout: String(result?.stdout ?? ''),
+    stderr: String(result?.stderr ?? ''),
+    healthStatus,
+  };
+}
+
 async function runRapidkitSelfCommand(args: string[], cwd: string, timeoutMs?: number) {
   const entrypoint = process.argv[1];
   if (!entrypoint) {
@@ -896,24 +1054,39 @@ async function executeStageCommand(
   let stdout = '';
   let stderr = '';
   let errorCategory: ErrorCategory | undefined;
+  let healthStatus: { healthy: boolean; reason?: string } | undefined;
   const timeoutMs = resolveWorkspaceRunStageTimeoutMs(stage);
   const startedAt = Date.now();
 
   try {
-    const result = useRapidkitWrapper
-      ? stage === 'init' && isVitestRuntime()
-        ? await runRapidkitInitInProcess(projectPath)
-        : await runRapidkitSelfCommand([stage], projectPath, timeoutMs)
-      : await execa(finalCommand, [], {
-          cwd: projectPath,
-          reject: false,
-          shell: true,
-          timeout: timeoutMs,
-        });
+    const result =
+      stage === 'start'
+        ? await runStartupSmoke({
+            projectPath,
+            finalCommand,
+            useRapidkitWrapper,
+            runtime,
+            framework,
+            timeoutMs,
+          })
+        : useRapidkitWrapper
+          ? stage === 'init' && isVitestRuntime()
+            ? await runRapidkitInitInProcess(projectPath)
+            : await runRapidkitSelfCommand([stage], projectPath, timeoutMs)
+          : await execa(finalCommand, [], {
+              cwd: projectPath,
+              reject: false,
+              shell: true,
+              timeout: timeoutMs,
+            });
 
     exitCode = Number(result.exitCode ?? 0);
     stdout = result.stdout;
     stderr = result.stderr;
+    healthStatus =
+      stage === 'start'
+        ? (result as { healthStatus?: { healthy: boolean; reason?: string } }).healthStatus
+        : undefined;
 
     // Categorize error if non-zero exit
     if (exitCode !== 0) {
@@ -944,9 +1117,6 @@ async function executeStageCommand(
   }
 
   // Step 3: Health check (if configured)
-  let healthStatus: { healthy: boolean; reason?: string } | undefined;
-  // Note: Health checks would be looked up from framework registry
-  // For now, we return the exit code result
   const combinedOutput = `${stdout}\n${stderr}`
     .split(/\r?\n/)
     .map((line) => line.trim())

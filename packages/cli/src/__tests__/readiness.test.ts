@@ -139,6 +139,44 @@ describe('release readiness', () => {
     expect(readiness.gates.find((gate) => gate.gate === 'env')?.status).toBe('pass');
   });
 
+  it('requires runtime pins for every registered project when run from the workspace root', async () => {
+    const workspace = await makeWorkspace();
+    await fsExtra.ensureDir(path.join(workspace, 'web'));
+    await fsExtra.ensureDir(path.join(workspace, 'api'));
+    await fsExtra.writeJSON(path.join(workspace, 'web', 'package.json'), {
+      name: 'web',
+      scripts: { build: 'next build' },
+    });
+    await fsExtra.writeFile(
+      path.join(workspace, 'api', 'pyproject.toml'),
+      '[project]\nname = "api"\nversion = "1.0.0"\n'
+    );
+    await fsExtra.writeJSON(path.join(workspace, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      projects: [
+        { slug: 'web', relativePath: 'web' },
+        { slug: 'api', relativePath: 'api' },
+      ],
+    });
+    await fsExtra.writeJSON(path.join(workspace, '.workspai', 'toolchain.lock'), {
+      runtime: { node: { version: '24.18.0' } },
+    });
+
+    const readiness = await evaluateReleaseReadiness({
+      startPath: workspace,
+      writeReport: false,
+      skipVerify: true,
+    });
+    const envGate = readiness.gates.find((gate) => gate.gate === 'env');
+
+    expect(envGate?.status).toBe('fail');
+    expect(envGate?.summary).toContain('(python)');
+    expect(envGate?.details).toContain(
+      'Run workspai setup python and workspai bootstrap to lock python for this workspace.'
+    );
+  });
+
   it('prefers workspace-registry.v1.json for registered project count', async () => {
     const workspace = await makeWorkspace();
     await fsExtra.writeJSON(path.join(workspace, '.workspai', 'workspace.json'), {
