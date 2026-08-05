@@ -27,6 +27,7 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS,
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
 } from './workspace-intelligence-runtime-registry.js';
 import {
   WORKSPACE_ARCHIVE_CAPABILITIES_SCHEMA_VERSION,
@@ -52,6 +53,10 @@ import {
   INGESTION_PLAN_SCHEMA_VERSION,
   INGESTION_RESULT_SCHEMA_VERSION,
 } from './ingestion-contract.js';
+import { STUDIO_CARD_REPAIR_CAPABILITIES_SCHEMA_VERSION } from './studio-card-repair-capabilities-contract.js';
+import { WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION } from './workspace-repair-transaction-contract.js';
+import { WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION } from './workspace-repair-proposal-contract.js';
+import { WORKSPACE_REPAIR_CAPABILITIES_SCHEMA_VERSION } from './workspace-repair-capabilities-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -71,13 +76,16 @@ export function getPublishedContractVersions() {
     ingestionPlan: INGESTION_PLAN_SCHEMA_VERSION,
     ingestionResult: INGESTION_RESULT_SCHEMA_VERSION,
     projectEntryCapability: PROJECT_ENTRY_CAPABILITY_SCHEMA_VERSION,
-    projectWorkspaceLink: 'project-workspace-link.v1',
+    projectWorkspaceLink:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectWorkspaceLink.schemaVersion,
     projectWorkspaceResolution: PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION,
-    projectContextAgent: 'project-context-agent.v1',
+    projectContextAgent:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectContextAgent.schemaVersion,
     doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
     doctorWorkspaceEvidence: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
     doctorGraphDiagnosis: DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION,
-    projectTestCoverage: 'workspai.project-test-coverage.v1',
+    projectTestCoverage:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectTestCoverage.schemaVersion,
     verifiedGoal: 'workspai.verified-goal.v1',
     verifiedGoalStatus: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.verifiedGoalStatus,
     workspaceIntelligenceArchitecture: WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION,
@@ -112,7 +120,31 @@ export function getPublishedContractVersions() {
     doctorRemediationPlan: DOCTOR_REMEDIATION_PLAN_SCHEMA_VERSION,
     doctorDependencyRepairTransaction: 'workspai.doctor-dependency-repair-transaction.v1',
     artifactRemediationPlan: ARTIFACT_REMEDIATION_PLAN_SCHEMA_VERSION,
+    studioCardRepairCapabilities: STUDIO_CARD_REPAIR_CAPABILITIES_SCHEMA_VERSION,
+    workspaceRepairProposal: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+    workspaceRepairCapabilities: WORKSPACE_REPAIR_CAPABILITIES_SCHEMA_VERSION,
+    workspaceRepairTransaction: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
     doctorFixResult: DOCTOR_FIX_RESULT_SCHEMA_VERSION,
+    backendImportStackParitySnapshot: 'backend-import-stack-parity-v1',
+    bootstrapCompliance:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.bootstrapCompliance.schemaVersion,
+    commandCapabilities: 'rapidkit-command-capabilities-v1',
+    createPlannerCapabilities: 'rapidkit-create-planner-capabilities-v1',
+    doctorRemediationPlanLegacy: DOCTOR_REMEDIATION_PLAN_SCHEMA_VERSION,
+    extensionCliCompatibility: 'rapidkit-extension-cli-compatibility.v1',
+    infraStack: 'rapidkit.infra-stack.v1',
+    mirrorOps: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.mirrorOps.schemaVersion,
+    moduleLayout: 'rapidkit.module-layout.v1',
+    moduleSupport: 'rapidkit-module-support-v1',
+    pipelineLastRun: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.pipelineLastRun.schemaVersion,
+    transparencyEvidence:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.transparencyEvidence.schemaVersion,
+    version: 'rapidkit-version-v1',
+    studioBlockerHandoff: 'rapidkit-studio-blocker-handoff-v1',
+    workspaceRegistry: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceRegistry.schemaVersion,
+    workspaceRunLast: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceRunLast.schemaVersion,
+    workspaceShareBundle:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceShareBundle.schemaVersion,
     ...OPERATIONAL_JSON_SCHEMA_VERSIONS,
   };
 }
@@ -190,7 +222,29 @@ export function getPublishedContractCatalog() {
     doctorDependencyRepairTransaction:
       'contracts/workspace-intelligence/doctor-dependency-repair-transaction.v1.json',
     artifactRemediationPlan: 'contracts/artifact-remediation-plan.v1.json',
+    studioCardRepairCapabilities: 'contracts/studio-card-repair-capabilities.v1.json',
+    workspaceRepairProposal: 'contracts/workspace-intelligence/workspace-repair-proposal.v1.json',
+    workspaceRepairCapabilities: 'contracts/workspace-repair-capabilities.v1.json',
+    workspaceRepairTransaction:
+      'contracts/workspace-intelligence/workspace-repair-transaction.v1.json',
     doctorFixResult: 'contracts/workspace-intelligence/doctor-fix-result.v1.json',
+    backendImportStackParitySnapshot: 'contracts/backend-import-stack-parity.snapshot.json',
+    bootstrapCompliance: 'contracts/bootstrap-compliance.v1.json',
+    commandCapabilities: 'contracts/command-capabilities.v1.json',
+    createPlannerCapabilities: 'contracts/create-planner-capabilities.v1.json',
+    doctorRemediationPlanLegacy: 'contracts/doctor-remediation-plan.v1.json',
+    extensionCliCompatibility: 'contracts/extension-cli-compatibility.v1.json',
+    infraStack: 'contracts/infra-stack.v1.json',
+    mirrorOps: 'contracts/mirror-ops.v1.json',
+    moduleLayout: 'contracts/module-layout.v1.json',
+    moduleSupport: 'contracts/module-support.v1.json',
+    pipelineLastRun: 'contracts/pipeline-last-run.v1.json',
+    transparencyEvidence: 'contracts/transparency-evidence.v1.json',
+    version: 'contracts/version.v1.json',
+    studioBlockerHandoff: 'contracts/workspace-intelligence/studio-blocker-handoff.v1.json',
+    workspaceRegistry: 'contracts/workspace-registry.v1.json',
+    workspaceRunLast: 'contracts/workspace-run-last.v1.json',
+    workspaceShareBundle: 'contracts/workspace-share-bundle.v1.json',
     autopilotRelease: 'contracts/autopilot-release.v1.json',
     workspaceList: 'contracts/workspace-list.v1.json',
     workspaceSync: 'contracts/workspace-sync.v1.json',
@@ -220,7 +274,11 @@ export function getPublishedContractCatalog() {
           publication: contractPath
             ? id === 'runtimeCommandSurface' ||
               id === 'cliRuntimeCommandInventory' ||
-              id.endsWith('Capabilities')
+              id.endsWith('Capabilities') ||
+              id.endsWith('Snapshot') ||
+              id === 'extensionCliCompatibility' ||
+              id === 'moduleLayout' ||
+              id === 'moduleSupport'
               ? 'capability-contract'
               : 'json-schema'
             : 'embedded-type',

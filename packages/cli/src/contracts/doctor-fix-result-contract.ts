@@ -1,4 +1,7 @@
-export const DOCTOR_FIX_RESULT_SCHEMA_VERSION = 'rapidkit-doctor-fix-result-v1' as const;
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS } from './workspace-intelligence-runtime-registry.js';
+
+export const DOCTOR_FIX_RESULT_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorFixResult.schemaVersion;
 
 export const DOCTOR_FIX_VERIFY_RECOMMENDED =
   'npx workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json';

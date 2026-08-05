@@ -6,6 +6,8 @@ import { GoRuntimeAdapter } from '../runtime-adapters/go.js';
 import { JavaRuntimeAdapter } from '../runtime-adapters/java.js';
 import { NodeRuntimeAdapter } from '../runtime-adapters/node.js';
 import { PythonRuntimeAdapter } from '../runtime-adapters/python.js';
+import { PhpRuntimeAdapter } from '../runtime-adapters/php.js';
+import { RustRuntimeAdapter } from '../runtime-adapters/rust.js';
 import { areRuntimeAdaptersEnabled, getRuntimeAdapter } from '../runtime-adapters/index.js';
 
 const normalizePath = (value: string | undefined): string => (value || '').replace(/\\/g, '/');
@@ -1674,6 +1676,16 @@ describe('Runtime Adapters', () => {
       const result = await adapter.initProject('/tmp/project');
       expect(result.exitCode).toBe(0);
       expect(runCommandInCwd).toHaveBeenCalledWith('dotnet', ['restore'], '/tmp/project');
+    });
+
+    it('returns PHP and Rust adapters from the canonical factory', () => {
+      const deps = {
+        runCommandInCwd: vi.fn().mockResolvedValue(0),
+        runCoreRapidkit: vi.fn().mockResolvedValue(0),
+      };
+
+      expect(getRuntimeAdapter('php', deps)).toBeInstanceOf(PhpRuntimeAdapter);
+      expect(getRuntimeAdapter('rust', deps)).toBeInstanceOf(RustRuntimeAdapter);
     });
 
     it('returns actionable dotnet restore diagnostics', async () => {

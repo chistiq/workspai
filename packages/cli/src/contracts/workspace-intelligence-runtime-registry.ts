@@ -28,6 +28,7 @@ export const WORKSPACE_INTELLIGENCE_ARTIFACTS = {
   evaluationLive: '.workspai/reports/workspace-intelligence-evaluation-live.json',
   evaluationLastRun: '.workspai/reports/workspace-intelligence-evaluation-last-run.json',
   verifiedGoalStatus: '.workspai/reports/verified-goal-last-run.json',
+  repairTransaction: '.workspai/reports/workspace-repair-last-run.json',
 } as const;
 
 export type WorkspaceIntelligenceArtifactId = keyof typeof WORKSPACE_INTELLIGENCE_ARTIFACTS;
@@ -56,6 +57,7 @@ export const WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS = {
   evaluationLive: 'workspace-intelligence-evaluation.v1',
   evaluationLastRun: 'workspace-intelligence-evaluation.v1',
   verifiedGoalStatus: 'workspai.verified-goal-status.v1',
+  repairTransaction: 'workspai.workspace-repair-transaction.v1',
 } as const satisfies Record<WorkspaceIntelligenceArtifactId, string | null>;
 
 export const WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS = {
@@ -81,7 +83,232 @@ export const WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS = {
   evaluationLive: 'contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json',
   evaluationLastRun: 'contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json',
   verifiedGoalStatus: 'contracts/workspace-intelligence/verified-goal-status.v1.json',
+  repairTransaction: 'contracts/workspace-intelligence/workspace-repair-transaction.v1.json',
 } as const satisfies Record<WorkspaceIntelligenceArtifactId, string | null>;
+
+export type WorkspaceSupplementalArtifactContract = {
+  artifactPath: string;
+  schemaVersion: string | number;
+  schemaVersionField?: 'schemaVersion' | 'schema_version' | 'schema' | 'version';
+  contractPath: string;
+  producerCommands: readonly (readonly string[])[];
+};
+
+/**
+ * Canonical registry for public artifacts produced outside the ordered
+ * Workspace Intelligence chain. Artifact validation and discovery consume
+ * this table directly; producer paths must never be re-declared elsewhere.
+ */
+export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
+  projectWorkspaceLink: {
+    artifactPath: '.workspai/workspace-link.local.json',
+    schemaVersion: 'project-workspace-link.v1',
+    contractPath: 'contracts/project-workspace-link.v1.json',
+    producerCommands: [
+      ['adopt'],
+      ['import'],
+      ['project', 'workspace', 'relink'],
+      ['workspace', 'sync'],
+    ],
+  },
+  projectContextAgent: {
+    artifactPath: '.workspai/reports/project-context-agent.json',
+    schemaVersion: 'project-context-agent.v1',
+    contractPath: 'contracts/workspace-intelligence/project-context-agent.v1.json',
+    producerCommands: [
+      ['adopt'],
+      ['import'],
+      ['workspace', 'sync'],
+      ['workspace', 'agent-sync', '--write'],
+    ],
+  },
+  workspaceContract: {
+    artifactPath: '.workspai/workspace.contract.json',
+    schemaVersion: 1,
+    contractPath: 'contracts/workspace-contract.v1.json',
+    producerCommands: [
+      ['workspace', 'sync'],
+      ['workspace', 'contract', 'sync'],
+    ],
+  },
+  workspaceModelCache: {
+    artifactPath: '.workspai/cache/workspace-model.v1.json',
+    schemaVersion: 'workspace-model-cache.v1',
+    contractPath: 'contracts/workspace-model-cache.v1.json',
+    producerCommands: [['workspace', 'model']],
+  },
+  workspaceRegistry: {
+    artifactPath: '.workspai/workspace-registry.v1.json',
+    schemaVersion: 'workspace-registry.v1',
+    contractPath: 'contracts/workspace-registry.v1.json',
+    producerCommands: [['workspace', 'sync']],
+  },
+  compatibilityMatrix: {
+    artifactPath: '.workspai/compatibility-matrix.json',
+    schemaVersion: 'rapidkit.compatibility-matrix.v1',
+    contractPath: 'contracts/compatibility-matrix.v1.json',
+    producerCommands: [['bootstrap']],
+  },
+  doctorWorkspaceCache: {
+    artifactPath: '.workspai/reports/doctor-workspace-cache.json',
+    schemaVersion: 'doctor-workspace-cache-v2',
+    contractPath: 'contracts/doctor-workspace-cache.v2.json',
+    producerCommands: [['doctor', 'workspace']],
+  },
+  bootstrapCompliance: {
+    artifactPath: '.workspai/reports/bootstrap-compliance.latest.json',
+    schemaVersion: 'bootstrap-compliance.v1',
+    contractPath: 'contracts/bootstrap-compliance.v1.json',
+    producerCommands: [['bootstrap']],
+  },
+  mirrorOps: {
+    artifactPath: '.workspai/reports/mirror-ops.latest.json',
+    schemaVersion: 'mirror-ops.v1',
+    contractPath: 'contracts/mirror-ops.v1.json',
+    producerCommands: [['mirror', 'status']],
+  },
+  transparencyEvidence: {
+    artifactPath: '.workspai/reports/transparency-evidence.latest.json',
+    schemaVersion: 'transparency-evidence.v1',
+    contractPath: 'contracts/transparency-evidence.v1.json',
+    producerCommands: [['mirror', 'sync']],
+  },
+  workspaceShareBundle: {
+    artifactPath: '.workspai/reports/share-bundle.json',
+    schemaVersion: '1.1',
+    schemaVersionField: 'schema_version',
+    contractPath: 'contracts/workspace-share-bundle.v1.json',
+    producerCommands: [['workspace', 'share']],
+  },
+  doctorProject: {
+    artifactPath: '.workspai/reports/doctor-project-last-run.json',
+    schemaVersion: 'doctor-project-evidence-v1',
+    contractPath: 'contracts/doctor-project-evidence.v1.json',
+    producerCommands: [['doctor', 'project']],
+  },
+  projectTestCoverage: {
+    artifactPath: '.workspai/reports/project-test-coverage-last-run.json',
+    schemaVersion: 'workspai.project-test-coverage.v1',
+    contractPath: 'contracts/project-test-coverage.v1.json',
+    producerCommands: [['project', 'coverage']],
+  },
+  doctorRemediationPlan: {
+    artifactPath: '.workspai/reports/doctor-remediation-plan-last-run.json',
+    schemaVersion: 'doctor-remediation-plan-v2',
+    contractPath: 'contracts/doctor-remediation-plan.v2.json',
+    producerCommands: [['workspace', 'remediation-plan']],
+  },
+  artifactRemediationPlan: {
+    artifactPath: '.workspai/reports/artifact-remediation-plan-last-run.json',
+    schemaVersion: 'artifact-remediation-plan-v1',
+    contractPath: 'contracts/artifact-remediation-plan.v1.json',
+    producerCommands: [['workspace', 'remediation-plan']],
+  },
+  doctorFixResult: {
+    artifactPath: '.workspai/reports/doctor-fix-result-last-run.json',
+    schemaVersion: 'rapidkit-doctor-fix-result-v1',
+    contractPath: 'contracts/workspace-intelligence/doctor-fix-result.v1.json',
+    producerCommands: [['doctor', 'workspace']],
+  },
+  pipelineLastRun: {
+    artifactPath: '.workspai/reports/pipeline-last-run.json',
+    schemaVersion: 'rapidkit-pipeline-v1',
+    contractPath: 'contracts/pipeline-last-run.v1.json',
+    producerCommands: [['pipeline']],
+  },
+  autopilotReleaseLastRun: {
+    artifactPath: '.workspai/reports/autopilot-release-last-run.json',
+    schemaVersion: 'autopilot-release-v1',
+    contractPath: 'contracts/autopilot-release.v1.json',
+    producerCommands: [['autopilot', 'release']],
+  },
+  autopilotReleaseAlias: {
+    artifactPath: '.workspai/reports/autopilot-release.json',
+    schemaVersion: 'autopilot-release-v1',
+    contractPath: 'contracts/autopilot-release.v1.json',
+    producerCommands: [['autopilot', 'release']],
+  },
+  workspaceRunLast: {
+    artifactPath: '.workspai/reports/workspace-run-last.json',
+    schemaVersion: 'workspace-run-v1',
+    contractPath: 'contracts/workspace-run-last.v1.json',
+    producerCommands: [['workspace', 'run']],
+  },
+  workspaiMcpDesign: {
+    artifactPath: '.workspai/reports/workspai-mcp-design.json',
+    schemaVersion: 'workspai-mcp-design.v1',
+    contractPath: 'contracts/workspace-intelligence/mcp-design.v1.json',
+    producerCommands: [['workspace', 'agent-sync', '--write']],
+  },
+  legacyMcpDesign: {
+    artifactPath: '.workspai/reports/rapidkit-mcp-design.json',
+    schemaVersion: 'workspai-mcp-design.v1',
+    contractPath: 'contracts/workspace-intelligence/mcp-design.v1.json',
+    producerCommands: [['workspace', 'agent-sync', '--write']],
+  },
+  workspaceWhy: {
+    artifactPath: '.workspai/reports/workspace-why-last-run.json',
+    schemaVersion: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.explain,
+    contractPath: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS.explain,
+    producerCommands: [['workspace', 'why']],
+  },
+  workspaceTrace: {
+    artifactPath: '.workspai/reports/workspace-trace-last-run.json',
+    schemaVersion: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.explain,
+    contractPath: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS.explain,
+    producerCommands: [['workspace', 'trace']],
+  },
+  agentHooks: {
+    artifactPath: '.vscode/workspai-agent-hooks.json',
+    schemaVersion: 'workspai-agent-hooks.v1',
+    contractPath: 'contracts/workspace-intelligence/agent-hooks.v1.json',
+    producerCommands: [['workspace', 'agent-sync']],
+  },
+  infraPlan: {
+    artifactPath: '.workspai/reports/infra-plan.json',
+    schemaVersion: 'rapidkit.infra-plan.v1',
+    contractPath: 'contracts/infra-plan.v1.json',
+    producerCommands: [['infra', 'plan']],
+  },
+} as const satisfies Record<string, WorkspaceSupplementalArtifactContract>;
+
+export const WORKSPACE_SUPPLEMENTAL_ARTIFACTS = Object.freeze(
+  Object.fromEntries(
+    Object.entries(WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS).map(([id, descriptor]) => [
+      id,
+      descriptor.artifactPath,
+    ])
+  )
+) as {
+  readonly [
+    K in keyof typeof WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS
+  ]: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS)[K]['artifactPath'];
+};
+
+export const WORKSPACE_INTELLIGENCE_ADDITIONAL_PRODUCERS = {
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.intelligenceRun]: [['workspace', 'intelligence', 'run']],
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.snapshot]: [['workspace', 'snapshot']],
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.history]: [['workspace', 'feedback', 'record', '--json']],
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.evaluationLive]: [
+    ['workspace', 'eval', 'init'],
+    ['workspace', 'eval', 'record', '--json'],
+  ],
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.evaluationLastRun]: [['workspace', 'eval', 'report', '--json']],
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.verifiedGoalStatus]: [
+    ['workspace', 'goal', 'plan'],
+    ['workspace', 'goal', 'verify'],
+  ],
+  [WORKSPACE_INTELLIGENCE_ARTIFACTS.repairTransaction]: [
+    ['workspace', 'repair', 'plan'],
+    ['workspace', 'repair', 'propose'],
+    ['workspace', 'repair', 'approve'],
+    ['workspace', 'repair', 'decide'],
+    ['workspace', 'repair', 'execute'],
+    ['workspace', 'repair', 'resume'],
+    ['workspace', 'repair', 'rollback'],
+    ['workspace', 'repair', 'cancel'],
+  ],
+} as const satisfies Readonly<Record<string, readonly (readonly string[])[]>>;
 
 export const WORKSPACE_INTELLIGENCE_COMMAND_SIGNATURES = {
   analyze: 'analyze',

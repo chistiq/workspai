@@ -10,10 +10,14 @@ import {
 } from './utils/artifact-path-compat.js';
 import { findWorkspaceRootUp } from './utils/workspace-root.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 
-export const PROJECT_TEST_COVERAGE_SCHEMA = 'workspai.project-test-coverage.v1';
-export const PROJECT_TEST_COVERAGE_ARTIFACT =
-  '.workspai/reports/project-test-coverage-last-run.json';
+export const PROJECT_TEST_COVERAGE_SCHEMA =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectTestCoverage.schemaVersion;
+export const PROJECT_TEST_COVERAGE_ARTIFACT = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectTestCoverage;
 
 export type ProjectCoverageRuntime =
   | 'node'

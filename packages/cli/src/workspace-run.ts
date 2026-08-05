@@ -42,6 +42,7 @@ import {
   workspaceMetadataCandidates,
   workspaceMetadataPath,
 } from './utils/workspace-paths.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
 
 export type WorkspaceRunStage = 'init' | 'test' | 'build' | 'start';
 export type WorkspaceRunStageName = WorkspaceRunStage | (string & {});
@@ -379,7 +380,7 @@ async function expandAffectedWithBlastRadius(
   const contractPath =
     (await firstExistingWorkspaceArtifactPath(
       workspacePath,
-      '.workspai/workspace.contract.json'
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract
     )) ?? workspaceMetadataPath(workspacePath, 'workspace.contract.json');
   if (await pathExists(contractPath)) {
     try {
@@ -644,8 +645,8 @@ async function runStartupSmoke(input: {
     };
   }
 
-  const subprocess = (input.useRapidkitWrapper
-    ? execa(process.execPath, [entrypoint!, 'start'], {
+  const subprocess = (input.useRapidkitWrapper && entrypoint
+    ? execa(process.execPath, [entrypoint, 'start'], {
         cwd: input.projectPath,
         reject: false,
         timeout: input.timeoutMs,

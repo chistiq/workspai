@@ -44,6 +44,8 @@ import { buildWorkspaceIntelligenceChainContract } from './contracts/workspace-i
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import {
   assertWorkspaceArtifactContract,
@@ -201,22 +203,22 @@ export const AGENT_REPORT_CATALOG: AgentReportCatalogEntry[] = [
     required: false,
   },
   {
-    relativePath: '.workspai/reports/doctor-project-last-run.json',
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorProject,
     label: 'Project doctor',
     required: false,
   },
   {
-    relativePath: '.workspai/reports/doctor-remediation-plan-last-run.json',
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorRemediationPlan,
     label: 'Doctor remediation plan',
     required: false,
   },
   {
-    relativePath: '.workspai/reports/artifact-remediation-plan-last-run.json',
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.artifactRemediationPlan,
     label: 'Artifact remediation plan',
     required: false,
   },
   {
-    relativePath: '.workspai/reports/doctor-fix-result-last-run.json',
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorFixResult,
     label: 'Doctor fix result',
     required: false,
   },
@@ -226,7 +228,7 @@ export const AGENT_REPORT_CATALOG: AgentReportCatalogEntry[] = [
     required: false,
   },
   {
-    relativePath: '.workspai/reports/pipeline-last-run.json',
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.pipelineLastRun,
     label: 'Governance pipeline',
     required: false,
   },
@@ -1017,7 +1019,7 @@ function buildMcpToolsResource(): string {
 function buildMcpDesignManifest(input: { workspacePath: string; generatedAt: string }): string {
   return `${JSON.stringify(
     {
-      schemaVersion: 'workspai-mcp-design.v1',
+      schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaiMcpDesign.schemaVersion,
       generatedAt: input.generatedAt,
       workspaceRoot: input.workspacePath,
       status: 'design-only',
@@ -1076,7 +1078,7 @@ function buildMcpDesignManifest(input: { workspacePath: string; generatedAt: str
           reads: [
             WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex,
             WORKSPACE_INTELLIGENCE_ARTIFACTS.verify,
-            '.workspai/reports/pipeline-last-run.json',
+            WORKSPACE_SUPPLEMENTAL_ARTIFACTS.pipelineLastRun,
           ],
           mutates: false,
         },
@@ -1131,7 +1133,7 @@ function buildExperimentalHooksConfig(input: {
 }): string {
   return `${JSON.stringify(
     {
-      schemaVersion: 'workspai-agent-hooks.v1',
+      schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.agentHooks.schemaVersion,
       generatedAt: input.generatedAt,
       workspaceRoot: input.workspacePath,
       enabledByDefault: false,

@@ -7,6 +7,10 @@ import https from 'https';
 import { execa } from 'execa';
 import { workspaceMetadataCandidates, workspaceMetadataPath } from './workspace-paths.js';
 import { assertWorkspaceArtifactContract } from '../contracts/artifact-contract-registry.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
 
 export type MirrorCheckStatus = 'passed' | 'failed' | 'skipped';
 
@@ -1227,7 +1231,7 @@ export async function runMirrorLifecycle(
   details.transparencyEvidenceRecords = transparencyEvidenceRecords.length;
   if (transparencyEvidenceRecords.length > 0) {
     const evidencePayload = {
-      schemaVersion: 'transparency-evidence.v1',
+      schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.transparencyEvidence.schemaVersion,
       generatedAt: new Date().toISOString(),
       environment: activeEnvironment,
       records: transparencyEvidenceRecords,
@@ -1240,7 +1244,7 @@ export async function runMirrorLifecycle(
       evidencePayload
     );
     assertWorkspaceArtifactContract(
-      '.workspai/reports/transparency-evidence.latest.json',
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.transparencyEvidence,
       evidencePayload
     );
     await fsExtra.ensureDir(reportsDir);

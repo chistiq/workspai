@@ -358,6 +358,96 @@ describe('doctor enterprise surface probes', () => {
     });
   });
 
+  it('does not require an environment contract when source does not consume environment variables', async () => {
+    const projectPath = await makeProject({
+      'package.json': { name: 'web', version: '1.0.0' },
+      'package-lock.json': '{}',
+      'src/page.tsx': 'export default function Page() { return <main>Hello</main>; }\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'node',
+      projectKind: 'frontend',
+      packageJsonData: (await fsExtra.readJSON(path.join(projectPath, 'package.json'))) as Record<
+        string,
+        unknown
+      >,
+      hasTests: true,
+      vulnerabilities: 0,
+    });
+
+    expect(probes.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
+      status: 'pass',
+      recommendation: undefined,
+      repairCapability: undefined,
+      reason: expect.stringContaining('not currently applicable'),
+    });
+  });
+
+  it('creates a secret-free environment contract from keys used by source', async () => {
+    const projectPath = await makeProject({
+      'package.json': { name: 'web', version: '1.0.0' },
+      'package-lock.json': '{}',
+      'src/config.ts':
+        "export const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env['API_FALLBACK_URL'];\n",
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'node',
+      projectKind: 'frontend',
+      packageJsonData: (await fsExtra.readJSON(path.join(projectPath, 'package.json'))) as Record<
+        string,
+        unknown
+      >,
+      hasTests: true,
+      vulnerabilities: 0,
+    });
+
+    expect(probes.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
+      status: 'warn',
+      repairCapability: {
+        fixKind: 'file-create',
+        canAutoFix: true,
+        operation: {
+          type: 'file-create',
+          path: path.join(projectPath, '.env.example'),
+          content: 'API_FALLBACK_URL=\nNEXT_PUBLIC_API_URL=\n',
+        },
+      },
+    });
+  });
+
+  it('copies only environment key names from a local .env into a proposed contract', async () => {
+    const projectPath = await makeProject({
+      'package.json': { name: 'web', version: '1.0.0' },
+      'package-lock.json': '{}',
+      '.env': 'API_TOKEN=do-not-copy-this\nPUBLIC_URL=https://private.example\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'node',
+      projectKind: 'frontend',
+      packageJsonData: (await fsExtra.readJSON(path.join(projectPath, 'package.json'))) as Record<
+        string,
+        unknown
+      >,
+      hasTests: true,
+      vulnerabilities: 0,
+    });
+    const operation = probes.find((probe) => probe.id === 'surface-env-contract')?.repairCapability
+      ?.operation;
+
+    expect(operation).toMatchObject({
+      type: 'file-create',
+      content: 'API_TOKEN=\nPUBLIC_URL=\n',
+    });
+    expect(JSON.stringify(operation)).not.toContain('do-not-copy-this');
+    expect(JSON.stringify(operation)).not.toContain('private.example');
+  });
+
   it('keeps repairable surface probes ready for Doctor taxonomy normalization', async () => {
     const projectPath = await makeProject({
       'package.json': {

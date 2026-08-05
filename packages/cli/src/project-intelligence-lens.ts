@@ -11,7 +11,11 @@ import type {
   WorkspaceKnowledgeProof,
   WorkspaceKnowledgeRelation,
 } from './contracts/workspace-knowledge-graph-contract.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 import type { WorkspaceModel, WorkspaceModelProject } from './workspace-model.js';
 import { hashWorkspaceModel } from './workspace-model-hash.js';
 import {
@@ -30,7 +34,8 @@ import {
   writeProjectWorkspaceLink,
 } from './project-workspace-link.js';
 
-export const PROJECT_CONTEXT_AGENT_SCHEMA_VERSION = 'project-context-agent.v1';
+export const PROJECT_CONTEXT_AGENT_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectContextAgent.schemaVersion;
 export const PROJECT_GROUNDING_MODE_VALUES = ['managed', 'local', 'off'] as const;
 export const WORKSPAI_PROJECT_GROUNDING_START = '<!-- WORKSPAI:PROJECT-GROUNDING:START -->';
 export const WORKSPAI_PROJECT_GROUNDING_END = '<!-- WORKSPAI:PROJECT-GROUNDING:END -->';
@@ -44,11 +49,11 @@ export interface ProjectContextAgent {
     name: string;
     profile?: string;
     relationship: ProjectWorkspaceRelationship;
-    contract: '.workspai/workspace.contract.json';
+    contract: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['workspaceContract'];
     model: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model'];
     knowledgeGraph: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph'];
     access: {
-      localBinding: '.workspai/workspace-link.local.json';
+      localBinding: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['projectWorkspaceLink'];
       canonicalEvidenceAvailableAtGeneration: boolean;
     };
   };
@@ -760,11 +765,11 @@ export async function buildProjectContextAgent(
         ? { profile: contract?.workspace?.profile ?? model?.workspace.profile }
         : {}),
       relationship,
-      contract: '.workspai/workspace.contract.json',
+      contract: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
       model: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
       knowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
       access: {
-        localBinding: '.workspai/workspace-link.local.json',
+        localBinding: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectWorkspaceLink,
         canonicalEvidenceAvailableAtGeneration: true,
       },
     },
@@ -839,7 +844,7 @@ export async function buildProjectContextAgent(
     evidence: {
       readOrder: [
         '.workspai/PROJECT-GROUNDING.md',
-        '.workspai/reports/project-context-agent.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
         'AGENTS.md',
         'workspace:.workspai/reports/INDEX.json',
         'workspace:.workspai/reports/workspace-context-agent.json',
@@ -1124,7 +1129,7 @@ export async function syncProjectIntelligenceLens(
       mode,
       projectPath,
       linkPath: link.linkPath,
-      writtenFiles: ['.workspai/workspace-link.local.json'],
+      writtenFiles: [WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectWorkspaceLink],
     };
   }
   const context = await buildProjectContextAgent(options);
@@ -1145,7 +1150,7 @@ export async function syncProjectIntelligenceLens(
   await writeAtomic(contextPath, `${JSON.stringify(context, null, 2)}\n`);
   await writeAtomic(groundingPath, `${buildProjectGroundingMarkdown(context).trimEnd()}\n`);
   const writtenFiles = [
-    '.workspai/workspace-link.local.json',
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectWorkspaceLink,
     PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
     PROJECT_GROUNDING_RELATIVE_PATH,
   ];

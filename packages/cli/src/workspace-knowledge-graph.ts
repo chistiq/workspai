@@ -6,7 +6,10 @@ import { parseAllDocuments } from 'yaml';
 
 import type { WorkspaceContract } from './utils/workspace-contract.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 import {
   WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
   type WorkspaceKnowledgeAttribute,
@@ -933,7 +936,7 @@ const foundationProvider: Provider = {
     const { state } = context;
     const workspaceProof = await state.addProof({
       provider: this.id,
-      artifact: '.workspai/workspace.contract.json',
+      artifact: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
       absolutePath: path.join(context.workspacePath, '.workspai', 'workspace.contract.json'),
       trust: 'authoritative',
       derivation: 'authored',
@@ -1335,7 +1338,7 @@ const serviceContractProvider: Provider = {
       const contract = project.contracts;
       const proof = await context.state.addProof({
         provider: this.id,
-        artifact: '.workspai/workspace.contract.json',
+        artifact: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
         absolutePath: path.join(context.workspacePath, '.workspai', 'workspace.contract.json'),
         pointer: `/projects/${project.slug}/contracts`,
         trust: 'authoritative',

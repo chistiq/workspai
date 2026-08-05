@@ -228,6 +228,8 @@ describe('workspace archive export/hydrate', () => {
 
     expect(shouldExcludeWorkspaceArchivePath('api/node_modules/pkg/index.js')).toBe(true);
     expect(shouldExcludeWorkspaceArchivePath('.rapidkit/cache/go/mod/pkg/file.go')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('api/.workspai/cache/go/mod/pkg/file.go')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('api/.rapidkit/reports/doctor.json')).toBe(true);
     expect(shouldExcludeWorkspaceArchivePath('.workspai/reports/workspace-run-last.json')).toBe(
       true
     );
@@ -336,6 +338,14 @@ describe('workspace archive export/hydrate', () => {
       ''
     );
     await fsExtra.outputFile(
+      path.join(workspacePath, 'api', '.workspai', 'cache', 'go', 'mod', 'nested.go'),
+      ''
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', '.rapidkit', 'reports', 'doctor.json'),
+      '{}'
+    );
+    await fsExtra.outputFile(
       path.join(workspacePath, 'api', 'node_modules', 'pkg', 'index.js'),
       ''
     );
@@ -353,6 +363,20 @@ describe('workspace archive export/hydrate', () => {
     expect(exported.manifest.files.map((file) => file.path)).not.toContain('api/.env');
     expect(exported.manifest.files.map((file) => file.path)).not.toContain(
       '.rapidkit/cache/go/mod/x.go'
+    );
+    expect(exported.manifest.files.map((file) => file.path)).not.toContain(
+      'api/.workspai/cache/go/mod/nested.go'
+    );
+    expect(exported.manifest.files.map((file) => file.path)).not.toContain(
+      'api/.rapidkit/reports/doctor.json'
+    );
+    expect(exported.manifest.security.excludedByDefault).toEqual(
+      expect.arrayContaining([
+        '.workspai/cache',
+        '.workspai/reports',
+        '.rapidkit/cache',
+        '.rapidkit/reports',
+      ])
     );
     expect(exported.manifest.files.map((file) => file.path)).not.toContain(
       'api/node_modules/pkg/index.js'

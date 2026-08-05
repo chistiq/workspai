@@ -18,9 +18,15 @@ import {
   writeWorkspaceArtifactJson,
 } from './artifact-path-compat.js';
 import { workspaceMetadataCandidates } from './workspace-paths.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
 
-export const WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH = '.workspai/workspace-registry.v1.json';
-export const WORKSPACE_REGISTRY_SUMMARY_SCHEMA_VERSION = 'workspace-registry.v1';
+export const WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceRegistry;
+export const WORKSPACE_REGISTRY_SUMMARY_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceRegistry.schemaVersion;
 
 export type WorkspaceRegistryAuthority =
   'workspace.contract.json' | 'global-registry' | 'legacy-workspace.json' | 'none';

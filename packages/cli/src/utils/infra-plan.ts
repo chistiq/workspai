@@ -18,6 +18,7 @@ import { collectWorkspaceInfraConnectionDefaults, parsePostgresServiceEnv } from
 import { firstExistingWorkspaceArtifactPath } from './artifact-path-compat.js';
 import { workspaceMetadataCandidates } from './workspace-paths.js';
 import { assertJsonSchemaContract } from './json-schema-contract.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 
 function sourceTargetsService(
   source: { kind: string; value: string },
@@ -115,9 +116,9 @@ export async function buildInfraPlan(input: {
 
   const contractPath = (await firstExistingWorkspaceArtifactPath(
     workspacePath,
-    '.workspai/workspace.contract.json'
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract
   ))
-    ? '.workspai/workspace.contract.json'
+    ? WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract
     : undefined;
 
   const contractConnectionEnv = mergeConnectionEnv(contract, discovery.serviceIds);

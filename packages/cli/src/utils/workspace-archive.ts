@@ -28,6 +28,7 @@ import {
 } from './workspace-paths.js';
 import type { WorkspaceContract } from './workspace-contract.js';
 import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 
 export const WORKSPACE_ARCHIVE_MANIFEST_PATH = '.workspai/archive-manifest.json';
 const LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH = '.rapidkit/archive-manifest.json';
@@ -363,10 +364,12 @@ export function shouldExcludeWorkspaceArchivePath(
 ): boolean {
   const normalized = toArchivePath(relativePath);
   const segments = normalized.split('/').filter(Boolean);
-  if (
-    (segments[0] === '.workspai' || segments[0] === '.rapidkit') &&
-    ['cache', 'reports'].includes(segments[1] || '')
-  ) {
+  const containsDerivedWorkspaiDirectory = segments.some(
+    (segment, index) =>
+      (segment === '.workspai' || segment === '.rapidkit') &&
+      ['cache', 'reports'].includes(segments[index + 1] || '')
+  );
+  if (containsDerivedWorkspaiDirectory) {
     return true;
   }
   if (
@@ -379,7 +382,7 @@ export function shouldExcludeWorkspaceArchivePath(
 
   const basename = segments[segments.length - 1] || '';
   if (
-    normalized === '.workspai/workspace.contract.json' ||
+    normalized === WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract ||
     normalized === '.rapidkit/workspace.contract.json'
   ) {
     return true;
@@ -656,6 +659,10 @@ export async function exportWorkspaceArchive(
         '.git',
         'node_modules',
         '.venv',
+        '.workspai/cache',
+        '.workspai/reports',
+        '.rapidkit/cache',
+        '.rapidkit/reports',
         'dist',
         'build',
         'target',

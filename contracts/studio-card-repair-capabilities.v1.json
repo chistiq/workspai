@@ -1,0 +1,378 @@
+{
+  "schemaVersion": "workspai.studio-card-repair-capabilities.v1",
+  "invariant": "A card repair closes only after its exact producer is non-blocking and aggregate Workspace Verify passes.",
+  "cards": [
+    {
+      "cardId": "doctor",
+      "scope": "workspace",
+      "producerCommand": "npx workspai doctor workspace --json",
+      "producerArtifact": ".workspai/reports/doctor-last-run.json",
+      "verifyCommand": "npx workspai doctor workspace --json",
+      "verifyArtifact": ".workspai/reports/doctor-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "diagnose-and-repair",
+      "remediationArtifacts": [
+        ".workspai/reports/doctor-remediation-plan-last-run.json",
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "projectDoctor",
+      "scope": "project",
+      "producerCommand": "npx workspai doctor project --json",
+      "producerArtifact": ".workspai/reports/doctor-project-last-run.json",
+      "verifyCommand": "npx workspai doctor project --json",
+      "verifyArtifact": ".workspai/reports/doctor-project-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "diagnose-and-repair",
+      "remediationArtifacts": [
+        ".workspai/reports/doctor-remediation-plan-last-run.json",
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "pipeline",
+      "scope": "workspace",
+      "producerCommand": "npx workspai pipeline --json --strict",
+      "producerArtifact": ".workspai/reports/pipeline-last-run.json",
+      "verifyCommand": "npx workspai pipeline --json --strict",
+      "verifyArtifact": ".workspai/reports/pipeline-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": [
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "analyze",
+      "scope": "workspace",
+      "producerCommand": "npx workspai analyze --json",
+      "producerArtifact": ".workspai/reports/analyze-last-run.json",
+      "verifyCommand": "npx workspai analyze --json",
+      "verifyArtifact": ".workspai/reports/analyze-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": [
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "readiness",
+      "scope": "workspace",
+      "producerCommand": "npx workspai readiness --json",
+      "producerArtifact": ".workspai/reports/release-readiness-last-run.json",
+      "verifyCommand": "npx workspai readiness --json",
+      "verifyArtifact": ".workspai/reports/release-readiness-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": [
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "bootstrap",
+      "scope": "workspace",
+      "producerCommand": "npx workspai bootstrap --ci --json",
+      "producerArtifact": ".workspai/reports/bootstrap-compliance.latest.json",
+      "verifyCommand": "npx workspai bootstrap --ci --json",
+      "verifyArtifact": ".workspai/reports/bootstrap-compliance.latest.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": [
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "workspaceSync",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace sync --json",
+      "producerArtifact": ".workspai/workspace-registry.v1.json",
+      "verifyCommand": "npx workspai workspace sync --json",
+      "verifyArtifact": ".workspai/workspace-registry.v1.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "foundation",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace foundation ensure --json",
+      "producerArtifact": ".workspai/workspace.json",
+      "verifyCommand": "npx workspai workspace foundation ensure --json",
+      "verifyArtifact": ".workspai/workspace.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "contract",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace contract verify --strict --json",
+      "producerArtifact": ".workspai/reports/workspace-contract-verify-last-run.json",
+      "verifyCommand": "npx workspai workspace contract verify --strict --json",
+      "verifyArtifact": ".workspai/reports/workspace-contract-verify-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "autopilot",
+      "scope": "workspace",
+      "producerCommand": "npx workspai autopilot release --json",
+      "producerArtifact": ".workspai/reports/autopilot-release-last-run.json",
+      "verifyCommand": "npx workspai autopilot release --json",
+      "verifyArtifact": ".workspai/reports/autopilot-release-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceRun",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace run test --json",
+      "producerArtifact": ".workspai/reports/workspace-run-last.json",
+      "verifyCommand": "npx workspai workspace run test --json",
+      "verifyArtifact": ".workspai/reports/workspace-run-last.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": [
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "setup",
+      "scope": "workspace",
+      "producerCommand": "npx workspai setup --json",
+      "producerArtifact": ".workspai/toolchain.lock",
+      "verifyCommand": "npx workspai setup --json",
+      "verifyArtifact": ".workspai/toolchain.lock",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "importReadiness",
+      "scope": "project",
+      "producerCommand": "npx workspai doctor project --json",
+      "producerArtifact": ".workspai/reports/doctor-project-last-run.json",
+      "verifyCommand": "npx workspai doctor project --json",
+      "verifyArtifact": ".workspai/reports/doctor-project-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "diagnose-and-repair",
+      "remediationArtifacts": [
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "snapshot",
+      "scope": "workspace",
+      "producerCommand": "npx workspai snapshot create --json",
+      "producerArtifact": ".workspai/reports/snapshot-last-run.json",
+      "verifyCommand": "npx workspai snapshot create --json",
+      "verifyArtifact": ".workspai/reports/snapshot-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceModel",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace model --json --write",
+      "producerArtifact": ".workspai/reports/workspace-model.json",
+      "verifyCommand": "npx workspai workspace model --json --write",
+      "verifyArtifact": ".workspai/reports/workspace-model.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "intelligenceSnapshot",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace snapshot --json",
+      "producerArtifact": ".workspai/reports/workspace-model-snapshot.json",
+      "verifyCommand": "npx workspai workspace snapshot --json",
+      "verifyArtifact": ".workspai/reports/workspace-model-snapshot.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceDiff",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace diff --from .workspai/reports/workspace-model-snapshot.json --json",
+      "producerArtifact": ".workspai/reports/workspace-model-diff-last-run.json",
+      "verifyCommand": "npx workspai workspace diff --from .workspai/reports/workspace-model-snapshot.json --json",
+      "verifyArtifact": ".workspai/reports/workspace-model-diff-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceImpact",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json",
+      "producerArtifact": ".workspai/reports/workspace-impact-last-run.json",
+      "verifyCommand": "npx workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json",
+      "verifyArtifact": ".workspai/reports/workspace-impact-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceIntelligenceRun",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace intelligence run --for-agent generic --strict --json",
+      "producerArtifact": ".workspai/reports/workspace-intelligence-run-last-run.json",
+      "verifyCommand": "npx workspai workspace intelligence run --for-agent generic --strict --json",
+      "verifyArtifact": ".workspai/reports/workspace-intelligence-run-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceVerify",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace verify --json",
+      "producerArtifact": ".workspai/reports/workspace-verify-last-run.json",
+      "verifyCommand": "npx workspai workspace verify --json",
+      "verifyArtifact": ".workspai/reports/workspace-verify-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": [
+        ".workspai/reports/artifact-remediation-plan-last-run.json"
+      ]
+    },
+    {
+      "cardId": "workspaceExplain",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace explain release-blocked --json --write",
+      "producerArtifact": ".workspai/reports/workspace-explain-last-run.json",
+      "verifyCommand": "npx workspai workspace explain release-blocked --json --write",
+      "verifyArtifact": ".workspai/reports/workspace-explain-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceWhy",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace why release-blocked --json --write",
+      "producerArtifact": ".workspai/reports/workspace-why-last-run.json",
+      "verifyCommand": "npx workspai workspace why release-blocked --json --write",
+      "verifyArtifact": ".workspai/reports/workspace-why-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceTrace",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --json --write",
+      "producerArtifact": ".workspai/reports/workspace-trace-last-run.json",
+      "verifyCommand": "npx workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --json --write",
+      "verifyArtifact": ".workspai/reports/workspace-trace-last-run.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceWatch",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace watch --once --json",
+      "producerArtifact": ".workspai/reports/workspace-model.json",
+      "verifyCommand": "npx workspai workspace watch --once --json",
+      "verifyArtifact": ".workspai/reports/workspace-model.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "workspaceContextAgent",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace context --for-agent --json --write",
+      "producerArtifact": ".workspai/reports/workspace-context-agent.json",
+      "verifyCommand": "npx workspai workspace context --for-agent --json --write",
+      "verifyArtifact": ".workspai/reports/workspace-context-agent.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "agentGrounding",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace agent-sync --write --refresh-context --json --preset enterprise --target vscode",
+      "producerArtifact": ".workspai/reports/agent-customization-pack.json",
+      "verifyCommand": "npx workspai workspace agent-sync --write --refresh-context --json --preset enterprise --target vscode",
+      "verifyArtifact": ".workspai/reports/agent-customization-pack.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "share",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace share --output .workspai/reports/share-bundle.json --json",
+      "producerArtifact": ".workspai/reports/share-bundle.json",
+      "verifyCommand": "npx workspai workspace share --output .workspai/reports/share-bundle.json --json",
+      "verifyArtifact": ".workspai/reports/share-bundle.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "archive",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace export --output team-workspace.workspai-archive.zip --json",
+      "producerArtifact": ".workspai/archive-manifest.json",
+      "verifyCommand": "npx workspai workspace export --output team-workspace.workspai-archive.zip --json",
+      "verifyArtifact": ".workspai/archive-manifest.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "mirror",
+      "scope": "workspace",
+      "producerCommand": "npx workspai mirror status --json",
+      "producerArtifact": ".workspai/reports/mirror-ops.latest.json",
+      "verifyCommand": "npx workspai mirror status --json",
+      "verifyArtifact": ".workspai/reports/mirror-ops.latest.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "cache",
+      "scope": "workspace",
+      "producerCommand": "npx workspai cache status --json",
+      "producerArtifact": ".workspai/cache-config.yml",
+      "verifyCommand": "npx workspai cache status --json",
+      "verifyArtifact": ".workspai/cache-config.yml",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "refresh-producer",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "policy",
+      "scope": "workspace",
+      "producerCommand": "npx workspai workspace policy show --json",
+      "producerArtifact": ".workspai/policies.yml",
+      "verifyCommand": "npx workspai workspace policy show --json",
+      "verifyArtifact": ".workspai/policies.yml",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": []
+    },
+    {
+      "cardId": "infra",
+      "scope": "workspace",
+      "producerCommand": "npx workspai infra plan --json",
+      "producerArtifact": ".workspai/reports/infra-plan.json",
+      "verifyCommand": "npx workspai infra plan --json",
+      "verifyArtifact": ".workspai/reports/infra-plan.json",
+      "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "repairPolicy": "source-repair-then-produce",
+      "remediationArtifacts": []
+    }
+  ]
+}

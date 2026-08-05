@@ -1,24 +1,28 @@
-import { WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS } from './workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+} from './workspace-intelligence-runtime-registry.js';
 
 type JsonSchema = Record<string, unknown>;
 
 export const OPERATIONAL_JSON_SCHEMA_VERSIONS = {
-  autopilotRelease: 'autopilot-release-v1',
+  autopilotRelease: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.autopilotReleaseLastRun.schemaVersion,
   workspaceList: 'rapidkit-workspace-list-v1',
   workspaceSync: 'rapidkit-workspace-sync-v1',
-  compatibilityMatrix: 'rapidkit.compatibility-matrix.v1',
-  mcpDesign: 'workspai-mcp-design.v1',
-  agentHooks: 'workspai-agent-hooks.v1',
+  compatibilityMatrix: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.compatibilityMatrix.schemaVersion,
+  mcpDesign: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaiMcpDesign.schemaVersion,
+  agentHooks: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.agentHooks.schemaVersion,
   projectArchive: 'rapidkit-project-archive-v1',
   workspaceSnapshot: 'rapidkit-workspace-snapshot-v1',
   workspaceSnapshotV2: 'rapidkit-workspace-snapshot-v2',
-  infraPlan: 'rapidkit.infra-plan.v1',
+  infraPlan: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.infraPlan.schemaVersion,
   privateProductManifest: 'rapidkit.private-product-manifest.v1',
   productFactoryPlan: 'rapidkit.product-factory-plan.v1',
-  workspaceModelCache: 'workspace-model-cache.v1',
+  workspaceModelCache: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceModelCache.schemaVersion,
   workspaceWatchEvent: 'workspace-watch-event.v1',
   doctorProjectScan: 'doctor-project-scan-v2',
-  doctorWorkspaceCache: 'doctor-workspace-cache-v2',
+  doctorWorkspaceCache:
+    WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion,
 } as const;
 
 const OPERATIONAL_JSON_SCHEMA_TITLES: Record<string, string> = {

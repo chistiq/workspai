@@ -63,6 +63,10 @@ const GENERATED_FILES = [
   'extension-cli-compatibility.v1.json',
   'workspace-intelligence-architecture.v1.json',
   'workspace-intelligence-chain.v1.json',
+  'studio-card-repair-capabilities.v1.json',
+  'workspace-repair-capabilities.v1.json',
+  'workspace-intelligence/workspace-repair-proposal.v1.json',
+  'workspace-intelligence/workspace-repair-transaction.v1.json',
 ];
 
 const VSCODE_SRC_CONTRACT_FILES = [
@@ -79,6 +83,10 @@ const VSCODE_SRC_CONTRACT_FILES = [
   'workspace-archive-operation-result.v1.json',
   'ingestion-plan.v1.json',
   'ingestion-result.v1.json',
+  'studio-card-repair-capabilities.v1.json',
+  'workspace-repair-capabilities.v1.json',
+  'workspace-intelligence/workspace-repair-proposal.v1.json',
+  'workspace-intelligence/workspace-repair-transaction.v1.json',
 ];
 const LEGACY_CONTRACT_PORTAL_PATTERN = /https:\/\/(?:www\.)?(?:getrapidkit\.com|rapidkit\.dev)\//i;
 const WORKSPAI_CONTRACT_TITLE_PATTERN = /^Workspai\b/;

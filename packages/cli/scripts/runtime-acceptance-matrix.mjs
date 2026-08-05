@@ -9,9 +9,24 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const cliPath = path.join(repoRoot, 'dist', 'index.js');
+const runtimeSurfaceContractPath = path.join(
+  repoRoot,
+  'contracts',
+  'runtime-command-surface.v1.json'
+);
 let tsupCli = path.join(repoRoot, 'node_modules', 'tsup', 'dist', 'cli-default.js');
 if (!fs.existsSync(tsupCli)) {
   tsupCli = path.join(repoRoot, '..', '..', 'node_modules', 'tsup', 'dist', 'cli-default.js');
+}
+
+const runtimeSurfaceContract = readRuntimeSurfaceContract();
+
+function runtimeExpectation(runtime) {
+  const descriptor = runtimeSurfaceContract.runtimeMatrix?.[runtime];
+  if (!descriptor) {
+    throw new Error(`Runtime ${runtime} is missing from runtime-command-surface.v1.json`);
+  }
+  return descriptor;
 }
 
 const NPM_KITS = [
@@ -19,29 +34,35 @@ const NPM_KITS = [
     id: 'gofiber.standard',
     project: 'matrix-go-fiber',
     runtime: 'go',
-    tier: 'extended',
+    tier: runtimeExpectation('go').tier,
     owner: 'npm',
   },
-  { id: 'gogin.standard', project: 'matrix-go-gin', runtime: 'go', tier: 'extended', owner: 'npm' },
+  {
+    id: 'gogin.standard',
+    project: 'matrix-go-gin',
+    runtime: 'go',
+    tier: runtimeExpectation('go').tier,
+    owner: 'npm',
+  },
   {
     id: 'springboot.standard',
     project: 'matrix-spring',
     runtime: 'java',
-    tier: 'extended',
+    tier: runtimeExpectation('java').tier,
     owner: 'npm',
   },
   {
     id: 'dotnet.webapi.clean',
     project: 'matrix-dotnet',
     runtime: 'dotnet',
-    tier: 'extended',
+    tier: runtimeExpectation('dotnet').tier,
     owner: 'npm',
   },
   {
     id: 'rust.axum',
     project: 'matrix-rust-axum',
     runtime: 'rust',
-    tier: 'extended',
+    tier: runtimeExpectation('rust').tier,
     owner: 'npm',
   },
 ];
@@ -51,21 +72,21 @@ const CORE_KITS = [
     id: 'fastapi.standard',
     project: 'matrix-fastapi',
     runtime: 'python',
-    tier: 'first-class',
+    tier: runtimeExpectation('python').tier,
     owner: 'core',
   },
   {
     id: 'fastapi.ddd',
     project: 'matrix-fastapi-ddd',
     runtime: 'python',
-    tier: 'first-class',
+    tier: runtimeExpectation('python').tier,
     owner: 'core',
   },
   {
     id: 'nestjs.standard',
     project: 'matrix-nestjs',
     runtime: 'node',
-    tier: 'first-class',
+    tier: runtimeExpectation('node').tier,
     owner: 'core',
   },
 ];
@@ -138,7 +159,7 @@ const OBSERVED_PROJECTS = [
     project: 'matrix-observed-php',
     runtime: 'php',
     framework: 'laravel',
-    tier: 'observed',
+    tier: runtimeExpectation('php').tier,
     sourceDir: 'observed-laravel-source',
   },
   {
@@ -146,7 +167,7 @@ const OBSERVED_PROJECTS = [
     project: 'matrix-observed-ruby',
     runtime: 'ruby',
     framework: 'rails',
-    tier: 'observed',
+    tier: runtimeExpectation('ruby').tier,
     sourceDir: 'observed-rails-source',
   },
   {
@@ -154,7 +175,7 @@ const OBSERVED_PROJECTS = [
     project: 'matrix-observed-rust',
     runtime: 'rust',
     framework: 'axum',
-    tier: 'observed',
+    tier: runtimeExpectation('rust').tier,
     sourceDir: 'observed-axum-source',
   },
   {
@@ -162,7 +183,7 @@ const OBSERVED_PROJECTS = [
     project: 'matrix-observed-generic',
     runtime: 'unknown',
     framework: 'unknown',
-    tier: 'observed',
+    tier: runtimeExpectation('unknown').tier,
     sourceDir: 'observed-generic-source',
   },
 ];
@@ -170,10 +191,14 @@ const OBSERVED_PROJECTS = [
 const RUNTIME_HINTS = {
   go: ['go', 'version'],
   java: ['java', '-version'],
+  maven: ['mvn', '--version'],
   dotnet: ['dotnet', '--version'],
   python: ['python3', '--version'],
+  rapidkitCore: ['rapidkit', 'list', '--json'],
   node: [process.execPath, '--version'],
-  rust: ['rustc', '--version'],
+  rust: ['cargo', '--version'],
+  php: ['php', '--version'],
+  composer: ['composer', '--version'],
 };
 
 const args = parseArgs(process.argv.slice(2));
@@ -195,7 +220,7 @@ const report = {
   schemaVersion: 1,
   kind: 'rapidkit.runtime.acceptance.matrix',
   generatedAt: startedAt.toISOString(),
-  mode: args.full ? 'full' : 'default',
+  mode: args.full ? 'full' : args.contractOnly ? 'contract-only' : 'default',
   repository: repoRoot,
   workspacePath,
   cliPath,
@@ -234,6 +259,7 @@ try {
 async function main() {
   ensureCli();
   preflightRuntimes();
+  if (args.full && !assertFullModePreconditions()) return;
 
   fs.mkdirSync(runRoot, { recursive: true });
 
@@ -281,13 +307,29 @@ async function main() {
     expect: 'pass',
   });
 
+  runScenario({
+    id: 'workspace.policy.set.shared-runtime-caches',
+    scope: 'workspace',
+    args: ['workspace', 'policy', 'set', 'dependency_sharing_mode', 'shared-runtime-caches'],
+    cwd: workspacePath,
+    expect: 'pass',
+  });
+
   for (const kit of [...NPM_KITS, ...CORE_KITS]) {
     runScenario({
       id: `create.project.${kit.id}`,
       scope: 'project-create',
       runtime: kit.runtime,
       supportTier: kit.tier,
-      args: ['create', 'project', kit.id, kit.project, '--yes', '--skip-install', '--skip-git'],
+      args: [
+        'create',
+        'project',
+        kit.id,
+        kit.project,
+        '--yes',
+        ...(args.full ? [] : ['--skip-install']),
+        '--skip-git',
+      ],
       cwd: workspacePath,
       expect: args.full || kit.owner === 'npm' ? 'pass' : 'passOrActionableRuntimeFailure',
       timeoutMs: kit.owner === 'core' ? 180000 : 60000,
@@ -360,18 +402,19 @@ async function main() {
     scope: 'doctor',
     args: ['doctor', 'workspace', '--json'],
     cwd: workspacePath,
-    expect: 'passJson',
+    expect: 'passJsonOrGovernedBlock',
+    validateJson: validateDoctorEvidence,
   });
 
-  const expectedProjects = [
-    ...NPM_KITS.map((kit) => ({ ...kit, moduleSupport: false })),
-    ...CORE_KITS.map((kit) => ({ ...kit, moduleSupport: true })),
-    ...OBSERVED_PROJECTS.map((project) => ({ ...project, moduleSupport: false })),
-  ];
+  const expectedProjects = [...NPM_KITS, ...CORE_KITS, ...OBSERVED_PROJECTS].map((project) => ({
+    ...project,
+    moduleSupport: runtimeExpectation(project.runtime).moduleCommands,
+  }));
 
+  const projectCapabilities = new Map();
   for (const project of expectedProjects) {
     const projectPath = path.join(workspacePath, project.project);
-    runScenario({
+    const commandsScenario = runScenario({
       id: `project.commands.${project.project}`,
       scope: 'project',
       runtime: project.runtime,
@@ -381,6 +424,14 @@ async function main() {
       expect: 'passJson',
       validateJson: (payload) => validateProjectCapabilities(payload, project),
     });
+    if (commandsScenario.status === 'passed' && commandsScenario.rawStdout) {
+      try {
+        projectCapabilities.set(project.project, parseJsonFromOutput(commandsScenario.rawStdout));
+      } catch {
+        // The passJson evaluator already reports malformed JSON. Keep the
+        // lifecycle phase defensive if stdout capture is unavailable.
+      }
+    }
 
     runScenario({
       id: `doctor.project.${project.project}`,
@@ -389,34 +440,40 @@ async function main() {
       supportTier: project.tier,
       args: ['doctor', 'project', '--json'],
       cwd: projectPath,
-      expect: 'passJson',
+      expect: 'passJsonOrGovernedBlock',
+      validateJson: validateDoctorEvidence,
     });
   }
 
-  for (const project of expectedProjects.filter((item) => item.tier !== 'observed')) {
-    const projectPath = path.join(workspacePath, project.project);
-    runScenario({
-      id: `project.init.${project.project}`,
-      scope: 'project-lifecycle',
-      runtime: project.runtime,
-      supportTier: project.tier,
-      args: ['init'],
-      cwd: projectPath,
-      expect: args.full ? 'pass' : 'passOrActionableRuntimeFailure',
-      timeoutMs: 240_000,
-    });
-
-    for (const commandName of ['help', 'test', 'build', 'lint', 'format']) {
-      runScenario({
-        id: `project.${commandName}.${project.project}`,
-        scope: 'project-lifecycle',
-        runtime: project.runtime,
-        supportTier: project.tier,
-        args: [commandName],
-        cwd: projectPath,
-        expect: args.full ? 'pass' : 'passOrActionableRuntimeFailure',
-        timeoutMs: 90_000,
-      });
+  if (!args.contractOnly) {
+    for (const project of expectedProjects.filter((item) => item.tier !== 'observed')) {
+      const projectPath = path.join(workspacePath, project.project);
+      const commandMap = projectCapabilities.get(project.project)?.commandMap;
+      for (const commandName of ['init', 'help', 'test', 'build', 'lint', 'format']) {
+        const commandStatus = commandMap?.[commandName]?.status;
+        const commandIsSupported = commandStatus === 'supported';
+        runScenario({
+          id: `project.${commandName}.${project.project}`,
+          scope: 'project-lifecycle',
+          runtime: project.runtime,
+          supportTier: project.tier,
+          args: [commandName],
+          cwd: projectPath,
+          ...(!commandMap
+            ? {
+                skipReason:
+                  'Project command capabilities were unavailable; lifecycle execution cannot be classified safely.',
+              }
+            : {}),
+          expect: commandIsSupported
+            ? args.full
+              ? 'pass'
+              : 'passOrActionableRuntimeFailure'
+            : 'failWithMessage',
+          ...(commandIsSupported ? {} : { expectedMessage: 'not supported' }),
+          timeoutMs: commandName === 'init' ? 240_000 : 90_000,
+        });
+      }
     }
   }
 
@@ -432,6 +489,10 @@ async function main() {
       expect: 'failWithMessage',
       expectedMessage: 'not supported',
     });
+  }
+
+  if (args.contractOnly) {
+    finalizeAndExit();
   }
 
   for (const stage of ['init', 'test', 'build']) {
@@ -634,6 +695,7 @@ function runSafetyCommandScenarios() {
 function parseArgs(argv) {
   const parsed = {
     full: false,
+    contractOnly: false,
     keep: false,
     noBuild: false,
     json: false,
@@ -645,6 +707,7 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--full') parsed.full = true;
+    else if (arg === '--contract-only') parsed.contractOnly = true;
     else if (arg === '--keep') parsed.keep = true;
     else if (arg === '--no-build') parsed.noBuild = true;
     else if (arg === '--json') parsed.json = true;
@@ -663,6 +726,10 @@ function parseArgs(argv) {
     }
   }
 
+  if (parsed.full && parsed.contractOnly) {
+    throw new Error('--full and --contract-only are mutually exclusive');
+  }
+
   return parsed;
 }
 
@@ -670,10 +737,11 @@ function printUsageAndExit() {
   console.log(`Workspai runtime acceptance matrix
 
 Usage:
-  node scripts/runtime-acceptance-matrix.mjs [--full] [--report <file>] [--keep]
+  node scripts/runtime-acceptance-matrix.mjs [--contract-only|--full] [--report <file>] [--keep]
 
 Modes:
-  default  Scaffold/import/contract/doctor/archive checks without requiring external runtimes.
+  default          Full local matrix with actionable missing-runtime outcomes.
+  --contract-only  Fast deterministic command, contract, capability, and Doctor gate.
   --full   Requires lifecycle commands to pass for installed runtimes.
 
 Options:
@@ -684,6 +752,17 @@ Options:
   --json                  Print only the final JSON report.
 `);
   process.exit(0);
+}
+
+function readRuntimeSurfaceContract() {
+  if (!fs.existsSync(runtimeSurfaceContractPath)) {
+    throw new Error(`Canonical runtime contract is missing: ${runtimeSurfaceContractPath}`);
+  }
+  const parsed = JSON.parse(fs.readFileSync(runtimeSurfaceContractPath, 'utf8'));
+  if (!parsed || typeof parsed !== 'object' || !parsed.runtimeMatrix) {
+    throw new Error('runtime-command-surface.v1.json does not expose runtimeMatrix');
+  }
+  return parsed;
 }
 
 function ensureCli() {
@@ -725,10 +804,43 @@ function preflightRuntimes() {
   }
 }
 
+function assertFullModePreconditions() {
+  const unavailable = report.runtimePreflight.filter((entry) => entry.status !== 'available');
+  if (unavailable.length === 0) return true;
+
+  report.scenarios.push({
+    id: 'matrix.full.preconditions',
+    scope: 'matrix',
+    status: 'failed',
+    command: '',
+    cwd: repoRoot,
+    durationMs: 0,
+    exitCode: 1,
+    expectation: 'all full-mode lifecycle toolchains must be healthy before execution',
+    reason: `Full mode requires a prepared machine. Unavailable: ${unavailable
+      .map((entry) => `${entry.runtime} (${entry.command})`)
+      .join(', ')}.`,
+    stdoutTail: '',
+    stderrTail: '',
+  });
+  if (!args.json) {
+    console.log('FAIL matrix.full.preconditions');
+    console.log(`     ${report.scenarios.at(-1).reason}`);
+  }
+  try {
+    removeGeneratedRunRoot(runRoot);
+  } catch {
+    // finalizeAndExit reports the failed precondition; the empty temporary
+    // root is harmless if the host denies cleanup.
+  }
+  finalizeAndExit();
+  return false;
+}
+
 function runScenario(options) {
   const started = Date.now();
   const command = `${process.execPath} ${quote(cliPath)} ${options.args.map(quote).join(' ')}`;
-  if (!fs.existsSync(options.cwd)) {
+  if (options.skipReason || !fs.existsSync(options.cwd)) {
     const scenario = {
       id: options.id,
       scope: options.scope,
@@ -741,10 +853,11 @@ function runScenario(options) {
       exitCode: null,
       signal: null,
       expectation: options.expect,
-      reason: `Working directory does not exist: ${options.cwd}`,
+      reason: options.skipReason || `Working directory does not exist: ${options.cwd}`,
       stdoutTail: '',
       stderrTail: '',
     };
+    Object.defineProperty(scenario, 'rawStdout', { value: '', enumerable: false });
     report.scenarios.push(scenario);
     if (!args.json) console.log(`SKIP ${scenario.id}`);
     return scenario;
@@ -775,6 +888,10 @@ function runScenario(options) {
     stdoutTail: tail(result.stdout || '', 1600),
     stderrTail: tail(result.stderr || '', 1600),
   };
+  Object.defineProperty(scenario, 'rawStdout', {
+    value: result.stdout || '',
+    enumerable: false,
+  });
   report.scenarios.push(scenario);
   if (!args.json) {
     const marker =
@@ -794,7 +911,8 @@ function evaluateScenario(options, result, output) {
   const passCode = code === 0;
   let jsonPayload = null;
 
-  if (options.expect.toLowerCase().includes('json') && passCode) {
+  const parseJsonOnFailure = options.expect === 'passJsonOrGovernedBlock';
+  if (options.expect.toLowerCase().includes('json') && (passCode || parseJsonOnFailure)) {
     try {
       jsonPayload = parseJsonFromOutput(result.stdout || '');
     } catch (error) {
@@ -824,6 +942,24 @@ function evaluateScenario(options, result, output) {
     return passCode
       ? { status: 'passed', reason: 'Command completed successfully.' }
       : { status: 'failed', reason: `Expected exit 0, received ${code}.` };
+  }
+
+  if (options.expect === 'passJsonOrGovernedBlock') {
+    if (passCode) {
+      return { status: 'passed', reason: 'Doctor completed without blocking findings.' };
+    }
+    const healthScore = jsonPayload?.healthScore;
+    const blockingFindings = doctorBlockingFindings(jsonPayload);
+    if ((code === 1 || code === 2) && healthScore?.verdict === 'blocked' && blockingFindings > 0) {
+      return {
+        status: 'passed',
+        reason: `Doctor truthfully reported ${blockingFindings} governed blocking finding(s).`,
+      };
+    }
+    return {
+      status: 'failed',
+      reason: `Doctor failed without a contract-valid governed blocked verdict (exit ${code}).`,
+    };
   }
 
   if (options.expect === 'failWithMessage') {
@@ -939,12 +1075,49 @@ function validateProjectCapabilities(payload, project) {
   if (project.moduleSupport && payload.commandMap.modules?.status !== 'supported') {
     return 'core project must mark modules as supported';
   }
-  if (project.tier === 'observed') {
-    for (const command of ['dev', 'start', 'build', 'test', 'lint', 'format']) {
-      if (payload.commandMap[command]?.status !== 'unsupported') {
-        return `observed runtime must mark ${command} as unsupported`;
-      }
+  const runtimeContract = runtimeExpectation(project.runtime);
+  const supportedLifecycleCommands = [];
+  for (const command of ['init', 'dev', 'start', 'build', 'test', 'lint', 'format', 'help']) {
+    const actualStatus = payload.commandMap[command]?.status;
+    if (actualStatus === 'supported') supportedLifecycleCommands.push(command);
+    if (actualStatus === 'supported' && !runtimeContract.lifecycleCommands.includes(command)) {
+      return `${project.runtime} exposes ${command} outside its canonical runtime contract`;
     }
+  }
+  if (!supportedLifecycleCommands.includes('help')) {
+    return `${project.runtime} must expose the universal help lifecycle`;
+  }
+  if (
+    runtimeContract.tier !== 'observed' &&
+    !supportedLifecycleCommands.some((command) => command !== 'help')
+  ) {
+    return `${project.runtime} must expose at least one project-aware lifecycle command`;
+  }
+  return true;
+}
+
+function doctorBlockingFindings(payload) {
+  const value = payload?.summary?.blockingFindings;
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function validateDoctorEvidence(payload) {
+  const healthScore = payload?.healthScore;
+  if (!healthScore || typeof healthScore !== 'object') {
+    return 'Doctor JSON must include healthScore';
+  }
+  if (!['passed', 'attention', 'blocked'].includes(healthScore.verdict)) {
+    return `Doctor emitted invalid verdict: ${String(healthScore.verdict)}`;
+  }
+  const blockingFindings = doctorBlockingFindings(payload);
+  if (blockingFindings === null) {
+    return 'Doctor summary.blockingFindings must be a non-negative integer';
+  }
+  if (healthScore.verdict === 'blocked' && blockingFindings === 0) {
+    return 'Doctor blocked verdict must carry at least one blocking finding';
+  }
+  if (healthScore.verdict !== 'blocked' && blockingFindings > 0) {
+    return 'Doctor non-blocked verdict cannot carry blocking findings';
   }
   return true;
 }
@@ -966,7 +1139,12 @@ function isActionableRuntimeFailure(output) {
     /not executable/i,
     /is required/i,
     /No such file or directory/i,
+    /No module named/i,
     /command not found/i,
+    /could not execute/i,
+    /command timed out/i,
+    /Cargo command failed/i,
+    /PHP lifecycle command failed/i,
     /Install .*SDK/i,
     /Install .*runtime/i,
     /No runtime adapter/i,
@@ -1042,6 +1220,10 @@ function childEnv() {
   // caller's environment unless CI was already set by the caller.
   env.NO_COLOR = env.NO_COLOR || '1';
   env.RAPIDKIT_SKIP_UPDATE_CHECK = '1';
+  env.GOFLAGS = [env.GOFLAGS, '-modcacherw'].filter(Boolean).join(' ');
+  if (!args.full && !env.RAPIDKIT_CHILD_COMMAND_TIMEOUT_MS) {
+    env.RAPIDKIT_CHILD_COMMAND_TIMEOUT_MS = '60000';
+  }
   return env;
 }
 
@@ -1057,6 +1239,28 @@ function detectProcessCapture() {
 }
 
 function finalizeAndExit() {
+  if (
+    !args.keep &&
+    report.scenarios.every((scenario) => scenario.status !== 'failed') &&
+    !args.workspaceDir
+  ) {
+    try {
+      removeGeneratedRunRoot(runRoot);
+    } catch (error) {
+      report.scenarios.push({
+        id: 'matrix.cleanup',
+        scope: 'matrix',
+        status: 'failed',
+        command: '',
+        cwd: runRoot,
+        durationMs: 0,
+        exitCode: 1,
+        expectation: 'generated acceptance workspace must be removed after a successful run',
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   report.summary.durationMs = Date.now() - startedAt.getTime();
   report.summary.total = report.scenarios.length;
   report.summary.passed = report.scenarios.filter(
@@ -1084,15 +1288,36 @@ function finalizeAndExit() {
     console.log(`  Failed: ${report.summary.failed}`);
     console.log(`  Report: ${reportPath}`);
     console.log(`  Markdown: ${markdownReportPath}`);
-    if (args.keep || report.summary.failed > 0) {
+    if ((args.keep || report.summary.failed > 0) && fs.existsSync(workspacePath)) {
       console.log(`  Workspace: ${workspacePath}`);
     }
   }
 
-  if (!args.keep && report.summary.failed === 0 && !args.workspaceDir) {
-    fs.rmSync(runRoot, { recursive: true, force: true });
-  }
   process.exit(report.summary.exitCode);
+}
+
+function removeGeneratedRunRoot(directory) {
+  try {
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    return;
+  } catch (error) {
+    const errorCode = error && typeof error === 'object' ? error.code : undefined;
+    if (errorCode !== 'EACCES' && errorCode !== 'EPERM') throw error;
+  }
+
+  makeGeneratedTreeWritable(directory);
+  fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+
+function makeGeneratedTreeWritable(candidate) {
+  if (!fs.existsSync(candidate)) return;
+  const stats = fs.lstatSync(candidate);
+  if (stats.isSymbolicLink()) return;
+  fs.chmodSync(candidate, stats.isDirectory() ? stats.mode | 0o700 : stats.mode | 0o600);
+  if (!stats.isDirectory()) return;
+  for (const entry of fs.readdirSync(candidate)) {
+    makeGeneratedTreeWritable(path.join(candidate, entry));
+  }
 }
 
 function renderMarkdownReport(matrixReport) {

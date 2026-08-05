@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/workspace-intelligence/workspace-repair-transaction.v1.json",
+  "title": "Workspai Workspace Repair Transaction v1",
+  "description": "Durable CLI-owned state for one governed workspace repair from plan through verification or rollback.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "transactionId",
+    "revision",
+    "createdAt",
+    "updatedAt",
+    "workspace",
+    "target",
+    "state",
+    "policy",
+    "approval",
+    "preconditions",
+    "checkpoint",
+    "stages",
+    "events",
+    "integrity"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.workspace-repair-transaction.v1" },
+    "transactionId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{12,128}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "rootRef"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "rootRef": { "const": "." }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cardId", "scope", "actionIds"],
+      "properties": {
+        "cardId": { "type": "string", "minLength": 1 },
+        "scope": { "enum": ["workspace", "project"] },
+        "projectName": { "type": "string", "minLength": 1 },
+        "projectPath": { "type": "string", "minLength": 1 },
+        "actionIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "awaiting-approval",
+        "approved",
+        "checkpointed",
+        "executing",
+        "verifying",
+        "closed",
+        "decision-required",
+        "rollback-required",
+        "rolling-back",
+        "rolled-back",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxRisk", "allowForce", "allowBreaking", "autoRollback", "strictVerify"],
+      "properties": {
+        "maxRisk": { "enum": ["safe", "guarded", "invasive"] },
+        "allowForce": { "type": "boolean" },
+        "allowBreaking": { "type": "boolean" },
+        "autoRollback": { "type": "boolean" },
+        "strictVerify": { "const": true }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "status"],
+      "properties": {
+        "required": { "const": true },
+        "status": { "enum": ["pending", "approved", "rejected", "expired"] },
+        "approvedAt": { "type": "string", "format": "date-time" },
+        "approvedBy": { "type": "string", "minLength": 1 },
+        "approvedPlanHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/precondition" }
+    },
+    "adapterEvaluations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/adapterEvaluation" }
+    },
+    "checkpoint": { "$ref": "#/$defs/checkpoint" },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/stage" }
+    },
+    "verification": { "$ref": "#/$defs/verification" },
+    "decision": { "$ref": "#/$defs/decision" },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planHash", "sourceEvidenceHash"],
+      "properties": {
+        "planHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sourceEvidenceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  },
+  "$defs": {
+    "adapterEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapterId", "ecosystem", "projectPath", "manifests", "support", "status", "requiredExecutables", "missingExecutables", "message"],
+      "properties": {
+        "adapterId": { "type": "string", "minLength": 1 },
+        "ecosystem": { "type": "string", "minLength": 1 },
+        "projectPath": { "type": "string", "minLength": 1 },
+        "manifests": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "support": { "enum": ["full", "conditional", "unsupported"] },
+        "status": { "enum": ["ready", "partial", "unsupported"] },
+        "requiredExecutables": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "missingExecutables": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "message": { "type": "string" }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd", "executable", "args", "purpose", "timeoutMs"],
+      "properties": {
+        "cwd": { "type": "string", "minLength": 1 },
+        "executable": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "purpose": { "enum": ["repair", "reconcile", "audit", "test", "build", "verify"] },
+        "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 900000 }
+      }
+    },
+    "precondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "message"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "unknown"] },
+        "message": { "type": "string" }
+      }
+    },
+    "checkpointFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "existed", "beforeHash"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "existed": { "type": "boolean" },
+        "beforeHash": { "type": ["string", "null"] },
+        "mode": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "afterHash": { "type": ["string", "null"] },
+        "backupRef": { "type": "string", "minLength": 1 }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "files"],
+      "properties": {
+        "status": { "enum": ["pending", "captured", "restored", "conflicted", "unavailable"] },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "restoredAt": { "type": "string", "format": "date-time" },
+        "files": { "type": "array", "items": { "$ref": "#/$defs/checkpointFile" } }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "status", "required", "risk", "summary"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["repair", "reconcile", "audit", "test", "build", "verify", "rollback"] },
+        "status": { "enum": ["pending", "running", "passed", "failed", "blocked", "skipped", "cancelled"] },
+        "required": { "type": "boolean" },
+        "risk": { "enum": ["safe", "guarded", "invasive"] },
+        "summary": { "type": "string" },
+        "invocation": { "$ref": "#/$defs/invocation" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "exitCode": { "type": ["integer", "null"] },
+        "stdoutTail": { "type": "string" },
+        "stderrTail": { "type": "string" },
+        "changedPaths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifact", "exitCode", "summary"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "not-run"] },
+        "artifact": { "const": ".workspai/reports/workspace-intelligence-run-last-run.json" },
+        "exitCode": { "type": ["integer", "null"] },
+        "summary": { "type": "string" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "options"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1 },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["approve-guarded", "approve-invasive", "allow-breaking", "allow-force", "manual-repair", "rollback", "cancel"] }
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "at", "type", "message"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1 },
+        "at": { "type": "string", "format": "date-time" },
+        "type": { "enum": ["planned", "approval", "checkpoint", "stage", "verification", "decision", "rollback", "closed", "failed", "cancelled"] },
+        "stageId": { "type": "string" },
+        "status": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

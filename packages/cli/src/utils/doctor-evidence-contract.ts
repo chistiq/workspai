@@ -1,9 +1,13 @@
 export type DoctorEvidenceType = 'workspace' | 'project';
 
-import { WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS } from '../contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
 
 export const DOCTOR_WORKSPACE_EVIDENCE_SCHEMA = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.doctor;
-export const DOCTOR_PROJECT_EVIDENCE_SCHEMA = 'doctor-project-evidence-v1';
+export const DOCTOR_PROJECT_EVIDENCE_SCHEMA =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorProject.schemaVersion;
 
 function toObjectRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

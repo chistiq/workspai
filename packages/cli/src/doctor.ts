@@ -75,7 +75,11 @@ import type {
 import { buildEnterpriseSurfaceProbes } from './utils/doctor-surface-probes.js';
 import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './workspace-history.js';
 import { isWorkspaceShellDirectory } from './utils/workspace-root.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import {
   collectDoctorDependencyAudit,
@@ -540,7 +544,7 @@ function shouldWarnAboutDoctorVersionCompatibility(input: {
 }
 
 interface DoctorWorkspaceCacheEntry {
-  schemaVersion: 'doctor-workspace-cache-v2';
+  schemaVersion: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS)['doctorWorkspaceCache']['schemaVersion'];
   signature: string;
   generatedAt: string;
   projects: ProjectHealth[];
@@ -566,7 +570,8 @@ type DoctorEvidenceLike = {
 };
 
 const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
-const DOCTOR_WORKSPACE_CACHE_SCHEMA = 'doctor-workspace-cache-v2';
+const DOCTOR_WORKSPACE_CACHE_SCHEMA =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
   version: 'doctor-evidence-v1',
   scoringPolicyVersion: 'doctor-score-policy-v2',
@@ -2133,6 +2138,7 @@ async function checkRapidKitCore(
 ): Promise<HealthCheckResult> {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const foundPaths: { location: string; path: string; version: string }[] = [];
+  const unusablePaths: { location: string; path: string; version?: string; reason: string }[] = [];
 
   const candidates = getRapidkitBinaryCandidates(homeDir, workspacePath);
 
@@ -2151,11 +2157,31 @@ async function checkRapidKitCore(
         ) {
           const versionMatch = stdout.match(/v?([\d.]+(?:rc\d+)?(?:a\d+)?(?:b\d+)?)/);
           if (versionMatch) {
-            foundPaths.push({ location, path: rapidkitPath, version: versionMatch[1] });
+            const readiness = await execa(rapidkitPath, ['list', '--json'], {
+              timeout: 5000,
+              reject: false,
+            });
+            if (readiness.exitCode === 0) {
+              foundPaths.push({ location, path: rapidkitPath, version: versionMatch[1] });
+            } else {
+              unusablePaths.push({
+                location,
+                path: rapidkitPath,
+                version: versionMatch[1],
+                reason: summarizeCoreProbeFailure(readiness.stderr || readiness.stdout),
+              });
+            }
           }
         }
       }
-    } catch {
+    } catch (error) {
+      if (await fsExtra.pathExists(rapidkitPath)) {
+        unusablePaths.push({
+          location,
+          path: rapidkitPath,
+          reason: summarizeCoreProbeFailure(error instanceof Error ? error.message : String(error)),
+        });
+      }
       continue;
     }
   }
@@ -2209,11 +2235,23 @@ async function checkRapidKitCore(
     if (exitCode === 0 && (stdout.includes('RapidKit Version') || stdout.includes('RapidKit'))) {
       const versionMatch = stdout.match(/v?([\d.]+(?:rc\d+)?(?:a\d+)?(?:b\d+)?)/);
       if (versionMatch) {
-        return {
-          status: 'ok',
-          message: `RapidKit Core ${versionMatch[1]}`,
-          details: 'Available via PATH',
-        };
+        const readiness = await execa('rapidkit', ['list', '--json'], {
+          timeout: 5000,
+          reject: false,
+        });
+        if (readiness.exitCode === 0) {
+          return {
+            status: 'ok',
+            message: `RapidKit Core ${versionMatch[1]}`,
+            details: 'Available via PATH',
+          };
+        }
+        unusablePaths.push({
+          location: 'PATH',
+          path: 'rapidkit',
+          version: versionMatch[1],
+          reason: summarizeCoreProbeFailure(readiness.stderr || readiness.stdout),
+        });
       }
     }
   } catch {
@@ -2230,11 +2268,23 @@ async function checkRapidKitCore(
     if (exitCode === 0 && (stdout.includes('RapidKit Version') || stdout.includes('RapidKit'))) {
       const versionMatch = stdout.match(/v?([\d.]+(?:rc\d+)?(?:a\d+)?(?:b\d+)?)/);
       if (versionMatch) {
-        return {
-          status: 'ok',
-          message: `RapidKit Core ${versionMatch[1]}`,
-          details: 'Available via Poetry',
-        };
+        const readiness = await execa('poetry', ['run', 'rapidkit', 'list', '--json'], {
+          timeout: 5000,
+          reject: false,
+        });
+        if (readiness.exitCode === 0) {
+          return {
+            status: 'ok',
+            message: `RapidKit Core ${versionMatch[1]}`,
+            details: 'Available via Poetry',
+          };
+        }
+        unusablePaths.push({
+          location: 'Poetry',
+          path: 'poetry run rapidkit',
+          version: versionMatch[1],
+          reason: summarizeCoreProbeFailure(readiness.stderr || readiness.stdout),
+        });
       }
     }
   } catch {
@@ -2259,11 +2309,24 @@ async function checkRapidKitCore(
       ) {
         const version = stdout.trim();
         if (version) {
-          return {
-            status: 'ok',
-            message: `RapidKit Core ${version}`,
-            details: `Available in ${cmd} environment`,
-          };
+          const moduleArgs =
+            cmd === 'py'
+              ? ['-3', '-m', 'rapidkit', 'list', '--json']
+              : ['-m', 'rapidkit', 'list', '--json'];
+          const readiness = await execa(cmd, moduleArgs, { timeout: 5000, reject: false });
+          if (readiness.exitCode === 0) {
+            return {
+              status: 'ok',
+              message: `RapidKit Core ${version}`,
+              details: `Available in ${cmd} environment`,
+            };
+          }
+          unusablePaths.push({
+            location: `${cmd} environment`,
+            path: `${cmd} -m rapidkit`,
+            version,
+            reason: summarizeCoreProbeFailure(readiness.stderr || readiness.stdout),
+          });
         }
       }
     } catch {
@@ -2271,11 +2334,36 @@ async function checkRapidKitCore(
     }
   }
 
+  if (unusablePaths.length > 0) {
+    const primary = unusablePaths[0];
+    return {
+      status: 'error',
+      message: primary.version
+        ? `RapidKit Core ${primary.version} installed but unusable`
+        : 'RapidKit Core installed but unusable',
+      details: `${primary.reason} Reinstall or repair this Python environment before running Core-backed commands.`,
+      paths: unusablePaths.map(({ location, path: corePath, version }) => ({
+        location,
+        path: corePath,
+        ...(version ? { version } : {}),
+      })),
+    };
+  }
+
   return {
     status: 'error',
     message: 'RapidKit Core not installed',
     details: 'Install with: pipx install rapidkit-core',
   };
+}
+
+function summarizeCoreProbeFailure(output: string): string {
+  const normalized = output
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return 'A real Core catalog command failed without diagnostics.';
+  return normalized.length > 240 ? `${normalized.slice(0, 237)}...` : normalized;
 }
 
 async function performCommonChecks(
@@ -4658,7 +4746,7 @@ async function writeProjectDoctorEvidence(
   envelope: ProjectHealthEnvelope
 ): Promise<string | undefined> {
   const evidenceRoot = workspacePath || envelope.projectPath;
-  const latestRelativePath = '.workspai/reports/doctor-project-last-run.json';
+  const latestRelativePath = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorProject;
   const namespacedRelativePath = projectDoctorEvidenceRelativePath(
     workspacePath,
     envelope.projectPath
@@ -4740,16 +4828,11 @@ async function writeDoctorRemediationPlanArtifact(
   remediationPlan: RemediationPlan,
   mirrorRoots: string[] = []
 ): Promise<string | undefined> {
-  const artifactPath = path.join(
-    scopeRoot,
-    '.workspai',
-    'reports',
-    'doctor-remediation-plan-last-run.json'
-  );
+  const artifactPath = path.join(scopeRoot, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorRemediationPlan);
   try {
     await writeWorkspaceArtifactJson(
       scopeRoot,
-      '.workspai/reports/doctor-remediation-plan-last-run.json',
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorRemediationPlan,
       remediationPlan
     );
     for (const mirrorRoot of mirrorRoots) {
@@ -4758,7 +4841,7 @@ async function writeDoctorRemediationPlanArtifact(
       }
       await writeWorkspaceArtifactJson(
         mirrorRoot,
-        '.workspai/reports/doctor-remediation-plan-last-run.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorRemediationPlan,
         remediationPlan
       );
     }
@@ -4776,16 +4859,11 @@ async function writeDoctorFixResultArtifact(
   fixResult: DoctorFixExecutionResult,
   mirrorRoots: string[] = []
 ): Promise<string | undefined> {
-  const artifactPath = path.join(
-    scopeRoot,
-    '.workspai',
-    'reports',
-    'doctor-fix-result-last-run.json'
-  );
+  const artifactPath = path.join(scopeRoot, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorFixResult);
   try {
     await writeWorkspaceArtifactJson(
       scopeRoot,
-      '.workspai/reports/doctor-fix-result-last-run.json',
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorFixResult,
       fixResult
     );
     for (const mirrorRoot of mirrorRoots) {
@@ -4794,7 +4872,7 @@ async function writeDoctorFixResultArtifact(
       }
       await writeWorkspaceArtifactJson(
         mirrorRoot,
-        '.workspai/reports/doctor-fix-result-last-run.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorFixResult,
         fixResult
       );
     }
@@ -4874,7 +4952,7 @@ async function getProjectHealthEnvelope(
 
   const projectLocalEvidencePath = await firstExistingWorkspaceArtifactPath(
     projectPath,
-    '.workspai/reports/doctor-project-last-run.json'
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorProject
   );
   const workspaceProjectEvidencePath = workspacePath
     ? await firstExistingWorkspaceArtifactPath(
@@ -5286,7 +5364,7 @@ interface PlannedFixStep extends FixPlanStep {
 }
 
 interface RemediationPlan {
-  schemaVersion: 'doctor-remediation-plan-v2';
+  schemaVersion: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS)['doctorRemediationPlan']['schemaVersion'];
   generatedAt: string;
   policyProfile: DoctorPolicyProfileName;
   fixableProjects: number;
@@ -6513,7 +6591,7 @@ async function buildRemediationPlan(
   const fixableProjects = new Set(orderedSteps.map((step) => step.projectPath)).size;
 
   return {
-    schemaVersion: 'doctor-remediation-plan-v2',
+    schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorRemediationPlan.schemaVersion,
     generatedAt: new Date().toISOString(),
     policyProfile,
     fixableProjects,

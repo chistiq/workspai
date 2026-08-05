@@ -2,16 +2,18 @@
  * Single source of truth for Phase 4 canonical artifact paths (roadmap 4.0).
  * Consumed by generators, pack contract, and extension parity tests via sync.
  */
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './workspace-intelligence-runtime-registry.js';
 
 export const WORKSPAI_SKILLS_DIR = '.workspai/skills' as const;
 /** @deprecated Use WORKSPAI_SKILLS_DIR. */
 export const RAPIDKIT_SKILLS_DIR = '.rapidkit/skills' as const;
 export const WORKSPACE_SKILLS_INDEX_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex;
 export const WORKSPACE_EXPLAIN_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.explain;
-export const WORKSPACE_WHY_REPORT_PATH = '.workspai/reports/workspace-why-last-run.json' as const;
-export const WORKSPACE_TRACE_REPORT_PATH =
-  '.workspai/reports/workspace-trace-last-run.json' as const;
+export const WORKSPACE_WHY_REPORT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceWhy;
+export const WORKSPACE_TRACE_REPORT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceTrace;
 export const AGENT_GROUNDING_DOC_PATH = '.workspai/AGENT-GROUNDING.md' as const;
 export const LEGACY_AGENT_GROUNDING_DOC_PATH = '.rapidkit/AGENT-GROUNDING.md' as const;
 export const WORKSPAI_CURSOR_GROUNDING_RULE_PATH = '.cursor/rules/workspai-grounding.mdc' as const;
@@ -54,10 +56,9 @@ export const WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH =
   '.github/skills/workspai-workspace-intelligence/SKILL.md' as const;
 export const LEGACY_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH =
   '.github/skills/rapidkit-workspace-intelligence/SKILL.md' as const;
-export const WORKSPAI_MCP_DESIGN_REPORT_PATH =
-  '.workspai/reports/workspai-mcp-design.json' as const;
-export const LEGACY_MCP_DESIGN_REPORT_PATH = '.workspai/reports/rapidkit-mcp-design.json' as const;
-export const WORKSPAI_VSCODE_AGENT_HOOKS_PATH = '.vscode/workspai-agent-hooks.json' as const;
+export const WORKSPAI_MCP_DESIGN_REPORT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaiMcpDesign;
+export const LEGACY_MCP_DESIGN_REPORT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.legacyMcpDesign;
+export const WORKSPAI_VSCODE_AGENT_HOOKS_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.agentHooks;
 export const LEGACY_VSCODE_AGENT_HOOKS_PATH = '.vscode/rapidkit-agent-hooks.json' as const;
 
 export const BUILTIN_OPERATIONAL_SKILL_PREFIX = 'workspai-' as const;

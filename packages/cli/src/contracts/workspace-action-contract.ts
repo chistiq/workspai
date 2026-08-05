@@ -3,7 +3,10 @@ import {
   WORKSPACE_TRACE_REPORT_PATH,
   WORKSPACE_WHY_REPORT_PATH,
 } from './workspace-artifact-paths.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './workspace-intelligence-runtime-registry.js';
 
 export type WorkspaceActionContract = {
   usage: string;
@@ -63,6 +66,16 @@ export const WORKSPACE_ACTION_FLAG_DESCRIPTIONS: Readonly<Record<string, string>
   '--no-gates': 'Skip Doctor and Readiness pre-run gates.',
   '--allow-breaking': 'Allow a verified goal to use breaking dependency changes.',
   '--allow-force': 'Allow a verified goal to use force-based repair commands.',
+  '--card': 'Select the dashboard card whose governed remediation actions should be repaired.',
+  '--action-id': 'Select one exact governed remediation action.',
+  '--project': 'Limit the repair transaction to one registered project name.',
+  '--proposal': 'Read a bounded model repair proposal from a JSON file inside the workspace.',
+  '--transaction': 'Select one durable repair transaction by id.',
+  '--approved-by': 'Record the local actor approving the immutable repair plan.',
+  '--decision': 'Submit one of the exact options exposed by a decision-required transaction.',
+  '--max-risk': 'Set the maximum approved repair risk: safe, guarded, or invasive.',
+  '--no-auto-rollback':
+    'Require a decision instead of automatically restoring a failed transaction.',
   '--no-build': 'Do not require build validation for the selected verified goal.',
   '--no-tests': 'Do not require test validation for the selected verified goal.',
   '--no-run': 'Read current goal evidence without executing verification commands.',
@@ -138,10 +151,54 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     usage: 'workspai workspace remediation-plan [--ci] [--write] [--json]',
     summary: 'Build a governed repair plan from current workspace evidence.',
     flags: ['--workspace', '--json', '--include-paths', '--ci', '--write'],
-    artifact: '.workspai/reports/artifact-remediation-plan-last-run.json',
+    artifact: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.artifactRemediationPlan,
     examples: [
       'workspai workspace remediation-plan --write --json',
       'workspai workspace remediation-plan --ci --json',
+    ],
+  },
+  repair: {
+    usage:
+      'workspai workspace repair <capabilities|plan|propose|approve|decide|execute|resume|status|list|rollback|cancel> [--transaction <id>] [--json]',
+    summary:
+      'Run a durable, approval-bound repair transaction through checkpoint, validation, canonical verification, and rollback.',
+    flags: [
+      '--workspace',
+      '--json',
+      '--card',
+      '--action-id',
+      '--project',
+      '--proposal',
+      '--transaction',
+      '--approved-by',
+      '--decision',
+      '--max-risk',
+      '--allow-breaking',
+      '--allow-force',
+      '--no-auto-rollback',
+    ],
+    subactions: [
+      'capabilities',
+      'plan',
+      'propose',
+      'approve',
+      'decide',
+      'execute',
+      'resume',
+      'status',
+      'list',
+      'rollback',
+      'cancel',
+    ],
+    artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.repairTransaction,
+    examples: [
+      'workspai workspace repair capabilities --json',
+      'workspai workspace repair plan --card doctor --project api --json',
+      'workspai workspace repair propose --proposal .workspai/repair/inbox/proposal.json --json',
+      'workspai workspace repair approve --transaction repair_123 --approved-by local-user --json',
+      'workspai workspace repair decide --transaction repair_123 --decision approve-invasive --json',
+      'workspai workspace repair execute --transaction repair_123 --json',
+      'workspai workspace repair rollback --transaction repair_123 --json',
     ],
   },
   context: {
@@ -331,7 +388,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     summary: 'Create, inspect, verify, or project the workspace contract.',
     flags: ['--workspace', '--json', '--output', '--force', '--strict'],
     subactions: ['init', 'inspect', 'verify', 'graph'],
-    artifact: '.workspai/workspace.contract.json',
+    artifact: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
     examples: [
       'workspai workspace contract verify --strict --json',
       'workspai workspace contract graph --json',
@@ -433,7 +490,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
       '--no-gates',
     ],
     subactions: ['init', 'test', 'build', 'start', '<custom-from-context>'],
-    artifact: '.workspai/reports/workspace-run-last.json',
+    artifact: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceRunLast,
     examples: [
       'workspai workspace run test --affected --blast-radius --strict',
       'workspai workspace run build --parallel --max-workers 4 --json',
@@ -503,7 +560,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
       '--strict',
       '--no-gates',
     ],
-    artifact: '.workspai/reports/workspace-run-last.json',
+    artifact: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceRunLast,
     examples: ['workspai workspace init --parallel --strict'],
   },
 } as const satisfies Readonly<Record<WorkspaceSubcommand, WorkspaceActionContract>>;

@@ -74,7 +74,10 @@ describe('npm publish contract', () => {
     };
 
     expect(rootPackage.private).toBe(true);
-    expect(rootPackage.workspaces).toContain('packages/*');
+    expect(rootPackage.workspaces).toEqual(['packages/cli', 'packages/wspai']);
+    expect(rootPackage.workspaces).not.toContain('packages/*');
+    expect(rootPackage.workspaces).not.toContain('packages/graph');
+    expect(rootPackage.workspaces).not.toContain('packages/shared');
     expect(rootPackage.scripts?.['install:local']).toContain('--workspace workspai link');
     expect(rootPackage.scripts?.['install:local']).toContain('--workspace wspai link');
     expect(rootPackage.scripts?.['uninstall:local']).toContain('unlink -g workspai');

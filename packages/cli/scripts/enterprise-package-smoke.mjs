@@ -201,6 +201,10 @@ const REQUIRED_PACKAGE_FILES = [
   'contracts/project-entry-capability.v1.json',
   'contracts/workspace-intelligence-architecture.v1.json',
   'contracts/workspace-intelligence-chain.v1.json',
+  'contracts/studio-card-repair-capabilities.v1.json',
+  'contracts/workspace-repair-capabilities.v1.json',
+  'contracts/workspace-intelligence/workspace-repair-proposal.v1.json',
+  'contracts/workspace-intelligence/workspace-repair-transaction.v1.json',
   'contracts/extension-cli-compatibility.v1.json',
   'data/modules-embeddings.json',
   'templates/kits/fastapi-standard/README.md.j2',
@@ -380,12 +384,7 @@ function smokeCreateNpmBackedKits() {
       kit: 'rust.axum',
       name: 'enterprise-rust-axum',
       extraArgs: [],
-      expectedFiles: [
-        'Cargo.toml',
-        'src/main.rs',
-        '.workspai/project.json',
-        'rapidkit',
-      ],
+      expectedFiles: ['Cargo.toml', 'src/main.rs', '.workspai/project.json', 'rapidkit'],
     },
   ];
 
@@ -504,6 +503,10 @@ for (const relativePath of [
   'contracts/project-entry-capability.v1.json',
   'contracts/workspace-intelligence-architecture.v1.json',
   'contracts/workspace-intelligence-chain.v1.json',
+  'contracts/studio-card-repair-capabilities.v1.json',
+  'contracts/workspace-repair-capabilities.v1.json',
+  'contracts/workspace-intelligence/workspace-repair-proposal.v1.json',
+  'contracts/workspace-intelligence/workspace-repair-transaction.v1.json',
   'contracts/extension-cli-compatibility.v1.json',
   'data/modules-embeddings.json',
 ]) {

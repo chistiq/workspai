@@ -363,6 +363,9 @@ describe('Doctor Command', () => {
       if (cmd === globalRapidkitPath && args?.[0] === '--version') {
         return { stdout: 'RapidKit Version: 0.4.0', stderr: '', exitCode: 0 } as any;
       }
+      if (cmd === globalRapidkitPath && args?.[0] === 'list') {
+        return { stdout: '{"kits":[]}', stderr: '', exitCode: 0 } as any;
+      }
       throw new Error('Command not found');
     });
 
@@ -408,6 +411,66 @@ describe('Doctor Command', () => {
       } else {
         process.env.HOME = originalHome;
       }
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('reports a version-visible Core installation as unusable when a real catalog command fails', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-doctor-core-probe-'));
+    const workspacePath = path.join(tempRoot, 'workspace');
+    const tempHome = path.join(tempRoot, 'home');
+    const rapidkitPath = path.join(tempHome, '.local', 'bin', 'rapidkit');
+
+    await fsExtra.outputJSON(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'workspace',
+      version: '1.0.0',
+    });
+    await fsExtra.outputFile(rapidkitPath, '#!/usr/bin/env python3\n');
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === rapidkitPath && args?.[0] === '--version') {
+        return { stdout: 'RapidKit Version: 0.6.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === rapidkitPath && args?.[0] === 'list') {
+        return {
+          stdout: '',
+          stderr: "Failed to import main CLI: No module named 'typing_extensions'",
+          exitCode: 1,
+        } as any;
+      }
+      throw new Error('Command not found');
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    const originalHome = process.env.HOME;
+    try {
+      process.env.HOME = tempHome;
+      process.chdir(workspacePath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ workspace: true, json: true });
+
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.system.rapidkitCore).toMatchObject({
+        status: 'error',
+        message: 'RapidKit Core 0.6.0 installed but unusable',
+      });
+      expect(payload.system.rapidkitCore.details).toContain('typing_extensions');
+      expect(payload.system.rapidkitCore.paths).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: rapidkitPath, version: '0.6.0' })])
+      );
+    } finally {
+      process.chdir(originalCwd);
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
       logSpy.mockRestore();
       await fsExtra.remove(tempRoot);
     }
@@ -461,6 +524,14 @@ describe('Doctor Command', () => {
         args?.[0] === '--version'
       ) {
         return { stdout: 'RapidKit Version: 0.6.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (
+        typeof cmd === 'string' &&
+        fs.existsSync(cmd) &&
+        realpathForAssertion(cmd) === realpathForAssertion(workspaceRapidkitPath) &&
+        args?.[0] === 'list'
+      ) {
+        return { stdout: '{"kits":[]}', stderr: '', exitCode: 0 } as any;
       }
       throw new Error('Command not found');
     });
@@ -1762,14 +1833,11 @@ describe('Doctor Command', () => {
           remainingBlockers: ['workspace: sentinel blocker'],
         })
       );
-      expect(payload.project.repairCapabilities).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            issueId: 'surface-env-contract',
-            status: 'manual',
-          }),
-        ])
-      );
+      expect(
+        payload.project.repairCapabilities.some(
+          (capability: { issueId?: string }) => capability.issueId === 'surface-env-contract'
+        )
+      ).toBe(false);
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();

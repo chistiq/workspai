@@ -322,6 +322,30 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   'workspace watch': 'Observe relevant workspace changes and publish versioned watch events.',
   'workspace remediation-plan':
     'Generate a structured remediation plan from current workspace evidence.',
+  'workspace repair':
+    'Own a durable repair transaction from governed planning and approval through checkpoint, execution, validation, canonical verification, closure, or rollback.',
+  'workspace repair capabilities':
+    'Inspect the canonical multi-runtime repair adapter inventory and fail-closed execution invariants, with global discovery available outside a workspace.',
+  'workspace repair plan':
+    'Resolve current canonical remediation evidence into an immutable, risk-bounded repair transaction plan.',
+  'workspace repair propose':
+    'Validate a model-authored, hash-pinned source proposal and compile it into a CLI-owned immutable repair transaction.',
+  'workspace repair approve':
+    'Bind explicit local approval to the exact hash of an immutable repair transaction plan.',
+  'workspace repair decide':
+    'Submit an available decision and either roll back, release control, or compile a fresh immutable policy plan.',
+  'workspace repair execute':
+    'Checkpoint bounded files and execute approved repair, reconcile, audit, test, build, and canonical verification stages.',
+  'workspace repair resume':
+    'Resume an interrupted approved transaction from its first unfinished durable stage.',
+  'workspace repair status':
+    'Read one durable repair transaction, its stages, evidence, decisions, and terminal state.',
+  'workspace repair list':
+    'List durable workspace repair transactions in most-recently-updated order.',
+  'workspace repair rollback':
+    'Restore bounded checkpoint files only when their post-repair hashes still match the transaction.',
+  'workspace repair cancel':
+    'Cancel an unmutated repair transaction and expire any prior approval.',
   'workspace why': 'Explain why a relationship, verdict, or workspace fact exists.',
   'workspace trace': 'Trace a change or finding through its evidence and dependency relationships.',
   'workspace feedback': 'Record structured feedback about Workspace Intelligence output.',

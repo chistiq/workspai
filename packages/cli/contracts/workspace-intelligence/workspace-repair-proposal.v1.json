@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/workspace-intelligence/workspace-repair-proposal.v1.json",
+  "title": "Workspai Workspace Repair Proposal v1",
+  "description": "A bounded, hash-pinned source change proposed by an IDE model for execution by the CLI Repair Engine.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cardId", "rationale", "changes"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.workspace-repair-proposal.v1" },
+    "cardId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "projectName": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "projectPath": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "rationale": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/change" }
+    },
+    "validation": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/validation" }
+    }
+  },
+  "$defs": {
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "operation", "expectedBeforeHash", "risk", "summary"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,160}$" },
+        "path": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "operation": { "enum": ["write", "delete"] },
+        "expectedBeforeHash": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            { "type": "null" }
+          ]
+        },
+        "content": { "type": "string", "maxLength": 5242880 },
+        "risk": { "enum": ["safe", "guarded", "invasive"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "operation": { "const": "write" } } },
+          "then": {
+            "properties": { "content": { "type": "string", "maxLength": 5242880 } },
+            "required": ["content"]
+          },
+          "else": { "not": { "required": ["content"] } }
+        }
+      ]
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "cwd", "executable", "args", "required", "risk", "summary"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,160}$" },
+        "kind": { "enum": ["audit", "test", "build"] },
+        "cwd": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "executable": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "args": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "maxLength": 4000 }
+        },
+        "required": { "type": "boolean" },
+        "risk": { "enum": ["safe", "guarded", "invasive"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 900000 }
+      }
+    }
+  }
+}

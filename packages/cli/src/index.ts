@@ -108,6 +108,8 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_COMMAND_SIGNATURES,
   WORKSPACE_INTELLIGENCE_ROOT_COMMANDS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import {
   isWorkspaceActionHelpRequest,
@@ -2731,10 +2733,16 @@ export async function runCommandInCwd(
       }
       resolve(code ?? 1);
     });
-    child.on('error', () => {
+    child.on('error', (error) => {
       if (settled) return;
       settled = true;
       if (timeout) clearTimeout(timeout);
+      if (process.env.RAPIDKIT_SUPPRESS_RUN_COMMAND_OUTPUT !== '1') {
+        process.stderr.write(
+          `Workspai could not execute ${executable}: ${error.message}. ` +
+            'Install the required runtime or tool and ensure it is available on PATH.\n'
+        );
+      }
       resolve(1);
     });
   });
@@ -4331,7 +4339,7 @@ export async function handleBootstrapCommand(
     const latestReportPath = path.join(reportDir, 'bootstrap-compliance.latest.json');
 
     const baseReport = {
-      schemaVersion: 'bootstrap-compliance.v1',
+      schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.bootstrapCompliance.schemaVersion,
       command: 'bootstrap',
       timestamp: new Date().toISOString(),
       workspacePath,
@@ -4349,7 +4357,7 @@ export async function handleBootstrapCommand(
     };
     const writeBootstrapReport = async (report: Record<string, unknown>): Promise<void> => {
       assertWorkspaceArtifactContract(`.workspai/reports/${path.basename(reportPath)}`, report);
-      assertWorkspaceArtifactContract('.workspai/reports/bootstrap-compliance.latest.json', report);
+      assertWorkspaceArtifactContract(WORKSPACE_SUPPLEMENTAL_ARTIFACTS.bootstrapCompliance, report);
       await fsExtra.ensureDir(reportDir);
       await writeJsonFile(reportPath, report);
       await writeJsonFile(latestReportPath, report);
@@ -5796,12 +5804,15 @@ export async function handleMirrorCommand(args: string[]): Promise<number> {
     const reportTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const reportPath = path.join(reportsDir, `mirror-ops-${reportTimestamp}.json`);
     const latestReportPath = path.join(reportsDir, 'mirror-ops.latest.json');
-    const contractedPayload = { schemaVersion: 'mirror-ops.v1', ...payload };
+    const contractedPayload = {
+      schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.mirrorOps.schemaVersion,
+      ...payload,
+    };
     assertWorkspaceArtifactContract(
       `.workspai/reports/${path.basename(reportPath)}`,
       contractedPayload
     );
-    assertWorkspaceArtifactContract('.workspai/reports/mirror-ops.latest.json', contractedPayload);
+    assertWorkspaceArtifactContract(WORKSPACE_SUPPLEMENTAL_ARTIFACTS.mirrorOps, contractedPayload);
     await fsExtra.ensureDir(reportsDir);
     await writeJsonFile(reportPath, contractedPayload);
     await writeJsonFile(latestReportPath, contractedPayload);
@@ -8208,6 +8219,31 @@ program
   .option('--no-gates', 'Skip doctor/readiness pre-run gates')
   .option('--allow-breaking', 'Allow breaking changes for a verified goal')
   .option('--allow-force', 'Allow force-based repairs for a verified goal')
+  .option('--card <id>', 'Dashboard card id for a governed repair transaction')
+  .option('--action-id <id>', 'Exact governed remediation action id')
+  .option('--project <name>', 'Registered project name for a scoped repair transaction')
+  .option('--proposal <path>', 'Validated model repair proposal JSON for CLI-owned execution')
+  .option('--transaction <id>', 'Durable workspace repair transaction id')
+  .option('--approved-by <actor>', 'Local actor approving the immutable repair plan')
+  .addOption(
+    new Option('--decision <choice>', 'Resolve a decision-required repair transaction').choices([
+      'approve-guarded',
+      'approve-invasive',
+      'allow-breaking',
+      'allow-force',
+      'manual-repair',
+      'rollback',
+      'cancel',
+    ])
+  )
+  .addOption(
+    new Option('--max-risk <risk>', 'Maximum approved repair risk').choices([
+      'safe',
+      'guarded',
+      'invasive',
+    ])
+  )
+  .option('--no-auto-rollback', 'Require a decision instead of automatic rollback on failure')
   .option('--no-build', 'Do not require build validation for a verified goal')
   .option('--no-tests', 'Do not require test validation for a verified goal')
   .option('--no-run', 'Read current goal evidence without executing verification commands')
@@ -8221,7 +8257,7 @@ program
 Workspace Actions:
   Discovery & registry     list | sync | registry | foundation
   Intelligence loop       model | snapshot | diff | impact | verify | context
-  Intelligence consumers  goal | agent-sync | remediation-plan | explain | why | trace | feedback | eval | mcp
+  Intelligence consumers  goal | agent-sync | remediation-plan | repair | explain | why | trace | feedback | eval | mcp
   Graph & observation      graph | watch
   Contracts & policy      contract | policy
   Portability             share | export | archive | hydrate | import
@@ -8285,6 +8321,22 @@ See the command reference for action-specific required inputs and output artifac
       graphStream?: boolean;
       allowBreaking?: boolean;
       allowForce?: boolean;
+      card?: string;
+      actionId?: string;
+      project?: string;
+      proposal?: string;
+      transaction?: string;
+      approvedBy?: string;
+      decision?:
+        | 'approve-guarded'
+        | 'approve-invasive'
+        | 'allow-breaking'
+        | 'allow-force'
+        | 'manual-repair'
+        | 'rollback'
+        | 'cancel';
+      maxRisk?: 'safe' | 'guarded' | 'invasive';
+      autoRollback?: boolean;
       build?: boolean;
       tests?: boolean;
       run?: boolean;
@@ -8620,6 +8672,190 @@ See the command reference for action-specific required inputs and output artifac
       if (strictRequested && result.strictViolations.length > 0) {
         process.exit(1);
       }
+    } else if (action === 'repair') {
+      const repairAction = subaction ?? 'status';
+      const {
+        approveWorkspaceRepair,
+        cancelWorkspaceRepair,
+        decideWorkspaceRepair,
+        executeWorkspaceRepair,
+        inspectWorkspaceRepairCapabilities,
+        listWorkspaceRepairTransactions,
+        planWorkspaceRepair,
+        planWorkspaceRepairProposal,
+        readWorkspaceRepairTransaction,
+        rollbackWorkspaceRepair,
+      } = await import('./workspace-repair-engine.js');
+      if (repairAction === 'capabilities') {
+        let workspacePath: string | undefined;
+        if (actionOptions.workspace) {
+          workspacePath = requireWorkspaceRootForAction('repair capabilities');
+        } else {
+          try {
+            const resolved = resolveProjectWorkspaceSync({
+              startPath: process.cwd(),
+              strict: false,
+            })?.workspacePath;
+            if (resolved && hasWorkspaceRootMarkers(resolved)) workspacePath = resolved;
+          } catch {
+            // Capability discovery is intentionally available without a
+            // workspace. Resolution errors only suppress optional local
+            // inspection; they never hide the canonical global contract.
+          }
+        }
+        const result = await inspectWorkspaceRepairCapabilities(
+          workspacePath ? { workspacePath } : {}
+        );
+        if (actionOptions.json === true || hasRawFlag('--json')) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(chalk.green(`✔ Workspace repair adapters: ${result.adapters.length}`));
+          for (const adapter of result.adapters) {
+            console.log(
+              chalk.gray(
+                `   ${adapter.id.padEnd(14)} ${adapter.support.padEnd(11)} ${adapter.ecosystem}`
+              )
+            );
+          }
+          console.log(chalk.gray('   Missing tools and unsupported ecosystems fail closed.'));
+        }
+        return;
+      }
+      const workspacePath = requireWorkspaceRootForAction('repair');
+      const transactionId =
+        actionOptions.transaction ??
+        (!['plan', 'propose', 'capabilities'].includes(repairAction) ? key : undefined);
+      const requireTransactionId = (): string => {
+        if (!transactionId?.trim()) {
+          throw new Error(
+            `workspace repair ${repairAction} requires --transaction <id> (or the id as the next positional argument).`
+          );
+        }
+        return transactionId.trim();
+      };
+      let result;
+      if (repairAction === 'plan') {
+        const cardId = actionOptions.card ?? key;
+        if (!cardId?.trim()) {
+          throw new Error('workspace repair plan requires --card <id>.');
+        }
+        result = await planWorkspaceRepair({
+          workspacePath,
+          cardId: cardId.trim(),
+          actionId: actionOptions.actionId,
+          projectName: actionOptions.project,
+          maxRisk: actionOptions.maxRisk,
+          allowBreaking: actionOptions.allowBreaking === true,
+          allowForce: actionOptions.allowForce === true,
+          autoRollback: actionOptions.autoRollback !== false,
+        });
+      } else if (repairAction === 'propose') {
+        const proposalArgument = actionOptions.proposal ?? key;
+        if (!proposalArgument?.trim()) {
+          throw new Error('workspace repair propose requires --proposal <path>.');
+        }
+        const proposalPath = path.resolve(workspacePath, proposalArgument.trim());
+        const relativeProposal = path.relative(workspacePath, proposalPath);
+        if (relativeProposal.startsWith('..') || path.isAbsolute(relativeProposal)) {
+          throw new Error('The repair proposal file must be inside the canonical workspace.');
+        }
+        const proposalStat = await fsExtra.lstat(proposalPath).catch(() => undefined);
+        if (
+          !proposalStat?.isFile() ||
+          proposalStat.isSymbolicLink() ||
+          proposalStat.size > 25 * 1024 * 1024
+        ) {
+          throw new Error('The repair proposal must be a regular JSON file no larger than 25 MiB.');
+        }
+        result = await planWorkspaceRepairProposal({
+          workspacePath,
+          proposal: await fsExtra.readJson(proposalPath),
+          maxRisk: actionOptions.maxRisk,
+          allowBreaking: actionOptions.allowBreaking === true,
+          allowForce: actionOptions.allowForce === true,
+          autoRollback: actionOptions.autoRollback !== false,
+        });
+      } else if (repairAction === 'approve') {
+        result = await approveWorkspaceRepair({
+          workspacePath,
+          transactionId: requireTransactionId(),
+          approvedBy: actionOptions.approvedBy,
+        });
+      } else if (repairAction === 'decide') {
+        if (!actionOptions.decision) {
+          throw new Error('workspace repair decide requires --decision <choice>.');
+        }
+        result = await decideWorkspaceRepair({
+          workspacePath,
+          transactionId: requireTransactionId(),
+          decision: actionOptions.decision,
+        });
+      } else if (repairAction === 'execute' || repairAction === 'resume') {
+        result = await executeWorkspaceRepair({
+          workspacePath,
+          transactionId: requireTransactionId(),
+        });
+      } else if (repairAction === 'status') {
+        result = await readWorkspaceRepairTransaction({
+          workspacePath,
+          transactionId: requireTransactionId(),
+        });
+      } else if (repairAction === 'list') {
+        result = await listWorkspaceRepairTransactions(workspacePath);
+      } else if (repairAction === 'rollback') {
+        result = await rollbackWorkspaceRepair({
+          workspacePath,
+          transactionId: requireTransactionId(),
+        });
+      } else if (repairAction === 'cancel') {
+        result = await cancelWorkspaceRepair({
+          workspacePath,
+          transactionId: requireTransactionId(),
+        });
+      } else {
+        throw new Error(
+          `Unknown workspace repair action: ${repairAction}. Available: capabilities, plan, propose, approve, decide, execute, resume, status, list, rollback, cancel.`
+        );
+      }
+
+      const outputPath = path.join(
+        workspacePath,
+        WORKSPACE_INTELLIGENCE_ARTIFACTS.repairTransaction
+      );
+      if (actionOptions.json === true || hasRawFlag('--json')) {
+        console.log(
+          JSON.stringify(
+            cliOperationSuccess(`workspace repair ${repairAction}`, result, outputPath),
+            null,
+            2
+          )
+        );
+      } else if (Array.isArray(result)) {
+        console.log(chalk.green(`✔ Workspace repair transactions: ${result.length}`));
+        for (const transaction of result.slice(0, 20)) {
+          console.log(
+            chalk.gray(
+              `   ${transaction.transactionId} · ${transaction.target.cardId} · ${transaction.state}`
+            )
+          );
+        }
+      } else {
+        console.log(chalk.green(`✔ Workspace repair: ${result.state}`));
+        console.log(chalk.gray(`   Transaction: ${result.transactionId}`));
+        console.log(chalk.gray(`   Target: ${result.target.cardId}`));
+        for (const stage of result.stages) {
+          console.log(chalk.gray(`   ${stage.status.padEnd(8)} ${stage.kind}: ${stage.summary}`));
+        }
+        if (result.decision) console.log(chalk.yellow(`   Decision: ${result.decision.reason}`));
+        console.log(
+          chalk.gray(`   Evidence: ${WORKSPACE_INTELLIGENCE_ARTIFACTS.repairTransaction}`)
+        );
+      }
+      if (!Array.isArray(result)) {
+        if (result.state === 'decision-required') process.exit(2);
+        if (result.state === 'rolled-back' || result.state === 'failed') process.exit(1);
+      }
+      return;
     } else if (action === 'remediation-plan') {
       const workspacePath = requireWorkspaceRootForAction('remediation-plan');
       const { buildArtifactRemediationPlan, writeArtifactRemediationPlan } =
@@ -10411,6 +10647,11 @@ See the command reference for action-specific required inputs and output artifac
           console.log(
             chalk.gray('Available stages: init | test | build | start | <custom-from-context>')
           );
+          if (stageName === 'dev') {
+            console.log(
+              chalk.gray('  Note: dev is excluded — it is a local-only primitive, not a CI stage')
+            );
+          }
           process.exit(2);
         }
       }

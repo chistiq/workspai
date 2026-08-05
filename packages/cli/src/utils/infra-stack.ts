@@ -1,11 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
 
 export const INFRA_STACK_SCHEMA_VERSION = 'rapidkit.infra-stack.v1';
-export const INFRA_PLAN_SCHEMA_VERSION = 'rapidkit.infra-plan.v1';
+export const INFRA_PLAN_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.infraPlan.schemaVersion;
 export const INFRA_COMPOSE_RELATIVE_PATH = '.workspai/infra/docker-compose.yml';
-export const INFRA_PLAN_RELATIVE_PATH = '.workspai/reports/infra-plan.json';
+export const INFRA_PLAN_RELATIVE_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.infraPlan;
 export const INFRA_ENV_EXAMPLE_RELATIVE_PATH = '.workspai/infra/.env.example';
 
 export interface InfraServicePort {

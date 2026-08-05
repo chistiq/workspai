@@ -11,7 +11,15 @@ export class RustRuntimeAdapter implements RuntimeAdapter {
   constructor(private readonly runCommand: RustCommandRunner) {}
 
   private async run(args: string[], cwd: string): Promise<CommandResult> {
-    return { exitCode: await this.runCommand('cargo', args, cwd) };
+    const exitCode = await this.runCommand('cargo', args, cwd);
+    if (exitCode === 0) return { exitCode };
+
+    return {
+      exitCode,
+      message:
+        `Cargo command failed (cargo ${args.join(' ')}). ` +
+        'Ensure the stable Rust toolchain and cargo are available on PATH, then review Cargo.toml and the command diagnostics above.',
+    };
   }
 
   private hasManifest(projectPath: string): boolean {

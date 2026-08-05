@@ -43,6 +43,8 @@ const GENERATED_FILES = [
   'extension-cli-compatibility.v1.json',
   'workspace-intelligence-architecture.v1.json',
   'workspace-intelligence-chain.v1.json',
+  'studio-card-repair-capabilities.v1.json',
+  'workspace-repair-capabilities.v1.json',
 ];
 
 function runGenerator() {

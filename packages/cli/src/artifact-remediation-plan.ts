@@ -14,6 +14,10 @@ import type {
   DoctorRepairStrategyStage,
 } from './utils/doctor-repair-capabilities.js';
 import { buildDoctorInternalRepairCommand } from './utils/doctor-repair-capabilities.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 
 export type ArtifactRemediationRisk = 'safe' | 'guarded' | 'invasive';
 export type ArtifactRemediationMode =
@@ -53,6 +57,11 @@ export type ArtifactRemediationAction = {
   blocker: string;
   summary: string;
   command?: string;
+  invocation?: {
+    cwd: string;
+    executable: string;
+    args: string[];
+  };
   verifyCommand: string;
   cwd: 'workspace' | 'project';
   files: string[];
@@ -183,7 +192,7 @@ function normalizeBootstrapCommand(command?: string): string {
 function buildCompatibilityMatrixContent(generatedAt: string): string {
   return `${JSON.stringify(
     {
-      schemaVersion: 'rapidkit.compatibility-matrix.v1',
+      schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.compatibilityMatrix.schemaVersion,
       generatedAt,
       source: 'workspai workspace remediation-plan',
       runtimes: {},
@@ -268,6 +277,11 @@ function actionBase(input: {
   risk: ArtifactRemediationRisk;
   status?: ArtifactRemediationAction['status'];
   command?: string;
+  invocation?: {
+    cwd: string;
+    executable: string;
+    args: string[];
+  };
   verifyCommand: string;
   files?: string[];
   operation?: ArtifactRemediationOperation;
@@ -303,6 +317,7 @@ function actionBase(input: {
     blocker: input.blocker,
     summary: input.summary,
     ...(input.command ? { command: input.command } : {}),
+    ...(input.invocation ? { invocation: structuredClone(input.invocation) } : {}),
     verifyCommand: input.verifyCommand,
     cwd: input.cwd ?? 'workspace',
     files: input.files ?? [],
@@ -357,6 +372,11 @@ function doctorPlanActions(input: {
       absoluteProjectPath,
       includeAbsolutePaths: input.includeAbsolutePaths,
     });
+    const invocation = portableInvocationFromCapability({
+      capability: step,
+      absoluteProjectPath,
+      includeAbsolutePaths: input.includeAbsolutePaths,
+    });
     const executable = step.executableInCurrentEnvironment === true && Boolean(command);
     const strategy = portableDoctorStrategy({
       strategy: step.strategy,
@@ -393,6 +413,7 @@ function doctorPlanActions(input: {
         risk,
         status: studioState,
         ...(executable && command ? { command } : {}),
+        ...(executable && invocation ? { invocation } : {}),
         verifyCommand:
           typeof step.verifyCommand === 'string' && step.verifyCommand.trim()
             ? step.verifyCommand.trim()
@@ -459,6 +480,27 @@ function portableCommandFromCapability(input: {
   return original
     .replace(new RegExp(`^cd\\s+["']?${escapedProjectPath}["']?\\s*&&\\s*`, 'i'), '')
     .replaceAll(input.absoluteProjectPath, '.');
+}
+
+function portableInvocationFromCapability(input: {
+  capability: ReportRecord;
+  absoluteProjectPath: string;
+  includeAbsolutePaths: boolean;
+}): ArtifactRemediationAction['invocation'] | undefined {
+  const invocation = asRecord(input.capability.invocation);
+  const executable = typeof invocation?.executable === 'string' ? invocation.executable.trim() : '';
+  const args = asStringArray(invocation?.args);
+  if (
+    !executable ||
+    args.length !== (Array.isArray(invocation?.args) ? invocation.args.length : 0)
+  ) {
+    return undefined;
+  }
+  return {
+    cwd: input.includeAbsolutePaths ? input.absoluteProjectPath : '.',
+    executable,
+    args,
+  };
 }
 
 function portableDoctorOperation(input: {
@@ -550,6 +592,11 @@ function doctorEvidenceActions(input: {
         absoluteProjectPath,
         includeAbsolutePaths: input.includeAbsolutePaths,
       });
+      const invocation = portableInvocationFromCapability({
+        capability,
+        absoluteProjectPath,
+        includeAbsolutePaths: input.includeAbsolutePaths,
+      });
       const canExecute = capability.status === 'available' && Boolean(command);
       const transactionRecord = asRecord(capability.transaction);
       const transaction =
@@ -618,6 +665,7 @@ function doctorEvidenceActions(input: {
               ? 'guidance-only'
               : 'blocked',
           ...(command ? { command } : {}),
+          ...(invocation ? { invocation } : {}),
           verifyCommand:
             typeof capability.verifyCommand === 'string' && capability.verifyCommand.trim()
               ? capability.verifyCommand.trim()
@@ -689,10 +737,10 @@ function bootstrapActions(input: {
           mode: 'edit-file',
           risk: 'safe',
           verifyCommand,
-          files: ['.workspai/compatibility-matrix.json'],
+          files: [WORKSPACE_SUPPLEMENTAL_ARTIFACTS.compatibilityMatrix],
           operation: {
             type: 'file-create',
-            path: '.workspai/compatibility-matrix.json',
+            path: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.compatibilityMatrix,
             content: buildCompatibilityMatrixContent(input.generatedAt),
             overwrite: false,
           },
@@ -824,6 +872,9 @@ function readinessEnvironmentActions(input: {
 
   for (const runtime of runtimes) {
     const setupId = `readiness.toolchain.${runtime}.setup`;
+    const blocker =
+      input.blockers.find((candidate) => candidate.toLowerCase().includes(`(${runtime})`)) ??
+      `The ${runtime} runtime is not pinned in the canonical workspace toolchain.`;
     actions.push(
       actionBase({
         id: setupId,
@@ -832,7 +883,7 @@ function readinessEnvironmentActions(input: {
         title: `Pin ${runtime} in the workspace toolchain`,
         order: input.startOrder + actions.length,
         phase: 'toolchain-reconciliation',
-        blocker: input.blockers.find((blocker) => blocker.toLowerCase().includes(`(${runtime})`))!,
+        blocker,
         summary: `Detect and persist the current ${runtime} runtime in the canonical workspace toolchain lock.`,
         mode: 'run-command',
         risk: 'safe',
@@ -1184,7 +1235,7 @@ export async function writeArtifactRemediationPlan(
 ): Promise<string> {
   return writeWorkspaceArtifactJson(
     workspacePath,
-    '.workspai/reports/artifact-remediation-plan-last-run.json',
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.artifactRemediationPlan,
     plan
   );
 }

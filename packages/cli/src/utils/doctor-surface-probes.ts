@@ -13,6 +13,10 @@ import {
   type DoctorRepairStrategyStage,
 } from './doctor-repair-capabilities.js';
 import type { DoctorDependencyAuditEvidence } from './doctor-dependency-audit.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
 
 export type DoctorSurfaceRuntimeFamily =
   | 'python'
@@ -226,6 +230,117 @@ async function collectTextFromExisting(projectPath: string, candidates: string[]
     if (text) chunks.push(text);
   }
   return chunks.join('\n');
+}
+
+const ENV_SOURCE_EXTENSIONS = new Set([
+  '.c',
+  '.cc',
+  '.clj',
+  '.cljs',
+  '.cpp',
+  '.cs',
+  '.ex',
+  '.exs',
+  '.go',
+  '.h',
+  '.hpp',
+  '.java',
+  '.js',
+  '.jsx',
+  '.kt',
+  '.kts',
+  '.mjs',
+  '.cjs',
+  '.php',
+  '.py',
+  '.rb',
+  '.rs',
+  '.scala',
+  '.svelte',
+  '.ts',
+  '.tsx',
+  '.vue',
+]);
+
+const ENV_REFERENCE_PATTERNS = [
+  /\bprocess\.env(?:\.([A-Z][A-Z0-9_]*)|\[['"]([A-Z][A-Z0-9_]*)['"]\])/g,
+  /\bimport\.meta\.env\.([A-Z][A-Z0-9_]*)/g,
+  /\b(?:Deno\.env\.get|os\.getenv|os\.Getenv|os\.LookupEnv|System\.getenv|std::env::var|env!|option_env!|getenv|Environment\.GetEnvironmentVariable)\(\s*['"]([A-Z][A-Z0-9_]*)['"]/g,
+  /\bos\.environ(?:\.get\(\s*['"]([A-Z][A-Z0-9_]*)['"]|\[\s*['"]([A-Z][A-Z0-9_]*)['"]\s*\])/g,
+  /\bENV(?:\.fetch\(\s*['"]([A-Z][A-Z0-9_]*)['"]|\[\s*['"]([A-Z][A-Z0-9_]*)['"]\s*\])/g,
+  /\$_ENV\[\s*['"]([A-Z][A-Z0-9_]*)['"]\s*\]/g,
+  /@Value\(\s*['"]\$\{([A-Z][A-Z0-9_]*)(?::[^}]*)?\}['"]\s*\)/g,
+];
+
+async function collectEnvironmentContractKeys(projectPath: string): Promise<string[]> {
+  const keys = new Set<string>();
+  const ignored = new Set([
+    '.git',
+    '.next',
+    '.nuxt',
+    '.output',
+    '.rapidkit',
+    '.svelte-kit',
+    '.venv',
+    '.workspai',
+    'build',
+    'coverage',
+    'dist',
+    'node_modules',
+    'target',
+    'vendor',
+  ]);
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: projectPath, depth: 0 }];
+  let inspectedFiles = 0;
+
+  while (queue.length > 0 && inspectedFiles < 300) {
+    const current = queue.shift();
+    if (!current) break;
+    let entries: Dirent[] = [];
+    try {
+      entries = await fsExtra.readdir(current.dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (ignored.has(entry.name)) continue;
+      const fullPath = path.join(current.dir, entry.name);
+      if (entry.isDirectory()) {
+        if (current.depth < 6 && !entry.name.startsWith('.')) {
+          queue.push({ dir: fullPath, depth: current.depth + 1 });
+        }
+        continue;
+      }
+      if (!entry.isFile() || !ENV_SOURCE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+        continue;
+      }
+      inspectedFiles += 1;
+      let source = '';
+      try {
+        const stat = await fsExtra.stat(fullPath);
+        if (stat.size > 512 * 1024) continue;
+        source = await fsExtra.readFile(fullPath, 'utf8');
+      } catch {
+        continue;
+      }
+      for (const pattern of ENV_REFERENCE_PATTERNS) {
+        pattern.lastIndex = 0;
+        for (const match of source.matchAll(pattern)) {
+          const key = match.slice(1).find((value) => typeof value === 'string' && value.length > 0);
+          if (key) keys.add(key);
+        }
+      }
+    }
+  }
+
+  const envText = await readTextIfExists(path.join(projectPath, '.env'));
+  for (const line of envText.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=/);
+    if (match?.[1]) keys.add(match[1]);
+  }
+
+  return [...keys].sort((left, right) => left.localeCompare(right));
 }
 
 async function inferDependencyBaselineRepair(input: {
@@ -974,21 +1089,30 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
   const configDirExists = await fsExtra.pathExists(path.join(input.projectPath, 'config'));
   const hasContract = envExampleExists || envDocsExist || configDirExists;
   const frontend = input.projectKind === 'frontend';
+  const environmentKeys = hasContract
+    ? []
+    : await collectEnvironmentContractKeys(input.projectPath);
+  const environmentContractRequired = envExists || environmentKeys.length > 0;
+  const contractNotApplicable = !hasContract && !environmentContractRequired;
+  const generatedExample = environmentKeys.map((key) => `${key}=`).join('\n');
 
   return {
     id: 'surface-env-contract',
     label: 'Environment/config contract',
-    status: hasContract ? 'pass' : frontend ? 'warn' : 'warn',
+    status: hasContract || contractNotApplicable ? 'pass' : 'warn',
     severity: 'warn',
     scope: 'project-scoped',
     reason: hasContract
       ? 'Environment/config contract marker detected.'
-      : frontend
-        ? 'No frontend environment contract marker detected.'
-        : 'No environment/config contract marker detected.',
-    recommendation: hasContract
-      ? undefined
-      : 'Add .env.example, config schema, or environment documentation for deterministic setup.',
+      : contractNotApplicable
+        ? 'No runtime environment-variable usage was detected; an environment contract is not currently applicable.'
+        : frontend
+          ? 'No frontend environment contract marker detected.'
+          : 'No environment/config contract marker detected.',
+    recommendation:
+      hasContract || contractNotApplicable
+        ? undefined
+        : 'Add .env.example, config schema, or environment documentation for deterministic setup.',
     repairCapability: hasContract
       ? envExampleExists && !envExists
         ? buildFileCopyRepairCapability({
@@ -1001,14 +1125,30 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
               'Seed the local environment file from the reviewed example without overwriting an existing .env.',
           })
         : undefined
-      : buildManualRepair({
-          issueId: 'surface-env-contract',
-          title: 'Define environment contract',
-          projectPath: input.projectPath,
-          files: ['.env.example'],
-          reason:
-            'Environment contracts are product-specific; Doctor can identify the missing baseline, but values must be reviewed by the project owner.',
-        }),
+      : contractNotApplicable
+        ? undefined
+        : environmentKeys.length > 0
+          ? buildFileCreateRepairCapability({
+              issueId: 'surface-env-contract',
+              title: 'Create environment contract skeleton',
+              projectPath: input.projectPath,
+              relativePath: '.env.example',
+              content: `${generatedExample}\n`,
+              reason:
+                'Create a secret-free .env.example from environment keys observed in source. Values remain empty for project-owner review.',
+              limitations: [
+                'Only variable names are copied; secrets and local values are never read into the generated contract.',
+                'Review required and optional variables before committing the example.',
+              ],
+            })
+          : buildManualRepair({
+              issueId: 'surface-env-contract',
+              title: 'Define environment contract',
+              projectPath: input.projectPath,
+              files: ['.env.example'],
+              reason:
+                'A local .env exists, but no safe variable names could be inferred. Review the required keys before publishing an example.',
+            }),
   };
 }
 
@@ -1444,7 +1584,9 @@ async function buildTestCoverageEvidenceProbe(input: SurfaceInput): Promise<Doct
     metrics?: Record<string, { percent?: number | null }>;
     lowCoverageFiles?: Array<{ path?: string; percent?: number | null }>;
   } | null;
-  const valid = evidence?.schemaVersion === 'workspai.project-test-coverage.v1';
+  const valid =
+    evidence?.schemaVersion ===
+    WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectTestCoverage.schemaVersion;
   if (!valid) {
     return {
       id: 'test-coverage-evidence',
@@ -1464,7 +1606,7 @@ async function buildTestCoverageEvidenceProbe(input: SurfaceInput): Promise<Doct
           executable: 'npx',
           args: ['workspai', 'project', 'coverage', '--run', '--json'],
         },
-        files: ['.workspai/reports/project-test-coverage-last-run.json'],
+        files: [WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectTestCoverage],
         reason:
           'Run the runtime-native test coverage adapter and publish normalized evidence for Doctor, CI, Studio, and IDE consumers.',
         risk: 'safe',
@@ -1511,7 +1653,7 @@ async function buildTestCoverageEvidenceProbe(input: SurfaceInput): Promise<Doct
             title: 'Reach the project coverage goal',
             projectPath: input.projectPath,
             files: [
-              '.workspai/reports/project-test-coverage-last-run.json',
+              WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectTestCoverage,
               ...(evidence.lowCoverageFiles ?? [])
                 .map((file) => file.path)
                 .filter((file): file is string => typeof file === 'string')

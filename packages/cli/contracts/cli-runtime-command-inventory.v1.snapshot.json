@@ -1433,6 +1433,42 @@
           "attributeName": "allowForce"
         },
         {
+          "flags": "--card <id>",
+          "attributeName": "card"
+        },
+        {
+          "flags": "--action-id <id>",
+          "attributeName": "actionId"
+        },
+        {
+          "flags": "--project <name>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--proposal <path>",
+          "attributeName": "proposal"
+        },
+        {
+          "flags": "--transaction <id>",
+          "attributeName": "transaction"
+        },
+        {
+          "flags": "--approved-by <actor>",
+          "attributeName": "approvedBy"
+        },
+        {
+          "flags": "--decision <choice>",
+          "attributeName": "decision"
+        },
+        {
+          "flags": "--max-risk <risk>",
+          "attributeName": "maxRisk"
+        },
+        {
+          "flags": "--no-auto-rollback",
+          "attributeName": "autoRollback"
+        },
+        {
           "flags": "--no-build",
           "attributeName": "build"
         },

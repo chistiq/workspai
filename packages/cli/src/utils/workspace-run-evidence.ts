@@ -8,10 +8,16 @@ import type {
 } from '../workspace-run.js';
 import { workspaceMetadataCandidates } from './workspace-paths.js';
 import { withWorkspaceArtifactLock, writeWorkspaceArtifactJson } from './artifact-path-compat.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
 
-export const WORKSPACE_RUN_EVIDENCE_SCHEMA_VERSION = 'workspace-run-v1';
+export const WORKSPACE_RUN_EVIDENCE_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceRunLast.schemaVersion;
 export const WORKSPACE_RUN_LAST_REPORT_FILENAME = 'workspace-run-last.json';
-export const WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH = `.workspai/reports/${WORKSPACE_RUN_LAST_REPORT_FILENAME}`;
+export const WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceRunLast;
 
 /** @deprecated Autopilot no longer writes separate stage files; use workspace-run-last.json stages map. */
 export const LEGACY_AUTOPILOT_WORKSPACE_RUN_TEST_FILENAME = 'autopilot-workspace-run-test.json';

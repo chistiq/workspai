@@ -29,10 +29,37 @@ import {
   buildIngestionPlanSchema,
   buildIngestionResultSchema,
 } from '../../contracts/ingestion-contract';
+import { buildStudioCardRepairCapabilitiesContract } from '../../contracts/studio-card-repair-capabilities-contract';
+import { buildWorkspaceRepairCapabilitiesContract } from '../../contracts/workspace-repair-capabilities-contract';
 
 function readJsonContract(fileName: string): unknown {
   const contractPath = path.resolve(process.cwd(), 'contracts', fileName);
   return JSON.parse(fs.readFileSync(contractPath, 'utf8')) as unknown;
+}
+
+function listPublishedContractFiles(
+  directory = path.resolve(process.cwd(), 'contracts')
+): string[] {
+  const files: string[] = [];
+  const visit = (current: string) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const absolutePath = path.join(current, entry.name);
+      if (entry.isDirectory()) visit(absolutePath);
+      else if (entry.isFile() && entry.name.endsWith('.json')) {
+        files.push(path.relative(process.cwd(), absolutePath).split(path.sep).join('/'));
+      }
+    }
+  };
+  visit(directory);
+  return files.sort();
+}
+
+function catalogContractPaths(value: unknown, paths = new Set<string>()): Set<string> {
+  if (!value || typeof value !== 'object') return paths;
+  const record = value as Record<string, unknown>;
+  if (typeof record.contractPath === 'string') paths.add(record.contractPath);
+  for (const nested of Object.values(record)) catalogContractPaths(nested, paths);
+  return paths;
 }
 
 describe('generated shared contracts (Wave B + C)', () => {
@@ -56,6 +83,11 @@ describe('generated shared contracts (Wave B + C)', () => {
     for (const [fileName, schema] of Object.entries(buildOperationalJsonSchemas())) {
       expect(readJsonContract(fileName)).toEqual(schema);
     }
+  });
+
+  it('publishes a discoverable catalog entry for every packaged JSON contract', () => {
+    const catalog = buildPublishedContractCatalog();
+    expect([...catalogContractPaths(catalog)].sort()).toEqual(listPublishedContractFiles());
   });
 
   it('keeps committed workspace archive contracts aligned with their generators', () => {
@@ -122,6 +154,18 @@ describe('generated shared contracts (Wave B + C)', () => {
   it('keeps committed workspace intelligence chain aligned with the generator', () => {
     expect(readJsonContract('workspace-intelligence-chain.v1.json')).toEqual(
       buildWorkspaceIntelligenceChainContract()
+    );
+  });
+
+  it('keeps every Studio card bound to its canonical repair producer', () => {
+    expect(readJsonContract('studio-card-repair-capabilities.v1.json')).toEqual(
+      buildStudioCardRepairCapabilitiesContract()
+    );
+  });
+
+  it('keeps the repair adapter inventory aligned with the CLI engine contract', () => {
+    expect(readJsonContract('workspace-repair-capabilities.v1.json')).toEqual(
+      buildWorkspaceRepairCapabilitiesContract()
     );
   });
 });

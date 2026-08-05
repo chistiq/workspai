@@ -218,6 +218,7 @@
         "blocker": { "type": "string" },
         "summary": { "type": "string" },
         "command": { "type": "string" },
+        "invocation": { "$ref": "#/$defs/commandInvocation" },
         "verifyCommand": { "type": "string" },
         "cwd": { "enum": ["workspace", "project"] },
         "files": {

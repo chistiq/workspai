@@ -33,6 +33,10 @@ const CLI_EXTENSION_CONTRACT_FILES = [
   'doctor-remediation-plan.v2.json',
   'workspace-intelligence/doctor-dependency-repair-transaction.v1.json',
   'artifact-remediation-plan.v1.json',
+  'studio-card-repair-capabilities.v1.json',
+  'workspace-repair-capabilities.v1.json',
+  'workspace-intelligence/workspace-repair-proposal.v1.json',
+  'workspace-intelligence/workspace-repair-transaction.v1.json',
   'analyze-last-run.v1.json',
 ];
 

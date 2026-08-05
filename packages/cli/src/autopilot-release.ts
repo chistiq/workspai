@@ -13,7 +13,10 @@ import {
   resolveWorkspaceArtifactPath,
   writeWorkspaceArtifactJson,
 } from './utils/artifact-path-compat.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 
 export type AutopilotReleaseMode = 'audit' | 'safe-fix' | 'enforce';
 export type AutopilotStageStatus = 'pass' | 'warn' | 'fail' | 'skipped';
@@ -43,7 +46,7 @@ export interface AutopilotStageResult {
 }
 
 export interface AutopilotReleaseReport {
-  schemaVersion: 'autopilot-release-v1';
+  schemaVersion: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS)['autopilotReleaseLastRun']['schemaVersion'];
   generatedAt: string;
   workspacePath: string;
   mode: AutopilotReleaseMode;
@@ -713,7 +716,7 @@ export async function runAutopilotRelease(
   const aliasEvidencePath = path.join(reportsDir, AUTOPILOT_RELEASE_ALIAS_FILENAME);
 
   const report: AutopilotReleaseReport = {
-    schemaVersion: 'autopilot-release-v1',
+    schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.autopilotReleaseLastRun.schemaVersion,
     generatedAt: new Date().toISOString(),
     workspacePath,
     mode,

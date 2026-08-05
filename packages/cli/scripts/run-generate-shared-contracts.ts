@@ -27,6 +27,8 @@ import {
   buildIngestionPlanSchema,
   buildIngestionResultSchema,
 } from '../src/contracts/ingestion-contract.js';
+import { buildStudioCardRepairCapabilitiesContract } from '../src/contracts/studio-card-repair-capabilities-contract.js';
+import { buildWorkspaceRepairCapabilitiesContract } from '../src/contracts/workspace-repair-capabilities-contract.js';
 
 const contractsDir = path.resolve(process.cwd(), 'contracts');
 
@@ -71,3 +73,5 @@ writeJson(
   buildWorkspaceIntelligenceArchitectureContract()
 );
 writeJson('workspace-intelligence-chain.v1.json', buildWorkspaceIntelligenceChainContract());
+writeJson('studio-card-repair-capabilities.v1.json', buildStudioCardRepairCapabilitiesContract());
+writeJson('workspace-repair-capabilities.v1.json', buildWorkspaceRepairCapabilitiesContract());

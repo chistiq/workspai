@@ -15,8 +15,13 @@ import {
   projectMetadataCandidates,
   projectMetadataPath,
 } from './utils/workspace-paths.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 
-export const PROJECT_WORKSPACE_LINK_SCHEMA_VERSION = 'project-workspace-link.v1';
+export const PROJECT_WORKSPACE_LINK_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectWorkspaceLink.schemaVersion;
 export const PROJECT_WORKSPACE_LINK_KIND = 'workspai.project-workspace-link';
 
 export type ProjectWorkspaceRelationship =
@@ -33,7 +38,7 @@ export interface ProjectWorkspaceLink {
     name: string;
     root: string;
     marker: '.workspai-workspace' | '.workspai/workspace.json';
-    contract: '.workspai/workspace.contract.json';
+    contract: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['workspaceContract'];
   };
   project: {
     name: string;
@@ -177,7 +182,7 @@ function parseProjectWorkspaceLink(filePath: string): ProjectWorkspaceLink {
     typeof value.workspace.root !== 'string' ||
     !path.isAbsolute(value.workspace.root) ||
     !['.workspai-workspace', '.workspai/workspace.json'].includes(value.workspace.marker ?? '') ||
-    value.workspace.contract !== '.workspai/workspace.contract.json' ||
+    value.workspace.contract !== WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract ||
     !value.project ||
     typeof value.project.name !== 'string' ||
     value.project.name.trim().length === 0 ||
@@ -566,7 +571,7 @@ export async function writeProjectWorkspaceLink(input: {
       name: workspaceName,
       root: workspacePath,
       marker: markerFor(workspacePath),
-      contract: '.workspai/workspace.contract.json',
+      contract: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
     },
     project: {
       name: input.projectName,

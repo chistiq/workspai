@@ -25,12 +25,12 @@ exclude the canonical marker.
 These paths are relative to each registered project root, not the workspace
 root:
 
-| Artifact | Writer | Schema / format | Portability and reader purpose |
-| --- | --- | --- | --- |
-| `.workspai/workspace-link.local.json` | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1` | Machine-local absolute binding; always gitignored and never an agent evidence payload |
-| `.workspai/reports/project-context-agent.json` | Project lens reconciliation and `workspace agent-sync --write` | `project-context-agent.v1` | Portable bounded model/graph/proof projection for project-local agents |
-| `.workspai/PROJECT-GROUNDING.md` | Project lens reconciliation | Markdown | Portable human/agent entry guide with path-free workspace references |
-| `AGENTS.md` managed section | Project lens reconciliation in `managed` mode | Managed Markdown block | Preserves user content and routes compatible agents to project/workspace evidence |
+| Artifact                                       | Writer                                                                            | Schema / format             | Portability and reader purpose                                                        |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------- |
+| `.workspai/workspace-link.local.json`          | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1` | Machine-local absolute binding; always gitignored and never an agent evidence payload |
+| `.workspai/reports/project-context-agent.json` | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`  | Portable bounded model/graph/proof projection for project-local agents                |
+| `.workspai/PROJECT-GROUNDING.md`               | Project lens reconciliation                                                       | Markdown                    | Portable human/agent entry guide with path-free workspace references                  |
+| `AGENTS.md` managed section                    | Project lens reconciliation in `managed` mode                                     | Managed Markdown block      | Preserves user content and routes compatible agents to project/workspace evidence     |
 
 The project link is validated against the canonical workspace contract and a
 SHA-256 binding over workspace identity, project identity, portable relative
@@ -52,19 +52,21 @@ and model/graph freshness for the selected project.
 
 ## Governance evidence loop
 
-| Command                              | Primary artifact                                            | Schema version                      | JSON Schema                                                  |
-| ------------------------------------ | ----------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------ |
-| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`      | `contracts/doctor-workspace-evidence.v1.json`                |
-| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`        | `contracts/doctor-project-evidence.v1.json`                  |
-| `project coverage`                   | `.workspai/reports/project-test-coverage-last-run.json`     | `workspai.project-test-coverage.v1` | `contracts/project-test-coverage.v1.json`                    |
-| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`        | `contracts/doctor-remediation-plan.v2.json`                  |
-| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1`     | `contracts/workspace-intelligence/doctor-fix-result.v1.json` |
-| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`      | `contracts/artifact-remediation-plan.v1.json`                |
-| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`               | `contracts/analyze-last-run.v1.json`                         |
-| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`              | `contracts/release-readiness.v1.json`                        |
-| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`              | `contracts/pipeline-last-run.v1.json`                        |
-| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`              | `contracts/autopilot-release.v1.json`                        |
-|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)               | `contracts/autopilot-release.v1.json`                        |
+| Command                              | Primary artifact                                            | Schema version                              | JSON Schema                                                             |
+| ------------------------------------ | ----------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
+| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`              | `contracts/doctor-workspace-evidence.v1.json`                           |
+| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`                | `contracts/doctor-project-evidence.v1.json`                             |
+| `project coverage`                   | `.workspai/reports/project-test-coverage-last-run.json`     | `workspai.project-test-coverage.v1`         | `contracts/project-test-coverage.v1.json`                               |
+| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`                | `contracts/doctor-remediation-plan.v2.json`                             |
+| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1`             | `contracts/workspace-intelligence/doctor-fix-result.v1.json`            |
+| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`              | `contracts/artifact-remediation-plan.v1.json`                           |
+| `workspace repair *`                 | `.workspai/reports/workspace-repair-last-run.json`          | `workspai.workspace-repair-transaction.v1`  | `contracts/workspace-intelligence/workspace-repair-transaction.v1.json` |
+| `workspace repair capabilities`      | CLI capability output                                       | `workspai.workspace-repair-capabilities.v1` | `contracts/workspace-repair-capabilities.v1.json`                       |
+| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`                       | `contracts/analyze-last-run.v1.json`                                    |
+| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`                      | `contracts/release-readiness.v1.json`                                   |
+| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`                      | `contracts/pipeline-last-run.v1.json`                                   |
+| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`                      | `contracts/autopilot-release.v1.json`                                   |
+|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)                       | `contracts/autopilot-release.v1.json`                                   |
 
 Side/cache (not gates): `.workspai/reports/doctor-workspace-cache.json` (`doctor-workspace-cache-v2`).
 

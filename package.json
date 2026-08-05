@@ -15,7 +15,8 @@
   },
   "packageManager": "npm@10.8.2",
   "workspaces": [
-    "packages/*"
+    "packages/cli",
+    "packages/wspai"
   ],
   "overrides": {
     "brace-expansion": "5.0.9",

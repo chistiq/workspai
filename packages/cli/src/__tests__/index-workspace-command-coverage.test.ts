@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 import type { Command } from 'commander';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { syncWorkspaceFoundationFiles } from '../create.js';
 import { runDoctor } from '../doctor.js';
 import { getVenvPythonPath } from '../utils/platform-capabilities.js';
+import { buildDoctorInternalRepairCommand } from '../utils/doctor-repair-capabilities.js';
 import {
   bootstrapCli,
   bridgeFailureCode,
@@ -343,6 +345,191 @@ describe.sequential('in-process workspace Commander coverage', () => {
 
     expect(logSpy).toHaveBeenCalled();
   }, 60_000);
+
+  it('executes the durable workspace repair planning, approval, status, list, and cancel callbacks', async () => {
+    const target = path.join(root, 'api', '.env.example');
+    const operation = {
+      type: 'file-create' as const,
+      path: target,
+      content: 'APP_ENV=test\n',
+      overwrite: false as const,
+    };
+    await fs.writeFile(
+      path.join(root, '.workspai', 'reports', 'doctor-last-run.json'),
+      `${JSON.stringify(
+        {
+          projects: [
+            {
+              name: 'api',
+              path: path.join(root, 'api'),
+              probes: [
+                {
+                  id: 'surface-environment-config',
+                  status: 'fail',
+                  repairCapability: {
+                    id: 'surface-environment-config.file-create',
+                    title: 'Create environment contract',
+                    status: 'available',
+                    risk: 'safe',
+                    canAutoFix: true,
+                    canEditFiles: true,
+                    requiresApproval: true,
+                    requiresReview: false,
+                    files: [target],
+                    command: buildDoctorInternalRepairCommand(operation),
+                    operation,
+                    verifyCommand: 'npx workspai doctor project --json',
+                    refreshCommands: [],
+                    reason: 'Environment contract is missing.',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    await runWorkspaceCommand(root, [
+      'repair',
+      'plan',
+      '--workspace',
+      root,
+      '--card',
+      'doctor',
+      '--project',
+      'api',
+      '--json',
+    ]);
+    const planned = JSON.parse(
+      await fs.readFile(
+        path.join(root, '.workspai', 'reports', 'workspace-repair-last-run.json'),
+        'utf8'
+      )
+    ) as { transactionId: string; state: string };
+    expect(planned.state).toBe('awaiting-approval');
+
+    await runWorkspaceCommand(root, [
+      'repair',
+      'approve',
+      '--workspace',
+      root,
+      '--transaction',
+      planned.transactionId,
+      '--approved-by',
+      'coverage-test',
+      '--json',
+    ]);
+    await runWorkspaceCommand(root, [
+      'repair',
+      'status',
+      '--workspace',
+      root,
+      '--transaction',
+      planned.transactionId,
+      '--json',
+    ]);
+    await runWorkspaceCommand(root, ['repair', 'list', '--workspace', root, '--json']);
+    await runWorkspaceCommand(root, [
+      'repair',
+      'cancel',
+      '--workspace',
+      root,
+      '--transaction',
+      planned.transactionId,
+      '--json',
+    ]);
+    const cancelled = JSON.parse(
+      await fs.readFile(
+        path.join(root, '.workspai', 'reports', 'workspace-repair-last-run.json'),
+        'utf8'
+      )
+    ) as { state: string };
+    expect(cancelled.state).toBe('cancelled');
+
+    const proposalSource = path.join(root, 'api', 'repair-target.ts');
+    const before = 'export const repaired = false;\n';
+    await fs.writeFile(proposalSource, before);
+    const proposalPath = path.join(root, '.workspai', 'repair', 'inbox', 'proposal.json');
+    await fs.mkdir(path.dirname(proposalPath), { recursive: true });
+    await fs.writeFile(
+      proposalPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 'workspai.workspace-repair-proposal.v1',
+          cardId: 'doctor',
+          projectName: 'api',
+          projectPath: 'api',
+          rationale: 'Exercise the CLI-owned model proposal callback.',
+          changes: [
+            {
+              id: 'repair-target',
+              path: 'api/repair-target.ts',
+              operation: 'write',
+              expectedBeforeHash: createHash('sha256').update(before).digest('hex'),
+              content: 'export const repaired = true;\n',
+              risk: 'guarded',
+              summary: 'Repair the target.',
+            },
+          ],
+        },
+        null,
+        2
+      )}\n`
+    );
+    await runWorkspaceCommand(root, [
+      'repair',
+      'propose',
+      '--workspace',
+      root,
+      '--proposal',
+      path.relative(root, proposalPath),
+      '--json',
+    ]);
+    const proposed = JSON.parse(
+      await fs.readFile(
+        path.join(root, '.workspai', 'reports', 'workspace-repair-last-run.json'),
+        'utf8'
+      )
+    ) as { transactionId: string; state: string };
+    expect(proposed.state).toBe('awaiting-approval');
+    await runWorkspaceCommand(root, [
+      'repair',
+      'cancel',
+      '--workspace',
+      root,
+      '--transaction',
+      proposed.transactionId,
+      '--json',
+    ]);
+  }, 60_000);
+
+  it('publishes repair capabilities without requiring a workspace', async () => {
+    const outsideWorkspace = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-capabilities-global-')
+    );
+    temporaryDirectories.push(outsideWorkspace);
+    process.chdir(outsideWorkspace);
+    const callsBefore = logSpy.mock.calls.length;
+    try {
+      await runWorkspaceCommand(outsideWorkspace, ['repair', 'capabilities', '--json']);
+    } finally {
+      process.chdir(root);
+    }
+
+    const payload = logSpy.mock.calls
+      .slice(callsBefore)
+      .map(([value]) => (typeof value === 'string' ? value : ''))
+      .find((value) => value.includes('workspai.workspace-repair-capabilities.v1'));
+    expect(payload).toBeTruthy();
+    expect(JSON.parse(payload as string)).toMatchObject({
+      schemaVersion: 'workspai.workspace-repair-capabilities.v1',
+      owner: 'Workspai CLI',
+      invariants: { unsupportedEcosystems: 'decision-required' },
+    });
+  });
 
   it('executes human renderers, archives, fleet runs, and guarded error branches', async () => {
     await runWorkspaceCommand(root, ['model', '--workspace', root, '--incremental', '--write']);

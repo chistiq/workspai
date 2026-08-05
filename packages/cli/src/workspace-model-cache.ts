@@ -12,6 +12,10 @@ import {
   resolveWorkspaceArtifactPath,
   writeWorkspaceArtifactJson,
 } from './utils/artifact-path-compat.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 
 /**
  * On-disk cache for the workspace model + graph, keyed by `inputsHash` (roadmap 1.15).
@@ -29,8 +33,9 @@ import {
  * job of `workspace model --incremental` (1.16). The cache is therefore opt-in.
  */
 
-export const WORKSPACE_MODEL_CACHE_SCHEMA_VERSION = 'workspace-model-cache.v1' as const;
-export const WORKSPACE_MODEL_CACHE_PATH = '.workspai/cache/workspace-model.v1.json';
+export const WORKSPACE_MODEL_CACHE_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceModelCache.schemaVersion;
+export const WORKSPACE_MODEL_CACHE_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceModelCache;
 
 /** Manifest files whose contents materially change model/graph inference. */
 export const MODEL_INPUT_MANIFEST_FILES = [
@@ -66,7 +71,7 @@ export type WorkspaceModelCacheEnvelope = {
 };
 
 export const MODEL_INPUT_WORKSPACE_FILES = [
-  '.workspai/workspace.contract.json',
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
   '.workspai/workspace.json',
   'workspai.workspace.json',
   '.workspai/policies.yml',

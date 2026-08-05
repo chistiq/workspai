@@ -221,6 +221,12 @@
         "path": ".workspai/reports/verified-goal-last-run.json",
         "schemaVersion": "workspai.verified-goal-status.v1",
         "schemaContract": "contracts/workspace-intelligence/verified-goal-status.v1.json"
+      },
+      {
+        "id": "repairTransaction",
+        "path": ".workspai/reports/workspace-repair-last-run.json",
+        "schemaVersion": "workspai.workspace-repair-transaction.v1",
+        "schemaContract": "contracts/workspace-intelligence/workspace-repair-transaction.v1.json"
       }
     ]
   },

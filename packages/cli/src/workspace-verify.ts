@@ -44,6 +44,8 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMA_CONTRACTS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { collectGitWorkingTreeObservation } from './workspace-git-observation.js';
@@ -350,7 +352,10 @@ function evaluateAnalyzeEvidence(payload: Record<string, unknown>): EvidenceEval
 
 function evaluateDoctorFixEvidence(payload: Record<string, unknown>): EvidenceEvaluation {
   const fixResult =
-    payload.schemaVersion === 'rapidkit-doctor-fix-result-v1' ? payload : payload.fixResult;
+    payload.schemaVersion ===
+    WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorFixResult.schemaVersion
+      ? payload
+      : payload.fixResult;
   if (!fixResult || typeof fixResult !== 'object' || Array.isArray(fixResult)) {
     return {
       status: 'skipped',
@@ -381,7 +386,7 @@ async function currentDoctorRemediationPlanHasNoPendingSteps(
 ): Promise<boolean> {
   const planPath = await firstExistingWorkspaceArtifactPath(
     workspacePath,
-    '.workspai/reports/doctor-remediation-plan-last-run.json'
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorRemediationPlan
   );
   if (!planPath) {
     return false;
@@ -707,7 +712,10 @@ async function evaluateCommandEvidence(
     }
   } else if (command.id === 'workspace.doctor-fix') {
     const fixResult =
-      payload.schemaVersion === 'rapidkit-doctor-fix-result-v1' ? payload : payload.fixResult;
+      payload.schemaVersion ===
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorFixResult.schemaVersion
+        ? payload
+        : payload.fixResult;
     const fixRecord = asRecord(fixResult);
     const fixGeneratedAt =
       typeof fixRecord?.generatedAt === 'string' ? fixRecord.generatedAt : undefined;

@@ -24,7 +24,10 @@ import { computeInputsHash } from './contracts/freshness-metadata-contract.js';
 import type { WorkspaceAgentContext } from './workspace-context.js';
 import type { WorkspaceModel } from './workspace-model.js';
 import type { WorkspaceContract } from './utils/workspace-contract.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 
 const CORE_REQUIRED_REPORTS = [
   WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex,
@@ -63,7 +66,7 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
     steps: [
       `Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.readiness}\` and \`pipeline-last-run.json\`.`,
       `Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.verify}\` for verdict and blocking reasons.`,
-      'Read `.workspai/reports/artifact-remediation-plan-last-run.json` when a Studio or agent repair path is needed.',
+      `Read \`${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.artifactRemediationPlan}\` when a Studio or agent repair path is needed.`,
       'List blocking gates first; never claim ready without cited report fields.',
       'Provide one safe next command and a verification checklist.',
     ],
@@ -98,7 +101,7 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
     triggers: ['rename contract', 'rename event', 'breaking api', 'contract change'],
     objective: 'Rename or change a shared contract with consumer awareness.',
     steps: [
-      'Read `.workspai/workspace.contract.json` for publishes/consumes/owns edges.',
+      `Read \`${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract}\` for publishes/consumes/owns edges.`,
       'List all consumer projects before proposing renames.',
       'Update contract file and regenerate workspace model.',
       'Verify contract gate and integration tests for consumers.',

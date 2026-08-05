@@ -15,7 +15,15 @@ export class PhpRuntimeAdapter implements RuntimeAdapter {
   constructor(private readonly runCommand: PhpCommandRunner) {}
 
   private async run(command: string, args: string[], cwd: string): Promise<CommandResult> {
-    return { exitCode: await this.runCommand(command, args, cwd) };
+    const exitCode = await this.runCommand(command, args, cwd);
+    if (exitCode === 0) return { exitCode };
+
+    return {
+      exitCode,
+      message:
+        `PHP lifecycle command failed (${command} ${args.join(' ')}). ` +
+        `Ensure ${command} is available on PATH, then review composer.json and the command diagnostics above.`,
+    };
   }
 
   private hasComposer(projectPath: string): boolean {

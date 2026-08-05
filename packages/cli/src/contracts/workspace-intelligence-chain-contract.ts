@@ -3,6 +3,7 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
   WORKSPACE_INTELLIGENCE_RUNTIME_STEPS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './workspace-intelligence-runtime-registry.js';
 
 export const WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION =
@@ -248,7 +249,7 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
       phase: 'evidence',
       label: 'Contract Evidence',
       command: [...runtime['contract-evidence'].command],
-      consumes: ['.workspai/workspace.contract.json'],
+      consumes: [WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract],
       inputRefs: ['workspace-rules'],
       consumesArtifacts: [],
       produces: [...runtime['contract-evidence'].produces],
@@ -429,7 +430,7 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
         },
         {
           id: 'governance',
-          paths: ['.workspai/policies.yml', '.workspai/workspace.contract.json'],
+          paths: ['.workspai/policies.yml', WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract],
           purpose: 'Define workspace policy and explicit structural relationships.',
         },
         {
@@ -461,7 +462,10 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
         {
           id: 'sync',
           executionPoint: 'before:model',
-          artifacts: ['.workspai/workspace.contract.json', '.workspai/workspace-registry.v1.json'],
+          artifacts: [
+            WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
+            WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceRegistry,
+          ],
           failurePolicy: 'stop-and-report',
           purpose: 'Reconcile portable workspace inventory and contract inputs before modeling.',
         },

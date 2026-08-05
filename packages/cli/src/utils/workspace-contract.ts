@@ -18,6 +18,8 @@ import { projectMetadataCandidates, workspaceMetadataCandidates } from './worksp
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from '../contracts/workspace-intelligence-runtime-registry.js';
 import {
   resolveProjectCommandCapabilities,
@@ -34,10 +36,11 @@ import {
 import type { WorkspaceKnowledgeGraph } from '../contracts/workspace-knowledge-graph-contract.js';
 import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
 
-export const WORKSPACE_CONTRACT_PATH = '.workspai/workspace.contract.json';
+export const WORKSPACE_CONTRACT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
 export const WORKSPACE_CONTRACT_VERIFY_REPORT_PATH =
   WORKSPACE_INTELLIGENCE_ARTIFACTS.contractVerify;
-export const WORKSPACE_CONTRACT_SCHEMA_VERSION = 1;
+export const WORKSPACE_CONTRACT_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceContract.schemaVersion;
 export const WORKSPACE_CONTRACT_VERIFY_SCHEMA_VERSION =
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.contractVerify;
 

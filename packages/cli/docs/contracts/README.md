@@ -61,6 +61,9 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `doctor-workspace-evidence.v1.json` / `doctor-project-evidence.v1.json` — doctor evidence
 - `doctor-remediation-plan.v2.json` — canonical persisted Doctor fix/plan Studio handoff contract (`v1` path is a deprecated compatibility alias)
 - `artifact-remediation-plan.v1.json` — cross-artifact Studio handoff for Bootstrap, Analyze, Readiness, Pipeline, Workspace Run, Workspace Verify, and Doctor plan bridging
+- `workspace-intelligence/workspace-repair-proposal.v1.json` — bounded, hash-pinned source changes and optional runtime-native validation proposed by an IDE model; proposals never execute themselves
+- `workspace-intelligence/workspace-repair-transaction.v1.json` — durable CLI-owned repair state from immutable plan and approval through checkpoint, execution, canonical verification, rollback, or an explicit decision
+- `workspace-repair-capabilities.v1.json` — canonical multi-runtime adapter inventory, conditional support boundaries, preflight policy, and fail-closed repair invariants
 - `analyze-last-run.v1.json` — analyze evidence
 - `pipeline-last-run.v1.json` — governance pipeline orchestration
 - `project-entry-capability.v1.json` — open-ended adopt/import contract for readable projects

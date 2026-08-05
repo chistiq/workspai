@@ -1270,6 +1270,86 @@
       ]
     },
     {
+      "invocation": "workspace repair",
+      "summary": "Own a durable repair transaction from governed planning and approval through checkpoint, execution, validation, canonical verification, closure, or rollback.",
+      "canonicalArgv": [
+        "workspace",
+        "repair"
+      ]
+    },
+    {
+      "invocation": "workspace repair approve",
+      "summary": "Bind explicit local approval to the exact hash of an immutable repair transaction plan.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "approve"
+      ]
+    },
+    {
+      "invocation": "workspace repair cancel",
+      "summary": "Cancel an unmutated repair transaction and expire any prior approval.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "cancel"
+      ]
+    },
+    {
+      "invocation": "workspace repair decide",
+      "summary": "Submit an available decision and either roll back, release control, or compile a fresh immutable policy plan.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "decide"
+      ]
+    },
+    {
+      "invocation": "workspace repair execute",
+      "summary": "Checkpoint bounded files and execute approved repair, reconcile, audit, test, build, and canonical verification stages.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "execute"
+      ]
+    },
+    {
+      "invocation": "workspace repair plan",
+      "summary": "Resolve current canonical remediation evidence into an immutable, risk-bounded repair transaction plan.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "plan"
+      ]
+    },
+    {
+      "invocation": "workspace repair propose",
+      "summary": "Validate a model-authored, hash-pinned source proposal and compile it into a CLI-owned immutable repair transaction.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "propose"
+      ]
+    },
+    {
+      "invocation": "workspace repair resume",
+      "summary": "Resume an interrupted approved transaction from its first unfinished durable stage.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "resume"
+      ]
+    },
+    {
+      "invocation": "workspace repair rollback",
+      "summary": "Restore bounded checkpoint files only when their post-repair hashes still match the transaction.",
+      "canonicalArgv": [
+        "workspace",
+        "repair",
+        "rollback"
+      ]
+    },
+    {
       "invocation": "workspace run",
       "summary": "Run a supported lifecycle command across registered workspace projects.",
       "canonicalArgv": [
@@ -1645,6 +1725,53 @@
       ]
     },
     {
+      "artifactPath": ".workspai/reports/workspace-repair-last-run.json",
+      "schemaVersion": "workspai.workspace-repair-transaction.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-repair-transaction.v1.json",
+      "producerCommands": [
+        [
+          "workspace",
+          "repair",
+          "plan"
+        ],
+        [
+          "workspace",
+          "repair",
+          "propose"
+        ],
+        [
+          "workspace",
+          "repair",
+          "approve"
+        ],
+        [
+          "workspace",
+          "repair",
+          "decide"
+        ],
+        [
+          "workspace",
+          "repair",
+          "execute"
+        ],
+        [
+          "workspace",
+          "repair",
+          "resume"
+        ],
+        [
+          "workspace",
+          "repair",
+          "rollback"
+        ],
+        [
+          "workspace",
+          "repair",
+          "cancel"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/workspace-link.local.json",
       "schemaVersion": "project-workspace-link.v1",
       "contractPath": "contracts/project-workspace-link.v1.json",
@@ -1974,6 +2101,7 @@
     "context",
     "agent-sync",
     "remediation-plan",
+    "repair",
     "explain",
     "why",
     "trace",
@@ -2648,6 +2776,88 @@
       ]
     },
     {
+      "id": "repair",
+      "usage": "workspai workspace repair <capabilities|plan|propose|approve|decide|execute|resume|status|list|rollback|cancel> [--transaction <id>] [--json]",
+      "summary": "Run a durable, approval-bound repair transaction through checkpoint, validation, canonical verification, and rollback.",
+      "options": [
+        {
+          "flag": "--workspace",
+          "description": "Use an explicit workspace root instead of the nearest workspace."
+        },
+        {
+          "flag": "--json",
+          "description": "Emit machine-readable JSON."
+        },
+        {
+          "flag": "--card",
+          "description": "Select the dashboard card whose governed remediation actions should be repaired."
+        },
+        {
+          "flag": "--action-id",
+          "description": "Select one exact governed remediation action."
+        },
+        {
+          "flag": "--project",
+          "description": "Limit the repair transaction to one registered project name."
+        },
+        {
+          "flag": "--proposal",
+          "description": "Read a bounded model repair proposal from a JSON file inside the workspace."
+        },
+        {
+          "flag": "--transaction",
+          "description": "Select one durable repair transaction by id."
+        },
+        {
+          "flag": "--approved-by",
+          "description": "Record the local actor approving the immutable repair plan."
+        },
+        {
+          "flag": "--decision",
+          "description": "Submit one of the exact options exposed by a decision-required transaction."
+        },
+        {
+          "flag": "--max-risk",
+          "description": "Set the maximum approved repair risk: safe, guarded, or invasive."
+        },
+        {
+          "flag": "--allow-breaking",
+          "description": "Allow a verified goal to use breaking dependency changes."
+        },
+        {
+          "flag": "--allow-force",
+          "description": "Allow a verified goal to use force-based repair commands."
+        },
+        {
+          "flag": "--no-auto-rollback",
+          "description": "Require a decision instead of automatically restoring a failed transaction."
+        }
+      ],
+      "subactions": [
+        "capabilities",
+        "plan",
+        "propose",
+        "approve",
+        "decide",
+        "execute",
+        "resume",
+        "status",
+        "list",
+        "rollback",
+        "cancel"
+      ],
+      "artifact": ".workspai/reports/workspace-repair-last-run.json",
+      "examples": [
+        "workspai workspace repair capabilities --json",
+        "workspai workspace repair plan --card doctor --project api --json",
+        "workspai workspace repair propose --proposal .workspai/repair/inbox/proposal.json --json",
+        "workspai workspace repair approve --transaction repair_123 --approved-by local-user --json",
+        "workspai workspace repair decide --transaction repair_123 --decision approve-invasive --json",
+        "workspai workspace repair execute --transaction repair_123 --json",
+        "workspai workspace repair rollback --transaction repair_123 --json"
+      ]
+    },
+    {
       "id": "explain",
       "usage": "workspai workspace explain [target] [--scope <scope>] [--write] [--json]",
       "summary": "Explain current blockers or a selected workspace target from evidence.",
@@ -3233,6 +3443,7 @@
     "context",
     "agent-sync",
     "remediation-plan",
+    "repair",
     "explain",
     "why",
     "trace",

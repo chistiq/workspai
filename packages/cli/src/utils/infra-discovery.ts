@@ -12,6 +12,7 @@ import {
 } from './infra-stack.js';
 import { firstExistingWorkspaceArtifactPath } from './artifact-path-compat.js';
 import { workspaceMetadataCandidates } from './workspace-paths.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 
 export interface InfraDiscoveryResult {
   modules: string[];
@@ -97,7 +98,7 @@ async function readContractEnvVars(
 ): Promise<Array<{ project: string; env: string }>> {
   const contractPath = await firstExistingWorkspaceArtifactPath(
     workspacePath,
-    '.workspai/workspace.contract.json'
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract
   );
   if (!contractPath) {
     return [];

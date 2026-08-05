@@ -11,6 +11,8 @@ import {
   WORKSPACE_INTELLIGENCE_COMMAND_SIGNATURES,
   WORKSPACE_INTELLIGENCE_RUNTIME_STEPS,
   WORKSPACE_INTELLIGENCE_STEP_IDS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from '../../contracts/workspace-intelligence-runtime-registry';
 import { WORKSPACE_SUBCOMMANDS } from '../../utils/workspace-command-surface';
 import { WORKSPACE_MODEL_REPORT_PATH, WORKSPACE_MODEL_SCHEMA_VERSION } from '../../workspace-model';
@@ -65,6 +67,10 @@ import {
   VERIFIED_GOAL_LAST_RUN_REPORT_PATH,
   VERIFIED_GOAL_STATUS_SCHEMA_VERSION,
 } from '../../verified-goal';
+import {
+  WORKSPACE_REPAIR_LAST_RUN_REPORT_PATH,
+  WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
+} from '../../contracts/workspace-repair-transaction-contract';
 
 describe('workspace intelligence chain contract', () => {
   it('forbids canonical report path literals outside the runtime registry', () => {
@@ -92,9 +98,10 @@ describe('workspace intelligence chain contract', () => {
     };
     visit(sourceRoot);
 
-    const reportPaths = Object.values(WORKSPACE_INTELLIGENCE_ARTIFACTS).filter((artifact) =>
-      artifact.startsWith('.workspai/reports/')
-    );
+    const reportPaths = [
+      ...Object.values(WORKSPACE_INTELLIGENCE_ARTIFACTS),
+      ...Object.values(WORKSPACE_SUPPLEMENTAL_ARTIFACTS),
+    ].filter((artifact) => artifact.startsWith('.workspai/') || artifact.startsWith('.vscode/'));
     const violations: string[] = [];
     for (const sourceFile of sourceFiles) {
       const source = fs.readFileSync(sourceFile, 'utf8');
@@ -119,9 +126,12 @@ describe('workspace intelligence chain contract', () => {
       'contracts/workspace-intelligence-runtime-registry.ts'
     );
     const testSegment = `${path.sep}__tests__${path.sep}`;
-    const schemaVersions = Object.values(WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS).filter(
-      (schema): schema is string => typeof schema === 'string'
-    );
+    const schemaVersions = [
+      ...Object.values(WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS),
+      ...Object.values(WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS).map(
+        (descriptor) => descriptor.schemaVersion
+      ),
+    ].filter((schema): schema is string => typeof schema === 'string');
     const violations: string[] = [];
     const visit = (directory: string) => {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -266,6 +276,7 @@ describe('workspace intelligence chain contract', () => {
       evaluationLive: WORKSPACE_EVALUATION_LIVE_PATH,
       evaluationLastRun: WORKSPACE_EVALUATION_LAST_RUN_PATH,
       verifiedGoalStatus: VERIFIED_GOAL_LAST_RUN_REPORT_PATH,
+      repairTransaction: WORKSPACE_REPAIR_LAST_RUN_REPORT_PATH,
     }).toEqual(WORKSPACE_INTELLIGENCE_ARTIFACTS);
   });
 
@@ -292,6 +303,7 @@ describe('workspace intelligence chain contract', () => {
       evaluationLive: WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
       evaluationLastRun: WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
       verifiedGoalStatus: VERIFIED_GOAL_STATUS_SCHEMA_VERSION,
+      repairTransaction: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
     }).toEqual(WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS);
   });
 

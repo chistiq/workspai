@@ -16,7 +16,11 @@ import {
   resolveWorkspaceArtifactPath,
   writeWorkspaceArtifactJson,
 } from './utils/artifact-path-compat.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 import { cliOperationError } from './contracts/cli-operation-result-contract.js';
 
 export type PipelineStageStatus = 'pass' | 'warn' | 'fail' | 'skipped';
@@ -33,7 +37,7 @@ export interface PipelineStageResult {
 }
 
 export interface PipelineReport {
-  schemaVersion: 'rapidkit-pipeline-v1';
+  schemaVersion: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS)['pipelineLastRun']['schemaVersion'];
   generatedAt: string;
   workspacePath: string;
   summary: {
@@ -393,10 +397,10 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
 
   const verdict = computePipelineVerdict(stages);
   const exitCode = computePipelineExitCode(stages, executionError);
-  const reportPath = path.join(workspacePath, '.workspai', 'reports', 'pipeline-last-run.json');
+  const reportPath = path.join(workspacePath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.pipelineLastRun);
 
   const report: PipelineReport = {
-    schemaVersion: 'rapidkit-pipeline-v1',
+    schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.pipelineLastRun.schemaVersion,
     generatedAt: new Date().toISOString(),
     workspacePath,
     summary: {
@@ -426,7 +430,7 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     });
     await writeWorkspaceArtifactJson(
       workspacePath,
-      '.workspai/reports/pipeline-last-run.json',
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.pipelineLastRun,
       enriched
     );
   }

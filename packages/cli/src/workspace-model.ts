@@ -43,6 +43,7 @@ import {
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { readWorkspaceContract, type WorkspaceContract } from './utils/workspace-contract.js';
 import { readRapidkitProjectJson } from './utils/runtime-detection.js';
@@ -1290,7 +1291,7 @@ export async function buildWorkspaceModel(
     workspaceMetadataCandidates(workspacePath, 'workspace.contract.json')
       .map((candidate) => path.relative(workspacePath, candidate).split(path.sep).join('/'))
       .find((candidate) => fsExtra.existsSync(path.join(workspacePath, candidate))) ??
-    '.workspai/workspace.contract.json';
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
   const contractExists = await fsExtra.pathExists(path.join(workspacePath, contractPath));
 
   const model: Omit<WorkspaceModel, 'validation'> = {
@@ -1345,22 +1346,22 @@ export async function buildWorkspaceModel(
       ),
       projectDoctor: await evidenceRef(
         workspacePath,
-        '.workspai/reports/doctor-project-last-run.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorProject,
         includeEvidence
       ),
       doctorRemediationPlan: await evidenceRef(
         workspacePath,
-        '.workspai/reports/doctor-remediation-plan-last-run.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorRemediationPlan,
         includeEvidence
       ),
       artifactRemediationPlan: await evidenceRef(
         workspacePath,
-        '.workspai/reports/artifact-remediation-plan-last-run.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.artifactRemediationPlan,
         includeEvidence
       ),
       doctorFixResult: await evidenceRef(
         workspacePath,
-        '.workspai/reports/doctor-fix-result-last-run.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorFixResult,
         includeEvidence
       ),
       analyze: await evidenceRef(
@@ -1375,7 +1376,7 @@ export async function buildWorkspaceModel(
       ),
       pipeline: await evidenceRef(
         workspacePath,
-        '.workspai/reports/pipeline-last-run.json',
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.pipelineLastRun,
         includeEvidence
       ),
     },

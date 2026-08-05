@@ -17,6 +17,10 @@ import { discoverWorkspaceProjects as discoverWorkspaceProjectsShared } from './
 import { buildCleanGitEnv } from './utils/git-worktree.js';
 import { projectMetadataCandidates, workspaceMetadataCandidates } from './utils/workspace-paths.js';
 import { assertWorkspaceArtifactContract } from './contracts/artifact-contract-registry.js';
+import {
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from './contracts/workspace-intelligence-runtime-registry.js';
 
 export interface WorkspaceProject {
   name: string;
@@ -1873,7 +1877,7 @@ type WorkspaceShareProject = {
 };
 
 type WorkspaceShareBundle = {
-  schema_version: '1.1';
+  schema_version: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS)['workspaceShareBundle']['schemaVersion'];
   generated_at: string;
   generated_by: 'workspai';
   workspace: {
@@ -2049,7 +2053,7 @@ export async function createWorkspaceShareBundle(
   );
 
   const bundle: WorkspaceShareBundle = {
-    schema_version: '1.1',
+    schema_version: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceShareBundle.schemaVersion,
     generated_at: new Date().toISOString(),
     generated_by: 'workspai',
     workspace: {
@@ -2111,7 +2115,7 @@ export async function createWorkspaceShareBundle(
     : path.join(workspaceReportsDirs[0], 'share-bundle.json');
 
   if (!options?.outputPath) {
-    assertWorkspaceArtifactContract('.workspai/reports/share-bundle.json', bundle);
+    assertWorkspaceArtifactContract(WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceShareBundle, bundle);
   }
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, JSON.stringify(bundle, null, 2), 'utf8');

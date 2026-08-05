@@ -133,7 +133,8 @@
         "intelligenceRun": "workspace-intelligence-run.v1",
         "evaluationLive": "workspace-intelligence-evaluation.v1",
         "evaluationLastRun": "workspace-intelligence-evaluation.v1",
-        "verifiedGoalStatus": "workspai.verified-goal-status.v1"
+        "verifiedGoalStatus": "workspai.verified-goal-status.v1",
+        "repairTransaction": "workspai.workspace-repair-transaction.v1"
       },
       "contractPath": null,
       "publication": "embedded-type",
@@ -242,6 +243,11 @@
           "path": ".workspai/reports/verified-goal-last-run.json",
           "schemaVersion": "workspai.verified-goal-status.v1",
           "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json"
+        },
+        "repairTransaction": {
+          "path": ".workspai/reports/workspace-repair-last-run.json",
+          "schemaVersion": "workspai.workspace-repair-transaction.v1",
+          "contractPath": "contracts/workspace-intelligence/workspace-repair-transaction.v1.json"
         }
       }
     },
@@ -385,9 +391,114 @@
       "contractPath": "contracts/artifact-remediation-plan.v1.json",
       "publication": "json-schema"
     },
+    "studioCardRepairCapabilities": {
+      "schemaVersion": "workspai.studio-card-repair-capabilities.v1",
+      "contractPath": "contracts/studio-card-repair-capabilities.v1.json",
+      "publication": "capability-contract"
+    },
+    "workspaceRepairProposal": {
+      "schemaVersion": "workspai.workspace-repair-proposal.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-repair-proposal.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceRepairCapabilities": {
+      "schemaVersion": "workspai.workspace-repair-capabilities.v1",
+      "contractPath": "contracts/workspace-repair-capabilities.v1.json",
+      "publication": "capability-contract"
+    },
+    "workspaceRepairTransaction": {
+      "schemaVersion": "workspai.workspace-repair-transaction.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-repair-transaction.v1.json",
+      "publication": "json-schema"
+    },
     "doctorFixResult": {
       "schemaVersion": "rapidkit-doctor-fix-result-v1",
       "contractPath": "contracts/workspace-intelligence/doctor-fix-result.v1.json",
+      "publication": "json-schema"
+    },
+    "backendImportStackParitySnapshot": {
+      "schemaVersion": "backend-import-stack-parity-v1",
+      "contractPath": "contracts/backend-import-stack-parity.snapshot.json",
+      "publication": "capability-contract"
+    },
+    "bootstrapCompliance": {
+      "schemaVersion": "bootstrap-compliance.v1",
+      "contractPath": "contracts/bootstrap-compliance.v1.json",
+      "publication": "json-schema"
+    },
+    "commandCapabilities": {
+      "schemaVersion": "rapidkit-command-capabilities-v1",
+      "contractPath": "contracts/command-capabilities.v1.json",
+      "publication": "capability-contract"
+    },
+    "createPlannerCapabilities": {
+      "schemaVersion": "rapidkit-create-planner-capabilities-v1",
+      "contractPath": "contracts/create-planner-capabilities.v1.json",
+      "publication": "capability-contract"
+    },
+    "doctorRemediationPlanLegacy": {
+      "schemaVersion": "doctor-remediation-plan-v2",
+      "contractPath": "contracts/doctor-remediation-plan.v1.json",
+      "publication": "json-schema"
+    },
+    "extensionCliCompatibility": {
+      "schemaVersion": "rapidkit-extension-cli-compatibility.v1",
+      "contractPath": "contracts/extension-cli-compatibility.v1.json",
+      "publication": "capability-contract"
+    },
+    "infraStack": {
+      "schemaVersion": "rapidkit.infra-stack.v1",
+      "contractPath": "contracts/infra-stack.v1.json",
+      "publication": "json-schema"
+    },
+    "mirrorOps": {
+      "schemaVersion": "mirror-ops.v1",
+      "contractPath": "contracts/mirror-ops.v1.json",
+      "publication": "json-schema"
+    },
+    "moduleLayout": {
+      "schemaVersion": "rapidkit.module-layout.v1",
+      "contractPath": "contracts/module-layout.v1.json",
+      "publication": "capability-contract"
+    },
+    "moduleSupport": {
+      "schemaVersion": "rapidkit-module-support-v1",
+      "contractPath": "contracts/module-support.v1.json",
+      "publication": "capability-contract"
+    },
+    "pipelineLastRun": {
+      "schemaVersion": "rapidkit-pipeline-v1",
+      "contractPath": "contracts/pipeline-last-run.v1.json",
+      "publication": "json-schema"
+    },
+    "transparencyEvidence": {
+      "schemaVersion": "transparency-evidence.v1",
+      "contractPath": "contracts/transparency-evidence.v1.json",
+      "publication": "json-schema"
+    },
+    "version": {
+      "schemaVersion": "rapidkit-version-v1",
+      "contractPath": "contracts/version.v1.json",
+      "publication": "json-schema"
+    },
+    "studioBlockerHandoff": {
+      "schemaVersion": "rapidkit-studio-blocker-handoff-v1",
+      "contractPath": "contracts/workspace-intelligence/studio-blocker-handoff.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceRegistry": {
+      "schemaVersion": "workspace-registry.v1",
+      "contractPath": "contracts/workspace-registry.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceRunLast": {
+      "schemaVersion": "workspace-run-v1",
+      "contractPath": "contracts/workspace-run-last.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceShareBundle": {
+      "schemaVersion": "1.1",
+      "contractPath": "contracts/workspace-share-bundle.v1.json",
       "publication": "json-schema"
     },
     "autopilotRelease": {
@@ -428,7 +539,7 @@
     "workspaceSnapshot": {
       "schemaVersion": "rapidkit-workspace-snapshot-v1",
       "contractPath": "contracts/workspace-snapshot.v1.json",
-      "publication": "json-schema"
+      "publication": "capability-contract"
     },
     "workspaceSnapshotV2": {
       "schemaVersion": "rapidkit-workspace-snapshot-v2",

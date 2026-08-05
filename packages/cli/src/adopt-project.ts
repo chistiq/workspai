@@ -1,6 +1,7 @@
 import path from 'path';
 
 import fsExtra from 'fs-extra';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
 
 import {
   upsertImportedProjectsRegistry,
@@ -385,7 +386,7 @@ export async function adoptProjectIntoWorkspace(
     mode: 'linked',
     workspace: {
       name: path.basename(workspacePath),
-      contract: '.workspai/workspace.contract.json',
+      contract: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
     },
     project: {
       name: projectName,

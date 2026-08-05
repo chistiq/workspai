@@ -14,8 +14,9 @@ workspace.
 npm run test:runtime-matrix
 ```
 
-For a stricter prepared-machine run where Go, Java, .NET, Python, and Node
-toolchains are expected to be installed:
+For a stricter prepared-machine run where the supported Go, Java, .NET,
+Python/RapidKit Core, Node, Rust, and PHP/Composer toolchains are healthy and
+dependency registries are reachable (or already cached):
 
 ```bash
 npm run test:runtime-matrix:full
@@ -32,7 +33,7 @@ node scripts/runtime-acceptance-matrix.mjs --report ./runtime-acceptance-report.
 | Mode     | Purpose                                                                 | External runtime requirement |
 | -------- | ----------------------------------------------------------------------- | ---------------------------- |
 | default  | Scaffold, import, contract, doctor, archive, and actionable diagnostics | no                           |
-| `--full` | Everything in default plus lifecycle commands must pass                 | yes                          |
+| `--full` | Supported lifecycle commands pass; unsupported commands reject cleanly  | yes                          |
 
 Default mode is intentionally network-safe. It creates a minimal workspace,
 uses `--skip-install` for scaffolded projects, and accepts missing-runtime
@@ -62,8 +63,10 @@ The matrix verifies:
 - `project commands --json` capability reporting for every generated/imported
   project.
 - Project lifecycle `init`, `help`, `test`, `build`, `lint`, and `format` in
-  default and full modes, with missing runtime/tooling reported as actionable
-  setup diagnostics in default mode.
+  default and full modes. The project capability map is authoritative:
+  supported commands run, unsupported commands must reject cleanly, and
+  missing runtime/tooling must produce actionable setup diagnostics in default
+  mode.
 - `workspace run init/test/build`, including default-mode actionable setup
   failures and full-mode hard pass requirements.
 - Rejection of unsupported fleet stages such as `workspace run dev`.
@@ -93,6 +96,7 @@ For npm releases:
 1. Run `npm run test:runtime-matrix` locally before publishing a release
    candidate.
 2. Run `npm run test:runtime-matrix:full` on at least one prepared release
-   machine with Go, Java, .NET, Python, and Node installed.
+   machine with all extended toolchains used by the matrix installed, a healthy
+   RapidKit Core environment, and dependency registry access or warm caches.
 3. Any newly added first-class or extended runtime must add at least one matrix
    scenario before release.
