@@ -190,6 +190,49 @@ interface HealthCheckResult {
   paths?: { location: string; path: string; version?: string }[]; // Multiple installation paths
 }
 
+function optionalizeHealthCheck(check: HealthCheckResult, reason: string): HealthCheckResult {
+  if (check.status !== 'error') {
+    return check;
+  }
+
+  const details = [check.details, reason]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join(' ');
+  return {
+    ...check,
+    status: 'warn',
+    ...(details ? { details } : {}),
+  };
+}
+
+function contextualizeDoctorSystemChecks(
+  checks: {
+    python: HealthCheckResult;
+    poetry: HealthCheckResult;
+    pipx: HealthCheckResult;
+    go: HealthCheckResult;
+    rapidkitCore: HealthCheckResult;
+  },
+  projects: ProjectHealth[]
+): typeof checks {
+  const hasPythonProject = projects.some((project) => project.runtimeFamily === 'python');
+  return {
+    ...checks,
+    python: hasPythonProject
+      ? checks.python
+      : optionalizeHealthCheck(
+          checks.python,
+          'Python is optional because this scope has no detected Python project.'
+        ),
+    rapidkitCore: /not installed/i.test(checks.rapidkitCore.message)
+      ? optionalizeHealthCheck(
+          checks.rapidkitCore,
+          'RapidKit Core is an optional engine for Python-backed kits and modules; Workspai CLI diagnostics remain available without it.'
+        )
+      : checks.rapidkitCore,
+  };
+}
+
 type DetectedFramework =
   | 'FastAPI'
   | 'Django'
@@ -4643,6 +4686,22 @@ async function getWorkspaceHealth(
   health.projectScanSignature = projectSignature;
   health.projectScanCachePath = cachePath;
 
+  const contextualSystemHealth = contextualizeDoctorSystemChecks(
+    {
+      python: health.python,
+      poetry: health.poetry,
+      pipx: health.pipx,
+      go: health.go,
+      rapidkitCore: health.rapidkitCore,
+    },
+    health.projects
+  );
+  health.python = contextualSystemHealth.python;
+  health.poetry = contextualSystemHealth.poetry;
+  health.pipx = contextualSystemHealth.pipx;
+  health.go = contextualSystemHealth.go;
+  health.rapidkitCore = contextualSystemHealth.rapidkitCore;
+
   await Promise.all(
     health.projects.map(async (projectHealth) => {
       projectHealth.graphDiagnosis = await buildDoctorGraphDiagnosis({
@@ -4912,6 +4971,7 @@ async function getProjectHealthEnvelope(
   const workspacePath = await findWorkspace(projectPath);
   const systemHealth = await collectSystemChecks(workspacePath || projectPath);
   const projectHealth = await checkProject(projectPath, { allowNonRapidkit: true });
+  const contextualSystemHealth = contextualizeDoctorSystemChecks(systemHealth, [projectHealth]);
   applyCommandCapabilities(projectHealth, projectPath);
   projectHealth.graphDiagnosis = await buildDoctorGraphDiagnosis({
     workspacePath: workspacePath || undefined,
@@ -4922,11 +4982,11 @@ async function getProjectHealthEnvelope(
   });
   const healthScore = calculateHealthScore(
     [
-      systemHealth.python,
-      systemHealth.poetry,
-      systemHealth.pipx,
-      systemHealth.go,
-      systemHealth.rapidkitCore,
+      contextualSystemHealth.python,
+      contextualSystemHealth.poetry,
+      contextualSystemHealth.pipx,
+      contextualSystemHealth.go,
+      contextualSystemHealth.rapidkitCore,
     ],
     [projectHealth]
   );
@@ -4935,11 +4995,11 @@ async function getProjectHealthEnvelope(
     workspacePath: workspacePath || undefined,
     projectPath,
     projectName: path.basename(projectPath),
-    python: systemHealth.python,
-    poetry: systemHealth.poetry,
-    pipx: systemHealth.pipx,
-    go: systemHealth.go,
-    rapidkitCore: systemHealth.rapidkitCore,
+    python: contextualSystemHealth.python,
+    poetry: contextualSystemHealth.poetry,
+    pipx: contextualSystemHealth.pipx,
+    go: contextualSystemHealth.go,
+    rapidkitCore: contextualSystemHealth.rapidkitCore,
     project: projectHealth,
     healthScore,
     policyProfile,

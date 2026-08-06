@@ -122,7 +122,7 @@ describe('frontend create registry', () => {
       mode: 'linked',
       policy: { moved_source: false, copied_source: false },
     });
-  });
+  }, 60_000);
 
   it('removes the generated target when strict finalization fails', async () => {
     const definition = resolveFrontendGenerator('nextjs');

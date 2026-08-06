@@ -383,4 +383,33 @@ describe('workspace artifact path compatibility', () => {
     ).rejects.toThrow('operation failed');
     expect(await fsExtra.pathExists(lockPath)).toBe(false);
   });
+
+  it('queues same-process contenders without consuming the filesystem lock timeout', async () => {
+    const root = await temporaryWorkspace();
+    const relativePath = '.workspai/reports/local-queue.json';
+    const lockPath = `${resolveWorkspaceArtifactPath(root, relativePath)}.lock`;
+    let active = 0;
+    let maxActive = 0;
+
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, index) =>
+        withWorkspaceArtifactLock(
+          root,
+          relativePath,
+          async () => {
+            active += 1;
+            maxActive = Math.max(maxActive, active);
+            await new Promise((resolve) => setTimeout(resolve, 15));
+            active -= 1;
+            return index;
+          },
+          { timeoutMs: 5 }
+        )
+      )
+    );
+
+    expect(results).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(maxActive).toBe(1);
+    expect(await fsExtra.pathExists(lockPath)).toBe(false);
+  });
 });

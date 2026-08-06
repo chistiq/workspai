@@ -97,6 +97,31 @@ async function removeWorkspaceArtifactLock(lockPath: string): Promise<void> {
   throw lastError;
 }
 
+const inProcessArtifactLockTails = new Map<string, Promise<void>>();
+
+async function withInProcessArtifactLock<T>(
+  lockPath: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  const previous = inProcessArtifactLockTails.get(lockPath) ?? Promise.resolve();
+  let release!: () => void;
+  const turn = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => turn);
+  inProcessArtifactLockTails.set(lockPath, tail);
+
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (inProcessArtifactLockTails.get(lockPath) === tail) {
+      inProcessArtifactLockTails.delete(lockPath);
+    }
+  }
+}
+
 async function syncFileHandleForArtifact(handle: Awaited<ReturnType<typeof open>>): Promise<void> {
   try {
     await handle.sync();
@@ -160,6 +185,17 @@ export async function withWorkspaceArtifactLock<T>(
   const artifactPath = resolveWorkspaceArtifactPath(workspacePath, relativePath);
   await ensureArtifactParentIsContained(workspacePath, artifactPath);
   const lockPath = `${artifactPath}.lock`;
+  return withInProcessArtifactLock(lockPath, () =>
+    withWorkspaceArtifactFileLock(lockPath, relativePath, operation, options)
+  );
+}
+
+async function withWorkspaceArtifactFileLock<T>(
+  lockPath: string,
+  relativePath: string,
+  operation: () => Promise<T>,
+  options: { timeoutMs?: number; staleAfterMs?: number }
+): Promise<T> {
   const timeoutMs = options.timeoutMs ?? 10_000;
   const staleAfterMs = options.staleAfterMs ?? 30_000;
   const startedAt = Date.now();

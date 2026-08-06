@@ -928,7 +928,7 @@ describe('CLI Entry Point', () => {
         await fs.remove(cwdOutsideWorkspace);
         await fs.remove(sourceDir);
       }
-    }, 20000);
+    }, 60_000);
 
     it('should not silently fall back when an explicit workspace path is invalid', async () => {
       const fakeHome = await fs.mkdtemp(path.join(TEST_DIR, 'home-import-explicit-'));

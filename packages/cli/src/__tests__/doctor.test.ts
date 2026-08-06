@@ -827,6 +827,51 @@ describe('Doctor Command', () => {
     }
   });
 
+  it('keeps runtime-neutral workspaces usable when optional Python tooling is absent', async () => {
+    const tempRoot = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-doctor-runtime-neutral-')
+    );
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai-workspace'), {
+      signature: 'WORKSPAI_WORKSPACE',
+      name: 'runtime-neutral',
+      version: '1.0.0',
+    });
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'workspace.json'), {
+      name: 'runtime-neutral',
+      profile: 'minimal',
+      projects: [],
+    });
+
+    mockedExeca.mockRejectedValue(new Error('tool not found'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await expect(runDoctor({ workspace: true, json: true })).resolves.toBe(0);
+
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.summary).toMatchObject({
+        totalProjects: 0,
+        hasSystemErrors: false,
+      });
+      expect(payload.system.python).toMatchObject({ status: 'warn' });
+      expect(payload.system.python.details).toContain('no detected Python project');
+      expect(payload.system.rapidkitCore).toMatchObject({ status: 'warn' });
+      expect(payload.system.rapidkitCore.details).toContain('optional engine');
+      expect(payload.healthScore).toMatchObject({ errors: 0, verdict: 'attention' });
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
   it('should detect workspace root with .rapidkit-workspace marker only', async () => {
     const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-doctor-marker-only-'));
     const workspacePath = path.join(tempRoot, 'workspace');
