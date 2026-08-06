@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-08-06
+
+### Added
+
+- Added the CLI-owned `workspace repair` engine with durable `capabilities`,
+  `plan`, `propose`, `approve`, `execute`, `resume`, `status`, `list`, `decide`,
+  `rollback`, and `cancel` actions.
+- Added published repair-capabilities, Studio card-repair, proposal, and
+  transaction contracts for CLI, IDE, CI, and agent consumers.
+- Added immutable plan hashes, executable/source preconditions, explicit
+  approval, bounded file checkpoints, durable stage events, owner locking, and
+  strict canonical verification.
+- Added guarded model proposals for bounded complete-file writes and deletes
+  plus structured audit, test, and build invocations.
+- Added package-manager-aware repair adapters for Node, Python, Go, Rust,
+  Composer, Bundler, Elixir, Deno, .NET, Maven, and Gradle project surfaces.
+- Added multi-adapter project planning and a runtime acceptance matrix that
+  distinguishes full, conditional, and unsupported repair paths.
+
+### Changed
+
+- Made the CLI the only authority that may execute, reconcile, verify, close,
+  or roll back a workspace repair transaction.
+- Made dependency-manifest proposals inherit reconcile, audit, declared test,
+  declared build, and strict Workspace Intelligence verification stages.
+- Made required executable resolution part of both planning and immediate
+  pre-execution validation, expiring stale approvals instead of starting a
+  partial transaction.
+- Made RapidKit Core optional in Doctor unless the current workspace actually
+  requires the Python-backed engine.
+- Aligned runtime command contracts, artifact catalogs, Doctor documentation,
+  Workspace Run documentation, and consumer compatibility inventories with the
+  executable CLI surface.
+
+### Fixed
+
+- Fixed Studio consumers needing to recreate repair execution rules or infer
+  completion from a source edit alone.
+- Fixed concurrent repair writers and unsafe lock stealing by introducing a
+  workspace owner lock with live-process checks.
+- Fixed rollback restoring over externally changed files or unverified backups;
+  conflicts now produce an explicit decision instead.
+- Fixed path, symbolic-link, Git-internal, evidence-artifact, dependency-tree,
+  secret-file, and stale-source proposal escape paths.
+- Fixed multi-runtime stage identifier collisions and cross-ecosystem Doctor
+  actions triggering an unrelated adapter.
+- Fixed Doctor missing a workspace-local RapidKit Core installation when run
+  from a nested project.
+- Fixed transient Windows `EPERM`/contention failures and stale or malformed
+  canonical artifact lock handling.
+
+### Verification
+
+- Full CLI tests, coverage, type checking, formatting, linting, production
+  build, contract generation, shared-contract parity, runtime acceptance, and
+  CLI/extension integration passed.
+- Package metrics reported 81% coverage, zero ESLint errors, and zero known
+  dependency vulnerabilities.
+
 ## [0.52.3] - 2026-08-03
 
 ### Changed

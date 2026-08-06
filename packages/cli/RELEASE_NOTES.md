@@ -5,7 +5,68 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.52.3 (August 3, 2026)
+## Latest Release: v0.53.0 (August 6, 2026)
+
+### Governed Workspace Repair Engine
+
+This minor release makes blocker repair a durable, CLI-owned transaction. IDEs
+and models can propose work and present decisions, while Workspai owns safety,
+approval, mutation, rollback, and the strict verification required to close the
+blocker.
+
+**What's New:**
+
+- **One governed repair lifecycle**
+  - `workspace repair` covers capabilities, plan, proposal, approval,
+    execution, resume, status, decisions, rollback, cancellation, and history.
+  - Durable state survives consumer restarts without losing passed stages.
+
+- **Integrity-bound mutation**
+  - Approval is tied to an immutable plan hash and current source/tool
+    preconditions.
+  - Bounded checkpoints, conflict-aware rollback, and an owner lock prevent
+    untracked or concurrent repair writes.
+
+- **Dynamic model proposals behind a hard boundary**
+  - Models may propose bounded file changes and structured commands.
+  - The CLI rejects stale, secret-bearing, out-of-workspace, symlink-escaping,
+    evidence-mutating, or ungoverned input before execution.
+
+- **Truthful multi-runtime adapters**
+  - Node, Python, Go, Rust, PHP, Ruby, Elixir, Deno, .NET, Maven, and Gradle
+    surfaces are represented in the published capability inventory.
+  - Missing tools or conditional support becomes `decision-required`, never a
+    silent model fallback.
+
+- **Stronger Doctor and artifact locking**
+  - RapidKit Core remains optional for workspaces that do not require the
+    Python-backed engine.
+  - Windows artifact locks tolerate transient filesystem contention without
+    stealing a live writer's lock.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Full CLI tests, coverage, type checking, formatting, linting, build, contract
+  generation, runtime acceptance, and CLI/extension integration passed.
+- Package metrics reported 81% coverage, zero ESLint errors, and zero known
+  dependency vulnerabilities.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.53.0
+workspai --version
+workspai workspace repair capabilities --json
+workspai workspace repair list --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.53.0/packages/cli/releases/RELEASE_NOTES_v0.53.0.md)
+
+---
+
+## Previous Release: v0.52.3 (August 3, 2026)
 
 ### Deterministic Governance Repair
 
