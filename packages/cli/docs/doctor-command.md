@@ -442,7 +442,7 @@ jobs:
         with:
           node-version: '20.19.0'
       - run: npm ci
-      - run: npx workspai doctor
+      - run: npx workspai doctor workspace --ci --json
 ```
 
 ## Exit Codes
@@ -556,15 +556,21 @@ These fields are designed for release gates and extension timeline cards that mu
 
 - `npx workspai doctor workspace --strict` exits `1` when health score reports errors **or** warnings.
 - `npx workspai doctor workspace --ci` exits `1` on errors and `2` on warnings only (errors take precedence).
-- Without `--strict` or `--ci`, doctor reports findings but exits `0` (backward compatible).
+- Without `--strict` or `--ci`, the local profile exits `1` for errors and `0`
+  for passed or warning-only results. Warnings remain advisory; errors never
+  become a successful local result.
 
 ## Workspace fix behavior
 
-- Reuses cached project scans when valid; refreshes `.workspai/reports/doctor-last-run.json`.
+- Reuses cached project scans only when their inputs and Doctor scoring/safety
+  policy still match; stale policy signatures force a rescan. Cached payloads
+  are re-sanitized before they can become current evidence.
 - `--fix` runs interactive remediation; `--plan` prints remediation plan only; `--apply` applies non-interactively.
 - `--plan` cannot be combined with `--fix` or `--apply`.
 - JSON fix/apply output includes the same `doctor-remediation-plan-v2` contract used by Studio.
-- Advisory warnings do not automatically become shell fix commands.
+- Advisory warnings do not automatically become shell fix commands. URLs stay
+  in issue guidance and recommendations; Doctor never exposes a documentation
+  URL as an executable `fixCommand` or repair action.
 - Go `go mod tidy` fixes are skipped when the Go toolchain is unavailable.
 
 ## Workspace JSON fields (AI/automation)

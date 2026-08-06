@@ -7,7 +7,8 @@ Use one command when you want the latest answer to these questions:
 - Is the workspace healthy and ready?
 - What should developers, CI, IDEs, and AI tools read?
 
-Run it from a Workspai workspace root:
+Run it from a Workspai workspace root or any project with a validated workspace
+binding:
 
 ```bash
 npx workspai workspace intelligence run --for-agent generic --strict --json

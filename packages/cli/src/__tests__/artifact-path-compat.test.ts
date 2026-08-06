@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   firstExistingWorkspaceArtifactPath,
+  isWorkspaceArtifactLockContentionError,
   resolveLegacyWorkspaceArtifactPath,
   resolveWorkspaceArtifactPath,
   writeWorkspaceArtifactJson,
@@ -32,6 +33,21 @@ async function temporaryWorkspace(): Promise<string> {
 }
 
 describe('workspace artifact path compatibility', () => {
+  it('treats Windows sharing violations as lock contention without masking them elsewhere', () => {
+    for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+      const error = Object.assign(new Error(code), { code });
+      expect(isWorkspaceArtifactLockContentionError(error, 'win32')).toBe(true);
+      expect(isWorkspaceArtifactLockContentionError(error, 'linux')).toBe(false);
+      expect(isWorkspaceArtifactLockContentionError(error, 'darwin')).toBe(false);
+    }
+    expect(
+      isWorkspaceArtifactLockContentionError(
+        Object.assign(new Error('unexpected'), { code: 'EINVAL' }),
+        'win32'
+      )
+    ).toBe(false);
+  });
+
   it('rejects absolute paths and workspace traversal for canonical and legacy resolution', () => {
     const root = path.resolve(os.tmpdir(), 'workspai-artifact-root');
     for (const unsafe of [

@@ -62,12 +62,12 @@ npx workspai workspace goal plan <release-readiness|dependency-security|test-cov
 npx workspai workspace goal status <goal-id> [--json]
 npx workspai workspace goal verify <goal-id> [--no-run] [--reuse-intelligence] [--json]
 npx workspai workspace model [--workspace <path>] [--json] [--write] [--strict] [--cache] [--incremental] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace context --for-agent [codex|claude|cursor|orca] [--workspace <path>] [--json] [--write] [--agent-sync|--no-agent-sync] [--target <targets>] [--preset minimal|enterprise] [--include-evidence] [--scan-depth <count>]
+npx workspai workspace context --for-agent [generic|codex|claude|cursor|orca] [--workspace <path>] [--scope project:<name>] [--json] [--write] [--agent-sync|--no-agent-sync] [--target <targets>] [--preset minimal|enterprise] [--project-grounding managed|local|off] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace agent-sync [--workspace <path>] [--write] [--refresh-context] [--strict] [--json] [--preset minimal|enterprise] [--target all|vscode|agents,copilot,cursor,claude,codex,orca] [--project-grounding managed|local|off] [--experimental-hooks] [--hydrate-prompts]
 npx workspai workspace remediation-plan [--json] [--write] [--ci] [--include-paths]
-npx workspai workspace repair <capabilities|plan|propose|approve|decide|execute|resume|status|list|rollback|cancel> [--transaction <id>] [--json]
+npx workspai workspace repair <capabilities|plan|propose|approve|decide|execute|resume|status|list|rollback|cancel> [--workspace <path>] [--card <id>] [--action-id <id>] [--project <name>] [--proposal <file>] [--transaction <id>] [--approved-by <actor>] [--decision <choice>] [--max-risk safe|guarded|invasive] [--allow-breaking] [--allow-force] [--no-auto-rollback] [--json]
 npx workspai workspace snapshot [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace diff --from <snapshot-or-report|git[:ref]> [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
+npx workspai workspace diff --from <snapshot-or-model|git[:ref]> [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace impact --from <workspace-diff-report> [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace verify [--from-impact <file>] [--workspace <path>] [--scope project:<name>] [--strict] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
@@ -96,7 +96,7 @@ npx workspai project restore <archive> [--name <project-name>] [--force] [--dry-
 npx workspai project delete <name> [--permanent --confirm <name>] [--dry-run] [--json]
 npx workspai project workspace [status|relink] [--workspace <path>] [--project <path>] [--json]
 npx workspai workspace init
-npx workspai workspace run <init|test|build|start> [--affected] [--blast-radius] [--since <ref>] [--parallel] [--max-workers <n>] [--strict] [--json]
+npx workspai workspace run <init|test|build|start|custom-stage> [--workspace <path>] [--scope project:<name>] [--affected] [--blast-radius] [--since <ref>] [--parallel] [--max-workers <n>] [--continue-on-error] [--reuse-passed] [--strict] [--no-gates] [--json]
 npx workspai infra plan [--workspace <path>] [--json] [--dry-run] [--verbose]
 npx workspai infra up [--workspace <path>] [--no-plan] [--build]
 npx workspai infra down [--workspace <path>] [--volumes]
@@ -163,8 +163,10 @@ artifacts, proof additions/removals/content changes, bounded one-hop impact,
 and a risk summary. Observation timestamps and freshness alone do not create
 false change noise. Query indexes are cached
 per immutable graph object and invalidated automatically when a new graph is
-built. `dot` and `mermaid` intentionally remain project-topology renderers and
-emit raw text for direct piping.
+built. `dot` and `mermaid` intentionally remain project-topology renderers.
+Without `--output` they emit raw text for direct piping. With `--output` they
+write a durable file; adding `--json` returns a structured operation receipt
+with the format, node and edge counts, and resolved output path.
 
 Every integrated `workspace graph` Knowledge Graph is derived from the
 canonical Workspace Model. Its contract fixes the source artifact to
@@ -183,9 +185,8 @@ assert equivalent answer quality or model-specific billing savings.
 
 `workspace graph jsonld|graphml|gexf` exports the current derived,
 evidence-backed Knowledge Graph for semantic, graph-analysis, and interactive
-2D/3D consumers.
-Use `--output <file>` for a durable export; Mermaid and DOT remain the compact
-documentation-oriented renderings.
+2D/3D consumers. All five export modes accept `--output <file>`; Mermaid and
+DOT remain compact documentation-oriented project-topology renderings.
 
 `workspace eval` records provider/tokenizer/estimate provenance, tool activity,
 cost, latency, and verified task outcome. `eval record` accepts a

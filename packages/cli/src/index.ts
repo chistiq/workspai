@@ -9398,12 +9398,35 @@ See the command reference for action-specific required inputs and output artifac
         });
       };
 
-      if (mode === 'dot') {
-        console.log(renderGraphDot(graph));
-        return;
-      }
-      if (mode === 'mermaid') {
-        console.log(renderGraphMermaid(graph));
+      if (mode === 'dot' || mode === 'mermaid') {
+        const rendered = mode === 'dot' ? renderGraphDot(graph) : renderGraphMermaid(graph);
+        const output = workspaceOutputPath();
+        if (output) {
+          const outputPath = path.resolve(workspacePath, output);
+          await fsExtra.outputFile(outputPath, `${rendered}\n`, 'utf8');
+          if (actionOptions.json) {
+            console.log(
+              JSON.stringify(
+                cliOperationSuccess(
+                  `workspace graph ${mode}`,
+                  {
+                    format: mode,
+                    nodeCount: graph.stats.nodeCount,
+                    edgeCount: graph.stats.edgeCount,
+                  },
+                  outputPath
+                ),
+                null,
+                2
+              )
+            );
+          } else {
+            console.log(chalk.green(`✔ Workspace dependency graph exported as ${mode}`));
+            console.log(chalk.gray(`   Written: ${outputPath}`));
+          }
+          return;
+        }
+        console.log(rendered);
         return;
       }
       if (mode === 'jsonld' || mode === 'graphml' || mode === 'gexf') {

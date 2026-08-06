@@ -1,6 +1,6 @@
 # Workspai Runtime Acceptance Matrix
 
-Last updated: 2026-06-05
+Last updated: 2026-08-06
 
 This document defines the executable acceptance gate for Workspai workspace
 and project orchestration. It complements
@@ -49,12 +49,12 @@ The matrix verifies:
   `info`, `frameworks`, `modules`, and `license`. The normal
   `workspai --version` path remains wrapper-owned.
 - `create workspace` with a Python-free minimal profile.
-- `create project` for npm-backed Go Fiber, Go Gin, Spring Boot, and ASP.NET
-  Core Clean Web API kits.
+- `create project` for npm-backed Go Fiber, Go Gin, Spring Boot, ASP.NET Core
+  Clean Web API, and Rust Axum kits.
 - `create project` for core-backed FastAPI and NestJS kits through the current
   bridge/fallback path.
-- `import` for observed runtime projects without first-class kits, including
-  Laravel/PHP, Rails/Ruby, Axum/Rust, and generic unknown backends.
+- `import` for existing projects across supported and observed runtime lanes,
+  including Laravel/PHP, Rails/Ruby, Axum/Rust, and generic unknown backends.
 - `workspace sync`, `workspace policy show/set`.
 - Snapshot safety flows: create/list/inspect/restore dry-run.
 - Project safety flows: archive list, archive dry-run, and delete dry-run.
@@ -71,6 +71,11 @@ The matrix verifies:
   failures and full-mode hard pass requirements.
 - Rejection of unsupported fleet stages such as `workspace run dev`.
 - Portable archive export, inspect, strict verify, doctor, and hydrate preview.
+
+The contract-driven official-generator smoke matrix complements this runtime
+matrix for network-backed official scaffolds such as Laravel and the frontend,
+desktop, and extension generator families. Runtime acceptance proves workspace
+orchestration; official-generator smoke proves the upstream scaffold itself.
 
 ## Report Contract
 

@@ -70,6 +70,33 @@ function isIgnorableArtifactFsyncError(error: unknown): boolean {
   );
 }
 
+export function isWorkspaceArtifactLockContentionError(
+  error: unknown,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  if (platform !== 'win32') return false;
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY';
+}
+
+async function removeWorkspaceArtifactLock(lockPath: string): Promise<void> {
+  const attempts = process.platform === 'win32' ? 6 : 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await fsExtra.remove(lockPath);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isWorkspaceArtifactLockContentionError(error) || attempt === attempts - 1) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
 async function syncFileHandleForArtifact(handle: Awaited<ReturnType<typeof open>>): Promise<void> {
   try {
     await handle.sync();
@@ -147,13 +174,19 @@ export async function withWorkspaceArtifactLock<T>(
       await syncFileHandleForArtifact(handle);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST') {
+      const contention = code === 'EEXIST' || isWorkspaceArtifactLockContentionError(error);
+      if (!contention) {
         if (handle) {
           await handle.close().catch(() => undefined);
           handle = undefined;
-          await fsExtra.remove(lockPath).catch(() => undefined);
+          await removeWorkspaceArtifactLock(lockPath).catch(() => undefined);
         }
         throw error;
+      }
+      if (handle) {
+        await handle.close().catch(() => undefined);
+        handle = undefined;
+        await removeWorkspaceArtifactLock(lockPath).catch(() => undefined);
       }
       const [stat, lock] = await Promise.all([
         fsExtra.stat(lockPath).catch(() => null),
@@ -173,7 +206,7 @@ export async function withWorkspaceArtifactLock<T>(
       const expiredUnknownOwner =
         !hasOwnerPid && Boolean(stat && Date.now() - stat.mtimeMs > staleAfterMs);
       if ((hasOwnerPid && !ownerAlive) || expiredUnknownOwner) {
-        await fsExtra.remove(lockPath).catch(() => undefined);
+        await removeWorkspaceArtifactLock(lockPath).catch(() => undefined);
         continue;
       }
       if (Date.now() - startedAt >= timeoutMs) {
@@ -187,7 +220,7 @@ export async function withWorkspaceArtifactLock<T>(
     return await operation();
   } finally {
     await handle.close().catch(() => undefined);
-    await fsExtra.remove(lockPath).catch(() => undefined);
+    await removeWorkspaceArtifactLock(lockPath);
   }
 }
 

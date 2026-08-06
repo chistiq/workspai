@@ -1137,6 +1137,18 @@ describe('Doctor Command', () => {
       const { runDoctor } = await import('../doctor.js');
 
       await runDoctor({ workspace: true, json: true });
+      const cachePath = path.join(
+        workspacePath,
+        '.workspai',
+        'reports',
+        'doctor-workspace-cache.json'
+      );
+      const firstCache = await fsExtra.readJSON(cachePath);
+      firstCache.projects[0].fixCommands = [
+        'https://example.com/install-tool',
+        'npx workspai doctor project --json',
+      ];
+      await fsExtra.writeJSON(cachePath, firstCache, { spaces: 2 });
       logSpy.mockClear();
 
       await runDoctor({ workspace: true, json: true });
@@ -1149,6 +1161,7 @@ describe('Doctor Command', () => {
       const payload = JSON.parse(jsonLine as string);
       expect(payload.cache.projectScan).toBe(true);
       expect(payload.cache.evidencePath).toContain('doctor-last-run.json');
+      expect(payload.projects[0].fixCommands).toEqual(['npx workspai doctor project --json']);
       expect(
         await fsExtra.pathExists(
           path.join(workspacePath, '.workspai', 'reports', 'doctor-workspace-cache.json')
@@ -2555,6 +2568,21 @@ describe('Doctor Command', () => {
       ).toBe(false);
       expect(
         executedCommands.some(({ cmd }) => typeof cmd === 'string' && cmd.includes('go mod tidy'))
+      ).toBe(false);
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((value) => typeof value === 'string' && value.trim().startsWith('{')) as
+        string | undefined;
+      expect(jsonLine).toBeDefined();
+      const payload = JSON.parse(jsonLine as string);
+      const project = payload.projects.find((item: { name?: string }) => item.name === 'go-api');
+      expect(project.issues).toContain('Go toolchain not found — install from https://go.dev/dl/');
+      expect(project.fixCommands).not.toContain('https://go.dev/dl/');
+      expect(
+        payload.remediationPlan.steps.some(
+          (step: { originalCommand?: string }) =>
+            typeof step.originalCommand === 'string' && /^https?:\/\//.test(step.originalCommand)
+        )
       ).toBe(false);
     } finally {
       process.chdir(originalCwd);

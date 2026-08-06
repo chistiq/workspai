@@ -233,7 +233,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     examples: ['workspai workspace snapshot --json'],
   },
   diff: {
-    usage: 'workspai workspace diff [--from <snapshot>] [--strict] [--json]',
+    usage: 'workspai workspace diff --from <snapshot-or-model|git[:ref]> [--strict] [--json]',
     summary: 'Compare the current model with a trusted model baseline.',
     flags: [
       '--workspace',
@@ -246,12 +246,12 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     ],
     artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.diff,
     examples: [
-      'workspai workspace diff --json',
       'workspai workspace diff --from .workspai/reports/workspace-model-snapshot.json --json',
+      'workspai workspace diff --from git --json',
     ],
   },
   impact: {
-    usage: 'workspai workspace impact [--from <diff>] [--scope <scope>] [--strict] [--json]',
+    usage: 'workspai workspace impact --from <diff> [--scope <scope>] [--strict] [--json]',
     summary: 'Calculate the evidence-backed blast radius of the current model change.',
     flags: [
       '--workspace',
@@ -265,7 +265,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     ],
     artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.impact,
     examples: [
-      'workspai workspace impact --json',
+      'workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json',
       'workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --strict --json',
     ],
   },

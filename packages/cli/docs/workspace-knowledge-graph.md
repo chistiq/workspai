@@ -107,6 +107,7 @@ because it appears in more files. No embedding service or model call is involved
 | How are two things connected?                        | `workspace graph path <from> <to> --json`               |
 | What changed between graph revisions?                | `workspace graph overlay --from <graph.json> --json`    |
 | What is the full portable graph?                     | `workspace graph emit --json`                           |
+| How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`       |
 | How do I export to semantic or graph-analysis tools? | `workspace graph jsonld\|graphml\|gexf --output <file>` |
 | How much retrieval payload did one query avoid?      | `workspace graph benchmark <query> --limit <n> --json`  |
 | How should an MCP-compatible agent retrieve context? | `workspace mcp serve` → `searchWorkspaceGraph`          |
@@ -330,12 +331,16 @@ deterministic projections of that same graph revision:
 ```bash
 npx workspai workspace graph mermaid
 npx workspai workspace graph dot
+npx workspai workspace graph mermaid --output workspace-graph.mmd --json
+npx workspai workspace graph dot --output workspace-graph.dot --json
 npx workspai workspace graph jsonld --output workspace-graph.jsonld
 npx workspai workspace graph graphml --output workspace-graph.graphml
 npx workspai workspace graph gexf --output workspace-graph.gexf
 ```
 
-- Mermaid and DOT are suited to documentation and architecture diagrams.
+- Mermaid and DOT are suited to documentation and architecture diagrams. They
+  print raw text when `--output` is omitted. With `--output --json`, the file is
+  written and stdout is a structured operation receipt rather than graph text.
 - JSON-LD carries semantic identities, relations, and proof references.
 - GraphML and GEXF work with graph-analysis and interactive visualization tools.
 - The canonical JSON, JSON-LD, GraphML, and GEXF outputs can drive 2D or 3D

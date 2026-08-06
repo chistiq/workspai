@@ -1179,6 +1179,7 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     expect(projectReport?.errorCategory).toBe('setup');
     expect(projectReport?.failureDiagnostic?.category).toBe('setup');
     expect(projectReport?.failureDiagnostic?.outputExcerpt).toContain('No module named pytest');
+    expect(projectReport?.reason).toContain('No module named pytest');
 
     await fsExtra.remove(workspacePath);
   });

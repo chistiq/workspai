@@ -824,6 +824,18 @@ function isVitestRuntime(): boolean {
   );
 }
 
+function boundedFailureOutput(lines: string[], limit = 8): string {
+  if (lines.length <= limit) return lines.join('\n');
+  const headCount = 3;
+  return [...lines.slice(0, headCount), ...lines.slice(-(limit - headCount))].join('\n');
+}
+
+function primaryFailureLine(lines: string[]): string | undefined {
+  const failureSignal =
+    /(?:\bnot found\b|\bno such\b|\bmissing\b|\bfailed\b|\berror\b|\bexception\b|\bcannot\b|\bdenied\b|\btimeout\b|\btimed out\b|\benoent\b|\beacces\b|\beperm\b)/i;
+  return [...lines].reverse().find((line) => failureSignal.test(line)) ?? lines.at(-1);
+}
+
 async function runRapidkitInitInProcess(cwd: string) {
   const originalCwd = process.cwd();
   try {
@@ -1122,7 +1134,8 @@ async function executeStageCommand(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const outputExcerpt = combinedOutput.slice(0, 6).join('\n');
+  const outputExcerpt = boundedFailureOutput(combinedOutput);
+  const failureSummary = primaryFailureLine(combinedOutput);
   const durationMs = Date.now() - startedAt;
   const timedOut =
     exitCode === 124 ||
@@ -1150,8 +1163,8 @@ async function executeStageCommand(
     message: timedOut
       ? `Stage timed out after ${timeoutMs}ms`
       : exitCode !== 0
-        ? outputExcerpt
-          ? `Stage failed with exit code ${exitCode}: ${combinedOutput[0]}`
+        ? failureSummary
+          ? `Stage failed with exit code ${exitCode}: ${failureSummary}`
           : `Stage failed with exit code ${exitCode}`
         : undefined,
   };

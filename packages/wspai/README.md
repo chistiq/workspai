@@ -10,14 +10,17 @@ cd /absolute/path/to/project
 npx wspai adopt .
 ```
 
-The CLI creates or reuses the minimal default workspace and prints the exact
-next shell step. Without the VS Code extension, continue from that workspace
-terminal:
+The CLI creates or reuses the minimal default workspace and records a validated
+link from the project. You can stay in the same project terminal:
 
 ```bash
-cd ~/.workspai/workspaces/workspai
+npx wspai project workspace status --json
 npx wspai workspace intelligence run --for-agent generic --strict --json
 ```
+
+The first command proves which canonical workspace owns the project. Use the
+workspace root directly only when you intentionally want a root-scoped
+operation; attached projects resolve it automatically.
 
 Use `generic` for vendor-neutral context, or select `codex`, `claude`,
 `cursor`, or `orca`. Shared grounding for GitHub Copilot, VS Code, and

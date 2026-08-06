@@ -148,10 +148,13 @@ graph whose binding does not match the current model.
 projections from that bound graph. These files are portable exports, not competing
 canonical or `last-run` artifacts: JSON-LD preserves semantic identifiers,
 GraphML targets general graph tooling, and GEXF targets exploration and
-visualization tools. Mermaid and DOT remain bounded text projections for docs
-and diagrams.
+visualization tools. `workspace graph dot|mermaid --output <path>` writes the
+bounded project-topology projections used by docs and diagrams. For DOT and
+Mermaid, `--output --json` returns a `cli-operation-result-v1` receipt containing
+the resolved output path; omitting `--output` keeps raw graph text on stdout.
 
-**CLI semantics:** `workspace diff --from` expects a **model or snapshot** baseline. `workspace impact --from` expects a **diff report**.
+**CLI semantics:** `workspace diff --from` expects a **model, snapshot, or explicit
+Git (`git[:ref]`)** baseline. `workspace impact --from` expects a **diff report**.
 Persisted artifacts retain their artifact schema. JSON command projections that add operation metadata
 such as `outputPath`, `status`, or structured errors use
 `contracts/cli-operation-result.v1.json`; the canonical artifact is nested under `artifact`.

@@ -388,7 +388,9 @@ before consuming its report from CI, IDE, or agent integrations.
 presence check. Required project evidence must match the affected project in
 `workspace-run-last.json`, and evidence generated before the current impact
 report is treated as stale and blocking. Re-run the recommended commands from
-`workspace impact --json` before using `workspace verify --strict` in CI.
+`workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json` before using
+`workspace verify --strict` in CI. Both `diff` and `impact` require an explicit trusted input; the
+CLI never guesses which historical baseline or diff should authorize a release decision.
 
 For doctor CI exit codes and JSON evidence fields, see [doctor-command.md](./doctor-command.md).
 

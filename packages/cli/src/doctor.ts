@@ -570,6 +570,10 @@ type DoctorEvidenceLike = {
 };
 
 const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
+// Bump whenever project diagnosis or executable-remediation semantics change.
+// This keeps unchanged source trees from reusing evidence produced by an older
+// Doctor policy after a CLI upgrade.
+const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v1';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
@@ -1799,7 +1803,12 @@ async function buildWorkspaceProjectSignature(
     })
   );
 
-  return [DOCTOR_PROJECT_SCAN_SCHEMA, ...workspaceSignature, ...projectSignatures].join('||');
+  return [
+    DOCTOR_PROJECT_SCAN_SCHEMA,
+    DOCTOR_PROJECT_SCAN_POLICY_VERSION,
+    ...workspaceSignature,
+    ...projectSignatures,
+  ].join('||');
 }
 
 async function loadWorkspaceProjectCache(
@@ -3411,7 +3420,6 @@ async function checkProjectUnnormalized(
       await execa('go', ['version'], { timeout: 3000 });
     } catch {
       health.issues.push('Go toolchain not found — install from https://go.dev/dl/');
-      health.fixCommands?.push('https://go.dev/dl/');
     }
 
     // Check deps via go.sum
@@ -3463,7 +3471,6 @@ async function checkProjectUnnormalized(
       await execa('java', ['-version'], { timeout: 3000, reject: false });
     } catch {
       health.issues.push('Java runtime not found — install JDK 21+ and ensure java is on PATH');
-      health.fixCommands?.push('https://adoptium.net/');
     }
 
     if (hasPomXml) {
@@ -3472,7 +3479,6 @@ async function checkProjectUnnormalized(
           await execa('mvn', ['-version'], { timeout: 3000, reject: false });
         } catch {
           health.issues.push('Maven not found — install Maven 3.9+ or add Maven Wrapper');
-          health.fixCommands?.push('https://maven.apache.org/install.html');
         }
       }
     } else if (hasGradleBuild) {
@@ -3481,7 +3487,6 @@ async function checkProjectUnnormalized(
           await execa('gradle', ['--version'], { timeout: 3000, reject: false });
         } catch {
           health.issues.push('Gradle not found — install Gradle 8+ or add Gradle Wrapper');
-          health.fixCommands?.push('https://gradle.org/install/');
         }
       }
     }
@@ -4077,7 +4082,10 @@ function normalizeProjectFixCommands(health: ProjectHealth): ProjectHealth {
   const seen = new Set<string>();
   health.fixCommands = health.fixCommands.filter((command) => {
     const normalized = command.trim();
-    if (!normalized || seen.has(normalized)) return false;
+    // Documentation links are guidance, never executable remediation. Keep the
+    // link in the issue/recommendation while refusing to expose it as a command
+    // to Studio, CI, or an automated repair transaction.
+    if (/^https?:\/\/\S+$/i.test(normalized) || !normalized || seen.has(normalized)) return false;
     seen.add(normalized);
     return true;
   });
@@ -4600,6 +4608,9 @@ async function getWorkspaceHealth(
   if (cached) {
     health.projects = cached.projects;
     for (const projectHealth of health.projects) {
+      // Cached scans are untrusted input at the executable-command boundary.
+      // Reapply current sanitization even when the source signature is valid.
+      normalizeProjectFixCommands(projectHealth);
       normalizeProjectProbeFreshness(projectHealth, cached.generatedAt);
       applyCommandCapabilities(projectHealth, projectHealth.path);
     }

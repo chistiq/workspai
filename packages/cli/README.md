@@ -140,6 +140,7 @@ The deterministic model, graph, and checks do not require an AI API key.
 | Refresh Model and Graph | `npx workspai workspace model --write --json` |
 | Ask a focused architecture question | `npx workspai workspace graph search "authentication service" --limit 12 --json` |
 | Verify current evidence | `npx workspai workspace verify --strict --json` |
+| Inspect a governed repair before execution | `npx workspai workspace repair capabilities --json` |
 | Refresh agent and IDE context | `npx workspai workspace agent-sync --write --preset enterprise --json` |
 
 For every command and flag, use the
@@ -181,6 +182,7 @@ modules; Workspai remains the workspace-level CLI.
 | Create, adopt, import, or connect software | [Creating workspaces and projects](docs/creating-workspaces-and-projects.md) |
 | Query Graph and inspect proof | [Workspace Knowledge Graph](docs/workspace-knowledge-graph.md) |
 | Understand the exact decision loop | [Workspace Intelligence runner](docs/workspace-intelligence-runner.md) |
+| Plan, approve, execute, or roll back a repair | [Workspace Repair Engine](docs/workspace-repair-engine.md) |
 | Set a release, security, or coverage outcome | [Verified engineering goals](docs/workspace-intelligence-runner.md#verified-engineering-goals) |
 | Integrate CI | [CI workflows](docs/ci-workflows.md) |
 | Find generated files and schemas | [Artifact Catalog](docs/contracts/ARTIFACT_CATALOG.md) |

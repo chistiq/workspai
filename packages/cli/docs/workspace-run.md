@@ -16,21 +16,18 @@ npx workspai workspace run build --json --max-workers 8
 `.rapidkit/workspace-dependency-graph.json` fallback. It expands direct
 `dependsOn` and publish/consume event relationships.
 
-## Supported runtimes
+## Runtime support
 
-| Runtime | Frameworks | Status |
-| --- | --- | --- |
-| Node | NestJS, Express, Next.js, Nuxt | Built-in |
-| Go | Fiber, Gin, Echo, Chi | Built-in |
-| Java | Spring Boot, Quarkus, Gradle | Built-in |
-| Python | FastAPI, Django, Flask, Poetry | Built-in |
-| PHP | Laravel, Symfony, Slim | Observed |
-| Rust | Actix, Axum, Rocket, Tokio | Observed |
-| .NET | ASP.NET Core, Entity Framework | Built-in |
-| Elixir | Phoenix, Umbrella | Observed |
-| Ruby | Rails, Sinatra, RSpec | Observed |
+`workspace run` does not infer support from a hard-coded framework list. It
+reads the effective project capability map produced by the runtime adapters and
+project metadata. First-class and extended Node.js, Python, Go, Java, .NET,
+PHP, and Rust projects can expose governed lifecycle stages; observed runtimes
+run only commands explicitly declared by their project context.
 
-Public scaffold/import/lifecycle contract: [contracts/RUNTIME_SUPPORT_MATRIX.md](./contracts/RUNTIME_SUPPORT_MATRIX.md).
+The authoritative scaffold/import/lifecycle tiers are in
+[contracts/RUNTIME_SUPPORT_MATRIX.md](./contracts/RUNTIME_SUPPORT_MATRIX.md).
+Inspect one project's effective surface with
+`npx workspai project commands --json` before orchestration.
 
 ## Enterprise configuration
 
@@ -83,6 +80,12 @@ cat test-results.json | jq '.projects[] | {path, status, errorCategory}'
 ```
 
 `errorCategory` values: `setup`, `test-failure`, `runtime`, `dependency`, `timeout`.
+For failures, `reason` and `errorMessage` select the most specific terminal
+failure signal instead of an earlier readiness warning.
+`failureDiagnostic.outputExcerpt` is a bounded head-and-tail excerpt, preserving
+both command context and the final root cause without copying the full log.
+Consumers should render these fields rather than reconstructing a diagnosis
+from arbitrary stdout lines.
 
 ## Command semantics
 

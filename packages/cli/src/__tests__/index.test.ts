@@ -169,12 +169,18 @@ describe('CLI Entry Point', () => {
         'Calculate the evidence-backed blast radius of the current model change.'
       );
       expect(impact.stdout).toContain(
-        'Usage:\n  workspai workspace impact [--from <diff>] [--scope <scope>] [--strict] [--json]'
+        'Usage:\n  workspai workspace impact --from <diff> [--scope <scope>] [--strict] [--json]'
       );
       expect(impact.stdout).toContain(
         'Evidence:\n  .workspai/reports/workspace-impact-last-run.json'
       );
       expect(impact.stdout).not.toContain('Workspace actions:');
+
+      const diff = await execa('node', [CLI_PATH, 'workspace', 'diff', '--help']);
+      expect(diff.stdout).toContain(
+        'Usage:\n  workspai workspace diff --from <snapshot-or-model|git[:ref]> [--strict] [--json]'
+      );
+      expect(diff.stdout).not.toContain('workspai workspace diff --json');
 
       const graph = await execa('node', [CLI_PATH, 'workspace', 'graph', '--help']);
       expect(graph.stdout).toContain(
@@ -1258,6 +1264,31 @@ describe('CLI Entry Point', () => {
         { cwd: workspaceRoot, reject: false }
       );
       expect(overlay.stdout).not.toContain('workspace.option.unsupported');
+    });
+
+    it('writes dependency graph renderers to --output with a structured receipt', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-graph-renderers-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+
+      for (const mode of ['dot', 'mermaid'] as const) {
+        const outputPath = path.join(workspaceRoot, `workspace-graph.${mode}`);
+        const result = await execa(
+          'node',
+          [CLI_PATH, 'workspace', 'graph', mode, '--output', outputPath, '--json'],
+          { cwd: workspaceRoot, reject: false }
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          schemaVersion: 'workspai-cli-operation-result-v1',
+          operation: `workspace graph ${mode}`,
+          status: 'success',
+          outputPath,
+          artifact: { format: mode, nodeCount: 0, edgeCount: 0 },
+        });
+        const rendered = await fs.readFile(outputPath, 'utf8');
+        expect(rendered).toContain(mode === 'dot' ? 'digraph workspace' : 'flowchart LR');
+      }
     });
 
     it('honors pipeline --no-agent-sync at the CLI boundary', async () => {

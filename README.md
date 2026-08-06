@@ -124,6 +124,7 @@ API key. AI providers are optional consumers of the same governed context.
 | Create, adopt, or import software | [Creating workspaces and projects](packages/cli/docs/creating-workspaces-and-projects.md) |
 | Query the graph and inspect proof | [Workspace Knowledge Graph](packages/cli/docs/workspace-knowledge-graph.md) |
 | Understand the full decision loop | [Workspace Intelligence runner](packages/cli/docs/workspace-intelligence-runner.md) |
+| Repair a governed blocker safely | [Workspace Repair Engine](packages/cli/docs/workspace-repair-engine.md) |
 | Integrate CI | [CI workflows](packages/cli/docs/ci-workflows.md) |
 | Find a command or flag | [Command reference](packages/cli/docs/commands-reference.md) |
 | Inspect schemas and artifact ownership | [Artifact Catalog](packages/cli/docs/contracts/ARTIFACT_CATALOG.md) |
