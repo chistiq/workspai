@@ -28,21 +28,38 @@ export interface DoctorRepairStrategyStage {
   continueWhen: 'always' | 'previous-passed' | 'blocker-remains' | 'manual-decision';
 }
 
-export interface DoctorDependencyRepairTransaction {
+type DoctorDependencyRepairTransactionBase = {
   schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1';
-  kind: 'dependency-security';
   state: 'planned';
   projectPath: string;
   ecosystem: string;
-  requiredStages: Array<'reconcile' | 'audit' | 'test' | 'build'>;
-  completion: {
-    manifestLockConsistent: true;
-    auditClean: true;
-    declaredTestsPass: true;
-    declaredBuildPass: true;
-    canonicalVerificationRequired: true;
-  };
-}
+};
+
+export type DoctorDependencyRepairTransaction =
+  | (DoctorDependencyRepairTransactionBase & {
+      kind: 'dependency-security';
+      requiredStages: Array<'reconcile' | 'audit' | 'test' | 'build'>;
+      completion: {
+        manifestLockConsistent: true;
+        auditClean: true;
+        declaredTestsPass: true;
+        declaredBuildPass: true;
+        canonicalVerificationRequired: true;
+      };
+    })
+  | (DoctorDependencyRepairTransactionBase & {
+      kind: 'dependency-materialization';
+      sourceMutationRequired: false;
+      observableState: 'runtime-dependency-tree';
+      requiredStages: Array<'reconcile' | 'test' | 'build'>;
+      completion: {
+        manifestLockConsistent: true;
+        installedTreePresent: true;
+        declaredTestsPass: true;
+        declaredBuildPass: true;
+        canonicalVerificationRequired: true;
+      };
+    });
 
 export type DoctorRepairOperation =
   | {
@@ -133,6 +150,60 @@ export function buildPackageScriptRepairCommand(input: {
 export function buildDoctorInternalRepairCommand(operation: DoctorRepairOperation): string {
   const encoded = Buffer.from(JSON.stringify(operation), 'utf8').toString('base64url');
   return `workspai:doctor:repair ${encoded}`;
+}
+
+export function buildDependencyMaterializationRepairCapability(input: {
+  issueId: string;
+  title: string;
+  projectPath: string;
+  ecosystem: string;
+  executable: string;
+  args: string[];
+  files: string[];
+  command: string;
+  reason: string;
+  limitations?: string[];
+}): DoctorRepairCapability {
+  return {
+    id: `${input.issueId}.dependency-materialization`,
+    issueId: input.issueId,
+    title: input.title,
+    status: 'available',
+    fixKind: 'dependency-sync',
+    risk: 'guarded',
+    canAutoFix: true,
+    canEditFiles: false,
+    requiresApproval: true,
+    requiresReview: false,
+    files: input.files.map((file) => path.join(input.projectPath, file)),
+    command: input.command,
+    invocation: {
+      cwd: input.projectPath,
+      executable: input.executable,
+      args: [...input.args],
+    },
+    transaction: {
+      schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+      kind: 'dependency-materialization',
+      state: 'planned',
+      projectPath: input.projectPath,
+      ecosystem: input.ecosystem,
+      sourceMutationRequired: false,
+      observableState: 'runtime-dependency-tree',
+      requiredStages: ['reconcile', 'test', 'build'],
+      completion: {
+        manifestLockConsistent: true,
+        installedTreePresent: true,
+        declaredTestsPass: true,
+        declaredBuildPass: true,
+        canonicalVerificationRequired: true,
+      },
+    },
+    verifyCommand: 'npx workspai doctor project --json',
+    refreshCommands: ['npx workspai doctor project --json', 'npx workspai workspace verify --json'],
+    reason: input.reason,
+    limitations: input.limitations,
+  };
 }
 
 export function buildFileCreateRepairCapability(input: {

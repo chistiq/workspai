@@ -131,10 +131,12 @@
         "schemaVersion": {
           "const": "workspai.doctor-dependency-repair-transaction.v1"
         },
-        "kind": { "const": "dependency-security" },
+        "kind": { "enum": ["dependency-security", "dependency-materialization"] },
         "state": { "const": "planned" },
         "projectPath": { "type": "string", "minLength": 1 },
         "ecosystem": { "type": "string", "minLength": 1 },
+        "sourceMutationRequired": { "type": "boolean" },
+        "observableState": { "enum": ["runtime-dependency-tree"] },
         "requiredStages": {
           "type": "array",
           "items": { "enum": ["reconcile", "audit", "test", "build"] },
@@ -145,7 +147,6 @@
           "additionalProperties": false,
           "required": [
             "manifestLockConsistent",
-            "auditClean",
             "declaredTestsPass",
             "declaredBuildPass",
             "canonicalVerificationRequired"
@@ -153,12 +154,30 @@
           "properties": {
             "manifestLockConsistent": { "const": true },
             "auditClean": { "const": true },
+            "installedTreePresent": { "const": true },
             "declaredTestsPass": { "const": true },
             "declaredBuildPass": { "const": true },
             "canonicalVerificationRequired": { "const": true }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "dependency-security" } } },
+          "then": { "properties": { "completion": { "type": "object", "properties": { "auditClean": { "const": true } }, "required": ["auditClean"] } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "dependency-materialization" } } },
+          "then": {
+            "required": ["sourceMutationRequired", "observableState"],
+            "properties": {
+              "sourceMutationRequired": { "const": false },
+              "observableState": { "const": "runtime-dependency-tree" },
+              "completion": { "type": "object", "properties": { "installedTreePresent": { "const": true } }, "required": ["installedTreePresent"] }
+            }
+          }
+        }
+      ]
     },
     "action": {
       "type": "object",

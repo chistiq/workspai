@@ -155,6 +155,12 @@ unparseable response, or unsupported zero-configuration workflow is explicit
 evidence—not a zero-vulnerability result. Compatible automatic fixes never use
 force.
 
+When a declared dependency tree has not been installed, Doctor emits a typed
+`dependency-materialization` capability instead of only a human shell hint. The capability
+records the runtime-native executable, project scope, observable installed-tree state, and
+required validation stages. An unchanged manifest or lockfile is valid in this case: successful
+installation plus declared test/build checks and canonical verification are the completion proof.
+
 When a scanner has no direct automatic fix—or advertises a downgrade—Doctor
 does not conclude that the project has no compatible repair. It emits guarded
 `resolutionCandidates` for the affected direct or transitive dependency. Each

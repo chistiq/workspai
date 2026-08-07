@@ -4280,6 +4280,64 @@ describe('Doctor Command', () => {
     }
   });
 
+  it('publishes a typed materialization transaction when a Node dependency tree is missing', async () => {
+    const tempRoot = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-node-materialization-'))
+    );
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'project.json'), {
+      name: 'catalog-api',
+      runtime: 'node',
+      framework: 'nestjs',
+    });
+    await fsExtra.writeJSON(path.join(tempRoot, 'package.json'), {
+      name: 'catalog-api',
+      packageManager: 'npm@11.5.1',
+      scripts: { test: 'vitest run', build: 'tsc --noEmit' },
+      dependencies: { '@nestjs/core': '^11.0.0' },
+    });
+    await fsExtra.writeJSON(path.join(tempRoot, 'package-lock.json'), {
+      name: 'catalog-api',
+      lockfileVersion: 3,
+      packages: {},
+    });
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const project = JSON.parse(jsonLine).project;
+      expect(project.issues).toContain(
+        'Dependencies not installed (node_modules empty or missing)'
+      );
+      expect(project.repairCapabilities).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization.dependency-materialization',
+          fixKind: 'dependency-sync',
+          command: expect.stringContaining('npm install'),
+          invocation: expect.objectContaining({ executable: 'npm', args: ['install'] }),
+          transaction: expect.objectContaining({
+            kind: 'dependency-materialization',
+            sourceMutationRequired: false,
+            observableState: 'runtime-dependency-tree',
+            requiredStages: ['reconcile', 'test', 'build'],
+          }),
+        })
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
   it('does not claim global Core or print internal repair tokens in human output', async () => {
     const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-human-'));
     await fsExtra.ensureDir(path.join(tempRoot, '.rapidkit'));

@@ -126,6 +126,9 @@ export type WorkspaceRepairTransaction = {
   stages: WorkspaceRepairStage[];
   verification?: {
     status: 'passed' | 'failed' | 'not-run';
+    targetStatus?: 'passed' | 'failed' | 'unknown';
+    workspaceStatus?: 'passed' | 'blocked' | 'failed';
+    remainingActionIds?: string[];
     artifact: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['intelligenceRun'];
     exitCode: number | null;
     summary: string;

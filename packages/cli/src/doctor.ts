@@ -72,6 +72,7 @@ import type {
   DoctorRepairOperation,
   DoctorRepairStrategyStage,
 } from './utils/doctor-repair-capabilities.js';
+import { buildDependencyMaterializationRepairCapability } from './utils/doctor-repair-capabilities.js';
 import { buildEnterpriseSurfaceProbes } from './utils/doctor-surface-probes.js';
 import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './workspace-history.js';
 import { isWorkspaceShellDirectory } from './utils/workspace-root.js';
@@ -3696,7 +3697,12 @@ async function checkProjectUnnormalized(
 
     if (!health.depsInstalled) {
       health.issues.push('Clojure dependency cache not initialized');
-      health.fixCommands?.push(buildProjectFixCommand(projectPath, 'clojure -P'));
+      health.fixCommands?.push(
+        buildProjectFixCommand(
+          projectPath,
+          (await fsExtra.pathExists(depsEdnPath)) ? 'clojure -P' : 'lein deps'
+        )
+      );
     }
 
     await performCommonChecks(projectPath, health);
@@ -4140,6 +4146,7 @@ async function checkProject(
   options: { allowNonRapidkit?: boolean } = {}
 ): Promise<ProjectHealth> {
   const health = normalizeProjectFixCommands(await checkProjectUnnormalized(projectPath, options));
+  attachDependencyMaterializationCapabilities(health);
   const canonicalKind = await inferWorkspaceProjectKind(projectPath);
   if (canonicalKind === 'backend' || canonicalKind === 'service' || canonicalKind === 'worker') {
     health.projectKind = 'backend';
@@ -5508,7 +5515,35 @@ function parseDependencySyncFix(
     { pattern: 'cargo\\s+fetch', command: 'cargo', args: ['fetch'] },
     { pattern: 'mix\\s+deps\\.get', command: 'mix', args: ['deps.get'] },
     { pattern: 'clojure\\s+-P', command: 'clojure', args: ['-P'] },
+    { pattern: 'lein\\s+deps', command: 'lein', args: ['deps'] },
     { pattern: 'sbt\\s+compile', command: 'sbt', args: ['compile'] },
+    { pattern: 'go\\s+mod\\s+tidy', command: 'go', args: ['mod', 'tidy'] },
+    {
+      pattern: 'mvn\\s+-B\\s+-DskipTests\\s+dependency:go-offline',
+      command: 'mvn',
+      args: ['-B', '-DskipTests', 'dependency:go-offline'],
+    },
+    {
+      pattern: '\\.\\/mvnw\\s+-B\\s+-DskipTests\\s+dependency:go-offline',
+      command: './mvnw',
+      args: ['-B', '-DskipTests', 'dependency:go-offline'],
+    },
+    {
+      pattern: '\\.\\\\mvnw\\.cmd\\s+-B\\s+-DskipTests\\s+dependency:go-offline',
+      command: '.\\mvnw.cmd',
+      args: ['-B', '-DskipTests', 'dependency:go-offline'],
+    },
+    { pattern: 'gradle\\s+dependencies', command: 'gradle', args: ['dependencies'] },
+    {
+      pattern: '\\.\\/gradlew\\s+dependencies',
+      command: './gradlew',
+      args: ['dependencies'],
+    },
+    {
+      pattern: '\\.\\\\gradlew\\.bat\\s+dependencies',
+      command: '.\\gradlew.bat',
+      args: ['dependencies'],
+    },
   ];
 
   for (const candidate of knownPatterns) {
@@ -5523,6 +5558,80 @@ function parseDependencySyncFix(
   }
 
   return null;
+}
+
+function dependencyMaterializationMetadata(executableValue: string): {
+  ecosystem: string;
+  files: string[];
+} {
+  const executable = path.posix
+    .basename(executableValue.replaceAll('\\', '/'))
+    .toLowerCase()
+    .replace(/\.(?:cmd|bat)$/i, '');
+  if (['npm', 'pnpm', 'yarn', 'bun'].includes(executable)) {
+    return {
+      ecosystem: executable,
+      files: [
+        'package.json',
+        'package-lock.json',
+        'npm-shrinkwrap.json',
+        'pnpm-lock.yaml',
+        'yarn.lock',
+        'bun.lock',
+        'bun.lockb',
+      ],
+    };
+  }
+  if (['poetry', 'uv', 'pip', 'pip3', 'python', 'python3', 'py'].includes(executable)) {
+    return {
+      ecosystem: executable === 'uv' ? 'uv' : executable === 'poetry' ? 'poetry' : 'python',
+      files: ['pyproject.toml', 'poetry.lock', 'uv.lock', 'requirements.txt'],
+    };
+  }
+  if (executable === 'go') return { ecosystem: 'go', files: ['go.mod', 'go.sum'] };
+  if (executable === 'cargo') return { ecosystem: 'cargo', files: ['Cargo.toml', 'Cargo.lock'] };
+  if (executable === 'composer')
+    return { ecosystem: 'composer', files: ['composer.json', 'composer.lock'] };
+  if (executable === 'bundle') return { ecosystem: 'bundler', files: ['Gemfile', 'Gemfile.lock'] };
+  if (executable === 'mix') return { ecosystem: 'mix', files: ['mix.exs', 'mix.lock'] };
+  if (executable === 'dotnet')
+    return { ecosystem: 'dotnet', files: ['Directory.Packages.props', 'packages.lock.json'] };
+  if (executable === 'clojure' || executable === 'lein')
+    return { ecosystem: 'clojure', files: ['deps.edn', 'project.clj'] };
+  if (executable === 'sbt') return { ecosystem: 'sbt', files: ['build.sbt'] };
+  if (executable === 'mvn' || executable === 'mvnw')
+    return { ecosystem: 'maven', files: ['pom.xml'] };
+  if (executable === 'gradle' || executable === 'gradlew')
+    return { ecosystem: 'gradle', files: ['build.gradle', 'build.gradle.kts', 'gradle.lockfile'] };
+  return { ecosystem: executable, files: [] };
+}
+
+function attachDependencyMaterializationCapabilities(health: ProjectHealth): void {
+  for (const command of health.fixCommands ?? []) {
+    const parsed = parseDependencySyncFix(command);
+    if (!parsed) continue;
+    const metadata = dependencyMaterializationMetadata(parsed.command);
+    const capability = buildDependencyMaterializationRepairCapability({
+      issueId: 'runtime-dependency-materialization',
+      title: `Install ${metadata.ecosystem} dependencies`,
+      projectPath: parsed.projectPath,
+      ecosystem: metadata.ecosystem,
+      executable: parsed.command,
+      args: parsed.args,
+      files: metadata.files,
+      command,
+      reason:
+        'The dependency definition exists, but its local runtime dependency tree is missing or incomplete.',
+      limitations: [
+        'This transaction may update a lockfile when the package manager determines it is stale.',
+        'Source mutation is not required when the existing manifest and lockfile are already consistent.',
+      ],
+    });
+    health.repairCapabilities = health.repairCapabilities ?? [];
+    if (!health.repairCapabilities.some((candidate) => candidate.id === capability.id)) {
+      health.repairCapabilities.push(capability);
+    }
+  }
 }
 
 function getDoctorFixCommandTimeoutMs(): number {

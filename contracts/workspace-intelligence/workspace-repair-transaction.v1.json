@@ -129,7 +129,17 @@
     "adapterEvaluation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["adapterId", "ecosystem", "projectPath", "manifests", "support", "status", "requiredExecutables", "missingExecutables", "message"],
+      "required": [
+        "adapterId",
+        "ecosystem",
+        "projectPath",
+        "manifests",
+        "support",
+        "status",
+        "requiredExecutables",
+        "missingExecutables",
+        "message"
+      ],
       "properties": {
         "adapterId": { "type": "string", "minLength": 1 },
         "ecosystem": { "type": "string", "minLength": 1 },
@@ -137,8 +147,16 @@
         "manifests": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "support": { "enum": ["full", "conditional", "unsupported"] },
         "status": { "enum": ["ready", "partial", "unsupported"] },
-        "requiredExecutables": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
-        "missingExecutables": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "requiredExecutables": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "missingExecutables": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
         "message": { "type": "string" }
       }
     },
@@ -195,7 +213,9 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["repair", "reconcile", "audit", "test", "build", "verify", "rollback"] },
-        "status": { "enum": ["pending", "running", "passed", "failed", "blocked", "skipped", "cancelled"] },
+        "status": {
+          "enum": ["pending", "running", "passed", "failed", "blocked", "skipped", "cancelled"]
+        },
         "required": { "type": "boolean" },
         "risk": { "enum": ["safe", "guarded", "invasive"] },
         "summary": { "type": "string" },
@@ -214,6 +234,13 @@
       "required": ["status", "artifact", "exitCode", "summary"],
       "properties": {
         "status": { "enum": ["passed", "failed", "not-run"] },
+        "targetStatus": { "enum": ["passed", "failed", "unknown"] },
+        "workspaceStatus": { "enum": ["passed", "blocked", "failed"] },
+        "remainingActionIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "artifact": { "const": ".workspai/reports/workspace-intelligence-run-last-run.json" },
         "exitCode": { "type": ["integer", "null"] },
         "summary": { "type": "string" }
@@ -228,7 +255,17 @@
         "options": {
           "type": "array",
           "minItems": 1,
-          "items": { "enum": ["approve-guarded", "approve-invasive", "allow-breaking", "allow-force", "manual-repair", "rollback", "cancel"] }
+          "items": {
+            "enum": [
+              "approve-guarded",
+              "approve-invasive",
+              "allow-breaking",
+              "allow-force",
+              "manual-repair",
+              "rollback",
+              "cancel"
+            ]
+          }
         }
       }
     },
@@ -239,7 +276,20 @@
       "properties": {
         "sequence": { "type": "integer", "minimum": 1 },
         "at": { "type": "string", "format": "date-time" },
-        "type": { "enum": ["planned", "approval", "checkpoint", "stage", "verification", "decision", "rollback", "closed", "failed", "cancelled"] },
+        "type": {
+          "enum": [
+            "planned",
+            "approval",
+            "checkpoint",
+            "stage",
+            "verification",
+            "decision",
+            "rollback",
+            "closed",
+            "failed",
+            "cancelled"
+          ]
+        },
         "stageId": { "type": "string" },
         "status": { "type": "string" },
         "message": { "type": "string" }

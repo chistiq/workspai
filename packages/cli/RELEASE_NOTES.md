@@ -5,7 +5,64 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.53.0 (August 6, 2026)
+## Latest Release: v0.54.0 (August 7, 2026)
+
+### Target-Aware, Cross-Runtime Repair
+
+This minor release makes the governed Repair Engine finish the blocker it was
+asked to fix without confusing unrelated workspace findings with a failed
+repair. Missing dependency trees are now first-class repair transactions, and
+the CLI publishes one portable lifecycle across supported runtimes.
+
+**What's New:**
+
+- **Dependency materialization is a real repair**
+  - Missing installed dependencies can run through reconcile, audit, declared
+    tests, declared build, and canonical verification without requiring a fake
+    manifest edit first.
+  - Doctor publishes the executable capability and evidence needed by CLI,
+    IDE, CI, and agent consumers.
+
+- **The selected blocker stays the target**
+  - Remediation plans prioritize blocking Doctor findings over advisory work.
+  - A repaired target can close truthfully while unrelated workspace blockers
+    remain visible for the next transaction.
+
+- **Broader runtime and package-manager coverage**
+  - Node, Python, Go, Rust, PHP, Ruby, Elixir, Deno, .NET, Maven, Gradle,
+    Clojure, and Scala surfaces use explicit adapters and tool preconditions.
+  - npm, pnpm, Yarn, Bun, Poetry, uv, pip, Composer, Bundler, Cargo, Mix,
+    Maven, Gradle, Leiningen, and sbt are represented without shell guessing.
+
+- **Durable, compatible transaction evidence**
+  - New receipts record target status, workspace status, and remaining
+    target-action identifiers separately.
+  - Existing v1 transactions remain readable and resumable.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- Full CLI tests, type checking, contract synchronization, package validation,
+  and focused repair-engine suites passed.
+- A real end-user repair installed a missing NestJS dependency tree, completed
+  audit, tests, and build, and closed the selected target while preserving an
+  unrelated workspace blocker.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.54.0
+workspai --version
+workspai workspace repair capabilities --json
+workspai workspace repair list --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.54.0/packages/cli/releases/RELEASE_NOTES_v0.54.0.md)
+
+---
+
+## Previous Release: v0.53.0 (August 6, 2026)
 
 ### Governed Workspace Repair Engine
 

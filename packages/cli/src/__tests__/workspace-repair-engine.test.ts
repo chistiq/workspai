@@ -138,6 +138,19 @@ describe('Workspace Repair Engine', () => {
       'APP_ENV=development\n'
     );
     expect(completed.events.at(-1)).toMatchObject({ type: 'closed', status: 'passed' });
+    const legacyV1Receipt = structuredClone(completed);
+    if (legacyV1Receipt.verification) {
+      delete legacyV1Receipt.verification.targetStatus;
+      delete legacyV1Receipt.verification.workspaceStatus;
+      delete legacyV1Receipt.verification.remainingActionIds;
+    }
+    expect(() =>
+      assertJsonSchemaContract(
+        legacyV1Receipt,
+        WORKSPACE_REPAIR_TRANSACTION_CONTRACT_PATH,
+        'legacy workspace repair transaction'
+      )
+    ).not.toThrow();
   });
 
   it('automatically restores the bounded checkpoint when canonical verification fails', async () => {
@@ -165,6 +178,44 @@ describe('Workspace Repair Engine', () => {
     expect(completed.decision).toBeUndefined();
     expect(completed.checkpoint.status).toBe('restored');
     expect(await fsExtra.pathExists(path.join(projectPath, '.env.example'))).toBe(false);
+  });
+
+  it('closes the selected repair target while preserving unrelated workspace blockers', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    await writeFileRepairEvidence({ workspacePath, projectPath });
+    const planned = await planWorkspaceRepair({
+      workspacePath,
+      cardId: 'doctor',
+      projectName: 'api',
+    });
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        verify: vi.fn(async () => ({
+          status: 'blocked',
+          exitCode: 2,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+        targetVerify: vi.fn(async () => ({ status: 'passed', remainingActionIds: [] })),
+      }
+    );
+
+    expect(completed).toMatchObject({
+      state: 'closed',
+      verification: {
+        status: 'passed',
+        targetStatus: 'passed',
+        workspaceStatus: 'blocked',
+        remainingActionIds: [],
+        exitCode: 2,
+      },
+    });
+    expect(completed.verification?.summary).toContain('other governed findings');
+    expect(await fsExtra.readFile(path.join(projectPath, '.env.example'), 'utf8')).toBe(
+      'APP_ENV=development\n'
+    );
   });
 
   it('expires approval when the persisted remediation plan changes before approval', async () => {
@@ -396,6 +447,129 @@ describe('Workspace Repair Engine', () => {
     expect(
       await readWorkspaceRepairTransaction({ workspacePath, transactionId: planned.transactionId })
     ).toMatchObject({ state: 'closed' });
+  });
+
+  it('materializes a missing dependency tree without requiring a source mutation', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
+      name: 'catalog-api',
+      scripts: { test: 'vitest run', build: 'tsc --noEmit' },
+      dependencies: { '@nestjs/core': '^11.0.0' },
+    });
+    await fsExtra.writeJson(path.join(projectPath, 'package-lock.json'), {
+      lockfileVersion: 3,
+    });
+    const command = `cd "${projectPath}" && npm install`;
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        projects: [
+          {
+            name: 'api',
+            path: projectPath,
+            issues: ['Dependencies not installed (node_modules empty or missing)'],
+            repairCapabilities: [
+              {
+                id: 'test-coverage-evidence.command',
+                title: 'Generate optional coverage evidence',
+                status: 'available',
+                risk: 'safe',
+                canAutoFix: true,
+                canEditFiles: false,
+                requiresApproval: true,
+                requiresReview: false,
+                files: [],
+                command: 'npx workspai project coverage --run --json',
+                invocation: {
+                  cwd: projectPath,
+                  executable: 'npx',
+                  args: ['workspai', 'project', 'coverage', '--run', '--json'],
+                },
+                verifyCommand: 'npx workspai doctor project --json',
+                refreshCommands: [],
+                reason: 'Optional coverage evidence is missing.',
+              },
+              {
+                id: 'runtime-dependency-materialization.dependency-materialization',
+                issueId: 'runtime-dependency-materialization',
+                title: 'Install npm dependencies',
+                status: 'available',
+                fixKind: 'dependency-sync',
+                risk: 'guarded',
+                canAutoFix: true,
+                canEditFiles: false,
+                requiresApproval: true,
+                requiresReview: false,
+                files: [
+                  path.join(projectPath, 'package.json'),
+                  path.join(projectPath, 'package-lock.json'),
+                ],
+                command,
+                invocation: { cwd: projectPath, executable: 'npm', args: ['install'] },
+                transaction: {
+                  schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+                  kind: 'dependency-materialization',
+                  state: 'planned',
+                  projectPath,
+                  ecosystem: 'npm',
+                  sourceMutationRequired: false,
+                  observableState: 'runtime-dependency-tree',
+                  requiredStages: ['reconcile', 'test', 'build'],
+                  completion: {
+                    manifestLockConsistent: true,
+                    installedTreePresent: true,
+                    declaredTestsPass: true,
+                    declaredBuildPass: true,
+                    canonicalVerificationRequired: true,
+                  },
+                },
+                verifyCommand: 'npx workspai doctor project --json',
+                refreshCommands: [],
+                reason: 'The installed dependency tree is missing.',
+              },
+            ],
+          },
+        ],
+      },
+      { spaces: 2 }
+    );
+
+    const planned = await planWorkspaceRepair({
+      workspacePath,
+      cardId: 'doctor',
+      projectName: 'api',
+    });
+    expect(planned.state).toBe('awaiting-approval');
+    expect(planned.target.actionIds).toEqual([
+      'doctor.api.runtime-dependency-materialization.dependency-materialization',
+    ]);
+    expect(planned.stages.map((stage) => stage.kind)).toEqual([
+      'repair',
+      'test',
+      'build',
+      'verify',
+    ]);
+    expect(planned.preconditions).not.toContainEqual(expect.objectContaining({ status: 'failed' }));
+
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const purposes: string[] = [];
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        runInvocation: vi.fn(async ({ invocation }) => {
+          purposes.push(invocation.purpose);
+          return { exitCode: 0, stdout: '', stderr: '' };
+        }),
+        verify: vi.fn(async () => ({
+          status: 'passed',
+          exitCode: 0,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+      }
+    );
+
+    expect(purposes).toEqual(['repair', 'test', 'build']);
+    expect(completed.state).toBe('closed');
   });
 
   it('compiles a model proposal into the same approval, checkpoint, validation, and verify boundary', async () => {

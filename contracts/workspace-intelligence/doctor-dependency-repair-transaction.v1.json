@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workspai.dev/contracts/workspace-intelligence/doctor-dependency-repair-transaction.v1.json",
   "title": "Workspai Doctor Dependency Repair Transaction v1",
-  "description": "The portable closure contract a consumer must satisfy after changing a dependency manifest or lockfile.",
+  "description": "The portable closure contract for dependency security changes and runtime dependency materialization.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,7 +19,7 @@
       "const": "workspai.doctor-dependency-repair-transaction.v1"
     },
     "kind": {
-      "const": "dependency-security"
+      "enum": ["dependency-security", "dependency-materialization"]
     },
     "state": {
       "const": "planned"
@@ -32,24 +32,20 @@
       "type": "string",
       "minLength": 1
     },
+    "sourceMutationRequired": { "type": "boolean" },
+    "observableState": {
+      "enum": ["runtime-dependency-tree"]
+    },
     "requiredStages": {
       "type": "array",
-      "prefixItems": [
-        { "const": "reconcile" },
-        { "const": "audit" },
-        { "const": "test" },
-        { "const": "build" }
-      ],
-      "items": false,
-      "minItems": 4,
-      "maxItems": 4
+      "items": { "enum": ["reconcile", "audit", "test", "build"] },
+      "uniqueItems": true
     },
     "completion": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "manifestLockConsistent",
-        "auditClean",
         "declaredTestsPass",
         "declaredBuildPass",
         "canonicalVerificationRequired"
@@ -57,10 +53,53 @@
       "properties": {
         "manifestLockConsistent": { "const": true },
         "auditClean": { "const": true },
+        "installedTreePresent": { "const": true },
         "declaredTestsPass": { "const": true },
         "declaredBuildPass": { "const": true },
         "canonicalVerificationRequired": { "const": true }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "dependency-security" } } },
+      "then": {
+        "properties": {
+          "requiredStages": {
+            "prefixItems": [
+              { "const": "reconcile" },
+              { "const": "audit" },
+              { "const": "test" },
+              { "const": "build" }
+            ],
+            "items": false,
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "completion": { "type": "object", "properties": { "auditClean": { "const": true } }, "required": ["auditClean"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "dependency-materialization" } } },
+      "then": {
+        "required": ["sourceMutationRequired", "observableState"],
+        "properties": {
+          "sourceMutationRequired": { "const": false },
+          "observableState": { "const": "runtime-dependency-tree" },
+          "requiredStages": {
+            "prefixItems": [
+              { "const": "reconcile" },
+              { "const": "test" },
+              { "const": "build" }
+            ],
+            "items": false,
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "completion": { "type": "object", "properties": { "installedTreePresent": { "const": true } }, "required": ["installedTreePresent"] }
+        }
+      }
+    }
+  ]
 }

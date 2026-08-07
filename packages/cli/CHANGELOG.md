@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-08-07
+
+### Added
+
+- Added typed `dependency-materialization` repair transactions for projects
+  whose declared dependencies exist but installed dependency state is missing.
+- Added Doctor repair capabilities that carry project scope, package-manager
+  invocation, risk, approval, transaction kind, and canonical verification
+  requirements to downstream consumers.
+- Added explicit repair adapters and executable preconditions for npm, pnpm,
+  Yarn, Bun, Poetry, uv, pip, Go, Cargo, Composer, Bundler, Mix, Deno, dotnet,
+  Maven, Gradle, Leiningen, and sbt project surfaces.
+- Added target-aware transaction receipts with separate target status,
+  workspace status, and remaining target-action identifiers.
+
+### Changed
+
+- Made Doctor remediation planning prioritize blocking findings and exclude
+  unrelated advisory actions from the selected repair transaction.
+- Made dependency materialization complete reconcile, audit, declared tests,
+  declared build, and strict Workspace Intelligence verification without
+  requiring a causal manifest or lockfile mutation.
+- Made canonical verification evaluate transaction closure against the selected
+  target while retaining unrelated workspace blockers as workspace evidence.
+- Made unavailable conditional tooling fail closed with an explicit decision
+  instead of falling through to shell or model inference.
+- Kept new v1 verification receipt fields optional for backward-compatible
+  loading while requiring the current engine to write them on new executions.
+
+### Fixed
+
+- Fixed a successful dependency install being rejected because no source file
+  needed to change.
+- Fixed advisory coverage or quality actions blocking a Doctor security or
+  dependency-materialization transaction.
+- Fixed a repaired project being rolled back or left blocked solely because a
+  different project still failed the workspace-wide gate.
+- Fixed Maven and Gradle executable normalization on Windows and executable
+  basename handling across platforms.
+- Fixed multi-runtime repair planning depending on npm-specific assumptions or
+  first-project selection.
+
+### Verification
+
+- Full CLI tests passed across 215 test files with 2,317 passing tests and 8
+  explicit skips; type checking and focused repair-engine suites passed.
+- Contract synchronization, shared-contract parity, and CLI/extension contract
+  parity passed.
+- A real NestJS workspace repair installed 849 packages, completed a clean
+  audit, passed 6 Jest suites and 10 tests, passed the production build, and
+  closed the selected target while truthfully retaining an unrelated workspace
+  blocker.
+
 ## [0.53.0] - 2026-08-06
 
 ### Added

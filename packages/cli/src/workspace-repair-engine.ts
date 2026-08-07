@@ -73,6 +73,9 @@ const PROJECT_MANIFESTS = new Set([
   'pom.xml',
   'build.gradle',
   'build.gradle.kts',
+  'deps.edn',
+  'project.clj',
+  'build.sbt',
 ]);
 
 const DEPENDENCY_SURFACES = new Set([
@@ -107,6 +110,9 @@ const DEPENDENCY_SURFACES = new Set([
   'build.gradle',
   'build.gradle.kts',
   'gradle.lockfile',
+  'deps.edn',
+  'project.clj',
+  'build.sbt',
 ]);
 
 const RISK_ORDER: Record<WorkspaceRepairRisk, number> = {
@@ -144,6 +150,9 @@ const ALLOWED_EXECUTABLES = new Set([
   'gradle',
   'gradlew',
   'mix',
+  'clojure',
+  'lein',
+  'sbt',
   'make',
 ]);
 
@@ -155,6 +164,13 @@ type RepairEngineDependencies = {
     status: string;
     exitCode: number;
     artifactPath: string;
+  }>;
+  targetVerify?: (input: {
+    workspacePath: string;
+    transaction: WorkspaceRepairTransaction;
+  }) => Promise<{
+    status: 'passed' | 'failed' | 'unknown';
+    remainingActionIds: string[];
   }>;
 };
 
@@ -986,7 +1002,11 @@ async function dependencyStagePlanForAdapter(input: {
     return finalize();
   }
 
-  const wrapper = (await exists('mvnw')) ? './mvnw' : 'mvn';
+  const wrapper = (await exists('mvnw'))
+    ? './mvnw'
+    : (await exists('mvnw.cmd'))
+      ? '.\\mvnw.cmd'
+      : 'mvn';
   if (input.adapterId === 'jvm-maven' && (await exists('pom.xml'))) {
     addFiles(['pom.xml']);
     add(
@@ -1048,7 +1068,11 @@ async function dependencyStagePlanForAdapter(input: {
       ? 'build.gradle'
       : undefined;
   if (input.adapterId === 'jvm-gradle' && gradleManifest) {
-    const gradle = (await exists('gradlew')) ? './gradlew' : 'gradle';
+    const gradle = (await exists('gradlew'))
+      ? './gradlew'
+      : (await exists('gradlew.bat'))
+        ? '.\\gradlew.bat'
+        : 'gradle';
     addFiles([gradleManifest, 'gradle.lockfile', 'gradle/libs.versions.toml']);
     add(
       pendingStage({
@@ -1104,6 +1128,137 @@ async function dependencyStagePlanForAdapter(input: {
     return finalize();
   }
 
+  const clojureManifest = (await exists('deps.edn'))
+    ? 'deps.edn'
+    : (await exists('project.clj'))
+      ? 'project.clj'
+      : undefined;
+  if (input.adapterId === 'clojure' && clojureManifest) {
+    const depsEdn = clojureManifest === 'deps.edn';
+    const manifestText = await text(path.join(projectPath, clojureManifest));
+    const clojureTool = depsEdn ? 'clojure' : 'lein';
+    addFiles([clojureManifest]);
+    add(
+      pendingStage({
+        id: stageId('reconcile'),
+        kind: 'reconcile',
+        risk: 'guarded',
+        summary: `Resolve the ${clojureManifest} dependency graph.`,
+        invocation: invocation({
+          workspacePath: input.workspacePath,
+          projectPath,
+          executable: clojureTool,
+          args: depsEdn ? ['-P'] : ['deps'],
+          purpose: 'reconcile',
+        }),
+      })
+    );
+    add(
+      pendingStage({
+        id: stageId('audit'),
+        kind: 'audit',
+        summary: 'Run the declared Clojure dependency audit.',
+        invocation: audit,
+      })
+    );
+    const hasTestAlias = !depsEdn || /:test\b/.test(manifestText);
+    add(
+      hasTestAlias
+        ? pendingStage({
+            id: stageId('test'),
+            kind: 'test',
+            summary: 'Run the declared Clojure test contract.',
+            invocation: invocation({
+              workspacePath: input.workspacePath,
+              projectPath,
+              executable: clojureTool,
+              args: depsEdn ? ['-M:test'] : ['test'],
+              purpose: 'test',
+            }),
+          })
+        : skippedStage(stageId('test'), 'test', 'No Clojure :test alias is declared.')
+    );
+    // tools.build aliases are intentionally not guessed: their functions and
+    // arguments are project-defined. Leiningen has a stable packaging task.
+    add(
+      depsEdn
+        ? skippedStage(
+            stageId('build'),
+            'build',
+            'No portable Clojure CLI build entrypoint is declared.'
+          )
+        : pendingStage({
+            id: stageId('build'),
+            kind: 'build',
+            summary: 'Build the Leiningen project artifact.',
+            invocation: invocation({
+              workspacePath: input.workspacePath,
+              projectPath,
+              executable: 'lein',
+              args: ['uberjar'],
+              purpose: 'build',
+            }),
+          })
+    );
+    return finalize();
+  }
+
+  if (input.adapterId === 'scala-sbt' && (await exists('build.sbt'))) {
+    addFiles(['build.sbt']);
+    add(
+      pendingStage({
+        id: stageId('reconcile'),
+        kind: 'reconcile',
+        risk: 'guarded',
+        summary: 'Resolve and compile the sbt dependency graph.',
+        invocation: invocation({
+          workspacePath: input.workspacePath,
+          projectPath,
+          executable: 'sbt',
+          args: ['compile'],
+          purpose: 'reconcile',
+        }),
+      })
+    );
+    add(
+      pendingStage({
+        id: stageId('audit'),
+        kind: 'audit',
+        summary: 'Run the declared Scala dependency audit.',
+        invocation: audit,
+      })
+    );
+    add(
+      pendingStage({
+        id: stageId('test'),
+        kind: 'test',
+        summary: 'Run sbt tests.',
+        invocation: invocation({
+          workspacePath: input.workspacePath,
+          projectPath,
+          executable: 'sbt',
+          args: ['test'],
+          purpose: 'test',
+        }),
+      })
+    );
+    add(
+      pendingStage({
+        id: stageId('build'),
+        kind: 'build',
+        summary: 'Build the sbt project artifact.',
+        invocation: invocation({
+          workspacePath: input.workspacePath,
+          projectPath,
+          executable: 'sbt',
+          args: ['package'],
+          purpose: 'build',
+        }),
+      })
+    );
+    return finalize();
+  }
+
   blockers.push(
     `The ${input.adapterId} repair adapter no longer matches the source at ${relativeProject}; refresh evidence and create a fresh plan.`
   );
@@ -1137,6 +1292,8 @@ async function detectWorkspaceRepairAdapterIds(
   if (await exists('pom.xml')) detected.push('jvm-maven');
   if ((await exists('build.gradle.kts')) || (await exists('build.gradle')))
     detected.push('jvm-gradle');
+  if ((await exists('deps.edn')) || (await exists('project.clj'))) detected.push('clojure');
+  if (await exists('build.sbt')) detected.push('scala-sbt');
   const order = new Map(
     WORKSPACE_REPAIR_ADAPTER_CAPABILITIES.map((capability, index) => [capability.id, index])
   );
@@ -1162,6 +1319,8 @@ function adapterIdForEcosystem(
   if (['dotnet', '.net', 'nuget'].includes(normalized)) return 'dotnet';
   if (['maven', 'jvm-maven'].includes(normalized)) return 'jvm-maven';
   if (['gradle', 'jvm-gradle'].includes(normalized)) return 'jvm-gradle';
+  if (['clojure', 'lein', 'leiningen'].includes(normalized)) return 'clojure';
+  if (['scala', 'sbt', 'scala-sbt'].includes(normalized)) return 'scala-sbt';
   return undefined;
 }
 
@@ -1254,11 +1413,31 @@ async function dependencyStagePlan(
   combined.checkpointFiles = [...new Set(combined.checkpointFiles)].sort();
   combined.blockers = [...new Set(combined.blockers)];
 
+  if (input.action.transaction?.kind === 'dependency-materialization') {
+    const requiredStages = new Set(input.action.transaction.requiredStages);
+    // The action invocation is itself the governed install/restore operation.
+    // Adapter stages close only the declared validation surface so the package
+    // manager is never invoked twice for one materialization transaction.
+    combined.stages = combined.stages.filter(
+      (stage) => stage.kind !== 'reconcile' && requiredStages.has(stage.kind as 'test' | 'build')
+    );
+    combined.blockers = combined.stages
+      .filter((stage) => stage.required && stage.status === 'blocked')
+      .map((stage) => stage.summary);
+  }
+
   for (const adapter of combined.adapters) {
     const adapterStages = combined.stages.filter((stage) =>
       stage.id.startsWith(`${adapter.projectPath}:${adapter.adapterId}:`)
     );
     const missing: string[] = [];
+    adapter.requiredExecutables = [
+      ...new Set(
+        adapterStages
+          .filter((stage) => stage.required && stage.invocation)
+          .map((stage) => (stage.invocation as WorkspaceRepairInvocation).executable)
+      ),
+    ];
     for (const stage of adapterStages) {
       if (!stage.required || !stage.invocation) continue;
       if (
@@ -1576,6 +1755,13 @@ function validateProposalValidationInvocation(
       (first === 'test' ||
         first === 'compile' ||
         (first === 'hex.audit' && validation.kind === 'audit'))) ||
+    (name === 'clojure' && first === '-M:test' && validation.kind === 'test') ||
+    (name === 'lein' &&
+      ((first === 'test' && validation.kind === 'test') ||
+        (first === 'uberjar' && validation.kind === 'build'))) ||
+    (name === 'sbt' &&
+      ((first === 'test' && validation.kind === 'test') ||
+        (first === 'package' && validation.kind === 'build'))) ||
     (name === 'deno' &&
       (first === 'test' || (first === 'task' && ['test', 'build'].includes(second))));
   if (!permitted) {
@@ -1710,11 +1896,16 @@ export async function planWorkspaceRepair(
     includeAbsolutePaths: false,
     ciMode: true,
   });
-  const actions = sourcePlan.actions
+  const candidates = sourcePlan.actions
     .filter((action) => action.cardId === input.cardId)
     .filter((action) => !input.actionId || action.id === input.actionId)
     .filter((action) => !input.projectName || action.projectName === input.projectName)
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+  const blockingCandidates = candidates.filter((action) =>
+    action.notes.includes('Doctor finding status: blocking')
+  );
+  const actions =
+    !input.actionId && blockingCandidates.length > 0 ? blockingCandidates : candidates;
   const maxRisk = input.maxRisk ?? 'guarded';
   const policy: WorkspaceRepairTransaction['policy'] = {
     maxRisk,
@@ -1782,7 +1973,7 @@ export async function planWorkspaceRepair(
       summary: action.summary,
       ...(structuredInvocation ? { invocation: structuredInvocation } : {}),
     });
-    if (action.transaction?.kind === 'dependency-security') {
+    if (action.transaction) {
       const dependency = await dependencyStagePlan({ workspacePath, action }, dependencies);
       stages.push(...dependency.stages);
       dependencyFiles.push(...dependency.checkpointFiles);
@@ -2395,10 +2586,10 @@ async function refreshAfterHashes(
 }
 
 function executableName(executable: string): string {
-  return path
-    .basename(executable)
+  return path.posix
+    .basename(executable.replaceAll('\\', '/'))
     .toLowerCase()
-    .replace(/\.(?:cmd|exe)$/i, '');
+    .replace(/\.(?:bat|cmd|exe)$/i, '');
 }
 
 function validateInvocation(
@@ -2485,6 +2676,60 @@ async function runInvocation(input: {
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
   };
+}
+
+async function verifyRepairTarget(input: {
+  workspacePath: string;
+  transaction: WorkspaceRepairTransaction;
+  sourcePlan: PersistedRepairSource;
+  dependencies: RepairEngineDependencies;
+  workspaceStatus: 'passed' | 'blocked' | 'failed';
+}): Promise<{
+  status: 'passed' | 'failed' | 'unknown';
+  remainingActionIds: string[];
+}> {
+  if (input.dependencies.targetVerify) {
+    return input.dependencies.targetVerify({
+      workspacePath: input.workspacePath,
+      transaction: input.transaction,
+    });
+  }
+  // Injected verification is used by bounded unit/host integrations. Preserve
+  // its explicit result unless the caller also supplies target verification.
+  if (input.dependencies.verify) {
+    return {
+      status: input.workspaceStatus === 'passed' ? 'passed' : 'failed',
+      remainingActionIds:
+        input.workspaceStatus === 'passed' ? [] : [...input.transaction.target.actionIds],
+    };
+  }
+  if (input.workspaceStatus === 'failed') {
+    return { status: 'unknown', remainingActionIds: [...input.transaction.target.actionIds] };
+  }
+  try {
+    const refreshed = await buildArtifactRemediationPlan({
+      workspacePath: input.workspacePath,
+      includeAbsolutePaths: false,
+      ciMode: true,
+    });
+    const selected = new Set(input.transaction.target.actionIds);
+    const remaining = isWorkspaceRepairProposal(input.sourcePlan)
+      ? refreshed.actions.filter(
+          (action) =>
+            action.cardId === input.transaction.target.cardId &&
+            (!input.transaction.target.projectName ||
+              action.projectName === input.transaction.target.projectName) &&
+            (!input.transaction.target.projectPath ||
+              action.projectPath === input.transaction.target.projectPath)
+        )
+      : refreshed.actions.filter((action) => selected.has(action.id));
+    return {
+      status: remaining.length === 0 ? 'passed' : 'failed',
+      remainingActionIds: remaining.map((action) => action.id).sort(),
+    };
+  } catch {
+    return { status: 'unknown', remainingActionIds: [...input.transaction.target.actionIds] };
+  }
 }
 
 function tail(value: string, max = 8_000): string {
@@ -3027,15 +3272,36 @@ export async function executeWorkspaceRepair(
       };
       verifyStage.stderrTail = tail(error instanceof Error ? error.message : String(error));
     }
-    const passed = verification.exitCode === 0 && verification.status === 'passed';
+    const workspaceStatus: 'passed' | 'blocked' | 'failed' =
+      verification.status === 'passed' && verification.exitCode === 0
+        ? 'passed'
+        : verification.status === 'failed' || verification.exitCode === 1
+          ? 'failed'
+          : 'blocked';
+    const targetVerification = await verifyRepairTarget({
+      workspacePath,
+      transaction,
+      sourcePlan,
+      dependencies,
+      workspaceStatus,
+    });
+    const passed = targetVerification.status === 'passed' && workspaceStatus !== 'failed';
     verifyStage.status = passed ? 'passed' : 'failed';
     verifyStage.completedAt = iso(dependencies.now);
     verifyStage.exitCode = verification.exitCode;
-    verifyStage.summary = passed
-      ? 'Canonical verification passed.'
-      : `Canonical verification remained ${verification.status}.`;
+    verifyStage.summary =
+      passed && workspaceStatus === 'passed'
+        ? 'Selected repair target and canonical workspace verification passed.'
+        : passed
+          ? 'Selected repair target passed; canonical workspace verification remains blocked by other governed findings.'
+          : targetVerification.status === 'unknown'
+            ? 'Canonical verification could not establish the selected repair target outcome.'
+            : `Selected repair target remains unresolved; canonical workspace verification is ${workspaceStatus}.`;
     transaction.verification = {
       status: passed ? 'passed' : 'failed',
+      targetStatus: targetVerification.status,
+      workspaceStatus,
+      remainingActionIds: targetVerification.remainingActionIds,
       artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.intelligenceRun,
       exitCode: verification.exitCode,
       summary: verifyStage.summary,
@@ -3048,7 +3314,7 @@ export async function executeWorkspaceRepair(
     if (passed) {
       transaction.state = 'closed';
       delete transaction.decision;
-      event(transaction, 'closed', 'Repair closed only after canonical verification passed.', {
+      event(transaction, 'closed', verifyStage.summary, {
         status: 'passed',
         now: dependencies.now,
       });

@@ -57,6 +57,12 @@ hashes, duplicate targets, workspace evidence edits, Git internals, installed de
 secret-bearing files, path/link escapes, and ungoverned commands. Dependency manifest proposals
 still receive CLI-inferred reconcile, audit, test, and build stages before strict verification.
 
+Doctor also publishes a distinct `dependency-materialization` transaction when manifests exist
+but the installed runtime tree is missing. Its install or restore invocation is the repair stage
+itself; it does not require a manifest or lockfile diff and is never run twice. Declared tests and
+builds, followed by canonical verification, prove closure. Dependency-security transactions still
+require manifest/lock reconciliation and a clean focused audit.
+
 ## Safety and ownership
 
 - The immutable plan hash covers target, policy, preconditions, structured invocations, risk,
@@ -75,7 +81,10 @@ still receive CLI-inferred reconcile, audit, test, and build stages before stric
   rollback verifies every target and backup hash, rejects path/link conflicts, restores files
   atomically with their recorded modes, and reconciles installed dependencies with the restored
   manifests and lockfiles. It reports `decision-required` if any part cannot be proven complete.
-- `closed` is reachable only after the strict canonical Workspace Intelligence run passes.
+- Strict canonical Workspace Intelligence always runs before closure. The receipt separates
+  `verification.targetStatus` from `verification.workspaceStatus`: a proven selected action may
+  close while unrelated governed findings keep the workspace blocked. Those findings remain the
+  next repair target and never trigger rollback of a valid bounded repair.
 - Required executables are resolved before approval and again immediately before execution. A
   missing or changed toolchain expires approval instead of starting a partial transaction.
 
@@ -86,13 +95,13 @@ Dependency transactions are package-manager aware. The canonical inventory is pu
 capabilities`. It distinguishes full support from conditional support instead of treating “the
 command exists” as proof that the whole repair is executable.
 
-Node, Python, Go, Rust, Composer, Bundler, Elixir, Deno, .NET, Maven, and Gradle surfaces are
-detected independently. A genuinely multi-runtime project receives collision-free stages for
-every applicable adapter. Doctor dependency actions remain bound to the ecosystem declared by
-their evidence so an npm finding cannot accidentally trigger an unrelated Python transaction.
-If a manifest, required executable, isolated environment, project-declared validation, or audit
-surface is unavailable, the engine returns `decision-required`; it never hides the gap behind a
-model fallback.
+Node, Python, Go, Rust, Composer, Bundler, Elixir, Deno, .NET, Maven, Gradle, Clojure, and sbt
+surfaces are detected independently. A genuinely multi-runtime project receives collision-free
+stages for every applicable adapter. Doctor dependency actions remain bound to the ecosystem
+declared by their evidence so an npm finding cannot accidentally trigger an unrelated Python
+transaction. If a manifest, required executable, isolated environment, project-declared
+validation, or audit surface is unavailable, the engine returns `decision-required`; it never
+hides the gap behind a model fallback.
 
 ## Consumer contract
 

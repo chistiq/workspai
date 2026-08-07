@@ -59,6 +59,8 @@ describe('Workspace Repair capability contract', () => {
       { id: 'dotnet', file: 'App.csproj' },
       { id: 'jvm-maven', file: 'pom.xml' },
       { id: 'jvm-gradle', file: 'build.gradle.kts' },
+      { id: 'clojure', file: 'deps.edn' },
+      { id: 'scala-sbt', file: 'build.sbt' },
     ];
 
     for (const fixture of fixtures) {

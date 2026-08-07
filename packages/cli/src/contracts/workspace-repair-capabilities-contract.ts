@@ -12,7 +12,9 @@ export type WorkspaceRepairAdapterId =
   | 'deno'
   | 'dotnet'
   | 'jvm-maven'
-  | 'jvm-gradle';
+  | 'jvm-gradle'
+  | 'clojure'
+  | 'scala-sbt';
 
 export type WorkspaceRepairAdapterCapability = {
   id: WorkspaceRepairAdapterId;
@@ -171,6 +173,34 @@ export const WORKSPACE_REPAIR_ADAPTER_CAPABILITIES: readonly WorkspaceRepairAdap
     support: 'conditional',
     stages: { reconcile: 'native', audit: 'conditional', test: 'native', build: 'native' },
     requiredToolFamilies: ['gradlew or gradle', 'governed Doctor audit'],
+    limitation: 'A project-specific dependency audit command must be declared by Doctor evidence.',
+  },
+  {
+    id: 'clojure',
+    ecosystem: 'Clojure',
+    manifests: ['deps.edn', 'project.clj'],
+    lockfiles: [],
+    packageManagers: ['Clojure CLI', 'Leiningen'],
+    support: 'conditional',
+    stages: {
+      reconcile: 'native',
+      audit: 'conditional',
+      test: 'conditional',
+      build: 'conditional',
+    },
+    requiredToolFamilies: ['clojure or lein', 'governed project audit'],
+    limitation:
+      'Tests and builds run only when the selected Clojure project surface declares a deterministic entrypoint.',
+  },
+  {
+    id: 'scala-sbt',
+    ecosystem: 'Scala / sbt',
+    manifests: ['build.sbt'],
+    lockfiles: [],
+    packageManagers: ['sbt'],
+    support: 'conditional',
+    stages: { reconcile: 'native', audit: 'conditional', test: 'native', build: 'native' },
+    requiredToolFamilies: ['sbt', 'governed project audit'],
     limitation: 'A project-specific dependency audit command must be declared by Doctor evidence.',
   },
 ] as const;

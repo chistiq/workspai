@@ -572,6 +572,14 @@ function doctorEvidenceActions(input: {
             .map((probe) => asRecord(probe)?.repairCapability)
             .filter((capability) => capability !== undefined)
         : [];
+    const probeFindingStatus = new Map<string, 'blocking' | 'advisory'>();
+    for (const rawProbe of Array.isArray(project.probes) ? project.probes : []) {
+      const probe = asRecord(rawProbe);
+      const capability = asRecord(probe?.repairCapability);
+      const capabilityId = typeof capability?.id === 'string' ? capability.id.trim() : '';
+      if (!capabilityId) continue;
+      probeFindingStatus.set(capabilityId, probe?.status === 'fail' ? 'blocking' : 'advisory');
+    }
 
     for (const rawCapability of capabilities) {
       const capability = asRecord(rawCapability);
@@ -603,6 +611,8 @@ function doctorEvidenceActions(input: {
         transactionRecord?.schemaVersion === 'workspai.doctor-dependency-repair-transaction.v1'
           ? (structuredClone(transactionRecord) as unknown as DoctorDependencyRepairTransaction)
           : undefined;
+      const findingStatus =
+        probeFindingStatus.get(capabilityId) ?? (transaction ? 'blocking' : 'advisory');
       if (transaction) {
         transaction.projectPath = relativeOrAbsolute(
           input.workspacePath,
@@ -673,6 +683,7 @@ function doctorEvidenceActions(input: {
           files,
           notes: [
             `Source Doctor capability: ${capabilityId}`,
+            `Doctor finding status: ${findingStatus}`,
             ...asStringArray(capability.limitations),
           ],
           scope: 'project',
