@@ -36,6 +36,12 @@ export type WorkspaceExplainReport = {
   target: WorkspaceExplainTarget;
   summary: string;
   sections: WorkspaceExplainSection[];
+  /** Canonical verify verdict at the time this explanation was generated. */
+  releaseVerdict?: 'ready' | 'needs-attention' | 'blocked';
+  /** Canonical verify freshness posture; consumers must not infer this from prose. */
+  evidenceFreshness?: 'fresh' | 'stale' | 'unknown';
+  /** True only when the referenced evidence contains an active release blocker. */
+  blocking?: boolean;
   releaseRisk?: string;
   blockingReasons?: string[];
   resolutionHints?: BlockerResolution[];

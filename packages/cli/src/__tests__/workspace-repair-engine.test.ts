@@ -154,6 +154,69 @@ describe('Workspace Repair Engine', () => {
     ).not.toThrow();
   });
 
+  it('publishes a workspace target when one Doctor transaction spans multiple projects', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const secondProjectPath = path.join(workspacePath, 'web');
+    await fsExtra.ensureDir(secondProjectPath);
+    const projects = [
+      { name: 'api', projectPath },
+      { name: 'web', projectPath: secondProjectPath },
+    ];
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        projects: projects.map(({ name, projectPath: targetPath }) => {
+          const operation = {
+            type: 'file-create' as const,
+            path: path.join(targetPath, '.env.example'),
+            content: 'APP_ENV=development\n',
+            overwrite: false as const,
+          };
+          return {
+            name,
+            path: targetPath,
+            probes: [
+              {
+                id: 'surface-environment-config',
+                status: 'fail',
+                repairCapability: {
+                  id: 'surface-environment-config.file-create',
+                  title: 'Create environment contract',
+                  status: 'available',
+                  risk: 'safe',
+                  canAutoFix: true,
+                  canEditFiles: true,
+                  requiresApproval: true,
+                  requiresReview: false,
+                  files: [operation.path],
+                  command: buildDoctorInternalRepairCommand(operation),
+                  operation,
+                  verifyCommand: 'npx workspai doctor project --json',
+                  refreshCommands: [],
+                  reason: 'Environment contract is missing.',
+                },
+              },
+            ],
+          };
+        }),
+      },
+      { spaces: 2 }
+    );
+
+    const planned = await planWorkspaceRepair({ workspacePath, cardId: 'doctor' });
+
+    expect(planned.target).toMatchObject({
+      cardId: 'doctor',
+      scope: 'workspace',
+      actionIds: [
+        'doctor.api.surface-environment-config.file-create',
+        'doctor.web.surface-environment-config.file-create',
+      ],
+    });
+    expect(planned.target).not.toHaveProperty('projectName');
+    expect(planned.target).not.toHaveProperty('projectPath');
+  });
+
   it('automatically restores the bounded checkpoint when canonical verification fails', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     await writeFileRepairEvidence({ workspacePath, projectPath, fileName: '.env.example' });
@@ -426,6 +489,13 @@ describe('Workspace Repair Engine', () => {
     });
     expect(missingToolPlan.preconditions).toContainEqual(
       expect.objectContaining({ id: 'tool:api:npm', status: 'failed' })
+    );
+    expect(missingToolPlan.decision?.causes).toContainEqual(
+      expect.objectContaining({
+        kind: 'missing-executable',
+        projectPath: 'api',
+        executable: 'npm',
+      })
     );
     await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
     const purposes: string[] = [];
@@ -1188,6 +1258,9 @@ describe('Workspace Repair Engine', () => {
     expect(planned.state).toBe('decision-required');
     expect(planned.decision?.reason).toContain('expected source hash');
     expect(planned.decision?.reason).toContain('Canonical workspace state and evidence');
+    expect(planned.decision?.causes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'failed-precondition' })])
+    );
     expect(planned.approval.status).toBe('pending');
   });
 
@@ -1625,6 +1698,9 @@ describe('Workspace Repair Engine', () => {
       policy: { maxRisk: 'guarded' },
     });
     expect(blocked.decision?.options).toContain('approve-invasive');
+    expect(blocked.decision?.causes).toContainEqual(
+      expect.objectContaining({ kind: 'risk-approval', id: 'risk:migration' })
+    );
 
     const replanned = await decideWorkspaceRepair({
       workspacePath,

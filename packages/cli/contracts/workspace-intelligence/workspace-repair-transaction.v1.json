@@ -267,7 +267,34 @@
               "cancel"
             ]
           }
+        },
+        "causes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/decisionCause" }
         }
+      }
+    },
+    "decisionCause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "message"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "missing-executable",
+            "unsupported-adapter",
+            "failed-precondition",
+            "risk-approval",
+            "policy-exception",
+            "source-repair-required"
+          ]
+        },
+        "id": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "projectPath": { "type": "string", "minLength": 1 },
+        "adapterId": { "type": "string", "minLength": 1 },
+        "executable": { "type": "string", "minLength": 1 }
       }
     },
     "event": {

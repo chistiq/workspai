@@ -72,6 +72,21 @@ export type WorkspaceRepairDecision =
   | 'rollback'
   | 'cancel';
 
+export type WorkspaceRepairDecisionCause = {
+  kind:
+    | 'missing-executable'
+    | 'unsupported-adapter'
+    | 'failed-precondition'
+    | 'risk-approval'
+    | 'policy-exception'
+    | 'source-repair-required';
+  id: string;
+  message: string;
+  projectPath?: string;
+  adapterId?: string;
+  executable?: string;
+};
+
 export type WorkspaceRepairTransaction = {
   schemaVersion: typeof WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION;
   transactionId: string;
@@ -137,6 +152,7 @@ export type WorkspaceRepairTransaction = {
   decision?: {
     reason: string;
     options: WorkspaceRepairDecision[];
+    causes: WorkspaceRepairDecisionCause[];
   };
   events: Array<{
     sequence: number;

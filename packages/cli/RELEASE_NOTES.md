@@ -5,7 +5,56 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.55.0 (August 7, 2026)
+## Latest Release: v0.55.1 (August 8, 2026)
+
+### Truthful Evidence Posture and Typed Repair Decisions
+
+This patch release prevents advisory evidence from appearing as a release
+blocker and gives IDEs and agents structured causes for every governed repair
+decision.
+
+**What's New:**
+
+- **Explain publishes an explicit posture**
+  - Reports carry the canonical release verdict, evidence freshness, and a
+    boolean blocking signal.
+  - `needs-attention` with no blocking reason remains advisory instead of
+    becoming a false blocker.
+
+- **Repair decisions are machine-actionable**
+  - Decision-required transactions identify missing executables, unsupported
+    adapters, failed preconditions, risk approval, policy exceptions, and
+    source-repair requirements as typed causes.
+  - Consumers no longer need to parse a prose reason to choose the next safe
+    user or model action.
+
+- **Multi-project scope stays truthful**
+  - A Doctor repair spanning several projects is published as a workspace
+    transaction.
+  - Project scope is used only when one exact project identity is available.
+
+**Breaking changes:** None. New report and transaction fields are additive.
+
+**Verification:**
+
+- Focused Explain and Repair Engine tests passed.
+- Type checking, contract synchronization, package validation, and
+  CLI/extension contract parity passed.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.55.1
+workspai --version
+workspai workspace repair capabilities --json
+workspai workspace repair list --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.55.1/packages/cli/releases/RELEASE_NOTES_v0.55.1.md)
+
+---
+
+## Previous Release: v0.55.0 (August 7, 2026)
 
 ### Exact-Target Repair and Complete Consumer Evidence
 

@@ -24,6 +24,9 @@
         "additionalProperties": false
       }
     },
+    "releaseVerdict": { "enum": ["ready", "needs-attention", "blocked"] },
+    "evidenceFreshness": { "enum": ["fresh", "stale", "unknown"] },
+    "blocking": { "type": "boolean" },
     "releaseRisk": { "type": "string" },
     "blockingReasons": { "type": "array", "items": { "type": "string" } },
     "resolutionHints": { "type": "array", "items": { "type": "object" } }

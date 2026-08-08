@@ -256,6 +256,11 @@ export async function buildWorkspaceExplain(
           : `${blockingReasons.length > 0 || verify.summary.verdict === 'blocked' ? 'Release blocked' : 'Release posture'}: ${verify.summary.verdict} with ${blockingReasons.length} blocking reason(s).`
         : 'Release posture unknown — verify report missing.',
       sections,
+      releaseVerdict: verify?.summary.verdict,
+      evidenceFreshness: verify?.freshness.verdict,
+      blocking: Boolean(
+        verify && (verify.summary.verdict === 'blocked' || blockingReasons.length > 0)
+      ),
       releaseRisk: verify?.impact.risk,
       blockingReasons,
       resolutionHints: verify?.resolutionHints,

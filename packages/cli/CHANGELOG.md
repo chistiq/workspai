@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.1] - 2026-08-08
+
+### Changed
+
+- Added typed decision causes for missing executables, unsupported adapters,
+  failed preconditions, risk approval, policy exceptions, and source repairs so
+  IDE and agent consumers can present the next safe action without parsing prose.
+- Made multi-project Doctor repairs publish workspace scope unless one exact
+  project is selected, preventing follow-up work from being routed to an
+  arbitrary project.
+- Added explicit release verdict, evidence freshness, and blocking posture to
+  Workspace Explain reports.
+
+### Fixed
+
+- Fixed `needs-attention` Explain evidence with zero blocking reasons being
+  rendered as a release blocker by downstream consumers.
+- Fixed repair transactions exposing only a human-readable decision reason,
+  which forced extensions and agents to guess whether a missing tool, policy
+  exception, source repair, or approval was required.
+- Fixed a Doctor transaction spanning multiple projects being advertised as
+  project-scoped without an exact project identity.
+
+### Verification
+
+- Focused Explain, repair capability, and Repair Engine contract tests passed.
+- Type checking, contract synchronization, CLI/extension contract parity, and
+  package validation passed.
+
 ## [0.55.0] - 2026-08-07
 
 ### Changed

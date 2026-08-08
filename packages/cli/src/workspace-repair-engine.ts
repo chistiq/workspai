@@ -17,6 +17,7 @@ import {
   WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
   type WorkspaceRepairInvocation,
   type WorkspaceRepairDecision,
+  type WorkspaceRepairDecisionCause,
   type WorkspaceRepairRisk,
   type WorkspaceRepairStage,
   type WorkspaceRepairTransaction,
@@ -204,6 +205,156 @@ type PersistedRepairSource = ArtifactRemediationPlan | WorkspaceRepairProposal;
 type RuntimeRepairAction =
   | { kind: 'canonical'; action: ArtifactRemediationAction }
   | { kind: 'proposal'; change: WorkspaceRepairProposalChange };
+
+function decisionCauseKey(cause: WorkspaceRepairDecisionCause): string {
+  return [
+    cause.kind,
+    cause.id,
+    cause.projectPath ?? '',
+    cause.adapterId ?? '',
+    cause.executable ?? '',
+  ].join('\0');
+}
+
+function runtimeRepairDecision(
+  reason: string,
+  options: WorkspaceRepairDecision[],
+  cause: Omit<WorkspaceRepairDecisionCause, 'id' | 'message'> &
+    Partial<Pick<WorkspaceRepairDecisionCause, 'id' | 'message'>> = {
+    kind: 'failed-precondition',
+  }
+): NonNullable<WorkspaceRepairTransaction['decision']> {
+  return {
+    reason,
+    options,
+    causes: [
+      {
+        ...cause,
+        id: cause.id ?? `runtime:${sha256(reason).slice(0, 16)}`,
+        message: cause.message ?? reason,
+      },
+    ],
+  };
+}
+
+function repairDecisionCauses(input: {
+  actions?: ArtifactRemediationAction[];
+  adapters: WorkspaceRepairAdapterEvaluation[];
+  preconditions: WorkspaceRepairTransaction['preconditions'];
+  stages: WorkspaceRepairStage[];
+  decisionOptions: ReadonlySet<WorkspaceRepairDecision>;
+  maxRisk: WorkspaceRepairRisk;
+  fallbackReasons: string[];
+}): WorkspaceRepairDecisionCause[] {
+  const causes = new Map<string, WorkspaceRepairDecisionCause>();
+  const add = (cause: WorkspaceRepairDecisionCause) => causes.set(decisionCauseKey(cause), cause);
+
+  for (const adapter of input.adapters) {
+    if (adapter.support === 'unsupported' || adapter.status === 'unsupported') {
+      add({
+        kind: 'unsupported-adapter',
+        id: `adapter:${adapter.projectPath}:${adapter.adapterId}`,
+        message: adapter.message,
+        projectPath: adapter.projectPath,
+        adapterId: adapter.adapterId,
+      });
+    }
+    for (const executable of adapter.missingExecutables) {
+      add({
+        kind: 'missing-executable',
+        id: `tool:${adapter.projectPath}:${adapter.adapterId}:${executable}`,
+        message: `Required repair executable is unavailable: ${executable} (${adapter.projectPath}).`,
+        projectPath: adapter.projectPath,
+        adapterId: adapter.adapterId,
+        executable,
+      });
+    }
+  }
+
+  for (const action of input.actions ?? []) {
+    const operation = operationForAction(action);
+    if (
+      action.status === 'blocked' ||
+      action.status === 'guidance-only' ||
+      (!operation && !action.invocation)
+    ) {
+      add({
+        kind: 'source-repair-required',
+        id: `action:${action.id}`,
+        message: action.blocker || `${action.id} requires a bounded source repair proposal.`,
+        ...(action.projectPath ? { projectPath: action.projectPath } : {}),
+      });
+    }
+    if (RISK_ORDER[action.risk] > RISK_ORDER[input.maxRisk]) {
+      add({
+        kind: 'risk-approval',
+        id: `risk:${action.id}`,
+        message: `${action.id} exceeds the approved ${input.maxRisk} risk ceiling.`,
+        ...(action.projectPath ? { projectPath: action.projectPath } : {}),
+      });
+    }
+  }
+
+  for (const precondition of input.preconditions.filter((entry) => entry.status === 'failed')) {
+    if (precondition.id === 'structured-execution') {
+      add({
+        kind: 'source-repair-required',
+        id: `precondition:${precondition.id}`,
+        message: precondition.message,
+      });
+      continue;
+    }
+    if (precondition.id.startsWith('tool:')) {
+      const stage = input.stages.find(
+        (candidate) =>
+          candidate.invocation &&
+          `tool:${candidate.invocation.cwd}:${candidate.invocation.executable}` === precondition.id
+      );
+      if (stage?.invocation) {
+        add({
+          kind: 'missing-executable',
+          id: precondition.id,
+          message: precondition.message,
+          projectPath: stage.invocation.cwd,
+          executable: stage.invocation.executable,
+        });
+        continue;
+      }
+    }
+    add({
+      kind: 'failed-precondition',
+      id: `precondition:${precondition.id}`,
+      message: precondition.message,
+    });
+  }
+
+  if (input.decisionOptions.has('allow-force')) {
+    add({
+      kind: 'policy-exception',
+      id: 'policy:allow-force',
+      message: 'The proposed repair requires an explicit force-install policy exception.',
+    });
+  }
+  if (input.decisionOptions.has('allow-breaking')) {
+    add({
+      kind: 'policy-exception',
+      id: 'policy:allow-breaking',
+      message: 'The proposed repair requires an explicit breaking-change policy exception.',
+    });
+  }
+
+  if (causes.size === 0) {
+    const message = input.fallbackReasons.find((reason) => reason.trim().length > 0);
+    if (message) {
+      add({
+        kind: 'failed-precondition',
+        id: `decision:${sha256(message).slice(0, 16)}`,
+        message,
+      });
+    }
+  }
+  return [...causes.values()];
+}
 
 function iso(now?: () => Date): string {
   return (now?.() ?? new Date()).toISOString();
@@ -2267,7 +2418,12 @@ export async function planWorkspaceRepair(
   ];
   const target: WorkspaceRepairTransaction['target'] = {
     cardId: input.cardId,
-    scope: actions.some((action) => action.scope === 'project') ? 'project' : 'workspace',
+    // A card spanning multiple project roots is a workspace transaction even
+    // when every selected action is project-scoped. Advertising it as a
+    // project transaction without an exact projectName/projectPath gives
+    // consumers a false scope and can cause them to route follow-up repair to
+    // an arbitrary project.
+    scope: input.projectName || actionProjectPaths.length === 1 ? 'project' : 'workspace',
     ...(input.projectName ? { projectName: input.projectName } : {}),
     ...(actionProjectPaths.length === 1 ? { projectPath: actionProjectPaths[0] } : {}),
     actionIds: actions.map((action) => action.id),
@@ -2280,6 +2436,20 @@ export async function planWorkspaceRepair(
     ...decisionReasons,
     ...preconditions.filter((entry) => entry.status === 'failed').map((entry) => entry.message),
   ];
+  const uniqueAdapterEvaluations = [
+    ...new Map(
+      adapterEvaluations.map((adapter) => [`${adapter.projectPath}:${adapter.adapterId}`, adapter])
+    ).values(),
+  ];
+  const decisionCauses = repairDecisionCauses({
+    actions,
+    adapters: uniqueAdapterEvaluations,
+    preconditions,
+    stages,
+    decisionOptions,
+    maxRisk,
+    fallbackReasons: decisionMessages,
+  });
   const transaction: WorkspaceRepairTransaction = {
     schemaVersion: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
     transactionId: id,
@@ -2292,14 +2462,7 @@ export async function planWorkspaceRepair(
     policy,
     approval: { required: true, status: 'pending' },
     preconditions,
-    adapterEvaluations: [
-      ...new Map(
-        adapterEvaluations.map((adapter) => [
-          `${adapter.projectPath}:${adapter.adapterId}`,
-          adapter,
-        ])
-      ).values(),
-    ],
+    adapterEvaluations: uniqueAdapterEvaluations,
     checkpoint: {
       status: files.length > 0 ? 'pending' : 'unavailable',
       files: checkpointInspection.entries,
@@ -2310,6 +2473,7 @@ export async function planWorkspaceRepair(
           decision: {
             reason: [...new Set(decisionMessages)].join(' '),
             options: [...decisionOptions],
+            causes: decisionCauses,
           },
         }
       : {}),
@@ -2321,14 +2485,7 @@ export async function planWorkspaceRepair(
         target,
         policy,
         preconditions,
-        adapterEvaluations: [
-          ...new Map(
-            adapterEvaluations.map((adapter) => [
-              `${adapter.projectPath}:${adapter.adapterId}`,
-              adapter,
-            ])
-          ).values(),
-        ],
+        adapterEvaluations: uniqueAdapterEvaluations,
         stages,
         checkpointFiles: checkpointInspection.entries,
       }),
@@ -2624,6 +2781,27 @@ export async function planWorkspaceRepairProposal(
   const transactionId = `repair_${randomUUID().replaceAll('-', '')}`;
   const failedPrecondition = preconditions.some((entry) => entry.status === 'failed');
   const blocked = failedPrecondition || decisionReasons.length > 0;
+  const decisionMessages = [
+    ...decisionReasons,
+    ...preconditions.filter((entry) => entry.status === 'failed').map((entry) => entry.message),
+  ];
+  const decisionCauses = repairDecisionCauses({
+    adapters: validationPlan.adapters,
+    preconditions,
+    stages,
+    decisionOptions,
+    maxRisk,
+    fallbackReasons: decisionMessages,
+  });
+  for (const change of proposal.changes) {
+    if (RISK_ORDER[change.risk] <= RISK_ORDER[maxRisk]) continue;
+    decisionCauses.push({
+      kind: 'risk-approval',
+      id: `risk:${change.id}`,
+      message: `${change.id} exceeds the approved ${maxRisk} risk ceiling.`,
+      ...(proposal.projectPath ? { projectPath: proposal.projectPath } : {}),
+    });
+  }
   const transaction: WorkspaceRepairTransaction = {
     schemaVersion: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
     transactionId,
@@ -2642,15 +2820,9 @@ export async function planWorkspaceRepairProposal(
     ...(blocked
       ? {
           decision: {
-            reason: [
-              ...new Set([
-                ...decisionReasons,
-                ...preconditions
-                  .filter((entry) => entry.status === 'failed')
-                  .map((entry) => entry.message),
-              ]),
-            ].join(' '),
+            reason: [...new Set(decisionMessages)].join(' '),
             options: [...decisionOptions],
+            causes: decisionCauses,
           },
         }
       : {}),
@@ -2704,10 +2876,10 @@ export async function approveWorkspaceRepair(
   if (transactionPlanHash(transaction) !== transaction.integrity.planHash) {
     transaction.approval.status = 'expired';
     transaction.state = 'decision-required';
-    transaction.decision = {
-      reason: 'The compiled repair plan changed after planning.',
-      options: ['cancel'],
-    };
+    transaction.decision = runtimeRepairDecision(
+      'The compiled repair plan changed after planning.',
+      ['cancel']
+    );
     await saveTransaction(input.workspacePath, transaction, dependencies.now);
     return transaction;
   }
@@ -2715,10 +2887,10 @@ export async function approveWorkspaceRepair(
   if (sha256(stableJson(sourcePlan)) !== transaction.integrity.sourceEvidenceHash) {
     transaction.approval.status = 'expired';
     transaction.state = 'decision-required';
-    transaction.decision = {
-      reason: 'The persisted source plan changed after planning.',
-      options: ['cancel'],
-    };
+    transaction.decision = runtimeRepairDecision(
+      'The persisted source plan changed after planning.',
+      ['cancel']
+    );
     await saveTransaction(input.workspacePath, transaction, dependencies.now);
     return transaction;
   }
@@ -3382,7 +3554,7 @@ async function rollbackInternal(input: {
   const refuseRollback = async (reason: string): Promise<false> => {
     input.transaction.checkpoint.status = 'conflicted';
     input.transaction.state = 'decision-required';
-    input.transaction.decision = { reason, options: ['manual-repair', 'cancel'] };
+    input.transaction.decision = runtimeRepairDecision(reason, ['manual-repair', 'cancel']);
     event(input.transaction, 'decision', reason, {
       status: 'conflicted',
       now: input.dependencies.now,
@@ -3525,10 +3697,10 @@ async function rollbackInternal(input: {
       rollbackStage.summary =
         result.stderr || result.stdout || `Rollback reconciliation exited with ${result.exitCode}.`;
       input.transaction.state = 'decision-required';
-      input.transaction.decision = {
-        reason: `Source files were restored, but the installed dependency tree could not be reconciled: ${rollbackStage.summary}`,
-        options: ['manual-repair', 'cancel'],
-      };
+      input.transaction.decision = runtimeRepairDecision(
+        `Source files were restored, but the installed dependency tree could not be reconciled: ${rollbackStage.summary}`,
+        ['manual-repair', 'cancel']
+      );
       event(input.transaction, 'decision', input.transaction.decision.reason, {
         stageId: rollbackStage.id,
         status: 'rollback-reconcile-failed',
@@ -3594,11 +3766,10 @@ export async function executeWorkspaceRepair(
     if (transactionPlanHash(transaction) !== transaction.integrity.planHash) {
       transaction.approval.status = 'expired';
       transaction.state = 'decision-required';
-      transaction.decision = {
-        reason:
-          'The compiled repair plan changed after approval. Create and approve a fresh transaction.',
-        options: ['cancel'],
-      };
+      transaction.decision = runtimeRepairDecision(
+        'The compiled repair plan changed after approval. Create and approve a fresh transaction.',
+        ['cancel']
+      );
       event(transaction, 'decision', transaction.decision.reason, {
         status: 'integrity-failed',
         now: dependencies.now,
@@ -3610,11 +3781,10 @@ export async function executeWorkspaceRepair(
     if (sha256(stableJson(sourcePlan)) !== transaction.integrity.sourceEvidenceHash) {
       transaction.approval.status = 'expired';
       transaction.state = 'decision-required';
-      transaction.decision = {
-        reason:
-          'Persisted remediation evidence changed after approval. Create and approve a fresh transaction.',
-        options: ['cancel'],
-      };
+      transaction.decision = runtimeRepairDecision(
+        'Persisted remediation evidence changed after approval. Create and approve a fresh transaction.',
+        ['cancel']
+      );
       event(transaction, 'decision', transaction.decision.reason, {
         status: 'integrity-failed',
         now: dependencies.now,
@@ -3629,12 +3799,23 @@ export async function executeWorkspaceRepair(
     });
     const missingTool = executionPreflight.find((entry) => entry.status === 'failed');
     if (missingTool) {
+      const missingExecutable = transaction.stages.find(
+        (stage) =>
+          stage.invocation &&
+          `tool:${stage.invocation.cwd}:${stage.invocation.executable}` === missingTool.id
+      )?.invocation?.executable;
       transaction.approval.status = 'expired';
       transaction.state = 'decision-required';
-      transaction.decision = {
-        reason: `${missingTool.message} The approved plan cannot execute against a changed toolchain.`,
-        options: ['manual-repair', 'cancel'],
-      };
+      transaction.decision = runtimeRepairDecision(
+        `${missingTool.message} The approved plan cannot execute against a changed toolchain.`,
+        ['manual-repair', 'cancel'],
+        {
+          kind: 'missing-executable',
+          id: missingTool.id,
+          message: missingTool.message,
+          ...(missingExecutable ? { executable: missingExecutable } : {}),
+        }
+      );
       event(transaction, 'decision', transaction.decision.reason, {
         status: 'tool-precondition-failed',
         now: dependencies.now,
@@ -3665,10 +3846,10 @@ export async function executeWorkspaceRepair(
     } catch (error) {
       transaction.approval.status = 'expired';
       transaction.state = 'decision-required';
-      transaction.decision = {
-        reason: error instanceof Error ? error.message : String(error),
-        options: ['cancel'],
-      };
+      transaction.decision = runtimeRepairDecision(
+        error instanceof Error ? error.message : String(error),
+        ['cancel']
+      );
       event(transaction, 'decision', transaction.decision.reason, {
         status: 'source-precondition-failed',
         now: dependencies.now,
@@ -3682,11 +3863,10 @@ export async function executeWorkspaceRepair(
     if (!targetPreconditionStage) {
       transaction.approval.status = 'expired';
       transaction.state = 'decision-required';
-      transaction.decision = {
-        reason:
-          'The approved plan has no exact target precondition. Create and approve a fresh transaction.',
-        options: ['cancel'],
-      };
+      transaction.decision = runtimeRepairDecision(
+        'The approved plan has no exact target precondition. Create and approve a fresh transaction.',
+        ['cancel']
+      );
       await saveTransaction(workspacePath, transaction, dependencies.now);
       return transaction;
     }
@@ -3700,10 +3880,10 @@ export async function executeWorkspaceRepair(
     if (!targetStillCurrent) {
       transaction.approval.status = 'expired';
       transaction.state = 'decision-required';
-      transaction.decision = {
-        reason: `Target precondition failed before checkpoint: ${targetPreconditionStage.summary}`,
-        options: ['cancel'],
-      };
+      transaction.decision = runtimeRepairDecision(
+        `Target precondition failed before checkpoint: ${targetPreconditionStage.summary}`,
+        ['cancel']
+      );
       event(transaction, 'decision', transaction.decision.reason, {
         status: 'target-precondition-failed',
         now: dependencies.now,
@@ -3716,10 +3896,10 @@ export async function executeWorkspaceRepair(
     } catch (error) {
       transaction.approval.status = 'expired';
       transaction.state = 'decision-required';
-      transaction.decision = {
-        reason: error instanceof Error ? error.message : String(error),
-        options: ['cancel'],
-      };
+      transaction.decision = runtimeRepairDecision(
+        error instanceof Error ? error.message : String(error),
+        ['cancel']
+      );
       event(transaction, 'decision', transaction.decision.reason, {
         status: 'precondition-failed',
         now: dependencies.now,
@@ -3740,12 +3920,12 @@ export async function executeWorkspaceRepair(
         transaction.state = transaction.policy.autoRollback
           ? 'rollback-required'
           : 'decision-required';
-        transaction.decision = {
-          reason: `Required stage ${stage.id} failed: ${stage.summary}`,
-          options: transaction.policy.autoRollback
+        transaction.decision = runtimeRepairDecision(
+          `Required stage ${stage.id} failed: ${stage.summary}`,
+          transaction.policy.autoRollback
             ? ['rollback', 'manual-repair', 'cancel']
-            : ['manual-repair', 'rollback', 'cancel'],
-        };
+            : ['manual-repair', 'rollback', 'cancel']
+        );
         await saveTransaction(workspacePath, transaction, dependencies.now);
         if (transaction.policy.autoRollback)
           await rollbackInternal({ workspacePath, transaction, dependencies });
@@ -3758,12 +3938,12 @@ export async function executeWorkspaceRepair(
       transaction.state = transaction.policy.autoRollback
         ? 'rollback-required'
         : 'decision-required';
-      transaction.decision = {
-        reason: 'The approved plan has no canonical verification stage.',
-        options: transaction.policy.autoRollback
+      transaction.decision = runtimeRepairDecision(
+        'The approved plan has no canonical verification stage.',
+        transaction.policy.autoRollback
           ? ['rollback', 'manual-repair', 'cancel']
-          : ['manual-repair', 'rollback', 'cancel'],
-      };
+          : ['manual-repair', 'rollback', 'cancel']
+      );
       await saveTransaction(workspacePath, transaction, dependencies.now);
       if (transaction.policy.autoRollback) {
         await rollbackInternal({ workspacePath, transaction, dependencies });
@@ -3841,12 +4021,12 @@ export async function executeWorkspaceRepair(
       return transaction;
     }
     transaction.state = transaction.policy.autoRollback ? 'rollback-required' : 'decision-required';
-    transaction.decision = {
-      reason: verifyStage.summary,
-      options: transaction.policy.autoRollback
+    transaction.decision = runtimeRepairDecision(
+      verifyStage.summary,
+      transaction.policy.autoRollback
         ? ['rollback', 'manual-repair', 'cancel']
-        : ['manual-repair', 'rollback', 'cancel'],
-    };
+        : ['manual-repair', 'rollback', 'cancel']
+    );
     await saveTransaction(workspacePath, transaction, dependencies.now);
     if (transaction.policy.autoRollback)
       await rollbackInternal({ workspacePath, transaction, dependencies });

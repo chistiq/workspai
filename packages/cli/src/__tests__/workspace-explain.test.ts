@@ -28,6 +28,7 @@ function verifyFixture(input: {
   risk: 'low' | 'high';
   affectedProjects: number;
   blockers: string[];
+  verdict?: 'ready' | 'needs-attention' | 'blocked';
 }) {
   return {
     schemaVersion: 'workspace-verify.v1',
@@ -35,8 +36,8 @@ function verifyFixture(input: {
     workspacePath,
     mode: 'evidence',
     summary: {
-      verdict: 'blocked',
-      exitCode: 2,
+      verdict: input.verdict ?? 'blocked',
+      exitCode: (input.verdict ?? 'blocked') === 'blocked' ? 2 : 0,
       stepsPassed: 0,
       stepsWarn: 0,
       stepsFailed: 0,
@@ -163,6 +164,30 @@ describe('workspace explain (Phase 4.B)', () => {
     expect(report.schemaVersion).toBe(WORKSPACE_EXPLAIN_SCHEMA_VERSION);
     expect(report.summary).toContain('blocked');
     expect(report.blockingReasons).toContain('doctor workspace failed');
+    expect(report.releaseVerdict).toBe('blocked');
+    expect(report.evidenceFreshness).toBe('fresh');
+    expect(report.blocking).toBe(true);
+  });
+
+  it('publishes needs-attention as advisory when verify has no blocking reason', async () => {
+    await fsExtra.outputJson(
+      path.join(workspacePath, WORKSPACE_VERIFY_REPORT_PATH),
+      verifyFixture({
+        risk: 'high',
+        affectedProjects: 1,
+        blockers: [],
+        verdict: 'needs-attention',
+      })
+    );
+
+    const report = await buildWorkspaceExplain({
+      workspacePath,
+      target: { kind: 'release-blocked' },
+    });
+
+    expect(report.releaseVerdict).toBe('needs-attention');
+    expect(report.blockingReasons).toEqual([]);
+    expect(report.blocking).toBe(false);
   });
 
   it('renders structured resolution hints and blocker-specific guidance', async () => {

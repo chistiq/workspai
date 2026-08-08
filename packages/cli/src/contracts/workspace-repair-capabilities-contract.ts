@@ -240,6 +240,7 @@ export function buildWorkspaceRepairCapabilitiesContract() {
       targetClosure: 'selected-causal-action-set',
       changeReceipt: 'checkpoint-hash-delta',
       consumerTimeline: 'durable-transaction-events',
+      typedDecisionCauses: true,
       consumerHandshakeRequired: true,
       ephemeralProposalsAreEvidence: false,
       approvalBoundToPlanHash: true,

@@ -32,6 +32,7 @@ describe('Workspace Repair capability contract', () => {
         targetClosure: 'selected-causal-action-set',
         changeReceipt: 'checkpoint-hash-delta',
         consumerTimeline: 'durable-transaction-events',
+        typedDecisionCauses: true,
         consumerHandshakeRequired: true,
         ephemeralProposalsAreEvidence: false,
         canonicalVerificationRequired: true,
