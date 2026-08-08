@@ -4378,6 +4378,18 @@ describe('Doctor Command', () => {
     });
     await fsExtra.writeFile(path.join(tempRoot, 'requirements.txt'), 'fastapi>=0.116\n');
     await fsExtra.outputFile(path.join(tempRoot, 'src', '__init__.py'), '');
+    const expectedVenvInvocation =
+      process.platform === 'win32'
+        ? {
+            command: 'py -3 -m venv .venv',
+            executable: 'py',
+            args: ['-3', '-m', 'venv', '.venv'],
+          }
+        : {
+            command: 'python3 -m venv .venv',
+            executable: 'python3',
+            args: ['-m', 'venv', '.venv'],
+          };
 
     mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
       if (cmd === 'python3' && args?.[0] === '--version') {
@@ -4400,11 +4412,11 @@ describe('Doctor Command', () => {
       expect(project.repairCapabilities).toContainEqual(
         expect.objectContaining({
           id: 'runtime-dependency-materialization.dependency-materialization',
-          command: expect.stringContaining('python3 -m venv .venv'),
+          command: expect.stringContaining(expectedVenvInvocation.command),
           invocation: expect.objectContaining({
             cwd: tempRoot,
-            executable: 'python3',
-            args: ['-m', 'venv', '.venv'],
+            executable: expectedVenvInvocation.executable,
+            args: expectedVenvInvocation.args,
           }),
           transaction: expect.objectContaining({
             kind: 'dependency-materialization',
