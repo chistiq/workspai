@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-08-07
+
+### Changed
+
+- Made approval bind to the complete semantics of every selected causal action
+  and refresh the exact card producer before checkpoint or mutation.
+- Made Python dependency materialization select Poetry, uv, or a project-local
+  `.venv` from the declared project surface instead of assuming one manager.
+- Replaced the unused big-library size preset with the file-only size plugin,
+  preserving the bundle budget without its browser-time dependency chain.
+
+### Fixed
+
+- Fixed missing Python launchers leaking a raw `--version exited with code
+  undefined` failure instead of the actionable `PYTHON_NOT_FOUND` diagnostic.
+- Fixed `workspace repair capabilities --project <name>` inspecting the
+  workspace root instead of the selected managed or externally linked project.
+- Fixed the final agent report index being published before Explain and the
+  canonical run receipt existed, which could expose stale `exists: false`
+  entries immediately after a completed Workspace Intelligence run.
+
+### Verification
+
+- Full CLI tests passed across 215 test files with 2,328 passing tests and 8
+  explicit skips; type checking, documentation gates, contract synchronization,
+  package validation, bundle limits and zero-vulnerability npm audit passed.
+
 ## [0.54.0] - 2026-08-07
 
 ### Added

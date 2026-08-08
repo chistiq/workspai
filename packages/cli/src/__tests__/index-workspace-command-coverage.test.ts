@@ -531,6 +531,28 @@ describe.sequential('in-process workspace Commander coverage', () => {
     });
   });
 
+  it('inspects repair capabilities for the selected registered project', async () => {
+    await runWorkspaceCommand(root, ['sync', '--workspace', root, '--json']);
+    const callsBefore = logSpy.mock.calls.length;
+    await runWorkspaceCommand(root, [
+      'repair',
+      'capabilities',
+      '--workspace',
+      root,
+      '--project',
+      'api',
+      '--json',
+    ]);
+    const payload = logSpy.mock.calls
+      .slice(callsBefore)
+      .map(([value]) => (typeof value === 'string' ? value : ''))
+      .find((value) => value.includes('workspai.workspace-repair-capabilities.v1'));
+    expect(payload).toBeTruthy();
+    expect(JSON.parse(payload as string)).toMatchObject({
+      inspection: { projectPath: 'api', detectedAdapters: ['node'] },
+    });
+  });
+
   it('executes human renderers, archives, fleet runs, and guarded error branches', async () => {
     await runWorkspaceCommand(root, ['model', '--workspace', root, '--incremental', '--write']);
     await runWorkspaceCommand(root, ['snapshot', '--workspace', root]);

@@ -5,7 +5,65 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.54.0 (August 7, 2026)
+## Latest Release: v0.55.0 (August 7, 2026)
+
+### Exact-Target Repair and Complete Consumer Evidence
+
+This minor release makes governed repairs safer at the approval boundary,
+selects the correct runtime capabilities for the requested project, and ensures
+agents receive the completed Workspace Intelligence artifact index.
+
+**What's New:**
+
+- **Approval stays bound to the exact repair**
+  - Workspai fingerprints the complete causal action rather than trusting an
+    action identifier alone.
+  - The selected card producer is refreshed before checkpoint and mutation so
+    stale approval fails closed.
+
+- **Project capability inspection is target-aware**
+  - `workspace repair capabilities --project` resolves the exact registered
+    project, including projects linked outside the workspace root.
+  - Runtime adapter selection no longer falls back to the workspace root or an
+    unrelated first project.
+
+- **Python failures are actionable**
+  - Poetry, uv, and project-local `.venv` surfaces are selected from the project
+    contract.
+  - Missing launchers return `PYTHON_NOT_FOUND` instead of an undefined process
+    exit failure.
+
+- **The final consumer index is complete**
+  - `INDEX.json` is republished after Explain and the canonical run receipt.
+  - Agents opening the index immediately after a run see the final artifact
+    state rather than the earlier Agent Sync projection.
+
+**Breaking changes:** None.
+
+**Verification:**
+
+- 2,328 CLI tests passed across 215 test files with 8 explicit skips.
+- Type checking, linting, formatting, contract synchronization, documentation
+  validation, runtime/adversarial gates and package smoke passed.
+- Coverage reached 81.86%, the CLI stayed within its bundle budget, and npm
+  audit reported zero known vulnerabilities.
+- Project-targeted capability checks and the canonical Workspace Intelligence
+  chain were exercised against a nine-project polyglot workspace.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.55.0
+workspai --version
+workspai workspace repair capabilities --json
+workspai workspace repair list --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.55.0/packages/cli/releases/RELEASE_NOTES_v0.55.0.md)
+
+---
+
+## Previous Release: v0.54.0 (August 7, 2026)
 
 ### Target-Aware, Cross-Runtime Repair
 
@@ -62,7 +120,7 @@ workspai workspace repair list --json
 
 ---
 
-## Previous Release: v0.53.0 (August 6, 2026)
+## Earlier Release: v0.53.0 (August 6, 2026)
 
 ### Governed Workspace Repair Engine
 

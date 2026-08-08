@@ -678,7 +678,8 @@ async function pickSystemPython(): Promise<PythonCommand | null> {
 }
 
 async function ensureBridgeVenvFromCandidates(): Promise<string> {
-  let lastError: unknown = null;
+  let lastBootstrapError: unknown = null;
+  let detectedPython = false;
 
   for (const cmd of pythonCommandCandidates()) {
     try {
@@ -688,29 +689,41 @@ async function ensureBridgeVenvFromCandidates(): Promise<string> {
         timeout: 2000,
       });
       if (probe.exitCode !== 0) {
-        lastError = new Error(`${cmd} --version exited with code ${probe.exitCode}`);
+        // With `reject: false`, execa reports command-not-found and some launch
+        // failures as a result whose exitCode is undefined. That is an unavailable
+        // candidate, not a bridge bootstrap failure. Keep probing so callers receive
+        // the canonical, actionable PYTHON_NOT_FOUND diagnostic when no interpreter
+        // can actually be launched.
         continue;
       }
-    } catch (err) {
-      lastError = err;
+      detectedPython = true;
+    } catch {
+      // A missing candidate is expected while probing python3/python/py. Do not
+      // leak platform-specific ENOENT details as a bridge bootstrap error.
       continue;
     }
 
     try {
       return await ensureBridgeVenv(cmd);
     } catch (err) {
-      lastError = err;
+      lastBootstrapError = err;
       continue;
     }
   }
 
-  if (lastError instanceof BridgeError) {
-    throw lastError;
+  if (!detectedPython) {
+    throw new BridgeError('PYTHON_NOT_FOUND', 'No Python interpreter found (python3/python/py).');
   }
-  if (lastError instanceof Error) {
-    throw new BridgeError('BRIDGE_VENV_BOOTSTRAP_FAILED', lastError.message);
+  if (lastBootstrapError instanceof BridgeError) {
+    throw lastBootstrapError;
   }
-  throw new BridgeError('PYTHON_NOT_FOUND', 'No Python interpreter found (python3/python/py).');
+  if (lastBootstrapError instanceof Error) {
+    throw new BridgeError('BRIDGE_VENV_BOOTSTRAP_FAILED', lastBootstrapError.message);
+  }
+  throw new BridgeError(
+    'BRIDGE_VENV_BOOTSTRAP_FAILED',
+    'Python was detected, but the Workspai bridge environment could not be created.'
+  );
 }
 
 /**

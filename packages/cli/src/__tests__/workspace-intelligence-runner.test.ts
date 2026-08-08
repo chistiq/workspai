@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   buildWorkspaceAgentContext: vi.fn(),
   writeWorkspaceAgentContext: vi.fn(),
   syncWorkspaceAgentGrounding: vi.fn(),
+  buildWorkspaceAgentReportsIndex: vi.fn(),
   buildWorkspaceExplain: vi.fn(),
   writeWorkspaceExplainReport: vi.fn(),
   writeWorkspaceArtifactJson: vi.fn(),
@@ -67,6 +68,7 @@ vi.mock('../workspace-context.js', () => ({
 }));
 vi.mock('../workspace-agent-sync.js', () => ({
   syncWorkspaceAgentGrounding: mocks.syncWorkspaceAgentGrounding,
+  buildWorkspaceAgentReportsIndex: mocks.buildWorkspaceAgentReportsIndex,
 }));
 vi.mock('../workspace-explain.js', () => ({
   buildWorkspaceExplain: mocks.buildWorkspaceExplain,
@@ -126,6 +128,9 @@ function configurePassingChain(): void {
   mocks.historyEntryFromVerify.mockReturnValue({ id: 'history-entry' });
   mocks.buildWorkspaceAgentContext.mockResolvedValue({ agent: 'codex' });
   mocks.syncWorkspaceAgentGrounding.mockResolvedValue({ writtenFiles: ['AGENTS.md'] });
+  mocks.buildWorkspaceAgentReportsIndex.mockResolvedValue({
+    schemaVersion: 'rapidkit-agent-reports-index.v1',
+  });
   mocks.buildWorkspaceExplain.mockResolvedValue({ summary: 'release is ready' });
   for (const mock of Object.values(mocks)) {
     if (mock.getMockImplementation() === undefined) mock.mockResolvedValue(undefined);
@@ -205,6 +210,12 @@ describe('unified Workspace Intelligence runner', () => {
       workspacePath,
       WORKSPACE_INTELLIGENCE_RUN_REPORT_PATH,
       report
+    );
+    expect(mocks.buildWorkspaceAgentReportsIndex).toHaveBeenCalledWith({ workspacePath });
+    expect(mocks.writeWorkspaceArtifactJson).toHaveBeenCalledWith(
+      workspacePath,
+      '.workspai/reports/INDEX.json',
+      expect.objectContaining({ schemaVersion: 'rapidkit-agent-reports-index.v1' })
     );
   });
 

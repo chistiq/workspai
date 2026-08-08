@@ -617,7 +617,7 @@ const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
 // Bump whenever project diagnosis or executable-remediation semantics change.
 // This keeps unchanged source trees from reusing evidence produced by an older
 // Doctor policy after a CLI upgrade.
-const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v1';
+const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v2';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
@@ -1241,8 +1241,20 @@ function buildEnvCopyFixCommand(projectPath: string): string {
   return buildProjectFixCommand(projectPath, 'cp .env.example .env');
 }
 
-function buildPythonDependencyInstallFixCommand(projectPath: string): string {
-  return buildProjectFixCommand(projectPath, 'poetry install --no-root');
+function buildPythonDependencyInstallFixCommand(input: {
+  projectPath: string;
+  manager: 'poetry' | 'uv' | 'venv';
+}): string {
+  if (input.manager === 'poetry') {
+    return buildProjectFixCommand(input.projectPath, 'poetry install --no-root');
+  }
+  if (input.manager === 'uv') {
+    return buildProjectFixCommand(input.projectPath, 'uv sync');
+  }
+  return buildProjectFixCommand(
+    input.projectPath,
+    isWindowsPlatform() ? 'py -3 -m venv .venv' : 'python3 -m venv .venv'
+  );
 }
 
 function supportTierForFramework(framework: DetectedFramework): FrameworkSupportTier {
@@ -2624,6 +2636,53 @@ async function inspectPythonEnvironment(input: {
   return { dependenciesInstalled: false };
 }
 
+async function resolvePoetryEnvironmentPath(projectPath: string): Promise<string | undefined> {
+  const environmentArgs = ['env', 'info', '--path'];
+  const candidates: Array<{ executable: string; args: string[] }> = [
+    { executable: 'poetry', args: environmentArgs },
+    ...getPythonCommandCandidates().map((executable) => ({
+      executable,
+      args:
+        executable === 'py'
+          ? ['-3', '-m', 'poetry', ...environmentArgs]
+          : ['-m', 'poetry', ...environmentArgs],
+    })),
+    ...getPoetryPathCandidates().map((executable) => ({ executable, args: environmentArgs })),
+  ];
+  const attempted = new Set<string>();
+
+  for (const candidate of candidates) {
+    const identity = `${candidate.executable}\u0000${candidate.args.join('\u0000')}`;
+    if (attempted.has(identity)) continue;
+    attempted.add(identity);
+    if (
+      path.isAbsolute(candidate.executable) &&
+      !(await fsExtra.pathExists(candidate.executable))
+    ) {
+      continue;
+    }
+    try {
+      const result = await execa(candidate.executable, candidate.args, {
+        cwd: projectPath,
+        // Poetry may initialize its environment registry on first access. A
+        // version-probe timeout is too short and creates a false blocker after
+        // a successful install/build transaction.
+        timeout: Math.max(getProbeTimeoutMs(), 15_000),
+        reject: false,
+        shell: shouldUseShellExecution(),
+      });
+      const environmentPath = result.stdout.trim();
+      if (result.exitCode === 0 && environmentPath && (await fsExtra.pathExists(environmentPath))) {
+        return environmentPath;
+      }
+    } catch {
+      // Continue through Python-module and well-known user-local fallbacks.
+    }
+  }
+
+  return undefined;
+}
+
 async function resolvePythonProjectEnvironment(
   projectPath: string,
   frameworkImport: string,
@@ -2646,21 +2705,12 @@ async function resolvePythonProjectEnvironment(
   }
 
   if (usesPoetry) {
-    try {
-      const result = await execa('poetry', ['env', 'info', '--path'], {
-        cwd: projectPath,
-        timeout: 3000,
-        reject: false,
-      });
-      const environmentPath = result.stdout.trim();
-      if (result.exitCode === 0 && environmentPath && (await fsExtra.pathExists(environmentPath))) {
-        return {
-          environmentPath,
-          ...(await inspectPythonEnvironment({ environmentPath, frameworkImport })),
-        };
-      }
-    } catch {
-      // Poetry may be unavailable or the project may not have an environment yet.
+    const environmentPath = await resolvePoetryEnvironmentPath(projectPath);
+    if (environmentPath) {
+      return {
+        environmentPath,
+        ...(await inspectPythonEnvironment({ environmentPath, frameworkImport })),
+      };
     }
   }
 
@@ -3952,10 +4002,20 @@ async function checkProjectUnnormalized(
     else if (health.framework === 'Python') frameworkImport = '';
 
     const pyprojectText = await readFileIfExists(pyprojectTomlPath);
+    const usesPoetry = /\[tool\.poetry\]/.test(pyprojectText);
+    const pythonEnvironmentManager: 'poetry' | 'uv' | 'venv' = usesPoetry
+      ? 'poetry'
+      : (await fsExtra.pathExists(path.join(projectPath, 'uv.lock')))
+        ? 'uv'
+        : 'venv';
+    const pythonDependencyFixCommand = buildPythonDependencyInstallFixCommand({
+      projectPath,
+      manager: pythonEnvironmentManager,
+    });
     const environment = await resolvePythonProjectEnvironment(
       projectPath,
       frameworkImport,
-      /\[tool\.poetry\]/.test(pyprojectText)
+      usesPoetry
     );
     health.venvActive = Boolean(environment.environmentPath);
     health.depsInstalled = environment.dependenciesInstalled;
@@ -3964,12 +4024,12 @@ async function checkProjectUnnormalized(
 
     if (!environment.environmentPath) {
       health.issues.push('Virtual environment not created');
-      health.fixCommands?.push(buildPythonDependencyInstallFixCommand(projectPath));
+      health.fixCommands?.push(pythonDependencyFixCommand);
     } else if (!environment.interpreter) {
       health.issues.push('Virtual environment exists but Python executable not found');
     } else if (!health.depsInstalled) {
       health.issues.push('Dependencies not installed');
-      health.fixCommands?.push(buildPythonDependencyInstallFixCommand(projectPath));
+      health.fixCommands?.push(pythonDependencyFixCommand);
     }
 
     // Check for .env file
@@ -5504,6 +5564,22 @@ function parseDependencySyncFix(
     },
     { pattern: 'poetry\\s+lock', command: 'poetry', args: ['lock'] },
     { pattern: 'uv\\s+lock', command: 'uv', args: ['lock'] },
+    { pattern: 'uv\\s+sync', command: 'uv', args: ['sync'] },
+    {
+      pattern: 'python3\\s+-m\\s+venv\\s+\\.venv',
+      command: 'python3',
+      args: ['-m', 'venv', '.venv'],
+    },
+    {
+      pattern: 'python\\s+-m\\s+venv\\s+\\.venv',
+      command: 'python',
+      args: ['-m', 'venv', '.venv'],
+    },
+    {
+      pattern: 'py\\s+-3\\s+-m\\s+venv\\s+\\.venv',
+      command: 'py',
+      args: ['-3', '-m', 'venv', '.venv'],
+    },
     {
       pattern: 'pip\\s+install\\s+-r\\s+requirements\\.txt',
       command: 'pip',

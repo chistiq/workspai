@@ -5,12 +5,14 @@
     "plan",
     "preconditions",
     "approval",
+    "target-precondition",
     "checkpoint",
     "execute",
     "reconcile",
     "audit",
     "test",
     "build",
+    "target-producer-verify",
     "canonical-verify",
     "close-or-rollback-or-decision"
   ],
@@ -19,9 +21,63 @@
     "missingTools": "decision-required",
     "unsupportedEcosystems": "decision-required",
     "silentFallbackToModelExecution": false,
+    "mutationAuthority": "cli-only",
+    "targetClosure": "selected-causal-action-set",
+    "changeReceipt": "checkpoint-hash-delta",
+    "consumerTimeline": "durable-transaction-events",
+    "consumerHandshakeRequired": true,
+    "ephemeralProposalsAreEvidence": false,
     "approvalBoundToPlanHash": true,
     "canonicalVerificationRequired": true,
     "rollbackConflictDetection": true
+  },
+  "consumerProtocol": {
+    "protocolVersion": "workspai.workspace-repair-consumer-protocol.v1",
+    "versionProbe": {
+      "args": [
+        "--version",
+        "--json"
+      ],
+      "schemaVersion": "rapidkit-version-v1"
+    },
+    "capabilityProbe": {
+      "args": [
+        "workspace",
+        "repair",
+        "capabilities",
+        "--json"
+      ],
+      "schemaVersion": "workspai.workspace-repair-capabilities.v1"
+    },
+    "invocation": {
+      "command": "workspace repair",
+      "workspaceResolution": [
+        "process-cwd",
+        "--workspace"
+      ],
+      "actions": [
+        "capabilities",
+        "plan",
+        "propose",
+        "approve",
+        "decide",
+        "execute",
+        "resume",
+        "status",
+        "list",
+        "rollback",
+        "cancel"
+      ]
+    },
+    "contracts": {
+      "operationResult": "workspai-cli-operation-result-v1",
+      "proposal": "workspai.workspace-repair-proposal.v1",
+      "transaction": "workspai.workspace-repair-transaction.v1"
+    },
+    "transientPaths": [
+      ".workspai/repair/inbox/*.json",
+      ".workspai/repair/engine.lock"
+    ]
   },
   "adapters": [
     {

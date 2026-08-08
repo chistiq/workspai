@@ -164,6 +164,39 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function doctorActionAuthority(action: ArtifactRemediationAction): number {
+  return (
+    (action.notes.includes('Doctor finding status: blocking') ? 16 : 0) +
+    (action.transaction ? 8 : 0) +
+    (action.operation ? 4 : 0) +
+    (action.invocation ? 2 : 0) +
+    (action.strategy?.length ? 1 : 0)
+  );
+}
+
+function mergeDuplicateDoctorAction(input: {
+  existing: ArtifactRemediationAction;
+  incoming: ArtifactRemediationAction;
+}): ArtifactRemediationAction {
+  const incomingWins =
+    doctorActionAuthority(input.incoming) > doctorActionAuthority(input.existing);
+  const primary = structuredClone(incomingWins ? input.incoming : input.existing);
+  const secondary = incomingWins ? input.existing : input.incoming;
+  const secondaryCapability = secondary.sourceStepId;
+
+  primary.order = input.existing.order;
+  primary.files = uniqueStrings([...primary.files, ...secondary.files]);
+  primary.notes = uniqueStrings([
+    ...primary.notes,
+    ...secondary.notes.filter(
+      (note) =>
+        !note.startsWith('Source Doctor capability:') && !note.startsWith('Doctor finding status:')
+    ),
+    ...(secondaryCapability ? [`Also satisfies Doctor capability: ${secondaryCapability}`] : []),
+  ]);
+  return primary;
+}
+
 function relativeOrAbsolute(
   workspacePath: string,
   filePath: string,
@@ -627,81 +660,75 @@ function doctorEvidenceActions(input: {
       const files = asStringArray(capability.files).map((filePath) =>
         relativeOrAbsolute(input.workspacePath, filePath, input.includeAbsolutePaths)
       );
-      const duplicateAction = command
-        ? actions.find(
+      const incomingAction = actionBase({
+        id: `doctor.${projectName}.${capabilityId}`,
+        artifactKind: input.report.artifactKind,
+        cardId: input.report.cardId,
+        title:
+          typeof capability.title === 'string' && capability.title.trim()
+            ? capability.title.trim()
+            : `Repair ${projectName}`,
+        order: input.startOrder + actions.length,
+        phase: transaction ? 'dependency-remediation' : 'doctor-remediation',
+        blocker:
+          typeof capability.reason === 'string' && capability.reason.trim()
+            ? capability.reason.trim()
+            : `Doctor remediation is pending for ${projectName}.`,
+        summary:
+          typeof capability.reason === 'string' && capability.reason.trim()
+            ? capability.reason.trim()
+            : `Execute the Doctor-authored repair capability for ${projectName}.`,
+        mode: canExecute
+          ? capability.canEditFiles === true
+            ? 'edit-file'
+            : 'run-command'
+          : 'manual-guidance',
+        risk,
+        status: canExecute ? 'ready' : capability.status === 'manual' ? 'guidance-only' : 'blocked',
+        ...(command ? { command } : {}),
+        ...(invocation ? { invocation } : {}),
+        verifyCommand:
+          typeof capability.verifyCommand === 'string' && capability.verifyCommand.trim()
+            ? capability.verifyCommand.trim()
+            : 'npx workspai doctor project --json',
+        files,
+        notes: [
+          `Source Doctor capability: ${capabilityId}`,
+          `Doctor finding status: ${findingStatus}`,
+          ...asStringArray(capability.limitations),
+        ],
+        scope: 'project',
+        projectName,
+        projectPath: relativeOrAbsolute(
+          input.workspacePath,
+          absoluteProjectPath,
+          input.includeAbsolutePaths
+        ),
+        sourceStepId: capabilityId,
+        strategy,
+        transaction,
+        cwd: 'project',
+        ...(capability.operation
+          ? { rollback: { available: true, strategy: 'manual' as const } }
+          : {}),
+      });
+      const duplicateIndex = command
+        ? actions.findIndex(
             (action) =>
               action.projectName === projectName &&
               action.command === command &&
               action.cwd === 'project'
           )
-        : undefined;
-      if (duplicateAction) {
-        duplicateAction.files = uniqueStrings([...duplicateAction.files, ...files]);
-        duplicateAction.notes = uniqueStrings([
-          ...duplicateAction.notes,
-          `Also satisfies Doctor capability: ${capabilityId}`,
-        ]);
+        : -1;
+      if (duplicateIndex >= 0) {
+        actions[duplicateIndex] = mergeDuplicateDoctorAction({
+          existing: actions[duplicateIndex],
+          incoming: incomingAction,
+        });
         continue;
       }
 
-      actions.push(
-        actionBase({
-          id: `doctor.${projectName}.${capabilityId}`,
-          artifactKind: input.report.artifactKind,
-          cardId: input.report.cardId,
-          title:
-            typeof capability.title === 'string' && capability.title.trim()
-              ? capability.title.trim()
-              : `Repair ${projectName}`,
-          order: input.startOrder + actions.length,
-          phase: transaction ? 'dependency-remediation' : 'doctor-remediation',
-          blocker:
-            typeof capability.reason === 'string' && capability.reason.trim()
-              ? capability.reason.trim()
-              : `Doctor remediation is pending for ${projectName}.`,
-          summary:
-            typeof capability.reason === 'string' && capability.reason.trim()
-              ? capability.reason.trim()
-              : `Execute the Doctor-authored repair capability for ${projectName}.`,
-          mode: canExecute
-            ? capability.canEditFiles === true
-              ? 'edit-file'
-              : 'run-command'
-            : 'manual-guidance',
-          risk,
-          status: canExecute
-            ? 'ready'
-            : capability.status === 'manual'
-              ? 'guidance-only'
-              : 'blocked',
-          ...(command ? { command } : {}),
-          ...(invocation ? { invocation } : {}),
-          verifyCommand:
-            typeof capability.verifyCommand === 'string' && capability.verifyCommand.trim()
-              ? capability.verifyCommand.trim()
-              : 'npx workspai doctor project --json',
-          files,
-          notes: [
-            `Source Doctor capability: ${capabilityId}`,
-            `Doctor finding status: ${findingStatus}`,
-            ...asStringArray(capability.limitations),
-          ],
-          scope: 'project',
-          projectName,
-          projectPath: relativeOrAbsolute(
-            input.workspacePath,
-            absoluteProjectPath,
-            input.includeAbsolutePaths
-          ),
-          sourceStepId: capabilityId,
-          strategy,
-          transaction,
-          cwd: 'project',
-          ...(capability.operation
-            ? { rollback: { available: true, strategy: 'manual' as const } }
-            : {}),
-        })
-      );
+      actions.push(incomingAction);
     }
   }
 

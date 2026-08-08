@@ -31,6 +31,10 @@ export type WorkspaceRepairProposalValidation = {
 export type WorkspaceRepairProposal = {
   schemaVersion: typeof WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION;
   cardId: string;
+  /** Signature of the exact blocker generation inspected by the model. */
+  blockerSignature?: string;
+  /** Canonical remediation action ids whose absence proves target closure. */
+  targetActionIds?: string[];
   projectName?: string;
   projectPath?: string;
   rationale: string;

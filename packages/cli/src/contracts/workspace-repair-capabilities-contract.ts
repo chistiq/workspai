@@ -1,5 +1,12 @@
+import { CLI_OPERATION_RESULT_SCHEMA_VERSION } from './cli-operation-result-contract.js';
+import { WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION } from './workspace-repair-proposal-contract.js';
+import { WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION } from './workspace-repair-transaction-contract.js';
+
 export const WORKSPACE_REPAIR_CAPABILITIES_SCHEMA_VERSION =
   'workspai.workspace-repair-capabilities.v1' as const;
+
+export const WORKSPACE_REPAIR_CONSUMER_PROTOCOL_VERSION =
+  'workspai.workspace-repair-consumer-protocol.v1' as const;
 
 export type WorkspaceRepairAdapterId =
   | 'node'
@@ -213,12 +220,14 @@ export function buildWorkspaceRepairCapabilitiesContract() {
       'plan',
       'preconditions',
       'approval',
+      'target-precondition',
       'checkpoint',
       'execute',
       'reconcile',
       'audit',
       'test',
       'build',
+      'target-producer-verify',
       'canonical-verify',
       'close-or-rollback-or-decision',
     ],
@@ -227,9 +236,49 @@ export function buildWorkspaceRepairCapabilitiesContract() {
       missingTools: 'decision-required',
       unsupportedEcosystems: 'decision-required',
       silentFallbackToModelExecution: false,
+      mutationAuthority: 'cli-only',
+      targetClosure: 'selected-causal-action-set',
+      changeReceipt: 'checkpoint-hash-delta',
+      consumerTimeline: 'durable-transaction-events',
+      consumerHandshakeRequired: true,
+      ephemeralProposalsAreEvidence: false,
       approvalBoundToPlanHash: true,
       canonicalVerificationRequired: true,
       rollbackConflictDetection: true,
+    },
+    consumerProtocol: {
+      protocolVersion: WORKSPACE_REPAIR_CONSUMER_PROTOCOL_VERSION,
+      versionProbe: {
+        args: ['--version', '--json'],
+        schemaVersion: 'rapidkit-version-v1',
+      },
+      capabilityProbe: {
+        args: ['workspace', 'repair', 'capabilities', '--json'],
+        schemaVersion: WORKSPACE_REPAIR_CAPABILITIES_SCHEMA_VERSION,
+      },
+      invocation: {
+        command: 'workspace repair',
+        workspaceResolution: ['process-cwd', '--workspace'],
+        actions: [
+          'capabilities',
+          'plan',
+          'propose',
+          'approve',
+          'decide',
+          'execute',
+          'resume',
+          'status',
+          'list',
+          'rollback',
+          'cancel',
+        ],
+      },
+      contracts: {
+        operationResult: CLI_OPERATION_RESULT_SCHEMA_VERSION,
+        proposal: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        transaction: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
+      },
+      transientPaths: ['.workspai/repair/inbox/*.json', '.workspai/repair/engine.lock'],
     },
     adapters: WORKSPACE_REPAIR_ADAPTER_CAPABILITIES,
   };

@@ -25,7 +25,10 @@ import {
   writeWorkspaceVerify,
 } from './workspace-verify.js';
 import { buildWorkspaceAgentContext, writeWorkspaceAgentContext } from './workspace-context.js';
-import { syncWorkspaceAgentGrounding } from './workspace-agent-sync.js';
+import {
+  buildWorkspaceAgentReportsIndex,
+  syncWorkspaceAgentGrounding,
+} from './workspace-agent-sync.js';
 import { buildWorkspaceExplain, writeWorkspaceExplainReport } from './workspace-explain.js';
 import {
   syncWorkspaceContract,
@@ -405,5 +408,11 @@ export async function runWorkspaceIntelligenceChain(input: {
   };
   assertWorkspaceIntelligenceRunSemantics(report);
   await writeWorkspaceArtifactJson(workspacePath, REPORT_PATH, report);
+  // Agent Sync precedes Explain in the canonical chain, so its first INDEX
+  // projection cannot observe the Explain report (or this run receipt) yet.
+  // Republish the index after every producer has completed so consumers never
+  // receive `exists:false` for artifacts the same governed run just wrote.
+  const finalAgentIndex = await buildWorkspaceAgentReportsIndex({ workspacePath });
+  await writeWorkspaceArtifactJson(workspacePath, A.agentIndex, finalAgentIndex);
   return report;
 }

@@ -8704,7 +8704,14 @@ See the command reference for action-specific required inputs and output artifac
           }
         }
         const result = await inspectWorkspaceRepairCapabilities(
-          workspacePath ? { workspacePath } : {}
+          workspacePath
+            ? {
+                workspacePath,
+                project: actionOptions.project,
+              }
+            : actionOptions.project
+              ? { project: actionOptions.project }
+              : {}
         );
         if (actionOptions.json === true || hasRawFlag('--json')) {
           console.log(JSON.stringify(result, null, 2));

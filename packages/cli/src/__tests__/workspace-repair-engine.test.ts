@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildDoctorInternalRepairCommand } from '../utils/doctor-repair-capabilities.js';
 import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
 import { WORKSPACE_REPAIR_TRANSACTION_CONTRACT_PATH } from '../contracts/workspace-repair-transaction-contract.js';
+import { STUDIO_CARD_REPAIR_CAPABILITIES } from '../contracts/studio-card-repair-capabilities-contract.js';
 import {
   WORKSPACE_REPAIR_PROPOSAL_CONTRACT_PATH,
   WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
@@ -403,11 +404,13 @@ describe('Workspace Repair Engine', () => {
     });
     expect(planned.state).toBe('awaiting-approval');
     expect(planned.stages.map((stage) => stage.kind)).toEqual([
+      'verify',
       'repair',
       'reconcile',
       'audit',
       'test',
       'build',
+      'verify',
       'verify',
     ]);
     expect(planned.adapterEvaluations).toEqual([
@@ -469,6 +472,24 @@ describe('Workspace Repair Engine', () => {
             path: projectPath,
             issues: ['Dependencies not installed (node_modules empty or missing)'],
             repairCapabilities: [
+              {
+                id: 'surface-dependency-contract.command',
+                title: 'Install npm dependency baseline',
+                status: 'available',
+                risk: 'guarded',
+                canAutoFix: true,
+                canEditFiles: false,
+                requiresApproval: true,
+                requiresReview: true,
+                files: [
+                  path.join(projectPath, 'package.json'),
+                  path.join(projectPath, 'package-lock.json'),
+                ],
+                command,
+                verifyCommand: 'npx workspai doctor project --json',
+                refreshCommands: [],
+                reason: 'Generate the runtime-native dependency baseline.',
+              },
               {
                 id: 'test-coverage-evidence.command',
                 title: 'Generate optional coverage evidence',
@@ -544,9 +565,11 @@ describe('Workspace Repair Engine', () => {
       'doctor.api.runtime-dependency-materialization.dependency-materialization',
     ]);
     expect(planned.stages.map((stage) => stage.kind)).toEqual([
+      'verify',
       'repair',
       'test',
       'build',
+      'verify',
       'verify',
     ]);
     expect(planned.preconditions).not.toContainEqual(expect.objectContaining({ status: 'failed' }));
@@ -572,6 +595,235 @@ describe('Workspace Repair Engine', () => {
     expect(completed.state).toBe('closed');
   });
 
+  it('keeps Poetry validation inside the environment created by materialization', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    await fsExtra.writeFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[build-system]\nrequires = ["poetry-core"]\nbuild-backend = "poetry.core.masonry.api"\n'
+    );
+    await fsExtra.ensureDir(path.join(projectPath, 'tests'));
+    const command = `cd "${projectPath}" && poetry install --no-root`;
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        projects: [
+          {
+            name: 'api',
+            path: projectPath,
+            issues: ['Virtual environment not created'],
+            repairCapabilities: [
+              {
+                id: 'surface-dependency-contract.command',
+                title: 'Install Poetry dependency baseline',
+                status: 'available',
+                risk: 'guarded',
+                canAutoFix: true,
+                canEditFiles: false,
+                files: [path.join(projectPath, 'pyproject.toml')],
+                command,
+                reason: 'Generate the Poetry dependency baseline.',
+              },
+              {
+                id: 'runtime-dependency-materialization.dependency-materialization',
+                title: 'Install Poetry dependencies',
+                status: 'available',
+                risk: 'guarded',
+                canAutoFix: true,
+                canEditFiles: false,
+                files: [
+                  path.join(projectPath, 'pyproject.toml'),
+                  path.join(projectPath, 'poetry.lock'),
+                ],
+                command,
+                invocation: {
+                  cwd: projectPath,
+                  executable: 'poetry',
+                  args: ['install', '--no-root'],
+                },
+                transaction: {
+                  schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+                  kind: 'dependency-materialization',
+                  state: 'planned',
+                  projectPath,
+                  ecosystem: 'poetry',
+                  sourceMutationRequired: false,
+                  observableState: 'runtime-dependency-tree',
+                  requiredStages: ['reconcile', 'test', 'build'],
+                  completion: {
+                    manifestLockConsistent: true,
+                    installedTreePresent: true,
+                    declaredTestsPass: true,
+                    declaredBuildPass: true,
+                    canonicalVerificationRequired: true,
+                  },
+                },
+                reason: 'The Poetry environment is missing.',
+              },
+            ],
+          },
+        ],
+      },
+      { spaces: 2 }
+    );
+
+    const planned = await planWorkspaceRepair(
+      { workspacePath, cardId: 'doctor', projectName: 'api' },
+      { toolAvailable: vi.fn(async () => true) }
+    );
+    expect(planned.state).toBe('awaiting-approval');
+    expect(planned.target.actionIds).toEqual([
+      'doctor.api.runtime-dependency-materialization.dependency-materialization',
+    ]);
+    expect(
+      planned.stages
+        .filter((stage) => stage.invocation)
+        .map((stage) => ({
+          kind: stage.kind,
+          executable: stage.invocation?.executable,
+          args: stage.invocation?.args,
+        }))
+    ).toEqual([
+      { kind: 'repair', executable: 'poetry', args: ['install', '--no-root'] },
+      {
+        kind: 'test',
+        executable: 'poetry',
+        args: ['run', 'python', '-m', 'pytest'],
+      },
+      { kind: 'build', executable: 'poetry', args: ['build'] },
+    ]);
+  });
+
+  it('creates and closes a standard Python venv before isolated dependency validation', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    await fsExtra.writeFile(path.join(projectPath, 'requirements.txt'), 'fastapi>=0.116\n');
+    await fsExtra.ensureDir(path.join(projectPath, 'tests'));
+    const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3';
+    const pythonArgs =
+      process.platform === 'win32' ? ['-3', '-m', 'venv', '.venv'] : ['-m', 'venv', '.venv'];
+    const venvPython = path.join(
+      projectPath,
+      '.venv',
+      process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
+    );
+    const command = `cd "${projectPath}" && ${pythonExecutable} ${pythonArgs.join(' ')}`;
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        projects: [
+          {
+            name: 'api',
+            path: projectPath,
+            issues: ['Virtual environment not created'],
+            repairCapabilities: [
+              {
+                id: 'runtime-dependency-materialization.dependency-materialization',
+                issueId: 'runtime-dependency-materialization',
+                title: 'Create the isolated Python environment',
+                status: 'available',
+                fixKind: 'dependency-sync',
+                risk: 'guarded',
+                canAutoFix: true,
+                canEditFiles: false,
+                requiresApproval: true,
+                requiresReview: false,
+                files: [
+                  path.join(projectPath, 'requirements.txt'),
+                  path.join(projectPath, 'pyproject.toml'),
+                ],
+                command,
+                invocation: {
+                  cwd: projectPath,
+                  executable: pythonExecutable,
+                  args: pythonArgs,
+                },
+                transaction: {
+                  schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+                  kind: 'dependency-materialization',
+                  state: 'planned',
+                  projectPath,
+                  ecosystem: 'python',
+                  sourceMutationRequired: false,
+                  observableState: 'runtime-dependency-tree',
+                  requiredStages: ['reconcile', 'test', 'build'],
+                  completion: {
+                    manifestLockConsistent: true,
+                    installedTreePresent: true,
+                    declaredTestsPass: true,
+                    declaredBuildPass: true,
+                    canonicalVerificationRequired: true,
+                  },
+                },
+                reason: 'The project-local Python environment is missing.',
+              },
+            ],
+          },
+        ],
+      },
+      { spaces: 2 }
+    );
+
+    const planned = await planWorkspaceRepair(
+      { workspacePath, cardId: 'doctor', projectName: 'api' },
+      {
+        toolAvailable: vi.fn(async (executable) => executable === pythonExecutable),
+      }
+    );
+    expect(planned.state).toBe('awaiting-approval');
+    expect(planned.preconditions).toContainEqual(
+      expect.objectContaining({
+        id: expect.stringContaining(venvPython),
+        status: 'passed',
+        message: expect.stringContaining('will create the isolated executable'),
+      })
+    );
+    expect(
+      planned.stages
+        .filter((stage) => stage.invocation)
+        .map((stage) => ({ kind: stage.kind, invocation: stage.invocation }))
+    ).toEqual([
+      {
+        kind: 'repair',
+        invocation: expect.objectContaining({ executable: pythonExecutable, args: pythonArgs }),
+      },
+      {
+        kind: 'reconcile',
+        invocation: expect.objectContaining({
+          executable: venvPython,
+          args: ['-m', 'pip', 'install', '-r', 'requirements.txt'],
+        }),
+      },
+      {
+        kind: 'test',
+        invocation: expect.objectContaining({
+          executable: venvPython,
+          args: ['-m', 'pytest'],
+        }),
+      },
+    ]);
+
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const purposes: string[] = [];
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        runInvocation: vi.fn(async ({ invocation }) => {
+          purposes.push(invocation.purpose);
+          if (invocation.purpose === 'repair') {
+            await fsExtra.outputFile(venvPython, 'python');
+          }
+          return { exitCode: 0, stdout: '', stderr: '' };
+        }),
+        verify: vi.fn(async () => ({
+          status: 'passed',
+          exitCode: 0,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+      }
+    );
+    expect(purposes).toEqual(['repair', 'reconcile', 'test']);
+    expect(completed.state).toBe('closed');
+  });
+
   it('compiles a model proposal into the same approval, checkpoint, validation, and verify boundary', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     const sourcePath = path.join(projectPath, 'src', 'service.ts');
@@ -579,6 +831,8 @@ describe('Workspace Repair Engine', () => {
     const proposal = {
       schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
       cardId: 'doctor',
+      blockerSignature: 'doctor:api:surface-environment-config:missing',
+      targetActionIds: ['doctor.api.surface-environment-config.file-create'],
       projectName: 'api',
       projectPath: 'api',
       rationale: 'Restore the missing environment readiness behavior.',
@@ -620,15 +874,32 @@ describe('Workspace Repair Engine', () => {
     );
     expect(planned).toMatchObject({
       state: 'awaiting-approval',
-      target: { projectName: 'api', projectPath: 'api' },
+      target: {
+        projectName: 'api',
+        projectPath: 'api',
+        blockerSignature: 'doctor:api:surface-environment-config:missing',
+        actionIds: ['doctor.api.surface-environment-config.file-create'],
+      },
       checkpoint: { files: [{ path: 'api/src/service.ts' }] },
     });
-    expect(planned.stages.map((stage) => stage.kind)).toEqual(['repair', 'test', 'verify']);
+    expect(planned.stages.map((stage) => stage.kind)).toEqual([
+      'verify',
+      'repair',
+      'test',
+      'verify',
+      'verify',
+    ]);
     await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const runTargetProducer = vi.fn(async () => ({
+      exitCode: 2,
+      stdout: '{"status":"blocked"}',
+      stderr: '',
+    }));
     const completed = await executeWorkspaceRepair(
       { workspacePath, transactionId: planned.transactionId },
       {
         runInvocation: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+        runTargetProducer,
         toolAvailable: async () => true,
         verify: vi.fn(async () => ({
           status: 'passed',
@@ -639,7 +910,185 @@ describe('Workspace Repair Engine', () => {
     );
 
     expect(completed.state).toBe('closed');
+    expect(runTargetProducer).toHaveBeenCalledTimes(2);
+    expect(completed.stages.find((stage) => stage.id === 'target-precondition')).toMatchObject({
+      status: 'passed',
+      exitCode: 2,
+    });
+    expect(completed.stages.find((stage) => stage.id === 'target-producer-verify')).toMatchObject({
+      status: 'passed',
+      exitCode: 2,
+    });
     expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('export const ready = true;\n');
+  });
+
+  it('routes every published Studio card through exact producer and canonical closure stages', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    for (const [index, capability] of STUDIO_CARD_REPAIR_CAPABILITIES.entries()) {
+      const relativePath = `api/card-${index}.txt`;
+      const absolutePath = path.join(projectPath, `card-${index}.txt`);
+      await fsExtra.writeFile(absolutePath, 'blocked\n');
+      const planned = await planWorkspaceRepairProposal({
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: capability.cardId,
+          blockerSignature: `${capability.cardId}:fixture-generation`,
+          ...(capability.scope === 'project' ? { projectName: 'api', projectPath: 'api' } : {}),
+          rationale: `Exercise the ${capability.cardId} repair control plane.`,
+          changes: [
+            {
+              id: `card-${index}`,
+              path: relativePath,
+              operation: 'write',
+              expectedBeforeHash: sha256('blocked\n'),
+              content: 'repaired\n',
+              risk: 'guarded',
+              summary: `Repair ${capability.cardId}.`,
+            },
+          ],
+        },
+      });
+      expect(planned.state, `${capability.cardId}: ${planned.decision?.reason ?? ''}`).toBe(
+        'awaiting-approval'
+      );
+      expect(planned.stages.slice(-2).map((stage) => stage.id)).toEqual([
+        'target-producer-verify',
+        'canonical-verify',
+      ]);
+      await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+      const runTargetProducer = vi.fn(async () => ({
+        exitCode: 2,
+        stdout: '{"status":"blocked"}',
+        stderr: '',
+      }));
+      const completed = await executeWorkspaceRepair(
+        { workspacePath, transactionId: planned.transactionId },
+        {
+          runTargetProducer,
+          verify: vi.fn(async () => ({
+            status: 'passed',
+            exitCode: 0,
+            artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+          })),
+        }
+      );
+      expect(completed.state, capability.cardId).toBe('closed');
+      expect(runTargetProducer, capability.cardId).toHaveBeenCalledTimes(2);
+      expect(await fsExtra.readFile(absolutePath, 'utf8')).toBe('repaired\n');
+    }
+  });
+
+  it('expires approval before checkpoint when the selected causal action drifted', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const sourcePath = path.join(projectPath, 'stale-target.txt');
+    await fsExtra.writeFile(sourcePath, 'blocked\n');
+    const planned = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'doctor',
+        blockerSignature: 'doctor:api:stale-generation',
+        targetActionIds: ['doctor.api.removed-causal-action'],
+        projectName: 'api',
+        projectPath: 'api',
+        rationale: 'Prove a stale approved blocker cannot mutate source.',
+        changes: [
+          {
+            id: 'stale-target',
+            path: 'api/stale-target.txt',
+            operation: 'write',
+            expectedBeforeHash: sha256('blocked\n'),
+            content: 'must-not-run\n',
+            risk: 'guarded',
+            summary: 'This mutation must be rejected before checkpoint.',
+          },
+        ],
+      },
+    });
+    expect(planned.state).toBe('awaiting-approval');
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        runTargetProducer: vi.fn(async () => ({
+          exitCode: 2,
+          stdout: '{"status":"blocked"}',
+          stderr: '',
+        })),
+      }
+    );
+
+    expect(completed).toMatchObject({
+      state: 'decision-required',
+      approval: { status: 'expired' },
+      checkpoint: { status: 'pending' },
+      decision: { options: ['cancel'] },
+    });
+    expect(completed.decision?.reason).toContain('Target precondition failed before checkpoint');
+    expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('blocked\n');
+  });
+
+  it('expires approval when a causal action keeps its id but changes meaning', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    await writeFileRepairEvidence({ workspacePath, projectPath });
+    const sourcePath = path.join(projectPath, 'semantic-target.txt');
+    await fsExtra.writeFile(sourcePath, 'blocked\n');
+    const planned = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'doctor',
+        blockerSignature: 'doctor:api:semantic-generation',
+        targetActionIds: ['doctor.api.surface-environment-config.file-create'],
+        projectName: 'api',
+        projectPath: 'api',
+        rationale: 'Bind approval to the complete causal action semantics.',
+        changes: [
+          {
+            id: 'semantic-target',
+            path: 'api/semantic-target.txt',
+            operation: 'write',
+            expectedBeforeHash: sha256('blocked\n'),
+            content: 'must-not-run\n',
+            risk: 'guarded',
+            summary: 'This mutation must be rejected when evidence meaning drifts.',
+          },
+        ],
+      },
+    });
+    expect(planned.state).toBe('awaiting-approval');
+    expect(planned.preconditions).toContainEqual(
+      expect.objectContaining({ id: expect.stringContaining('causal-action-integrity:') })
+    );
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+
+    const doctorPath = path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json');
+    const doctor = await fsExtra.readJson(doctorPath);
+    doctor.projects[0].probes[0].repairCapability.reason =
+      'The same capability id now represents a different blocker generation.';
+    await fsExtra.writeJson(doctorPath, doctor, { spaces: 2 });
+
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        runTargetProducer: vi.fn(async () => ({
+          exitCode: 2,
+          stdout: '{"status":"blocked"}',
+          stderr: '',
+        })),
+      }
+    );
+
+    expect(completed).toMatchObject({
+      state: 'decision-required',
+      approval: { status: 'expired' },
+      checkpoint: { status: 'pending' },
+    });
+    expect(completed.decision?.reason).toContain(
+      'The selected action semantics changed after approval.'
+    );
+    expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('blocked\n');
   });
 
   it('expires approval before checkpoint or mutation when the approved toolchain disappears', async () => {
@@ -908,11 +1357,13 @@ describe('Workspace Repair Engine', () => {
 
     expect(planned.state).toBe('awaiting-approval');
     expect(planned.stages.map((stage) => stage.kind)).toEqual([
+      'verify',
       'repair',
       'reconcile',
       'audit',
       'test',
       'build',
+      'verify',
       'verify',
     ]);
     expect(planned.checkpoint.files.map((file) => file.path)).toEqual([

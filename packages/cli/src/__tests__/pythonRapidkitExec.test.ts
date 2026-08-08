@@ -286,6 +286,20 @@ rapidkit deploy
         expect.any(Object)
       );
     });
+
+    it('reports PYTHON_NOT_FOUND when execa cannot launch any candidate', async () => {
+      mockExeca.mockResolvedValue({
+        exitCode: undefined,
+        failed: true,
+        stdout: '',
+        stderr: '',
+        shortMessage: 'Command failed with ENOENT',
+      });
+
+      await expect(bridge.__test__.ensureBridgeVenvFromCandidates()).rejects.toMatchObject({
+        code: 'PYTHON_NOT_FOUND',
+      });
+    });
   });
 });
 

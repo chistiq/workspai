@@ -846,8 +846,10 @@ describe('Doctor Command', () => {
     mockedExeca.mockRejectedValue(new Error('tool not found'));
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const originalCwd = process.cwd();
+    const originalHome = process.env.HOME;
 
     try {
+      process.env.HOME = path.join(tempRoot, 'home');
       process.chdir(tempRoot);
       const { runDoctor } = await import('../doctor.js');
       await expect(runDoctor({ workspace: true, json: true })).resolves.toBe(0);
@@ -867,6 +869,8 @@ describe('Doctor Command', () => {
       expect(payload.healthScore).toMatchObject({ errors: 0, verdict: 'attention' });
     } finally {
       process.chdir(originalCwd);
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
       logSpy.mockRestore();
       await fsExtra.remove(tempRoot);
     }
@@ -4273,6 +4277,145 @@ describe('Doctor Command', () => {
       expect(payload.project.venvActive).toBe(true);
       expect(payload.project.depsInstalled).toBe(true);
       expect(payload.project.issues).not.toContain('Dependencies not installed');
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('resolves a Poetry project environment through the user-local executable fallback', async () => {
+    const tempRoot = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-poetry-fallback-'))
+    );
+    const fakeHome = path.join(tempRoot, 'home');
+    const projectPath = path.join(tempRoot, 'api');
+    const environmentPath = path.join(tempRoot, 'poetry-environment');
+    const poetryExecutable = path.join(
+      fakeHome,
+      '.local',
+      'bin',
+      process.platform === 'win32' ? 'poetry.exe' : 'poetry'
+    );
+    const interpreterCandidates = [
+      path.join(environmentPath, 'bin', 'python'),
+      path.join(environmentPath, 'Scripts', 'python.exe'),
+    ];
+    await fsExtra.outputFile(poetryExecutable, 'poetry', 'utf8');
+    await Promise.all(
+      interpreterCandidates.map((interpreter) => fsExtra.outputFile(interpreter, '', 'utf8'))
+    );
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'api',
+      runtime: 'python',
+      framework: 'fastapi',
+    });
+    await fsExtra.writeFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[tool.poetry]\nname = "api"\nversion = "0.1.0"\n'
+    );
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if (cmd === poetryExecutable && args?.join(' ') === 'env info --path') {
+        return { stdout: environmentPath, stderr: '', exitCode: 0 } as any;
+      }
+      if (interpreterCandidates.includes(cmd) && args?.[0] === '-c') {
+        return {
+          stdout: '',
+          stderr: '',
+          exitCode: String(args?.[1] ?? '').includes('import fastapi') ? 0 : 1,
+        } as any;
+      }
+      if (cmd === 'python3' && args?.[0] === '--version') {
+        return { stdout: 'Python 3.12.0', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: 'not found', exitCode: 1 } as any;
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+
+    try {
+      process.env.HOME = fakeHome;
+      process.env.USERPROFILE = fakeHome;
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.project.venvActive).toBe(true);
+      expect(payload.project.depsInstalled).toBe(true);
+      expect(payload.project.issues).not.toContain('Virtual environment not created');
+      expect(mockedExeca).toHaveBeenCalledWith(
+        poetryExecutable,
+        ['env', 'info', '--path'],
+        expect.objectContaining({ cwd: projectPath, reject: false })
+      );
+    } finally {
+      process.chdir(originalCwd);
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('publishes a local venv materialization transaction for standard Python projects', async () => {
+    const tempRoot = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-python-venv-'))
+    );
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'project.json'), {
+      name: 'catalog-api',
+      runtime: 'python',
+      framework: 'fastapi',
+    });
+    await fsExtra.writeFile(path.join(tempRoot, 'requirements.txt'), 'fastapi>=0.116\n');
+    await fsExtra.outputFile(path.join(tempRoot, 'src', '__init__.py'), '');
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if (cmd === 'python3' && args?.[0] === '--version') {
+        return { stdout: 'Python 3.12.0', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: 'not found', exitCode: 1 } as any;
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const project = JSON.parse(jsonLine).project;
+      expect(project.issues).toContain('Virtual environment not created');
+      expect(project.repairCapabilities).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization.dependency-materialization',
+          command: expect.stringContaining('python3 -m venv .venv'),
+          invocation: expect.objectContaining({
+            cwd: tempRoot,
+            executable: 'python3',
+            args: ['-m', 'venv', '.venv'],
+          }),
+          transaction: expect.objectContaining({
+            kind: 'dependency-materialization',
+            ecosystem: 'python',
+            requiredStages: ['reconcile', 'test', 'build'],
+          }),
+        })
+      );
+      expect(project.repairCapabilities).not.toContainEqual(
+        expect.objectContaining({ command: expect.stringContaining('poetry install') })
+      );
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();

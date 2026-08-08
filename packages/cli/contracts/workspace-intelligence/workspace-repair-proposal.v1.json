@@ -9,6 +9,14 @@
   "properties": {
     "schemaVersion": { "const": "workspai.workspace-repair-proposal.v1" },
     "cardId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "blockerSignature": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "targetActionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
     "projectName": { "type": "string", "minLength": 1, "maxLength": 200 },
     "projectPath": { "type": "string", "minLength": 1, "maxLength": 1000 },
     "rationale": { "type": "string", "minLength": 1, "maxLength": 4000 },

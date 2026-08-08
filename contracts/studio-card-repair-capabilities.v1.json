@@ -1,6 +1,6 @@
 {
   "schemaVersion": "workspai.studio-card-repair-capabilities.v1",
-  "invariant": "A card repair closes only after its exact producer is non-blocking and aggregate Workspace Verify passes.",
+  "invariant": "A card repair closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.",
   "cards": [
     {
       "cardId": "doctor",
@@ -10,6 +10,8 @@
       "verifyCommand": "npx workspai doctor workspace --json",
       "verifyArtifact": ".workspai/reports/doctor-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "diagnose-and-repair",
       "remediationArtifacts": [
         ".workspai/reports/doctor-remediation-plan-last-run.json",
@@ -24,6 +26,8 @@
       "verifyCommand": "npx workspai doctor project --json",
       "verifyArtifact": ".workspai/reports/doctor-project-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "diagnose-and-repair",
       "remediationArtifacts": [
         ".workspai/reports/doctor-remediation-plan-last-run.json",
@@ -38,6 +42,8 @@
       "verifyCommand": "npx workspai pipeline --json --strict",
       "verifyArtifact": ".workspai/reports/pipeline-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
         ".workspai/reports/artifact-remediation-plan-last-run.json"
@@ -51,6 +57,8 @@
       "verifyCommand": "npx workspai analyze --json",
       "verifyArtifact": ".workspai/reports/analyze-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
         ".workspai/reports/artifact-remediation-plan-last-run.json"
@@ -64,6 +72,8 @@
       "verifyCommand": "npx workspai readiness --json",
       "verifyArtifact": ".workspai/reports/release-readiness-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
         ".workspai/reports/artifact-remediation-plan-last-run.json"
@@ -77,6 +87,8 @@
       "verifyCommand": "npx workspai bootstrap --ci --json",
       "verifyArtifact": ".workspai/reports/bootstrap-compliance.latest.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
         ".workspai/reports/artifact-remediation-plan-last-run.json"
@@ -90,6 +102,8 @@
       "verifyCommand": "npx workspai workspace sync --json",
       "verifyArtifact": ".workspai/workspace-registry.v1.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -101,6 +115,8 @@
       "verifyCommand": "npx workspai workspace foundation ensure --json",
       "verifyArtifact": ".workspai/workspace.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -112,6 +128,8 @@
       "verifyCommand": "npx workspai workspace contract verify --strict --json",
       "verifyArtifact": ".workspai/reports/workspace-contract-verify-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
     },
@@ -123,6 +141,8 @@
       "verifyCommand": "npx workspai autopilot release --json",
       "verifyArtifact": ".workspai/reports/autopilot-release-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
     },
@@ -134,6 +154,8 @@
       "verifyCommand": "npx workspai workspace run test --json",
       "verifyArtifact": ".workspai/reports/workspace-run-last.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
         ".workspai/reports/artifact-remediation-plan-last-run.json"
@@ -147,6 +169,8 @@
       "verifyCommand": "npx workspai setup --json",
       "verifyArtifact": ".workspai/toolchain.lock",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
     },
@@ -158,6 +182,8 @@
       "verifyCommand": "npx workspai doctor project --json",
       "verifyArtifact": ".workspai/reports/doctor-project-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "diagnose-and-repair",
       "remediationArtifacts": [
         ".workspai/reports/artifact-remediation-plan-last-run.json"
@@ -171,6 +197,8 @@
       "verifyCommand": "npx workspai snapshot create --json",
       "verifyArtifact": ".workspai/reports/snapshot-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -182,6 +210,8 @@
       "verifyCommand": "npx workspai workspace model --json --write",
       "verifyArtifact": ".workspai/reports/workspace-model.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -193,6 +223,8 @@
       "verifyCommand": "npx workspai workspace snapshot --json",
       "verifyArtifact": ".workspai/reports/workspace-model-snapshot.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -204,6 +236,8 @@
       "verifyCommand": "npx workspai workspace diff --from .workspai/reports/workspace-model-snapshot.json --json",
       "verifyArtifact": ".workspai/reports/workspace-model-diff-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -215,6 +249,8 @@
       "verifyCommand": "npx workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json",
       "verifyArtifact": ".workspai/reports/workspace-impact-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -226,6 +262,8 @@
       "verifyCommand": "npx workspai workspace intelligence run --for-agent generic --strict --json",
       "verifyArtifact": ".workspai/reports/workspace-intelligence-run-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
     },
@@ -237,6 +275,8 @@
       "verifyCommand": "npx workspai workspace verify --json",
       "verifyArtifact": ".workspai/reports/workspace-verify-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
         ".workspai/reports/artifact-remediation-plan-last-run.json"
@@ -250,6 +290,8 @@
       "verifyCommand": "npx workspai workspace explain release-blocked --json --write",
       "verifyArtifact": ".workspai/reports/workspace-explain-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -261,6 +303,8 @@
       "verifyCommand": "npx workspai workspace why release-blocked --json --write",
       "verifyArtifact": ".workspai/reports/workspace-why-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -272,6 +316,8 @@
       "verifyCommand": "npx workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --json --write",
       "verifyArtifact": ".workspai/reports/workspace-trace-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -283,6 +329,8 @@
       "verifyCommand": "npx workspai workspace watch --once --json",
       "verifyArtifact": ".workspai/reports/workspace-model.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -294,6 +342,8 @@
       "verifyCommand": "npx workspai workspace context --for-agent --json --write",
       "verifyArtifact": ".workspai/reports/workspace-context-agent.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -305,6 +355,8 @@
       "verifyCommand": "npx workspai workspace agent-sync --write --refresh-context --json --preset enterprise --target vscode",
       "verifyArtifact": ".workspai/reports/agent-customization-pack.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -316,6 +368,8 @@
       "verifyCommand": "npx workspai workspace share --output .workspai/reports/share-bundle.json --json",
       "verifyArtifact": ".workspai/reports/share-bundle.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -327,6 +381,8 @@
       "verifyCommand": "npx workspai workspace export --output team-workspace.workspai-archive.zip --json",
       "verifyArtifact": ".workspai/archive-manifest.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -338,6 +394,8 @@
       "verifyCommand": "npx workspai mirror status --json",
       "verifyArtifact": ".workspai/reports/mirror-ops.latest.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -349,6 +407,8 @@
       "verifyCommand": "npx workspai cache status --json",
       "verifyArtifact": ".workspai/cache-config.yml",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
     },
@@ -360,6 +420,8 @@
       "verifyCommand": "npx workspai workspace policy show --json",
       "verifyArtifact": ".workspai/policies.yml",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
     },
@@ -371,6 +433,8 @@
       "verifyCommand": "npx workspai infra plan --json",
       "verifyArtifact": ".workspai/reports/infra-plan.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
+      "targetClosure": "exact-producer-and-causal-action-set",
+      "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
     }

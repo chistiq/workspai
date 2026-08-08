@@ -1438,6 +1438,27 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
         })
       : undefined;
 
+  const auditUnavailableRepair = auditIsUnavailable
+    ? buildManualRepair({
+        issueId: 'surface-security-hygiene',
+        title: `Establish ${dependencyAudit?.ecosystem ?? runtime} security audit evidence`,
+        projectPath: input.projectPath,
+        files: Array.from(
+          new Set([
+            ...(DEPENDENCY_MANIFESTS[runtime] ?? []),
+            ...(DEPENDENCY_LOCKFILES[runtime] ?? []),
+            ...(runtime === 'node' ? ['package.json'] : []),
+            ...(runtime === 'python' ? ['pyproject.toml', 'requirements.txt'] : []),
+          ])
+        ),
+        reason: `${dependencyAudit?.tool ?? 'The runtime-native audit tool'} is unavailable. Add or declare the audit tool in the project's governed dependency/tooling surface, then rerun Doctor.`,
+        limitations: [
+          'Do not install an unpinned global scanner as an implicit repair.',
+          'The selected project environment and CI must resolve the same audit command.',
+        ],
+      })
+    : undefined;
+
   const pass = gitignoreCoversSecrets && auditIsClean;
   const auditReason = dependencyAudit?.reason;
   return {
@@ -1523,9 +1544,11 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
             },
           },
         })
-      : gitignoreCoversSecrets
-        ? undefined
-        : await buildGitignoreRepair(input.projectPath),
+      : auditUnavailableRepair
+        ? auditUnavailableRepair
+        : gitignoreCoversSecrets
+          ? undefined
+          : await buildGitignoreRepair(input.projectPath),
   };
 }
 

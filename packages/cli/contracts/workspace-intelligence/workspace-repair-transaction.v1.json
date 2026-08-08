@@ -43,6 +43,7 @@
       "required": ["cardId", "scope", "actionIds"],
       "properties": {
         "cardId": { "type": "string", "minLength": 1 },
+        "blockerSignature": { "type": "string", "minLength": 1, "maxLength": 256 },
         "scope": { "enum": ["workspace", "project"] },
         "projectName": { "type": "string", "minLength": 1 },
         "projectPath": { "type": "string", "minLength": 1 },

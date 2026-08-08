@@ -46,7 +46,7 @@ Validate or preview the current CLI announcement locally:
 npm --workspace workspai run check:release-announcement
 npm --workspace workspai run release:announcement -- \
   --product workspai-cli \
-  --tag v0.51.0 \
+  --tag v0.55.0 \
   --markdown-output /tmp/workspai-discord-announcement.md
 ```
 

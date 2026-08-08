@@ -2,8 +2,6 @@
     {
         "path": "dist/index.js",
         "limit": "200 KB",
-        "name": "Full CLI bundle",
-        "webpack": false,
-        "running": false
+        "name": "Full CLI bundle"
     }
 ]

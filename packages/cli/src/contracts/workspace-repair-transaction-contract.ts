@@ -81,6 +81,7 @@ export type WorkspaceRepairTransaction = {
   workspace: { name: string; rootRef: '.' };
   target: {
     cardId: string;
+    blockerSignature?: string;
     scope: 'workspace' | 'project';
     projectName?: string;
     projectPath?: string;

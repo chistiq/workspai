@@ -34,6 +34,7 @@ import {
   buildWorkspaceRepairCapabilitiesContract,
   type WorkspaceRepairAdapterId,
 } from './contracts/workspace-repair-capabilities-contract.js';
+import { STUDIO_CARD_REPAIR_CAPABILITIES } from './contracts/studio-card-repair-capabilities-contract.js';
 import {
   applyEnvKeyAddFix,
   applyFileAppendFix,
@@ -45,6 +46,7 @@ import {
   parseInternalRepairCommand,
 } from './doctor.js';
 import { runWorkspaceIntelligenceChain } from './workspace-intelligence-runner.js';
+import { resolveWorkspaceProjectLensTargets } from './project-intelligence-lens.js';
 import type { DoctorRepairOperation } from './utils/doctor-repair-capabilities.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 
@@ -172,6 +174,10 @@ type RepairEngineDependencies = {
     status: 'passed' | 'failed' | 'unknown';
     remainingActionIds: string[];
   }>;
+  runTargetProducer?: (input: {
+    workspacePath: string;
+    transaction: WorkspaceRepairTransaction;
+  }) => Promise<{ exitCode: number | null; stdout: string; stderr: string }>;
 };
 
 type DependencyStagePlan = {
@@ -223,6 +229,57 @@ function stableJson(value: unknown): string {
   // integrity hashes for nested optional arrays.
   if (value === undefined) return 'null';
   return JSON.stringify(value);
+}
+
+const CAUSAL_ACTION_INTEGRITY_PREFIX = 'causal-action-integrity:';
+
+function causalActionFingerprint(actions: ArtifactRemediationAction[]): string {
+  return sha256(
+    stableJson(
+      [...actions]
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .map((action) => ({
+          id: action.id,
+          artifactKind: action.artifactKind,
+          cardId: action.cardId,
+          title: action.title,
+          phase: action.phase,
+          scope: action.scope,
+          projectName: action.projectName,
+          projectPath: action.projectPath,
+          sourceStepId: action.sourceStepId,
+          dependsOn: action.dependsOn,
+          strategy: action.strategy,
+          transaction: action.transaction,
+          status: action.status,
+          mode: action.mode,
+          risk: action.risk,
+          requiresApproval: action.requiresApproval,
+          blocker: action.blocker,
+          summary: action.summary,
+          command: action.command,
+          invocation: action.invocation,
+          verifyCommand: action.verifyCommand,
+          cwd: action.cwd,
+          files: action.files,
+          operation: action.operation,
+          rollback: action.rollback,
+          notes: action.notes,
+        }))
+    )
+  );
+}
+
+function causalActionIntegrityPrecondition(
+  actions: ArtifactRemediationAction[]
+): WorkspaceRepairTransaction['preconditions'][number] | undefined {
+  if (actions.length === 0) return undefined;
+  const fingerprint = causalActionFingerprint(actions);
+  return {
+    id: `${CAUSAL_ACTION_INTEGRITY_PREFIX}${fingerprint}`,
+    status: 'passed',
+    message: `${actions.length} causal action(s) are semantically pinned to this approval (${fingerprint.slice(0, 12)}).`,
+  };
 }
 
 function inside(root: string, candidate: string): boolean {
@@ -440,6 +497,27 @@ async function toolPreconditions(input: {
   stages: WorkspaceRepairStage[];
   toolAvailable?: RepairEngineDependencies['toolAvailable'];
 }): Promise<WorkspaceRepairTransaction['preconditions']> {
+  const deferredExecutables = new Set<string>();
+  for (const stage of input.stages) {
+    if (stage.kind !== 'repair' || !stage.invocation) continue;
+    const name = executableName(stage.invocation.executable);
+    if (
+      !['python', 'python3', 'py'].includes(name) ||
+      !stage.invocation.args.includes('venv') ||
+      !stage.invocation.args.includes('.venv')
+    ) {
+      continue;
+    }
+    deferredExecutables.add(
+      path.normalize(
+        path.join(
+          path.resolve(input.workspacePath, stage.invocation.cwd),
+          '.venv',
+          process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
+        )
+      )
+    );
+  }
   const invocations = input.stages
     .filter((stage) => stage.required && stage.status !== 'skipped' && stage.invocation)
     .map((stage) => stage.invocation as WorkspaceRepairInvocation);
@@ -449,6 +527,17 @@ async function toolPreconditions(input: {
   }
   const result: WorkspaceRepairTransaction['preconditions'] = [];
   for (const invocation of unique.values()) {
+    const executablePath = path.isAbsolute(invocation.executable)
+      ? path.normalize(invocation.executable)
+      : path.normalize(path.resolve(input.workspacePath, invocation.cwd, invocation.executable));
+    if (deferredExecutables.has(executablePath)) {
+      result.push({
+        id: `tool:${invocation.cwd}:${invocation.executable}`,
+        status: 'passed',
+        message: `Repair stage will create the isolated executable before use: ${invocation.executable} (${invocation.cwd}).`,
+      });
+      continue;
+    }
     const available = await invocationToolAvailable({
       workspacePath: input.workspacePath,
       invocation,
@@ -688,14 +777,32 @@ async function dependencyStagePlanForAdapter(input: {
     ((await exists('pyproject.toml')) || (await exists('requirements.txt')))
   ) {
     addFiles(['pyproject.toml', 'requirements.txt', 'uv.lock', 'poetry.lock']);
+    const declaredEcosystem = input.action.transaction?.ecosystem.toLowerCase();
+    const repairExecutable = path
+      .basename(input.action.invocation?.executable ?? '')
+      .toLowerCase()
+      .replace(/\.(?:cmd|bat|exe)$/i, '');
+    const usesUv =
+      repairExecutable === 'uv' || declaredEcosystem === 'uv' || (await exists('uv.lock'));
+    const usesPoetry =
+      !usesUv &&
+      (repairExecutable === 'poetry' ||
+        declaredEcosystem === 'poetry' ||
+        (await exists('poetry.lock')));
+    const createsManagedVenv =
+      !usesUv &&
+      !usesPoetry &&
+      ['python', 'python3', 'py'].includes(repairExecutable) &&
+      (input.action.invocation?.args ?? []).some((arg) => arg === 'venv') &&
+      (input.action.invocation?.args ?? []).some((arg) => arg === '.venv');
     let python = process.platform === 'win32' ? 'python' : 'python3';
     const venvPython = path.join(
       projectPath,
       '.venv',
       process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
     );
-    if (await fsExtra.pathExists(venvPython)) python = venvPython;
-    const reconcile = (await exists('uv.lock'))
+    if ((await fsExtra.pathExists(venvPython)) || createsManagedVenv) python = venvPython;
+    const reconcile = usesUv
       ? invocation({
           workspacePath: input.workspacePath,
           projectPath,
@@ -703,7 +810,7 @@ async function dependencyStagePlanForAdapter(input: {
           args: ['sync'],
           purpose: 'reconcile',
         })
-      : (await exists('poetry.lock'))
+      : usesPoetry
         ? invocation({
             workspacePath: input.workspacePath,
             projectPath,
@@ -719,7 +826,15 @@ async function dependencyStagePlanForAdapter(input: {
               args: ['-m', 'pip', 'install', '-r', 'requirements.txt'],
               purpose: 'reconcile',
             })
-          : undefined;
+          : (await exists('pyproject.toml')) && inside(input.workspacePath, python)
+            ? invocation({
+                workspacePath: input.workspacePath,
+                projectPath,
+                executable: python,
+                args: ['-m', 'pip', 'install', '-e', '.'],
+                purpose: 'reconcile',
+              })
+            : undefined;
     add(
       pendingStage({
         id: stageId('reconcile'),
@@ -739,19 +854,59 @@ async function dependencyStagePlanForAdapter(input: {
     );
     const pyproject = await text(path.join(projectPath, 'pyproject.toml'));
     const hasTests = (await exists('tests')) || /\[tool\.pytest/i.test(pyproject);
+    const pythonTestInvocation = usesPoetry
+      ? invocation({
+          workspacePath: input.workspacePath,
+          projectPath,
+          executable: 'poetry',
+          args: ['run', 'python', '-m', 'pytest'],
+          purpose: 'test',
+        })
+      : usesUv
+        ? invocation({
+            workspacePath: input.workspacePath,
+            projectPath,
+            executable: 'uv',
+            args: ['run', 'python', '-m', 'pytest'],
+            purpose: 'test',
+          })
+        : invocation({
+            workspacePath: input.workspacePath,
+            projectPath,
+            executable: python,
+            args: ['-m', 'pytest'],
+            purpose: 'test',
+          });
+    const pythonBuildInvocation = usesPoetry
+      ? invocation({
+          workspacePath: input.workspacePath,
+          projectPath,
+          executable: 'poetry',
+          args: ['build'],
+          purpose: 'build',
+        })
+      : usesUv
+        ? invocation({
+            workspacePath: input.workspacePath,
+            projectPath,
+            executable: 'uv',
+            args: ['build'],
+            purpose: 'build',
+          })
+        : invocation({
+            workspacePath: input.workspacePath,
+            projectPath,
+            executable: python,
+            args: ['-m', 'build'],
+            purpose: 'build',
+          });
     add(
       hasTests
         ? pendingStage({
             id: stageId('test'),
             kind: 'test',
             summary: 'Run the Python test contract.',
-            invocation: invocation({
-              workspacePath: input.workspacePath,
-              projectPath,
-              executable: python,
-              args: ['-m', 'pytest'],
-              purpose: 'test',
-            }),
+            invocation: pythonTestInvocation,
           })
         : skippedStage(stageId('test'), 'test', 'No Python test surface is declared.')
     );
@@ -761,13 +916,7 @@ async function dependencyStagePlanForAdapter(input: {
             id: stageId('build'),
             kind: 'build',
             summary: 'Build the declared Python package.',
-            invocation: invocation({
-              workspacePath: input.workspacePath,
-              projectPath,
-              executable: python,
-              args: ['-m', 'build'],
-              purpose: 'build',
-            }),
+            invocation: pythonBuildInvocation,
           })
         : skippedStage(stageId('build'), 'build', 'No Python build contract is declared.')
     );
@@ -1412,15 +1561,35 @@ async function dependencyStagePlan(
   combined.stages = [...new Map(combined.stages.map((stage) => [stage.id, stage])).values()];
   combined.checkpointFiles = [...new Set(combined.checkpointFiles)].sort();
   combined.blockers = [...new Set(combined.blockers)];
+  const deferredStageExecutables = new Set<string>();
 
   if (input.action.transaction?.kind === 'dependency-materialization') {
     const requiredStages = new Set(input.action.transaction.requiredStages);
+    const repairExecutable = executableName(input.action.invocation?.executable ?? '');
+    const repairArgs = input.action.invocation?.args ?? [];
+    const createsManagedVenv =
+      input.action.transaction.ecosystem === 'python' &&
+      ['python', 'python3', 'py'].includes(repairExecutable) &&
+      repairArgs.includes('venv') &&
+      repairArgs.includes('.venv');
+    if (createsManagedVenv) {
+      deferredStageExecutables.add(
+        path.normalize(
+          path.join(
+            projectPath,
+            '.venv',
+            process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
+          )
+        )
+      );
+    }
     // The action invocation is itself the governed install/restore operation.
     // Adapter stages close only the declared validation surface so the package
     // manager is never invoked twice for one materialization transaction.
-    combined.stages = combined.stages.filter(
-      (stage) => stage.kind !== 'reconcile' && requiredStages.has(stage.kind as 'test' | 'build')
-    );
+    combined.stages = combined.stages.filter((stage) => {
+      if (stage.kind === 'reconcile') return createsManagedVenv && requiredStages.has('reconcile');
+      return requiredStages.has(stage.kind as 'test' | 'build');
+    });
     combined.blockers = combined.stages
       .filter((stage) => stage.required && stage.status === 'blocked')
       .map((stage) => stage.summary);
@@ -1440,6 +1609,12 @@ async function dependencyStagePlan(
     ];
     for (const stage of adapterStages) {
       if (!stage.required || !stage.invocation) continue;
+      const executablePath = path.isAbsolute(stage.invocation.executable)
+        ? path.normalize(stage.invocation.executable)
+        : path.normalize(
+            path.resolve(input.workspacePath, stage.invocation.cwd, stage.invocation.executable)
+          );
+      if (deferredStageExecutables.has(executablePath)) continue;
       if (
         !(await invocationToolAvailable({
           workspacePath: input.workspacePath,
@@ -1470,6 +1645,7 @@ export async function inspectWorkspaceRepairCapabilities(
   input: {
     workspacePath?: string;
     projectPath?: string;
+    project?: string;
   } = {}
 ): Promise<
   ReturnType<typeof buildWorkspaceRepairCapabilitiesContract> & {
@@ -1477,16 +1653,55 @@ export async function inspectWorkspaceRepairCapabilities(
   }
 > {
   const contract = buildWorkspaceRepairCapabilitiesContract();
-  if (!input.workspacePath && !input.projectPath) return contract;
+  if (!input.workspacePath && !input.projectPath && !input.project) return contract;
   const workspacePath = path.resolve(input.workspacePath ?? process.cwd());
-  const projectPath = path.resolve(workspacePath, input.projectPath ?? '.');
-  if (!inside(workspacePath, projectPath)) {
-    throw new Error('Repair capability inspection project path escapes the workspace.');
+  let projectPath: string;
+  let inspectionPath: string;
+
+  if (input.project?.trim()) {
+    const projectRef = input.project.trim();
+    const targets = await resolveWorkspaceProjectLensTargets(workspacePath);
+    const normalizedRef = projectRef.replace(/\\/g, '/').replace(/^\.\//, '');
+    const absoluteRef = path.resolve(workspacePath, projectRef);
+    const matches = targets.resolved.filter((target) => {
+      const relativePath = inside(workspacePath, target.projectPath)
+        ? portable(workspacePath, target.projectPath)
+        : undefined;
+      return (
+        target.name === projectRef ||
+        relativePath === normalizedRef ||
+        path.resolve(target.projectPath) === absoluteRef
+      );
+    });
+    if (matches.length === 0) {
+      const unavailable = targets.skipped.find((target) => target.name === projectRef);
+      if (unavailable) {
+        throw new Error(
+          `Registered project is unavailable for repair capability inspection: ${projectRef} (${unavailable.reason}).`
+        );
+      }
+      throw new Error(
+        `Registered project not found for repair capability inspection: ${projectRef}.`
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `Project reference is ambiguous for repair capability inspection: ${projectRef}.`
+      );
+    }
+    projectPath = path.resolve(matches[0].projectPath);
+    inspectionPath = matches[0].name;
+  } else {
+    projectPath = path.resolve(workspacePath, input.projectPath ?? '.');
+    if (!inside(workspacePath, projectPath)) {
+      throw new Error('Repair capability inspection project path escapes the workspace.');
+    }
+    inspectionPath = portable(workspacePath, projectPath);
   }
   return {
     ...contract,
     inspection: {
-      projectPath: portable(workspacePath, projectPath),
+      projectPath: inspectionPath,
       detectedAdapters: await detectWorkspaceRepairAdapterIds(projectPath),
     },
   };
@@ -1933,6 +2148,8 @@ export async function planWorkspaceRepair(
           : 'No governed remediation action matches this target.',
     },
   ];
+  const causalIntegrity = causalActionIntegrityPrecondition(actions);
+  if (causalIntegrity) preconditions.push(causalIntegrity);
   const stages: WorkspaceRepairStage[] = [];
   const dependencyFiles: string[] = [];
   const adapterEvaluations: WorkspaceRepairAdapterEvaluation[] = [];
@@ -1983,6 +2200,23 @@ export async function planWorkspaceRepair(
   }
   const uniqueStages = [...new Map(stages.map((stage) => [stage.id, stage])).values()];
   stages.splice(0, stages.length, ...uniqueStages);
+  stages.unshift({
+    id: 'target-precondition',
+    kind: 'verify',
+    status: 'pending',
+    required: true,
+    risk: 'safe',
+    summary:
+      'Refresh the exact producer and prove the approved causal target is still current before mutation.',
+  });
+  stages.push({
+    id: 'target-producer-verify',
+    kind: 'verify',
+    status: 'pending',
+    required: true,
+    risk: 'safe',
+    summary: 'Refresh the exact producer that owns the selected repair card.',
+  });
   stages.push({
     id: 'canonical-verify',
     kind: 'verify',
@@ -2028,13 +2262,14 @@ export async function planWorkspaceRepair(
         : checkpointInspection.errors.join(' '),
   });
   const sourceEvidenceHash = sha256(stableJson(sourcePlan));
+  const actionProjectPaths = [
+    ...new Set(actions.map((action) => action.projectPath).filter(Boolean)),
+  ];
   const target: WorkspaceRepairTransaction['target'] = {
     cardId: input.cardId,
     scope: actions.some((action) => action.scope === 'project') ? 'project' : 'workspace',
     ...(input.projectName ? { projectName: input.projectName } : {}),
-    ...(actions.length === 1 && actions[0].projectPath
-      ? { projectPath: actions[0].projectPath }
-      : {}),
+    ...(actionProjectPaths.length === 1 ? { projectPath: actionProjectPaths[0] } : {}),
     actionIds: actions.map((action) => action.id),
   };
   const createdAt = iso(dependencies.now);
@@ -2284,6 +2519,15 @@ export async function planWorkspaceRepairProposal(
   });
 
   const stages: WorkspaceRepairStage[] = [
+    {
+      id: 'target-precondition',
+      kind: 'verify',
+      status: 'pending',
+      required: true,
+      risk: 'safe',
+      summary:
+        'Refresh the exact producer and prove the approved causal target is still current before mutation.',
+    },
     ...proposal.changes.map((change): WorkspaceRepairStage => ({
       id: `proposal:${change.id}`,
       kind: 'repair',
@@ -2294,6 +2538,14 @@ export async function planWorkspaceRepairProposal(
       changedPaths: [change.path],
     })),
     ...validationStages,
+    {
+      id: 'target-producer-verify',
+      kind: 'verify',
+      status: 'pending',
+      required: true,
+      risk: 'safe',
+      summary: 'Refresh the exact producer that owns the selected repair card.',
+    },
     {
       id: 'canonical-verify',
       kind: 'verify',
@@ -2322,13 +2574,51 @@ export async function planWorkspaceRepairProposal(
         : 'Repair proposal stage ids collide.',
   });
 
+  // The CLI, not the IDE, owns causal target selection. An IDE may bind the
+  // proposal to action ids it inspected, but older consumers only provide a
+  // card/project scope. Resolve that scope against the current canonical
+  // remediation plan before hashing and persisting the proposal so closure is
+  // proven against the finding generation that actually caused the repair.
+  try {
+    const currentPlan = await buildArtifactRemediationPlan({
+      workspacePath,
+      includeAbsolutePaths: false,
+      ciMode: true,
+    });
+    if (!proposal.targetActionIds?.length) {
+      const causalActionIds = currentPlan.actions
+        .filter(
+          (action) =>
+            action.cardId === proposal.cardId &&
+            (!proposal.projectName || action.projectName === proposal.projectName) &&
+            (!proposal.projectPath || action.projectPath === proposal.projectPath)
+        )
+        .map((action) => action.id)
+        .sort();
+      if (causalActionIds.length > 0) proposal.targetActionIds = causalActionIds;
+    }
+    const selectedActionIds = new Set(proposal.targetActionIds ?? []);
+    const selectedActions = currentPlan.actions.filter((action) =>
+      selectedActionIds.has(action.id)
+    );
+    const causalIntegrity = causalActionIntegrityPrecondition(selectedActions);
+    if (causalIntegrity) preconditions.push(causalIntegrity);
+  } catch {
+    // Some refresh-only cards do not expose remediation actions. Their exact
+    // producer still runs and the conservative card/project fallback remains.
+  }
+
   const sourceEvidenceHash = sha256(stableJson(proposal));
   const target: WorkspaceRepairTransaction['target'] = {
     cardId: proposal.cardId,
     scope: proposal.projectPath || proposal.projectName ? 'project' : 'workspace',
     ...(proposal.projectName ? { projectName: proposal.projectName } : {}),
     ...(proposal.projectPath ? { projectPath: proposal.projectPath } : {}),
-    actionIds: proposal.changes.map((change) => `proposal:${change.id}`),
+    ...(proposal.blockerSignature ? { blockerSignature: proposal.blockerSignature } : {}),
+    actionIds:
+      proposal.targetActionIds && proposal.targetActionIds.length > 0
+        ? [...new Set(proposal.targetActionIds)].sort()
+        : proposal.changes.map((change) => `proposal:${change.id}`),
   };
   const createdAt = iso(dependencies.now);
   const transactionId = `repair_${randomUUID().replaceAll('-', '')}`;
@@ -2507,12 +2797,10 @@ async function acquireLock(
   };
 }
 
-async function captureCheckpoint(input: {
+async function assertCheckpointBaselineIsCurrent(input: {
   workspacePath: string;
   transaction: WorkspaceRepairTransaction;
-  now?: () => Date;
 }): Promise<void> {
-  if (input.transaction.checkpoint.status === 'captured') return;
   const current = await inspectCheckpointFiles(
     input.workspacePath,
     input.transaction.checkpoint.files.map((entry) => entry.path)
@@ -2532,6 +2820,15 @@ async function captureCheckpoint(input: {
       );
     }
   }
+}
+
+async function captureCheckpoint(input: {
+  workspacePath: string;
+  transaction: WorkspaceRepairTransaction;
+  now?: () => Date;
+}): Promise<void> {
+  if (input.transaction.checkpoint.status === 'captured') return;
+  await assertCheckpointBaselineIsCurrent(input);
   const directory = path.join(
     transactionDir(input.workspacePath, input.transaction.transactionId),
     CHECKPOINT_DIR
@@ -2678,6 +2975,73 @@ async function runInvocation(input: {
   };
 }
 
+export function exactCardProducerArgs(cardId: string): string[] {
+  const capability = STUDIO_CARD_REPAIR_CAPABILITIES.find((entry) => entry.cardId === cardId);
+  if (!capability) {
+    throw new Error(`No canonical producer is registered for repair card ${cardId}.`);
+  }
+  const tokens = capability.verifyCommand.trim().split(/\s+/);
+  if (tokens[0] !== 'npx' || tokens[1] !== 'workspai' || tokens.length < 3) {
+    throw new Error(`Repair card ${cardId} publishes an invalid canonical producer command.`);
+  }
+  return tokens.slice(2);
+}
+
+async function runExactCardProducer(input: {
+  workspacePath: string;
+  transaction: WorkspaceRepairTransaction;
+}): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  const capability = STUDIO_CARD_REPAIR_CAPABILITIES.find(
+    (entry) => entry.cardId === input.transaction.target.cardId
+  );
+  if (!capability) {
+    throw new Error(
+      `No canonical producer is registered for repair card ${input.transaction.target.cardId}.`
+    );
+  }
+  const entrypoint = process.argv[1]?.trim();
+  if (!entrypoint || !(await fsExtra.pathExists(entrypoint))) {
+    throw new Error('The running Workspai CLI entrypoint is unavailable for target verification.');
+  }
+  const cwd =
+    capability.scope === 'project' && input.transaction.target.projectPath
+      ? path.resolve(input.workspacePath, input.transaction.target.projectPath)
+      : path.resolve(input.workspacePath);
+  if (capability.scope === 'project' && !input.transaction.target.projectPath) {
+    throw new Error(
+      `Repair card ${capability.cardId} requires an explicit project path for exact producer verification.`
+    );
+  }
+  if (!(await insideResolvedBoundary(input.workspacePath, cwd))) {
+    throw new Error('The target producer working directory escapes the workspace boundary.');
+  }
+  const protectedEnvironment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) =>
+        !/(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL|COOKIE|AUTH)/i.test(key)
+    )
+  );
+  const result = await execa(
+    process.execPath,
+    [entrypoint, ...exactCardProducerArgs(capability.cardId)],
+    {
+      cwd,
+      shell: false,
+      reject: false,
+      timeout: 15 * 60_000,
+      maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+      stdin: 'ignore',
+      extendEnv: false,
+      env: { ...protectedEnvironment, NO_COLOR: '1', CI: process.env.CI ?? '1' },
+    }
+  );
+  return {
+    exitCode: result.exitCode ?? null,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
+}
+
 async function verifyRepairTarget(input: {
   workspacePath: string;
   transaction: WorkspaceRepairTransaction;
@@ -2713,14 +3077,19 @@ async function verifyRepairTarget(input: {
       ciMode: true,
     });
     const selected = new Set(input.transaction.target.actionIds);
+    const proposalHasCausalTargets =
+      isWorkspaceRepairProposal(input.sourcePlan) &&
+      Array.isArray(input.sourcePlan.targetActionIds) &&
+      input.sourcePlan.targetActionIds.length > 0;
     const remaining = isWorkspaceRepairProposal(input.sourcePlan)
-      ? refreshed.actions.filter(
-          (action) =>
-            action.cardId === input.transaction.target.cardId &&
-            (!input.transaction.target.projectName ||
-              action.projectName === input.transaction.target.projectName) &&
-            (!input.transaction.target.projectPath ||
-              action.projectPath === input.transaction.target.projectPath)
+      ? refreshed.actions.filter((action) =>
+          proposalHasCausalTargets
+            ? selected.has(action.id)
+            : action.cardId === input.transaction.target.cardId &&
+              (!input.transaction.target.projectName ||
+                action.projectName === input.transaction.target.projectName) &&
+              (!input.transaction.target.projectPath ||
+                action.projectPath === input.transaction.target.projectPath)
         )
       : refreshed.actions.filter((action) => selected.has(action.id));
     return {
@@ -2730,6 +3099,52 @@ async function verifyRepairTarget(input: {
   } catch {
     return { status: 'unknown', remainingActionIds: [...input.transaction.target.actionIds] };
   }
+}
+
+async function verifyApprovedTargetIsCurrent(input: {
+  workspacePath: string;
+  transaction: WorkspaceRepairTransaction;
+  dependencies: RepairEngineDependencies;
+}): Promise<{
+  current: boolean;
+  missingActionIds: string[];
+  semanticDrift: boolean;
+}> {
+  // Bounded test/host integrations provide their own verification truth. The
+  // production path below is deliberately CLI-owned and evidence-backed.
+  if (input.dependencies.verify || input.dependencies.targetVerify) {
+    return { current: true, missingActionIds: [], semanticDrift: false };
+  }
+  const selectedActionIds = input.transaction.target.actionIds.filter(
+    (actionId) => !actionId.startsWith('proposal:')
+  );
+  // Refresh-only cards may have no remediation action. Their producer result,
+  // immutable proposal hash, and source before-hashes remain the precondition.
+  if (selectedActionIds.length === 0)
+    return { current: true, missingActionIds: [], semanticDrift: false };
+  const refreshed = await buildArtifactRemediationPlan({
+    workspacePath: input.workspacePath,
+    includeAbsolutePaths: false,
+    ciMode: true,
+  });
+  const currentActionIds = new Set(refreshed.actions.map((action) => action.id));
+  const missingActionIds = selectedActionIds.filter((actionId) => !currentActionIds.has(actionId));
+  const approvedFingerprint = input.transaction.preconditions
+    .map((entry) => entry.id)
+    .find((id) => id.startsWith(CAUSAL_ACTION_INTEGRITY_PREFIX))
+    ?.slice(CAUSAL_ACTION_INTEGRITY_PREFIX.length);
+  const currentActions = refreshed.actions.filter(
+    (action) => currentActionIds.has(action.id) && selectedActionIds.includes(action.id)
+  );
+  const semanticDrift =
+    missingActionIds.length === 0 &&
+    Boolean(approvedFingerprint) &&
+    causalActionFingerprint(currentActions) !== approvedFingerprint;
+  return {
+    current: missingActionIds.length === 0 && !semanticDrift,
+    missingActionIds,
+    semanticDrift,
+  };
 }
 
 function tail(value: string, max = 8_000): string {
@@ -2825,7 +3240,52 @@ async function runStage(input: {
   });
   await saveTransaction(input.workspacePath, input.transaction, input.dependencies.now);
   try {
-    if (input.stage.kind === 'repair') {
+    if (input.stage.id === 'target-precondition' || input.stage.id === 'target-producer-verify') {
+      const boundedHostIntegration = Boolean(
+        input.dependencies.verify ||
+        input.dependencies.targetVerify ||
+        input.dependencies.runInvocation ||
+        input.dependencies.toolAvailable ||
+        input.dependencies.now
+      );
+      const result = await (
+        input.dependencies.runTargetProducer ??
+        (boundedHostIntegration
+          ? async () => ({ exitCode: 0, stdout: '', stderr: '' })
+          : runExactCardProducer)
+      )({
+        workspacePath: input.workspacePath,
+        transaction: input.transaction,
+      });
+      input.stage.exitCode = result.exitCode;
+      input.stage.stdoutTail = tail(result.stdout);
+      input.stage.stderrTail = tail(result.stderr);
+      // Evidence producers use exit code 2 for a successfully refreshed but
+      // still-blocked finding. Target closure is evaluated after the complete
+      // canonical loop; only producer execution failure is fatal here.
+      if (result.exitCode !== 0 && result.exitCode !== 2) {
+        throw new Error(
+          result.stderr ||
+            result.stdout ||
+            `Exact card producer exited with ${String(result.exitCode)}.`
+        );
+      }
+      if (input.stage.id === 'target-precondition') {
+        const targetState = await verifyApprovedTargetIsCurrent({
+          workspacePath: input.workspacePath,
+          transaction: input.transaction,
+          dependencies: input.dependencies,
+        });
+        if (!targetState.current) {
+          const detail = targetState.semanticDrift
+            ? 'The selected action semantics changed after approval.'
+            : `Missing action(s): ${targetState.missingActionIds.join(', ')}.`;
+          throw new Error(
+            `The approved causal repair target changed before mutation. ${detail} Create and approve a fresh plan.`
+          );
+        }
+      }
+    } else if (input.stage.kind === 'repair') {
       const runtimeAction = input.actions.get(input.stage.id);
       if (!runtimeAction) throw new Error(`Persisted repair action is missing: ${input.stage.id}`);
       if (runtimeAction.kind === 'proposal') {
@@ -2874,7 +3334,12 @@ async function runStage(input: {
     }
     input.stage.status = 'passed';
     input.stage.completedAt = iso(input.dependencies.now);
-    input.stage.summary = `${input.stage.kind} completed.`;
+    input.stage.summary =
+      input.stage.id === 'target-precondition'
+        ? `Exact ${input.transaction.target.cardId} target revalidated before mutation.`
+        : input.stage.id === 'target-producer-verify'
+          ? `Exact ${input.transaction.target.cardId} producer refreshed after mutation.`
+          : `${input.stage.kind} completed.`;
     await refreshAfterHashes(input.workspacePath, input.transaction);
     event(input.transaction, 'stage', input.stage.summary, {
       stageId: input.stage.id,
@@ -3196,6 +3661,57 @@ export async function executeWorkspaceRepair(
           ])
     );
     try {
+      await assertCheckpointBaselineIsCurrent({ workspacePath, transaction });
+    } catch (error) {
+      transaction.approval.status = 'expired';
+      transaction.state = 'decision-required';
+      transaction.decision = {
+        reason: error instanceof Error ? error.message : String(error),
+        options: ['cancel'],
+      };
+      event(transaction, 'decision', transaction.decision.reason, {
+        status: 'source-precondition-failed',
+        now: dependencies.now,
+      });
+      await saveTransaction(workspacePath, transaction, dependencies.now);
+      return transaction;
+    }
+    const targetPreconditionStage = transaction.stages.find(
+      (stage) => stage.id === 'target-precondition'
+    );
+    if (!targetPreconditionStage) {
+      transaction.approval.status = 'expired';
+      transaction.state = 'decision-required';
+      transaction.decision = {
+        reason:
+          'The approved plan has no exact target precondition. Create and approve a fresh transaction.',
+        options: ['cancel'],
+      };
+      await saveTransaction(workspacePath, transaction, dependencies.now);
+      return transaction;
+    }
+    const targetStillCurrent = await runStage({
+      workspacePath,
+      transaction,
+      stage: targetPreconditionStage,
+      actions,
+      dependencies,
+    });
+    if (!targetStillCurrent) {
+      transaction.approval.status = 'expired';
+      transaction.state = 'decision-required';
+      transaction.decision = {
+        reason: `Target precondition failed before checkpoint: ${targetPreconditionStage.summary}`,
+        options: ['cancel'],
+      };
+      event(transaction, 'decision', transaction.decision.reason, {
+        status: 'target-precondition-failed',
+        now: dependencies.now,
+      });
+      await saveTransaction(workspacePath, transaction, dependencies.now);
+      return transaction;
+    }
+    try {
       await captureCheckpoint({ workspacePath, transaction, now: dependencies.now });
     } catch (error) {
       transaction.approval.status = 'expired';
@@ -3214,7 +3730,10 @@ export async function executeWorkspaceRepair(
     transaction.state = 'executing';
     await saveTransaction(workspacePath, transaction, dependencies.now);
     for (const stage of transaction.stages.filter(
-      (candidate) => candidate.kind !== 'verify' && candidate.kind !== 'rollback'
+      (candidate) =>
+        candidate.id !== 'target-precondition' &&
+        candidate.id !== 'canonical-verify' &&
+        candidate.kind !== 'rollback'
     )) {
       const passed = await runStage({ workspacePath, transaction, stage, actions, dependencies });
       if (!passed && stage.required) {
@@ -3234,7 +3753,7 @@ export async function executeWorkspaceRepair(
       }
     }
     transaction.state = 'verifying';
-    const verifyStage = transaction.stages.find((stage) => stage.kind === 'verify');
+    const verifyStage = transaction.stages.find((stage) => stage.id === 'canonical-verify');
     if (!verifyStage) {
       transaction.state = transaction.policy.autoRollback
         ? 'rollback-required'

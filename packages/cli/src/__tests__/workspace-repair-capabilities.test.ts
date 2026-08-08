@@ -28,9 +28,35 @@ describe('Workspace Repair capability contract', () => {
         missingTools: 'decision-required',
         unsupportedEcosystems: 'decision-required',
         silentFallbackToModelExecution: false,
+        mutationAuthority: 'cli-only',
+        targetClosure: 'selected-causal-action-set',
+        changeReceipt: 'checkpoint-hash-delta',
+        consumerTimeline: 'durable-transaction-events',
+        consumerHandshakeRequired: true,
+        ephemeralProposalsAreEvidence: false,
         canonicalVerificationRequired: true,
       },
+      consumerProtocol: {
+        protocolVersion: 'workspai.workspace-repair-consumer-protocol.v1',
+        versionProbe: {
+          args: ['--version', '--json'],
+          schemaVersion: 'rapidkit-version-v1',
+        },
+        capabilityProbe: {
+          args: ['workspace', 'repair', 'capabilities', '--json'],
+          schemaVersion: 'workspai.workspace-repair-capabilities.v1',
+        },
+        invocation: {
+          workspaceResolution: ['process-cwd', '--workspace'],
+        },
+      },
     });
+    expect(contract.workflow).toContain('target-precondition');
+    expect(contract.workflow.slice(-3)).toEqual([
+      'target-producer-verify',
+      'canonical-verify',
+      'close-or-rollback-or-decision',
+    ]);
     expect(new Set(contract.adapters.map((adapter) => adapter.id)).size).toBe(
       contract.adapters.length
     );
@@ -92,5 +118,42 @@ describe('Workspace Repair capability contract', () => {
     });
 
     expect(report.inspection?.detectedAdapters).toEqual(['node', 'python', 'go']);
+  });
+
+  it('resolves a registered project reference, including an external project, before inspection', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-registered-project-')
+    );
+    const externalRoot = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-external-project-')
+    );
+    roots.push(workspacePath, externalRoot);
+    await fsExtra.outputJson(path.join(workspacePath, 'web', 'package.json'), {});
+    await fsExtra.outputFile(path.join(externalRoot, 'go.mod'), 'module example.test/external\n');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      projects: [
+        { slug: 'web', relativePath: 'web', relationship: 'managed' },
+        {
+          slug: 'external-api',
+          relativePath: 'external/external-api',
+          externalPath: externalRoot,
+          relationship: 'linked',
+        },
+      ],
+    });
+
+    await expect(
+      inspectWorkspaceRepairCapabilities({ workspacePath, project: 'web' })
+    ).resolves.toMatchObject({
+      inspection: { projectPath: 'web', detectedAdapters: ['node'] },
+    });
+    await expect(
+      inspectWorkspaceRepairCapabilities({ workspacePath, project: 'external-api' })
+    ).resolves.toMatchObject({
+      inspection: { projectPath: 'external-api', detectedAdapters: ['go'] },
+    });
+    await expect(
+      inspectWorkspaceRepairCapabilities({ workspacePath, project: 'missing' })
+    ).rejects.toThrow('Registered project not found');
   });
 });

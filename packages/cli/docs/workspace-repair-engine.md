@@ -7,8 +7,8 @@ that a repair is complete.
 ```text
 canonical evidence
       ↓
-plan → preconditions → approval → checkpoint → execute
-     → reconcile → audit → test → build → canonical verify
+plan → preconditions → approval → exact-target preflight → checkpoint → execute
+     → reconcile → audit → test → build → exact producer → canonical verify
      → closed | rolled-back | decision-required
 ```
 
@@ -48,8 +48,24 @@ npx workspai workspace repair list --json
 an attached project or workspace, the same response also includes local adapter inspection. All
 other repair actions require an unambiguous canonical workspace root.
 
+Before the first mutation, every IDE consumer must probe the executable it will actually run with
+`--version --json` and `workspace repair capabilities --json`. Package metadata alone is not an
+execution contract: version-manager links can expose multiple manifests or a stale built entrypoint.
+The consumer must reject a binary whose version, repair protocol, proposal schema, transaction
+schema, or operation envelope does not match the published handshake. Running from the canonical
+workspace root is sufficient; `--workspace` is an equivalent explicit selector, not a required IDE
+transport flag.
+
 `plan` never mutates source files. `approve` never executes work. `execute` refuses an expired,
 tampered, unapproved, or precondition-stale plan.
+
+Immediately before checkpoint and mutation, the engine reruns the exact producer registered for
+the selected Studio card and proves that every approved causal remediation action still exists
+with the same semantics. The approval-bound fingerprint covers the blocker, scope, risk, command,
+typed operation, files, rollback posture, and dependency transaction—not only the action id. If
+the card generation changed, the blocker disappeared, or any selected action changed meaning, the
+approval expires and no source byte is changed. After mutation and runtime-native validation, the
+same exact producer runs again before aggregate Workspace Intelligence verification.
 
 `propose` is the dynamic repair boundary for IDE models. A model may provide bounded complete-file
 writes/deletes and optional structured audit/test/build commands. The CLI rejects stale source
@@ -62,6 +78,13 @@ but the installed runtime tree is missing. Its install or restore invocation is 
 itself; it does not require a manifest or lockfile diff and is never run twice. Declared tests and
 builds, followed by canonical verification, prove closure. Dependency-security transactions still
 require manifest/lock reconciliation and a clean focused audit.
+
+Python materialization follows the project's declared environment surface instead of assuming
+Poetry: `[tool.poetry]` selects `poetry install --no-root`, `uv.lock` selects `uv sync`, and a
+requirements-only or standard `pyproject.toml` project creates a project-local `.venv` before using
+that exact interpreter for dependency reconciliation and tests. The future `.venv` executable is a
+deferred precondition owned by the approved transaction; it is never mistaken for a missing global
+tool before the environment-creation stage runs.
 
 ## Safety and ownership
 
@@ -87,6 +110,8 @@ require manifest/lock reconciliation and a clean focused audit.
   next repair target and never trigger rollback of a valid bounded repair.
 - Required executables are resolved before approval and again immediately before execution. A
   missing or changed toolchain expires approval instead of starting a partial transaction.
+- The exact card producer is run twice: first as a no-mutation causal precondition, then after
+  repair as card-local evidence. An aggregate workspace gate cannot substitute for either run.
 
 ## Runtime adapters
 
@@ -117,6 +142,21 @@ is durable under `.workspai/repair/transactions/<transaction-id>/`. Consumers sh
 the `workspace repair` action from `runtime-command-surface.v1.json`, render its stages and
 events, and send explicit user decisions back to the CLI. They must not reproduce the executor.
 
+The consumer protocol is fail-closed on four additional invariants:
+
+- `mutationAuthority=cli-only`: an IDE or model may inspect and propose, but it cannot run a
+  parallel package-manager, file-write, or remediation executor.
+- `targetClosure=selected-causal-action-set`: closure proves the requested card and its selected
+  prerequisite action set; unrelated workspace findings remain visible without falsifying the
+  selected repair result.
+- `changeReceipt=checkpoint-hash-delta`: consumers must call a file changed only when the
+  transaction recorded a different post-execution hash. Planned checkpoint files are not edits.
+- `consumerTimeline=durable-transaction-events`: progress, decisions, rollback, and closure are
+  projections of ordered transaction/session events, not optimistic UI copy.
+
 IDE-generated input follows
 `contracts/workspace-intelligence/workspace-repair-proposal.v1.json`. The proposal is evidence,
 not authority: only the approved transaction created by the CLI may mutate the workspace.
+Files under `.workspai/repair/inbox/` and the engine lock are transient transport state. They must
+never advance an evidence generation, reset a retry budget, or appear as governed evidence in an
+IDE. Durable transaction receipts and canonical reports are the only repair-state evidence.

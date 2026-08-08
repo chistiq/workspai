@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { buildStudioCardRepairCapabilitiesContract } from '../../contracts/studio-card-repair-capabilities-contract.js';
+import { exactCardProducerArgs } from '../../workspace-repair-engine.js';
 
 const EXPECTED_CARD_IDS = [
   'doctor',
@@ -53,7 +54,13 @@ describe('Studio card repair capabilities contract', () => {
       expect(card.verifyCommand).toBe(card.producerCommand);
       expect(card.verifyArtifact).toBe(card.producerArtifact);
       expect(card.aggregateVerifyCommand).toBe('npx workspai workspace verify --json');
+      expect(card.targetClosure).toBe('exact-producer-and-causal-action-set');
+      expect(card.workspacePosture).toBe('reported-separately');
+      expect(exactCardProducerArgs(card.cardId)).toEqual(
+        card.verifyCommand.trim().split(/\s+/).slice(2)
+      );
     }
+    expect(contract.invariant).toContain('Unrelated workspace blockers');
   });
 
   it('never substitutes the Doctor producer for an unrelated card', () => {

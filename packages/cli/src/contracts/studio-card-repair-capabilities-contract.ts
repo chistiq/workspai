@@ -14,6 +14,8 @@ export type StudioCardRepairCapability = {
   verifyCommand: string;
   verifyArtifact: string;
   aggregateVerifyCommand: 'npx workspai workspace verify --json';
+  targetClosure: 'exact-producer-and-causal-action-set';
+  workspacePosture: 'reported-separately';
   repairPolicy: 'diagnose-and-repair' | 'source-repair-then-produce' | 'refresh-producer';
   remediationArtifacts: string[];
 };
@@ -40,6 +42,8 @@ function capability(
     verifyCommand: producerCommand,
     verifyArtifact: producerArtifact,
     aggregateVerifyCommand: AGGREGATE_VERIFY_COMMAND,
+    targetClosure: 'exact-producer-and-causal-action-set',
+    workspacePosture: 'reported-separately',
     repairPolicy: options.repairPolicy ?? 'refresh-producer',
     remediationArtifacts: options.remediationArtifacts ?? [],
   };
@@ -178,7 +182,7 @@ export function buildStudioCardRepairCapabilitiesContract() {
   return {
     schemaVersion: STUDIO_CARD_REPAIR_CAPABILITIES_SCHEMA_VERSION,
     invariant:
-      'A card repair closes only after its exact producer is non-blocking and aggregate Workspace Verify passes.',
+      'A card repair closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.',
     cards: STUDIO_CARD_REPAIR_CAPABILITIES,
   };
 }

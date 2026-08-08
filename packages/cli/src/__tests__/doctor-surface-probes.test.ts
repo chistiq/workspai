@@ -520,6 +520,52 @@ describe('doctor enterprise surface probes', () => {
     });
   });
 
+  it('keeps an unavailable audit tool causally ahead of an unrelated gitignore repair', async () => {
+    const projectPath = await makeProject({
+      'pyproject.toml': '[project]\nname = "api"\nversion = "0.1.0"\n',
+      'requirements.txt': 'fastapi>=0.116\n',
+      '.gitignore': '.venv\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'python',
+      projectKind: 'backend',
+      hasTests: true,
+      dependencyAudit: {
+        schemaVersion: 'doctor-dependency-audit-v1',
+        runtime: 'python',
+        ecosystem: 'PyPI',
+        tool: 'pip-audit',
+        status: 'tool-unavailable',
+        generatedAt: new Date().toISOString(),
+        findingCount: null,
+        blockingFindingCount: null,
+        severityCounts: { low: 0, moderate: 0, high: 0, critical: 0, unknown: 0 },
+        subjects: [],
+        reason: 'pip-audit is not installed in the project environment.',
+        limitations: [],
+      },
+    });
+
+    expect(probes.find((probe) => probe.id === 'surface-security-hygiene')).toMatchObject({
+      status: 'warn',
+      reason: expect.stringContaining('pip-audit is not installed'),
+      repairCapability: {
+        issueId: 'surface-security-hygiene',
+        title: 'Establish PyPI security audit evidence',
+        status: 'manual',
+        fixKind: 'manual',
+        canAutoFix: false,
+        files: expect.arrayContaining([
+          path.join(projectPath, 'pyproject.toml'),
+          path.join(projectPath, 'requirements.txt'),
+        ]),
+        reason: expect.stringContaining('pip-audit is unavailable'),
+      },
+    });
+  });
+
   it('offers a guarded non-force npm vulnerability repair for Node projects', async () => {
     const projectPath = await makeProject({
       'package.json': { name: 'web', version: '1.0.0' },
