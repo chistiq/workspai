@@ -47,6 +47,19 @@ describe('blocker-resolution contract', () => {
     expect(hint.fixHints[0]?.actionKind).toBe('run-once');
   });
 
+  it('prefers an exact evidence producer command over the generic Analyze shortcut', () => {
+    const hint = buildResolutionHintForBlocker({
+      reason: 'project.web.test: Missing evidence report',
+      blockerId: 'blocker-1',
+      sourceCommand: 'npx workspai workspace run test --scope project:web --json',
+      sourceArtifact: '.workspai/reports/workspace-run-last.json',
+    });
+
+    expect(hint.sourceCommand).toBe('npx workspai workspace run test --scope project:web --json');
+    expect(hint.fixHints[0]).not.toHaveProperty('studioActionId');
+    expect(hint.commandRetryHint).toContain('workspace run test --scope project:web');
+  });
+
   it('infers semantic-attention for impact-style blockers', () => {
     expect(inferResolutionClassFromBlockerReason('impact: untracked grounding files')).toBe(
       'semantic-attention'

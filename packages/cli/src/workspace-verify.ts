@@ -27,7 +27,7 @@ import {
   summarizeGraphIntegrity,
   type WorkspaceGraphIntegrity,
 } from './workspace-graph-integrity.js';
-import { buildResolutionHintsForBlockingReasons } from './workspace-blocker-resolution-hints.js';
+import { buildResolutionHintForBlocker } from './workspace-blocker-resolution-hints.js';
 import { softenEmptyWorkspaceVerifyVerdict } from './workspace-scaffold.js';
 import type { BlockerResolution } from './contracts/blocker-resolution-contract.js';
 import {
@@ -1223,15 +1223,21 @@ export async function buildWorkspaceVerify(
   });
   summary.verdict = softenedSummary.verdict;
   summary.exitCode = softenedSummary.exitCode;
-  const resolutionHints =
-    blockingReasons.length > 0
-      ? buildResolutionHintsForBlockingReasons({
-          blockingReasons,
-          verifyCommand:
-            'npx workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json',
-          verifyArtifact: WORKSPACE_VERIFY_REPORT_PATH,
-        })
-      : [];
+  const uniqueBlockingReasons = Array.from(
+    new Set(blockingReasons.map((reason) => reason.trim()).filter(Boolean))
+  ).slice(0, 12);
+  const resolutionHints = uniqueBlockingReasons.map((reason, index) => {
+    const sourceStep = steps.find((step) => reason.startsWith(`${step.id}:`));
+    return buildResolutionHintForBlocker({
+      reason,
+      blockerId: `blocker-${index + 1}`,
+      sourceCommand: sourceStep?.command.display,
+      sourceArtifact: sourceStep?.evidencePath,
+      verifyCommand:
+        'npx workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json',
+      verifyArtifact: WORKSPACE_VERIFY_REPORT_PATH,
+    });
+  });
 
   return {
     schemaVersion: WORKSPACE_VERIFY_SCHEMA_VERSION,

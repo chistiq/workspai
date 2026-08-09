@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-08-09
+
+### Added
+
+- Added a universal Doctor diagnosis boundary with stable finding identities,
+  causal groups, confidence, proof bindings, repair disposition, explicit
+  unknowns, contradictions, and six-domain completeness.
+- Added versioned Doctor capability, validation, diagnosis, summary, and receipt
+  contracts for CLI, IDE, CI, and agent consumers.
+- Added a 17-adapter, 44-framework capability registry and a deterministic
+  170-case validation corpus with explicit platform and limitation metadata.
+- Added `doctor capabilities` filters, validation, and governed artifact output,
+  plus bounded `--json=summary` and cache-bypassing `--fresh` Doctor modes.
+
+### Changed
+
+- Made Readiness, Verify, remediation planning, and Repair consume the canonical
+  Doctor diagnosis rather than independently interpreting legacy issue strings.
+- Made not-applicable checks non-inflating and stale or unobserved providers
+  explicit unknowns instead of implied success.
+- Kept multi-project remediation actions attached to their diagnosis finding and
+  causal key through planning and transaction closure.
+- Bound missing verification evidence to the exact step `sourceCommand` and
+  `sourceArtifact` so consumers refresh the correct producer.
+
+### Fixed
+
+- Fixed generic `run-analyze` guidance being attached to missing project
+  init/test/build/start evidence owned by `workspace run`.
+- Fixed unrelated causal findings leaking into a selected repair transaction or
+  preventing truthful target closure.
+- Fixed advisory dependency subjects and not-applicable probes being counted as
+  blocking vulnerabilities or warnings.
+- Fixed fresh Doctor runs reusing stale project scan state beyond the governed
+  cache boundary.
+- Fixed backward-compatible CLI releases automatically raising the extension
+  compatibility floor and creating artificial cross-repository drift.
+
+### Verification
+
+- 2,388 tests passed across 222 test files with 8 explicit environment skips;
+  statement coverage reached 81.65% and line coverage reached 82.67%.
+- The 170-case Doctor validation corpus passed across all 17 runtime adapters.
+- Type checking, linting, formatting, contracts, docs, runtime acceptance,
+  bundle limits, and npm audit passed; npm audit reported zero vulnerabilities.
+- A nine-project polyglot fixture exercised the complete Workspace Intelligence
+  chain and a typed, approval-bound Repair plan.
+
 ## [0.55.1] - 2026-08-08
 
 ### Changed

@@ -185,6 +185,10 @@ Automation must distinguish:
 Do not parse terminal prose. Read `status`, `exitCode`, `preflight`, `stages`,
 and their registered artifacts from the JSON report.
 
+When Verify publishes `resolutionHints`, an evidence-backed step includes its
+exact `sourceCommand` and `sourceArtifact`. Consumers should run that producer
+command instead of substituting a generic Analyze refresh, then re-run Verify.
+
 ## Verified engineering goals
 
 The intelligence runner answers what is true now. A verified goal adds the

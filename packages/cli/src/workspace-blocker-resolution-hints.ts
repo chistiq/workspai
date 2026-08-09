@@ -56,7 +56,10 @@ export function buildResolutionHintForBlocker(input: {
             detail: input.sourceCommand
               ? `Run the source command once: ${input.sourceCommand}`
               : 'Run the mapped workspace intelligence command once to generate the missing artifact.',
-            studioActionId: 'run-analyze' as const,
+            // An exact producer command is authoritative. Do not attach the
+            // generic Analyze shortcut to evidence owned by another producer
+            // (for example workspace-run, Doctor, or readiness).
+            ...(input.sourceCommand ? {} : { studioActionId: 'run-analyze' as const }),
           },
         ]
       : resolutionClass === 'semantic-attention'
@@ -89,7 +92,9 @@ export function buildResolutionHintForBlocker(input: {
     blockerSignature,
     commandRetryHint:
       resolutionClass === 'artifact-missing'
-        ? 'Run the source command once, then verify.'
+        ? input.sourceCommand
+          ? `Run the source command once: ${input.sourceCommand}, then verify.`
+          : 'Run the source command once, then verify.'
         : 'Do not re-run the same failing command; fix the source issue first, then verify.',
     fixHints,
     verifyCommand: input.verifyCommand,

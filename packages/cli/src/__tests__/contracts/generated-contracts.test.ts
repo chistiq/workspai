@@ -139,7 +139,7 @@ describe('generated shared contracts (Wave B + C)', () => {
     expect(readJsonContract('infra-stack.v1.json')).toEqual(buildInfraStackContract());
   });
 
-  it('keeps committed extension CLI compatibility aligned with npm package version', () => {
+  it('keeps committed extension CLI compatibility aligned with its explicit compatibility floor', () => {
     expect(readJsonContract('extension-cli-compatibility.v1.json')).toEqual(
       buildExtensionCliCompatibilityContract()
     );

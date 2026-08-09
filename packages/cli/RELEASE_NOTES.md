@@ -5,7 +5,61 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.55.1 (August 8, 2026)
+## Latest Release: v0.56.0 (August 9, 2026)
+
+### Universal Doctor Intelligence and Exact Evidence Repair
+
+This release gives Doctor one causal, fail-closed diagnosis vocabulary across
+polyglot projects and routes missing verification evidence back to the exact
+command that owns it.
+
+**What's New:**
+
+- **One Doctor truth model**
+  - Findings carry stable identity, confidence, proof, causality, repair
+    disposition, unknowns, contradictions, and completeness.
+  - Applicability and freshness remain explicit, so absence is never counted as
+    health.
+
+- **Portable capability evidence**
+  - 17 runtime adapters and 44 framework identities publish their support,
+    limitations, platforms, and repair modes.
+  - Summary and receipt artifacts give IDEs, CI, and agents bounded handoffs
+    without discarding the complete evidence.
+
+- **Exact repair routing**
+  - Remediation retains causal finding identities across projects.
+  - Missing init, test, build, or start evidence points to its exact producer
+    command rather than a generic Analyze action.
+
+- **Stable extension compatibility**
+  - Backward-compatible CLI releases no longer raise the extension's minimum
+    supported CLI version automatically.
+
+**Breaking changes:** None. New evidence fields and contracts are additive.
+
+**Verification:**
+
+- 2,388 tests passed across 222 files with 8 explicit skips.
+- Coverage reached 81.65% statements and 82.67% lines.
+- The 170-case Doctor validation corpus passed across all 17 adapters.
+- Type checking, linting, formatting, contracts, docs, runtime acceptance,
+  bundle limits, and zero-vulnerability npm audit passed.
+
+**Upgrade:**
+
+```bash
+npm install -g workspai@0.56.0
+workspai --version
+workspai doctor capabilities --validate --json
+workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.56.0/packages/cli/releases/RELEASE_NOTES_v0.56.0.md)
+
+---
+
+## Previous Release: v0.55.1 (August 8, 2026)
 
 ### Truthful Evidence Posture and Typed Repair Decisions
 

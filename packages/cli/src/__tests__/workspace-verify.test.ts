@@ -319,6 +319,21 @@ describe('workspace verify', () => {
         }),
       ])
     );
+    expect(verify.resolutionHints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceCommand: 'npx workspai workspace run test --scope project:web --json',
+          sourceArtifact: '.workspai/reports/workspace-run-last.json',
+          fixHints: [
+            expect.objectContaining({
+              actionKind: 'run-once',
+              detail:
+                'Run the source command once: npx workspai workspace run test --scope project:web --json',
+            }),
+          ],
+        }),
+      ])
+    );
     expect(verify.summary.verdict).toBe('blocked');
   });
 
