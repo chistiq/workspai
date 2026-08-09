@@ -24,12 +24,7 @@ export type ArtifactRemediationMode =
   'edit-file' | 'run-command' | 'refresh-evidence' | 'verify-before-fix' | 'manual-guidance';
 
 export type ArtifactRemediationOperation =
-  | {
-      type: 'file-create';
-      path: string;
-      content: string;
-      overwrite: false;
-    }
+  | DoctorRepairOperation
   | {
       type: 'run-command';
       command: string;
@@ -47,6 +42,9 @@ export type ArtifactRemediationAction = {
   projectName?: string;
   projectPath?: string;
   sourceStepId?: string;
+  findingId: string;
+  findingStatus: 'blocking' | 'advisory' | 'informational' | 'unknown';
+  causalKey: string;
   dependsOn?: string[];
   strategy?: DoctorRepairStrategyStage[];
   transaction?: DoctorDependencyRepairTransaction;
@@ -323,12 +321,19 @@ function actionBase(input: {
   projectName?: string;
   projectPath?: string;
   sourceStepId?: string;
+  findingId?: string;
+  findingStatus?: ArtifactRemediationAction['findingStatus'];
   dependsOn?: string[];
   strategy?: DoctorRepairStrategyStage[];
   transaction?: DoctorDependencyRepairTransaction;
   cwd?: ArtifactRemediationAction['cwd'];
   rollback?: ArtifactRemediationAction['rollback'];
 }): ArtifactRemediationAction {
+  const findingId = input.findingId?.trim() || input.sourceStepId?.trim() || input.id;
+  const findingStatus = input.findingStatus ?? 'blocking';
+  const causalKey = [input.cardId, input.projectName ?? input.scope ?? 'workspace', findingId]
+    .map((value) => String(value).trim().toLowerCase())
+    .join(':');
   return {
     id: input.id,
     artifactKind: input.artifactKind,
@@ -340,6 +345,9 @@ function actionBase(input: {
     ...(input.projectName ? { projectName: input.projectName } : {}),
     ...(input.projectPath ? { projectPath: input.projectPath } : {}),
     ...(input.sourceStepId ? { sourceStepId: input.sourceStepId } : {}),
+    findingId,
+    findingStatus,
+    causalKey,
     ...(input.dependsOn ? { dependsOn: input.dependsOn } : {}),
     ...(input.strategy ? { strategy: structuredClone(input.strategy) } : {}),
     ...(input.transaction ? { transaction: structuredClone(input.transaction) } : {}),
@@ -410,6 +418,18 @@ function doctorPlanActions(input: {
       absoluteProjectPath,
       includeAbsolutePaths: input.includeAbsolutePaths,
     });
+    const operation = portableDoctorOperation({
+      operation: step.operation,
+      absoluteProjectPath,
+    });
+    const findingStatus =
+      step.findingStatus === 'blocking' ||
+      step.findingStatus === 'advisory' ||
+      step.findingStatus === 'informational'
+        ? step.findingStatus
+        : 'unknown';
+    const findingId =
+      typeof step.issueId === 'string' && step.issueId.trim() ? step.issueId.trim() : id;
     const executable = step.executableInCurrentEnvironment === true && Boolean(command);
     const strategy = portableDoctorStrategy({
       strategy: step.strategy,
@@ -447,6 +467,7 @@ function doctorPlanActions(input: {
         status: studioState,
         ...(executable && command ? { command } : {}),
         ...(executable && invocation ? { invocation } : {}),
+        ...(operation ? { operation } : {}),
         verifyCommand:
           typeof step.verifyCommand === 'string' && step.verifyCommand.trim()
             ? step.verifyCommand.trim()
@@ -463,12 +484,16 @@ function doctorPlanActions(input: {
         }),
         notes: [
           `Source Doctor step: ${id}`,
+          `Doctor finding id: ${findingId}`,
+          `Doctor finding status: ${findingStatus}`,
           ...(typeof studioStatus?.reason === 'string' ? [studioStatus.reason] : []),
         ],
         scope: 'project',
         projectName,
         projectPath,
         sourceStepId: id,
+        findingId,
+        findingStatus,
         dependsOn: asStringArray(step.dependsOn).map((dependency) => `doctor.${dependency}`),
         strategy,
         transaction,
@@ -638,6 +663,10 @@ function doctorEvidenceActions(input: {
         absoluteProjectPath,
         includeAbsolutePaths: input.includeAbsolutePaths,
       });
+      const operation = portableDoctorOperation({
+        operation: capability.operation,
+        absoluteProjectPath,
+      });
       const canExecute = capability.status === 'available' && Boolean(command);
       const transactionRecord = asRecord(capability.transaction);
       const transaction =
@@ -705,11 +734,19 @@ function doctorEvidenceActions(input: {
           input.includeAbsolutePaths
         ),
         sourceStepId: capabilityId,
+        findingId:
+          typeof capability.issueId === 'string' && capability.issueId.trim()
+            ? capability.issueId.trim()
+            : capabilityId,
+        findingStatus,
         strategy,
         transaction,
         cwd: 'project',
-        ...(capability.operation
-          ? { rollback: { available: true, strategy: 'manual' as const } }
+        ...(operation
+          ? {
+              operation,
+              rollback: { available: true, strategy: 'manual' as const },
+            }
           : {}),
       });
       const duplicateIndex = command

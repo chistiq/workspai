@@ -76,6 +76,94 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["type", "path", "lines", "ensureNewline"],
+          "properties": {
+            "type": { "const": "file-append" },
+            "path": { "type": "string" },
+            "lines": { "type": "array", "items": { "type": "string" } },
+            "ensureNewline": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "sourcePath", "path", "overwrite"],
+          "properties": {
+            "type": { "const": "file-copy" },
+            "sourcePath": { "type": "string" },
+            "path": { "type": "string" },
+            "overwrite": { "const": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "path", "scriptName", "scriptValue"],
+          "properties": {
+            "type": { "const": "package-json-script" },
+            "path": { "type": "string" },
+            "scriptName": { "type": "string" },
+            "scriptValue": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "path", "edits"],
+          "properties": {
+            "type": { "const": "json-edit" },
+            "path": { "type": "string" },
+            "edits": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["pointer", "value"],
+                "properties": {
+                  "pointer": { "type": "string" },
+                  "value": { "type": ["string", "number", "boolean", "null"] }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "path", "keys"],
+          "properties": {
+            "type": { "const": "env-key-add" },
+            "path": { "type": "string" },
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "value"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "value": { "type": "string" },
+                  "comment": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "path", "target", "command", "phony"],
+          "properties": {
+            "type": { "const": "makefile-target" },
+            "path": { "type": "string" },
+            "target": { "type": "string" },
+            "command": { "type": "string" },
+            "phony": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["type", "command", "cwd"],
           "properties": {
             "type": { "const": "run-command" },
@@ -164,7 +252,15 @@
       "allOf": [
         {
           "if": { "properties": { "kind": { "const": "dependency-security" } } },
-          "then": { "properties": { "completion": { "type": "object", "properties": { "auditClean": { "const": true } }, "required": ["auditClean"] } } }
+          "then": {
+            "properties": {
+              "completion": {
+                "type": "object",
+                "properties": { "auditClean": { "const": true } },
+                "required": ["auditClean"]
+              }
+            }
+          }
         },
         {
           "if": { "properties": { "kind": { "const": "dependency-materialization" } } },
@@ -173,7 +269,11 @@
             "properties": {
               "sourceMutationRequired": { "const": false },
               "observableState": { "const": "runtime-dependency-tree" },
-              "completion": { "type": "object", "properties": { "installedTreePresent": { "const": true } }, "required": ["installedTreePresent"] }
+              "completion": {
+                "type": "object",
+                "properties": { "installedTreePresent": { "const": true } },
+                "required": ["installedTreePresent"]
+              }
             }
           }
         }
@@ -190,6 +290,9 @@
         "order",
         "phase",
         "scope",
+        "findingId",
+        "findingStatus",
+        "causalKey",
         "status",
         "mode",
         "risk",
@@ -213,6 +316,11 @@
         "projectName": { "type": "string", "minLength": 1 },
         "projectPath": { "type": "string", "minLength": 1 },
         "sourceStepId": { "type": "string", "minLength": 1 },
+        "findingId": { "type": "string", "minLength": 1 },
+        "findingStatus": {
+          "enum": ["blocking", "advisory", "informational", "unknown"]
+        },
+        "causalKey": { "type": "string", "minLength": 1 },
         "dependsOn": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }

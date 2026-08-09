@@ -5468,11 +5468,17 @@ interface PlannedFixStep extends FixPlanStep {
   order: number;
   dependsOn: string[];
   issueId?: string;
+  findingStatus: 'blocking' | 'advisory' | 'informational' | 'unknown';
   issueClass?: DoctorIssueClass;
   operationalImpact?: DoctorOperationalImpact;
   repairIntent?: DoctorRepairIntent;
   files: string[];
   operation?: DoctorRepairOperation;
+  invocation?: {
+    cwd: string;
+    executable: string;
+    args: string[];
+  };
   strategy?: DoctorRepairStrategyStage[];
   transaction?: DoctorDependencyRepairTransaction;
   preview: {
@@ -6823,11 +6829,28 @@ async function buildRemediationPlan(
       order: 0,
       dependsOn: [],
       issueId: capability?.issueId,
+      findingStatus:
+        probe?.status === 'fail'
+          ? 'blocking'
+          : probe?.status === 'warn'
+            ? 'advisory'
+            : probe?.status === 'pass'
+              ? 'informational'
+              : 'unknown',
       issueClass: probe?.issueClass,
       operationalImpact: probe?.operationalImpact,
       repairIntent,
       files,
       ...(operation ? { operation } : {}),
+      ...(capability?.invocation
+        ? {
+            invocation: {
+              cwd: capability.invocation.cwd,
+              executable: capability.invocation.executable,
+              args: [...capability.invocation.args],
+            },
+          }
+        : {}),
       ...(capability?.strategy
         ? { strategy: capability.strategy.map((stage) => structuredClone(stage)) }
         : {}),

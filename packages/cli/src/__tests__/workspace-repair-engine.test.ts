@@ -217,6 +217,120 @@ describe('Workspace Repair Engine', () => {
     expect(planned.target).not.toHaveProperty('projectPath');
   });
 
+  it('isolates one blocking finding family from unrelated Doctor guidance and advisory actions', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const secondProjectPath = path.join(workspacePath, 'web');
+    await fsExtra.ensureDir(secondProjectPath);
+    const envSteps = [
+      { name: 'api', projectPath },
+      { name: 'web', projectPath: secondProjectPath },
+    ].map(({ name, projectPath: targetPath }, index) => {
+      const operation = {
+        type: 'file-copy' as const,
+        sourcePath: path.join(targetPath, '.env.example'),
+        path: path.join(targetPath, '.env'),
+        overwrite: false as const,
+      };
+      return {
+        id: `${name}:env-copy:${index}`,
+        phase: 'local-environment',
+        order: index + 1,
+        dependsOn: [],
+        projectName: name,
+        projectPath: targetPath,
+        originalCommand: buildDoctorInternalRepairCommand(operation),
+        kind: 'env-copy',
+        risk: 'safe',
+        executable: true,
+        issueId: 'surface-env-contract',
+        findingStatus: 'blocking',
+        files: [operation.sourcePath, operation.path],
+        operation,
+        preview: {
+          title: 'Create local environment file',
+          summary: 'Copy .env.example to .env if the target is missing.',
+          changes: ['copy reviewed environment example'],
+        },
+        diffPreview: {
+          available: false,
+          format: 'summary',
+          summary: 'Copy the reviewed example.',
+          hunks: [],
+        },
+        verifyCommand: 'npx workspai doctor project --json',
+        refreshCommands: ['npx workspai doctor project --json'],
+        rollback: { available: true, strategy: 'snapshot' },
+        studioStatus: { state: 'ready', reason: 'Safe typed repair.' },
+        executableInCurrentEnvironment: true,
+      };
+    });
+    envSteps[0].dependsOn = [envSteps[1].id];
+    await fsExtra.writeFile(path.join(projectPath, '.env.example'), 'API_KEY=\n');
+    await fsExtra.writeFile(path.join(secondProjectPath, '.env.example'), 'API_KEY=\n');
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-remediation-plan-last-run.json'),
+      {
+        schemaVersion: 'doctor-remediation-plan-v2',
+        generatedAt: new Date().toISOString(),
+        policyProfile: 'local',
+        fixableProjects: 2,
+        totalSteps: 4,
+        executableSteps: 3,
+        risk: { safe: 2, guarded: 1, invasive: 1 },
+        steps: [
+          ...envSteps,
+          {
+            ...envSteps[0],
+            id: 'api:security-guidance',
+            order: 3,
+            phase: 'manual-review',
+            kind: 'shell',
+            risk: 'guarded',
+            executable: false,
+            issueId: 'surface-security-hygiene',
+            findingStatus: 'advisory',
+            originalCommand: '',
+            operation: undefined,
+            files: [path.join(projectPath, 'pyproject.toml')],
+            studioStatus: { state: 'review-required', reason: 'Declare pip-audit first.' },
+            executableInCurrentEnvironment: false,
+          },
+          {
+            ...envSteps[0],
+            id: 'api:coverage',
+            order: 4,
+            phase: 'generic-execution',
+            kind: 'shell',
+            risk: 'invasive',
+            issueId: 'test-coverage-evidence',
+            findingStatus: 'advisory',
+            originalCommand: 'npx workspai project coverage --run --json',
+            operation: undefined,
+            files: ['.workspai/reports/project-test-coverage-last-run.json'],
+          },
+        ],
+      },
+      { spaces: 2 }
+    );
+
+    const planned = await planWorkspaceRepair({ workspacePath, cardId: 'doctor' });
+
+    expect(planned.state).toBe('awaiting-approval');
+    expect(planned.target.actionIds).toEqual(['doctor.api:env-copy:0', 'doctor.web:env-copy:1']);
+    expect(planned.decision).toBeUndefined();
+    expect(planned.preconditions).toContainEqual(
+      expect.objectContaining({ id: 'structured-execution', status: 'passed' })
+    );
+
+    const exact = await planWorkspaceRepair({
+      workspacePath,
+      cardId: 'doctor',
+      actionId: 'doctor.api:env-copy:0',
+    });
+    expect(exact.target.actionIds).toEqual(['doctor.api:env-copy:0', 'doctor.web:env-copy:1']);
+    expect(exact.state).toBe('awaiting-approval');
+  });
+
   it('automatically restores the bounded checkpoint when canonical verification fails', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     await writeFileRepairEvidence({ workspacePath, projectPath, fileName: '.env.example' });

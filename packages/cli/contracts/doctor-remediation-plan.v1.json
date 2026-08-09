@@ -219,7 +219,15 @@
       "allOf": [
         {
           "if": { "properties": { "kind": { "const": "dependency-security" } } },
-          "then": { "properties": { "completion": { "type": "object", "properties": { "auditClean": { "const": true } }, "required": ["auditClean"] } } }
+          "then": {
+            "properties": {
+              "completion": {
+                "type": "object",
+                "properties": { "auditClean": { "const": true } },
+                "required": ["auditClean"]
+              }
+            }
+          }
         },
         {
           "if": { "properties": { "kind": { "const": "dependency-materialization" } } },
@@ -228,7 +236,11 @@
             "properties": {
               "sourceMutationRequired": { "const": false },
               "observableState": { "const": "runtime-dependency-tree" },
-              "completion": { "type": "object", "properties": { "installedTreePresent": { "const": true } }, "required": ["installedTreePresent"] }
+              "completion": {
+                "type": "object",
+                "properties": { "installedTreePresent": { "const": true } },
+                "required": ["installedTreePresent"]
+              }
             }
           }
         }
@@ -461,6 +473,7 @@
         "kind",
         "risk",
         "executable",
+        "findingStatus",
         "files",
         "preview",
         "diffPreview",
@@ -531,6 +544,9 @@
         "issueId": {
           "type": "string"
         },
+        "findingStatus": {
+          "enum": ["blocking", "advisory", "informational", "unknown"]
+        },
         "issueClass": {
           "enum": [
             "dependency",
@@ -571,6 +587,9 @@
         },
         "operation": {
           "$ref": "#/$defs/repairOperation"
+        },
+        "invocation": {
+          "$ref": "#/$defs/commandInvocation"
         },
         "strategy": {
           "type": "array",

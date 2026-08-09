@@ -399,6 +399,9 @@ function causalActionFingerprint(actions: ArtifactRemediationAction[]): string {
           projectName: action.projectName,
           projectPath: action.projectPath,
           sourceStepId: action.sourceStepId,
+          findingId: action.findingId,
+          findingStatus: action.findingStatus,
+          causalKey: action.causalKey,
           dependsOn: action.dependsOn,
           strategy: action.strategy,
           transaction: action.transaction,
@@ -2067,6 +2070,15 @@ function syntheticProposalAction(input: {
     id: `proposal:${input.proposal.cardId}:${projectPath}`,
     artifactKind: 'workspace-repair-proposal',
     cardId: input.proposal.cardId,
+    findingId: input.proposal.targetActionIds?.[0] ?? input.proposal.blockerSignature ?? 'proposal',
+    findingStatus: 'blocking',
+    causalKey: [
+      input.proposal.cardId,
+      input.proposal.projectName ?? projectPath,
+      input.proposal.targetActionIds?.[0] ?? input.proposal.blockerSignature ?? 'proposal',
+    ]
+      .map((value) => value.trim().toLowerCase())
+      .join(':'),
     title: 'Validate model-proposed repair',
     order: 1,
     phase: 'source-repair',
@@ -2262,16 +2274,61 @@ export async function planWorkspaceRepair(
     includeAbsolutePaths: false,
     ciMode: true,
   });
-  const candidates = sourcePlan.actions
+  const candidatePool = sourcePlan.actions
     .filter((action) => action.cardId === input.cardId)
-    .filter((action) => !input.actionId || action.id === input.actionId)
     .filter((action) => !input.projectName || action.projectName === input.projectName)
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
-  const blockingCandidates = candidates.filter((action) =>
-    action.notes.includes('Doctor finding status: blocking')
+  const candidates = input.actionId
+    ? candidatePool.filter((action) => action.id === input.actionId)
+    : candidatePool;
+  const dependencyPool = sourcePlan.actions
+    .filter(
+      (action) =>
+        !input.projectName || !action.projectName || action.projectName === input.projectName
+    )
+    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+  const byId = new Map(dependencyPool.map((action) => [action.id, action]));
+  const withDependencies = (selected: typeof candidates): typeof candidates => {
+    const selectedIds = new Set(selected.map((action) => action.id));
+    const pending = [...selected];
+    while (pending.length > 0) {
+      const action = pending.pop();
+      for (const dependencyId of action?.dependsOn ?? []) {
+        const dependency = byId.get(dependencyId);
+        if (!dependency || selectedIds.has(dependency.id)) continue;
+        selectedIds.add(dependency.id);
+        pending.push(dependency);
+      }
+    }
+    return dependencyPool.filter((action) => selectedIds.has(action.id));
+  };
+  const blockingCandidates = candidates.filter(
+    (action) =>
+      action.findingStatus === 'blocking' ||
+      action.notes.includes('Doctor finding status: blocking')
   );
-  const actions =
-    !input.actionId && blockingCandidates.length > 0 ? blockingCandidates : candidates;
+  const eligibleCandidates =
+    blockingCandidates.length > 0
+      ? blockingCandidates
+      : candidates.filter(
+          (action) =>
+            action.findingStatus !== 'advisory' && action.findingStatus !== 'informational'
+        );
+  const explicitlySelected = input.actionId
+    ? candidates.filter((action) => action.id === input.actionId)
+    : [];
+  const firstCausalCandidate = eligibleCandidates[0];
+  const causalSelection = firstCausalCandidate
+    ? eligibleCandidates.filter(
+        (action) =>
+          action.cardId === firstCausalCandidate.cardId &&
+          action.findingId === firstCausalCandidate.findingId
+      )
+    : [];
+  // One immutable transaction owns one causal finding family. Independent
+  // blockers are repaired and verified sequentially so a review-only or
+  // unsupported action cannot prevent a safe action from closing first.
+  const actions = withDependencies(input.actionId ? explicitlySelected : causalSelection);
   const maxRisk = input.maxRisk ?? 'guarded';
   const policy: WorkspaceRepairTransaction['policy'] = {
     maxRisk,
