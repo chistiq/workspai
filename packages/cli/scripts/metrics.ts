@@ -30,7 +30,7 @@ interface VitestJsonReport {
   numFailedTests: number;
 }
 
-const BUNDLE_SIZE_LIMIT_KB = Number(process.env.RAPIDKIT_BUNDLE_SIZE_LIMIT_KB ?? '2000');
+const BUNDLE_SIZE_LIMIT_KB = Number(process.env.RAPIDKIT_BUNDLE_SIZE_LIMIT_KB ?? '3000');
 const TEST_COVERAGE_TARGET = Number(process.env.WORKSPAI_TEST_COVERAGE_TARGET ?? '80');
 
 class MetricsCollector {

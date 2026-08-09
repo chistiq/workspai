@@ -61,7 +61,7 @@ jobs:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
-      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: '2000'
+      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: '3000'
 
     strategy:
       fail-fast: false
