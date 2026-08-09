@@ -17,6 +17,8 @@ type RemediationStep = {
   kind: string;
   originalCommand: string;
   projectName: string;
+  diagnosisFindingId?: string;
+  causalKey?: string;
   operation?: {
     type: string;
     path?: string;
@@ -36,6 +38,18 @@ type RemediationStep = {
 };
 
 type DoctorPlanPayload = {
+  project?: {
+    diagnosis?: {
+      schemaVersion: string;
+      project: { runtimeFamily: string };
+      coverage: {
+        totalObservations: number;
+        blockingFindings: number;
+        unknownFindings: number;
+      };
+      findings: Array<{ proofs: unknown[]; causalKey: string }>;
+    };
+  };
   remediationPlan: {
     schemaVersion: string;
     policyProfile: string;
@@ -412,12 +426,31 @@ describe('doctor remediation canary matrix', () => {
         `${canary.name} should not duplicate dependency baseline`
       ).toHaveLength(1);
       expect(dependencyStep?.originalCommand).toContain(canary.expectedDependencyCommand);
+      expect(dependencyStep?.diagnosisFindingId).toEqual(expect.any(String));
+      expect(dependencyStep?.causalKey).toEqual(expect.any(String));
       expect(commandStep, `${canary.name} command-contract step`).toBeDefined();
       expect(commandStep?.operation?.type).toBe(canary.expectedCommandOperation);
+      expect(commandStep?.diagnosisFindingId).toEqual(expect.any(String));
+      expect(commandStep?.causalKey).toEqual(expect.any(String));
       expect(commandStep?.diffPreview.available).toBe(true);
       expect(commandStep?.diffPreview.hunks.length).toBeGreaterThan(0);
       expect(dependencyStep?.order).toBeLessThan(commandStep?.order ?? Number.MAX_SAFE_INTEGER);
       expect(commandStep?.dependsOn).toContain(dependencyStep?.id);
+      expect(payload.project?.diagnosis).toMatchObject({
+        schemaVersion: 'workspai.doctor-diagnosis.v1',
+        project: { runtimeFamily: canary.projectJson.runtime },
+        coverage: {
+          totalObservations: expect.any(Number),
+          blockingFindings: expect.any(Number),
+          unknownFindings: expect.any(Number),
+        },
+      });
+      expect(
+        payload.project?.diagnosis?.findings.every((finding) => finding.proofs.length > 0)
+      ).toBe(true);
+      expect(
+        payload.project?.diagnosis?.findings.every((finding) => finding.causalKey.length > 0)
+      ).toBe(true);
     });
   }
 

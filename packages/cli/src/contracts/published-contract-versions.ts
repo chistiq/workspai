@@ -15,6 +15,12 @@ import { AGENT_CUSTOMIZATION_PACK_SCHEMA_VERSION } from './agent-customization-p
 import { WORKSPACE_DEPENDENCY_GRAPH_SCHEMA_VERSION } from './workspace-dependency-graph-contract.js';
 import { WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION } from './workspace-knowledge-graph-contract.js';
 import { DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION } from './doctor-graph-diagnosis-contract.js';
+import { DOCTOR_DIAGNOSIS_SCHEMA_VERSION } from './doctor-diagnosis-contract.js';
+import { DOCTOR_SUMMARY_SCHEMA_VERSION } from './doctor-summary-contract.js';
+import {
+  DOCTOR_CAPABILITIES_SCHEMA_VERSION,
+  DOCTOR_VALIDATION_SCHEMA_VERSION,
+} from './doctor-capabilities-contract.js';
 import { WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION } from './workspace-knowledge-graph-change-overlay-contract.js';
 import { WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION } from './workspace-intelligence-architecture-contract.js';
 import { WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION } from './workspace-intelligence-chain-contract.js';
@@ -84,6 +90,11 @@ export function getPublishedContractVersions() {
     doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
     doctorWorkspaceEvidence: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
     doctorGraphDiagnosis: DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION,
+    doctorDiagnosis: DOCTOR_DIAGNOSIS_SCHEMA_VERSION,
+    doctorCapabilities: DOCTOR_CAPABILITIES_SCHEMA_VERSION,
+    doctorValidation: DOCTOR_VALIDATION_SCHEMA_VERSION,
+    doctorReceipt: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorReceipt.schemaVersion,
+    doctorSummary: DOCTOR_SUMMARY_SCHEMA_VERSION,
     projectTestCoverage:
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectTestCoverage.schemaVersion,
     verifiedGoal: 'workspai.verified-goal.v1',
@@ -180,6 +191,11 @@ export function getPublishedContractCatalog() {
     doctorProjectEvidence: 'contracts/doctor-project-evidence.v1.json',
     doctorWorkspaceEvidence: 'contracts/doctor-workspace-evidence.v1.json',
     doctorGraphDiagnosis: 'contracts/workspace-intelligence/doctor-graph-diagnosis.v1.json',
+    doctorDiagnosis: 'contracts/workspace-intelligence/doctor-diagnosis.v1.json',
+    doctorCapabilities: 'contracts/workspace-intelligence/doctor-capabilities.v1.json',
+    doctorValidation: 'contracts/workspace-intelligence/doctor-validation.v1.json',
+    doctorReceipt: 'contracts/workspace-intelligence/doctor-receipt.v1.json',
+    doctorSummary: 'contracts/workspace-intelligence/doctor-summary.v1.json',
     projectTestCoverage: 'contracts/project-test-coverage.v1.json',
     verifiedGoal: 'contracts/workspace-intelligence/verified-goal.v1.json',
     verifiedGoalStatus: 'contracts/workspace-intelligence/verified-goal-status.v1.json',

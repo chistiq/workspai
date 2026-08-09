@@ -59,6 +59,49 @@ Checks:
 
 > Compatibility note: `npx workspai doctor --project` also works.
 
+### 4) Capability truth and validation
+
+```bash
+# Complete runtime/domain matrix
+npx workspai doctor capabilities --json
+
+# Ask what Doctor can prove for one runtime or framework
+npx workspai doctor capabilities --runtime node --json
+npx workspai doctor capabilities --framework "Spring Boot" --json
+
+# Exercise every registered adapter against the versioned disease corpus
+npx workspai doctor capabilities --validate --json
+
+# Persist both governed artifacts in a workspace
+npx workspai doctor capabilities --validate --write --workspace . --json
+```
+
+Runtime and framework filters narrow only the command response. With `--write`, Doctor persists the
+complete capability registry, never a filtered subset, so downstream consumers cannot mistake a
+query result for canonical capability truth. Conflicting runtime/framework ownership fails closed
+to the unknown adapter and records the conflict as an explicit limitation.
+
+The capability matrix never turns absence into success. Each adapter declares all six diagnostic
+domains as `native`, `portable`, `observable`, or `unsupported`, plus its limitations, platforms,
+repair modes, runtime aliases, and framework ownership. An unknown runtime resolves to the
+fail-closed fallback adapter: unsupported or unobserved evidence stays unknown and cannot produce a
+healthy security claim.
+
+`--validate` runs the same versioned disease classes through every registered runtime adapter. Its
+precision and recall describe that deterministic synthetic corpus only. Real tool execution,
+runtime-native fixtures, and Linux/macOS/Windows acceptance remain separate gates; the report says
+so explicitly instead of presenting synthetic coverage as production accuracy.
+
+With `--write`, consumers can read:
+
+- `.workspai/reports/doctor-capabilities.json`
+- `.workspai/reports/doctor-validation-last-run.json`
+
+Contracts:
+
+- `contracts/workspace-intelligence/doctor-capabilities.v1.json`
+- `contracts/workspace-intelligence/doctor-validation.v1.json`
+
 ## Typical Usage
 
 ```bash
@@ -74,6 +117,9 @@ npx workspai doctor project
 # Machine-readable output
 npx workspai doctor workspace --json
 
+# Compact agent/CI projection; full evidence is still written
+npx workspai doctor workspace --fresh --json=summary
+
 # Attempt safe fixes (interactive)
 npx workspai doctor workspace --fix
 
@@ -86,6 +132,18 @@ npx workspai doctor project --json
 # Release-grade policy profile
 npx workspai doctor workspace --profile enterprise-strict --json
 ```
+
+`--json` remains the complete backward-compatible payload. `--json=summary` returns a bounded
+projection with the verdict, affected projects, explicit count categories, freshness, and artifact
+locations. It never replaces or weakens the full Doctor evidence. `--fresh` bypasses the project
+scan cache; the default cache also expires after five minutes (configurable with
+`WORKSPAI_DOCTOR_CACHE_MAX_AGE_SECONDS`) so live security state cannot be reused indefinitely.
+
+Every project or workspace run also writes
+`.workspai/reports/doctor-receipt-last-run.json`. The receipt is a small governed handoff for IDEs,
+CI, and agents: it distinguishes blocking causes, advisory findings, unknowns, dependency advisory
+subjects, vulnerability findings, not-applicable checks, and the next safe action. The complete
+probe and diagnosis evidence remains in `doctor-last-run.json` or `doctor-project-last-run.json`.
 
 ## One verdict, backed by every probe
 
@@ -101,6 +159,72 @@ evidence includes the host/project score components and per-project probe
 summary; semantic validation rejects contradictory artifacts before they are
 written. Older v1 evidence remains readable so existing workspaces and IDEs do
 not break during migration.
+
+## Universal diagnosis core
+
+Doctor normalizes every runtime-specific observation through one internal diagnosis boundary
+before CLI, Studio, CI, or an agent consumes it. This boundary is intentionally kept inside the
+CLI until its contracts stabilize; it does not depend on Commander, terminal rendering, or the
+VS Code extension.
+
+Project and workspace evidence publish the result under `project.diagnosis`:
+
+- a stable causal key and typed finding status for every non-passing observation;
+- confidence and diagnosis state (`confirmed`, `candidate`, or `unknown`) rather than fabricated
+  certainty;
+- proof bindings for the originating probe, affected dependency, structured command, and repair
+  targets;
+- repair disposition (`automatic`, `approval-required`, `manual`, or `unavailable`);
+- causal groups that let Repair close one disease family without mixing unrelated guidance;
+- explicit unknowns and contradictions when providers disagree or evidence is stale;
+- diagnosis completeness and repair-coverage counts that cannot silently score empty/unsupported
+  evidence as healthy.
+
+Completeness is measured across six canonical diagnostic domains—runtime, dependency, security,
+configuration, test, and quality. Every domain is explicitly `clean`, `findings`,
+`not-applicable`, `not-run`, or `stale`. An explicit `not-applicable` observation is retained as
+evidence but does not become a warning or inflate passing counts. A provider that did not run, or
+evidence that is no longer fresh, increases unknowns and prevents a 100% completeness claim.
+Readiness and Workspace Verify consume this canonical diagnosis instead of independently
+recounting legacy issue strings.
+
+The same diagnosis contract is used for Node, Python, Go, JVM, Rust, .NET, PHP, Ruby, Elixir,
+Clojure, Deno, Bun, Scala, Kotlin, C, C++, and unknown/custom projects. Runtime adapters gather
+different evidence; the diagnosis, causality, safety, and verification vocabulary stays the same.
+Composite projects publish every detected family under `project.runtimeFamilies`; Doctor keeps a
+primary runtime for compatibility and explicitly warns when secondary runtimes need their own
+project boundary or custom adapter instead of silently claiming full coverage. Every unevaluated
+secondary runtime is also published as a diagnosis unknown and proportionally lowers diagnosis
+completeness; a primary-only polyglot scan can never report 100%.
+
+Workspace project boundaries come from the canonical workspace contract/registry when available.
+A nested solution, test project, or manifest inside a registered project is treated as evidence for
+that project—not silently promoted into another workspace project. Unregistered monorepos remain
+discoverable, while an explicitly registered nested project remains an independent boundary.
+
+Contract: `contracts/workspace-intelligence/doctor-diagnosis.v1.json`.
+
+The internal ownership boundaries are deliberately narrow:
+
+| Boundary            | Owns                                                                            | Must not own                                    |
+| ------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Runtime sensors     | Observable runtime, manifest, tool, source, and audit facts                     | Verdicts or speculative causality               |
+| Universal diagnosis | Causal reconciliation, confidence, proof binding, unknowns, and contradictions  | File mutation or terminal/UI rendering          |
+| Doctor policy       | Blocking/advisory projection, health score, and profile-specific gate semantics | Re-running sensors or inventing repairs         |
+| Remediation planner | Typed operations bound to `diagnosisFindingId` and `causalKey`                  | Reclassifying the disease                       |
+| Repair engine       | Approval, checkpoint, execution, validation, canonical verify, and rollback     | Silently weakening Doctor policy                |
+| Consumers           | Rendering and user/model interaction                                            | Recomputing or overriding diagnosis and verdict |
+
+This keeps Doctor internal today without turning `doctor.ts` into a public dependency boundary. A
+future package extraction can move the diagnosis contract and engine without changing the evidence
+or remediation protocol consumed by the CLI, Studio, CI, and agents.
+
+The extraction seam is enforced in source and tests. `adapter-contract.ts`,
+`capability-registry.ts`, `diagnosis-engine.ts`, and `validation-corpus.ts` are pure core modules:
+they cannot import Commander, terminal styling, workspace discovery, or extension/UI code.
+`capabilities-command.ts` is the CLI adapter that owns workspace resolution, artifact persistence,
+and human rendering. A future `@workspai/doctor` package can therefore take the pure core without
+moving command UX or creating a second source of truth.
 
 ## Graph-aware diagnosis
 
@@ -127,6 +251,12 @@ package.
 This data is available under `project.graphDiagnosis` in project and workspace
 Doctor JSON evidence. Doctor rejects stale, invalid, or model-unbound graph
 evidence instead of presenting it as current.
+
+Graph enrichment is deliberately bounded per finding and restricted to the selected project's
+graph neighborhood. Doctor publishes a small set of affected candidates, verification targets,
+source artifacts, and shortest proof paths; consumers can query the canonical graph for deeper
+exploration. This prevents unrelated projects and repeated graph payloads from consuming an
+agent's context budget.
 
 Graph reachability is deliberately described as a **structural impact
 candidate**, not runtime causality. It narrows investigation and gives Studio a
@@ -291,12 +421,12 @@ The remediation plan is intentionally ordered for Studio execution:
 | Phase                 | Purpose                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------- |
 | `dependency-baseline` | Restore package/runtime dependency baselines before other fixes                       |
-| `local-environment`   | Seed local env files without overwriting operator-owned values                        |
+| `local-environment`   | Repair declared configuration contracts without inventing local secrets               |
 | `source-hygiene`      | Apply safe project-scoped hygiene files such as `.dockerignore` or `.gitignore` rules |
 | `command-contract`    | Add missing test, quality, audit, or runtime command contracts                        |
 | `runtime-governance`  | Run RapidKit/workspace initializers that may touch multiple project surfaces          |
 | `manual-review`       | Surface guidance that requires a human decision                                       |
-| `generic-execution`   | Last-resort shell remediation when no typed operation exists                          |
+| `generic-execution`   | Review-only legacy guidance when no typed operation or invocation exists              |
 
 `dependsOn` lets Workspai avoid false loops: for example, a missing test script repair can depend on
 the project dependency baseline step, so Studio can run or ask for approval in the same order Doctor
@@ -371,9 +501,11 @@ safe `file-create` operation, and a `.gitignore` missing env-file rules can prod
 `file-append` operation. Workspai can render those operations as reviewable file edits before the
 operator approves the fix.
 
-Local environment seeding is also typed. When `.env.example` exists and `.env` is missing, Doctor
-emits a safe `file-copy` operation instead of an opaque shell copy command. The target is never
-overwritten.
+`.env.example`, a config schema, or environment documentation is the portable configuration
+contract. Doctor does **not** create `.env` implicitly: that file can contain operator-owned secrets
+and its absence is not a health defect when a portable contract exists. A product-specific typed
+operation may still create a non-secret local file when its own contract explicitly requires it and
+the user approves the change.
 
 For Node projects without a security audit script, Doctor can emit a guarded
 `package-json-script` operation for `scripts.audit="npm audit --audit-level=moderate"`, giving CI,
@@ -418,6 +550,16 @@ CI, and agents can reason about consistently across frontend and backend stacks:
 These probes are intentionally evidence-first. Missing optional surfaces are surfaced as warnings
 or manual repair capabilities, while deterministic repairs are promoted into `--fix` only when the
 change is safe enough for Doctor to apply with approval and post-fix verification.
+
+Workspace scans are bounded and cache-safe. Doctor fingerprints manifests plus relevant source,
+test, and module trees, includes content hashes for small files, writes cache artifacts atomically,
+and limits project concurrency (four workers by default; configurable with
+`RAPIDKIT_DOCTOR_SCAN_CONCURRENCY`). Dependency trees and build outputs are represented by bounded
+materialization sensors rather than recursively traversed. Repair/plan/apply always bypass scan
+cache, and Java warm-up uses workspace-local Maven/Gradle cache paths so its postcondition is both
+portable and observable. Dependency-audit cache keys hash the complete governed manifest/lockfile
+inputs and use a bounded in-memory cache, so same-size lockfile changes cannot reuse stale security
+evidence.
 
 Runtime-native probes add a second layer on top of the generic surface checks:
 
@@ -581,7 +723,7 @@ These fields are designed for release gates and extension timeline cards that mu
 
 ## Workspace JSON fields (AI/automation)
 
-`npx workspai doctor workspace --json` includes per-project metadata: `framework`, `frameworkKey`, `importStack`, `runtimeFamily`, `projectKind`, `supportTier`, `frameworkConfidence`, `probes`, and `repairCapabilities`.
+`npx workspai doctor workspace --json` includes per-project metadata: `framework`, `frameworkKey`, `importStack`, `runtimeFamily`, `runtimeFamilies`, `projectKind`, `supportTier`, `frameworkConfidence`, `probes`, and `repairCapabilities`. Passing probes never retain an executable repair capability; only non-passing evidence can enter remediation planning.
 
 ## Project scope behavior
 
@@ -600,7 +742,16 @@ These fields are designed for release gates and extension timeline cards that mu
 - Project evidence: `doctor-project-evidence-v1`
 - Workspace scan cache: `doctor-workspace-cache-v2`
 
-Legacy evidence without `schemaVersion` is still accepted. Unknown versions are treated as invalid evidence. `readiness` and `workspace share` share the same validation path.
+Recognizable legacy evidence without `schemaVersion` remains readable only when it exposes an
+actual workspace/project Doctor shape. Arbitrary JSON objects, unknown versions, contradictory
+score accounting, malformed typed repairs, and semantically invalid canonical diagnosis are
+treated as missing or invalid evidence. Readiness and Workspace Verify enforce the same fail-closed
+semantic boundary.
+
+Typed file repairs resolve existing ancestors through the filesystem before mutation. A lexical
+path under the project is rejected if a symbolic link escapes the governed project/workspace
+boundary. The checkpointed `package-json-script` target is the exact file that is edited; JSON
+pointer prototype segments and hidden multiline env/append values are rejected before execution.
 
 ## Related Workspace Commands
 

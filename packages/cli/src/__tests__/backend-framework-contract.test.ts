@@ -312,6 +312,39 @@ describe('backend-framework-contract', () => {
     });
   });
 
+  it('prefers specific compatible runtimes over their host runtime markers', async () => {
+    const bun = await createTempProject('bun-with-package');
+    await fs.writeFile(path.join(bun, 'package.json'), '{"name":"bun-app"}');
+    await fs.writeFile(path.join(bun, 'bun.lock'), 'lockfileVersion = 1');
+    expect(detectBackendFrameworkFromProject(bun)).toMatchObject({
+      key: 'bun',
+      runtime: 'bun',
+    });
+
+    const kotlin = await createTempProject('kotlin-with-gradle');
+    await fs.ensureDir(path.join(kotlin, 'src', 'main', 'kotlin'));
+    await fs.writeFile(
+      path.join(kotlin, 'build.gradle.kts'),
+      'plugins { kotlin("jvm") version "2.0.21" }'
+    );
+    await fs.writeFile(path.join(kotlin, 'src', 'main', 'kotlin', 'Main.kt'), 'fun main() {}');
+    expect(detectBackendFrameworkFromProject(kotlin)).toMatchObject({
+      key: 'kotlin',
+      runtime: 'kotlin',
+    });
+  });
+
+  it('does not classify a pure C build contract as C++', async () => {
+    const c = await createTempProject('pure-c');
+    await fs.ensureDir(path.join(c, 'src'));
+    await fs.writeFile(path.join(c, 'CMakeLists.txt'), 'project(native_api C)');
+    await fs.writeFile(path.join(c, 'src', 'main.c'), 'int main(void) { return 0; }');
+    expect(detectBackendFrameworkFromProject(c)).toMatchObject({
+      key: 'c',
+      runtime: 'c',
+    });
+  });
+
   it('prefers explicit project metadata over conflicting on-disk signals', async () => {
     const project = await createTempProject('hint-priority');
     await fs.writeFile(path.join(project, 'package.json'), '{"dependencies":{"express":"*"}}');

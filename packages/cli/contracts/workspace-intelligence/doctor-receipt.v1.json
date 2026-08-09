@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/doctor-receipt.v1.json",
+  "title": "Workspai Doctor Receipt",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "scope",
+    "verdict",
+    "counts",
+    "freshness",
+    "affectedProjects",
+    "blockers",
+    "next",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.doctor-receipt.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "scope": {
+      "type": "object",
+      "required": ["kind", "root", "name"],
+      "properties": {
+        "kind": { "enum": ["workspace", "project"] },
+        "root": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "workspacePath": { "type": ["string", "null"] },
+        "projectPath": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "verdict": { "enum": ["passed", "attention", "blocked"] },
+    "counts": { "$ref": "#/$defs/counts" },
+    "freshness": { "$ref": "#/$defs/freshness" },
+    "affectedProjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "runtimeFamily", "verdict", "blockingCauses", "advisoryFindings", "unknownFindings"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "runtimeFamily": { "type": "string" },
+          "framework": { "type": "string" },
+          "verdict": { "enum": ["passed", "attention", "blocked"] },
+          "blockingCauses": { "type": "integer", "minimum": 0 },
+          "advisoryFindings": { "type": "integer", "minimum": 0 },
+          "unknownFindings": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "projectName", "projectPath", "issueClass", "symptom", "repairDisposition"],
+        "properties": {
+          "id": { "type": "string" },
+          "projectName": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "issueClass": { "type": "string" },
+          "symptom": { "type": "string" },
+          "repairDisposition": { "enum": ["automatic", "approval-required", "manual", "unavailable", "not-needed"] },
+          "capabilityId": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "next": {
+      "type": "object",
+      "required": ["action", "reason", "commands"],
+      "properties": {
+        "action": { "enum": ["repair", "review", "refresh", "verify", "none"] },
+        "reason": { "type": "string" },
+        "commands": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["evidence", "receipt"],
+      "properties": {
+        "evidence": { "type": ["string", "null"] },
+        "receipt": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "required": [
+        "projectsScanned", "affectedProjects", "projectsBlocked", "projectsNeedingAttention",
+        "blockingCauses", "advisoryFindings", "unknownFindings", "contradictionFindings",
+        "repairableFindings", "manualFindings", "unsupportedFindings",
+        "dependencyAdvisorySubjects", "dependencyVulnerabilityFindings",
+        "notApplicableChecks", "systemErrors"
+      ],
+      "properties": {
+        "projectsScanned": { "type": "integer", "minimum": 0 },
+        "affectedProjects": { "type": "integer", "minimum": 0 },
+        "projectsBlocked": { "type": "integer", "minimum": 0 },
+        "projectsNeedingAttention": { "type": "integer", "minimum": 0 },
+        "blockingCauses": { "type": "integer", "minimum": 0 },
+        "advisoryFindings": { "type": "integer", "minimum": 0 },
+        "unknownFindings": { "type": "integer", "minimum": 0 },
+        "contradictionFindings": { "type": "integer", "minimum": 0 },
+        "repairableFindings": { "type": "integer", "minimum": 0 },
+        "manualFindings": { "type": "integer", "minimum": 0 },
+        "unsupportedFindings": { "type": "integer", "minimum": 0 },
+        "dependencyAdvisorySubjects": { "type": "integer", "minimum": 0 },
+        "dependencyVulnerabilityFindings": { "type": "integer", "minimum": 0 },
+        "notApplicableChecks": { "type": "integer", "minimum": 0 },
+        "systemErrors": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "freshness": {
+      "type": "object",
+      "required": ["generatedAt", "status", "staleProbeCount", "unknownProbeCount", "liveStateProbeCount", "verifyBeforeUseProbeCount"],
+      "properties": {
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "status": { "enum": ["fresh", "stale", "unknown"] },
+        "staleProbeCount": { "type": "integer", "minimum": 0 },
+        "unknownProbeCount": { "type": "integer", "minimum": 0 },
+        "liveStateProbeCount": { "type": "integer", "minimum": 0 },
+        "verifyBeforeUseProbeCount": { "type": "integer", "minimum": 0 },
+        "oldestProbeGeneratedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -49,6 +49,11 @@ import {
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { collectGitWorkingTreeObservation } from './workspace-git-observation.js';
+import { assessCanonicalDoctorEvidence } from './utils/doctor-diagnosis-consumer.js';
+import {
+  assertDoctorEvidenceSemanticInvariants,
+  isDoctorEvidencePayloadCompatible,
+} from './utils/doctor-evidence-contract.js';
 
 export const WORKSPACE_VERIFY_SCHEMA_VERSION = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.verify;
 export const WORKSPACE_VERIFY_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.verify;
@@ -299,17 +304,42 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function evaluateDoctorEvidence(payload: Record<string, unknown>): EvidenceEvaluation {
-  const healthScore = asRecord(payload.healthScore);
-  const summary = asRecord(payload.summary);
-  const errors = typeof healthScore?.errors === 'number' ? healthScore.errors : 0;
-  const percent = typeof healthScore?.percent === 'number' ? healthScore.percent : undefined;
-  if (errors > 0 || summary?.hasSystemErrors === true) {
-    return { status: 'fail', message: `Doctor evidence reports ${errors} error(s).` };
+  if (!isDoctorEvidencePayloadCompatible(payload, 'workspace')) {
+    return { status: 'fail', message: 'Doctor evidence contract is missing or unsupported.' };
   }
-  if (typeof percent === 'number' && percent < 70) {
-    return { status: 'warn', message: `Doctor health score is ${percent}%.` };
+  try {
+    assertDoctorEvidenceSemanticInvariants(payload);
+  } catch (error) {
+    return {
+      status: 'fail',
+      message: `Doctor evidence semantic validation failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
-  return { status: 'pass', message: 'Doctor evidence is present and healthy.' };
+  const assessment = assessCanonicalDoctorEvidence(payload);
+  if (assessment.hasSystemErrors || assessment.blockingFindings > 0) {
+    return {
+      status: 'fail',
+      message: `Doctor evidence reports ${assessment.blockingFindings} canonical blocking finding(s).`,
+    };
+  }
+
+  const trustWarnings =
+    assessment.advisoryFindings +
+    assessment.unknownFindings +
+    assessment.contradictionCount +
+    assessment.missingDiagnosisProjects;
+  if (
+    trustWarnings > 0 ||
+    assessment.staleEvidence ||
+    assessment.unknownFreshness ||
+    assessment.minimumDiagnosisCompleteness < 100
+  ) {
+    return {
+      status: 'warn',
+      message: `Doctor evidence needs attention (${assessment.advisoryFindings} advisory, ${assessment.unknownFindings} unknown, ${assessment.contradictionCount} contradictory; ${assessment.minimumDiagnosisCompleteness}% complete).`,
+    };
+  }
+  return { status: 'pass', message: 'Canonical Doctor evidence is complete, fresh, and healthy.' };
 }
 
 function evaluateReadinessEvidence(payload: Record<string, unknown>): EvidenceEvaluation {

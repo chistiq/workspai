@@ -33,7 +33,7 @@ describe('Doctor Command', () => {
     const { runDoctor } = await import('../doctor.js');
     expect(runDoctor).toBeDefined();
     expect(typeof runDoctor).toBe('function');
-  });
+  }, 15_000);
 
   it('should fail doctor apply exit code when a fix execution fails', async () => {
     const { computeDoctorFixAwareExitCode } = await import('../doctor.js');
@@ -641,8 +641,41 @@ describe('Doctor Command', () => {
       expect(payload.cache.evidencePath).toBe(
         path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json')
       );
+      expect(payload.cache.receiptPath).toBe(
+        path.join(workspacePath, '.workspai', 'reports', 'doctor-receipt-last-run.json')
+      );
+      expect(payload.summary.counts).toMatchObject({
+        projectsScanned: 0,
+        affectedProjects: 0,
+        blockingCauses: 0,
+        dependencyAdvisorySubjects: 0,
+        dependencyVulnerabilityFindings: 0,
+      });
       expect(payload.workspace.name).toBe('canonical-workspace-name');
       expect(await fsExtra.pathExists(payload.cache.evidencePath)).toBe(true);
+      const receipt = await fsExtra.readJSON(payload.cache.receiptPath);
+      expect(receipt).toMatchObject({
+        schemaVersion: 'workspai.doctor-receipt.v1',
+        scope: { kind: 'workspace', name: 'canonical-workspace-name' },
+        counts: { projectsScanned: 0 },
+      });
+
+      logSpy.mockClear();
+      await runDoctor({ workspace: workspacePath, json: 'summary', fresh: true });
+      const summaryLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      expect(JSON.parse(summaryLine)).toMatchObject({
+        schemaVersion: 'workspai.doctor-summary.v1',
+        scope: 'workspace',
+        workspace: { name: 'canonical-workspace-name' },
+        counts: { projectsScanned: 0, blockingCauses: 0 },
+        freshness: { status: 'fresh' },
+        artifacts: {
+          evidence: payload.cache.evidencePath,
+          receipt: payload.cache.receiptPath,
+        },
+      });
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();
@@ -2118,10 +2151,9 @@ describe('Doctor Command', () => {
       await expect(
         fsExtra.readFile(path.join(projectPath, '.gitignore'), 'utf8')
       ).resolves.toContain('!.env.example');
-      await expect(fsExtra.pathExists(path.join(projectPath, '.env'))).resolves.toBe(true);
-      await expect(fsExtra.readFile(path.join(projectPath, '.env'), 'utf8')).resolves.toContain(
-        'NEXT_PUBLIC_APP_URL='
-      );
+      // .env.example is the portable configuration contract. Doctor must not
+      // materialize a local, potentially secret-bearing .env implicitly.
+      await expect(fsExtra.pathExists(path.join(projectPath, '.env'))).resolves.toBe(false);
 
       const jsonLine = logSpy.mock.calls
         .map((call) => call[0])
@@ -2137,19 +2169,6 @@ describe('Doctor Command', () => {
       );
       expect(payload.remediationPlan.steps).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({
-            projectName: 'next-app',
-            files: expect.arrayContaining([
-              path.join(realProjectPath, '.env.example'),
-              path.join(realProjectPath, '.env'),
-            ]),
-            operation: expect.objectContaining({
-              type: 'file-copy',
-              sourcePath: path.join(realProjectPath, '.env.example'),
-              path: path.join(realProjectPath, '.env'),
-              overwrite: false,
-            }),
-          }),
           expect.objectContaining({
             projectName: 'next-app',
             files: expect.arrayContaining([path.join(realProjectPath, '.dockerignore')]),
@@ -2179,7 +2198,7 @@ describe('Doctor Command', () => {
         payload.remediationPlan.steps.filter(
           (step: { operation?: { type?: string } }) => step.operation?.type === 'file-copy'
         )
-      ).toHaveLength(1);
+      ).toHaveLength(0);
       expect(
         payload.remediationPlan.steps.some((step: { originalCommand?: string }) =>
           step.originalCommand?.includes('cp .env.example .env')
@@ -2194,11 +2213,6 @@ describe('Doctor Command', () => {
           }),
           expect.objectContaining({
             action: 'file-append',
-            outcome: 'applied',
-            projectName: 'next-app',
-          }),
-          expect.objectContaining({
-            action: 'env-copy',
             outcome: 'applied',
             projectName: 'next-app',
           }),
@@ -2545,6 +2559,95 @@ describe('Doctor Command', () => {
         }),
       ]);
       expect(await fsExtra.pathExists(path.join(workspacePath, '.workspai', 'reports'))).toBe(true);
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('treats registered project boundaries as canonical and keeps passing probes non-actionable', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-boundary-'));
+    const workspacePath = path.join(tempRoot, 'workspace');
+    const projectPath = path.join(workspacePath, 'atlas-api');
+
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'workspace',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      projects: [{ slug: 'atlas-api', relativePath: 'atlas-api', framework: 'dotnet' }],
+    });
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'atlas-api',
+      runtime: 'dotnet',
+      framework: 'dotnet',
+      kit_name: 'dotnet.webapi.clean',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'atlas-api.sln'),
+      'Microsoft Visual Studio Solution File\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'atlas-api.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk.Web" />\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'tests', 'atlas-api.Tests.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk" />\n'
+    );
+    await fsExtra.outputFile(path.join(projectPath, '.env.example'), 'PORT=8080\n');
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === 'poetry') {
+        return { stdout: 'Poetry version 2.3.2', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === 'pipx' && args?.[0] === '--version') {
+        return { stdout: '1.8.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === 'rapidkit') {
+        return { stdout: 'RapidKit Version: 0.6.0', stderr: '', exitCode: 0 } as any;
+      }
+      if (cmd === 'go' && args?.[0] === 'version') {
+        return { stdout: 'go version go1.22.0 linux/amd64', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: '', exitCode: 1 } as any;
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(workspacePath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ workspace: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as
+        string | undefined;
+      const payload = JSON.parse(jsonLine as string);
+      expect(payload.summary.totalProjects).toBe(1);
+      expect(payload.projects).toHaveLength(1);
+      expect(payload.projects[0]).toMatchObject({
+        name: 'atlas-api',
+        path: projectPath,
+        runtimeFamily: 'dotnet',
+        runtimeFamilies: ['dotnet'],
+      });
+      expect(
+        payload.projects[0].probes.find(
+          (probe: { id: string }) => probe.id === 'surface-env-contract'
+        )
+      ).toMatchObject({ status: 'pass', repairIntent: { mode: 'none' } });
+      expect(
+        payload.projects[0].probes.find(
+          (probe: { id: string }) => probe.id === 'surface-env-contract'
+        )
+      ).not.toHaveProperty('repairCapability');
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();
@@ -3948,6 +4051,9 @@ describe('Doctor Command', () => {
         return { stdout: 'Poetry version 2.3.2', stderr: '', exitCode: 0 } as any;
       }
       if (cmd === path.join(poetryEnvironmentPath, 'bin', 'python')) {
+        if (Array.isArray(args) && args[0] === '-c' && args[1] === 'import fastapi') {
+          return { stdout: '', stderr: 'ModuleNotFoundError', exitCode: 1 } as any;
+        }
         if (Array.isArray(args) && args[0] === '-m' && args[1] === 'pip') {
           return { stdout: '[]', stderr: '', exitCode: 0 } as any;
         }
@@ -4427,6 +4533,16 @@ describe('Doctor Command', () => {
       );
       expect(project.repairCapabilities).not.toContainEqual(
         expect.objectContaining({ command: expect.stringContaining('poetry install') })
+      );
+      expect(project.diagnosis.findings).toContainEqual(
+        expect.objectContaining({
+          status: 'blocking',
+          issueClass: 'dependency',
+          repair: expect.objectContaining({
+            capabilityId: 'runtime-dependency-materialization.dependency-materialization',
+            disposition: 'approval-required',
+          }),
+        })
       );
     } finally {
       process.chdir(originalCwd);

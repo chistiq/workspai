@@ -8,7 +8,10 @@ import {
   isPythonProject,
   readRapidkitProjectJson,
 } from './utils/runtime-detection.js';
-import { isDoctorEvidencePayloadCompatible } from './utils/doctor-evidence-contract.js';
+import {
+  assertDoctorEvidenceSemanticInvariants,
+  isDoctorEvidencePayloadCompatible,
+} from './utils/doctor-evidence-contract.js';
 import { findWorkspaceRootUp, isWorkspaceShellDirectory } from './utils/workspace-root.js';
 import {
   resolveGovernanceRunId,
@@ -24,6 +27,10 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { assertWorkspaceArtifactContract } from './contracts/artifact-contract-registry.js';
+import {
+  assessCanonicalDoctorDependencies,
+  assessCanonicalDoctorEvidence,
+} from './utils/doctor-diagnosis-consumer.js';
 
 export const RELEASE_READINESS_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.readiness;
 
@@ -277,6 +284,7 @@ function loadDoctorPayload(workspacePath: string): {
     if (!isDoctorEvidencePayloadCompatible(payload, 'workspace')) {
       return { payload: null, path: reportPath };
     }
+    assertDoctorEvidenceSemanticInvariants(payload);
 
     return { payload, path: reportPath };
   } catch {
@@ -303,11 +311,9 @@ function buildDoctorGate(workspacePath: string): {
     };
   }
 
-  const summary = toObjectRecord(loaded.payload.summary);
-  const totalIssues = Number(summary.totalIssues ?? 0);
-  const hasSystemErrors = Boolean(summary.hasSystemErrors);
+  const assessment = assessCanonicalDoctorEvidence(loaded.payload);
 
-  if (hasSystemErrors) {
+  if (assessment.hasSystemErrors) {
     return {
       gate: {
         gate: 'doctor',
@@ -320,13 +326,43 @@ function buildDoctorGate(workspacePath: string): {
     };
   }
 
-  if (totalIssues > 0) {
+  if (assessment.blockingFindings > 0) {
+    return {
+      gate: {
+        gate: 'doctor',
+        status: 'fail',
+        summary: `Doctor reported ${assessment.blockingFindings} blocking finding(s)`,
+        details: ['Resolve the canonical Doctor findings and regenerate fresh Doctor evidence.'],
+        evidencePath: loaded.path,
+      },
+      payload: loaded.payload,
+    };
+  }
+
+  const trustWarnings = [
+    ...(assessment.advisoryFindings > 0
+      ? [`${assessment.advisoryFindings} advisory finding(s)`]
+      : []),
+    ...(assessment.unknownFindings > 0 ? [`${assessment.unknownFindings} unknown finding(s)`] : []),
+    ...(assessment.contradictionCount > 0
+      ? [`${assessment.contradictionCount} evidence contradiction(s)`]
+      : []),
+    ...(assessment.missingDiagnosisProjects > 0
+      ? [`${assessment.missingDiagnosisProjects} project(s) without canonical diagnosis`]
+      : []),
+    ...(assessment.staleEvidence ? ['stale Doctor evidence'] : []),
+    ...(assessment.unknownFreshness ? ['unknown Doctor evidence freshness'] : []),
+    ...(assessment.minimumDiagnosisCompleteness < 100
+      ? [`diagnosis completeness ${assessment.minimumDiagnosisCompleteness}%`]
+      : []),
+  ];
+  if (trustWarnings.length > 0) {
     return {
       gate: {
         gate: 'doctor',
         status: 'warn',
-        summary: `Doctor found ${totalIssues} issue(s)`,
-        details: ['Run workspai doctor workspace --fix and re-run readiness checks.'],
+        summary: 'Doctor evidence requires attention',
+        details: trustWarnings,
         evidencePath: loaded.path,
       },
       payload: loaded.payload,
@@ -593,33 +629,55 @@ function buildDependencyGate(
     };
   }
 
-  const projects = Array.isArray(doctorPayload.projects)
-    ? (doctorPayload.projects as Array<Record<string, unknown>>)
-    : [];
+  const assessment = assessCanonicalDoctorDependencies(doctorPayload);
 
-  const vulnerabilities = projects.reduce((sum, project) => {
-    const count = Number(project.vulnerabilities ?? 0);
-    return Number.isFinite(count) ? sum + Math.max(0, count) : sum;
-  }, 0);
-
-  const missingDeps = projects.filter((project) => project.depsInstalled === false).length;
-
-  if (vulnerabilities > 0) {
+  if (assessment.blockingFindings > 0 || assessment.vulnerableDependencies > 0) {
     return {
       gate: 'dependency',
       status: 'fail',
-      summary: `${vulnerabilities} dependency vulnerability(ies) reported`,
-      details: ['Resolve vulnerabilities (npm/pip/go audit pipelines) before release.'],
+      summary: `${Math.max(assessment.blockingFindings, assessment.vulnerableDependencies)} blocking dependency/security vulnerability finding(s) reported`,
+      details: [
+        'Resolve the typed dependency/security findings and regenerate focused audit evidence.',
+      ],
       evidencePath: fallbackEvidence,
     };
   }
 
-  if (missingDeps > 0) {
+  if (assessment.auditFailed > 0) {
+    return {
+      gate: 'dependency',
+      status: 'fail',
+      summary: `${assessment.auditFailed} dependency audit(s) failed`,
+      details: ['Repair the audit runner or dependency environment; failed audits are not clean.'],
+      evidencePath: fallbackEvidence,
+    };
+  }
+
+  if (
+    assessment.missingDependencies > 0 ||
+    assessment.auditUnavailable > 0 ||
+    assessment.unknownFindings > 0 ||
+    assessment.advisoryFindings > 0
+  ) {
+    const details = [
+      ...(assessment.missingDependencies > 0
+        ? [`${assessment.missingDependencies} project(s) have no materialized dependency tree.`]
+        : []),
+      ...(assessment.auditUnavailable > 0
+        ? [`${assessment.auditUnavailable} audit provider(s) are unavailable or unsupported.`]
+        : []),
+      ...(assessment.unknownFindings > 0
+        ? [`${assessment.unknownFindings} dependency/security finding(s) remain unknown.`]
+        : []),
+      ...(assessment.advisoryFindings > 0
+        ? [`${assessment.advisoryFindings} dependency/security advisory finding(s) remain.`]
+        : []),
+    ];
     return {
       gate: 'dependency',
       status: 'warn',
-      summary: `${missingDeps} project(s) report missing dependencies`,
-      details: ['Run project init/bootstrap and regenerate doctor evidence.'],
+      summary: 'Dependency evidence is incomplete or requires attention',
+      details,
       evidencePath: fallbackEvidence,
     };
   }

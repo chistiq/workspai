@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/doctor-validation.v1.json",
+  "title": "Workspai Doctor Validation Report",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "corpusVersion",
+    "capabilityRegistryVersion",
+    "scope",
+    "summary",
+    "cases",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.doctor-validation.v1" },
+    "corpusVersion": { "const": "doctor-disease-corpus-v1" },
+    "capabilityRegistryVersion": { "const": "universal-doctor-capabilities-v1" },
+    "scope": { "const": "synthetic-contract-corpus" },
+    "summary": {
+      "type": "object",
+      "required": [
+        "totalCases",
+        "passedCases",
+        "failedCases",
+        "truePositives",
+        "trueNegatives",
+        "falsePositives",
+        "falseNegatives",
+        "precision",
+        "recall",
+        "domainCoverage",
+        "runtimeAdapterCoverage",
+        "runtimeAdaptersExercised",
+        "declaredPlatforms"
+      ],
+      "properties": {
+        "totalCases": { "type": "integer", "minimum": 1 },
+        "passedCases": { "type": "integer", "minimum": 0 },
+        "failedCases": { "type": "integer", "minimum": 0 },
+        "truePositives": { "type": "integer", "minimum": 0 },
+        "trueNegatives": { "type": "integer", "minimum": 0 },
+        "falsePositives": { "type": "integer", "minimum": 0 },
+        "falseNegatives": { "type": "integer", "minimum": 0 },
+        "precision": { "type": "number", "minimum": 0, "maximum": 1 },
+        "recall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "domainCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "runtimeAdapterCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "runtimeAdaptersExercised": { "type": "integer", "minimum": 1 },
+        "declaredPlatforms": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "passed", "expected", "actual", "failures"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "passed": { "type": "boolean" },
+          "expected": { "$ref": "#/$defs/outcome" },
+          "actual": { "$ref": "#/$defs/actualOutcome" },
+          "failures": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "domain": { "enum": ["runtime", "dependency", "security", "configuration", "test", "quality"] },
+    "outcome": {
+      "type": "object",
+      "required": ["finding"],
+      "properties": {
+        "finding": { "type": "boolean" },
+        "domain": { "$ref": "#/$defs/domain" },
+        "status": { "enum": ["blocking", "advisory"] },
+        "diagnosisState": { "enum": ["confirmed", "candidate", "unknown"] },
+        "repairDisposition": { "enum": ["automatic", "approval-required", "manual", "unavailable"] }
+      },
+      "additionalProperties": false
+    },
+    "actualOutcome": {
+      "type": "object",
+      "required": ["finding"],
+      "properties": {
+        "finding": { "type": "boolean" },
+        "domain": { "$ref": "#/$defs/domain" },
+        "status": { "enum": ["blocking", "advisory"] },
+        "diagnosisState": { "enum": ["confirmed", "candidate", "unknown"] },
+        "repairDisposition": { "enum": ["automatic", "approval-required", "manual", "unavailable"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

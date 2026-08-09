@@ -410,6 +410,19 @@ describe('release readiness', () => {
     expect(doctorGate?.summary).toContain('missing');
   });
 
+  it('fails closed when the Doctor report is an arbitrary JSON object', async () => {
+    const workspace = await makeWorkspace();
+    await fsExtra.writeJSON(
+      path.join(workspace, '.workspai', 'reports', 'doctor-last-run.json'),
+      {}
+    );
+
+    const readiness = await evaluateReleaseReadiness({ startPath: workspace, writeReport: false });
+    const doctorGate = readiness.gates.find((gate) => gate.gate === 'doctor');
+
+    expect(doctorGate).toMatchObject({ status: 'fail', summary: 'Doctor evidence is missing' });
+  });
+
   it('passes verify gate with --skip-verify even when verify artifacts are missing', async () => {
     const workspace = await makeWorkspace();
 

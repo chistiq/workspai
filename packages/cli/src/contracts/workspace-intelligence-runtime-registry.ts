@@ -1,10 +1,16 @@
 /**
  * Physical source of truth for the canonical Workspace Intelligence chain.
  *
- * This module intentionally has no runtime imports. Producers, command
- * dispatchers, generated contracts, IDE adapters, and conformance tests must
- * consume these descriptors instead of repeating command or artifact strings.
+ * This module intentionally has no producer/runtime imports. It may consume
+ * data-only schema constants from extraction-safe contract modules; producers,
+ * command dispatchers, generated contracts, IDE adapters, and conformance tests
+ * must consume these descriptors instead of repeating command or artifact strings.
  */
+
+import {
+  DOCTOR_CAPABILITIES_SCHEMA_VERSION,
+  DOCTOR_VALIDATION_SCHEMA_VERSION,
+} from './doctor-capabilities-contract.js';
 
 export const WORKSPACE_INTELLIGENCE_ARTIFACTS = {
   model: '.workspai/reports/workspace-model.json',
@@ -155,6 +161,18 @@ export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
     contractPath: 'contracts/doctor-workspace-cache.v2.json',
     producerCommands: [['doctor', 'workspace']],
   },
+  doctorCapabilities: {
+    artifactPath: '.workspai/reports/doctor-capabilities.json',
+    schemaVersion: DOCTOR_CAPABILITIES_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/doctor-capabilities.v1.json',
+    producerCommands: [['doctor', 'capabilities', '--write']],
+  },
+  doctorValidation: {
+    artifactPath: '.workspai/reports/doctor-validation-last-run.json',
+    schemaVersion: DOCTOR_VALIDATION_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/doctor-validation.v1.json',
+    producerCommands: [['doctor', 'capabilities', '--validate', '--write']],
+  },
   bootstrapCompliance: {
     artifactPath: '.workspai/reports/bootstrap-compliance.latest.json',
     schemaVersion: 'bootstrap-compliance.v1',
@@ -185,6 +203,15 @@ export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
     schemaVersion: 'doctor-project-evidence-v1',
     contractPath: 'contracts/doctor-project-evidence.v1.json',
     producerCommands: [['doctor', 'project']],
+  },
+  doctorReceipt: {
+    artifactPath: '.workspai/reports/doctor-receipt-last-run.json',
+    schemaVersion: 'workspai.doctor-receipt.v1',
+    contractPath: 'contracts/workspace-intelligence/doctor-receipt.v1.json',
+    producerCommands: [
+      ['doctor', 'workspace'],
+      ['doctor', 'project'],
+    ],
   },
   projectTestCoverage: {
     artifactPath: '.workspai/reports/project-test-coverage-last-run.json',

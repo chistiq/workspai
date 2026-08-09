@@ -91,6 +91,38 @@ describe('Doctor dependency audit evidence', () => {
     });
   });
 
+  it('does not classify npm registry or authentication error JSON as a clean audit', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), { name: 'node-app' });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), { lockfileVersion: 3 });
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        error: { code: 'E403', summary: 'Audit endpoint is forbidden.' },
+      }),
+      stderr: '',
+      exitCode: 1,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+
+    expect(evidence).toMatchObject({ status: 'failed', findingCount: null });
+    expect(evidence.reason).toMatch(/parseable vulnerability evidence/);
+  });
+
+  it('does not trust a clean-looking audit payload with a non-zero exit code', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), { name: 'node-app' });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), { lockfileVersion: 3 });
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({ metadata: { vulnerabilities: { total: 0 } } }),
+      stderr: 'audit transport failed after producing partial output',
+      exitCode: 1,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+
+    expect(evidence).toMatchObject({ status: 'failed', findingCount: null, exitCode: 1 });
+    expect(evidence.reason).toMatch(/refuses to treat contradictory audit execution as healthy/);
+  });
+
   it('distinguishes compatible boolean npm fixes from breaking-only candidates', async () => {
     await fsExtra.writeJSON(path.join(projectPath, 'package.json'), { name: 'node-app' });
     await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), { lockfileVersion: 3 });
@@ -622,6 +654,36 @@ describe('Doctor dependency audit evidence', () => {
     });
     expect(evidence.status).toBe('failed');
     expect(evidence.findingCount).toBeNull();
+  });
+
+  it('invalidates cached audit evidence when same-size lockfile content changes', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), { name: 'node-app' });
+    const lockPath = path.join(projectPath, 'package-lock.json');
+    await fsExtra.writeFile(lockPath, 'aaaa');
+    execaMock
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({ metadata: { vulnerabilities: { total: 0 } } }),
+        stderr: '',
+        exitCode: 0,
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          vulnerabilities: { unsafe: { name: 'unsafe', severity: 'high', via: [] } },
+          metadata: { vulnerabilities: { high: 1, total: 1 } },
+        }),
+        stderr: '',
+        exitCode: 1,
+      });
+
+    expect(await collectDoctorDependencyAudit({ projectPath, runtime: 'node' })).toMatchObject({
+      status: 'clean',
+    });
+    await fsExtra.writeFile(lockPath, 'bbbb');
+    expect(await collectDoctorDependencyAudit({ projectPath, runtime: 'node' })).toMatchObject({
+      status: 'vulnerable',
+      findingCount: 1,
+    });
+    expect(execaMock).toHaveBeenCalledTimes(2);
   });
 
   it.each([

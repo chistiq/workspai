@@ -21,13 +21,16 @@ import {
 
 describe.sequential('doctor typed repair operations', () => {
   let projectRoot: string;
+  let outsideRoot: string;
 
   beforeAll(async () => {
     projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-repair-'));
+    outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-repair-outside-'));
   });
 
   afterAll(async () => {
     await fs.rm(projectRoot, { recursive: true, force: true });
+    await fs.rm(outsideRoot, { recursive: true, force: true });
   });
 
   it('enforces project boundaries and decodes JSON pointer segments', () => {
@@ -95,10 +98,12 @@ describe.sequential('doctor typed repair operations', () => {
       [],
       { type: 'file-create', path: 1, content: 'x', overwrite: false },
       { type: 'file-append', path: '/x', lines: [1], ensureNewline: true },
+      { type: 'file-append', path: '/x', lines: ['safe\ninjected'], ensureNewline: true },
       { type: 'file-copy', sourcePath: '/a', path: '/b', overwrite: true },
       { type: 'package-json-script', path: '/x', scriptName: 1, scriptValue: 'x' },
       { type: 'json-edit', path: '/x', edits: [{ pointer: 'bad', value: {} }] },
       { type: 'env-key-add', path: '/x', keys: [{ name: 'BAD-NAME', value: 1 }] },
+      { type: 'env-key-add', path: '/x', keys: [{ name: 'SAFE', value: 'x\nINJECTED=1' }] },
       { type: 'makefile-target', path: '/x', target: 'bad target', command: '', phony: 'yes' },
       { type: 'unknown' },
     ];
@@ -170,6 +175,28 @@ describe.sequential('doctor typed repair operations', () => {
     expect(await fs.readFile(path.join(projectRoot, relativeTarget), 'utf8')).toBe('portable');
   });
 
+  it('rejects typed repair paths that escape through a symbolic link', async () => {
+    const linkedDirectory = path.join(projectRoot, 'linked-outside');
+    await fs.symlink(
+      outsideRoot,
+      linkedDirectory,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+
+    await expect(
+      applyFileCreateFix({
+        projectPath: projectRoot,
+        operation: {
+          type: 'file-create',
+          path: path.join(linkedDirectory, 'escaped.txt'),
+          content: 'must not be written',
+          overwrite: false,
+        },
+      })
+    ).rejects.toThrow(/symbolic link/);
+    await expect(fs.access(path.join(outsideRoot, 'escaped.txt'))).rejects.toThrow();
+  });
+
   it('repairs package scripts without replacing an existing command', async () => {
     const packageJsonPath = path.join(projectRoot, 'package.json');
     await fs.writeFile(packageJsonPath, '{"name":"fixture","scripts":{"test":"existing"}}\n');
@@ -185,6 +212,19 @@ describe.sequential('doctor typed repair operations', () => {
     });
     const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
     expect(packageJson.scripts).toEqual({ test: 'existing', build: 'tsc' });
+
+    const nestedPackageJsonPath = path.join(projectRoot, 'nested-package', 'package.json');
+    await fs.mkdir(path.dirname(nestedPackageJsonPath), { recursive: true });
+    await fs.writeFile(nestedPackageJsonPath, '{"name":"nested"}\n');
+    await applyPackageScriptFix({
+      projectPath: projectRoot,
+      packageJsonPath: nestedPackageJsonPath,
+      scriptName: 'test',
+      scriptValue: 'vitest run',
+    });
+    expect(JSON.parse(await fs.readFile(nestedPackageJsonPath, 'utf8')).scripts).toEqual({
+      test: 'vitest run',
+    });
     await expect(
       applyPackageScriptFix({ projectPath: projectRoot, scriptName: 'bad name', scriptValue: 'x' })
     ).rejects.toThrow('Unsafe package script name');
@@ -194,7 +234,7 @@ describe.sequential('doctor typed repair operations', () => {
         scriptName: 'test',
         scriptValue: 'x',
       })
-    ).rejects.toThrow('package.json not found');
+    ).rejects.toThrow('Repair project boundary not found');
   });
 
   it('applies nested JSON pointers and rejects malformed or missing targets', async () => {
@@ -217,6 +257,16 @@ describe.sequential('doctor typed repair operations', () => {
       applyJsonEditFix({
         projectPath: projectRoot,
         operation: { type: 'json-edit', path: target, edits: [{ pointer: '/', value: true }] },
+      })
+    ).rejects.toThrow('Unsupported JSON pointer');
+    await expect(
+      applyJsonEditFix({
+        projectPath: projectRoot,
+        operation: {
+          type: 'json-edit',
+          path: target,
+          edits: [{ pointer: '/__proto__/polluted', value: true }],
+        },
       })
     ).rejects.toThrow('Unsupported JSON pointer');
     await expect(

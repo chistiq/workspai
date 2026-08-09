@@ -16,6 +16,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
+import { listCanonicalDoctorFindings } from './utils/doctor-diagnosis-consumer.js';
 import type { WorkspaceModel, WorkspaceModelProject } from './workspace-model.js';
 import { hashWorkspaceModel } from './workspace-model-hash.js';
 import {
@@ -574,36 +575,18 @@ async function readProjectBlockers(
   }
   const doctor = await readJsonIfPresent<{
     projectName?: unknown;
-    project?: { issues?: unknown; probes?: unknown };
+    project?: Record<string, unknown>;
   }>(path.join(workspacePath, '.workspai', 'reports', 'doctor-project-last-run.json'));
   if (doctor?.projectName === projectName) {
-    if (Array.isArray(doctor.project?.issues)) {
-      for (const issue of doctor.project.issues) {
-        if (typeof issue !== 'string') continue;
-        blockers.push({
-          source: 'doctor-project',
-          severity: 'error',
-          message: portableText(issue, workspacePath, projectPath),
-        });
-      }
-    }
-    if (Array.isArray(doctor.project?.probes)) {
-      for (const rawProbe of doctor.project.probes) {
-        const probe = asRecord(rawProbe);
-        if (!probe || !['fail', 'warn'].includes(String(probe.status))) continue;
-        const reason =
-          typeof probe.reason === 'string'
-            ? probe.reason
-            : typeof probe.label === 'string'
-              ? probe.label
-              : 'Project Doctor reported unresolved evidence.';
-        blockers.push({
-          source: 'doctor-project',
-          severity: probe.status === 'fail' ? 'error' : 'warning',
-          message: portableText(reason, workspacePath, projectPath),
-          ...(typeof probe.id === 'string' ? { code: probe.id } : {}),
-        });
-      }
+    for (const finding of listCanonicalDoctorFindings({
+      project: doctor.project,
+    })) {
+      blockers.push({
+        source: 'doctor-project',
+        severity: finding.status === 'blocking' ? 'error' : 'warning',
+        message: portableText(finding.message, workspacePath, projectPath),
+        ...(finding.id ? { code: finding.id } : {}),
+      });
     }
   }
   return [

@@ -22,6 +22,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { cliOperationError } from './contracts/cli-operation-result-contract.js';
+import { listCanonicalDoctorFindings } from './utils/doctor-diagnosis-consumer.js';
 
 export type PipelineStageStatus = 'pass' | 'warn' | 'fail' | 'skipped';
 
@@ -89,22 +90,9 @@ async function readDoctorStageEvidence(evidencePath: string): Promise<{
   try {
     const payload = fsExtra.readJsonSync(evidencePath) as Record<string, unknown>;
     const policy = payload.policyProfile as Record<string, unknown> | undefined;
-    const projects = Array.isArray(payload.projects) ? payload.projects : [];
-    const blockers = projects.flatMap((rawProject) => {
-      const project = rawProject as Record<string, unknown>;
-      const name = typeof project.name === 'string' ? project.name : 'project';
-      const issues = Array.isArray(project.issues)
-        ? project.issues.filter((entry): entry is string => typeof entry === 'string')
-        : [];
-      const probes = Array.isArray(project.probes) ? project.probes : [];
-      const findings = probes.flatMap((rawProbe) => {
-        const probe = rawProbe as Record<string, unknown>;
-        if (probe.status !== 'fail' && probe.status !== 'warn') return [];
-        const reason = typeof probe.reason === 'string' ? probe.reason.trim() : '';
-        return reason ? [`${name}: ${reason}`] : [];
-      });
-      return [...issues.map((issue) => `${name}: ${issue}`), ...findings];
-    });
+    const blockers = listCanonicalDoctorFindings(payload)
+      .filter((finding) => finding.status === 'blocking')
+      .map((finding) => `${finding.projectName}: ${finding.message}`);
     return {
       policyProfile: typeof policy?.name === 'string' ? policy.name : undefined,
       blockers: [...new Set(blockers)].slice(0, 12),

@@ -117,6 +117,8 @@ describe('artifact remediation plan', () => {
         steps: [
           {
             id: 'api-security-fix',
+            diagnosisFindingId: 'finding.api.security',
+            causalKey: 'causal.api.security',
             phase: 'dependency-baseline',
             order: 1,
             dependsOn: [],
@@ -182,6 +184,8 @@ describe('artifact remediation plan', () => {
         projectName: 'api',
         projectPath: 'api',
         sourceStepId: 'api-security-fix',
+        findingId: 'finding.api.security',
+        causalKey: 'causal.api.security',
         cwd: 'project',
         command: 'npm audit fix --audit-level=moderate',
         verifyCommand: 'npx workspai doctor project --json',
@@ -223,6 +227,22 @@ describe('artifact remediation plan', () => {
           {
             name: 'api',
             path: projectPath,
+            diagnosis: {
+              findings: [
+                {
+                  id: 'finding.api.security',
+                  causalKey: 'causal.api.security',
+                  status: 'blocking',
+                  repair: { capabilityId: 'surface-security-hygiene.command' },
+                },
+                {
+                  id: 'finding.api.environment',
+                  causalKey: 'causal.api.environment',
+                  status: 'advisory',
+                  repair: { capabilityId: 'surface-env-contract.file-copy' },
+                },
+              ],
+            },
             repairCapabilities: [
               {
                 id: 'surface-security-hygiene.command',
@@ -333,6 +353,8 @@ describe('artifact remediation plan', () => {
       expect.objectContaining({
         projectName: 'api',
         projectPath: 'api',
+        findingId: 'finding.api.security',
+        causalKey: 'causal.api.security',
         command: 'npm audit fix --audit-level=moderate',
         files: ['api/package.json', 'api/package-lock.json'],
         strategy: [

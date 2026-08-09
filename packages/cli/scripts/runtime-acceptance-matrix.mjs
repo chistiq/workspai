@@ -178,6 +178,23 @@ const OBSERVED_PROJECTS = [
     tier: runtimeExpectation('rust').tier,
     sourceDir: 'observed-axum-source',
   },
+  ...[
+    ['elixir', 'phoenix', 'observed-elixir-source'],
+    ['clojure', 'clojure', 'observed-clojure-source'],
+    ['deno', 'deno', 'observed-deno-source'],
+    ['bun', 'bun', 'observed-bun-source'],
+    ['scala', 'scala', 'observed-scala-source'],
+    ['kotlin', 'kotlin', 'observed-kotlin-source'],
+    ['c', 'c', 'observed-c-source'],
+    ['cpp', 'cpp', 'observed-cpp-source'],
+  ].map(([runtime, framework, sourceDir]) => ({
+    id: `observed.${runtime}.${framework}`,
+    project: `matrix-observed-${runtime}`,
+    runtime,
+    framework,
+    tier: runtimeExpectation(runtime).tier,
+    sourceDir,
+  })),
   {
     id: 'observed.unknown.generic',
     project: 'matrix-observed-generic',
@@ -398,6 +415,15 @@ async function main() {
   });
 
   runScenario({
+    id: 'doctor.capabilities.validate',
+    scope: 'doctor',
+    args: ['doctor', 'capabilities', '--validate', '--json'],
+    cwd: workspacePath,
+    expect: 'passJson',
+    validateJson: validateDoctorCapabilities,
+  });
+
+  runScenario({
     id: 'doctor.workspace',
     scope: 'doctor',
     args: ['doctor', 'workspace', '--json'],
@@ -405,6 +431,16 @@ async function main() {
     expect: 'passJsonOrGovernedBlock',
     validateJson: validateDoctorEvidence,
   });
+
+  runScenario({
+    id: 'doctor.workspace.summary.fresh',
+    scope: 'doctor',
+    args: ['doctor', 'workspace', '--fresh', '--json=summary'],
+    cwd: workspacePath,
+    expect: 'passJsonOrGovernedBlock',
+    validateJson: validateDoctorSummary,
+  });
+  validateDoctorReceiptFile(workspacePath);
 
   const expectedProjects = [...NPM_KITS, ...CORE_KITS, ...OBSERVED_PROJECTS].map((project) => ({
     ...project,
@@ -766,11 +802,11 @@ function readRuntimeSurfaceContract() {
 }
 
 function ensureCli() {
-  if (args.noBuild) {
-    if (!fs.existsSync(cliPath)) {
-      throw new Error('dist/index.js is missing. Run `npm run build` or omit --no-build.');
-    }
+  if (fs.existsSync(cliPath)) {
     return;
+  }
+  if (args.noBuild) {
+    throw new Error('dist/index.js is missing. Run `npm run build` or omit --no-build.');
   }
   if (!fs.existsSync(tsupCli)) {
     throw new Error('dist/index.js is missing and local tsup is unavailable. Run `npm install`.');
@@ -948,9 +984,9 @@ function evaluateScenario(options, result, output) {
     if (passCode) {
       return { status: 'passed', reason: 'Doctor completed without blocking findings.' };
     }
-    const healthScore = jsonPayload?.healthScore;
+    const verdict = jsonPayload?.healthScore?.verdict ?? jsonPayload?.verdict;
     const blockingFindings = doctorBlockingFindings(jsonPayload);
-    if ((code === 1 || code === 2) && healthScore?.verdict === 'blocked' && blockingFindings > 0) {
+    if ((code === 1 || code === 2) && verdict === 'blocked' && blockingFindings > 0) {
       return {
         status: 'passed',
         reason: `Doctor truthfully reported ${blockingFindings} governed blocking finding(s).`,
@@ -1097,7 +1133,7 @@ function validateProjectCapabilities(payload, project) {
 }
 
 function doctorBlockingFindings(payload) {
-  const value = payload?.summary?.blockingFindings;
+  const value = payload?.summary?.blockingFindings ?? payload?.counts?.blockingCauses;
   return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
@@ -1118,6 +1154,77 @@ function validateDoctorEvidence(payload) {
   }
   if (healthScore.verdict !== 'blocked' && blockingFindings > 0) {
     return 'Doctor non-blocked verdict cannot carry blocking findings';
+  }
+  return true;
+}
+
+function validateDoctorSummary(payload) {
+  if (payload?.schemaVersion !== 'workspai.doctor-summary.v1') {
+    return 'Doctor summary JSON must use workspai.doctor-summary.v1';
+  }
+  if (!['passed', 'attention', 'blocked'].includes(payload.verdict)) {
+    return 'Doctor summary JSON must include a canonical verdict';
+  }
+  const counts = payload.counts;
+  for (const field of [
+    'projectsScanned',
+    'affectedProjects',
+    'blockingCauses',
+    'advisoryFindings',
+    'unknownFindings',
+    'dependencyAdvisorySubjects',
+    'dependencyVulnerabilityFindings',
+    'notApplicableChecks',
+  ]) {
+    if (!Number.isInteger(counts?.[field]) || counts[field] < 0) {
+      return `Doctor summary count ${field} must be a non-negative integer`;
+    }
+  }
+  if (payload.freshness?.status !== 'fresh') {
+    return `Doctor --fresh summary must carry fresh evidence, received ${String(payload.freshness?.status)}`;
+  }
+  if (typeof payload.artifacts?.receipt !== 'string') {
+    return 'Doctor summary must reference its receipt artifact';
+  }
+  return true;
+}
+
+function validateDoctorReceiptFile(workspaceRoot) {
+  const receiptPath = path.join(
+    workspaceRoot,
+    '.workspai',
+    'reports',
+    'doctor-receipt-last-run.json'
+  );
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Doctor receipt is missing or invalid: ${error.message}`);
+  }
+  if (payload.schemaVersion !== 'workspai.doctor-receipt.v1') {
+    throw new Error('Doctor receipt schemaVersion is invalid.');
+  }
+  if (!payload.counts || !Array.isArray(payload.affectedProjects) || !Array.isArray(payload.blockers)) {
+    throw new Error('Doctor receipt is missing counts, affectedProjects, or blockers.');
+  }
+}
+
+function validateDoctorCapabilities(payload) {
+  if (payload?.schemaVersion !== 'workspai.doctor-capabilities.v1') {
+    return 'Doctor capability payload has an invalid schemaVersion';
+  }
+  if (!Array.isArray(payload.adapters) || payload.adapters.length < 17) {
+    return 'Doctor capability payload must include every built-in adapter';
+  }
+  if (payload.policy?.unknownIsHealthy !== false || payload.policy?.unsupportedIsHealthy !== false) {
+    return 'Doctor capability policy must fail closed for unknown and unsupported evidence';
+  }
+  if (payload.validation?.summary?.failedCases !== 0) {
+    return 'Doctor disease-corpus validation must pass';
+  }
+  if (payload.validation?.summary?.runtimeAdapterCoverage !== 1) {
+    return 'Doctor disease-corpus validation must exercise every runtime adapter';
   }
   return true;
 }
@@ -1162,7 +1269,33 @@ function createObservedSourceProjects(root) {
   createObservedLaravelProject(path.join(root, 'observed-laravel-source'));
   createObservedRailsProject(path.join(root, 'observed-rails-source'));
   createObservedRustProject(path.join(root, 'observed-axum-source'));
+  createObservedExtendedProjects(root);
   createObservedGenericProject(path.join(root, 'observed-generic-source'));
+}
+
+function createObservedExtendedProjects(root) {
+  const fixtures = [
+    ['observed-elixir-source', 'mix.exs', 'defmodule Matrix.MixProject do\n  use Mix.Project\n  def project, do: [app: :matrix, version: "0.1.0", deps: deps()]\n  defp deps, do: [{:phoenix, "~> 1.7"}]\nend\n'],
+    ['observed-clojure-source', 'deps.edn', '{:paths ["src"] :deps {org.clojure/clojure {:mvn/version "1.12.0"}}}\n'],
+    ['observed-deno-source', 'deno.json', '{"tasks":{"test":"deno test","check":"deno check main.ts"}}\n'],
+    ['observed-bun-source', 'bun.lock', '# observed Bun lock baseline\n'],
+    ['observed-scala-source', 'build.sbt', 'scalaVersion := "3.5.2"\n'],
+    ['observed-kotlin-source', 'build.gradle.kts', 'plugins { kotlin("jvm") version "2.0.21" }\n'],
+    ['observed-c-source', 'CMakeLists.txt', 'cmake_minimum_required(VERSION 3.20)\nproject(matrix_c C)\nadd_executable(matrix src/main.c)\n'],
+    ['observed-cpp-source', 'meson.build', "project('matrix_cpp', 'cpp')\nexecutable('matrix', 'src/main.cpp')\n"],
+  ];
+  for (const [directory, marker, content] of fixtures) {
+    const source = path.join(root, directory);
+    fs.mkdirSync(path.join(source, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(source, marker), content);
+  }
+  fs.writeFileSync(path.join(root, 'observed-deno-source', 'main.ts'), 'console.log("deno");\n');
+  fs.writeFileSync(
+    path.join(root, 'observed-bun-source', 'package.json'),
+    '{"name":"matrix-bun","scripts":{"test":"bun test"}}\n'
+  );
+  fs.writeFileSync(path.join(root, 'observed-c-source', 'src', 'main.c'), 'int main(void) { return 0; }\n');
+  fs.writeFileSync(path.join(root, 'observed-cpp-source', 'src', 'main.cpp'), 'int main() { return 0; }\n');
 }
 
 function createObservedLaravelProject(source) {

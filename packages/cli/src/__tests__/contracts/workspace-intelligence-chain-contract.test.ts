@@ -125,6 +125,9 @@ describe('workspace intelligence chain contract', () => {
       sourceRoot,
       'contracts/workspace-intelligence-runtime-registry.ts'
     );
+    const extractionSafeSchemaSources = new Set([
+      path.resolve(sourceRoot, 'contracts/doctor-capabilities-contract.ts'),
+    ]);
     const testSegment = `${path.sep}__tests__${path.sep}`;
     const schemaVersions = [
       ...Object.values(WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS),
@@ -144,6 +147,7 @@ describe('workspace intelligence chain contract', () => {
           !entry.isFile() ||
           !entry.name.endsWith('.ts') ||
           absolutePath === registryPath ||
+          extractionSafeSchemaSources.has(absolutePath) ||
           absolutePath.includes(testSegment)
         ) {
           continue;

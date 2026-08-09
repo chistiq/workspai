@@ -18,24 +18,27 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from '../contracts/workspace-intelligence-runtime-registry.js';
 
-export type DoctorSurfaceRuntimeFamily =
-  | 'python'
-  | 'node'
-  | 'go'
-  | 'java'
-  | 'rust'
-  | 'elixir'
-  | 'clojure'
-  | 'deno'
-  | 'bun'
-  | 'php'
-  | 'ruby'
-  | 'dotnet'
-  | 'scala'
-  | 'kotlin'
-  | 'c'
-  | 'cpp'
-  | 'unknown';
+export const DOCTOR_SURFACE_RUNTIME_FAMILIES = [
+  'python',
+  'node',
+  'go',
+  'java',
+  'rust',
+  'elixir',
+  'clojure',
+  'deno',
+  'bun',
+  'php',
+  'ruby',
+  'dotnet',
+  'scala',
+  'kotlin',
+  'c',
+  'cpp',
+  'unknown',
+] as const;
+
+export type DoctorSurfaceRuntimeFamily = (typeof DOCTOR_SURFACE_RUNTIME_FAMILIES)[number];
 
 export type DoctorSurfaceProjectKind =
   'backend' | 'frontend' | 'desktop' | 'extension' | 'fullstack' | 'generic';
@@ -46,6 +49,7 @@ export interface DoctorSurfaceProbe {
   status: 'pass' | 'warn' | 'fail';
   severity: 'info' | 'warn' | 'error';
   scope: 'project-scoped';
+  applicability?: 'applicable' | 'not-applicable' | 'unknown';
   reason: string;
   recommendation?: string;
   repairCapability?: DoctorRepairCapability;
@@ -137,25 +141,8 @@ type RuntimeCommandContract = {
 
 function normalizeRuntime(runtime: string | undefined): DoctorSurfaceRuntimeFamily {
   if (!runtime) return 'unknown';
-  if (
-    runtime === 'python' ||
-    runtime === 'node' ||
-    runtime === 'go' ||
-    runtime === 'java' ||
-    runtime === 'rust' ||
-    runtime === 'elixir' ||
-    runtime === 'clojure' ||
-    runtime === 'deno' ||
-    runtime === 'bun' ||
-    runtime === 'php' ||
-    runtime === 'ruby' ||
-    runtime === 'dotnet' ||
-    runtime === 'scala' ||
-    runtime === 'kotlin' ||
-    runtime === 'c' ||
-    runtime === 'cpp'
-  ) {
-    return runtime;
+  if (DOCTOR_SURFACE_RUNTIME_FAMILIES.includes(runtime as DoctorSurfaceRuntimeFamily)) {
+    return runtime as DoctorSurfaceRuntimeFamily;
   }
   return 'unknown';
 }
@@ -392,14 +379,14 @@ async function inferDependencyBaselineRepair(input: {
     const command = hasPom
       ? hasMavenWrapper
         ? process.platform === 'win32'
-          ? '.\\mvnw.cmd -B -DskipTests dependency:go-offline'
-          : './mvnw -B -DskipTests dependency:go-offline'
-        : 'mvn -B -DskipTests dependency:go-offline'
+          ? '.\\mvnw.cmd -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
+          : './mvnw -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
+        : 'mvn -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
       : hasGradleWrapper
         ? process.platform === 'win32'
-          ? '.\\gradlew.bat dependencies'
-          : './gradlew dependencies'
-        : 'gradle dependencies';
+          ? '.\\gradlew.bat --project-cache-dir .workspai/cache/java/gradle dependencies'
+          : './gradlew --project-cache-dir .workspai/cache/java/gradle dependencies'
+        : 'gradle --project-cache-dir .workspai/cache/java/gradle dependencies';
     return {
       command,
       title: 'Prepare Java dependency baseline',
@@ -1102,6 +1089,7 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
     status: hasContract || contractNotApplicable ? 'pass' : 'warn',
     severity: 'warn',
     scope: 'project-scoped',
+    applicability: contractNotApplicable ? 'not-applicable' : 'applicable',
     reason: hasContract
       ? 'Environment/config contract marker detected.'
       : contractNotApplicable
@@ -1181,16 +1169,13 @@ async function buildContainerProbe(input: SurfaceInput): Promise<DoctorSurfacePr
   return {
     id: 'surface-container-contract',
     label: 'Container contract',
-    status: composeExists ? 'pass' : 'warn',
+    status: 'pass',
     severity: 'warn',
     scope: 'project-scoped',
+    applicability: composeExists ? 'applicable' : 'not-applicable',
     reason: composeExists
       ? 'Compose surface detected; project has a local container orchestration baseline.'
-      : 'No Dockerfile or compose surface detected.',
-    recommendation:
-      input.projectKind === 'backend' || input.projectKind === 'fullstack'
-        ? 'Add Dockerfile or compose baseline when this service is expected to run in containerized environments.'
-        : 'Add a container baseline only when this project is shipped through containerized environments.',
+      : 'No container intent was detected; a container contract is not currently applicable.',
   };
 }
 
@@ -1231,17 +1216,13 @@ async function buildKubernetesProbe(input: SurfaceInput): Promise<DoctorSurfaceP
     return {
       id: 'surface-deploy-contract',
       label: 'Deployment contract',
-      status: hasAlternativeSurface ? 'pass' : 'warn',
+      status: 'pass',
       severity: 'warn',
       scope: 'project-scoped',
+      applicability: hasAlternativeSurface ? 'applicable' : 'not-applicable',
       reason: hasAlternativeSurface
         ? 'A documented or provider-managed non-Kubernetes deployment surface was detected.'
-        : 'No declared deployment surface or deployment-path documentation was detected.',
-      recommendation: hasAlternativeSurface
-        ? undefined
-        : input.projectKind === 'backend' || input.projectKind === 'fullstack'
-          ? 'Add deployment manifests or document the non-Kubernetes deployment path.'
-          : 'Document the distribution or deployment path when this project is production-hosted.',
+        : 'No deployment intent was detected; a deployment contract is not currently applicable.',
     };
   }
 

@@ -170,8 +170,8 @@ describe('doctor enterprise surface probes', () => {
         files: { 'pom.xml': '<project></project>\n', mvnw: '#!/bin/sh\n' },
         expectedCommand:
           process.platform === 'win32'
-            ? '.\\mvnw.cmd -B -DskipTests dependency:go-offline'
-            : './mvnw -B -DskipTests dependency:go-offline',
+            ? '.\\mvnw.cmd -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
+            : './mvnw -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline',
         expectedFiles: ['pom.xml', 'gradle.lockfile'],
       },
       {
@@ -343,6 +343,7 @@ describe('doctor enterprise surface probes', () => {
 
     expect(probes.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
       status: 'pass',
+      applicability: 'applicable',
       repairCapability: {
         issueId: 'surface-env-contract',
         fixKind: 'file-copy',
@@ -355,6 +356,34 @@ describe('doctor enterprise surface probes', () => {
           overwrite: false,
         },
       },
+    });
+  });
+
+  it('preserves container and deployment observations without creating false advisories', async () => {
+    const projectPath = await makeProject({
+      'package.json': { name: 'library', version: '1.0.0' },
+      'package-lock.json': '{}',
+      'src/index.ts': 'export const value = 1;\n',
+    });
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'node',
+      projectKind: 'generic',
+      packageJsonData: (await fsExtra.readJSON(path.join(projectPath, 'package.json'))) as Record<
+        string,
+        unknown
+      >,
+      hasTests: true,
+      vulnerabilities: 0,
+    });
+
+    expect(probes.find((probe) => probe.id === 'surface-container-contract')).toMatchObject({
+      status: 'pass',
+      applicability: 'not-applicable',
+    });
+    expect(probes.find((probe) => probe.id === 'surface-deploy-contract')).toMatchObject({
+      status: 'pass',
+      applicability: 'not-applicable',
     });
   });
 
@@ -379,6 +408,7 @@ describe('doctor enterprise surface probes', () => {
 
     expect(probes.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
       status: 'pass',
+      applicability: 'not-applicable',
       recommendation: undefined,
       repairCapability: undefined,
       reason: expect.stringContaining('not currently applicable'),

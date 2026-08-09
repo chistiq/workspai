@@ -86,6 +86,31 @@
       "contractPath": "contracts/workspace-intelligence/doctor-graph-diagnosis.v1.json",
       "publication": "json-schema"
     },
+    "doctorDiagnosis": {
+      "schemaVersion": "workspai.doctor-diagnosis.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-diagnosis.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorCapabilities": {
+      "schemaVersion": "workspai.doctor-capabilities.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-capabilities.v1.json",
+      "publication": "capability-contract"
+    },
+    "doctorValidation": {
+      "schemaVersion": "workspai.doctor-validation.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-validation.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorReceipt": {
+      "schemaVersion": "workspai.doctor-receipt.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-receipt.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorSummary": {
+      "schemaVersion": "workspai.doctor-summary.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-summary.v1.json",
+      "publication": "json-schema"
+    },
     "projectTestCoverage": {
       "schemaVersion": "workspai.project-test-coverage.v1",
       "contractPath": "contracts/project-test-coverage.v1.json",

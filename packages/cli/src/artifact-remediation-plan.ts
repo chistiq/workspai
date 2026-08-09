@@ -323,6 +323,7 @@ function actionBase(input: {
   sourceStepId?: string;
   findingId?: string;
   findingStatus?: ArtifactRemediationAction['findingStatus'];
+  causalKey?: string;
   dependsOn?: string[];
   strategy?: DoctorRepairStrategyStage[];
   transaction?: DoctorDependencyRepairTransaction;
@@ -331,9 +332,11 @@ function actionBase(input: {
 }): ArtifactRemediationAction {
   const findingId = input.findingId?.trim() || input.sourceStepId?.trim() || input.id;
   const findingStatus = input.findingStatus ?? 'blocking';
-  const causalKey = [input.cardId, input.projectName ?? input.scope ?? 'workspace', findingId]
-    .map((value) => String(value).trim().toLowerCase())
-    .join(':');
+  const causalKey =
+    input.causalKey?.trim() ||
+    [input.cardId, input.projectName ?? input.scope ?? 'workspace', findingId]
+      .map((value) => String(value).trim().toLowerCase())
+      .join(':');
   return {
     id: input.id,
     artifactKind: input.artifactKind,
@@ -429,7 +432,15 @@ function doctorPlanActions(input: {
         ? step.findingStatus
         : 'unknown';
     const findingId =
-      typeof step.issueId === 'string' && step.issueId.trim() ? step.issueId.trim() : id;
+      typeof step.diagnosisFindingId === 'string' && step.diagnosisFindingId.trim()
+        ? step.diagnosisFindingId.trim()
+        : typeof step.issueId === 'string' && step.issueId.trim()
+          ? step.issueId.trim()
+          : id;
+    const causalKey =
+      typeof step.causalKey === 'string' && step.causalKey.trim()
+        ? step.causalKey.trim()
+        : undefined;
     const executable = step.executableInCurrentEnvironment === true && Boolean(command);
     const strategy = portableDoctorStrategy({
       strategy: step.strategy,
@@ -494,6 +505,7 @@ function doctorPlanActions(input: {
         sourceStepId: id,
         findingId,
         findingStatus,
+        causalKey,
         dependsOn: asStringArray(step.dependsOn).map((dependency) => `doctor.${dependency}`),
         strategy,
         transaction,
@@ -631,6 +643,33 @@ function doctorEvidenceActions(input: {
             .filter((capability) => capability !== undefined)
         : [];
     const probeFindingStatus = new Map<string, 'blocking' | 'advisory'>();
+    const diagnosisByCapability = new Map<
+      string,
+      {
+        findingId: string;
+        causalKey: string;
+        findingStatus: ArtifactRemediationAction['findingStatus'];
+      }
+    >();
+    const diagnosis = asRecord(project.diagnosis);
+    for (const rawFinding of Array.isArray(diagnosis?.findings) ? diagnosis.findings : []) {
+      const finding = asRecord(rawFinding);
+      const repair = asRecord(finding?.repair);
+      const capabilityId =
+        typeof repair?.capabilityId === 'string' ? repair.capabilityId.trim() : '';
+      const findingId = typeof finding?.id === 'string' ? finding.id.trim() : '';
+      const causalKey = typeof finding?.causalKey === 'string' ? finding.causalKey.trim() : '';
+      const findingStatus =
+        finding?.status === 'blocking' ||
+        finding?.status === 'advisory' ||
+        finding?.status === 'informational' ||
+        finding?.status === 'unknown'
+          ? finding.status
+          : 'unknown';
+      if (capabilityId && findingId && causalKey) {
+        diagnosisByCapability.set(capabilityId, { findingId, causalKey, findingStatus });
+      }
+    }
     for (const rawProbe of Array.isArray(project.probes) ? project.probes : []) {
       const probe = asRecord(rawProbe);
       const capability = asRecord(probe?.repairCapability);
@@ -673,8 +712,11 @@ function doctorEvidenceActions(input: {
         transactionRecord?.schemaVersion === 'workspai.doctor-dependency-repair-transaction.v1'
           ? (structuredClone(transactionRecord) as unknown as DoctorDependencyRepairTransaction)
           : undefined;
+      const diagnosisIdentity = diagnosisByCapability.get(capabilityId);
       const findingStatus =
-        probeFindingStatus.get(capabilityId) ?? (transaction ? 'blocking' : 'advisory');
+        diagnosisIdentity?.findingStatus ??
+        probeFindingStatus.get(capabilityId) ??
+        (transaction ? 'blocking' : 'advisory');
       if (transaction) {
         transaction.projectPath = relativeOrAbsolute(
           input.workspacePath,
@@ -735,10 +777,12 @@ function doctorEvidenceActions(input: {
         ),
         sourceStepId: capabilityId,
         findingId:
-          typeof capability.issueId === 'string' && capability.issueId.trim()
+          diagnosisIdentity?.findingId ??
+          (typeof capability.issueId === 'string' && capability.issueId.trim()
             ? capability.issueId.trim()
-            : capabilityId,
+            : capabilityId),
         findingStatus,
+        causalKey: diagnosisIdentity?.causalKey,
         strategy,
         transaction,
         cwd: 'project',

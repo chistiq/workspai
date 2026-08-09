@@ -59,6 +59,11 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `release-readiness.v1.json` — release readiness gate evidence
 - `workspace-run-last.v1.json` — multi-stage workspace run evidence
 - `doctor-workspace-evidence.v1.json` / `doctor-project-evidence.v1.json` — doctor evidence
+- `workspace-intelligence/doctor-diagnosis.v1.json` — runtime-neutral causal findings, proof bindings, confidence, unknowns, contradictions, and repair disposition embedded in Doctor evidence
+- `workspace-intelligence/doctor-capabilities.v1.json` — fail-closed runtime/framework ownership, six-domain support levels, platform boundaries, repair modes, and extraction-safe adapter inventory
+- `workspace-intelligence/doctor-validation.v1.json` — versioned disease-corpus results across every registered adapter, with bounded synthetic precision/recall and explicit limitations
+- `workspace-intelligence/doctor-receipt.v1.json` — compact Doctor verdict, unambiguous counts, freshness, affected projects, blockers, and next-action handoff; full evidence remains canonical
+- `workspace-intelligence/doctor-summary.v1.json` — bounded stdout contract emitted by `doctor --json=summary` for system, workspace, and project consumers
 - `doctor-remediation-plan.v2.json` — canonical persisted Doctor fix/plan Studio handoff contract (`v1` path is a deprecated compatibility alias)
 - `artifact-remediation-plan.v1.json` — cross-artifact Studio handoff for Bootstrap, Analyze, Readiness, Pipeline, Workspace Run, Workspace Verify, and Doctor plan bridging
 - `workspace-intelligence/workspace-repair-proposal.v1.json` — bounded, hash-pinned source changes and optional runtime-native validation proposed by an IDE model; proposals never execute themselves

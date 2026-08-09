@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/doctor-diagnosis.v1.json",
+  "title": "Workspai Universal Doctor Diagnosis",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "engineVersion",
+    "project",
+    "capability",
+    "domains",
+    "coverage",
+    "findings",
+    "causalGroups",
+    "unknowns",
+    "contradictions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.doctor-diagnosis.v1" },
+    "engineVersion": { "const": "universal-diagnosis-v1" },
+    "project": {
+      "type": "object",
+      "required": ["name", "path", "runtimeFamily", "runtimeFamilies", "framework", "projectKind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "runtimeFamily": { "type": "string", "minLength": 1 },
+        "runtimeFamilies": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "framework": { "type": "string", "minLength": 1 },
+        "projectKind": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "capability": {
+      "type": "object",
+      "required": [
+        "registryVersion",
+        "adapterId",
+        "runtimeFamily",
+        "tier",
+        "confidence",
+        "nativeDomains",
+        "portableDomains",
+        "observableDomains",
+        "unsupportedDomains",
+        "limitations"
+      ],
+      "properties": {
+        "registryVersion": { "type": "string", "minLength": 1 },
+        "adapterId": { "type": "string", "minLength": 1 },
+        "runtimeFamily": { "type": "string", "minLength": 1 },
+        "tier": { "enum": ["first-class", "extended", "fallback"] },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "nativeDomains": { "$ref": "#/$defs/domainList" },
+        "portableDomains": { "$ref": "#/$defs/domainList" },
+        "observableDomains": { "$ref": "#/$defs/domainList" },
+        "unsupportedDomains": { "$ref": "#/$defs/domainList" },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "observationCount",
+          "blockingFindings",
+          "advisoryFindings",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "enum": ["runtime", "dependency", "security", "configuration", "test", "quality"]
+          },
+          "status": { "enum": ["clean", "findings", "not-applicable", "not-run", "stale"] },
+          "observationCount": { "type": "integer", "minimum": 0 },
+          "blockingFindings": { "type": "integer", "minimum": 0 },
+          "advisoryFindings": { "type": "integer", "minimum": 0 },
+          "reason": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "totalObservations",
+        "evaluatedObservations",
+        "passingObservations",
+        "blockingFindings",
+        "advisoryFindings",
+        "unknownFindings",
+        "repairableFindings",
+        "manualFindings",
+        "unsupportedFindings",
+        "contradictionCount",
+        "diagnosisCompleteness"
+      ],
+      "properties": {
+        "totalObservations": { "type": "integer", "minimum": 0 },
+        "evaluatedObservations": { "type": "integer", "minimum": 0 },
+        "passingObservations": { "type": "integer", "minimum": 0 },
+        "blockingFindings": { "type": "integer", "minimum": 0 },
+        "advisoryFindings": { "type": "integer", "minimum": 0 },
+        "unknownFindings": { "type": "integer", "minimum": 0 },
+        "repairableFindings": { "type": "integer", "minimum": 0 },
+        "manualFindings": { "type": "integer", "minimum": 0 },
+        "unsupportedFindings": { "type": "integer", "minimum": 0 },
+        "contradictionCount": { "type": "integer", "minimum": 0 },
+        "diagnosisCompleteness": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "causalGroups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/causalGroup" }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "reason"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 },
+          "probeId": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["probeId", "statuses", "reason"],
+        "properties": {
+          "probeId": { "type": "string", "minLength": 1 },
+          "statuses": {
+            "type": "array",
+            "items": { "enum": ["pass", "warn", "fail"] },
+            "minItems": 2,
+            "uniqueItems": true
+          },
+          "reason": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "domainList": {
+      "type": "array",
+      "items": {
+        "enum": ["runtime", "dependency", "security", "configuration", "test", "quality"]
+      },
+      "uniqueItems": true
+    },
+    "proof": {
+      "type": "object",
+      "required": ["kind", "role", "ref", "claim"],
+      "properties": {
+        "kind": { "enum": ["probe", "file", "dependency", "runtime", "command", "graph", "unknown"] },
+        "role": { "enum": ["observation", "repair-target", "subject", "verification", "impact"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "claim": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "repair": {
+      "type": "object",
+      "required": ["disposition", "requiresFreshEvidence"],
+      "properties": {
+        "disposition": {
+          "enum": ["automatic", "approval-required", "manual", "unavailable", "not-needed"]
+        },
+        "capabilityId": { "type": "string", "minLength": 1 },
+        "operationType": { "type": "string", "minLength": 1 },
+        "verifyCommand": { "type": "string", "minLength": 1 },
+        "requiresFreshEvidence": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "causalKey",
+        "projectName",
+        "projectPath",
+        "probeId",
+        "label",
+        "status",
+        "severity",
+        "issueClass",
+        "operationalImpact",
+        "applicability",
+        "confidence",
+        "confidenceScore",
+        "diagnosisState",
+        "symptom",
+        "proofs",
+        "repair"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "causalKey": { "type": "string", "minLength": 1 },
+        "projectName": { "type": "string", "minLength": 1 },
+        "projectPath": { "type": "string", "minLength": 1 },
+        "probeId": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["blocking", "advisory", "informational", "unknown"] },
+        "severity": { "enum": ["info", "warn", "error"] },
+        "issueClass": { "type": "string", "minLength": 1 },
+        "operationalImpact": { "type": "string", "minLength": 1 },
+        "applicability": { "enum": ["applicable", "not-applicable", "unknown"] },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "confidenceScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "diagnosisState": { "enum": ["confirmed", "candidate", "unknown"] },
+        "symptom": { "type": "string", "minLength": 1 },
+        "recommendation": { "type": "string", "minLength": 1 },
+        "proofs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/proof" },
+          "minItems": 1
+        },
+        "repair": { "$ref": "#/$defs/repair" }
+      },
+      "additionalProperties": false
+    },
+    "causalGroup": {
+      "type": "object",
+      "required": ["causalKey", "issueClass", "status", "findingIds", "projectPaths", "repairable"],
+      "properties": {
+        "causalKey": { "type": "string", "minLength": 1 },
+        "issueClass": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["blocking", "advisory", "informational", "unknown"] },
+        "findingIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "projectPaths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "repairable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

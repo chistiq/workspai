@@ -299,7 +299,12 @@ export async function runWorkspaceIntelligenceChain(input: {
   });
 
   await stage('doctor-evidence', async () => {
-    const exitCode = await runDoctor({ workspace: workspacePath, json: true, quiet: true });
+    const exitCode = await runDoctor({
+      workspace: workspacePath,
+      json: true,
+      quiet: true,
+      profile: input.strict === true ? 'enterprise-strict' : 'local',
+    });
     return { exitCode, blocked: exitCode !== 0, message: `doctor exit ${exitCode}` };
   });
 
@@ -314,7 +319,11 @@ export async function runWorkspaceIntelligenceChain(input: {
   });
 
   await stage('analyze-evidence', async () => {
-    const result = await runAnalyze({ workspacePath, json: true, strict: false });
+    const result = await runAnalyze({
+      workspacePath,
+      json: true,
+      strict: input.strict === true,
+    });
     return {
       blocked:
         result.summary.verdict === 'blocked' ||
@@ -376,7 +385,7 @@ export async function runWorkspaceIntelligenceChain(input: {
       agent: input.agent ?? 'generic',
       write: true,
       refreshContext: false,
-      strict: false,
+      strict: input.strict === true,
       preset: 'enterprise',
     });
     return { message: `${result.writtenFiles.length} grounding files written` };

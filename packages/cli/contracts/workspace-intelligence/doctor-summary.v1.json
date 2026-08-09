@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/doctor-summary.v1.json",
+  "title": "Workspai Doctor JSON Summary",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "scope", "verdict", "counts"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.doctor-summary.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "scope": { "enum": ["system", "workspace", "project"] },
+    "verdict": { "enum": ["passed", "attention", "blocked"] },
+    "counts": { "$ref": "doctor-receipt.v1.json#/$defs/counts" },
+    "freshness": { "$ref": "doctor-receipt.v1.json#/$defs/freshness" },
+    "workspace": {
+      "type": ["object", "null"],
+      "required": ["name", "path"],
+      "properties": {
+        "name": { "type": "string" },
+        "path": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "path", "runtimeFamily", "framework"],
+      "properties": {
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "runtimeFamily": { "type": "string" },
+        "framework": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "affectedProjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "runtimeFamily", "verdict", "blockingCauses", "advisoryFindings", "unknownFindings"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "runtimeFamily": { "type": "string" },
+          "verdict": { "enum": ["passed", "attention", "blocked"] },
+          "blockingCauses": { "type": "integer", "minimum": 0 },
+          "advisoryFindings": { "type": "integer", "minimum": 0 },
+          "unknownFindings": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "issueClass", "symptom", "repairDisposition"],
+        "properties": {
+          "id": { "type": "string" },
+          "issueClass": { "type": "string" },
+          "symptom": { "type": "string" },
+          "repairDisposition": { "enum": ["automatic", "approval-required", "manual", "unavailable", "not-needed"] },
+          "capabilityId": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "system": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status", "message"],
+        "properties": {
+          "status": { "enum": ["ok", "warn", "error"] },
+          "message": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "nextActions": { "type": "array", "items": { "type": "string" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "scope": { "const": "workspace" } } },
+      "then": { "required": ["workspace", "affectedProjects", "freshness", "artifacts"] }
+    },
+    {
+      "if": { "properties": { "scope": { "const": "project" } } },
+      "then": { "required": ["workspace", "project", "blockers", "freshness", "artifacts"] }
+    },
+    {
+      "if": { "properties": { "scope": { "const": "system" } } },
+      "then": { "required": ["system", "nextActions"] }
+    }
+  ],
+  "additionalProperties": false
+}

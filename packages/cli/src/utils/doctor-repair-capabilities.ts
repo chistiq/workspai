@@ -111,6 +111,101 @@ export type DoctorRepairOperation =
       phony: boolean;
     };
 
+/**
+ * Validate an untrusted operation at the shared Doctor/Repair boundary.
+ * Keeping this validator beside the data contract prevents Doctor, the
+ * remediation planner, and the transaction engine from accepting different
+ * operation subsets.
+ */
+export function parseDoctorRepairOperation(value: unknown): DoctorRepairOperation | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const operation = value as Partial<DoctorRepairOperation>;
+  const safePath = (candidate: unknown): candidate is string =>
+    typeof candidate === 'string' && candidate.trim().length > 0 && !candidate.includes('\0');
+  if (operation.type === 'file-create') {
+    return safePath(operation.path) &&
+      typeof operation.content === 'string' &&
+      operation.overwrite === false
+      ? (operation as DoctorRepairOperation)
+      : null;
+  }
+  if (operation.type === 'file-append') {
+    return safePath(operation.path) &&
+      Array.isArray(operation.lines) &&
+      operation.lines.every(
+        (line) => typeof line === 'string' && !line.includes('\n') && !line.includes('\r')
+      ) &&
+      typeof operation.ensureNewline === 'boolean'
+      ? (operation as DoctorRepairOperation)
+      : null;
+  }
+  if (operation.type === 'file-copy') {
+    return safePath(operation.sourcePath) &&
+      safePath(operation.path) &&
+      operation.overwrite === false
+      ? (operation as DoctorRepairOperation)
+      : null;
+  }
+  if (operation.type === 'package-json-script') {
+    return safePath(operation.path) &&
+      typeof operation.scriptName === 'string' &&
+      typeof operation.scriptValue === 'string'
+      ? (operation as DoctorRepairOperation)
+      : null;
+  }
+  if (operation.type === 'json-edit') {
+    return safePath(operation.path) &&
+      Array.isArray(operation.edits) &&
+      operation.edits.every(
+        (edit) =>
+          edit &&
+          typeof edit === 'object' &&
+          !Array.isArray(edit) &&
+          typeof edit.pointer === 'string' &&
+          edit.pointer.startsWith('/') &&
+          !edit.pointer.includes('\0') &&
+          (typeof edit.value === 'string' ||
+            typeof edit.value === 'number' ||
+            typeof edit.value === 'boolean' ||
+            edit.value === null)
+      )
+      ? (operation as DoctorRepairOperation)
+      : null;
+  }
+  if (operation.type === 'env-key-add') {
+    return safePath(operation.path) &&
+      Array.isArray(operation.keys) &&
+      operation.keys.every(
+        (key) =>
+          key &&
+          typeof key === 'object' &&
+          !Array.isArray(key) &&
+          typeof key.name === 'string' &&
+          /^[A-Z_][A-Z0-9_]*$/i.test(key.name) &&
+          typeof key.value === 'string' &&
+          !key.value.includes('\n') &&
+          !key.value.includes('\r') &&
+          (key.comment === undefined ||
+            (typeof key.comment === 'string' &&
+              !key.comment.includes('\n') &&
+              !key.comment.includes('\r')))
+      )
+      ? (operation as DoctorRepairOperation)
+      : null;
+  }
+  if (operation.type === 'makefile-target') {
+    return safePath(operation.path) &&
+      typeof operation.target === 'string' &&
+      /^[A-Za-z0-9_.:-]+$/.test(operation.target) &&
+      typeof operation.command === 'string' &&
+      operation.command.trim().length > 0 &&
+      typeof operation.phony === 'boolean'
+      ? (operation as DoctorRepairOperation)
+      : null;
+  }
+  return null;
+}
+
 export interface DoctorRepairCapability {
   id: string;
   issueId: string;

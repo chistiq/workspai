@@ -363,6 +363,25 @@
       ]
     },
     {
+      "invocation": "doctor capabilities --validate --write",
+      "summary": "Validate every registered Doctor adapter and persist the governed capability and validation artifacts in the selected workspace.",
+      "canonicalArgv": [
+        "doctor",
+        "capabilities",
+        "--validate",
+        "--write"
+      ]
+    },
+    {
+      "invocation": "doctor capabilities --write",
+      "summary": "Persist the canonical Doctor capability matrix as a governed workspace artifact.",
+      "canonicalArgv": [
+        "doctor",
+        "capabilities",
+        "--write"
+      ]
+    },
+    {
       "invocation": "doctor project",
       "summary": "Diagnose the current project and emit structured project evidence.",
       "canonicalArgv": [
@@ -1875,6 +1894,31 @@
       ]
     },
     {
+      "artifactPath": ".workspai/reports/doctor-capabilities.json",
+      "schemaVersion": "workspai.doctor-capabilities.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-capabilities.v1.json",
+      "producerCommands": [
+        [
+          "doctor",
+          "capabilities",
+          "--write"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/reports/doctor-validation-last-run.json",
+      "schemaVersion": "workspai.doctor-validation.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-validation.v1.json",
+      "producerCommands": [
+        [
+          "doctor",
+          "capabilities",
+          "--validate",
+          "--write"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/reports/bootstrap-compliance.latest.json",
       "schemaVersion": "bootstrap-compliance.v1",
       "contractPath": "contracts/bootstrap-compliance.v1.json",
@@ -1922,6 +1966,21 @@
       "schemaVersion": "doctor-project-evidence-v1",
       "contractPath": "contracts/doctor-project-evidence.v1.json",
       "producerCommands": [
+        [
+          "doctor",
+          "project"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/reports/doctor-receipt-last-run.json",
+      "schemaVersion": "workspai.doctor-receipt.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-receipt.v1.json",
+      "producerCommands": [
+        [
+          "doctor",
+          "workspace"
+        ],
         [
           "doctor",
           "project"

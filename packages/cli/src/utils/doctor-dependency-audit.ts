@@ -1,25 +1,29 @@
 import { execa } from 'execa';
 import fsExtra from 'fs-extra';
+import { createHash } from 'node:crypto';
 import path from 'path';
 
-export type DoctorDependencyAuditRuntime =
-  | 'node'
-  | 'bun'
-  | 'deno'
-  | 'python'
-  | 'go'
-  | 'java'
-  | 'rust'
-  | 'elixir'
-  | 'clojure'
-  | 'php'
-  | 'ruby'
-  | 'dotnet'
-  | 'scala'
-  | 'kotlin'
-  | 'c'
-  | 'cpp'
-  | 'unknown';
+export const DOCTOR_DEPENDENCY_AUDIT_RUNTIMES = [
+  'node',
+  'bun',
+  'deno',
+  'python',
+  'go',
+  'java',
+  'rust',
+  'elixir',
+  'clojure',
+  'php',
+  'ruby',
+  'dotnet',
+  'scala',
+  'kotlin',
+  'c',
+  'cpp',
+  'unknown',
+] as const;
+
+export type DoctorDependencyAuditRuntime = (typeof DOCTOR_DEPENDENCY_AUDIT_RUNTIMES)[number];
 
 export type DoctorDependencyAuditStatus =
   'clean' | 'vulnerable' | 'tool-unavailable' | 'unsupported' | 'failed';
@@ -244,6 +248,7 @@ function genericResolutionCandidates(
 }
 
 const auditEvidenceCache = new Map<string, Promise<DoctorDependencyAuditEvidence>>();
+const MAX_AUDIT_CACHE_ENTRIES = 256;
 const AUDIT_INPUT_FILES = [
   'package.json',
   'package-lock.json',
@@ -290,8 +295,10 @@ async function auditCacheKey(
   for (const relativePath of AUDIT_INPUT_FILES) {
     const absolute = path.join(projectPath, relativePath);
     try {
-      const stat = await fsExtra.stat(absolute);
-      state.push(`${relativePath}:${stat.size}:${stat.mtimeMs}`);
+      const content = await fsExtra.readFile(absolute);
+      state.push(
+        `${relativePath}:${content.byteLength}:${createHash('sha256').update(content).digest('hex')}`
+      );
     } catch {
       // Missing inputs are intentionally omitted from the source signature.
     }
@@ -748,6 +755,11 @@ function parseNpmCompatibleAudit(stdout: string): ParsedAudit | null {
     payload.advisories && typeof payload.advisories === 'object'
       ? Object.entries(payload.advisories as Record<string, unknown>)
       : [];
+  const hasAdvisoryShape =
+    payload.advisories !== null &&
+    typeof payload.advisories === 'object' &&
+    !Array.isArray(payload.advisories);
+  if (!hasAdvisoryShape) return null;
   const advisorySubjects: DoctorDependencyAuditSubject[] = [];
   for (const [advisoryId, advisory] of advisoryEntries) {
     const record =
@@ -1255,6 +1267,16 @@ async function collectDoctorDependencyAuditUncached(input: {
       };
     }
 
+    if (parsed.findingCount === 0 && result.exitCode !== 0) {
+      return {
+        ...base,
+        invocation: plan.invocation,
+        exitCode: result.exitCode,
+        status: 'failed',
+        reason: `${plan.tool} emitted a clean-looking payload but exited with ${result.exitCode}; Doctor refuses to treat contradictory audit execution as healthy.`,
+      };
+    }
+
     if ((input.runtime === 'node' || input.runtime === 'bun') && parsed.remediation) {
       parsed.remediation = await normalizeNpmRemediationEvidence(
         input.projectPath,
@@ -1322,12 +1344,19 @@ async function collectDoctorDependencyAuditUncached(input: {
 export async function collectDoctorDependencyAudit(input: {
   projectPath: string;
   runtime: DoctorDependencyAuditRuntime;
+  fresh?: boolean;
 }): Promise<DoctorDependencyAuditEvidence> {
   const key = await auditCacheKey(input.projectPath, input.runtime);
+  if (input.fresh) auditEvidenceCache.delete(key);
   const cached = auditEvidenceCache.get(key);
   if (cached) return cached;
   const pending = collectDoctorDependencyAuditUncached(input);
   auditEvidenceCache.set(key, pending);
+  while (auditEvidenceCache.size > MAX_AUDIT_CACHE_ENTRIES) {
+    const oldest = auditEvidenceCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    auditEvidenceCache.delete(oldest);
+  }
   try {
     return await pending;
   } catch (error) {

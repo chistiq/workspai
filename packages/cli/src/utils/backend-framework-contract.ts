@@ -1034,7 +1034,8 @@ export function detectRuntimeCandidatesFromProject(projectPath: string): Backend
   }
   if (
     fs.existsSync(path.join(projectPath, 'settings.gradle.kts')) ||
-    hasFileWithSuffix(path.join(projectPath, 'src'), '.kt', 3)
+    hasFileWithSuffix(path.join(projectPath, 'src'), '.kt', 3) ||
+    readTextIfExists(path.join(projectPath, 'build.gradle.kts')).includes('kotlin')
   ) {
     push('kotlin');
   }
@@ -1083,7 +1084,17 @@ export function detectNestedRuntimeCandidatesFromProject(
     push('cpp');
   }
   if (hasSuffix('.c', '.h')) push('c');
-  if (hasName('settings.gradle.kts') || hasSuffix('.kt')) push('kotlin');
+  if (
+    hasName('settings.gradle.kts') ||
+    hasSuffix('.kt') ||
+    files.some(
+      (filePath) =>
+        path.basename(filePath) === 'build.gradle.kts' &&
+        readTextIfExists(filePath).includes('kotlin')
+    )
+  ) {
+    push('kotlin');
+  }
 
   return candidates;
 }
@@ -1113,6 +1124,19 @@ export function detectBackendFrameworkFromProject(
   }
 
   const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  // Prefer runtime-specific control surfaces over their compatible host
+  // runtimes. Bun projects also carry package.json and Kotlin projects often
+  // carry Gradle markers; resolving Node/Java first would erase the more
+  // precise runtime contract.
+  if (runtimeCandidates.includes('bun')) {
+    return buildDetection('bun', 'high', 'marker');
+  }
+  if (runtimeCandidates.includes('deno')) {
+    return buildDetection('deno', 'high', 'marker');
+  }
+  if (runtimeCandidates.includes('kotlin')) {
+    return buildDetection('kotlin', 'medium', 'marker');
+  }
   if (runtimeCandidates.includes('node')) {
     const applicationDetection = detectNodeApplicationFromProject(projectPath);
     if (applicationDetection.key !== 'unknown') {
@@ -1182,14 +1206,13 @@ export function detectBackendFrameworkFromProject(
   if (runtimeCandidates.includes('scala')) {
     return buildDetection('scala', 'medium', 'marker');
   }
-  if (runtimeCandidates.includes('kotlin')) {
-    return buildDetection('kotlin', 'medium', 'marker');
-  }
-  if (runtimeCandidates.includes('deno')) {
-    return buildDetection('deno', 'high', 'marker');
-  }
-  if (runtimeCandidates.includes('bun')) {
-    return buildDetection('bun', 'high', 'marker');
+  const hasCppSource =
+    hasFileWithSuffix(projectPath, '.cpp', 3) ||
+    hasFileWithSuffix(projectPath, '.cc', 3) ||
+    hasFileWithSuffix(projectPath, '.cxx', 3);
+  const hasCSource = hasFileWithSuffix(projectPath, '.c', 3);
+  if (runtimeCandidates.includes('c') && hasCSource && !hasCppSource) {
+    return buildDetection('c', 'medium', 'marker');
   }
   if (runtimeCandidates.includes('cpp')) {
     return buildDetection('cpp', 'medium', 'marker');

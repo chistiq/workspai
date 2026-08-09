@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/doctor-capabilities.v1.json",
+  "title": "Workspai Doctor Capability Matrix",
+  "type": "object",
+  "required": ["schemaVersion", "registryVersion", "generatedBy", "policy", "summary", "adapters"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.doctor-capabilities.v1" },
+    "registryVersion": { "const": "universal-doctor-capabilities-v1" },
+    "generatedBy": { "const": "workspai" },
+    "policy": {
+      "type": "object",
+      "required": [
+        "unknownIsHealthy",
+        "unsupportedIsHealthy",
+        "repairRequiresTypedOperation",
+        "canonicalDomains"
+      ],
+      "properties": {
+        "unknownIsHealthy": { "const": false },
+        "unsupportedIsHealthy": { "const": false },
+        "repairRequiresTypedOperation": { "const": true },
+        "canonicalDomains": { "$ref": "#/$defs/domains" }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "adapterCount",
+        "firstClassRuntimes",
+        "extendedRuntimes",
+        "fallbackRuntimes",
+        "frameworkCount",
+        "platformCount"
+      ],
+      "properties": {
+        "adapterCount": { "type": "integer", "minimum": 1 },
+        "firstClassRuntimes": { "type": "integer", "minimum": 0 },
+        "extendedRuntimes": { "type": "integer", "minimum": 0 },
+        "fallbackRuntimes": { "type": "integer", "minimum": 0 },
+        "frameworkCount": { "type": "integer", "minimum": 0 },
+        "platformCount": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "adapters": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/adapter" }
+    }
+  },
+  "$defs": {
+    "domain": { "enum": ["runtime", "dependency", "security", "configuration", "test", "quality"] },
+    "domains": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/domain" },
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true
+    },
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "nonEmptyStringList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "domainCapability": {
+      "type": "object",
+      "required": ["domain", "level", "evidenceSources", "limitations"],
+      "properties": {
+        "domain": { "$ref": "#/$defs/domain" },
+        "level": { "enum": ["native", "portable", "observable", "unsupported"] },
+        "evidenceSources": { "$ref": "#/$defs/stringList" },
+        "limitations": { "$ref": "#/$defs/stringList" }
+      },
+      "additionalProperties": false
+    },
+    "adapter": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "id",
+        "runtimeFamilies",
+        "aliases",
+        "frameworks",
+        "projectKinds",
+        "tier",
+        "platforms",
+        "domains",
+        "repairModes",
+        "source",
+        "limitations"
+      ],
+      "properties": {
+        "contractVersion": { "const": "workspai.doctor-adapter.v1" },
+        "id": { "type": "string", "minLength": 1 },
+        "runtimeFamilies": { "$ref": "#/$defs/nonEmptyStringList" },
+        "aliases": { "$ref": "#/$defs/stringList" },
+        "frameworks": { "$ref": "#/$defs/stringList" },
+        "projectKinds": { "$ref": "#/$defs/nonEmptyStringList" },
+        "tier": { "enum": ["first-class", "extended", "fallback"] },
+        "platforms": {
+          "type": "array",
+          "items": { "enum": ["linux", "darwin", "win32"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "domains": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/domainCapability" },
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "repairModes": {
+          "type": "array",
+          "items": { "enum": ["typed-operation", "structured-invocation", "manual-guidance"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "source": { "enum": ["builtin", "workspace", "package"] },
+        "limitations": { "$ref": "#/$defs/stringList" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

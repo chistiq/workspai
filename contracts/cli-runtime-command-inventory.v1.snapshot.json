@@ -377,8 +377,12 @@
           "attributeName": "project"
         },
         {
-          "flags": "--json",
+          "flags": "--json [mode]",
           "attributeName": "json"
+        },
+        {
+          "flags": "--fresh",
+          "attributeName": "fresh"
         },
         {
           "flags": "--strict",
@@ -403,6 +407,22 @@
         {
           "flags": "--apply",
           "attributeName": "apply"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--framework <framework>",
+          "attributeName": "framework"
+        },
+        {
+          "flags": "--validate",
+          "attributeName": "validate"
+        },
+        {
+          "flags": "--write",
+          "attributeName": "write"
         }
       ]
     },

@@ -62,6 +62,67 @@ const AFFECTED_KINDS = new Set<WorkspaceKnowledgeEntityKind>([
 
 const VERIFY_KINDS = new Set<WorkspaceKnowledgeEntityKind>(['test-suite', 'pipeline']);
 
+type DoctorGraphSource = {
+  graph: WorkspaceKnowledgeGraph;
+  model: WorkspaceModel;
+  entitiesById: ReadonlyMap<string, WorkspaceKnowledgeEntity>;
+  edges: ReadonlyMap<string, string[]>;
+};
+
+const doctorGraphSourceCache = new Map<string, Promise<DoctorGraphSource>>();
+
+async function loadDoctorGraphSource(
+  graphPath: string,
+  modelPath: string
+): Promise<DoctorGraphSource> {
+  const [graphStat, modelStat] = await Promise.all([
+    fsExtra.stat(graphPath),
+    fsExtra.stat(modelPath),
+  ]);
+  const cacheKey = [
+    graphPath,
+    graphStat.size,
+    graphStat.mtimeMs,
+    modelPath,
+    modelStat.size,
+    modelStat.mtimeMs,
+  ].join(':');
+  const cached = doctorGraphSourceCache.get(cacheKey);
+  if (cached) return cached;
+
+  if (doctorGraphSourceCache.size >= 4) doctorGraphSourceCache.clear();
+  const pending = (async () => {
+    const [graphPayload, modelPayload] = await Promise.all([
+      fsExtra.readJSON(graphPath),
+      fsExtra.readJSON(modelPath),
+    ]);
+    assertJsonSchemaContract(
+      graphPayload,
+      'contracts/workspace-intelligence/workspace-knowledge-graph.v1.json',
+      'Doctor graph diagnosis source'
+    );
+    assertJsonSchemaContract(
+      modelPayload,
+      'contracts/workspace-intelligence/workspace-model.v1.json',
+      'Doctor graph diagnosis model'
+    );
+    const graph = graphPayload as WorkspaceKnowledgeGraph;
+    return {
+      graph,
+      model: modelPayload as WorkspaceModel,
+      entitiesById: new Map(graph.entities.map((entity) => [entity.id, entity])),
+      edges: adjacency(graph),
+    };
+  })();
+  doctorGraphSourceCache.set(cacheKey, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    doctorGraphSourceCache.delete(cacheKey);
+    throw error;
+  }
+}
+
 export type DoctorGraphDiagnosisProbe = {
   id: string;
   status: 'pass' | 'warn' | 'fail';
@@ -189,11 +250,10 @@ function adjacency(graph: WorkspaceKnowledgeGraph): Map<string, string[]> {
 }
 
 function reachableEntityIds(
-  graph: WorkspaceKnowledgeGraph,
+  edges: ReadonlyMap<string, string[]>,
   starts: readonly string[],
   maxDepth: number
 ): string[] {
-  const edges = adjacency(graph);
   const visited = new Set(starts);
   const queue = starts.map((id) => ({ id, depth: 0 }));
   for (let index = 0; index < queue.length; index += 1) {
@@ -221,13 +281,37 @@ function normalizedEntitySubjectValues(entity: WorkspaceKnowledgeEntity): Set<st
   );
 }
 
+function normalizedFindingStatement(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function legacyIssueCoveredByProbe(
+  issue: string,
+  probes: readonly DoctorGraphDiagnosisProbe[]
+): boolean {
+  const normalizedIssue = normalizedFindingStatement(issue);
+  if (!normalizedIssue) return true;
+  return probes.some((probe) => {
+    const normalizedReason = normalizedFindingStatement(probe.reason);
+    return (
+      normalizedReason === normalizedIssue ||
+      normalizedReason.includes(normalizedIssue) ||
+      normalizedIssue.includes(normalizedReason)
+    );
+  });
+}
+
 function rootEntitiesForFinding(
-  graph: WorkspaceKnowledgeGraph,
   project: WorkspaceKnowledgeEntity,
+  scoped: readonly WorkspaceKnowledgeEntity[],
   issueClass: string,
   subjects: readonly string[]
 ): { roots: WorkspaceKnowledgeEntity[]; unresolvedSubjects: string[] } {
-  const scoped = projectEntities(graph, project);
   const kinds = ROOT_KINDS[issueClass] ?? ROOT_KINDS.unknown;
   const normalizedSubjects = [
     ...new Set(subjects.map((value) => value.trim().toLowerCase()).filter(Boolean)),
@@ -244,19 +328,26 @@ function rootEntitiesForFinding(
       )
     );
     return {
-      roots: matches.length > 0 ? matches.slice(0, 12) : [project],
+      roots: matches.length > 0 ? matches.slice(0, 4) : [project],
       unresolvedSubjects: subjects.filter(
         (candidate) => !resolved.has(candidate.trim().toLowerCase())
       ),
     };
   }
-  const matches = scoped.filter((entity) => kinds?.includes(entity.kind)).slice(0, 6);
+  const matches = scoped.filter((entity) => kinds?.includes(entity.kind)).slice(0, 4);
   return { roots: matches.length > 0 ? matches : [project], unresolvedSubjects: [] };
 }
 
 function findingFromProbe(
   graph: WorkspaceKnowledgeGraph,
   project: WorkspaceKnowledgeEntity,
+  context: {
+    scoped: readonly WorkspaceKnowledgeEntity[];
+    scopedIds: ReadonlySet<string>;
+    entitiesById: ReadonlyMap<string, WorkspaceKnowledgeEntity>;
+    edges: ReadonlyMap<string, string[]>;
+    projectRelativePath: string;
+  },
   probe: DoctorGraphDiagnosisProbe
 ): DoctorGraphFinding {
   const issueClass = probe.issueClass ?? 'unknown';
@@ -264,33 +355,35 @@ function findingFromProbe(
     ...new Set((probe.subjects ?? []).map((value) => value.trim()).filter(Boolean)),
   ];
   const { roots, unresolvedSubjects } = rootEntitiesForFinding(
-    graph,
     project,
+    context.scoped,
     issueClass,
     subjects
   );
-  const entitiesById = new Map(graph.entities.map((entity) => [entity.id, entity]));
   const reachable = reachableEntityIds(
-    graph,
+    context.edges,
     roots.map((entity) => entity.id),
     3
   )
-    .map((id) => entitiesById.get(id))
+    .map((id) => context.entitiesById.get(id))
     .filter((entity): entity is WorkspaceKnowledgeEntity => Boolean(entity));
   const affected = reachable
     .filter(
-      (entity) => !roots.some((root) => root.id === entity.id) && AFFECTED_KINDS.has(entity.kind)
+      (entity) =>
+        context.scopedIds.has(entity.id) &&
+        !roots.some((root) => root.id === entity.id) &&
+        AFFECTED_KINDS.has(entity.kind)
     )
-    .slice(0, 20);
+    .slice(0, 6);
   const verificationTargets = reachable
-    .filter((entity) => VERIFY_KINDS.has(entity.kind))
-    .slice(0, 8);
+    .filter((entity) => context.scopedIds.has(entity.id) && VERIFY_KINDS.has(entity.kind))
+    .slice(0, 2);
   const destinations = [...affected, ...verificationTargets]
     .filter(
       (entity, index, values) =>
         values.findIndex((candidate) => candidate.id === entity.id) === index
     )
-    .slice(0, 12);
+    .slice(0, 3);
   const proofPaths = destinations.flatMap((target) => {
     const candidates = roots
       .map((root) => queryKnowledgePath(graph, root.id, target.id))
@@ -315,9 +408,14 @@ function findingFromProbe(
   const sourceArtifacts = graph.proofs
     .filter((proof) => proofIds.has(proof.id))
     .map((proof) => proof.artifact)
+    .filter((artifact) => {
+      if (context.projectRelativePath === '.') return true;
+      const normalizedArtifact = artifact.split(path.sep).join('/').replace(/^\.\//, '');
+      return normalizedArtifact.startsWith(`${context.projectRelativePath}/`);
+    })
     .filter((artifact, index, values) => values.indexOf(artifact) === index)
     .sort()
-    .slice(0, 20);
+    .slice(0, 4);
   const unknowns: string[] = [];
   if (affected.length === 0) {
     unknowns.push('No affected surface is structurally reachable from the selected root evidence.');
@@ -381,21 +479,10 @@ export async function buildDoctorGraphDiagnosis(
 
   let graph: WorkspaceKnowledgeGraph;
   let model: WorkspaceModel;
+  let entitiesById: ReadonlyMap<string, WorkspaceKnowledgeEntity>;
+  let edges: ReadonlyMap<string, string[]>;
   try {
-    const graphPayload = await fsExtra.readJSON(graphPath);
-    const modelPayload = await fsExtra.readJSON(modelPath);
-    assertJsonSchemaContract(
-      graphPayload,
-      'contracts/workspace-intelligence/workspace-knowledge-graph.v1.json',
-      'Doctor graph diagnosis source'
-    );
-    assertJsonSchemaContract(
-      modelPayload,
-      'contracts/workspace-intelligence/workspace-model.v1.json',
-      'Doctor graph diagnosis model'
-    );
-    graph = graphPayload as WorkspaceKnowledgeGraph;
-    model = modelPayload as WorkspaceModel;
+    ({ graph, model, entitiesById, edges } = await loadDoctorGraphSource(graphPath, modelPath));
   } catch (error) {
     return emptyDiagnosis(
       options,
@@ -434,18 +521,30 @@ export async function buildDoctorGraphDiagnosis(
     );
   }
 
+  const scoped = projectEntities(graph, project);
+  const context = {
+    scoped,
+    scopedIds: new Set(scoped.map((entity) => entity.id)),
+    entitiesById,
+    edges,
+    projectRelativePath: portablePath(options.workspacePath, options.projectPath),
+  };
+
+  const findingProbes = (options.probes ?? []).filter(
+    (probe): probe is DoctorGraphDiagnosisProbe & { status: 'warn' | 'fail' } =>
+      probe.status !== 'pass'
+  );
   const findings = [
-    ...(options.probes ?? []).filter(
-      (probe): probe is DoctorGraphDiagnosisProbe & { status: 'warn' | 'fail' } =>
-        probe.status !== 'pass'
-    ),
-    ...(options.issues ?? []).map((reason, index) => ({
-      id: `legacy-project-issue-${index + 1}`,
-      status: 'fail' as const,
-      reason,
-      issueClass: 'runtime',
-    })),
-  ].map((probe) => findingFromProbe(graph, project, probe));
+    ...findingProbes,
+    ...(options.issues ?? [])
+      .filter((reason) => !legacyIssueCoveredByProbe(reason, findingProbes))
+      .map((reason, index) => ({
+        id: `legacy-project-issue-${index + 1}`,
+        status: 'fail' as const,
+        reason,
+        issueClass: 'runtime',
+      })),
+  ].map((probe) => findingFromProbe(graph, project, context, probe));
 
   return {
     schemaVersion: DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION,

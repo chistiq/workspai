@@ -48,7 +48,10 @@ import {
 } from './doctor.js';
 import { runWorkspaceIntelligenceChain } from './workspace-intelligence-runner.js';
 import { resolveWorkspaceProjectLensTargets } from './project-intelligence-lens.js';
-import type { DoctorRepairOperation } from './utils/doctor-repair-capabilities.js';
+import {
+  parseDoctorRepairOperation,
+  type DoctorRepairOperation,
+} from './utils/doctor-repair-capabilities.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 
 const REPAIR_ROOT = '.workspai/repair';
@@ -1866,10 +1869,7 @@ function operationForAction(action: ArtifactRemediationAction): DoctorRepairOper
     const internal = parseInternalRepairCommand(action.command);
     if (internal) return internal;
   }
-  if (action.operation?.type === 'file-create') {
-    return action.operation;
-  }
-  return undefined;
+  return parseDoctorRepairOperation(action.operation) ?? undefined;
 }
 
 async function checkpointPaths(input: {
@@ -1879,12 +1879,35 @@ async function checkpointPaths(input: {
 }): Promise<string[]> {
   const results = new Set<string>(input.dependencyFiles);
   for (const action of input.actions) {
-    for (const file of action.files) results.add(portable(input.workspacePath, file));
+    const projectRoot = actionProjectRoot(input.workspacePath, action);
+    if (!(await insideResolvedBoundary(input.workspacePath, projectRoot))) {
+      throw new Error(
+        `Repair project scope escapes workspace through a symbolic link: ${projectRoot}`
+      );
+    }
+    for (const file of action.files) {
+      const absoluteFile = path.isAbsolute(file)
+        ? path.resolve(file)
+        : path.resolve(input.workspacePath, file);
+      if (!(await insideResolvedBoundary(input.workspacePath, absoluteFile))) {
+        throw new Error(
+          `Repair checkpoint path escapes workspace through a symbolic link: ${file}`
+        );
+      }
+      results.add(portable(input.workspacePath, file));
+    }
     const operation = operationForAction(action);
     if (!operation) continue;
-    const projectRoot = actionProjectRoot(input.workspacePath, action);
     const target = 'path' in operation ? operation.path : undefined;
-    if (target) results.add(portable(input.workspacePath, path.resolve(projectRoot, target)));
+    if (target) {
+      const absoluteTarget = path.resolve(projectRoot, target);
+      if (!(await insideResolvedBoundary(input.workspacePath, absoluteTarget))) {
+        throw new Error(
+          `Repair operation target escapes workspace through a symbolic link: ${target}`
+        );
+      }
+      results.add(portable(input.workspacePath, absoluteTarget));
+    }
   }
   return [...results].filter((value) => value !== '.').sort();
 }
@@ -3390,6 +3413,7 @@ async function applyOperation(
   if (operation.type === 'package-json-script')
     return applyPackageScriptFix({
       projectPath,
+      packageJsonPath: operation.path,
       scriptName: operation.scriptName,
       scriptValue: operation.scriptValue,
     });
@@ -3526,10 +3550,13 @@ async function runStage(input: {
       } else {
         const operation = operationForAction(runtimeAction.action);
         if (operation) {
-          await applyOperation(
-            actionProjectRoot(input.workspacePath, runtimeAction.action),
-            operation
-          );
+          const projectRoot = actionProjectRoot(input.workspacePath, runtimeAction.action);
+          if (!(await insideResolvedBoundary(input.workspacePath, projectRoot))) {
+            throw new Error(
+              `Repair project scope escapes workspace through a symbolic link: ${projectRoot}`
+            );
+          }
+          await applyOperation(projectRoot, operation);
         } else if (input.stage.invocation) {
           const result = await (input.dependencies.runInvocation ?? runInvocation)({
             workspacePath: input.workspacePath,

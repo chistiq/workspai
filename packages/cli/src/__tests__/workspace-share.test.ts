@@ -59,6 +59,7 @@ describe('createWorkspaceShareBundle', () => {
       path.join(projectPath, '.rapidkit', 'reports', 'doctor-last-run.json'),
       {
         status: 'pass',
+        project: { name: 'orders-service' },
       }
     );
 

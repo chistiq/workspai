@@ -8023,36 +8023,78 @@ program
     'Check entire workspace, optionally from an explicit workspace path'
   )
   .option('--project', 'Check only the current project (or nearest parent project)')
-  .option('--json', 'Output results in JSON format (for CI/CD pipelines)')
+  .option('--json [mode]', 'Output JSON: full (default) or summary')
+  .option('--fresh', 'Bypass Doctor project scan cache and refresh live evidence')
   .option('--strict', 'Exit 1 on health errors or warnings (workspace/project scope)')
   .option('--ci', 'CI gate: exit 1 on errors, exit 2 on warnings only')
   .option('--profile <profile>', 'Doctor policy profile: local | ci | release | enterprise-strict')
   .option('--fix', 'Automatically fix common issues (with confirmation)')
   .option('--plan', 'Generate remediation plan without applying changes')
   .option('--apply', 'Apply remediation plan non-interactively')
+  .option('--runtime <runtime>', 'Filter Doctor capability truth by runtime family')
+  .option('--framework <framework>', 'Filter Doctor capability truth by framework')
+  .option('--validate', 'Run the versioned Doctor disease validation corpus')
+  .option('--write', 'Write Doctor capability/validation artifacts inside the workspace')
   .action(
     async (
       scope: string | undefined,
       options: {
         workspace?: boolean | string;
         project?: boolean;
-        json?: boolean;
+        json?: boolean | string;
+        fresh?: boolean;
         strict?: boolean;
         ci?: boolean;
         profile?: string;
         fix?: boolean;
         plan?: boolean;
         apply?: boolean;
+        runtime?: string;
+        framework?: string;
+        validate?: boolean;
+        write?: boolean;
       }
     ) => {
-      if (scope && scope !== 'workspace' && scope !== 'project') {
+      if (scope && scope !== 'workspace' && scope !== 'project' && scope !== 'capabilities') {
         console.log(chalk.red(`Unknown doctor scope: ${scope}`));
-        console.log(chalk.gray('Available: workspace, project'));
+        console.log(chalk.gray('Available: workspace, project, capabilities'));
         console.log(
           chalk.gray(
-            'Usage: npx workspai doctor | npx workspai doctor workspace | npx workspai doctor project'
+            'Usage: npx workspai doctor | npx workspai doctor workspace | npx workspai doctor project | npx workspai doctor capabilities'
           )
         );
+        process.exit(1);
+      }
+
+      if (typeof options.json === 'string' && !['full', 'summary'].includes(options.json)) {
+        console.log(chalk.red(`Invalid Doctor JSON mode: ${options.json}. Use full or summary.`));
+        process.exit(1);
+      }
+
+      if (scope === 'capabilities') {
+        if (options.fix || options.plan || options.apply || options.project) {
+          console.log(
+            chalk.red(
+              'Doctor capability inspection cannot be combined with repair or project-scope flags.'
+            )
+          );
+          process.exit(1);
+        }
+        const { runDoctorCapabilities } = await import('./doctor/capabilities-command.js');
+        const exitCode = await runDoctorCapabilities({
+          runtime: options.runtime,
+          framework: options.framework,
+          validate: options.validate === true,
+          write: options.write === true,
+          workspace: typeof options.workspace === 'string' ? options.workspace : undefined,
+          json: Boolean(options.json),
+        });
+        if (exitCode !== 0) process.exit(exitCode);
+        return;
+      }
+
+      if (options.runtime || options.framework || options.validate || options.write) {
+        console.log(chalk.red('Doctor capability flags require the "doctor capabilities" scope.'));
         process.exit(1);
       }
 
@@ -8100,6 +8142,7 @@ program
       const { runDoctor } = await import('./doctor.js');
       const exitCode = await runDoctor({
         ...options,
+        json: options.json === 'summary' ? 'summary' : Boolean(options.json),
         workspace: options.workspace || scope === 'workspace',
         project: options.project || scope === 'project',
         strict: options.strict === true,

@@ -47,6 +47,9 @@
           "graphDiagnosis": {
             "$ref": "https://workspai.dev/schemas/workspace-intelligence/doctor-graph-diagnosis.v1.json"
           },
+          "diagnosis": {
+            "$ref": "https://workspai.dev/schemas/workspace-intelligence/doctor-diagnosis.v1.json"
+          },
           "verdict": { "enum": ["passed", "attention", "blocked"] },
           "probeSummary": { "$ref": "#/$defs/probeSummary" }
         },
@@ -57,6 +60,7 @@
       "type": "object",
       "required": ["totalProjects", "totalIssues", "hasSystemErrors"],
       "properties": {
+        "counts": { "$ref": "#/$defs/counts" },
         "totalProjects": { "type": "integer", "minimum": 0 },
         "totalIssues": { "type": "integer", "minimum": 0 },
         "projectAdvisoryWarningProjects": { "type": "integer", "minimum": 0 },
@@ -78,6 +82,10 @@
     "policyProfile": { "$ref": "#/$defs/policyProfile" }
   },
   "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
     "dependencyAudit": {
       "type": "object",
       "required": [
@@ -401,6 +409,7 @@
         "status": { "enum": ["pass", "warn", "fail"] },
         "severity": { "enum": ["info", "warn", "error"] },
         "scope": { "type": "string" },
+        "applicability": { "enum": ["applicable", "not-applicable", "unknown"] },
         "reason": { "type": "string" },
         "recommendation": { "type": "string" },
         "freshness": { "$ref": "#/$defs/freshness" },
@@ -540,7 +549,15 @@
       "allOf": [
         {
           "if": { "properties": { "kind": { "const": "dependency-security" } } },
-          "then": { "properties": { "completion": { "type": "object", "properties": { "auditClean": { "const": true } }, "required": ["auditClean"] } } }
+          "then": {
+            "properties": {
+              "completion": {
+                "type": "object",
+                "properties": { "auditClean": { "const": true } },
+                "required": ["auditClean"]
+              }
+            }
+          }
         },
         {
           "if": { "properties": { "kind": { "const": "dependency-materialization" } } },
@@ -549,7 +566,11 @@
             "properties": {
               "sourceMutationRequired": { "const": false },
               "observableState": { "const": "runtime-dependency-tree" },
-              "completion": { "type": "object", "properties": { "installedTreePresent": { "const": true } }, "required": ["installedTreePresent"] }
+              "completion": {
+                "type": "object",
+                "properties": { "installedTreePresent": { "const": true } },
+                "required": ["installedTreePresent"]
+              }
             }
           }
         }
@@ -635,6 +656,51 @@
         "command": { "type": "string" },
         "phony": { "type": "boolean" }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "file-create" } } },
+          "then": {
+            "required": ["content", "overwrite"],
+            "properties": { "content": {}, "overwrite": { "const": false } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "file-append" } } },
+          "then": {
+            "required": ["lines", "ensureNewline"],
+            "properties": { "lines": {}, "ensureNewline": {} }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "file-copy" } } },
+          "then": {
+            "required": ["sourcePath", "overwrite"],
+            "properties": { "sourcePath": {}, "overwrite": { "const": false } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "package-json-script" } } },
+          "then": {
+            "required": ["scriptName", "scriptValue"],
+            "properties": { "scriptName": {}, "scriptValue": {} }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "json-edit" } } },
+          "then": { "required": ["edits"], "properties": { "edits": {} } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "env-key-add" } } },
+          "then": { "required": ["keys"], "properties": { "keys": {} } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "makefile-target" } } },
+          "then": {
+            "required": ["target", "command", "phony"],
+            "properties": { "target": {}, "command": {}, "phony": {} }
+          }
+        }
+      ],
       "additionalProperties": false
     }
   },

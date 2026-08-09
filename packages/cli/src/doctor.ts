@@ -72,7 +72,10 @@ import type {
   DoctorRepairOperation,
   DoctorRepairStrategyStage,
 } from './utils/doctor-repair-capabilities.js';
-import { buildDependencyMaterializationRepairCapability } from './utils/doctor-repair-capabilities.js';
+import {
+  buildDependencyMaterializationRepairCapability,
+  parseDoctorRepairOperation,
+} from './utils/doctor-repair-capabilities.js';
 import { buildEnterpriseSurfaceProbes } from './utils/doctor-surface-probes.js';
 import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './workspace-history.js';
 import { isWorkspaceShellDirectory } from './utils/workspace-root.js';
@@ -88,7 +91,10 @@ import {
 } from './utils/doctor-dependency-audit.js';
 import { buildDoctorGraphDiagnosis } from './utils/doctor-graph-diagnosis.js';
 import type { DoctorGraphDiagnosis } from './contracts/doctor-graph-diagnosis-contract.js';
+import { DOCTOR_SUMMARY_SCHEMA_VERSION } from './contracts/doctor-summary-contract.js';
+import { buildDoctorDiagnosis, type DoctorDiagnosis } from './doctor/index.js';
 import { inferWorkspaceProjectKind } from './utils/project-kind.js';
+import { resolveWorkspaceRegisteredProjects } from './utils/workspace-registry-summary.js';
 
 export const DOCTOR_WORKSPACE_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor;
 
@@ -320,6 +326,7 @@ interface ProjectHealth {
   importStack?: BackendImportStack;
   supportTier?: FrameworkSupportTier;
   runtimeFamily?: ProjectRuntimeFamily;
+  runtimeFamilies?: ProjectRuntimeFamily[];
   projectKind?: ProjectKind;
   frameworkConfidence?: FrameworkConfidence;
   isGoProject?: boolean;
@@ -341,6 +348,9 @@ interface ProjectHealth {
   repairCapabilities?: DoctorRepairCapability[];
   commandCapabilities?: ProjectCommandCapabilities;
   graphDiagnosis?: DoctorGraphDiagnosis;
+  diagnosis?: DoctorDiagnosis;
+  /** Internal scan control; removed before evidence serialization. */
+  _freshDependencyAudit?: boolean;
 }
 
 type DoctorScopeLabel = 'host-system' | 'workspace-aggregate' | 'project-scoped';
@@ -426,6 +436,7 @@ interface ProjectProbeResult {
   status: 'pass' | 'warn' | 'fail';
   severity: 'info' | 'warn' | 'error';
   scope: DoctorScopeLabel;
+  applicability?: 'applicable' | 'not-applicable' | 'unknown';
   reason: string;
   recommendation?: string;
   repairCapability?: DoctorRepairCapability;
@@ -490,6 +501,7 @@ interface WorkspaceHealth {
   projectScanSignature?: string;
   projectScanCachePath?: string;
   evidencePath?: string;
+  receiptPath?: string;
   scoreBreakdown?: ScoreBreakdownItem[];
   driftDelta?: DoctorDriftDelta;
   scopeProvenance?: ScopeProvenanceSummary;
@@ -509,6 +521,7 @@ interface ProjectHealthEnvelope {
   project: ProjectHealth;
   healthScore: HealthScore;
   evidencePath?: string;
+  receiptPath?: string;
   scoreBreakdown?: ScoreBreakdownItem[];
   driftDelta?: DoctorDriftDelta;
   scopeProvenance?: ScopeProvenanceSummary;
@@ -524,6 +537,24 @@ interface EvidenceFreshnessSummary {
   liveStateProbeCount: number;
   verifyBeforeUseProbeCount: number;
   oldestProbeGeneratedAt?: string;
+}
+
+interface DoctorCountSummary {
+  projectsScanned: number;
+  affectedProjects: number;
+  projectsBlocked: number;
+  projectsNeedingAttention: number;
+  blockingCauses: number;
+  advisoryFindings: number;
+  unknownFindings: number;
+  contradictionFindings: number;
+  repairableFindings: number;
+  manualFindings: number;
+  unsupportedFindings: number;
+  dependencyAdvisorySubjects: number;
+  dependencyVulnerabilityFindings: number;
+  notApplicableChecks: number;
+  systemErrors: number;
 }
 
 interface ScopeProvenanceSummary {
@@ -617,7 +648,7 @@ const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
 // Bump whenever project diagnosis or executable-remediation semantics change.
 // This keeps unchanged source trees from reusing evidence produced by an older
 // Doctor policy after a CLI upgrade.
-const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v2';
+const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v3';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
@@ -794,6 +825,7 @@ function classifyDoctorIssueClass(probe: ProjectProbeResult): DoctorIssueClass {
   if (id.includes('quality') || id.includes('format') || id.includes('lint')) return 'quality';
   if (id.includes('docker') || id.includes('container')) return 'container';
   if (id.includes('deploy') || id.includes('kubernetes')) return 'deployment';
+  if (id.includes('migration') || id.includes('database')) return 'configuration';
   if (id.includes('runtime')) return 'runtime';
   if (id.includes('contract')) return 'workspace-contract';
   if (id.includes('source-tree')) return 'source-tree';
@@ -961,6 +993,58 @@ function normalizeDoctorProbe(probe: ProjectProbeResult, generatedAt: string): P
 function normalizeProjectProbeFreshness(project: ProjectHealth, generatedAt: string): void {
   if (!Array.isArray(project.probes)) return;
   project.probes = project.probes.map((probe) => normalizeDoctorProbe(probe, generatedAt));
+}
+
+function applyUniversalDoctorDiagnosis(project: ProjectHealth): void {
+  project.diagnosis = buildDoctorDiagnosis({
+    projectName: project.name,
+    projectPath: project.path,
+    runtimeFamily: project.runtimeFamily,
+    runtimeFamilies: project.runtimeFamilies,
+    framework: project.framework,
+    projectKind: project.projectKind,
+    probes: project.probes ?? [],
+    legacyIssues: project.issues,
+    dependencySubjects: project.dependencyAudit?.subjects,
+  });
+}
+
+function finalizeUniversalDoctorDiagnosis(
+  project: ProjectHealth,
+  generatedAt: string = new Date().toISOString()
+): void {
+  // Project and workspace Doctor must build the canonical diagnosis from the
+  // same fully normalized probe set. Capability attachment after diagnosis
+  // would otherwise make project evidence disagree with workspace evidence.
+  normalizeProjectProbeFreshness(project, generatedAt);
+  applyCommandCapabilities(project, project.path);
+  applyUniversalDoctorDiagnosis(project);
+}
+
+function enrichDoctorDiagnosisWithGraph(project: ProjectHealth): void {
+  if (!project.diagnosis || project.graphDiagnosis?.status !== 'available') return;
+  const graphFindings = new Map(
+    project.graphDiagnosis.findings.map((finding) => [finding.issueId, finding])
+  );
+  for (const finding of project.diagnosis.findings) {
+    const graphFinding = graphFindings.get(finding.probeId);
+    if (!graphFinding) continue;
+    const graphProofs = [
+      {
+        kind: 'graph' as const,
+        role: 'impact' as const,
+        ref: `doctor-graph:${project.name}:${graphFinding.issueId}`,
+        claim: `Canonical graph diagnosis retained ${graphFinding.proofPaths.length} bounded proof path(s), ${graphFinding.affectedEntities.length} affected candidate(s), and ${graphFinding.verificationTargets.length} verification target(s); structural reachability is not runtime causality.`,
+      },
+    ];
+    const existing = new Set(
+      finding.proofs.map((proof) => `${proof.kind}:${proof.role}:${proof.ref}`)
+    );
+    for (const proof of graphProofs) {
+      const identity = `${proof.kind}:${proof.role}:${proof.ref}`;
+      if (!existing.has(identity)) finding.proofs.push(proof);
+    }
+  }
 }
 
 function buildEvidenceFreshnessSummary(
@@ -1232,13 +1316,6 @@ function buildProjectFixCommand(projectPath: string, command: string): string {
     return `Set-Location -LiteralPath "${projectPath.replace(/"/g, '`"')}"; ${command}`;
   }
   return `cd '${projectPath.replace(/'/g, `'"'"'`)}' && ${command}`;
-}
-
-function buildEnvCopyFixCommand(projectPath: string): string {
-  if (isWindowsPlatform()) {
-    return buildProjectFixCommand(projectPath, 'Copy-Item .env.example .env');
-  }
-  return buildProjectFixCommand(projectPath, 'cp .env.example .env');
 }
 
 function buildPythonDependencyInstallFixCommand(input: {
@@ -1700,7 +1777,68 @@ async function detectPythonFramework(
 async function statSignature(candidatePath: string): Promise<string> {
   try {
     const stat = await fsExtra.stat(candidatePath);
-    return `${path.basename(candidatePath)}:${stat.isDirectory() ? 'd' : 'f'}:${stat.size}:${stat.mtimeMs}`;
+    if (stat.isFile() && stat.size <= 1_048_576) {
+      const content = await fsExtra.readFile(candidatePath);
+      return `${path.basename(candidatePath)}:f:${stat.size}:${createHash('sha256').update(content).digest('hex')}`;
+    }
+    if (stat.isDirectory()) {
+      if (['node_modules', '.venv'].includes(path.basename(candidatePath))) {
+        const entries = await fsExtra.readdir(candidatePath).catch(() => [] as string[]);
+        return `${path.basename(candidatePath)}:materialized:${entries.length}:${stat.mtimeMs}`;
+      }
+      const digest = createHash('sha256');
+      const queue = [candidatePath];
+      const ignored = new Set([
+        '.git',
+        '.workspai',
+        '.rapidkit',
+        '.venv',
+        'node_modules',
+        'dist',
+        'build',
+        'coverage',
+        'target',
+        'bin',
+        'obj',
+        '__pycache__',
+      ]);
+      let visitedFiles = 0;
+      let hashedBytes = 0;
+      const maxFiles = 20_000;
+      const maxContentBytes = 32 * 1024 * 1024;
+      while (queue.length > 0 && visitedFiles < maxFiles) {
+        const current = queue.shift();
+        if (!current) break;
+        const entries = await fsExtra.readdir(current, { withFileTypes: true }).catch(() => []);
+        entries.sort((left, right) => left.name.localeCompare(right.name));
+        for (const entry of entries) {
+          if (ignored.has(entry.name)) continue;
+          const absolutePath = path.join(current, entry.name);
+          const relativePath = path.relative(candidatePath, absolutePath).split(path.sep).join('/');
+          if (entry.isDirectory()) {
+            digest.update(`d:${relativePath}\0`);
+            queue.push(absolutePath);
+            continue;
+          }
+          if (!entry.isFile()) continue;
+          const fileStat = await fsExtra.stat(absolutePath).catch(() => null);
+          if (!fileStat) continue;
+          visitedFiles += 1;
+          digest.update(`f:${relativePath}:${fileStat.size}:${fileStat.mtimeMs}\0`);
+          if (fileStat.size <= 262_144 && hashedBytes + fileStat.size <= maxContentBytes) {
+            const content = await fsExtra.readFile(absolutePath).catch(() => null);
+            if (content) {
+              hashedBytes += content.length;
+              digest.update(content);
+            }
+          }
+          if (visitedFiles >= maxFiles) break;
+        }
+      }
+      digest.update(`files:${visitedFiles}:bytes:${hashedBytes}:remaining:${queue.length}`);
+      return `${path.basename(candidatePath)}:d:${digest.digest('hex')}`;
+    }
+    return `${path.basename(candidatePath)}:other:${stat.size}:${stat.mtimeMs}`;
   } catch {
     return `${path.basename(candidatePath)}:missing`;
   }
@@ -1720,6 +1858,7 @@ async function collectWorkspaceProjectPaths(workspacePath: string): Promise<stri
       '__pycache__',
     ]);
     const projectPaths = new Set<string>();
+    const governedProjectRoots = new Set<string>();
 
     const hasDoctorProjectSurface = async (dirPath: string): Promise<boolean> => {
       if (await hasRapidkitProjectMarkers(dirPath)) {
@@ -1739,8 +1878,12 @@ async function collectWorkspaceProjectPaths(workspacePath: string): Promise<stri
         'Gemfile',
         'mix.exs',
         'deps.edn',
+        'project.clj',
+        'build.sbt',
         'deno.json',
         'deno.jsonc',
+        'CMakeLists.txt',
+        'meson.build',
       ];
       for (const candidate of manifestCandidates) {
         if (candidate === '*.csproj') {
@@ -1761,19 +1904,32 @@ async function collectWorkspaceProjectPaths(workspacePath: string): Promise<stri
       projectPaths.add(workspacePath);
     }
 
+    const registeredProjects = await resolveWorkspaceRegisteredProjects(workspacePath);
+    for (const registeredProject of registeredProjects.summary.projects) {
+      const projectPath = path.resolve(workspacePath, registeredProject.relativePath);
+      if (await hasDoctorProjectSurface(projectPath)) {
+        projectPaths.add(projectPath);
+        governedProjectRoots.add(projectPath);
+      }
+    }
+
     const importedProjects = await readImportedProjectsRegistry(workspacePath);
     for (const importedProject of importedProjects) {
       const projectPath = path.isAbsolute(importedProject.path)
         ? importedProject.path
         : path.join(workspacePath, importedProject.path);
       if (await hasDoctorProjectSurface(projectPath)) {
-        projectPaths.add(projectPath);
+        const resolvedProjectPath = path.resolve(projectPath);
+        projectPaths.add(resolvedProjectPath);
+        governedProjectRoots.add(resolvedProjectPath);
       }
     }
 
     const discoveredProjects = await discoverWorkspaceProjects(workspacePath, {
       skipDirs: ignoredDirs,
-      descendIntoMatchedProjects: false,
+      // Composite repositories can contain independently governed nested
+      // runtimes. Doctor must not stop at the first manifest-bearing parent.
+      descendIntoMatchedProjects: true,
       isProjectDir: async (dirPath, rootPath) => {
         if (path.resolve(dirPath) === path.resolve(rootPath)) {
           return hasRapidkitProjectMarkers(dirPath);
@@ -1781,7 +1937,21 @@ async function collectWorkspaceProjectPaths(workspacePath: string): Promise<stri
         return hasDoctorProjectSurface(dirPath);
       },
     });
-    discoveredProjects.forEach((projectPath) => projectPaths.add(projectPath));
+    discoveredProjects.forEach((projectPath) => {
+      const resolvedProjectPath = path.resolve(projectPath);
+      const nestedInsideGovernedProject = [...governedProjectRoots].some(
+        (governedRoot) =>
+          resolvedProjectPath !== governedRoot &&
+          resolvedProjectPath.startsWith(`${governedRoot}${path.sep}`)
+      );
+      // The workspace registry/contract owns project boundaries. Nested
+      // manifests inside a governed project (for example src/*.csproj and
+      // tests/*.csproj) are runtime surfaces, not additional workspace
+      // projects, unless they are explicitly registered themselves.
+      if (!nestedInsideGovernedProject || governedProjectRoots.has(resolvedProjectPath)) {
+        projectPaths.add(resolvedProjectPath);
+      }
+    });
 
     if (projectPaths.size === 0) {
       const fallbackProjects = await findRapidkitProjectsDeep(workspacePath, 3, ignoredDirs);
@@ -1822,6 +1992,9 @@ async function buildWorkspaceProjectSignature(
   ];
 
   const projectKeyPaths = [
+    // The bounded recursive fingerprint closes cache holes for runtime-specific
+    // manifests and source layouts without traversing dependency/build trees.
+    '.',
     '.workspai/project.json',
     '.workspai/context.json',
     '.workspai/file-hashes.json',
@@ -1889,6 +2062,13 @@ async function loadWorkspaceProjectCache(
     ) {
       return null;
     }
+    const generatedAt = Date.parse(cached.generatedAt);
+    const configuredMaxAge = Number(process.env.WORKSPAI_DOCTOR_CACHE_MAX_AGE_SECONDS);
+    const maxAgeSeconds =
+      Number.isFinite(configuredMaxAge) && configuredMaxAge >= 0 ? configuredMaxAge : 5 * 60;
+    if (!Number.isFinite(generatedAt) || Date.now() - generatedAt > maxAgeSeconds * 1000) {
+      return null;
+    }
     return cached;
   } catch {
     return null;
@@ -1896,20 +2076,44 @@ async function loadWorkspaceProjectCache(
 }
 
 async function saveWorkspaceProjectCache(
-  cachePath: string,
+  workspacePath: string,
   entry: DoctorWorkspaceCacheEntry
 ): Promise<void> {
   try {
     assertJsonSchemaContract(
       entry,
       'contracts/doctor-workspace-cache.v2.json',
-      `Doctor workspace cache ${cachePath}`
+      `Doctor workspace cache ${workspacePath}`
     );
-    await fsExtra.ensureDir(path.dirname(cachePath));
-    await fsExtra.writeJSON(cachePath, entry, { spaces: 2 });
+    await writeWorkspaceArtifactJson(
+      workspacePath,
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorWorkspaceCache,
+      entry
+    );
   } catch {
     // Non-fatal cache write failure.
   }
+}
+
+async function mapDoctorProjectsWithConcurrency<T>(
+  projectPaths: string[],
+  operation: (projectPath: string) => Promise<T>
+): Promise<T[]> {
+  const requested = Number.parseInt(process.env.RAPIDKIT_DOCTOR_SCAN_CONCURRENCY ?? '4', 10);
+  const concurrency = Number.isFinite(requested) ? Math.min(32, Math.max(1, requested)) : 4;
+  const results = new Array<T>(projectPaths.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, projectPaths.length) }, async () => {
+    while (cursor < projectPaths.length) {
+      const index = cursor;
+      cursor += 1;
+      const projectPath = projectPaths[index];
+      if (projectPath === undefined) break;
+      results[index] = await operation(projectPath);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 async function writeDoctorEvidence(
@@ -1921,14 +2125,22 @@ async function writeDoctorEvidence(
   try {
     const blockers: string[] = [];
     for (const project of health.projects) {
-      for (const issue of project.issues ?? []) {
-        if (typeof issue === 'string' && issue.trim()) {
-          blockers.push(`${project.name}: ${issue.trim()}`);
+      if (project.diagnosis) {
+        for (const finding of project.diagnosis.findings) {
+          if (finding.status === 'blocking' && finding.symptom.trim()) {
+            blockers.push(`${project.name}: ${finding.symptom.trim()}`);
+          }
         }
-      }
-      for (const probe of project.probes ?? []) {
-        if (probe.status === 'fail' && probe.reason.trim()) {
-          blockers.push(`${project.name}: ${probe.reason.trim()}`);
+      } else {
+        for (const issue of project.issues ?? []) {
+          if (typeof issue === 'string' && issue.trim()) {
+            blockers.push(`${project.name}: ${issue.trim()}`);
+          }
+        }
+        for (const probe of project.probes ?? []) {
+          if (probe.status === 'fail' && probe.reason.trim()) {
+            blockers.push(`${project.name}: ${probe.reason.trim()}`);
+          }
         }
       }
     }
@@ -1950,6 +2162,13 @@ async function writeDoctorEvidence(
       (sum, summary) => sum + summary.advisoryFindings,
       0
     );
+    const counts = buildDoctorCountSummary(health.projects, [
+      health.python,
+      health.poetry,
+      health.pipx,
+      health.go,
+      health.rapidkitCore,
+    ]);
     const payload = withGovernanceRunMetadata(
       {
         schemaVersion: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
@@ -1976,6 +2195,7 @@ async function writeDoctorEvidence(
         },
         projects: health.projects,
         summary: {
+          counts,
           totalProjects: health.projects.length,
           totalIssues: health.projects.reduce((sum, p) => sum + p.issues.length, 0),
           verdict: health.healthScore?.verdict ?? 'passed',
@@ -2005,10 +2225,10 @@ async function writeDoctorEvidence(
     await writeWorkspaceArtifactJson(workspacePath, DOCTOR_WORKSPACE_REPORT_PATH, payload);
     return evidencePath;
   } catch (error) {
-    if (error instanceof Error && error.message.includes('violates contracts/')) {
-      throw error;
-    }
-    return undefined;
+    // Doctor evidence is a governed source of truth, not best-effort logging.
+    // A semantic, schema, or filesystem failure must be visible to the caller
+    // rather than silently continuing without the artifact consumers require.
+    throw error;
   }
 }
 
@@ -2550,6 +2770,7 @@ async function performCommonChecks(
   health.dependencyAudit = await collectDoctorDependencyAudit({
     projectPath,
     runtime: health.runtimeFamily ?? 'unknown',
+    fresh: health._freshDependencyAudit === true,
   });
   health.vulnerabilities =
     health.dependencyAudit.status === 'vulnerable'
@@ -2722,22 +2943,27 @@ function pushProjectProbe(health: ProjectHealth, probe: ProjectProbeResult): voi
     health.probes = [];
   }
   const normalizedProbe = normalizeDoctorProbe(probe, new Date().toISOString());
-  health.probes.push(normalizedProbe);
+  const effectiveProbe: ProjectProbeResult =
+    normalizedProbe.status === 'pass' && normalizedProbe.repairCapability
+      ? { ...normalizedProbe, repairCapability: undefined }
+      : normalizedProbe;
+  health.probes.push(effectiveProbe);
 
-  if (normalizedProbe.repairCapability) {
+  if (effectiveProbe.repairCapability) {
     if (!health.repairCapabilities) {
       health.repairCapabilities = [];
     }
-    health.repairCapabilities.push(normalizedProbe.repairCapability);
+    health.repairCapabilities.push(effectiveProbe.repairCapability);
 
     if (
-      normalizedProbe.repairCapability.status === 'available' &&
-      normalizedProbe.repairCapability.canAutoFix &&
-      normalizedProbe.repairCapability.command
+      effectiveProbe.status !== 'pass' &&
+      effectiveProbe.repairCapability.status === 'available' &&
+      effectiveProbe.repairCapability.canAutoFix &&
+      effectiveProbe.repairCapability.command
     ) {
       health.fixCommands = health.fixCommands ?? [];
-      if (!health.fixCommands.includes(normalizedProbe.repairCapability.command)) {
-        health.fixCommands.push(normalizedProbe.repairCapability.command);
+      if (!health.fixCommands.includes(effectiveProbe.repairCapability.command)) {
+        health.fixCommands.push(effectiveProbe.repairCapability.command);
       }
     }
   }
@@ -3004,7 +3230,150 @@ async function appendRuntimeAdapterProbes(
         ? undefined
         : 'Expose Program.cs at the project root or under src for deterministic boot probes.',
     });
+    return;
   }
+
+  const portableAdapters: Partial<
+    Record<
+      ProjectRuntimeFamily,
+      {
+        dependencyMarkers: string[];
+        entrypointMarkers: string[];
+        dependencyLabel: string;
+        entrypointLabel: string;
+      }
+    >
+  > = {
+    rust: {
+      dependencyMarkers: ['Cargo.lock'],
+      entrypointMarkers: ['src/main.rs', 'src/lib.rs'],
+      dependencyLabel: 'Rust lockfile integrity',
+      entrypointLabel: 'Rust crate entrypoint',
+    },
+    php: {
+      dependencyMarkers: ['composer.lock'],
+      entrypointMarkers: ['public/index.php', 'artisan', 'index.php'],
+      dependencyLabel: 'Composer lockfile integrity',
+      entrypointLabel: 'PHP application entrypoint',
+    },
+    ruby: {
+      dependencyMarkers: ['Gemfile.lock'],
+      entrypointMarkers: ['config.ru', 'app.rb', 'config/application.rb'],
+      dependencyLabel: 'Bundler lockfile integrity',
+      entrypointLabel: 'Ruby application entrypoint',
+    },
+    elixir: {
+      dependencyMarkers: ['mix.lock'],
+      entrypointMarkers: ['lib/application.ex', 'lib/*/application.ex'],
+      dependencyLabel: 'Mix lockfile integrity',
+      entrypointLabel: 'Elixir application entrypoint',
+    },
+    clojure: {
+      dependencyMarkers: ['deps.edn', 'project.clj'],
+      entrypointMarkers: ['src/core.clj', 'src/main.clj'],
+      dependencyLabel: 'Clojure dependency contract',
+      entrypointLabel: 'Clojure application entrypoint',
+    },
+    deno: {
+      dependencyMarkers: ['deno.lock', 'deno.json', 'deno.jsonc'],
+      entrypointMarkers: ['main.ts', 'mod.ts', 'src/main.ts', 'src/mod.ts'],
+      dependencyLabel: 'Deno dependency contract',
+      entrypointLabel: 'Deno application entrypoint',
+    },
+    bun: {
+      dependencyMarkers: ['bun.lock', 'bun.lockb'],
+      entrypointMarkers: ['src/index.ts', 'src/main.ts', 'index.ts'],
+      dependencyLabel: 'Bun lockfile integrity',
+      entrypointLabel: 'Bun application entrypoint',
+    },
+    scala: {
+      dependencyMarkers: ['build.sbt', 'project/build.properties'],
+      entrypointMarkers: ['src/main/scala/Main.scala', 'src/main/scala/Application.scala'],
+      dependencyLabel: 'Scala build contract',
+      entrypointLabel: 'Scala application entrypoint',
+    },
+    kotlin: {
+      dependencyMarkers: ['build.gradle.kts', 'gradle.lockfile'],
+      entrypointMarkers: ['src/main/kotlin/Application.kt', 'src/main/kotlin/Main.kt'],
+      dependencyLabel: 'Kotlin build contract',
+      entrypointLabel: 'Kotlin application entrypoint',
+    },
+    c: {
+      dependencyMarkers: ['CMakeLists.txt', 'meson.build', 'Makefile'],
+      entrypointMarkers: ['src/main.c', 'main.c'],
+      dependencyLabel: 'C build contract',
+      entrypointLabel: 'C application entrypoint',
+    },
+    cpp: {
+      dependencyMarkers: ['CMakeLists.txt', 'meson.build', 'Makefile'],
+      entrypointMarkers: ['src/main.cpp', 'main.cpp', 'src/main.cc', 'main.cc'],
+      dependencyLabel: 'C++ build contract',
+      entrypointLabel: 'C++ application entrypoint',
+    },
+  };
+  const adapter = portableAdapters[runtime];
+  if (!adapter) return;
+
+  const dependencyContractExists = await anyRelativePathExists(
+    projectPath,
+    adapter.dependencyMarkers
+  );
+  pushProjectProbe(health, {
+    id: `adapter-${runtime}-dependency-contract`,
+    label: adapter.dependencyLabel,
+    status: dependencyContractExists ? 'pass' : 'warn',
+    severity: 'warn',
+    scope: 'project-scoped',
+    reason: dependencyContractExists
+      ? `${adapter.dependencyLabel} detected.`
+      : `${adapter.dependencyLabel} is missing.`,
+    recommendation: dependencyContractExists
+      ? undefined
+      : `Add a runtime-native dependency/build contract: ${adapter.dependencyMarkers.join(', ')}.`,
+    issueClass: 'dependency',
+    operationalImpact: 'ci-risk',
+  });
+
+  let entrypointExists = await anyRelativePathExists(projectPath, adapter.entrypointMarkers);
+  // JVM and BEAM applications normally nest their entrypoint below a package
+  // or application-name directory. Literal wildcard markers are not portable
+  // filesystem evidence, so resolve those conventions with a bounded walk.
+  if (!entrypointExists && runtime === 'elixir') {
+    entrypointExists = await findFileByName(projectPath, {
+      name: 'application.ex',
+      under: ['lib'],
+    });
+  }
+  if (!entrypointExists && runtime === 'scala') {
+    entrypointExists =
+      (await findFileByName(projectPath, { name: 'Main.scala', under: ['src/main/scala'] })) ||
+      (await findFileByName(projectPath, {
+        name: 'Application.scala',
+        under: ['src/main/scala'],
+      }));
+  }
+  if (!entrypointExists && runtime === 'kotlin') {
+    entrypointExists =
+      (await findFileByName(projectPath, {
+        name: 'Application.kt',
+        under: ['src/main/kotlin'],
+      })) || (await findFileByName(projectPath, { name: 'Main.kt', under: ['src/main/kotlin'] }));
+  }
+  pushProjectProbe(health, {
+    id: `adapter-${runtime}-boot-entrypoint`,
+    label: adapter.entrypointLabel,
+    status: entrypointExists ? 'pass' : 'warn',
+    severity: 'warn',
+    scope: 'project-scoped',
+    reason: entrypointExists
+      ? `${adapter.entrypointLabel} detected.`
+      : `${adapter.entrypointLabel} is not explicitly declared.`,
+    recommendation: entrypointExists
+      ? undefined
+      : `Expose a conventional entrypoint or declare a custom Doctor adapter for this ${runtime} project.`,
+    issueClass: 'runtime',
+    operationalImpact: 'runtime-risk',
+  });
 }
 
 type CustomDoctorAdapterCheck = {
@@ -3344,7 +3713,7 @@ async function appendCustomConfiguredProbes(
 
 async function checkProjectUnnormalized(
   projectPath: string,
-  options: { allowNonRapidkit?: boolean } = {}
+  options: { allowNonRapidkit?: boolean; freshAudit?: boolean } = {}
 ): Promise<ProjectHealth> {
   const projectName = path.basename(projectPath);
   const health: ProjectHealth = {
@@ -3355,6 +3724,7 @@ async function checkProjectUnnormalized(
     coreInstalled: false,
     issues: [],
     fixCommands: [],
+    _freshDependencyAudit: options.freshAudit === true,
   };
 
   const allowNonRapidkit = options.allowNonRapidkit === true;
@@ -3499,6 +3869,14 @@ async function checkProjectUnnormalized(
       (typeof (projectJsonData?.packageManager as string | undefined) === 'string' &&
         (projectJsonData?.packageManager as string).toLowerCase().startsWith('bun@')));
 
+  const kotlinBuildPath = path.join(projectPath, 'build.gradle.kts');
+  const isKotlinProject =
+    projectJsonData?.runtime === 'kotlin' ||
+    (await fsExtra.pathExists(path.join(projectPath, 'settings.gradle.kts'))) ||
+    ((await fsExtra.pathExists(kotlinBuildPath)) &&
+      ((await findFileByName(projectPath, { suffix: '.kt', under: ['src', '.'] })) ||
+        (await readFileIfExists(kotlinBuildPath)).includes('kotlin')));
+
   // Go project checks (Fiber or Gin)
   if (isGoProject) {
     applyBackendFrameworkDetection(
@@ -3537,10 +3915,43 @@ async function checkProjectUnnormalized(
   }
 
   const isJavaProject =
-    (await fsExtra.pathExists(pomXmlPath)) ||
+    (!isKotlinProject && (await fsExtra.pathExists(pomXmlPath))) ||
     projectJsonData?.runtime === 'java' ||
     (typeof projectJsonData?.kit_name === 'string' &&
       (projectJsonData.kit_name as string).startsWith('springboot'));
+
+  if (isKotlinProject) {
+    applyBackendFrameworkDetection(
+      health,
+      detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
+    );
+    health.venvActive = true;
+    health.coreInstalled = false;
+
+    const hasGradleWrapper =
+      (await fsExtra.pathExists(path.join(projectPath, 'gradlew'))) ||
+      (await fsExtra.pathExists(path.join(projectPath, 'gradlew.bat')));
+    health.depsInstalled =
+      (await fsExtra.pathExists(path.join(projectPath, 'build'))) ||
+      (await fsExtra.pathExists(path.join(projectPath, '.gradle')));
+    if (!health.depsInstalled) {
+      health.issues.push('Kotlin dependencies/build artifacts are not initialized');
+      const command = hasGradleWrapper
+        ? isWindowsPlatform()
+          ? '.\\gradlew.bat dependencies'
+          : './gradlew dependencies'
+        : 'gradle dependencies';
+      health.fixCommands?.push(buildProjectFixCommand(projectPath, command));
+    }
+
+    const envPath = path.join(projectPath, '.env');
+    health.hasEnvFile = await fsExtra.pathExists(envPath);
+    await performCommonChecks(projectPath, health);
+    await appendEnterpriseSurfaceProbes(projectPath, health);
+    await appendBuiltInBackendProbes(projectPath, health);
+    await appendCustomConfiguredProbes(projectPath, health);
+    return health;
+  }
 
   if (isJavaProject) {
     applyBackendFrameworkDetection(
@@ -3600,26 +4011,19 @@ async function checkProjectUnnormalized(
       const dependencyCommand = hasPomXml
         ? hasMavenWrapper
           ? isWindowsPlatform()
-            ? '.\\mvnw.cmd -B -DskipTests dependency:go-offline'
-            : './mvnw -B -DskipTests dependency:go-offline'
-          : 'mvn -B -DskipTests dependency:go-offline'
+            ? '.\\mvnw.cmd -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
+            : './mvnw -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
+          : 'mvn -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
         : hasGradleWrapper
           ? isWindowsPlatform()
-            ? '.\\gradlew.bat dependencies'
-            : './gradlew dependencies'
-          : 'gradle dependencies';
+            ? '.\\gradlew.bat --project-cache-dir .workspai/cache/java/gradle dependencies'
+            : './gradlew --project-cache-dir .workspai/cache/java/gradle dependencies'
+          : 'gradle --project-cache-dir .workspai/cache/java/gradle dependencies';
       health.fixCommands?.push(buildProjectFixCommand(projectPath, dependencyCommand));
     }
 
     const envPath = path.join(projectPath, '.env');
     health.hasEnvFile = await fsExtra.pathExists(envPath);
-    if (!health.hasEnvFile) {
-      const envExamplePath = path.join(projectPath, '.env.example');
-      if (await fsExtra.pathExists(envExamplePath)) {
-        health.issues.push('Environment file missing (found .env.example)');
-        health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-      }
-    }
 
     const applicationYamlPath = path.join(
       projectPath,
@@ -3678,13 +4082,6 @@ async function checkProjectUnnormalized(
 
     const envPath = path.join(projectPath, '.env');
     health.hasEnvFile = await fsExtra.pathExists(envPath);
-    if (!health.hasEnvFile) {
-      const envExamplePath = path.join(projectPath, '.env.example');
-      if (await fsExtra.pathExists(envExamplePath)) {
-        health.issues.push('Environment file missing (found .env.example)');
-        health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-      }
-    }
 
     await performCommonChecks(projectPath, health);
     await appendEnterpriseSurfaceProbes(projectPath, health);
@@ -3713,13 +4110,6 @@ async function checkProjectUnnormalized(
 
     const envPath = path.join(projectPath, '.env');
     health.hasEnvFile = await fsExtra.pathExists(envPath);
-    if (!health.hasEnvFile) {
-      const envExamplePath = path.join(projectPath, '.env.example');
-      if (await fsExtra.pathExists(envExamplePath)) {
-        health.issues.push('Environment file missing (found .env.example)');
-        health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-      }
-    }
 
     await performCommonChecks(projectPath, health);
     await appendEnterpriseSurfaceProbes(projectPath, health);
@@ -3780,13 +4170,6 @@ async function checkProjectUnnormalized(
 
     const envPath = path.join(projectPath, '.env');
     health.hasEnvFile = await fsExtra.pathExists(envPath);
-    if (!health.hasEnvFile) {
-      const envExamplePath = path.join(projectPath, '.env.example');
-      if (await fsExtra.pathExists(envExamplePath)) {
-        health.issues.push('Environment file missing (found .env.example)');
-        health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-      }
-    }
 
     await performCommonChecks(projectPath, health);
     await appendEnterpriseSurfaceProbes(projectPath, health);
@@ -3806,13 +4189,6 @@ async function checkProjectUnnormalized(
 
     const envPath = path.join(projectPath, '.env');
     health.hasEnvFile = await fsExtra.pathExists(envPath);
-    if (!health.hasEnvFile) {
-      const envExamplePath = path.join(projectPath, '.env.example');
-      if (await fsExtra.pathExists(envExamplePath)) {
-        health.issues.push('Environment file missing (found .env.example)');
-        health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-      }
-    }
 
     await performCommonChecks(projectPath, health);
     await appendEnterpriseSurfaceProbes(projectPath, health);
@@ -3937,20 +4313,11 @@ async function checkProjectUnnormalized(
         const envExamplePath = path.join(projectPath, '.env.example');
         if (await fsExtra.pathExists(envExamplePath)) {
           health.hasEnvFile = false;
-          health.issues.push('Environment file missing (found .env.example)');
-          health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
         }
       }
     } else {
       const envPath = path.join(projectPath, '.env');
       health.hasEnvFile = await fsExtra.pathExists(envPath);
-      if (!health.hasEnvFile) {
-        const envExamplePath = path.join(projectPath, '.env.example');
-        if (await fsExtra.pathExists(envExamplePath)) {
-          health.issues.push('Environment file missing (found .env.example)');
-          health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-        }
-      }
     }
 
     if (health.projectKind === 'frontend') {
@@ -4035,13 +4402,6 @@ async function checkProjectUnnormalized(
     // Check for .env file
     const envPath = path.join(projectPath, '.env');
     health.hasEnvFile = await fsExtra.pathExists(envPath);
-    if (!health.hasEnvFile) {
-      const envExamplePath = path.join(projectPath, '.env.example');
-      if (await fsExtra.pathExists(envExamplePath)) {
-        health.issues.push('Environment file missing (found .env.example)');
-        health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-      }
-    }
 
     // Check for critical modules (src/__init__.py or modules/)
     const srcPath = path.join(projectPath, 'src');
@@ -4103,13 +4463,6 @@ async function checkProjectUnnormalized(
 
     const envPath = path.join(projectPath, '.env');
     health.hasEnvFile = await fsExtra.pathExists(envPath);
-    if (!health.hasEnvFile) {
-      const envExamplePath = path.join(projectPath, '.env.example');
-      if (await fsExtra.pathExists(envExamplePath)) {
-        health.issues.push('Environment file missing (found .env.example)');
-        health.fixCommands?.push(buildEnvCopyFixCommand(projectPath));
-      }
-    }
 
     await performCommonChecks(projectPath, health);
     await appendEnterpriseSurfaceProbes(projectPath, health);
@@ -4174,6 +4527,25 @@ async function checkProjectUnnormalized(
     return health;
   }
 
+  const hasNativeBuildContract =
+    (await fsExtra.pathExists(path.join(projectPath, 'CMakeLists.txt'))) ||
+    (await fsExtra.pathExists(path.join(projectPath, 'meson.build')));
+  if (hasNativeBuildContract) {
+    const hasCppSource = await findFileByName(projectPath, {
+      suffix: '.cpp',
+      under: ['src', '.'],
+    });
+    applyFrameworkMetadata(health, hasCppSource ? 'C++' : 'C', 'medium');
+    health.venvActive = true;
+    health.coreInstalled = false;
+    health.depsInstalled = true;
+    await performCommonChecks(projectPath, health);
+    await appendEnterpriseSurfaceProbes(projectPath, health);
+    await appendBuiltInBackendProbes(projectPath, health);
+    await appendCustomConfiguredProbes(projectPath, health);
+    return health;
+  }
+
   // If runtime markers are absent, return basic health
   applyFrameworkMetadata(health, 'Unknown', 'low');
   health.issues.push('Unknown project type (no recognized runtime marker files)');
@@ -4201,12 +4573,85 @@ function normalizeProjectFixCommands(health: ProjectHealth): ProjectHealth {
   return health;
 }
 
+async function detectProjectRuntimeFamilies(projectPath: string): Promise<ProjectRuntimeFamily[]> {
+  const exists = async (name: string): Promise<boolean> =>
+    fsExtra.pathExists(path.join(projectPath, name));
+  const entries = await fsExtra.readdir(projectPath).catch(() => [] as string[]);
+  const families: ProjectRuntimeFamily[] = [];
+  const add = (family: ProjectRuntimeFamily, present: boolean): void => {
+    if (present && !families.includes(family)) families.push(family);
+  };
+
+  const packageJson = await exists('package.json');
+  add('bun', packageJson && ((await exists('bun.lock')) || (await exists('bun.lockb'))));
+  add('deno', (await exists('deno.json')) || (await exists('deno.jsonc')));
+  add('node', packageJson && !families.includes('bun'));
+  add('python', (await exists('pyproject.toml')) || (await exists('requirements.txt')));
+  add('go', await exists('go.mod'));
+  add(
+    'kotlin',
+    (await exists('build.gradle.kts')) &&
+      (await findFileByName(projectPath, { suffix: '.kt', under: ['src'] }))
+  );
+  add(
+    'java',
+    (await exists('pom.xml')) ||
+      (await exists('build.gradle')) ||
+      ((await exists('build.gradle.kts')) && !families.includes('kotlin'))
+  );
+  add('rust', await exists('Cargo.toml'));
+  add('elixir', await exists('mix.exs'));
+  add('clojure', (await exists('deps.edn')) || (await exists('project.clj')));
+  add('scala', await exists('build.sbt'));
+  add('php', await exists('composer.json'));
+  add('ruby', await exists('Gemfile'));
+  add(
+    'dotnet',
+    entries.some((entry) => entry.endsWith('.csproj')) || (await exists('global.json'))
+  );
+
+  const hasNativeBuild = (await exists('CMakeLists.txt')) || (await exists('meson.build'));
+  if (hasNativeBuild) {
+    add('cpp', await findFileByName(projectPath, { suffix: '.cpp', under: ['src', '.'] }));
+    add('c', await findFileByName(projectPath, { suffix: '.c', under: ['src', '.'] }));
+    if (!families.includes('c') && !families.includes('cpp')) add('cpp', true);
+  }
+
+  return families.length > 0 ? families : ['unknown'];
+}
+
 async function checkProject(
   projectPath: string,
-  options: { allowNonRapidkit?: boolean } = {}
+  options: { allowNonRapidkit?: boolean; freshAudit?: boolean } = {}
 ): Promise<ProjectHealth> {
   const health = normalizeProjectFixCommands(await checkProjectUnnormalized(projectPath, options));
+  delete health._freshDependencyAudit;
   attachDependencyMaterializationCapabilities(health);
+  health.runtimeFamilies = await detectProjectRuntimeFamilies(projectPath);
+  if (
+    health.runtimeFamily &&
+    health.runtimeFamily !== 'unknown' &&
+    !health.runtimeFamilies.includes(health.runtimeFamily)
+  ) {
+    health.runtimeFamilies.unshift(health.runtimeFamily);
+  }
+  if (health.runtimeFamily && health.runtimeFamily !== 'unknown') {
+    health.runtimeFamilies = health.runtimeFamilies.filter((family) => family !== 'unknown');
+  }
+  if (health.runtimeFamilies.length > 1) {
+    pushProjectProbe(health, {
+      id: 'runtime-composition',
+      label: 'Composite runtime coverage',
+      status: 'warn',
+      severity: 'warn',
+      scope: 'project-scoped',
+      reason: `Multiple runtime families share one project boundary: ${health.runtimeFamilies.join(', ')}. Primary adapters evaluated ${health.runtimeFamily ?? 'unknown'} only.`,
+      recommendation:
+        'Declare nested project boundaries or add doctor.adapters.json checks for every secondary runtime.',
+      issueClass: 'runtime',
+      operationalImpact: 'ci-risk',
+    });
+  }
   const canonicalKind = await inferWorkspaceProjectKind(projectPath);
   if (canonicalKind === 'backend' || canonicalKind === 'service' || canonicalKind === 'worker') {
     health.projectKind = 'backend';
@@ -4219,6 +4664,7 @@ async function checkProject(
   } else if (!health.projectKind) {
     health.projectKind = 'generic';
   }
+  finalizeUniversalDoctorDiagnosis(health);
   return health;
 }
 
@@ -4430,6 +4876,8 @@ async function hasBackendProjectMarkers(projectPath: string): Promise<boolean> {
     'requirements.txt',
     'go.mod',
     'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
     'build.sbt',
     'Cargo.toml',
     'mix.exs',
@@ -4439,12 +4887,20 @@ async function hasBackendProjectMarkers(projectPath: string): Promise<boolean> {
     'deno.jsonc',
     'composer.json',
     'Gemfile',
+    'global.json',
+    'CMakeLists.txt',
+    'meson.build',
   ];
 
   for (const marker of markerPaths) {
     if (await fsExtra.pathExists(path.join(projectPath, marker))) {
       return true;
     }
+  }
+
+  const entries = await fsExtra.readdir(projectPath).catch(() => [] as string[]);
+  if (entries.some((entry) => entry.endsWith('.csproj') || entry.endsWith('.sln'))) {
+    return true;
   }
 
   return false;
@@ -4480,6 +4936,24 @@ function calculateHealthScore(
   });
 
   projects.forEach((project) => {
+    const diagnosis = project.diagnosis;
+    if (diagnosis) {
+      // Diagnosis is the canonical project accounting surface. Raw issues and
+      // probes may describe the same causal finding and must never inflate the
+      // health score simply because more than one provider observed it.
+      const passed = diagnosis.coverage.passingObservations;
+      const errors = diagnosis.coverage.blockingFindings;
+      const warnings =
+        diagnosis.coverage.advisoryFindings +
+        diagnosis.coverage.unknownFindings +
+        diagnosis.coverage.contradictionCount;
+      projectScore.passed += passed;
+      projectScore.warnings += warnings;
+      projectScore.errors += errors;
+      projectScore.total += passed + warnings + errors;
+      return;
+    }
+
     const probes = project.probes ?? [];
     if (probes.length > 0) {
       for (const probe of probes) {
@@ -4523,12 +4997,18 @@ function calculateHealthScore(
 }
 
 function buildDoctorProbeSummary(project: ProjectHealth): DoctorProbeSummary {
-  const probes = project.probes ?? [];
+  const probes = (project.probes ?? []).filter((probe) => probe.applicability !== 'not-applicable');
   const passed = probes.filter((probe) => probe.status === 'pass').length;
   const warnings = probes.filter((probe) => probe.status === 'warn').length;
   const failed = probes.filter((probe) => probe.status === 'fail').length;
-  const blockingFindings = failed + project.issues.length;
-  const advisoryFindings = warnings;
+  const blockingFindings =
+    project.diagnosis?.coverage.blockingFindings ?? failed + project.issues.length;
+  const diagnosisTrustGaps = project.diagnosis
+    ? project.diagnosis.coverage.unknownFindings + project.diagnosis.coverage.contradictionCount
+    : 0;
+  const advisoryFindings = project.diagnosis
+    ? project.diagnosis.coverage.advisoryFindings + diagnosisTrustGaps
+    : warnings;
   return {
     total: probes.length,
     passed,
@@ -4537,6 +5017,67 @@ function buildDoctorProbeSummary(project: ProjectHealth): DoctorProbeSummary {
     blockingFindings,
     advisoryFindings,
     verdict: blockingFindings > 0 ? 'blocked' : advisoryFindings > 0 ? 'attention' : 'passed',
+  };
+}
+
+function buildDoctorCountSummary(
+  projects: ProjectHealth[],
+  systemChecks: HealthCheckResult[] = []
+): DoctorCountSummary {
+  const diagnoses = projects.map((project) => project.diagnosis).filter(Boolean);
+  const summaries = projects.map(buildDoctorProbeSummary);
+  return {
+    projectsScanned: projects.length,
+    affectedProjects: summaries.filter(
+      (summary) => summary.blockingFindings > 0 || summary.advisoryFindings > 0
+    ).length,
+    projectsBlocked: summaries.filter((summary) => summary.blockingFindings > 0).length,
+    projectsNeedingAttention: summaries.filter(
+      (summary) => summary.blockingFindings === 0 && summary.advisoryFindings > 0
+    ).length,
+    blockingCauses: diagnoses.reduce(
+      (sum, diagnosis) => sum + (diagnosis?.coverage.blockingFindings ?? 0),
+      0
+    ),
+    advisoryFindings: diagnoses.reduce(
+      (sum, diagnosis) => sum + (diagnosis?.coverage.advisoryFindings ?? 0),
+      0
+    ),
+    unknownFindings: diagnoses.reduce(
+      (sum, diagnosis) => sum + (diagnosis?.coverage.unknownFindings ?? 0),
+      0
+    ),
+    contradictionFindings: diagnoses.reduce(
+      (sum, diagnosis) => sum + (diagnosis?.coverage.contradictionCount ?? 0),
+      0
+    ),
+    repairableFindings: diagnoses.reduce(
+      (sum, diagnosis) => sum + (diagnosis?.coverage.repairableFindings ?? 0),
+      0
+    ),
+    manualFindings: diagnoses.reduce(
+      (sum, diagnosis) => sum + (diagnosis?.coverage.manualFindings ?? 0),
+      0
+    ),
+    unsupportedFindings: diagnoses.reduce(
+      (sum, diagnosis) => sum + (diagnosis?.coverage.unsupportedFindings ?? 0),
+      0
+    ),
+    dependencyAdvisorySubjects: projects.reduce(
+      (sum, project) => sum + (project.dependencyAudit?.subjects.length ?? 0),
+      0
+    ),
+    dependencyVulnerabilityFindings: projects.reduce(
+      (sum, project) => sum + (project.dependencyAudit?.findingCount ?? 0),
+      0
+    ),
+    notApplicableChecks: projects.reduce(
+      (sum, project) =>
+        sum +
+        (project.probes ?? []).filter((probe) => probe.applicability === 'not-applicable').length,
+      0
+    ),
+    systemErrors: systemChecks.filter((check) => check.status === 'error').length,
   };
 }
 
@@ -4572,25 +5113,48 @@ function buildScoreBreakdown(
 
   for (const project of sortedProjects) {
     applyProjectVerdict(project);
-    for (const probe of project.probes ?? []) {
-      breakdown.push({
-        id: `project:${project.name}:probe:${probe.id}`,
-        label: `${project.name} · ${probe.label}`,
-        status: probe.status === 'pass' ? 'ok' : probe.status === 'warn' ? 'warn' : 'error',
-        scope: 'project-scoped',
-        policyRuleId: `project-probe-${probe.id}`,
-        reason: probe.reason,
-      });
-    }
-    for (const [index, issue] of project.issues.entries()) {
-      breakdown.push({
-        id: `project:${project.name}:legacy:${index + 1}`,
-        label: `${project.name} · Runtime issue`,
-        status: 'error',
-        scope: 'project-scoped',
-        policyRuleId: 'project-runtime-issue',
-        reason: issue,
-      });
+    if (project.diagnosis) {
+      for (const probe of (project.probes ?? []).filter((entry) => entry.status === 'pass')) {
+        breakdown.push({
+          id: `project:${project.name}:probe:${probe.id}`,
+          label: `${project.name} · ${probe.label}`,
+          status: 'ok',
+          scope: 'project-scoped',
+          policyRuleId: `project-probe-${probe.id}`,
+          reason: probe.reason,
+        });
+      }
+      for (const finding of project.diagnosis.findings) {
+        breakdown.push({
+          id: `project:${project.name}:diagnosis:${finding.id}`,
+          label: `${project.name} · ${finding.label}`,
+          status: finding.status === 'blocking' ? 'error' : 'warn',
+          scope: 'project-scoped',
+          policyRuleId: `project-diagnosis-${finding.issueClass}`,
+          reason: finding.symptom,
+        });
+      }
+    } else {
+      for (const probe of project.probes ?? []) {
+        breakdown.push({
+          id: `project:${project.name}:probe:${probe.id}`,
+          label: `${project.name} · ${probe.label}`,
+          status: probe.status === 'pass' ? 'ok' : probe.status === 'warn' ? 'warn' : 'error',
+          scope: 'project-scoped',
+          policyRuleId: `project-probe-${probe.id}`,
+          reason: probe.reason,
+        });
+      }
+      for (const [index, issue] of project.issues.entries()) {
+        breakdown.push({
+          id: `project:${project.name}:legacy:${index + 1}`,
+          label: `${project.name} · Runtime issue`,
+          status: 'error',
+          scope: 'project-scoped',
+          policyRuleId: 'project-runtime-issue',
+          reason: issue,
+        });
+      }
     }
     if ((project.probes?.length ?? 0) === 0 && project.issues.length === 0) {
       breakdown.push({
@@ -4670,7 +5234,8 @@ function buildScoreBreakdown(
 async function getWorkspaceHealth(
   workspacePath: string,
   allowProjectCache: boolean = true,
-  policyProfile: DoctorPolicyProfile = resolveDoctorPolicyProfile({})
+  policyProfile: DoctorPolicyProfile = resolveDoctorPolicyProfile({}),
+  fresh: boolean = false
 ): Promise<WorkspaceHealth> {
   let workspaceName = path.basename(workspacePath);
 
@@ -4710,10 +5275,11 @@ async function getWorkspaceHealth(
   logger.debug(`Workspace scan found ${projectPaths.length} project(s)`);
 
   const projectSignature = await buildWorkspaceProjectSignature(workspacePath, projectPaths);
-  const cachePath = path.join(workspacePath, '.workspai', 'reports', 'doctor-workspace-cache.json');
-  const cached = allowProjectCache
-    ? await loadWorkspaceProjectCache(cachePath, projectSignature)
-    : null;
+  const cachePath = path.join(workspacePath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorWorkspaceCache);
+  const cached =
+    allowProjectCache && !fresh
+      ? await loadWorkspaceProjectCache(cachePath, projectSignature)
+      : null;
 
   if (cached) {
     health.projects = cached.projects;
@@ -4721,24 +5287,27 @@ async function getWorkspaceHealth(
       // Cached scans are untrusted input at the executable-command boundary.
       // Reapply current sanitization even when the source signature is valid.
       normalizeProjectFixCommands(projectHealth);
-      normalizeProjectProbeFreshness(projectHealth, cached.generatedAt);
-      applyCommandCapabilities(projectHealth, projectHealth.path);
+      finalizeUniversalDoctorDiagnosis(projectHealth, cached.generatedAt);
     }
     health.projectScanCached = true;
     logger.debug(`Workspace project health cache hit: ${cachePath}`);
   } else {
     try {
       const scanGeneratedAt = new Date().toISOString();
-      const projectHealthResults = await Promise.all(
-        projectPaths.map((projectPath) => checkProject(projectPath, { allowNonRapidkit: true }))
+      const projectHealthResults = await mapDoctorProjectsWithConcurrency(
+        projectPaths,
+        (projectPath) =>
+          checkProject(projectPath, {
+            allowNonRapidkit: true,
+            freshAudit: fresh,
+          })
       );
       for (const projectHealth of projectHealthResults) {
-        normalizeProjectProbeFreshness(projectHealth, scanGeneratedAt);
-        applyCommandCapabilities(projectHealth, projectHealth.path);
+        finalizeUniversalDoctorDiagnosis(projectHealth, scanGeneratedAt);
       }
       health.projects = projectHealthResults;
       health.projectScanCached = false;
-      await saveWorkspaceProjectCache(cachePath, {
+      await saveWorkspaceProjectCache(workspacePath, {
         schemaVersion: DOCTOR_WORKSPACE_CACHE_SCHEMA,
         signature: projectSignature,
         generatedAt: scanGeneratedAt,
@@ -4778,6 +5347,7 @@ async function getWorkspaceHealth(
         probes: doctorGraphDiagnosisProbes(projectHealth),
         issues: projectHealth.issues,
       });
+      enrichDoctorDiagnosisWithGraph(projectHealth);
     })
   );
 
@@ -4819,6 +5389,20 @@ async function getWorkspaceHealth(
   health.driftDelta = buildWorkspaceDriftDelta(previousEvidence, health);
 
   health.evidencePath = await writeDoctorEvidence(workspacePath, health, cached ? cachePath : null);
+  health.receiptPath = await writeDoctorReceipt(
+    workspacePath,
+    buildDoctorReceiptPayload({
+      scopeKind: 'workspace',
+      scopeRoot: workspacePath,
+      scopeName: health.workspaceName,
+      workspacePath,
+      projects: health.projects,
+      healthScore: health.healthScore,
+      freshness: health.evidenceFreshness,
+      evidencePath: health.evidencePath,
+      systemChecks: [health.python, health.poetry, health.pipx, health.go, health.rapidkitCore],
+    })
+  );
 
   return health;
 }
@@ -4831,6 +5415,7 @@ function serializeDoctorProjectForOutput(project: ProjectHealth): Record<string,
     frameworkKey: project.frameworkKey,
     importStack: project.importStack,
     runtimeFamily: project.runtimeFamily,
+    runtimeFamilies: project.runtimeFamilies,
     projectKind: project.projectKind,
     supportTier: project.supportTier,
     frameworkConfidence: project.frameworkConfidence,
@@ -4857,6 +5442,7 @@ function serializeDoctorProjectForOutput(project: ProjectHealth): Record<string,
     repairCapabilities: project.repairCapabilities,
     commandCapabilities: project.commandCapabilities,
     graphDiagnosis: project.graphDiagnosis,
+    diagnosis: project.diagnosis,
   };
 }
 
@@ -4900,6 +5486,10 @@ async function writeProjectDoctorEvidence(
       .filter((issue): issue is string => typeof issue === 'string' && issue.trim().length > 0)
       .slice(0, 12);
     const probeSummary = buildDoctorProbeSummary(envelope.project);
+    const counts = buildDoctorCountSummary(
+      [envelope.project],
+      [envelope.python, envelope.poetry, envelope.pipx, envelope.go, envelope.rapidkitCore]
+    );
     const payload = withGovernanceRunMetadata(
       {
         schemaVersion: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
@@ -4921,6 +5511,7 @@ async function writeProjectDoctorEvidence(
         project: envelope.project,
         driftDelta: envelope.driftDelta,
         summary: {
+          counts,
           scopeProvenance: envelope.scopeProvenance,
           verdict: probeSummary.verdict,
           probeSummary,
@@ -4953,11 +5544,140 @@ async function writeProjectDoctorEvidence(
     }
     return evidencePath;
   } catch (error) {
-    if (error instanceof Error && error.message.includes('violates contracts/')) {
-      throw error;
-    }
-    return undefined;
+    throw error;
   }
+}
+
+function buildDoctorReceiptPayload(input: {
+  scopeKind: 'workspace' | 'project';
+  scopeRoot: string;
+  scopeName: string;
+  workspacePath?: string | null;
+  projectPath?: string | null;
+  projects: ProjectHealth[];
+  healthScore?: HealthScore;
+  freshness?: EvidenceFreshnessSummary;
+  evidencePath?: string | null;
+  systemChecks?: HealthCheckResult[];
+}): Record<string, unknown> {
+  const generatedAt = new Date().toISOString();
+  const freshness = input.freshness ?? buildEvidenceFreshnessSummary(input.projects, generatedAt);
+  const counts = buildDoctorCountSummary(input.projects, input.systemChecks);
+  const affectedProjects = input.projects
+    .map((project) => {
+      const summary = buildDoctorProbeSummary(project);
+      return {
+        name: project.name,
+        path: project.path,
+        runtimeFamily: project.runtimeFamily ?? 'unknown',
+        framework: project.framework ?? 'Unknown',
+        verdict: summary.verdict,
+        blockingCauses: project.diagnosis?.coverage.blockingFindings ?? summary.blockingFindings,
+        advisoryFindings: project.diagnosis?.coverage.advisoryFindings ?? summary.advisoryFindings,
+        unknownFindings: project.diagnosis?.coverage.unknownFindings ?? 0,
+      };
+    })
+    .filter(
+      (project) =>
+        project.blockingCauses > 0 || project.advisoryFindings > 0 || project.unknownFindings > 0
+    );
+  const blockers = input.projects.flatMap((project) =>
+    (project.diagnosis?.findings ?? [])
+      .filter((finding) => finding.status === 'blocking')
+      .map((finding) => ({
+        id: finding.id,
+        projectName: project.name,
+        projectPath: project.path,
+        issueClass: finding.issueClass,
+        symptom: finding.symptom,
+        repairDisposition: finding.repair.disposition,
+        ...(finding.repair.capabilityId ? { capabilityId: finding.repair.capabilityId } : {}),
+      }))
+  );
+  const verdict =
+    input.healthScore?.verdict ??
+    (counts.blockingCauses > 0
+      ? 'blocked'
+      : counts.advisoryFindings + counts.unknownFindings > 0
+        ? 'attention'
+        : 'passed');
+  const next =
+    freshness.status !== 'fresh'
+      ? {
+          action: 'refresh',
+          reason: 'Doctor evidence is stale or has unknown freshness.',
+          commands: [`npx workspai doctor ${input.scopeKind} --fresh --json=summary`],
+        }
+      : counts.blockingCauses > 0 && counts.repairableFindings > 0
+        ? {
+            action: 'repair',
+            reason: 'At least one blocking cause has a typed repair capability.',
+            commands: [`npx workspai doctor ${input.scopeKind} --plan --json=summary`],
+          }
+        : counts.blockingCauses > 0
+          ? {
+              action: 'review',
+              reason: 'Blocking causes remain, but no automatic typed repair covers every cause.',
+              commands: [`npx workspai doctor ${input.scopeKind} --json`],
+            }
+          : verdict === 'attention'
+            ? {
+                action: 'review',
+                reason: 'No blocker remains; advisory or unknown findings need policy review.',
+                commands: [`npx workspai doctor ${input.scopeKind} --json=summary`],
+              }
+            : {
+                action: 'verify',
+                reason: 'Doctor is healthy; canonical Workspace Intelligence verification is next.',
+                commands: ['npx workspai workspace intelligence run --strict --json'],
+              };
+  return {
+    schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorReceipt.schemaVersion,
+    generatedAt,
+    scope: {
+      kind: input.scopeKind,
+      root: input.scopeRoot,
+      name: input.scopeName,
+      workspacePath: input.workspacePath ?? null,
+      projectPath: input.projectPath ?? null,
+    },
+    verdict,
+    counts,
+    freshness,
+    affectedProjects,
+    blockers,
+    next,
+    artifacts: {
+      evidence: input.evidencePath ?? null,
+      receipt: path.join(input.scopeRoot, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorReceipt),
+    },
+  };
+}
+
+async function writeDoctorReceipt(
+  scopeRoot: string,
+  payload: Record<string, unknown>,
+  mirrorRoots: string[] = []
+): Promise<string> {
+  assertJsonSchemaContract(
+    payload,
+    'contracts/workspace-intelligence/doctor-receipt.v1.json',
+    `Doctor receipt ${scopeRoot}`
+  );
+  await writeWorkspaceArtifactJson(
+    scopeRoot,
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorReceipt,
+    payload
+  );
+  for (const mirrorRoot of mirrorRoots) {
+    if (path.resolve(mirrorRoot) === path.resolve(scopeRoot)) continue;
+    await writeWorkspaceArtifactJson(
+      mirrorRoot,
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorReceipt,
+      payload
+    );
+  }
+  return path.join(scopeRoot, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.doctorReceipt);
 }
 
 async function writeDoctorRemediationPlanArtifact(
@@ -5033,13 +5753,17 @@ async function recordDoctorFixHistory(
 
 async function getProjectHealthEnvelope(
   projectPath: string,
-  policyProfile: DoctorPolicyProfile = resolveDoctorPolicyProfile({})
+  policyProfile: DoctorPolicyProfile = resolveDoctorPolicyProfile({}),
+  fresh: boolean = false
 ): Promise<ProjectHealthEnvelope> {
   const workspacePath = await findWorkspace(projectPath);
   const systemHealth = await collectSystemChecks(workspacePath || projectPath);
-  const projectHealth = await checkProject(projectPath, { allowNonRapidkit: true });
+  const projectHealth = await checkProject(projectPath, {
+    allowNonRapidkit: true,
+    freshAudit: fresh,
+  });
   const contextualSystemHealth = contextualizeDoctorSystemChecks(systemHealth, [projectHealth]);
-  applyCommandCapabilities(projectHealth, projectPath);
+  finalizeUniversalDoctorDiagnosis(projectHealth);
   projectHealth.graphDiagnosis = await buildDoctorGraphDiagnosis({
     workspacePath: workspacePath || undefined,
     projectPath,
@@ -5047,6 +5771,7 @@ async function getProjectHealthEnvelope(
     probes: doctorGraphDiagnosisProbes(projectHealth),
     issues: projectHealth.issues,
   });
+  enrichDoctorDiagnosisWithGraph(projectHealth);
   const healthScore = calculateHealthScore(
     [
       contextualSystemHealth.python,
@@ -5105,6 +5830,29 @@ async function getProjectHealthEnvelope(
   envelope.driftDelta = buildProjectDriftDelta(previousEvidence, envelope);
 
   envelope.evidencePath = await writeProjectDoctorEvidence(workspacePath || undefined, envelope);
+  const receiptRoot = workspacePath || projectPath;
+  envelope.receiptPath = await writeDoctorReceipt(
+    receiptRoot,
+    buildDoctorReceiptPayload({
+      scopeKind: 'project',
+      scopeRoot: receiptRoot,
+      scopeName: envelope.projectName,
+      workspacePath: workspacePath || null,
+      projectPath,
+      projects: [envelope.project],
+      healthScore: envelope.healthScore,
+      freshness: envelope.evidenceFreshness,
+      evidencePath: envelope.evidencePath,
+      systemChecks: [
+        envelope.python,
+        envelope.poetry,
+        envelope.pipx,
+        envelope.go,
+        envelope.rapidkitCore,
+      ],
+    }),
+    workspacePath && path.resolve(workspacePath) !== path.resolve(projectPath) ? [projectPath] : []
+  );
   return envelope;
 }
 
@@ -5467,6 +6215,8 @@ interface PlannedFixStep extends FixPlanStep {
   phase: RemediationPlanPhase;
   order: number;
   dependsOn: string[];
+  diagnosisFindingId?: string;
+  causalKey?: string;
   issueId?: string;
   findingStatus: 'blocking' | 'advisory' | 'informational' | 'unknown';
   issueClass?: DoctorIssueClass;
@@ -5601,6 +6351,39 @@ function parseDependencySyncFix(
     { pattern: 'sbt\\s+compile', command: 'sbt', args: ['compile'] },
     { pattern: 'go\\s+mod\\s+tidy', command: 'go', args: ['mod', 'tidy'] },
     {
+      pattern:
+        'mvn\\s+-B\\s+-DskipTests\\s+-Dmaven\\.repo\\.local=\\.workspai/cache/java/m2\\s+dependency:go-offline',
+      command: 'mvn',
+      args: [
+        '-B',
+        '-DskipTests',
+        '-Dmaven.repo.local=.workspai/cache/java/m2',
+        'dependency:go-offline',
+      ],
+    },
+    {
+      pattern:
+        '\\.\\/mvnw\\s+-B\\s+-DskipTests\\s+-Dmaven\\.repo\\.local=\\.workspai/cache/java/m2\\s+dependency:go-offline',
+      command: './mvnw',
+      args: [
+        '-B',
+        '-DskipTests',
+        '-Dmaven.repo.local=.workspai/cache/java/m2',
+        'dependency:go-offline',
+      ],
+    },
+    {
+      pattern:
+        '\\.\\\\mvnw\\.cmd\\s+-B\\s+-DskipTests\\s+-Dmaven\\.repo\\.local=\\.workspai/cache/java/m2\\s+dependency:go-offline',
+      command: '.\\mvnw.cmd',
+      args: [
+        '-B',
+        '-DskipTests',
+        '-Dmaven.repo.local=.workspai/cache/java/m2',
+        'dependency:go-offline',
+      ],
+    },
+    {
       pattern: 'mvn\\s+-B\\s+-DskipTests\\s+dependency:go-offline',
       command: 'mvn',
       args: ['-B', '-DskipTests', 'dependency:go-offline'],
@@ -5625,6 +6408,23 @@ function parseDependencySyncFix(
       pattern: '\\.\\\\gradlew\\.bat\\s+dependencies',
       command: '.\\gradlew.bat',
       args: ['dependencies'],
+    },
+    {
+      pattern: 'gradle\\s+--project-cache-dir\\s+\\.workspai/cache/java/gradle\\s+dependencies',
+      command: 'gradle',
+      args: ['--project-cache-dir', '.workspai/cache/java/gradle', 'dependencies'],
+    },
+    {
+      pattern:
+        '\\.\\/gradlew\\s+--project-cache-dir\\s+\\.workspai/cache/java/gradle\\s+dependencies',
+      command: './gradlew',
+      args: ['--project-cache-dir', '.workspai/cache/java/gradle', 'dependencies'],
+    },
+    {
+      pattern:
+        '\\.\\\\gradlew\\.bat\\s+--project-cache-dir\\s+\\.workspai/cache/java/gradle\\s+dependencies',
+      command: '.\\gradlew.bat',
+      args: ['--project-cache-dir', '.workspai/cache/java/gradle', 'dependencies'],
     },
   ];
 
@@ -5682,13 +6482,24 @@ function dependencyMaterializationMetadata(executableValue: string): {
     return { ecosystem: 'clojure', files: ['deps.edn', 'project.clj'] };
   if (executable === 'sbt') return { ecosystem: 'sbt', files: ['build.sbt'] };
   if (executable === 'mvn' || executable === 'mvnw')
-    return { ecosystem: 'maven', files: ['pom.xml'] };
+    return {
+      ecosystem: 'maven',
+      files: ['pom.xml', '.workspai/cache/java/m2'],
+    };
   if (executable === 'gradle' || executable === 'gradlew')
-    return { ecosystem: 'gradle', files: ['build.gradle', 'build.gradle.kts', 'gradle.lockfile'] };
+    return {
+      ecosystem: 'gradle',
+      files: ['build.gradle', 'build.gradle.kts', 'gradle.lockfile', '.workspai/cache/java/gradle'],
+    };
   return { ecosystem: executable, files: [] };
 }
 
 function attachDependencyMaterializationCapabilities(health: ProjectHealth): void {
+  const materializationIssue = (health.issues ?? []).find((issue) =>
+    /(?:dependencies? (?:are )?(?:not (?:installed|downloaded|resolved)|missing)|dependency cache not initialized|virtual environment (?:not created|exists but)|restore\/build artifacts not found|build artifacts missing|dependencies are not warmed)/i.test(
+      issue
+    )
+  );
   for (const command of health.fixCommands ?? []) {
     const parsed = parseDependencySyncFix(command);
     if (!parsed) continue;
@@ -5709,10 +6520,50 @@ function attachDependencyMaterializationCapabilities(health: ProjectHealth): voi
         'Source mutation is not required when the existing manifest and lockfile are already consistent.',
       ],
     });
-    health.repairCapabilities = health.repairCapabilities ?? [];
-    if (!health.repairCapabilities.some((candidate) => candidate.id === capability.id)) {
-      health.repairCapabilities.push(capability);
+    const existingProbe = health.probes?.find(
+      (probe) => probe.id === 'runtime-dependency-materialization'
+    );
+    if (existingProbe) {
+      Object.assign(
+        existingProbe,
+        normalizeDoctorProbe(
+          { ...existingProbe, repairCapability: capability },
+          new Date().toISOString()
+        )
+      );
+      continue;
     }
+    pushProjectProbe(health, {
+      id: 'runtime-dependency-materialization',
+      label: 'Runtime dependency materialization',
+      status: 'fail',
+      severity: 'error',
+      scope: 'project-scoped',
+      reason:
+        materializationIssue ??
+        'The dependency definition exists, but its local runtime dependency tree is missing or incomplete.',
+      recommendation:
+        'Run the typed dependency materialization transaction, then recheck the exact runtime postcondition.',
+      repairCapability: capability,
+      issueClass: 'dependency',
+      operationalImpact: 'release-risk',
+    });
+  }
+
+  if (
+    health.depsInstalled &&
+    !(health.probes ?? []).some((probe) => probe.id === 'runtime-dependency-materialization')
+  ) {
+    pushProjectProbe(health, {
+      id: 'runtime-dependency-materialization',
+      label: 'Runtime dependency materialization',
+      status: 'pass',
+      severity: 'info',
+      scope: 'project-scoped',
+      reason: 'The runtime dependency tree is materialized for the detected project ecosystem.',
+      issueClass: 'dependency',
+      operationalImpact: 'none',
+    });
   }
 }
 
@@ -5758,96 +6609,7 @@ export function parseInternalRepairCommand(cmd: string): DoctorRepairOperation |
   try {
     const decoded = Buffer.from(match[1], 'base64url').toString('utf8');
     const value = JSON.parse(decoded) as unknown;
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const operation = value as Partial<DoctorRepairOperation>;
-    if (operation.type === 'file-create') {
-      if (
-        typeof operation.path === 'string' &&
-        typeof operation.content === 'string' &&
-        operation.overwrite === false
-      ) {
-        return operation as DoctorRepairOperation;
-      }
-    }
-    if (operation.type === 'file-append') {
-      if (
-        typeof operation.path === 'string' &&
-        Array.isArray(operation.lines) &&
-        operation.lines.every((line) => typeof line === 'string') &&
-        typeof operation.ensureNewline === 'boolean'
-      ) {
-        return operation as DoctorRepairOperation;
-      }
-    }
-    if (operation.type === 'file-copy') {
-      if (
-        typeof operation.sourcePath === 'string' &&
-        typeof operation.path === 'string' &&
-        operation.overwrite === false
-      ) {
-        return operation as DoctorRepairOperation;
-      }
-    }
-    if (operation.type === 'package-json-script') {
-      if (
-        typeof operation.path === 'string' &&
-        typeof operation.scriptName === 'string' &&
-        typeof operation.scriptValue === 'string'
-      ) {
-        return operation as DoctorRepairOperation;
-      }
-    }
-    if (operation.type === 'json-edit') {
-      if (
-        typeof operation.path === 'string' &&
-        Array.isArray(operation.edits) &&
-        operation.edits.every((edit) => {
-          if (!edit || typeof edit !== 'object' || Array.isArray(edit)) return false;
-          const record = edit as Record<string, unknown>;
-          return (
-            typeof record.pointer === 'string' &&
-            record.pointer.startsWith('/') &&
-            (typeof record.value === 'string' ||
-              typeof record.value === 'number' ||
-              typeof record.value === 'boolean' ||
-              record.value === null)
-          );
-        })
-      ) {
-        return operation as DoctorRepairOperation;
-      }
-    }
-    if (operation.type === 'env-key-add') {
-      if (
-        typeof operation.path === 'string' &&
-        Array.isArray(operation.keys) &&
-        operation.keys.every((key) => {
-          if (!key || typeof key !== 'object' || Array.isArray(key)) return false;
-          const record = key as Record<string, unknown>;
-          return (
-            typeof record.name === 'string' &&
-            /^[A-Z_][A-Z0-9_]*$/i.test(record.name) &&
-            typeof record.value === 'string' &&
-            (record.comment === undefined || typeof record.comment === 'string')
-          );
-        })
-      ) {
-        return operation as DoctorRepairOperation;
-      }
-    }
-    if (operation.type === 'makefile-target') {
-      if (
-        typeof operation.path === 'string' &&
-        typeof operation.target === 'string' &&
-        /^[A-Za-z0-9_.:-]+$/.test(operation.target) &&
-        typeof operation.command === 'string' &&
-        operation.command.trim().length > 0 &&
-        typeof operation.phony === 'boolean'
-      ) {
-        return operation as DoctorRepairOperation;
-      }
-    }
-    return null;
+    return parseDoctorRepairOperation(value);
   } catch {
     return null;
   }
@@ -5906,8 +6668,41 @@ export function assertOperationPathInsideProject(projectPath: string, targetPath
   return resolvedTargetPath;
 }
 
+export async function assertOperationPathInsideProjectResolved(
+  projectPath: string,
+  targetPath: string
+): Promise<string> {
+  const projectStat = await fsExtra.stat(projectPath).catch(() => undefined);
+  if (!projectStat?.isDirectory()) {
+    throw new Error(`Repair project boundary not found: ${projectPath}`);
+  }
+  const resolvedTargetPath = assertOperationPathInsideProject(projectPath, targetPath);
+  const resolvedProjectPath = await fsExtra
+    .realpath(projectPath)
+    .catch(() => path.resolve(projectPath));
+  let existingAncestor = resolvedTargetPath;
+  while (!(await fsExtra.pathExists(existingAncestor))) {
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) {
+      throw new Error(`Repair target has no resolvable project ancestor: ${targetPath}`);
+    }
+    existingAncestor = parent;
+  }
+  const resolvedAncestor = await fsExtra
+    .realpath(existingAncestor)
+    .catch(() => path.resolve(existingAncestor));
+  const relative = path.relative(resolvedProjectPath, resolvedAncestor);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(
+      `Repair target escapes project boundary through a symbolic link: ${targetPath}`
+    );
+  }
+  return resolvedTargetPath;
+}
+
 export async function applyPackageScriptFix(input: {
   projectPath: string;
+  packageJsonPath?: string;
   scriptName: string;
   scriptValue: string;
 }): Promise<void> {
@@ -5915,7 +6710,10 @@ export async function applyPackageScriptFix(input: {
     throw new Error(`Unsafe package script name: ${input.scriptName}`);
   }
 
-  const packageJsonPath = path.join(input.projectPath, 'package.json');
+  const packageJsonPath = await assertOperationPathInsideProjectResolved(
+    input.projectPath,
+    input.packageJsonPath ?? 'package.json'
+  );
   if (!(await fsExtra.pathExists(packageJsonPath))) {
     throw new Error(`package.json not found at ${packageJsonPath}`);
   }
@@ -5945,7 +6743,10 @@ export async function applyFileCreateFix(input: {
   projectPath: string;
   operation: Extract<DoctorRepairOperation, { type: 'file-create' }>;
 }): Promise<void> {
-  const targetPath = assertOperationPathInsideProject(input.projectPath, input.operation.path);
+  const targetPath = await assertOperationPathInsideProjectResolved(
+    input.projectPath,
+    input.operation.path
+  );
   if (await fsExtra.pathExists(targetPath)) {
     return;
   }
@@ -5957,7 +6758,10 @@ export async function applyFileAppendFix(input: {
   projectPath: string;
   operation: Extract<DoctorRepairOperation, { type: 'file-append' }>;
 }): Promise<void> {
-  const targetPath = assertOperationPathInsideProject(input.projectPath, input.operation.path);
+  const targetPath = await assertOperationPathInsideProjectResolved(
+    input.projectPath,
+    input.operation.path
+  );
   await fsExtra.ensureDir(path.dirname(targetPath));
 
   const existing = await readFileIfExists(targetPath);
@@ -5976,11 +6780,14 @@ export async function applyFileCopyFix(input: {
   projectPath: string;
   operation: Extract<DoctorRepairOperation, { type: 'file-copy' }>;
 }): Promise<void> {
-  const sourcePath = assertOperationPathInsideProject(
+  const sourcePath = await assertOperationPathInsideProjectResolved(
     input.projectPath,
     input.operation.sourcePath
   );
-  const targetPath = assertOperationPathInsideProject(input.projectPath, input.operation.path);
+  const targetPath = await assertOperationPathInsideProjectResolved(
+    input.projectPath,
+    input.operation.path
+  );
 
   if (!(await fsExtra.pathExists(sourcePath))) {
     throw new Error(`Repair source file not found at ${sourcePath}`);
@@ -6004,7 +6811,10 @@ export async function applyJsonEditFix(input: {
   projectPath: string;
   operation: Extract<DoctorRepairOperation, { type: 'json-edit' }>;
 }): Promise<void> {
-  const targetPath = assertOperationPathInsideProject(input.projectPath, input.operation.path);
+  const targetPath = await assertOperationPathInsideProjectResolved(
+    input.projectPath,
+    input.operation.path
+  );
   if (!(await fsExtra.pathExists(targetPath))) {
     throw new Error(`JSON repair target not found at ${targetPath}`);
   }
@@ -6012,7 +6822,16 @@ export async function applyJsonEditFix(input: {
   const document = (await fsExtra.readJSON(targetPath)) as Record<string, unknown>;
   for (const edit of input.operation.edits) {
     const segments = edit.pointer.split('/').slice(1).map(decodeJsonPointerSegment);
-    if (segments.length === 0 || segments.some((segment) => segment.length === 0)) {
+    if (
+      segments.length === 0 ||
+      segments.some(
+        (segment) =>
+          segment.length === 0 ||
+          segment === '__proto__' ||
+          segment === 'prototype' ||
+          segment === 'constructor'
+      )
+    ) {
       throw new Error(`Unsupported JSON pointer: ${edit.pointer}`);
     }
     let cursor: Record<string, unknown> = document;
@@ -6033,7 +6852,10 @@ export async function applyEnvKeyAddFix(input: {
   projectPath: string;
   operation: Extract<DoctorRepairOperation, { type: 'env-key-add' }>;
 }): Promise<void> {
-  const targetPath = assertOperationPathInsideProject(input.projectPath, input.operation.path);
+  const targetPath = await assertOperationPathInsideProjectResolved(
+    input.projectPath,
+    input.operation.path
+  );
   await fsExtra.ensureDir(path.dirname(targetPath));
   const existing = await readFileIfExists(targetPath);
   const existingKeys = new Set(
@@ -6057,7 +6879,10 @@ export async function applyMakefileTargetFix(input: {
   projectPath: string;
   operation: Extract<DoctorRepairOperation, { type: 'makefile-target' }>;
 }): Promise<void> {
-  const targetPath = assertOperationPathInsideProject(input.projectPath, input.operation.path);
+  const targetPath = await assertOperationPathInsideProjectResolved(
+    input.projectPath,
+    input.operation.path
+  );
   await fsExtra.ensureDir(path.dirname(targetPath));
   const existing = await readFileIfExists(targetPath);
   const targetPattern = new RegExp(
@@ -6237,8 +7062,9 @@ function classifyFixStep(project: ProjectHealth, cmd: string): FixPlanStep {
     originalCommand: cmd,
     kind: 'shell',
     risk: 'invasive',
-    executable: true,
-    reason: 'Generic shell command',
+    executable: false,
+    reason:
+      'Untyped command retained as review guidance only; Doctor never executes generic shell remediation.',
   };
 }
 
@@ -6789,16 +7615,22 @@ async function buildRemediationPlan(
       }
     }
 
+    const capability = item.capability ?? findRepairCapabilityForCommand(project, command);
+    const probe = item.probe ?? findProbeForRepairCapability(project, capability);
+    const diagnosisFinding = probe
+      ? project.diagnosis?.findings.find((finding) => finding.probeId === probe.id)
+      : undefined;
+    const operation = capability?.operation ?? parseInternalRepairCommand(command) ?? undefined;
+    if (executableInCurrentEnvironment && !operation && !capability?.invocation?.executable) {
+      executableInCurrentEnvironment = false;
+      blockedReason = 'Executable remediation requires a typed operation or structured invocation.';
+    }
     if (executableInCurrentEnvironment) {
       executableSteps += 1;
       if (step.risk === 'safe') safe += 1;
       if (step.risk === 'guarded') guarded += 1;
       if (step.risk === 'invasive') invasive += 1;
     }
-
-    const capability = item.capability ?? findRepairCapabilityForCommand(project, command);
-    const probe = item.probe ?? findProbeForRepairCapability(project, capability);
-    const operation = capability?.operation ?? parseInternalRepairCommand(command) ?? undefined;
     const files = capability?.files ?? (operation && 'path' in operation ? [operation.path] : []);
     const repairIntent = probe?.repairIntent;
     const studioStatus = buildStudioStatus({
@@ -6828,6 +7660,12 @@ async function buildRemediationPlan(
       phase,
       order: 0,
       dependsOn: [],
+      ...(diagnosisFinding
+        ? {
+            diagnosisFindingId: diagnosisFinding.id,
+            causalKey: diagnosisFinding.causalKey,
+          }
+        : {}),
       issueId: capability?.issueId,
       findingStatus:
         probe?.status === 'fail'
@@ -7001,9 +7839,11 @@ async function verifyProjectPostFix(
   projectPath: string
 ): Promise<{ issues: number; healthy: boolean }> {
   const recheck = await checkProject(projectPath, { allowNonRapidkit: true });
+  const blockingFindings =
+    recheck.diagnosis?.findings.filter((finding) => finding.status === 'blocking') ?? [];
   return {
-    issues: recheck.issues.length,
-    healthy: recheck.issues.length === 0,
+    issues: blockingFindings.length,
+    healthy: blockingFindings.length === 0,
   };
 }
 
@@ -7011,10 +7851,9 @@ async function collectDoctorRemainingBlockers(projects: ProjectHealth[]): Promis
   const blockers: string[] = [];
   for (const project of projects) {
     const recheck = await checkProject(project.path, { allowNonRapidkit: true });
-    for (const issue of recheck.issues) {
-      if (typeof issue === 'string' && issue.trim()) {
-        blockers.push(`${project.name}: ${issue.trim()}`);
-      }
+    const findings = recheck.diagnosis?.findings.filter((finding) => finding.status === 'blocking');
+    for (const finding of findings ?? []) {
+      if (finding.symptom.trim()) blockers.push(`${project.name}: ${finding.symptom.trim()}`);
     }
   }
   return blockers.slice(0, 24);
@@ -7023,10 +7862,16 @@ async function collectDoctorRemainingBlockers(projects: ProjectHealth[]): Promis
 function collectDoctorRemainingBlockersFromHealth(projects: ProjectHealth[]): string[] {
   const blockers: string[] = [];
   for (const project of projects) {
-    for (const issue of project.issues) {
-      if (typeof issue === 'string' && issue.trim()) {
-        blockers.push(`${project.name}: ${issue.trim()}`);
+    const findings = project.diagnosis?.findings.filter((finding) => finding.status === 'blocking');
+    if (findings) {
+      for (const finding of findings) {
+        if (finding.symptom.trim()) blockers.push(`${project.name}: ${finding.symptom.trim()}`);
       }
+      continue;
+    }
+    for (const issue of project.issues) {
+      if (typeof issue === 'string' && issue.trim())
+        blockers.push(`${project.name}: ${issue.trim()}`);
     }
   }
   return blockers.slice(0, 24);
@@ -7771,7 +8616,8 @@ export async function runDoctor(
   options: {
     workspace?: boolean | string;
     project?: boolean;
-    json?: boolean;
+    json?: boolean | 'full' | 'summary';
+    fresh?: boolean;
     quiet?: boolean;
     fix?: boolean;
     plan?: boolean;
@@ -7826,7 +8672,12 @@ export async function runDoctor(
     }
 
     const allowProjectScanCache = !(options.plan || options.fix || options.apply);
-    let health = await getWorkspaceHealth(workspacePath, allowProjectScanCache, policyProfile);
+    let health = await getWorkspaceHealth(
+      workspacePath,
+      allowProjectScanCache,
+      policyProfile,
+      options.fresh === true
+    );
 
     if (!options.json) {
       if (health.projectScanCached) {
@@ -7865,7 +8716,7 @@ export async function runDoctor(
             remainingBlockers: [],
             verifyRecommended: DOCTOR_FIX_VERIFY_RECOMMENDED,
           });
-        health = await getWorkspaceHealth(workspacePath, false, policyProfile);
+        health = await getWorkspaceHealth(workspacePath, false, policyProfile, true);
         fixResult = {
           ...fixResult,
           remainingBlockers: collectDoctorRemainingBlockersFromHealth(health.projects),
@@ -7883,6 +8734,13 @@ export async function runDoctor(
         (sum, summary) => sum + summary.advisoryFindings,
         0
       );
+      const counts = buildDoctorCountSummary(health.projects, [
+        health.python,
+        health.poetry,
+        health.pipx,
+        health.go,
+        health.rapidkitCore,
+      ]);
       const output = {
         contract: getDoctorContractMetadata(),
         policyProfile,
@@ -7894,6 +8752,7 @@ export async function runDoctor(
           projectScan: health.projectScanCached ?? false,
           projectScanPath: health.projectScanCachePath,
           evidencePath: health.evidencePath,
+          receiptPath: health.receiptPath,
         },
         healthScore: health.healthScore,
         evidenceFreshness: health.evidenceFreshness,
@@ -7909,6 +8768,7 @@ export async function runDoctor(
         },
         projects: health.projects.map((project) => serializeDoctorProjectForOutput(project)),
         summary: {
+          counts,
           totalProjects: health.projects.length,
           totalIssues: health.projects.reduce((sum, p) => sum + p.issues.length, 0),
           verdict: health.healthScore?.verdict ?? 'passed',
@@ -7936,7 +8796,46 @@ export async function runDoctor(
       };
 
       if (!options.quiet) {
-        console.log(JSON.stringify(output, null, 2));
+        const renderedOutput =
+          options.json === 'summary'
+            ? {
+                schemaVersion: DOCTOR_SUMMARY_SCHEMA_VERSION,
+                generatedAt: health.evidenceFreshness?.generatedAt ?? new Date().toISOString(),
+                scope: 'workspace',
+                workspace: output.workspace,
+                verdict: health.healthScore?.verdict ?? 'passed',
+                counts,
+                freshness: health.evidenceFreshness,
+                affectedProjects: health.projects
+                  .map((project) => {
+                    const summary = buildDoctorProbeSummary(project);
+                    return {
+                      name: project.name,
+                      path: project.path,
+                      runtimeFamily: project.runtimeFamily ?? 'unknown',
+                      verdict: summary.verdict,
+                      blockingCauses:
+                        project.diagnosis?.coverage.blockingFindings ?? summary.blockingFindings,
+                      advisoryFindings:
+                        project.diagnosis?.coverage.advisoryFindings ?? summary.advisoryFindings,
+                      unknownFindings: project.diagnosis?.coverage.unknownFindings ?? 0,
+                    };
+                  })
+                  .filter(
+                    (project) =>
+                      project.blockingCauses > 0 ||
+                      project.advisoryFindings > 0 ||
+                      project.unknownFindings > 0
+                  ),
+                artifacts: {
+                  evidence: health.evidencePath,
+                  receipt: health.receiptPath,
+                  ...(remediationPlanPath ? { remediationPlan: remediationPlanPath } : {}),
+                  ...(fixResultPath ? { fixResult: fixResultPath } : {}),
+                },
+              }
+            : output;
+        console.log(JSON.stringify(renderedOutput, null, 2));
       }
       return computeDoctorFixAwareExitCode(
         health.healthScore,
@@ -8032,7 +8931,12 @@ export async function runDoctor(
         });
 
         if (!options.json) {
-          const refreshedHealth = await getWorkspaceHealth(workspacePath, false, policyProfile);
+          const refreshedHealth = await getWorkspaceHealth(
+            workspacePath,
+            false,
+            policyProfile,
+            true
+          );
           const refreshedTotalIssues = refreshedHealth.projects
             .map(buildDoctorProbeSummary)
             .reduce((sum, summary) => sum + summary.blockingFindings, 0);
@@ -8145,7 +9049,11 @@ export async function runDoctor(
       process.exit(1);
     }
 
-    let envelope = await getProjectHealthEnvelope(projectPath, policyProfile);
+    let envelope = await getProjectHealthEnvelope(
+      projectPath,
+      policyProfile,
+      options.fresh === true
+    );
     const reportedWorkspacePath = envelope.workspacePath
       ? normalizeReportedPath(envelope.workspacePath)
       : null;
@@ -8179,7 +9087,7 @@ export async function runDoctor(
             remainingBlockers: [],
             verifyRecommended: DOCTOR_FIX_VERIFY_RECOMMENDED,
           });
-        envelope = await getProjectHealthEnvelope(projectPath, policyProfile);
+        envelope = await getProjectHealthEnvelope(projectPath, policyProfile, true);
         fixResult = {
           ...fixResult,
           remainingBlockers: collectDoctorRemainingBlockersFromHealth([envelope.project]),
@@ -8194,6 +9102,10 @@ export async function runDoctor(
 
       const reportedProjectPath = normalizeReportedPath(envelope.project.path);
       const probeSummary = buildDoctorProbeSummary(envelope.project);
+      const counts = buildDoctorCountSummary(
+        [envelope.project],
+        [envelope.python, envelope.poetry, envelope.pipx, envelope.go, envelope.rapidkitCore]
+      );
       const output = {
         contract: getDoctorContractMetadata(),
         policyProfile,
@@ -8209,6 +9121,7 @@ export async function runDoctor(
           path: reportedProjectPath,
         },
         evidencePath: envelope.evidencePath,
+        receiptPath: envelope.receiptPath,
         healthScore: envelope.healthScore,
         evidenceFreshness: envelope.evidenceFreshness,
         system: {
@@ -8219,6 +9132,7 @@ export async function runDoctor(
           rapidkitCore: envelope.rapidkitCore,
         },
         summary: {
+          counts,
           totalProjects: 1,
           totalIssues: envelope.project.issues.length,
           verdict: probeSummary.verdict,
@@ -8247,7 +9161,42 @@ export async function runDoctor(
       };
 
       if (!options.quiet) {
-        console.log(JSON.stringify(output, null, 2));
+        const renderedOutput =
+          options.json === 'summary'
+            ? {
+                schemaVersion: DOCTOR_SUMMARY_SCHEMA_VERSION,
+                generatedAt: envelope.evidenceFreshness?.generatedAt ?? new Date().toISOString(),
+                scope: 'project',
+                workspace: output.workspace,
+                project: {
+                  name: envelope.project.name,
+                  path: reportedProjectPath,
+                  runtimeFamily: envelope.project.runtimeFamily ?? 'unknown',
+                  framework: envelope.project.framework ?? 'Unknown',
+                },
+                verdict: probeSummary.verdict,
+                counts,
+                freshness: envelope.evidenceFreshness,
+                blockers: (envelope.project.diagnosis?.findings ?? [])
+                  .filter((finding) => finding.status === 'blocking')
+                  .map((finding) => ({
+                    id: finding.id,
+                    issueClass: finding.issueClass,
+                    symptom: finding.symptom,
+                    repairDisposition: finding.repair.disposition,
+                    ...(finding.repair.capabilityId
+                      ? { capabilityId: finding.repair.capabilityId }
+                      : {}),
+                  })),
+                artifacts: {
+                  evidence: envelope.evidencePath,
+                  receipt: envelope.receiptPath,
+                  ...(remediationPlanPath ? { remediationPlan: remediationPlanPath } : {}),
+                  ...(fixResultPath ? { fixResult: fixResultPath } : {}),
+                },
+              }
+            : output;
+        console.log(JSON.stringify(renderedOutput, null, 2));
       }
       return computeDoctorFixAwareExitCode(
         envelope.healthScore,
@@ -8354,12 +9303,14 @@ export async function runDoctor(
     const systemErrors = [python, core].filter((c) => c.status === 'error').length;
 
     if (options.json) {
+      const generatedAt = new Date().toISOString();
+      const counts = buildDoctorCountSummary([], checks);
       const output = {
         contract: getDoctorContractMetadata(),
         policyProfile,
         scope: 'system',
         status: systemErrors > 0 ? 'error' : 'ok',
-        generatedAt: new Date().toISOString(),
+        generatedAt,
         healthScore,
         system: {
           python,
@@ -8377,7 +9328,23 @@ export async function runDoctor(
         nextActions: ['npx workspai doctor workspace --json', 'npx workspai doctor project --json'],
       };
       if (!options.quiet) {
-        console.log(JSON.stringify(output, null, 2));
+        const renderedOutput =
+          options.json === 'summary'
+            ? {
+                schemaVersion: DOCTOR_SUMMARY_SCHEMA_VERSION,
+                generatedAt,
+                scope: 'system',
+                verdict: healthScore.verdict,
+                counts,
+                system: Object.fromEntries(
+                  Object.entries({ python, poetry, pipx, go, rapidkitCore: core }).map(
+                    ([id, check]) => [id, { status: check.status, message: check.message }]
+                  )
+                ),
+                nextActions: output.nextActions,
+              }
+            : output;
+        console.log(JSON.stringify(renderedOutput, null, 2));
       }
       return options.strict || options.ci ? (systemErrors > 0 ? 1 : 0) : 0;
     }

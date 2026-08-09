@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { assertDoctorEvidenceSemanticInvariants } from '../utils/doctor-evidence-contract.js';
+import {
+  assertDoctorEvidenceSemanticInvariants,
+  isDoctorEvidencePayloadCompatible,
+} from '../utils/doctor-evidence-contract.js';
+import { buildDoctorDiagnosis } from '../doctor/diagnosis-engine.js';
 
 function validEvidence(): Record<string, unknown> {
   return {
@@ -34,6 +38,21 @@ function validEvidence(): Record<string, unknown> {
 }
 
 describe('Doctor evidence semantic invariants', () => {
+  it('rejects arbitrary schema-less objects at the Doctor trust boundary', () => {
+    expect(isDoctorEvidencePayloadCompatible({}, 'workspace')).toBe(false);
+    expect(isDoctorEvidencePayloadCompatible({ evidenceType: 'workspace' }, 'workspace')).toBe(
+      false
+    );
+    expect(isDoctorEvidencePayloadCompatible({ schemaVersion: 1, projects: [] }, 'workspace')).toBe(
+      false
+    );
+    expect(isDoctorEvidencePayloadCompatible({ evidenceType: 1, projects: [] }, 'workspace')).toBe(
+      false
+    );
+    expect(isDoctorEvidencePayloadCompatible({ projects: [] }, 'workspace')).toBe(true);
+    expect(isDoctorEvidencePayloadCompatible({ project: { name: 'api' } }, 'project')).toBe(true);
+  });
+
   it('accepts internally consistent blocked evidence', () => {
     expect(() => assertDoctorEvidenceSemanticInvariants(validEvidence())).not.toThrow();
   });
@@ -50,6 +69,17 @@ describe('Doctor evidence semantic invariants', () => {
     const evidence = validEvidence();
     (evidence.healthScore as Record<string, unknown>).verdict = 'passed';
     expect(() => assertDoctorEvidenceSemanticInvariants(evidence)).toThrow(/contradicts score/);
+  });
+
+  it('rejects health totals that disagree with host/project components', () => {
+    const evidence = validEvidence();
+    (evidence.healthScore as Record<string, unknown>).components = {
+      host: { total: 1, passed: 1, warnings: 0, errors: 0 },
+      projects: { total: 1, passed: 1, warnings: 0, errors: 0 },
+    };
+    expect(() => assertDoctorEvidenceSemanticInvariants(evidence)).toThrow(
+      /contradicts its host\/project components/
+    );
   });
 
   it('rejects the historical contradiction of failed probes with zero score errors', () => {
@@ -82,5 +112,50 @@ describe('Doctor evidence semantic invariants', () => {
         healthScore: { total: 1, passed: 1, warnings: 0, errors: 0 },
       })
     ).not.toThrow();
+  });
+
+  it('validates canonical diagnosis even when legacy healthScore verdict is absent', () => {
+    const diagnosis = buildDoctorDiagnosis({
+      projectName: 'api',
+      projectPath: '/workspace/api',
+      runtimeFamily: 'node',
+      probes: [],
+    }) as unknown as Record<string, unknown>;
+    diagnosis.schemaVersion = 'workspai.doctor-diagnosis.v999';
+
+    expect(() =>
+      assertDoctorEvidenceSemanticInvariants({ projects: [{ name: 'api', diagnosis }] })
+    ).toThrow(/diagnosis schemaVersion is missing or unsupported/);
+  });
+
+  it('rejects canonical v2 evidence when any project omits its diagnosis', () => {
+    expect(() =>
+      assertDoctorEvidenceSemanticInvariants({
+        contract: { scoringPolicyVersion: 'doctor-score-policy-v2' },
+        projects: [{ name: 'api' }],
+      })
+    ).toThrow(/project without diagnosis/);
+  });
+
+  it('rejects malformed typed repair operations before evidence is published', () => {
+    expect(() =>
+      assertDoctorEvidenceSemanticInvariants({
+        projects: [
+          {
+            name: 'api',
+            repairCapabilities: [
+              {
+                id: 'unsafe-env',
+                operation: {
+                  type: 'env-key-add',
+                  path: '.env',
+                  keys: [{ name: 'SAFE', value: 'ok\nINJECTED=1' }],
+                },
+              },
+            ],
+          },
+        ],
+      })
+    ).toThrow(/invalid typed operation/);
   });
 });

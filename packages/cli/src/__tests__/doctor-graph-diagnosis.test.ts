@@ -43,6 +43,21 @@ describe('Doctor graph diagnosis', () => {
     await fsExtra.outputFile(path.join(project, 'src', 'app.ts'), "import './service';\n");
     await fsExtra.outputFile(path.join(project, 'src', 'service.ts'), 'export function run() {}\n');
     await fsExtra.outputFile(path.join(project, 'test', 'app.test.ts'), 'test("ok", () => {});\n');
+    await fsExtra.outputJson(path.join(root, 'other', '.workspai', 'project.json'), {
+      name: 'other',
+      runtime: 'node',
+      framework: 'nestjs',
+    });
+    await fsExtra.outputJson(path.join(root, 'other', 'package.json'), {
+      name: '@platform/other',
+      version: '1.0.0',
+      scripts: { test: 'vitest run' },
+      dependencies: { express: '^5.0.0' },
+    });
+    await fsExtra.outputFile(
+      path.join(root, 'other', 'test', 'other.test.ts'),
+      'test("ok", () => {});\n'
+    );
     const model = await buildWorkspaceModel({ workspacePath: root, now: NOW });
     await writeWorkspaceModel(model, root);
     return { root, project };
@@ -87,6 +102,10 @@ describe('Doctor graph diagnosis', () => {
     );
     expect(finding?.proofPaths.length).toBeGreaterThan(0);
     expect(finding?.sourceArtifacts).toContain('api/package.json');
+    expect(finding?.sourceArtifacts.some((artifact) => artifact.startsWith('other/'))).toBe(false);
+    expect(finding?.affectedEntities.some((entity) => entity.projectId === 'other')).toBe(false);
+    expect(finding?.proofPaths.length).toBeLessThanOrEqual(6);
+    expect(finding?.sourceArtifacts.length).toBeLessThanOrEqual(8);
     expect(diagnosis.claimBoundary).toMatch(/do not prove runtime causality/i);
 
     const schema = await fsExtra.readJson(

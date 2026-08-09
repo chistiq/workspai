@@ -180,6 +180,17 @@ describe('unified Workspace Intelligence runner', () => {
         .map((metadata) => metadata.intelligenceMilestoneId)
     ).toEqual(WORKSPACE_INTELLIGENCE_PREFLIGHT_IDS);
     expect(mocks.buildWorkspaceModel).toHaveBeenCalledTimes(1);
+    expect(mocks.runDoctor).toHaveBeenCalledWith({
+      workspace: workspacePath,
+      json: true,
+      quiet: true,
+      profile: 'enterprise-strict',
+    });
+    expect(mocks.runAnalyze).toHaveBeenCalledWith({
+      workspacePath,
+      json: true,
+      strict: true,
+    });
     expect(mocks.createWorkspaceModelBuildProvenance).toHaveBeenCalledWith({
       mode: 'full',
       engineStatus: 'disabled',
@@ -204,7 +215,12 @@ describe('unified Workspace Intelligence runner', () => {
       })
     );
     expect(mocks.syncWorkspaceAgentGrounding).toHaveBeenCalledWith(
-      expect.objectContaining({ agent: 'codex', preset: 'enterprise', write: true })
+      expect.objectContaining({
+        agent: 'codex',
+        preset: 'enterprise',
+        write: true,
+        strict: true,
+      })
     );
     expect(mocks.writeWorkspaceArtifactJson).toHaveBeenCalledWith(
       workspacePath,

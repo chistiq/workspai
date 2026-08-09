@@ -544,6 +544,14 @@
         "issueId": {
           "type": "string"
         },
+        "diagnosisFindingId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "causalKey": {
+          "type": "string",
+          "minLength": 1
+        },
         "findingStatus": {
           "enum": ["blocking", "advisory", "informational", "unknown"]
         },

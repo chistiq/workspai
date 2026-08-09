@@ -188,6 +188,16 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Diagnose cross-project workspace health, contracts, policies, toolchains, and operational evidence.',
   'doctor workspace --json':
     'Emit workspace Doctor findings as structured evidence for verification and automation consumers.',
+  'doctor capabilities':
+    'Publish the runtime, framework, platform, diagnostic-domain, and repair capability truth matrix.',
+  'doctor capabilities --json':
+    'Emit the canonical Doctor capability matrix for IDE, CI, and agent consumers.',
+  'doctor capabilities --validate':
+    'Run the versioned disease corpus and report bounded precision, recall, and domain coverage.',
+  'doctor capabilities --validate --write':
+    'Validate every registered Doctor adapter and persist the governed capability and validation artifacts in the selected workspace.',
+  'doctor capabilities --write':
+    'Persist the canonical Doctor capability matrix as a governed workspace artifact.',
   format:
     'Run the detected project formatter while respecting workspace policy and runtime ownership.',
   frameworks: 'List scaffold frameworks and kits currently supported by the installed CLI.',
