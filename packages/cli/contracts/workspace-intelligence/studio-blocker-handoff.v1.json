@@ -39,6 +39,31 @@
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
     },
+    "doctorFindings": {
+      "type": "array",
+      "description": "Exact causal Doctor findings used to bind Studio repair to stable finding and capability identifiers.",
+      "items": {
+        "type": "object",
+        "required": ["id", "symptom", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "causalKey": { "type": "string" },
+          "projectName": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "probeId": { "type": "string" },
+          "issueClass": { "type": "string" },
+          "symptom": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["blocking", "advisory", "informational", "unknown"] },
+          "applicability": { "enum": ["applicable", "not-applicable", "unknown"] },
+          "diagnosisState": { "enum": ["confirmed", "candidate", "unknown"] },
+          "repairDisposition": { "enum": ["automatic", "approval-required", "manual", "unavailable", "not-needed"] },
+          "capabilityId": { "type": "string" },
+          "verifyCommand": { "type": "string" },
+          "requiresFreshEvidence": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
     "artifactPath": {
       "type": "string"
     },

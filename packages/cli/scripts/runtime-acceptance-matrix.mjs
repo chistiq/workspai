@@ -985,11 +985,16 @@ function evaluateScenario(options, result, output) {
       return { status: 'passed', reason: 'Doctor completed without blocking findings.' };
     }
     const verdict = jsonPayload?.healthScore?.verdict ?? jsonPayload?.verdict;
-    const blockingFindings = doctorBlockingFindings(jsonPayload);
-    if ((code === 1 || code === 2) && verdict === 'blocked' && blockingFindings > 0) {
+    const governedBlockingCauses = doctorGovernedBlockingCauses(jsonPayload);
+    if (
+      (code === 1 || code === 2) &&
+      verdict === 'blocked' &&
+      governedBlockingCauses !== null &&
+      governedBlockingCauses > 0
+    ) {
       return {
         status: 'passed',
-        reason: `Doctor truthfully reported ${blockingFindings} governed blocking finding(s).`,
+        reason: `Doctor truthfully reported ${governedBlockingCauses} governed blocking cause(s).`,
       };
     }
     return {
@@ -1137,6 +1142,23 @@ function doctorBlockingFindings(payload) {
   return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
+function doctorSystemErrors(payload) {
+  const value = payload?.summary?.counts?.systemErrors ?? payload?.counts?.systemErrors;
+  if (Number.isInteger(value) && value >= 0) return value;
+  if (typeof payload?.summary?.hasSystemErrors === 'boolean') {
+    return payload.summary.hasSystemErrors ? 1 : 0;
+  }
+  const hostErrors = payload?.healthScore?.components?.host?.errors;
+  return Number.isInteger(hostErrors) && hostErrors >= 0 ? hostErrors : null;
+}
+
+function doctorGovernedBlockingCauses(payload) {
+  const blockingFindings = doctorBlockingFindings(payload);
+  const systemErrors = doctorSystemErrors(payload);
+  if (blockingFindings === null || systemErrors === null) return null;
+  return blockingFindings + systemErrors;
+}
+
 function validateDoctorEvidence(payload) {
   const healthScore = payload?.healthScore;
   if (!healthScore || typeof healthScore !== 'object') {
@@ -1149,11 +1171,16 @@ function validateDoctorEvidence(payload) {
   if (blockingFindings === null) {
     return 'Doctor summary.blockingFindings must be a non-negative integer';
   }
-  if (healthScore.verdict === 'blocked' && blockingFindings === 0) {
-    return 'Doctor blocked verdict must carry at least one blocking finding';
+  const systemErrors = doctorSystemErrors(payload);
+  if (systemErrors === null) {
+    return 'Doctor summary.counts.systemErrors must be a non-negative integer';
   }
-  if (healthScore.verdict !== 'blocked' && blockingFindings > 0) {
-    return 'Doctor non-blocked verdict cannot carry blocking findings';
+  const governedBlockingCauses = blockingFindings + systemErrors;
+  if (healthScore.verdict === 'blocked' && governedBlockingCauses === 0) {
+    return 'Doctor blocked verdict must carry a blocking finding or governed system error';
+  }
+  if (healthScore.verdict !== 'blocked' && governedBlockingCauses > 0) {
+    return 'Doctor non-blocked verdict cannot carry governed blocking causes';
   }
   return true;
 }
@@ -1205,7 +1232,11 @@ function validateDoctorReceiptFile(workspaceRoot) {
   if (payload.schemaVersion !== 'workspai.doctor-receipt.v1') {
     throw new Error('Doctor receipt schemaVersion is invalid.');
   }
-  if (!payload.counts || !Array.isArray(payload.affectedProjects) || !Array.isArray(payload.blockers)) {
+  if (
+    !payload.counts ||
+    !Array.isArray(payload.affectedProjects) ||
+    !Array.isArray(payload.blockers)
+  ) {
     throw new Error('Doctor receipt is missing counts, affectedProjects, or blockers.');
   }
 }
@@ -1217,7 +1248,10 @@ function validateDoctorCapabilities(payload) {
   if (!Array.isArray(payload.adapters) || payload.adapters.length < 17) {
     return 'Doctor capability payload must include every built-in adapter';
   }
-  if (payload.policy?.unknownIsHealthy !== false || payload.policy?.unsupportedIsHealthy !== false) {
+  if (
+    payload.policy?.unknownIsHealthy !== false ||
+    payload.policy?.unsupportedIsHealthy !== false
+  ) {
     return 'Doctor capability policy must fail closed for unknown and unsupported evidence';
   }
   if (payload.validation?.summary?.failedCases !== 0) {
@@ -1275,14 +1309,34 @@ function createObservedSourceProjects(root) {
 
 function createObservedExtendedProjects(root) {
   const fixtures = [
-    ['observed-elixir-source', 'mix.exs', 'defmodule Matrix.MixProject do\n  use Mix.Project\n  def project, do: [app: :matrix, version: "0.1.0", deps: deps()]\n  defp deps, do: [{:phoenix, "~> 1.7"}]\nend\n'],
-    ['observed-clojure-source', 'deps.edn', '{:paths ["src"] :deps {org.clojure/clojure {:mvn/version "1.12.0"}}}\n'],
-    ['observed-deno-source', 'deno.json', '{"tasks":{"test":"deno test","check":"deno check main.ts"}}\n'],
+    [
+      'observed-elixir-source',
+      'mix.exs',
+      'defmodule Matrix.MixProject do\n  use Mix.Project\n  def project, do: [app: :matrix, version: "0.1.0", deps: deps()]\n  defp deps, do: [{:phoenix, "~> 1.7"}]\nend\n',
+    ],
+    [
+      'observed-clojure-source',
+      'deps.edn',
+      '{:paths ["src"] :deps {org.clojure/clojure {:mvn/version "1.12.0"}}}\n',
+    ],
+    [
+      'observed-deno-source',
+      'deno.json',
+      '{"tasks":{"test":"deno test","check":"deno check main.ts"}}\n',
+    ],
     ['observed-bun-source', 'bun.lock', '# observed Bun lock baseline\n'],
     ['observed-scala-source', 'build.sbt', 'scalaVersion := "3.5.2"\n'],
     ['observed-kotlin-source', 'build.gradle.kts', 'plugins { kotlin("jvm") version "2.0.21" }\n'],
-    ['observed-c-source', 'CMakeLists.txt', 'cmake_minimum_required(VERSION 3.20)\nproject(matrix_c C)\nadd_executable(matrix src/main.c)\n'],
-    ['observed-cpp-source', 'meson.build', "project('matrix_cpp', 'cpp')\nexecutable('matrix', 'src/main.cpp')\n"],
+    [
+      'observed-c-source',
+      'CMakeLists.txt',
+      'cmake_minimum_required(VERSION 3.20)\nproject(matrix_c C)\nadd_executable(matrix src/main.c)\n',
+    ],
+    [
+      'observed-cpp-source',
+      'meson.build',
+      "project('matrix_cpp', 'cpp')\nexecutable('matrix', 'src/main.cpp')\n",
+    ],
   ];
   for (const [directory, marker, content] of fixtures) {
     const source = path.join(root, directory);
@@ -1294,8 +1348,14 @@ function createObservedExtendedProjects(root) {
     path.join(root, 'observed-bun-source', 'package.json'),
     '{"name":"matrix-bun","scripts":{"test":"bun test"}}\n'
   );
-  fs.writeFileSync(path.join(root, 'observed-c-source', 'src', 'main.c'), 'int main(void) { return 0; }\n');
-  fs.writeFileSync(path.join(root, 'observed-cpp-source', 'src', 'main.cpp'), 'int main() { return 0; }\n');
+  fs.writeFileSync(
+    path.join(root, 'observed-c-source', 'src', 'main.c'),
+    'int main(void) { return 0; }\n'
+  );
+  fs.writeFileSync(
+    path.join(root, 'observed-cpp-source', 'src', 'main.cpp'),
+    'int main() { return 0; }\n'
+  );
 }
 
 function createObservedLaravelProject(source) {
