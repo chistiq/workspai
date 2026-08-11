@@ -87,6 +87,11 @@ cannot use that safe path fall back to content hashing with
 one workspace scope and every canonical project scope. `--refresh-graph`
 remains the explicit bypass when a caller requires a live rebuild.
 
+Before scope containment is evaluated, Workspai canonicalizes both the logical
+workspace path and Git's reported physical worktree root. This keeps macOS
+`/var` → `/private/var` aliases and Windows workspace junctions on the
+`git-worktree-v2` path instead of causing a false content-hash fallback.
+
 ## Native and polyglot structure is first-class
 
 Root CMake and Meson projects retain C/C++ as their primary runtime even when

@@ -141,6 +141,28 @@ describe('workspace knowledge graph snapshot', () => {
     });
   });
 
+  it.runIf(process.platform !== 'win32')(
+    'keeps the Git strategy when the workspace path is a logical alias of the physical worktree',
+    async () => {
+      const { root } = await fixture({ git: true });
+      const aliasedRoot = `${root}-alias`;
+      roots.push(aliasedRoot);
+      await fsExtra.symlink(root, aliasedRoot, 'dir');
+
+      const fingerprint = await computeWorkspaceKnowledgeGraphInputFingerprint({
+        workspacePath: aliasedRoot,
+        projects: [],
+        projectFileLimit: 100,
+        workspaceFileLimit: 100,
+      });
+
+      expect(fingerprint.scopes[0]).toMatchObject({
+        kind: 'workspace',
+        strategy: 'git-worktree-v2',
+      });
+    }
+  );
+
   it('rejects a graph whose source hash does not match the model', async () => {
     const { root, graph } = await fixture();
     graph.source.hash = '0'.repeat(64);

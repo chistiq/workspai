@@ -5,7 +5,7 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Planned Release: v0.56.0 (publication pending)
+## Latest Release: v0.56.0 (August 11, 2026)
 
 ### Universal Doctor Intelligence and Proof-Backed Polyglot Graphs
 
@@ -35,6 +35,8 @@ polyglot projects. It is documented on `main` but is not yet published to npm.
 - **Safe, fast Graph retrieval**
   - Read queries reuse the persisted graph only when its model binding, proofs,
     project scopes, and Git/Merkle live-input fingerprint still match.
+  - Physical-path canonicalization preserves the Git fast path across macOS
+    `/var` aliases and Windows workspace junctions.
   - `--refresh-graph` forces a live rebuild, while `--scope project:<name>` keeps
     retrieval and benchmarks project-focused without hiding connected shared
     APIs, schemas, owners, pipelines, or protocol entities.

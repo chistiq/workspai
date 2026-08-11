@@ -77,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the central workspace directory.
 - Fixed re-adopt terminal output showing `Stack: unknown` when the detected
   runtime/framework supplied a truthful display label.
+- Fixed Git-backed graph fingerprints falling back to content hashing when
+  macOS `/var` aliases or Windows workspace junctions made the logical scope
+  path differ from Git's physical worktree path.
 
 ### Verification
 

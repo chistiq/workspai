@@ -2634,7 +2634,7 @@ describe('Doctor Command', () => {
       expect(payload.projects).toHaveLength(1);
       expect(payload.projects[0]).toMatchObject({
         name: 'atlas-api',
-        path: projectPath,
+        path: realpathForAssertion(projectPath),
         runtimeFamily: 'dotnet',
         runtimeFamilies: ['dotnet'],
       });

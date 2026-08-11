@@ -733,10 +733,18 @@ async function gitFingerprintScope(input: {
   fileLimit: number;
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint['scopes'][number] | null> {
   try {
-    const gitRoot = path.resolve(
+    const reportedGitRoot = path.resolve(
       (await gitOutput(input.root, ['rev-parse', '--show-toplevel'])).toString('utf8').trim()
     );
-    const scope = path.relative(gitRoot, input.root);
+    // macOS exposes /var through /private/var and Windows runners commonly
+    // place worktrees behind junctions. Git reports the physical worktree root
+    // while Node may retain the logical input path; compare canonical paths so
+    // a valid scope does not fall through to content hashing.
+    const [gitRoot, scopeRoot] = await Promise.all([
+      fsExtra.realpath(reportedGitRoot).catch(() => reportedGitRoot),
+      fsExtra.realpath(input.root).catch(() => path.resolve(input.root)),
+    ]);
+    const scope = path.relative(gitRoot, scopeRoot);
     if (scope === '..' || scope.startsWith(`..${path.sep}`) || path.isAbsolute(scope)) return null;
     const treeSpec = scope ? `HEAD:${toPosix(scope)}` : 'HEAD^{tree}';
     const [tree, diff, untracked, ignored, flags, gitLinks] = await Promise.all([
@@ -781,7 +789,9 @@ async function gitFingerprintScope(input: {
         .some((line) => /^[a-z] /u.test(line))
     )
       return null;
-    const scannedFiles = input.files.map((file) => path.resolve(file));
+    const scannedFiles = input.files.map((file) =>
+      path.resolve(scopeRoot, path.relative(input.root, file))
+    );
     const initializedGitLinkIsScanned = gitLinks
       .toString('utf8')
       .split(/\r?\n/u)
@@ -794,7 +804,7 @@ async function gitFingerprintScope(input: {
     // is not fully represented by the parent diff. Fall back to content only
     // when graph inventory actually traverses that gitlink.
     if (initializedGitLinkIsScanned) return null;
-    const inventory = new Set(input.files.map((file) => path.resolve(file)));
+    const inventory = new Set(scannedFiles);
     const extraPaths = Buffer.concat([untracked, ignored])
       .toString('utf8')
       .split('\0')
@@ -805,7 +815,7 @@ async function gitFingerprintScope(input: {
       [...new Set(extraPaths)].sort((left, right) => left.localeCompare(right)),
       16,
       async (filePath) => ({
-        path: toPosix(path.relative(input.root, filePath)),
+        path: toPosix(path.relative(scopeRoot, filePath)),
         hash: await contentHash(filePath),
       })
     );
