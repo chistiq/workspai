@@ -105,8 +105,11 @@ export async function renderGitHubReleaseBody(tag) {
   };
 }
 
-export function validateAggregateReleaseLinks(markdown, { currentTag }) {
+export function validateAggregateReleaseLinks(markdown, { currentTag, currentRef = currentTag }) {
   assertReleaseTag(currentTag);
+  if (currentRef !== 'main' && currentRef !== currentTag) {
+    throw new Error(`Current release-note ref must be main or ${currentTag}: ${currentRef}`);
+  }
   const releaseLinkPattern =
     /\]\(([^)\s]*RELEASE_NOTES_v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.md)\)/gu;
   const links = [...markdown.matchAll(releaseLinkPattern)];
@@ -136,10 +139,10 @@ export function validateAggregateReleaseLinks(markdown, { currentTag }) {
   }
 
   const currentVersion = currentTag.slice(1);
-  const currentCanonicalUrl = `${REPOSITORY_URL}/blob/${currentTag}/packages/cli/releases/RELEASE_NOTES_v${currentVersion}.md`;
+  const currentCanonicalUrl = `${REPOSITORY_URL}/blob/${currentRef}/packages/cli/releases/RELEASE_NOTES_v${currentVersion}.md`;
   if (!links.some(([, href]) => href === currentCanonicalUrl)) {
     throw new Error(
-      `Aggregate release notes are missing the current tag-bound link: ${currentCanonicalUrl}`
+      `Aggregate release notes are missing the current status-bound link: ${currentCanonicalUrl}`
     );
   }
 
@@ -158,8 +161,18 @@ async function main() {
   const rendered = await renderGitHubReleaseBody(tag);
   const aggregatePath = path.resolve(options.aggregate ?? path.join(CLI_ROOT, 'RELEASE_NOTES.md'));
   const aggregateMarkdown = await fs.readFile(aggregatePath, 'utf8');
+  const currentReleasePath = path.join(
+    CLI_ROOT,
+    'releases',
+    `RELEASE_NOTES_v${currentTag.slice(1)}.md`
+  );
+  const currentReleaseDocument = await readReleaseDocument(currentReleasePath);
+  const currentRef = currentReleaseDocument.body.includes('Publication status: pending.')
+    ? 'main'
+    : currentTag;
   const aggregateLinkCount = validateAggregateReleaseLinks(aggregateMarkdown, {
     currentTag,
+    currentRef,
   });
 
   if (options.output) {

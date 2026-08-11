@@ -151,8 +151,36 @@ describe('backend-framework-contract', () => {
       key: 'cpp',
       runtime: 'cpp',
       importStack: 'unknown',
-      confidence: 'medium',
+      confidence: 'high',
+      source: 'manifest',
     });
+  });
+
+  it('keeps a root C++ build primary when the repository also ships language bindings', async () => {
+    const nativePolyglotProject = await createTempProject('native-polyglot');
+    await fs.outputFile(
+      path.join(nativePolyglotProject, 'CMakeLists.txt'),
+      'project(native_polyglot C CXX)\n'
+    );
+    await fs.outputFile(
+      path.join(nativePolyglotProject, 'src', 'core', 'server.cc'),
+      'int serve() { return 0; }\n'
+    );
+    await fs.outputFile(
+      path.join(nativePolyglotProject, 'pyproject.toml'),
+      '[project]\nname = "native-binding"\n'
+    );
+    await fs.outputJson(path.join(nativePolyglotProject, 'bindings', 'node', 'package.json'), {
+      name: 'native-binding',
+    });
+
+    expect(detectBackendFrameworkFromProject(nativePolyglotProject)).toMatchObject({
+      key: 'cpp',
+      runtime: 'cpp',
+      confidence: 'high',
+      source: 'manifest',
+    });
+    expect(detectRuntimeCandidatesFromProject(nativePolyglotProject)).toEqual(['python', 'cpp']);
   });
 
   it('keeps runtime candidate detection broad for polyglot backends', async () => {

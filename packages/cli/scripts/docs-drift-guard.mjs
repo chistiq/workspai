@@ -12,6 +12,8 @@ const chainContract = JSON.parse(
 const runtimeContract = JSON.parse(
   fs.readFileSync(path.join(root, 'contracts', 'runtime-command-surface.v1.json'), 'utf8')
 );
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const commandReference = fs.readFileSync(path.join(root, 'docs', 'commands-reference.md'), 'utf8');
 const architectureContract = JSON.parse(
   fs.readFileSync(
     path.join(root, 'contracts', 'workspace-intelligence-architecture.v1.json'),
@@ -122,6 +124,64 @@ for (const artifact of [
 const runtimeDocumentation = new Map(
   (runtimeContract.commandDocumentation ?? []).map((entry) => [entry.invocation, entry])
 );
+const requiredDocumentedInvocations = new Set([
+  ...(runtimeContract.lifecycleCommands ?? []),
+  ...(runtimeContract.moduleMutationCommands ?? []),
+  ...(runtimeContract.globalCommands ?? []),
+  ...(runtimeContract.universalCommands ?? []),
+  ...(runtimeContract.coreProjectCommands ?? []),
+  ...(runtimeContract.npmOwnedTopLevelCommands ?? []),
+  ...(runtimeContract.npmOwnedScopedCommands ?? []).map((entry) => entry.join(' ')),
+  ...(runtimeContract.workspaceSubcommands ?? []).map((entry) => `workspace ${entry}`),
+]);
+for (const invocation of requiredDocumentedInvocations) {
+  if (!runtimeDocumentation.has(invocation)) {
+    errors.push(`Runtime command documentation is missing the public command: ${invocation}`);
+  }
+}
+
+function escapedPattern(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+for (const command of runtimeContract.npmOwnedTopLevelCommands ?? []) {
+  const pattern = new RegExp(`workspai\\s+${escapedPattern(command)}(?:\\s|<|\\[|$)`, 'u');
+  if (!pattern.test(commandReference)) {
+    errors.push(`Command Reference is missing the public command group: ${command}`);
+  }
+}
+for (const action of runtimeContract.workspaceSubcommands ?? []) {
+  const pattern = new RegExp(`workspai\\s+workspace\\s+${escapedPattern(action)}(?:\\s|<|\\[|$)`, 'u');
+  if (!pattern.test(commandReference)) {
+    errors.push(`Command Reference is missing the workspace action: ${action}`);
+  }
+}
+
+const currentVersion = packageJson.version;
+const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
+const aggregateReleaseNotes = fs.readFileSync(path.join(root, 'RELEASE_NOTES.md'), 'utf8');
+const versionedReleaseNotes = fs.readFileSync(
+  path.join(root, 'releases', `RELEASE_NOTES_v${currentVersion}.md`),
+  'utf8'
+);
+const currentIsPending = changelog.includes(`## [${currentVersion}] - Unreleased`);
+if (currentIsPending) {
+  if (!aggregateReleaseNotes.includes(`## Planned Release: v${currentVersion} (publication pending)`)) {
+    errors.push('Aggregate release notes must identify the unreleased package version as planned');
+  }
+  if (!versionedReleaseNotes.includes('Publication status: pending.')) {
+    errors.push('Versioned notes must identify an unreleased package version as publication pending');
+  }
+  const pendingUrl = `https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v${currentVersion}.md`;
+  if (!aggregateReleaseNotes.includes(pendingUrl)) {
+    errors.push('A planned release must link to its notes on main before the release tag exists');
+  }
+} else if (
+  aggregateReleaseNotes.includes(`## Planned Release: v${currentVersion}`) ||
+  versionedReleaseNotes.includes('Publication status: pending.')
+) {
+  errors.push('Published-version documentation still carries a planned/pending release status');
+}
 const graphRuntimeSelectors =
   runtimeDocumentation.get('workspace graph')?.output?.modes?.map((mode) => mode.selector) ?? [];
 for (const selector of [
@@ -337,6 +397,7 @@ const graphBenchmarkGuide = fs.readFileSync(
   path.join(root, 'docs', 'graph-benchmark-methodology.md'),
   'utf8'
 );
+const workspaceRunGuide = fs.readFileSync(path.join(root, 'docs', 'workspace-run.md'), 'utf8');
 const glossary = fs.readFileSync(path.join(root, 'docs', 'GLOSSARY.md'), 'utf8');
 const aiQuickstart = fs.readFileSync(path.join(root, 'docs', 'AI_QUICKSTART.md'), 'utf8');
 
@@ -397,6 +458,29 @@ for (const semantic of [
 ]) {
   if (!graphGuide.includes(semantic) && !graphBenchmarkGuide.includes(semantic)) {
     errors.push(`Graph documentation is missing required claim boundary: ${semantic}`);
+  }
+}
+
+for (const semantic of [
+  '`hybrid-git-content-v2`',
+  '`git-worktree-v2`',
+  '`content-merkle-v1`',
+  '`--refresh-graph`',
+  '`--scope project:<name>`',
+  'omission budget',
+]) {
+  if (!graphGuide.includes(semantic) && !graphBenchmarkGuide.includes(semantic)) {
+    errors.push(`Graph documentation is missing current retrieval semantics: ${semantic}`);
+  }
+}
+for (const semantic of ['`--plan`', '`--runtime <runtime>`', 'CMake', 'Meson']) {
+  if (!workspaceRunGuide.includes(semantic)) {
+    errors.push(`Workspace Run documentation is missing polyglot lifecycle semantics: ${semantic}`);
+  }
+}
+for (const flag of ['--refresh-graph', '--plan', '--runtime <runtime>']) {
+  if (!commandReference.includes(flag)) {
+    errors.push(`Command Reference is missing the current CLI option: ${flag}`);
   }
 }
 

@@ -132,6 +132,12 @@ async function readExistingProjectJson(
   return null;
 }
 
+function isWorkspaiManagedAdoption(projectJson: Record<string, unknown> | null): boolean {
+  if (!projectJson?.adoption || typeof projectJson.adoption !== 'object') return false;
+  const adoption = projectJson.adoption as Record<string, unknown>;
+  return adoption.managed_by === 'workspai' && adoption.mode === 'linked';
+}
+
 export async function captureAdoptProjectRollbackSnapshot(
   workspacePath: string,
   projectPath: string
@@ -197,6 +203,7 @@ function buildAdoptedProjectJson(input: {
   discoveredRelativePath: string;
   detection: ReturnType<typeof detectBackendFrameworkFromProject>;
   existingProjectJson: Record<string, unknown> | null;
+  refreshManagedDetection: boolean;
   projectKind: WorkspaceProjectKind;
   moduleSupport: boolean;
   adoptedAt: string;
@@ -238,11 +245,11 @@ function buildAdoptedProjectJson(input: {
     runtime: input.detection.runtime,
     framework: input.detection.key,
     kit:
-      typeof input.existingProjectJson?.kit === 'string'
+      !input.refreshManagedDetection && typeof input.existingProjectJson?.kit === 'string'
         ? input.existingProjectJson.kit
         : `adopted.${input.detection.key}`,
     kit_name:
-      typeof input.existingProjectJson?.kit_name === 'string'
+      !input.refreshManagedDetection && typeof input.existingProjectJson?.kit_name === 'string'
         ? input.existingProjectJson.kit_name
         : `adopted.${input.detection.key}`,
     engine:
@@ -319,7 +326,14 @@ export async function adoptProjectIntoWorkspace(
   assertMatchingRollbackSnapshot(rollbackSnapshot, workspacePath, projectPath);
 
   const existingProjectJson = await readExistingProjectJson(projectPath);
-  const detection = detectBackendFrameworkFromProject(projectPath, existingProjectJson);
+  const refreshManagedDetection = isWorkspaiManagedAdoption(existingProjectJson);
+  // Re-adoption must re-observe source markers instead of pinning a previous
+  // Workspai-generated runtime/framework hint forever. Authored project
+  // metadata remains authoritative; only managed linked adoption is refreshed.
+  const detection = detectBackendFrameworkFromProject(
+    projectPath,
+    refreshManagedDetection ? null : existingProjectJson
+  );
   const projectKind = await inferWorkspaceProjectKind(projectPath, existingProjectJson);
   const projectName =
     normalizeProjectName(
@@ -374,6 +388,7 @@ export async function adoptProjectIntoWorkspace(
     discoveredRelativePath: paths.relativePath,
     detection,
     existingProjectJson,
+    refreshManagedDetection,
     projectKind,
     moduleSupport,
     adoptedAt,

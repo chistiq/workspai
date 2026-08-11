@@ -12,6 +12,7 @@
     "intelligence",
     "evidence",
     "blockers",
+    "agentRouting",
     "commands",
     "integrity"
   ],
@@ -56,6 +57,11 @@
         },
         "kind": { "type": "string" },
         "runtime": { "type": "string" },
+        "runtimeCandidates": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "framework": { "type": "string" },
         "kit": { "type": "string" },
         "supportTier": { "type": "string" },
@@ -88,6 +94,8 @@
         "proofCount",
         "entitiesByKind",
         "relationsByKind",
+        "languages",
+        "semantic",
         "relatedProjects",
         "freshness",
         "topology",
@@ -108,6 +116,45 @@
         "relationsByKind": {
           "type": "object",
           "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "languages": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["fileCount", "symbolCount", "generatedFileCount"],
+            "properties": {
+              "fileCount": { "type": "integer", "minimum": 0 },
+              "symbolCount": { "type": "integer", "minimum": 0 },
+              "generatedFileCount": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "semantic": {
+          "type": "object",
+          "required": [
+            "protocolConceptCount",
+            "protocolImplementationBindings",
+            "equivalenceBindings",
+            "generationBindings",
+            "runtimeUnitCount",
+            "lifecycleStageCount",
+            "runtimeCoverage"
+          ],
+          "properties": {
+            "protocolConceptCount": { "type": "integer", "minimum": 0 },
+            "protocolImplementationBindings": { "type": "integer", "minimum": 0 },
+            "equivalenceBindings": { "type": "integer", "minimum": 0 },
+            "generationBindings": { "type": "integer", "minimum": 0 },
+            "runtimeUnitCount": { "type": "integer", "minimum": 0 },
+            "lifecycleStageCount": { "type": "integer", "minimum": 0 },
+            "runtimeCoverage": {
+              "type": "array",
+              "items": { "type": "string" },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
         },
         "relatedProjects": {
           "type": "array",
@@ -146,6 +193,10 @@
           "type": "object",
           "required": [
             "services",
+            "packages",
+            "protocols",
+            "runtimeUnits",
+            "lifecycleStages",
             "apis",
             "endpoints",
             "dataStores",
@@ -158,6 +209,10 @@
           ],
           "properties": {
             "services": { "$ref": "#/$defs/entityList" },
+            "packages": { "$ref": "#/$defs/entityList" },
+            "protocols": { "$ref": "#/$defs/entityList" },
+            "runtimeUnits": { "$ref": "#/$defs/entityList" },
+            "lifecycleStages": { "$ref": "#/$defs/entityList" },
             "apis": { "$ref": "#/$defs/entityList" },
             "endpoints": { "$ref": "#/$defs/entityList" },
             "dataStores": { "$ref": "#/$defs/entityList" },
@@ -221,6 +276,61 @@
       "type": "array",
       "maxItems": 32,
       "items": { "$ref": "#/$defs/blocker" }
+    },
+    "agentRouting": {
+      "description": "Machine-readable mandatory routing policy that prevents agents from bypassing canonical workspace evidence.",
+      "type": "object",
+      "required": [
+        "enforcement",
+        "mandatoryPreflight",
+        "workspaceEvidenceRequiredFor",
+        "requiredReadOrder",
+        "degradedMode"
+      ],
+      "properties": {
+        "enforcement": { "const": "required" },
+        "mandatoryPreflight": {
+          "type": "object",
+          "required": ["command", "successCondition"],
+          "properties": {
+            "command": { "const": "npx workspai project workspace status --json" },
+            "successCondition": { "const": "resolved" }
+          },
+          "additionalProperties": false
+        },
+        "workspaceEvidenceRequiredFor": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "repository-analysis",
+              "architecture-analysis",
+              "change-impact",
+              "cross-project-change",
+              "contract-change",
+              "infrastructure-change",
+              "release-readiness"
+            ]
+          }
+        },
+        "requiredReadOrder": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "degradedMode": {
+          "type": "object",
+          "required": ["allowCompleteArchitectureClaims", "requireDisclosure"],
+          "properties": {
+            "allowCompleteArchitectureClaims": { "const": false },
+            "requireDisclosure": { "const": true }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "commands": {
       "type": "object",

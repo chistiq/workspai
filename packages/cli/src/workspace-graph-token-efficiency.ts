@@ -55,13 +55,61 @@ function estimatedTokens(characters: number): number {
   return Math.ceil(characters / CHARS_PER_ESTIMATED_TOKEN);
 }
 
-function safeArtifactPath(workspacePath: string, artifact: string): string | null {
-  if (!artifact || path.isAbsolute(artifact)) return null;
-  const root = path.resolve(workspacePath);
-  const candidate = path.resolve(root, artifact);
+function containedPath(root: string, relativeArtifact: string): string | null {
+  const candidate = path.resolve(root, relativeArtifact);
   const relative = path.relative(root, candidate);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
   return candidate;
+}
+
+async function externalArtifactRoots(workspacePath: string): Promise<Map<string, string>> {
+  const roots = new Map<string, string>();
+  const contractCandidates = [
+    path.join(workspacePath, '.workspai', 'workspace.contract.json'),
+    path.join(workspacePath, '.rapidkit', 'workspace.contract.json'),
+  ];
+  for (const contractPath of contractCandidates) {
+    if (!(await fsExtra.pathExists(contractPath))) continue;
+    try {
+      const contract = (await fsExtra.readJson(contractPath)) as {
+        projects?: Array<{ relativePath?: unknown; externalPath?: unknown }>;
+      };
+      for (const project of contract.projects ?? []) {
+        if (
+          typeof project.relativePath === 'string' &&
+          typeof project.externalPath === 'string' &&
+          path.isAbsolute(project.externalPath)
+        ) {
+          roots.set(
+            project.relativePath.replace(/\\/g, '/').replace(/\/$/, ''),
+            project.externalPath
+          );
+        }
+      }
+      break;
+    } catch {
+      // Contract validation is owned by workspace sync/verify. A malformed
+      // contract simply leaves its external proof artifacts unreadable here.
+    }
+  }
+  return roots;
+}
+
+function safeArtifactPath(
+  workspacePath: string,
+  artifact: string,
+  externalRoots: Map<string, string>
+): string | null {
+  if (!artifact || path.isAbsolute(artifact)) return null;
+  const root = path.resolve(workspacePath);
+  const portableArtifact = artifact.replace(/\\/g, '/');
+  for (const [prefix, externalRoot] of [...externalRoots.entries()].sort(
+    ([left], [right]) => right.length - left.length
+  )) {
+    if (!portableArtifact.startsWith(`${prefix}/`)) continue;
+    return containedPath(externalRoot, portableArtifact.slice(prefix.length + 1));
+  }
+  return containedPath(root, portableArtifact);
 }
 
 export async function buildWorkspaceGraphTokenEfficiencyReport(input: {
@@ -69,6 +117,7 @@ export async function buildWorkspaceGraphTokenEfficiencyReport(input: {
   graph: WorkspaceKnowledgeGraph;
   query: string;
   kind?: string;
+  projectId?: string;
   limit?: number;
   now?: Date;
 }): Promise<WorkspaceGraphTokenEfficiencyReport> {
@@ -76,14 +125,17 @@ export async function buildWorkspaceGraphTokenEfficiencyReport(input: {
   const payload = searchKnowledgeGraph(input.graph, {
     query: input.query,
     ...(input.kind ? { kind: input.kind } : {}),
+    ...(input.projectId ? { projectId: input.projectId } : {}),
     limit: input.limit,
+    projection: 'agent',
   });
   const artifacts = [...new Set(input.graph.proofs.map((proof) => proof.artifact))].sort();
   const unreadableArtifacts: string[] = [];
+  const externalRoots = await externalArtifactRoots(workspacePath);
   let characterCount = 0;
   let artifactCount = 0;
   for (const artifact of artifacts) {
-    const absolutePath = safeArtifactPath(workspacePath, artifact);
+    const absolutePath = safeArtifactPath(workspacePath, artifact, externalRoots);
     if (!absolutePath) {
       unreadableArtifacts.push(artifact);
       continue;

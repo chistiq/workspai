@@ -3267,7 +3267,11 @@ export async function handleAdoptCommand(
     console.log(chalk.gray(`   Workspace: ${workspacePath}`));
     console.log(chalk.gray(`   Project: ${adoptedProject.path}`));
     console.log(chalk.gray(`   Mode: linked (source was not moved or copied)`));
-    console.log(chalk.gray(`   Stack: ${adoptedProject.stack} (${adoptedProject.confidence})`));
+    const adoptedStackLabel =
+      adoptedProject.stack === 'unknown'
+        ? adoptedProject.frameworkDisplayName || adoptedProject.runtime
+        : adoptedProject.stack;
+    console.log(chalk.gray(`   Stack: ${adoptedStackLabel} (${adoptedProject.confidence})`));
     if (!adoptedProject.profileCompatibility.ok) {
       const hint = formatWorkspaceProfileCompatibilityHint(adoptedProject.profileCompatibility);
       console.log(
@@ -8029,7 +8033,7 @@ program
   .option('--ci', 'CI gate: exit 1 on errors, exit 2 on warnings only')
   .option('--profile <profile>', 'Doctor policy profile: local | ci | release | enterprise-strict')
   .option('--fix', 'Automatically fix common issues (with confirmation)')
-  .option('--plan', 'Generate remediation plan without applying changes')
+  .option('--plan', 'Generate an action or lifecycle plan without applying or executing changes')
   .option('--apply', 'Apply remediation plan non-interactively')
   .option('--runtime <runtime>', 'Filter Doctor capability truth by runtime family')
   .option('--framework <framework>', 'Filter Doctor capability truth by framework')
@@ -8178,6 +8182,10 @@ program
   .option('--include-evidence', 'Read status metadata from referenced evidence reports')
   .option('--scan-depth <count>', 'Observable project discovery depth for large monorepos')
   .option('--limit <count>', 'Bound graph search results (default 12, maximum 100)')
+  .option(
+    '--refresh-graph',
+    'Bypass the compatible persisted knowledge graph and rebuild from live workspace sources'
+  )
   .option('--cache', 'Reuse cached workspace model when inputs are unchanged (keyed by inputsHash)')
   .option(
     '--incremental',
@@ -8250,6 +8258,7 @@ program
   .option('--blast-radius', 'Include downstream dependents from workspace dependency graph')
   .option('--since <ref>', 'Git ref for affected calculation (default: HEAD~1)')
   .option('--parallel', 'Run project stages in parallel')
+  .option('--runtime <runtime>', 'Limit workspace run to one detected runtime family')
   .option('--max-workers <count>', 'Maximum parallel workers (default: min(4, selected))')
   .option('--continue-on-error', 'Continue running remaining projects after a failure')
   .option(
@@ -8351,6 +8360,8 @@ See the command reference for action-specific required inputs and output artifac
       blastRadius?: boolean;
       since?: string;
       parallel?: boolean;
+      plan?: boolean;
+      runtime?: string;
       maxWorkers?: string;
       continueOnError?: boolean;
       reusePassed?: boolean;
@@ -8359,6 +8370,7 @@ See the command reference for action-specific required inputs and output artifac
       strict?: boolean;
       gates?: boolean;
       cache?: boolean;
+      refreshGraph?: boolean;
       incremental?: boolean;
       once?: boolean;
       graphStream?: boolean;
@@ -9378,14 +9390,29 @@ See the command reference for action-specific required inputs and output artifac
         await import('./workspace-model.js');
       const { buildGraphEmit, renderGraphDot, renderGraphMermaid, explainGraphNode } =
         await import('./workspace-graph.js');
-      const model = await buildWorkspaceModel({
-        workspacePath,
-        includeAbsolutePaths: actionOptions.includePaths === true || hasRawFlag('--include-paths'),
-        includeEvidence: actionOptions.includeEvidence === true || hasRawFlag('--include-evidence'),
-        observableScanDepth: workspaceModelScanDepth(),
-      });
-      const graph = workspaceModelProjectTopology(model);
       const mode = (subaction || 'emit').toLowerCase();
+      const persistedReadModes = new Set(['benchmark', 'entities', 'evidence', 'path', 'search']);
+      const forceGraphRefresh =
+        actionOptions.refreshGraph === true || hasRawFlag('--refresh-graph');
+      const snapshot =
+        persistedReadModes.has(mode) && !forceGraphRefresh
+          ? await (
+              await import('./workspace-knowledge-graph-snapshot.js')
+            ).readWorkspaceKnowledgeGraphSnapshot(workspacePath)
+          : null;
+      const persistedKnowledgeGraph = snapshot?.status === 'hit' ? snapshot.graph : null;
+      const model =
+        snapshot?.status === 'hit'
+          ? snapshot.model
+          : await buildWorkspaceModel({
+              workspacePath,
+              includeAbsolutePaths:
+                actionOptions.includePaths === true || hasRawFlag('--include-paths'),
+              includeEvidence:
+                actionOptions.includeEvidence === true || hasRawFlag('--include-evidence'),
+              observableScanDepth: workspaceModelScanDepth(),
+            });
+      const graph = workspaceModelProjectTopology(model);
       if (!graph) {
         if (actionOptions.json) {
           console.log(
@@ -9412,6 +9439,7 @@ See the command reference for action-specific required inputs and output artifac
       }
 
       const buildKnowledgeGraph = async () => {
+        if (persistedKnowledgeGraph) return persistedKnowledgeGraph;
         const { buildWorkspaceKnowledgeGraph } = await import('./workspace-knowledge-graph.js');
         const { hashWorkspaceModel } = await import('./workspace-model-hash.js');
         const { readWorkspaceContract } = await import('./utils/workspace-contract.js');
@@ -9637,6 +9665,9 @@ See the command reference for action-specific required inputs and output artifac
         }
         const knowledgeGraph = await buildKnowledgeGraph();
         if (mode === 'benchmark') {
+          const projectId = actionOptions.scope?.startsWith('project:')
+            ? actionOptions.scope.slice('project:'.length).trim()
+            : undefined;
           const { buildWorkspaceGraphTokenEfficiencyReport } =
             await import('./workspace-graph-token-efficiency.js');
           const report = await buildWorkspaceGraphTokenEfficiencyReport({
@@ -9644,6 +9675,7 @@ See the command reference for action-specific required inputs and output artifac
             graph: knowledgeGraph,
             query,
             limit: limitValue,
+            ...(projectId ? { projectId } : {}),
           });
           if (actionOptions.json) {
             console.log(JSON.stringify(report, null, 2));
@@ -9665,7 +9697,15 @@ See the command reference for action-specific required inputs and output artifac
           return;
         }
         const { searchKnowledgeGraph } = await import('./workspace-knowledge-graph-query.js');
-        const result = searchKnowledgeGraph(knowledgeGraph, { query, limit: limitValue });
+        const projectId = actionOptions.scope?.startsWith('project:')
+          ? actionOptions.scope.slice('project:'.length).trim()
+          : undefined;
+        const result = searchKnowledgeGraph(knowledgeGraph, {
+          query,
+          limit: limitValue,
+          ...(projectId ? { projectId } : {}),
+          projection: 'agent',
+        });
         if (actionOptions.json) {
           console.log(JSON.stringify(result, null, 2));
         } else {
@@ -10764,6 +10804,8 @@ See the command reference for action-specific required inputs and output artifac
         json: actionOptions.json === true,
         enforceGates: actionOptions.gates,
         reusePassed: actionOptions.reusePassed === true,
+        planOnly: actionOptions.plan === true,
+        runtime: actionOptions.runtime,
       });
 
       if (actionOptions.json) {

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.56.0] - 2026-08-09
+## [0.56.0] - Unreleased
 
 ### Added
 
@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   170-case validation corpus with explicit platform and limitation metadata.
 - Added `doctor capabilities` filters, validation, and governed artifact output,
   plus bounded `--json=summary` and cache-bypassing `--fresh` Doctor modes.
+- Added a live-input fingerprint to every persisted Knowledge Graph. Git
+  worktrees use a bounded `git-worktree-v2` signature and other sources use a
+  content-Merkle fallback, so read queries reuse persisted graphs only while
+  their model, proofs, project scopes, and source contents still match.
+- Added `--refresh-graph` as an explicit bypass for persisted graph retrieval,
+  plus project-scoped Graph search and benchmark execution.
+- Added proof-backed C/C++ language, CMake/Bazel package, runtime-unit, and
+  lifecycle-stage graph coverage, including CMake and Meson fleet plans.
+- Added Protocol Buffers service/message identity variants and cross-language
+  protocol bindings without collapsing distinct definitions that share an FQN.
+- Added bounded agent search projections with explicit omission budgets for
+  entities, relations, proofs, aliases, attributes, and proof references.
 
 ### Changed
 
@@ -31,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   causal key through planning and transaction closure.
 - Bound missing verification evidence to the exact step `sourceCommand` and
   `sourceArtifact` so consumers refresh the correct producer.
+- Made re-adoption refresh Workspai-managed runtime, framework, kit, registry,
+  and workspace-contract metadata instead of retaining stale detection state.
+- Made broad architecture queries intent-aware and project scope
+  relation-aware, so shared APIs, schemas, owners, pipelines, and language
+  bridges remain discoverable without leaking unrelated project facts.
+- Made `workspace run` discover polyglot runtime units and support dry planning
+  with `--plan` plus runtime selection with `--runtime <runtime>`.
+- Made graph benchmarks resolve portable `external/<project>/...` proof paths
+  through the workspace contract for linked projects.
 
 ### Fixed
 
@@ -44,16 +65,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cache boundary.
 - Fixed backward-compatible CLI releases automatically raising the extension
   compatibility floor and creating artificial cross-repository drift.
+- Fixed root CMake/Meson C/C++ repositories being downgraded to `unknown` or a
+  secondary binding runtime when nested Python or Node manifests were present.
+- Fixed C++ headers being classified as C in C++-primary repositories and fixed
+  empty generated graph labels that violated the graph contract.
+- Fixed scoped search excluding workspace-level shared entities connected to
+  the selected project and fixed same-FQN Protobuf definitions being merged
+  into ambiguous identities.
+- Fixed Analyze, Doctor, Workspace Run, and graph benchmarking treating linked
+  external projects as absent or resolving their portable artifacts beneath
+  the central workspace directory.
+- Fixed re-adopt terminal output showing `Stack: unknown` when the detected
+  runtime/framework supplied a truthful display label.
 
 ### Verification
 
-- 2,388 tests passed across 222 test files with 8 explicit environment skips;
-  statement coverage reached 81.65% and line coverage reached 82.67%.
+- The complete restricted-environment suite produced 2,413 passes and 8
+  explicit skips. Seven loopback-listener cases were environment-blocked; all
+  three owning suites passed 60/60 when rerun with loopback access.
+- 234 focused adoption, lifecycle, model, graph, query, consumer, and contract
+  tests passed across 10 files.
 - The 170-case Doctor validation corpus passed across all 17 runtime adapters.
-- Type checking, linting, formatting, contracts, docs, runtime acceptance,
-  bundle limits, and npm audit passed; npm audit reported zero vulnerabilities.
+- Type checking, linting, formatting, contract synchronization, contract
+  parity, and documentation validation passed.
 - A nine-project polyglot fixture exercised the complete Workspace Intelligence
   chain and a typed, approval-bound Repair plan.
+- A real linked gRPC repository produced 4,692 entities, 5,287 relations, and
+  7,332 proofs with 100% proof coverage, zero conflicts, zero unknowns, and a
+  non-truncated 10,439-file live-input fingerprint. Its bounded benchmark read
+  all 1,062 proof artifacts and reduced the estimated query payload from
+  2,644,948 to 4,665 tokens (99.82%; results vary by workspace and query).
 
 ## [0.55.1] - 2026-08-08
 

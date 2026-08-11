@@ -132,6 +132,8 @@
             "depends-on",
             "exposes",
             "implements",
+            "implements-protocol",
+            "equivalent-to",
             "calls",
             "reads-from",
             "writes-to",
@@ -145,6 +147,7 @@
             "tests",
             "owns",
             "generated-by",
+            "generated-from",
             "configured-by",
             "references"
           ]

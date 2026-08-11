@@ -1301,6 +1301,10 @@
           "attributeName": "limit"
         },
         {
+          "flags": "--refresh-graph",
+          "attributeName": "refreshGraph"
+        },
+        {
           "flags": "--cache",
           "attributeName": "cache"
         },
@@ -1415,6 +1419,10 @@
         {
           "flags": "--parallel",
           "attributeName": "parallel"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
         },
         {
           "flags": "--max-workers <count>",

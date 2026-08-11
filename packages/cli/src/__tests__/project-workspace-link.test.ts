@@ -278,6 +278,7 @@ describe('project workspace binding', () => {
           path: 'external/web',
           kind: 'frontend',
           runtime: 'node',
+          runtimeCandidates: ['node', 'python'],
           framework: 'nextjs',
           supportTier: 'first-class',
           commands: {
@@ -323,6 +324,62 @@ describe('project workspace binding', () => {
             attributes: {},
             proofIds: ['proof:web'],
           },
+          {
+            id: 'service:web:dashboard',
+            kind: 'service',
+            label: 'web dashboard',
+            projectId: 'web',
+            identity: {
+              key: 'web dashboard',
+              scope: 'project',
+              aliases: [],
+              fingerprint: 'a'.repeat(64),
+            },
+            attributes: { surface: 'webview' },
+            proofIds: ['proof:web'],
+          },
+          {
+            id: 'package:web:npm',
+            kind: 'package',
+            label: '@example/web',
+            projectId: 'web',
+            identity: {
+              key: 'package:web:npm',
+              scope: 'project',
+              aliases: [],
+              fingerprint: '1'.repeat(64),
+            },
+            attributes: { ecosystem: 'npm', manifest: 'external/web/package.json' },
+            proofIds: ['proof:web'],
+          },
+          {
+            id: 'file:web:generated',
+            kind: 'file',
+            label: 'external/web/src/generated/client.ts',
+            projectId: 'web',
+            identity: {
+              key: 'file:web:generated',
+              scope: 'project',
+              aliases: [],
+              fingerprint: '2'.repeat(64),
+            },
+            attributes: { language: 'typescript', generated: true },
+            proofIds: ['proof:web'],
+          },
+          ...Array.from({ length: 100 }, (_, index) => ({
+            id: `symbol:web:${index.toString().padStart(3, '0')}`,
+            kind: 'symbol',
+            label: `symbol-${index}`,
+            projectId: 'web',
+            identity: {
+              key: `symbol-${index}`,
+              scope: 'project',
+              aliases: [],
+              fingerprint: 'f'.repeat(64),
+            },
+            attributes: { symbolKind: 'function' },
+            proofIds: ['proof:web'],
+          })),
           {
             id: 'endpoint:web:users',
             kind: 'endpoint',
@@ -392,7 +449,7 @@ describe('project workspace binding', () => {
         ],
         providers: [],
         quality: {
-          entityCount: 4,
+          entityCount: 105,
           relationCount: 1,
           proofCount: 1,
           entityProofCoverageRatio: 1,
@@ -430,7 +487,7 @@ describe('project workspace binding', () => {
     expect(JSON.stringify(context)).not.toContain(workspacePath);
     expect(JSON.stringify(context)).not.toContain(projectPath);
     expect(context.intelligence).toMatchObject({
-      entityCount: 4,
+      entityCount: 107,
       relationCount: 1,
       proofCount: 1,
       freshness: {
@@ -440,12 +497,36 @@ describe('project workspace binding', () => {
       },
       topology: { status: 'unavailable' },
     });
+    expect(context.project.runtimeCandidates).toEqual(['node', 'python']);
+    expect(context.intelligence.languages).toEqual({
+      typescript: { fileCount: 1, symbolCount: 0, generatedFileCount: 1 },
+    });
     expect(context.workspace.access).toMatchObject({
       localBinding: '.workspai/workspace-link.local.json',
       canonicalEvidenceAvailableAtGeneration: true,
     });
+    expect(context.agentRouting).toMatchObject({
+      enforcement: 'required',
+      mandatoryPreflight: {
+        command: 'npx workspai project workspace status --json',
+        successCondition: 'resolved',
+      },
+      degradedMode: {
+        allowCompleteArchitectureClaims: false,
+        requireDisclosure: true,
+      },
+    });
+    expect(context.agentRouting.workspaceEvidenceRequiredFor).toContain('architecture-analysis');
+    expect(context.commands.graphSearch).toContain('workspace graph search');
+    expect(context.commands.graphSearch).toContain('--scope "project:web"');
     expect(context.intelligence.surfaces.endpoints).toEqual([
       expect.objectContaining({ id: 'endpoint:web:users', label: 'GET /users' }),
+    ]);
+    expect(context.intelligence.surfaces.services).toEqual([
+      expect.objectContaining({ id: 'service:web:dashboard', label: 'web dashboard' }),
+    ]);
+    expect(context.intelligence.surfaces.packages).toEqual([
+      expect.objectContaining({ id: 'package:web:npm', label: '@example/web' }),
     ]);
     expect(context.intelligence.surfaces.deployments).toEqual([
       expect.objectContaining({ id: 'deployment:web' }),
@@ -465,6 +546,8 @@ describe('project workspace binding', () => {
     const agents = await fsp.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
     expect(agents).toContain('Keep this text.');
     expect(agents).toContain('Workspai project boundary');
+    expect(agents).toContain('Repository analysis, architecture analysis');
+    expect(agents).toContain('do not claim complete architecture');
     expect(agents).toContain('<!-- WORKSPAI:PROJECT-GROUNDING:START -->');
     expect(agents).not.toContain('<!-- RAPIDKIT:AGENT-GROUNDING:START -->');
     expect(fs.existsSync(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))).toBe(true);

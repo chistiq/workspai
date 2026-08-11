@@ -230,14 +230,39 @@ export function queryKnowledgeEntities(
 export type WorkspaceKnowledgeSearchOptions = {
   query: string;
   kind?: string;
+  projectId?: string;
   limit?: number;
   relationsPerEntity?: number;
+  projection?: 'full' | 'agent';
+};
+
+export type WorkspaceKnowledgeSearchBudget = {
+  mode: 'agent';
+  limits: {
+    relations: number;
+    relatedEntities: number;
+    proofs: number;
+    proofIdsPerItem: number;
+    aliasesPerEntity: number;
+    attributeArrayItems: number;
+    attributeStringCharacters: number;
+  };
+  omitted: {
+    entities: number;
+    relations: number;
+    relatedEntities: number;
+    proofs: number;
+    proofReferences: number;
+    aliases: number;
+    attributeValues: number;
+  };
 };
 
 export type WorkspaceKnowledgeSearchResult = {
   schemaVersion: typeof WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION;
   query: string;
   kind: string | null;
+  projectId?: string;
   limit: number;
   totalMatches: number;
   truncated: boolean;
@@ -245,7 +270,73 @@ export type WorkspaceKnowledgeSearchResult = {
   relatedEntities: Array<Pick<WorkspaceKnowledgeEntity, 'id' | 'kind' | 'label' | 'projectId'>>;
   relations: WorkspaceKnowledgeRelation[];
   proofs: WorkspaceKnowledgeProof[];
+  budget?: WorkspaceKnowledgeSearchBudget;
 };
+
+const AGENT_SEARCH_LIMITS = {
+  relations: 24,
+  relatedEntities: 24,
+  proofs: 16,
+  proofIdsPerItem: 4,
+  aliasesPerEntity: 8,
+  attributeArrayItems: 8,
+  attributeStringCharacters: 256,
+} as const;
+
+function agentProofIds(items: Array<{ proofIds: string[] }>): string[] {
+  const selected: string[] = [];
+  const seen = new Set<string>();
+  for (
+    let offset = 0;
+    offset < AGENT_SEARCH_LIMITS.proofIdsPerItem && selected.length < AGENT_SEARCH_LIMITS.proofs;
+    offset += 1
+  ) {
+    for (const item of items) {
+      const proofId = item.proofIds[offset];
+      if (!proofId || seen.has(proofId)) continue;
+      seen.add(proofId);
+      selected.push(proofId);
+      if (selected.length >= AGENT_SEARCH_LIMITS.proofs) break;
+    }
+  }
+  return selected;
+}
+
+function projectAgentEntity(
+  entity: WorkspaceKnowledgeEntity,
+  includedProofIds: ReadonlySet<string>,
+  omitted: WorkspaceKnowledgeSearchBudget['omitted']
+): WorkspaceKnowledgeEntity {
+  const aliases = entity.identity.aliases.slice(0, AGENT_SEARCH_LIMITS.aliasesPerEntity);
+  omitted.aliases += entity.identity.aliases.length - aliases.length;
+  const attributes = Object.fromEntries(
+    Object.entries(entity.attributes).map(([key, value]) => {
+      if (Array.isArray(value)) {
+        const bounded = value.slice(0, AGENT_SEARCH_LIMITS.attributeArrayItems);
+        omitted.attributeValues += value.length - bounded.length;
+        return [key, bounded];
+      }
+      if (
+        typeof value === 'string' &&
+        value.length > AGENT_SEARCH_LIMITS.attributeStringCharacters
+      ) {
+        omitted.attributeValues += 1;
+        return [key, value.slice(0, AGENT_SEARCH_LIMITS.attributeStringCharacters)];
+      }
+      return [key, value];
+    })
+  ) as WorkspaceKnowledgeEntity['attributes'];
+  const proofIds = entity.proofIds
+    .filter((proofId) => includedProofIds.has(proofId))
+    .slice(0, AGENT_SEARCH_LIMITS.proofIdsPerItem);
+  omitted.proofReferences += entity.proofIds.length - proofIds.length;
+  return {
+    ...entity,
+    identity: { ...entity.identity, aliases },
+    attributes,
+    proofIds,
+  };
+}
 
 function searchableEntityText(entity: WorkspaceKnowledgeEntity): string {
   const attributes = Object.values(entity.attributes).flatMap((value) =>
@@ -332,9 +423,13 @@ const NATURAL_LANGUAGE_STOPWORDS = new Set([
 ]);
 
 function searchTokens(value: string): string[] {
-  return normalized(value.replace(/([a-z0-9])([A-Z])/g, '$1 $2'))
-    .split(/[^a-z0-9]+/u)
-    .filter((term) => term.length > 1);
+  const tokenize = (candidate: string): string[] =>
+    normalized(candidate)
+      .split(/[^a-z0-9]+/u)
+      .filter((term) => term.length > 1);
+  return [
+    ...new Set([...tokenize(value), ...tokenize(value.replace(/([a-z0-9])([A-Z])/g, '$1 $2'))]),
+  ];
 }
 
 type SearchDocument = {
@@ -360,9 +455,11 @@ function searchDocument(entity: WorkspaceKnowledgeEntity): SearchDocument {
     identity,
     aliases,
     haystack,
-    labelTokens: new Set(searchTokens(label)),
-    identityTokens: new Set(searchTokens(identity)),
-    aliasTokens: new Set(aliases.flatMap(searchTokens)),
+    // Preserve the original casing until tokenization so identifiers such as
+    // CopilotClient remain searchable as both "copilot" and "client".
+    labelTokens: new Set(searchTokens(entity.label)),
+    identityTokens: new Set(searchTokens(entity.identity.key)),
+    aliasTokens: new Set(entity.identity.aliases.flatMap(searchTokens)),
     allTokens: new Set(searchTokens(haystack)),
   };
 }
@@ -370,6 +467,15 @@ function searchDocument(entity: WorkspaceKnowledgeEntity): SearchDocument {
 function containsTokenOrPrefix(tokens: ReadonlySet<string>, term: string): boolean {
   return (
     tokens.has(term) || (term.length >= 3 && [...tokens].some((token) => token.startsWith(term)))
+  );
+}
+
+function documentMatchesTerm(document: SearchDocument, term: string): boolean {
+  return (
+    containsTokenOrPrefix(document.labelTokens, term) ||
+    containsTokenOrPrefix(document.identityTokens, term) ||
+    containsTokenOrPrefix(document.aliasTokens, term) ||
+    containsTokenOrPrefix(document.allTokens, term)
   );
 }
 
@@ -381,7 +487,10 @@ function searchScore(
 ): number {
   const { label, identity, aliases, haystack } = document;
   let score = 0;
-  if (label === query || identity === query || aliases.includes(query)) score += 1_000;
+  // Exact canonical/alias resolution must remain stronger than every intent
+  // boost combined; otherwise a broad entity kind can displace the entity the
+  // caller named verbatim.
+  if (label === query || identity === query || aliases.includes(query)) score += 10_000;
   if (label.startsWith(query) || identity.startsWith(query)) score += 250;
   if (haystack.includes(query)) score += 100;
   let matchedTerms = 0;
@@ -390,7 +499,7 @@ function searchScore(
     const labelMatch = containsTokenOrPrefix(document.labelTokens, term);
     const identityMatch = containsTokenOrPrefix(document.identityTokens, term);
     const aliasMatch = containsTokenOrPrefix(document.aliasTokens, term);
-    const anyMatch = containsTokenOrPrefix(document.allTokens, term);
+    const anyMatch = documentMatchesTerm(document, term);
     if (anyMatch) matchedTerms += 1;
     if (label === term) score += 80 * weight;
     else if (labelMatch) score += 36 * weight;
@@ -402,6 +511,155 @@ function searchScore(
   return score;
 }
 
+function matchedSearchTerms(document: SearchDocument, terms: string[]): number {
+  return terms.filter((term) => documentMatchesTerm(document, term)).length;
+}
+
+const LANGUAGE_QUERY_TERMS = new Map<string, string>([
+  ['clojure', 'clojure'],
+  ['cplusplus', 'cpp'],
+  ['cpp', 'cpp'],
+  ['typescript', 'typescript'],
+  ['ts', 'typescript'],
+  ['javascript', 'javascript'],
+  ['js', 'javascript'],
+  ['nodejs', 'javascript'],
+  ['python', 'python'],
+  ['py', 'python'],
+  ['go', 'go'],
+  ['golang', 'go'],
+  ['csharp', 'csharp'],
+  ['dotnet', 'csharp'],
+  ['dart', 'dart'],
+  ['elixir', 'elixir'],
+  ['fsharp', 'fsharp'],
+  ['java', 'java'],
+  ['kotlin', 'kotlin'],
+  ['lua', 'lua'],
+  ['php', 'php'],
+  ['ruby', 'ruby'],
+  ['rust', 'rust'],
+  ['scala', 'scala'],
+  ['svelte', 'svelte'],
+  ['swift', 'swift'],
+  ['vue', 'vue'],
+]);
+
+function requestedLanguages(terms: string[]): Set<string> {
+  return new Set(
+    terms
+      .map((term) => LANGUAGE_QUERY_TERMS.get(term))
+      .filter((language): language is string => Boolean(language))
+  );
+}
+
+function entityLanguage(entity: WorkspaceKnowledgeEntity): string | null {
+  const language = entity.attributes.language;
+  return typeof language === 'string' ? normalized(language) : null;
+}
+
+function projectOverviewScore(entity: WorkspaceKnowledgeEntity): number {
+  const priorities: Partial<Record<WorkspaceKnowledgeEntityKind, number>> = {
+    project: 1_000,
+    service: 900,
+    api: 900,
+    package: 850,
+    endpoint: 800,
+    container: 700,
+    deployment: 700,
+    environment: 650,
+    pipeline: 600,
+    'test-suite': 550,
+    owner: 500,
+    decision: 450,
+    document: 400,
+  };
+  return priorities[entity.kind] ?? 0;
+}
+
+function architectureIntentScore(
+  entity: WorkspaceKnowledgeEntity,
+  terms: ReadonlySet<string>
+): number {
+  const hasLanguageIntent = terms.has('language') || terms.has('languages');
+  const hasBindingIntent =
+    terms.has('binding') || terms.has('bindings') || terms.has('bridge') || terms.has('bridges');
+  const hasDependencyIntent =
+    terms.has('dependency') || terms.has('dependencies') || terms.has('depends');
+  const hasCoreIntent = terms.has('core') || terms.has('runtime');
+  const hasOwnershipIntent =
+    terms.has('owner') || terms.has('owners') || terms.has('ownership') || terms.has('maintainer');
+  const hasCiIntent =
+    terms.has('ci') || terms.has('pipeline') || terms.has('pipelines') || terms.has('workflow');
+  const hasDeploymentIntent =
+    terms.has('deploy') ||
+    terms.has('deployment') ||
+    terms.has('infrastructure') ||
+    terms.has('container');
+  const hasDocumentationIntent =
+    terms.has('doc') || terms.has('docs') || terms.has('document') || terms.has('documentation');
+  const hasServiceIntent =
+    terms.has('service') || terms.has('services') || terms.has('api') || terms.has('rpc');
+  const hasSchemaIntent =
+    terms.has('schema') ||
+    terms.has('schemas') ||
+    terms.has('message') ||
+    terms.has('protobuf') ||
+    terms.has('proto') ||
+    terms.has('contract');
+  const mechanism =
+    typeof entity.attributes.mechanism === 'string' ? normalized(entity.attributes.mechanism) : '';
+  const specification =
+    typeof entity.attributes.specification === 'string'
+      ? normalized(entity.attributes.specification)
+      : '';
+  const label = normalized(entity.label);
+  let score = 0;
+  if (hasLanguageIntent && entity.kind === 'language') {
+    const fileCount =
+      typeof entity.attributes.fileCount === 'number' ? entity.attributes.fileCount : 0;
+    score += 900 + Math.min(fileCount, 10_000) / 10;
+  }
+  if (hasBindingIntent && entity.kind === 'protocol') score += 800;
+  if (hasDependencyIntent && entity.kind === 'package') score += 650;
+  if (hasCoreIntent && entity.kind === 'package' && /(?:^|[_-])core(?:$|[_-])/u.test(label)) {
+    score += 700;
+  }
+  if (hasCoreIntent && entity.kind === 'protocol' && mechanism.includes('core')) score += 300;
+  if (hasOwnershipIntent && entity.kind === 'owner') score += 850;
+  if (hasCiIntent && entity.kind === 'pipeline') score += 800;
+  if (hasDeploymentIntent && ['deployment', 'container', 'environment'].includes(entity.kind)) {
+    score += 775;
+  }
+  if (hasDocumentationIntent && ['document', 'decision'].includes(entity.kind)) score += 725;
+  if (hasServiceIntent && ['api', 'endpoint', 'service'].includes(entity.kind)) score += 700;
+  if (
+    hasSchemaIntent &&
+    (entity.kind === 'schema' ||
+      ((entity.kind === 'api' || entity.kind === 'protocol') &&
+        (specification.includes('protobuf') || mechanism.includes('protobuf'))))
+  ) {
+    score += 750;
+  }
+  return score;
+}
+
+function hasBroadArchitectureIntent(terms: ReadonlySet<string>): boolean {
+  const dimensions = [
+    terms.has('language') || terms.has('languages'),
+    terms.has('binding') || terms.has('bindings') || terms.has('bridge') || terms.has('bridges'),
+    terms.has('dependency') || terms.has('dependencies') || terms.has('depends'),
+    terms.has('core') || terms.has('runtime'),
+    terms.has('owner') || terms.has('ownership') || terms.has('maintainer'),
+    terms.has('ci') || terms.has('pipeline') || terms.has('workflow'),
+    terms.has('deploy') || terms.has('deployment') || terms.has('infrastructure'),
+    terms.has('doc') || terms.has('docs') || terms.has('documentation'),
+    terms.has('service') || terms.has('api') || terms.has('rpc'),
+    terms.has('schema') || terms.has('protobuf') || terms.has('proto') || terms.has('contract'),
+  ];
+  return dimensions.filter(Boolean).length >= 3;
+}
+
 /**
  * Produces a bounded, proof-carrying retrieval payload for agents and MCP
  * clients. This deliberately does not return the entire graph.
@@ -411,38 +669,111 @@ export function searchKnowledgeGraph(
   options: WorkspaceKnowledgeSearchOptions
 ): WorkspaceKnowledgeSearchResult {
   const query = normalized(options.query);
-  const rawTerms = [...new Set(searchTokens(query))];
-  const meaningfulTerms = rawTerms.filter((term) => !NATURAL_LANGUAGE_STOPWORDS.has(term));
-  const terms = meaningfulTerms.length > 0 ? meaningfulTerms : rawTerms;
+  const rawTerms = [...new Set(searchTokens(options.query))];
+  const scopeTerms = new Set(searchTokens(options.projectId ?? ''));
+  const contentTerms = options.projectId
+    ? rawTerms.filter((term) => !scopeTerms.has(term))
+    : rawTerms;
+  const scopeOnlyQuery = Boolean(
+    options.projectId && rawTerms.length > 0 && contentTerms.length === 0
+  );
+  const meaningfulTerms = contentTerms.filter((term) => !NATURAL_LANGUAGE_STOPWORDS.has(term));
+  const terms = meaningfulTerms.length > 0 ? meaningfulTerms : contentTerms;
+  const languages = requestedLanguages(terms);
+  const termSet = new Set(terms);
+  const minimumTermMatches =
+    terms.length <= 1 ? terms.length : Math.min(3, Math.ceil(terms.length / 3));
   const limit = Math.max(1, Math.min(Math.trunc(options.limit ?? 12), 100));
   const relationsPerEntity = Math.max(0, Math.min(Math.trunc(options.relationsPerEntity ?? 4), 20));
+  const scopedSharedEntityIds = new Set<string>();
+  if (options.projectId) {
+    const projectEntityIds = new Set(
+      graph.entities
+        .filter(
+          (entity) =>
+            entity.kind === 'project' &&
+            (entity.projectId === options.projectId || entity.label === options.projectId)
+        )
+        .map((entity) => entity.id)
+    );
+    for (const relation of graph.relations) {
+      if (projectEntityIds.has(relation.from)) scopedSharedEntityIds.add(relation.to);
+      if (projectEntityIds.has(relation.to)) scopedSharedEntityIds.add(relation.from);
+    }
+  }
   const documents = graph.entities
-    .filter((entity) => !options.kind || entity.kind === options.kind)
+    .filter(
+      (entity) =>
+        (!options.kind || entity.kind === options.kind) &&
+        (!options.projectId ||
+          entity.projectId === options.projectId ||
+          (entity.projectId === undefined && scopedSharedEntityIds.has(entity.id)))
+    )
     .map(searchDocument);
   const inverseDocumentFrequency = new Map(
     terms.map((term) => {
       const documentFrequency = documents.filter((document) =>
-        containsTokenOrPrefix(document.allTokens, term)
+        documentMatchesTerm(document, term)
       ).length;
       return [term, Math.log((documents.length + 1) / (documentFrequency + 1)) + 1] as const;
     })
   );
   const ranked = documents
-    .map((document) => ({
-      entity: document.entity,
-      score: searchScore(document, query, terms, inverseDocumentFrequency),
-    }))
-    .filter((entry) => query.length === 0 || entry.score > 0)
+    .map((document) => {
+      const matchedTerms = matchedSearchTerms(document, terms);
+      const language = entityLanguage(document.entity);
+      const languageBoost = language && languages.has(language) ? 400 : 0;
+      const intentScore = architectureIntentScore(document.entity, termSet);
+      return {
+        entity: document.entity,
+        matchedTerms,
+        intentScore,
+        score: scopeOnlyQuery
+          ? projectOverviewScore(document.entity)
+          : searchScore(document, query, terms, inverseDocumentFrequency) +
+            languageBoost +
+            intentScore,
+      };
+    })
+    .filter((entry) => {
+      const language = entityLanguage(entry.entity);
+      return (
+        (languages.size === 0 || language === null || languages.has(language)) &&
+        (query.length === 0 ||
+          (entry.score > 0 &&
+            (scopeOnlyQuery || entry.matchedTerms >= minimumTermMatches || entry.intentScore > 0)))
+      );
+    })
     .sort(
       (a, b) =>
         b.score - a.score ||
         a.entity.kind.localeCompare(b.entity.kind) ||
         a.entity.label.localeCompare(b.entity.label)
     );
-  const entities = ranked.slice(0, limit).map((entry) => entry.entity);
-  const selectedIds = new Set(entities.map((entity) => entity.id));
+  const selectionPool = hasBroadArchitectureIntent(termSet)
+    ? (() => {
+        const selected: typeof ranked = [];
+        const deferred: typeof ranked = [];
+        const perKind = new Map<WorkspaceKnowledgeEntityKind, number>();
+        const selectedLabels = new Set<string>();
+        for (const entry of ranked) {
+          const count = perKind.get(entry.entity.kind) ?? 0;
+          const label = normalized(entry.entity.label);
+          if (count < 2 && !selectedLabels.has(label)) {
+            selected.push(entry);
+            perKind.set(entry.entity.kind, count + 1);
+            selectedLabels.add(label);
+          } else {
+            deferred.push(entry);
+          }
+        }
+        return [...selected, ...deferred];
+      })()
+    : ranked;
+  const matchedEntities = selectionPool.slice(0, limit).map((entry) => entry.entity);
+  const selectedIds = new Set(matchedEntities.map((entity) => entity.id));
   const relationCounts = new Map<string, number>();
-  const relations = graph.relations.filter((relation) => {
+  const relationCandidates = graph.relations.filter((relation) => {
     const selected = selectedIds.has(relation.from) || selectedIds.has(relation.to);
     if (!selected) return false;
     const owner = selectedIds.has(relation.from) ? relation.from : relation.to;
@@ -451,13 +782,17 @@ export function searchKnowledgeGraph(
     relationCounts.set(owner, count + 1);
     return true;
   });
+  const agentProjection = options.projection === 'agent';
+  const relationSources = agentProjection
+    ? relationCandidates.slice(0, AGENT_SEARCH_LIMITS.relations)
+    : relationCandidates;
   const index = queryIndex(graph);
   const relatedIds = new Set(
-    relations
+    relationSources
       .flatMap((relation) => [relation.from, relation.to])
       .filter((id) => !selectedIds.has(id))
   );
-  const relatedEntities = [...relatedIds]
+  const allRelatedEntities = [...relatedIds]
     .map((id) => index.entitiesById.get(id))
     .filter((entity): entity is WorkspaceKnowledgeEntity => Boolean(entity))
     .map(({ id, kind, label, projectId }) => ({
@@ -467,11 +802,39 @@ export function searchKnowledgeGraph(
       ...(projectId ? { projectId } : {}),
     }))
     .sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label));
-  const proofIds = new Set([
-    ...entities.flatMap((entity) => entity.proofIds),
-    ...relations.flatMap((relation) => relation.proofIds),
+  const relatedEntities = agentProjection
+    ? allRelatedEntities.slice(0, AGENT_SEARCH_LIMITS.relatedEntities)
+    : allRelatedEntities;
+  const allProofIds = new Set([
+    ...matchedEntities.flatMap((entity) => entity.proofIds),
+    ...relationSources.flatMap((relation) => relation.proofIds),
   ]);
-  const proofs = [...proofIds]
+  const selectedAgentProofIds = agentProjection
+    ? agentProofIds([...matchedEntities, ...relationSources])
+    : [...allProofIds];
+  const includedProofIds = new Set(selectedAgentProofIds);
+  const omitted: WorkspaceKnowledgeSearchBudget['omitted'] = {
+    entities: ranked.length - matchedEntities.length,
+    relations: relationCandidates.length - relationSources.length,
+    relatedEntities: allRelatedEntities.length - relatedEntities.length,
+    proofs: allProofIds.size - includedProofIds.size,
+    proofReferences: 0,
+    aliases: 0,
+    attributeValues: 0,
+  };
+  const entities = agentProjection
+    ? matchedEntities.map((entity) => projectAgentEntity(entity, includedProofIds, omitted))
+    : matchedEntities;
+  const relations = agentProjection
+    ? relationSources.map((relation) => {
+        const proofIds = relation.proofIds
+          .filter((proofId) => includedProofIds.has(proofId))
+          .slice(0, AGENT_SEARCH_LIMITS.proofIdsPerItem);
+        omitted.proofReferences += relation.proofIds.length - proofIds.length;
+        return { ...relation, proofIds };
+      })
+    : relationSources;
+  const proofs = [...includedProofIds]
     .map((id) => index.proofsById.get(id))
     .filter((proof): proof is WorkspaceKnowledgeProof => Boolean(proof))
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -479,12 +842,24 @@ export function searchKnowledgeGraph(
     schemaVersion: WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION,
     query: options.query,
     kind: options.kind ?? null,
+    ...(options.projectId ? { projectId: options.projectId } : {}),
     limit,
     totalMatches: ranked.length,
-    truncated: ranked.length > entities.length,
+    truncated:
+      ranked.length > entities.length ||
+      (agentProjection && Object.values(omitted).some((count) => count > 0)),
     entities,
     relatedEntities,
     relations,
     proofs,
+    ...(agentProjection
+      ? {
+          budget: {
+            mode: 'agent' as const,
+            limits: { ...AGENT_SEARCH_LIMITS },
+            omitted,
+          },
+        }
+      : {}),
   };
 }

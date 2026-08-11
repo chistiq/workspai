@@ -88,10 +88,12 @@ describe('workspace mcp serve (4.19)', () => {
     await expect(
       invokeMcpToolForTest(workspacePath, 'searchWorkspaceGraph', {
         query: 'example api',
+        projectId: 'api',
         limit: 1,
       })
     ).resolves.toMatchObject({
       schemaVersion: 'workspace-knowledge-search.v1',
+      projectId: 'api',
       entities: [{ label: '@example/api' }],
     });
     await expect(

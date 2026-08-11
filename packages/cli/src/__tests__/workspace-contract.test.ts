@@ -385,6 +385,191 @@ describe('workspace contract registry', () => {
     });
   });
 
+  it('does not preserve a synthetic HTTP port for an adopted VS Code extension', async () => {
+    const workspacePath = await makeTempDir('rk-contract-vscode-ws-');
+    const externalProjectPath = await makeTempDir('rk-contract-vscode-project-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'extension-ws',
+    });
+    await fsExtra.outputJson(path.join(externalProjectPath, '.workspai', 'project.json'), {
+      name: 'extension',
+      runtime: 'node',
+      framework: 'vscode-extension',
+      kit_name: 'adopted.vscode-extension',
+      modules: [],
+    });
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'extension',
+        path: externalProjectPath,
+        relativePath: path.relative(workspacePath, externalProjectPath).replace(/\\/g, '/'),
+        relationship: 'adopted',
+        source: 'adopted-local',
+        stack: 'vscode-extension',
+        runtime: 'node',
+        framework: 'vscode-extension',
+        frameworkDisplayName: 'VS Code Extension',
+        supportTier: 'extended',
+        moduleSupport: false,
+        confidence: 'high',
+        importedAt: '2026-08-10T00:00:00.000Z',
+      },
+    ]);
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-08-10T00:00:00.000Z',
+      workspace: { name: 'extension-ws' },
+      projects: [
+        {
+          slug: 'extension',
+          relativePath: 'external/extension',
+          source: 'adopted-local',
+          relationship: 'adopted',
+          externalPath: externalProjectPath,
+          runtime: 'node',
+          framework: 'vscode-extension',
+          kit: 'adopted.vscode-extension',
+          modules: [],
+          ports: [{ name: 'http', port: 3000, protocol: 'http' }],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+
+    expect(result.contract.projects.find((project) => project.slug === 'extension')?.ports).toEqual(
+      []
+    );
+  });
+
+  it('refreshes an adopted generic Python port from Docker evidence', async () => {
+    const workspacePath = await makeTempDir('rk-contract-python-ws-');
+    const externalProjectPath = await makeTempDir('rk-contract-python-project-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'python-ws',
+    });
+    await fsExtra.outputJson(path.join(externalProjectPath, '.workspai', 'project.json'), {
+      name: 'graph-tool',
+      runtime: 'python',
+      framework: 'python',
+      kit_name: 'adopted.python',
+    });
+    await fsExtra.outputFile(
+      path.join(externalProjectPath, 'Dockerfile'),
+      'FROM python:3.12-slim\nEXPOSE 8080\n'
+    );
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'graph-tool',
+        path: externalProjectPath,
+        relativePath: path.relative(workspacePath, externalProjectPath).replace(/\\/g, '/'),
+        relationship: 'adopted',
+        source: 'adopted-local',
+        stack: 'python',
+        runtime: 'python',
+        framework: 'python',
+        frameworkDisplayName: 'Python',
+        supportTier: 'observed',
+        moduleSupport: false,
+        confidence: 'medium',
+        importedAt: '2026-08-10T00:00:00.000Z',
+      },
+    ]);
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'python-ws' },
+      projects: [
+        {
+          slug: 'graph-tool',
+          relativePath: 'external/graph-tool',
+          source: 'adopted-local',
+          relationship: 'adopted',
+          externalPath: externalProjectPath,
+          runtime: 'python',
+          framework: 'python',
+          kit: 'adopted.python',
+          modules: [],
+          ports: [{ name: 'http', port: 8000, protocol: 'http' }],
+          contracts: { owns: [], apis: [], publishes: [], consumes: [], dependsOn: [], env: [] },
+        },
+      ],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+    expect(
+      result.contract.projects.find((project) => project.slug === 'graph-tool')?.ports
+    ).toEqual([{ name: 'http', port: 8080, protocol: 'http' }]);
+  });
+
+  it('refreshes managed adoption runtime metadata after source re-detection', async () => {
+    const workspacePath = await makeTempDir('rk-contract-refresh-ws-');
+    const externalProjectPath = await makeTempDir('rk-contract-refresh-project-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'refresh-ws',
+    });
+    await fsExtra.outputJson(path.join(externalProjectPath, '.workspai', 'project.json'), {
+      name: 'native-service',
+      runtime: 'cpp',
+      framework: 'cpp',
+      kit_name: 'adopted.cpp',
+    });
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'native-service',
+        path: externalProjectPath,
+        relationship: 'adopted',
+        source: 'adopted-local',
+        stack: 'unknown',
+        runtime: 'cpp',
+        framework: 'cpp',
+        frameworkDisplayName: 'C++',
+        supportTier: 'observed',
+        moduleSupport: false,
+        confidence: 'high',
+        importedAt: '2026-08-10T00:00:00.000Z',
+      },
+    ]);
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'refresh-ws' },
+      projects: [
+        {
+          slug: 'native-service',
+          relativePath: 'external/native-service',
+          source: 'adopted-local',
+          relationship: 'adopted',
+          externalPath: externalProjectPath,
+          runtime: 'python',
+          framework: 'python',
+          kit: 'adopted.python',
+          modules: [],
+          ports: [],
+          contracts: { owns: [], apis: [], publishes: [], consumes: [], dependsOn: [], env: [] },
+        },
+      ],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+
+    expect(result.contract.projects[0]).toMatchObject({
+      runtime: 'cpp',
+      framework: 'cpp',
+      kit: 'adopted.cpp',
+    });
+    expect(result.updatedProjects).toEqual(['native-service']);
+  });
+
   it('fails verification for colliding ports and unknown dependencies', async () => {
     const workspacePath = await makeTempDir('rk-contract-fail-');
     await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {

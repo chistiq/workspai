@@ -540,6 +540,25 @@ describe('workspace intelligence model', () => {
     expect(model.projects[0].importantFiles).toContain('package.json');
   });
 
+  it('publishes native build and Bazel control surfaces as important files', async () => {
+    const workspacePath = await makeTempDir('rk-model-native-');
+    const projectPath = path.join(workspacePath, 'native');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'native',
+      runtime: 'cpp',
+      framework: 'cpp',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'CMakeLists.txt'), 'project(native CXX)\n');
+    await fsExtra.outputFile(path.join(projectPath, 'WORKSPACE'), 'workspace(name = "native")\n');
+    await fsExtra.outputFile(path.join(projectPath, '.bazelrc'), 'build --color=yes\n');
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining(['CMakeLists.txt', 'WORKSPACE', '.bazelrc'])
+    );
+  });
+
   it('separates official frontend generator identity from detected framework identity', async () => {
     const workspacePath = await makeTempDir('rk-model-frontend-generator-');
     await fsExtra.outputJson(path.join(workspacePath, 'apps', 'web', '.rapidkit', 'project.json'), {

@@ -3877,6 +3877,32 @@ async function checkProjectUnnormalized(
       ((await findFileByName(projectPath, { suffix: '.kt', under: ['src', '.'] })) ||
         (await readFileIfExists(kotlinBuildPath)).includes('kotlin')));
 
+  const primaryBackendDetection = detectBackendFrameworkFromProject(
+    projectPath,
+    projectJsonData ?? null
+  );
+  const isNativeProject =
+    primaryBackendDetection.runtime === 'c' || primaryBackendDetection.runtime === 'cpp';
+
+  // Native polyglot repositories commonly carry Python/Ruby/PHP binding
+  // manifests at the root. Honor the primary C/C++ detection before those
+  // secondary markers so Doctor does not demand a Python virtualenv or
+  // __init__.py files from a CMake-owned project.
+  if (isNativeProject) {
+    applyBackendFrameworkDetection(health, primaryBackendDetection);
+    health.venvActive = true;
+    health.coreInstalled = false;
+    health.depsInstalled = true;
+    health.modulesHealthy = true;
+    health.missingModules = [];
+
+    await performCommonChecks(projectPath, health);
+    await appendEnterpriseSurfaceProbes(projectPath, health);
+    await appendBuiltInBackendProbes(projectPath, health);
+    await appendCustomConfiguredProbes(projectPath, health);
+    return health;
+  }
+
   // Go project checks (Fiber or Gin)
   if (isGoProject) {
     applyBackendFrameworkDetection(

@@ -71,6 +71,7 @@ graph:
 
 ```bash
 npx workspai workspace graph search "billing database" --limit 12 --json
+npx workspai workspace graph search "billing database" --scope project:billing --limit 12 --json
 ```
 
 A simplified response looks like this:
@@ -79,23 +80,58 @@ A simplified response looks like this:
 {
   "schemaVersion": "workspace-knowledge-search.v1",
   "query": "billing database",
+  "projectId": "billing",
   "totalMatches": 23,
   "truncated": true,
   "entities": [{ "kind": "database", "label": "billing-db", "proofIds": ["proof:..."] }],
   "relations": [{ "kind": "reads-from", "from": "service:billing", "to": "database:billing-db" }],
-  "proofs": [{ "provider": "compose", "artifact": "infra/compose.yml", "trust": "authoritative" }]
+  "proofs": [{ "provider": "compose", "artifact": "infra/compose.yml", "trust": "authoritative" }],
+  "budget": { "mode": "agent", "limits": { "proofs": 16 }, "omitted": { "proofs": 4 } }
 }
 ```
 
 The response is intentionally bounded. `totalMatches` tells the consumer more
 results exist, `truncated` prevents silent omission, and every returned claim can
-be traced through `proofIds`.
+be traced through `proofIds`. Use `--scope project:<name>` to keep a query within
+one registered project while retaining workspace-level shared entities that are
+proven to be connected to it.
 
 Search remains deterministic, local, and offline. Natural-language filler words
 are removed before ranking, and the remaining terms are weighted by how rare
 they are in the current graph. Exact labels and identities still win. This keeps
 a common word such as `check` from outranking a rarer term such as `user` merely
 because it appears in more files. No embedding service or model call is involved.
+
+### Fast reads without stale answers
+
+The read-oriented `search`, `entities`, `evidence`, `path`, and `benchmark`
+commands first try the persisted Model and Knowledge Graph. A snapshot is a hit
+only when all of the following remain true:
+
+- both artifacts are structurally readable;
+- the graph's stable model SHA-256 matches the persisted canonical model;
+- no proof is marked stale;
+- the graph fingerprint contains exactly one workspace scope and every
+  canonical project scope with compatible scan limits;
+- a fresh bounded scan produces the same aggregate live-input hash.
+
+Git-backed scopes use `git-worktree-v2`, covering tracked tree state plus
+modified, deleted, renamed, untracked, and relevant ignored files. If Git cannot
+prove the scanned inventory safely—for example because a traversed initialized
+submodule or hidden index flag is present—Workspai falls back to
+`content-merkle-v1`, which hashes each bounded file by portable path and content.
+The graph records the combined strategy as `hybrid-git-content-v2`.
+
+A miss rebuilds from live sources. Use `--refresh-graph` when the caller requires
+an explicit rebuild even if the persisted snapshot is compatible:
+
+```bash
+npx workspai workspace graph search "protobuf ownership" --refresh-graph --json
+```
+
+The fingerprint proves compatibility of the exact bounded provider inventory;
+if a scope reports `truncated: true`, it must not be interpreted as proof about
+files beyond that declared limit.
 
 ## Pick the command by question
 
@@ -259,6 +295,8 @@ The current CLI uses bounded providers for:
 - workspace/project foundations and service contracts;
 - language-neutral source structure and package manifests;
 - OpenAPI, GraphQL, Protobuf, and AsyncAPI interfaces;
+- C/C++ source, CMake/Meson lifecycle units, Bazel/CMake packages, and
+  cross-language protocol bindings;
 - Docker/Compose, Kubernetes, Terraform, and CI workflows;
 - README/docs, ADRs, tests, and CODEOWNERS.
 
@@ -272,6 +310,13 @@ be proven. External packages remain module entities, while unresolved relative
 imports are labelled `unresolved-local` and produce a diagnostic. This prevents
 an unknown local path from being silently presented as a third-party
 dependency.
+
+Protocol Buffers services and messages retain definition-level identity
+variants. Two projects may use the same fully qualified name without being
+silently collapsed; proven cross-project or cross-language equivalence is
+represented as a relation instead. In a C++-primary repository, ambiguous
+`.h` headers inherit the authoritative project language so C/C++ inventories do
+not split solely because the extension is shared.
 
 ### Binding quality, not just graph size
 
@@ -382,8 +427,10 @@ The recommended read order is:
 Graph construction inventories each project once per build and caps the number
 of scanned files. Providers reuse the same in-memory inventory and content
 hashes. Query indexes are cached per immutable graph object; replacing the graph
-is the invalidation boundary. `workspace model --cache` and `--incremental`
-avoid unnecessary model/project work when inputs are unchanged.
+is the in-memory invalidation boundary. Across CLI processes, compatible
+persisted read queries validate the live Git/Merkle fingerprint before reuse.
+`workspace model --cache` and `--incremental` avoid unnecessary model/project
+work when inputs are unchanged.
 
 Use full graph export for interchange or offline analysis. Use bounded search
 for interactive agents. The latter keeps response size proportional to the
@@ -426,6 +473,8 @@ a general performance claim.
 
 - The CLI graph is intentionally file-backed; a graph database is not required.
 - Text search is deterministic lexical retrieval, not embedding similarity.
+- The live-input fingerprint enables whole-graph snapshot reuse; it is not yet
+  a per-file incremental graph rebuild or a hosted semantic-vector index.
 - Compiler/LSP-grade symbol resolution belongs in deeper language providers.
 - Missing project edges mean “relationship not proven,” not “projects are
   independent.” Author service contracts or provide API/package/runtime

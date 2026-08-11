@@ -1,6 +1,12 @@
 # Commands Reference
 
-Complete CLI syntax for the Workspai CLI. For behavior and workflows, see [workspace-operations.md](./workspace-operations.md) and [OPEN_SOURCE_USER_SCENARIOS.md](./OPEN_SOURCE_USER_SCENARIOS.md).
+Human-readable CLI syntax for the Workspai CLI. The machine-complete command,
+argument, option, alias, ownership, and integrity inventory is available through
+`workspai commands --json` and
+[`runtime-command-surface.v1.json`](../contracts/runtime-command-surface.v1.json).
+For behavior and workflows, see
+[workspace-operations.md](./workspace-operations.md) and
+[OPEN_SOURCE_USER_SCENARIOS.md](./OPEN_SOURCE_USER_SCENARIOS.md).
 
 ## Workspace lifecycle
 
@@ -44,6 +50,7 @@ profile.
 
 ```bash
 npx workspai workspace sync [--json]
+npx workspai workspace registry [--json]
 npx workspai workspace policy show
 npx workspai workspace policy set <key> <value>
 npx workspai doctor
@@ -70,10 +77,11 @@ npx workspai workspace snapshot [--workspace <path>] [--json] [--include-paths] 
 npx workspai workspace diff --from <snapshot-or-model|git[:ref]> [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace impact --from <workspace-diff-report> [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace verify [--from-impact <file>] [--workspace <path>] [--scope project:<name>] [--strict] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
+npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace eval [init <task> [strategy]|record|status|report|compare --from <report>] [--workspace <path>] [--output <file>] [--json]
 npx workspai workspace watch [--workspace <path>] [--json] [--graph-stream] [--once] [--scan-depth <count>]
-npx workspai workspace explain|why <target> [--workspace <path>] [--json] [--write]
+npx workspai workspace explain <target> [--workspace <path>] [--json] [--write]
+npx workspai workspace why <target> [--workspace <path>] [--json] [--write]
 npx workspai workspace trace --from <workspace-diff-report> [--workspace <path>] [--json] [--write]
 printf '%s\n' '{"actionId":"fix-api","summary":"API tests passed","outcome":"ok"}' | npx workspai workspace feedback record [--workspace <path>] --json
 npx workspai workspace mcp serve [--workspace <path>] [--json]
@@ -96,7 +104,7 @@ npx workspai project restore <archive> [--name <project-name>] [--force] [--dry-
 npx workspai project delete <name> [--permanent --confirm <name>] [--dry-run] [--json]
 npx workspai project workspace [status|relink] [--workspace <path>] [--project <path>] [--json]
 npx workspai workspace init
-npx workspai workspace run <init|test|build|start|custom-stage> [--workspace <path>] [--scope project:<name>] [--affected] [--blast-radius] [--since <ref>] [--parallel] [--max-workers <n>] [--continue-on-error] [--reuse-passed] [--strict] [--no-gates] [--json]
+npx workspai workspace run <init|test|build|start|custom-stage> [--workspace <path>] [--scope project:<name>] [--plan] [--runtime <runtime>] [--affected] [--blast-radius] [--since <ref>] [--parallel] [--max-workers <n>] [--continue-on-error] [--reuse-passed] [--strict] [--no-gates] [--json]
 npx workspai infra plan [--workspace <path>] [--json] [--dry-run] [--verbose]
 npx workspai infra up [--workspace <path>] [--no-plan] [--build]
 npx workspai infra down [--workspace <path>] [--volumes]
@@ -183,6 +191,15 @@ that retrieval payload with the readable proof-indexed corpus using a labelled
 `characters / 4` estimate. It measures payload reduction only; it does not
 assert equivalent answer quality or model-specific billing savings.
 
+Add `--scope project:<name>` to retrieve project-owned facts plus
+workspace-level shared entities proven to be connected to that project. The
+agent projection reports explicit omission budgets for relations, related
+entities, proofs, aliases, attributes, and proof references. Read-oriented
+`search`, `entities`, `evidence`, `path`, and `benchmark` modes reuse the
+persisted graph only when its model binding, proofs, project scopes, and live
+Git/Merkle input fingerprint still match. `--refresh-graph` bypasses that
+compatible snapshot and rebuilds from current sources.
+
 `workspace graph jsonld|graphml|gexf` exports the current derived,
 evidence-backed Knowledge Graph for semantic, graph-analysis, and interactive
 2D/3D consumers. All five export modes accept `--output <file>`; Mermaid and
@@ -230,8 +247,11 @@ cross-runtime additions are allowed with a recommendation such as
 blocked before the project is registered. Rust is an extended runtime with
 Axum/Tauri scaffolding and Cargo lifecycle support. PHP is extended through
 Laravel and Composer lifecycle support. Observed runtimes such as C and C++ are
-still counted in the workspace runtime mix even when Workspai does not own a
-native scaffold for them.
+counted in the workspace runtime mix even when Workspai does not own a native
+scaffold for them. Existing CMake and Meson projects can also expose discovered
+lifecycle units to `workspace run`; inspect them without execution using
+`workspace run <stage> --plan`, and select one runtime family with
+`--runtime <runtime>`.
 
 Core module/template commands are intentionally narrower than runtime detection.
 RapidKit Core modules are guaranteed only for RapidKit Core module-enabled kits:
@@ -287,7 +307,16 @@ governance while Core module mutation remains disabled.
 npx workspai cache <status|clear|prune|repair>
 npx workspai mirror <status|sync|verify|rotate>
 npx workspai infra <plan|up|down|status>
+npx workspai ai <info|recommend|generate-embeddings|update-embeddings>
+npx workspai config <show|ai|set-api-key|remove-api-key>
+npx workspai product <manifest|plan>
+npx workspai shell
 ```
+
+These groups are part of the public CLI surface, but availability of an
+operation can still depend on project runtime, optional provider configuration,
+or product metadata. Use the action's `--help` and `workspai commands --json`
+instead of inferring support from this compact synopsis.
 
 See [workspace-operations.md](./workspace-operations.md#workspace-infrastructure-sidecar) for infra discovery rules.
 

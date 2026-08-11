@@ -6,6 +6,8 @@
 
 ```bash
 npx workspai workspace run test --parallel
+npx workspai workspace run build --plan --json
+npx workspai workspace run test --runtime cpp --scope project:native-core --json
 npx workspai workspace run test --affected --since HEAD~1
 npx workspai workspace run test --affected --blast-radius
 npx workspai workspace run build --json --max-workers 8
@@ -20,9 +22,18 @@ npx workspai workspace run build --json --max-workers 8
 
 `workspace run` does not infer support from a hard-coded framework list. It
 reads the effective project capability map produced by the runtime adapters and
-project metadata. First-class and extended Node.js, Python, Go, Java, .NET,
-PHP, and Rust projects can expose governed lifecycle stages; observed runtimes
-run only commands explicitly declared by their project context.
+project metadata. First-class and extended Node.js, Python, Go, Java, .NET, PHP,
+and Rust projects can expose governed lifecycle stages. Existing polyglot
+repositories also publish bounded runtime units discovered from npm, Python,
+Go, Cargo, Maven, Gradle, NuGet, CMake, and Meson manifests. CMake and Meson
+provide explicit native init, test, and build plans; Workspai does not treat
+discovery as permission to execute them.
+
+Use `--plan` to return the selected runtime units and commands without running
+them. Use `--runtime <runtime>` to limit a polyglot project to one runtime
+family. Vendored trees, build outputs, fixtures, and nested test fixture package
+manifests are excluded from lifecycle discovery so orchestration does not turn
+sample inputs into install targets.
 
 The authoritative scaffold/import/lifecycle tiers are in
 [contracts/RUNTIME_SUPPORT_MATRIX.md](./contracts/RUNTIME_SUPPORT_MATRIX.md).

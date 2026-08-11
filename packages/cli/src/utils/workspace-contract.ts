@@ -293,6 +293,31 @@ function normalizeProjectPorts(payload: Record<string, unknown>): WorkspaceContr
     : [];
 }
 
+async function discoverDockerPorts(projectPath: string): Promise<WorkspaceContractPort[]> {
+  const dockerfile = path.join(projectPath, 'Dockerfile');
+  if (!(await fsExtra.pathExists(dockerfile))) return [];
+  try {
+    const contents = await fsExtra.readFile(dockerfile, 'utf8');
+    const ports = new Map<number, WorkspaceContractPort>();
+    for (const line of contents.matchAll(/^\s*EXPOSE\s+(.+)$/gim)) {
+      for (const token of line[1].split(/\s+/)) {
+        const match = token.match(/^(\d{1,5})(?:\/(tcp|udp))?$/i);
+        const port = Number(match?.[1]);
+        if (!match || !Number.isInteger(port) || port < 1 || port > 65535) continue;
+        const transport = match[2]?.toLowerCase();
+        ports.set(port, {
+          name: 'http',
+          port,
+          protocol: transport === 'udp' ? 'udp' : 'http',
+        });
+      }
+    }
+    return [...ports.values()].sort((left, right) => left.port - right.port);
+  } catch {
+    return [];
+  }
+}
+
 async function firstExistingFile(candidates: string[]): Promise<string | null> {
   for (const candidate of candidates) {
     if (await fsExtra.pathExists(candidate)) {
@@ -387,11 +412,13 @@ function projectKindFromKit(kit?: string): string | undefined {
 function defaultPortForKit(kit?: string, runtime?: string): number | null {
   const value = (kit || '').toLowerCase();
   const runtimeValue = (runtime || '').toLowerCase();
+  if (value.includes('vscode-extension')) return null;
   if (value.includes('fastapi')) return 8000;
   if (value.includes('nestjs')) return 3000;
   if (value.includes('springboot')) return 8080;
   if (value.includes('gofiber')) return 3000;
   if (value.includes('gogin')) return 8080;
+  if (value.startsWith('adopted.')) return null;
   if (runtimeValue === 'node') return 3000;
   if (runtimeValue === 'python') return 8000;
   if (runtimeValue === 'java') return 8080;
@@ -416,20 +443,38 @@ function mergeProjectContract(
   const preferredPort = defaultPortForKit(discovered.kit, discovered.runtime);
   const existingPorts = existing?.ports || [];
   const discoveredPorts = discovered.ports || [];
+  const nonServiceExtension = (discovered.kit || '').toLowerCase().includes('vscode-extension');
+  const refreshAdoptedPorts =
+    discovered.source === 'adopted-local' && existing?.source === 'adopted-local';
+  const refreshAdoptedMetadata = refreshAdoptedPorts;
   const selectedPorts =
-    existingPorts.length > 0
-      ? existingPorts
-      : discoveredPorts.length > 0
-        ? discoveredPorts
-        : preferredPort
-          ? [
-              {
-                name: 'http',
-                port: nextAvailablePort(preferredPort, usedPorts),
-                protocol: 'http' as const,
-              },
-            ]
-          : [];
+    nonServiceExtension && discoveredPorts.length === 0
+      ? []
+      : refreshAdoptedPorts
+        ? discoveredPorts.length > 0
+          ? discoveredPorts
+          : preferredPort
+            ? [
+                {
+                  name: 'http',
+                  port: nextAvailablePort(preferredPort, usedPorts),
+                  protocol: 'http' as const,
+                },
+              ]
+            : []
+        : existingPorts.length > 0
+          ? existingPorts
+          : discoveredPorts.length > 0
+            ? discoveredPorts
+            : preferredPort
+              ? [
+                  {
+                    name: 'http',
+                    port: nextAvailablePort(preferredPort, usedPorts),
+                    protocol: 'http' as const,
+                  },
+                ]
+              : [];
   const ports = selectedPorts.map((port) => ({
     ...port,
     port: nextAvailablePort(port.port, usedPorts),
@@ -456,9 +501,11 @@ function mergeProjectContract(
     externalPath: preserveExistingIdentity
       ? existing?.externalPath || discovered.externalPath
       : discovered.externalPath,
-    runtime: existing?.runtime || discovered.runtime,
-    framework: existing?.framework || discovered.framework,
-    kit: existing?.kit || discovered.kit,
+    runtime: refreshAdoptedMetadata ? discovered.runtime : existing?.runtime || discovered.runtime,
+    framework: refreshAdoptedMetadata
+      ? discovered.framework
+      : existing?.framework || discovered.framework,
+    kit: refreshAdoptedMetadata ? discovered.kit : existing?.kit || discovered.kit,
     modules: existing?.modules?.length ? existing.modules : discovered.modules,
     ports,
     contracts: {
@@ -539,7 +586,10 @@ export async function buildWorkspaceContract(input: {
       framework,
       kit,
       modules: normalizeStringArray(payload.modules),
-      ports: normalizeProjectPorts(payload),
+      ports:
+        normalizeProjectPorts(payload).length > 0
+          ? normalizeProjectPorts(payload)
+          : await discoverDockerPorts(projectPath),
       contracts: {
         owns: [],
         apis: [],

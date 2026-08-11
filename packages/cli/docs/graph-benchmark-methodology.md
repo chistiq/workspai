@@ -20,6 +20,7 @@ From a Workspai workspace:
 ```bash
 npx workspai workspace model --write --json
 npx workspai workspace graph benchmark "authentication endpoint" --limit 12 --json
+npx workspai workspace graph benchmark "authentication endpoint" --scope project:api --limit 12 --json
 ```
 
 The result conforms to
@@ -33,6 +34,18 @@ It records:
 - the bounded retrieval size and match count;
 - unreadable artifacts rather than silently excluding them;
 - the estimate formula, reduction ratio, percentage, and claim boundary.
+
+For linked projects, portable proof artifacts such as
+`external/api/src/server.ts` are resolved through the canonical workspace
+contract's `externalPath`. Resolution remains containment-checked beneath that
+registered project root. A missing or unsafe mapping stays in
+`unreadableArtifacts`; it is never silently dropped from the denominator
+explanation.
+
+The benchmark uses the same bounded agent projection as Graph search. A project
+scope therefore includes facts owned by that project and connected
+workspace-level shared entities, while the response's omission budget makes
+payload caps explicit.
 
 ## Baseline and formula
 

@@ -154,6 +154,37 @@ describe('adopt-project', () => {
     ]);
   });
 
+  it('refreshes Workspai-managed detection when a linked project is re-adopted', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = await makeTempDir('rapidkit-readopt-source-');
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
+      name: 'native-core',
+      dependencies: { express: '^4.19.2' },
+    });
+
+    const first = await adoptProjectIntoWorkspace({ workspacePath, source: projectPath });
+    expect(first).toMatchObject({ runtime: 'node', framework: 'express' });
+
+    await fsExtra.remove(path.join(projectPath, 'package.json'));
+    await fsExtra.outputFile(
+      path.join(projectPath, 'CMakeLists.txt'),
+      'project(native_core CXX)\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'core.cc'),
+      'int core() { return 0; }\n'
+    );
+
+    const refreshed = await adoptProjectIntoWorkspace({ workspacePath, source: projectPath });
+    expect(refreshed).toMatchObject({ runtime: 'cpp', framework: 'cpp', confidence: 'high' });
+    expect(await fsExtra.readJson(refreshed.projectJsonPath)).toMatchObject({
+      runtime: 'cpp',
+      framework: 'cpp',
+      kit: 'adopted.cpp',
+      kit_name: 'adopted.cpp',
+    });
+  });
+
   it('previews adoption without writing metadata in dry-run mode', async () => {
     const workspacePath = await makeWorkspace();
     const projectPath = await makeTempDir('rapidkit-adopt-dry-source-');

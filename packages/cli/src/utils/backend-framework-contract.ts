@@ -1124,6 +1124,31 @@ export function detectBackendFrameworkFromProject(
   }
 
   const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  const rootCmake = readTextIfExists(path.join(projectPath, 'CMakeLists.txt'));
+  const rootMeson = readTextIfExists(path.join(projectPath, 'meson.build'));
+  const hasRootNativeBuild = rootCmake.trim().length > 0 || rootMeson.trim().length > 0;
+  const hasCppSource =
+    hasFileWithSuffix(projectPath, '.cpp', 3) ||
+    hasFileWithSuffix(projectPath, '.cc', 3) ||
+    hasFileWithSuffix(projectPath, '.cxx', 3);
+  const hasCSource = hasFileWithSuffix(projectPath, '.c', 3);
+  const declaresCpp = /(?:\bcxx\b|\bcplusplus\b|\bc\+\+\b)/u.test(`${rootCmake}\n${rootMeson}`);
+  // A root native build is a stronger primary-runtime signal than binding and
+  // tooling manifests for Python, Node, Ruby, or .NET. Large native projects
+  // such as gRPC intentionally ship those secondary language surfaces beside
+  // their C/C++ core.
+  if (hasRootNativeBuild && runtimeCandidates.includes('cpp') && (hasCppSource || declaresCpp)) {
+    return buildDetection('cpp', 'high', 'manifest');
+  }
+  if (
+    hasRootNativeBuild &&
+    runtimeCandidates.includes('c') &&
+    hasCSource &&
+    !hasCppSource &&
+    !declaresCpp
+  ) {
+    return buildDetection('c', 'high', 'manifest');
+  }
   // Prefer runtime-specific control surfaces over their compatible host
   // runtimes. Bun projects also carry package.json and Kotlin projects often
   // carry Gradle markers; resolving Node/Java first would erase the more
@@ -1206,11 +1231,6 @@ export function detectBackendFrameworkFromProject(
   if (runtimeCandidates.includes('scala')) {
     return buildDetection('scala', 'medium', 'marker');
   }
-  const hasCppSource =
-    hasFileWithSuffix(projectPath, '.cpp', 3) ||
-    hasFileWithSuffix(projectPath, '.cc', 3) ||
-    hasFileWithSuffix(projectPath, '.cxx', 3);
-  const hasCSource = hasFileWithSuffix(projectPath, '.c', 3);
   if (runtimeCandidates.includes('c') && hasCSource && !hasCppSource) {
     return buildDetection('c', 'medium', 'marker');
   }

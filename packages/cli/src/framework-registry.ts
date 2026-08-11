@@ -27,6 +27,8 @@ export type RuntimeFamily =
   | 'php'
   | 'rust'
   | 'dotnet'
+  | 'c'
+  | 'cpp'
   | 'elixir'
   | 'ruby'
   | 'jvm-generic'
@@ -498,6 +500,8 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     php: ['composer install'],
     rust: ['cargo fetch'],
     dotnet: ['dotnet restore'],
+    c: ['cmake -S . -B build'],
+    cpp: ['cmake -S . -B build'],
     elixir: ['mix deps.get'],
     ruby: ['bundle install'],
     'jvm-generic': ['mvn dependency:go-offline', 'gradle dependencies'],
@@ -512,6 +516,8 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     php: ['php artisan test', 'phpunit', 'pest'],
     rust: ['cargo test'],
     dotnet: ['dotnet test'],
+    c: ['ctest --test-dir build --output-on-failure'],
+    cpp: ['ctest --test-dir build --output-on-failure'],
     elixir: ['mix test'],
     ruby: ['rspec', 'ruby -m minitest'],
     'jvm-generic': ['mvn test', 'gradle test'],
@@ -526,6 +532,8 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     php: ['echo "PHP build: typically no build step"'],
     rust: ['cargo build --release'],
     dotnet: ['dotnet build -c Release'],
+    c: ['cmake --build build'],
+    cpp: ['cmake --build build'],
     elixir: ['mix compile'],
     ruby: ['gem build *.gemspec'],
     'jvm-generic': ['mvn package -DskipTests', 'gradle build'],
@@ -540,6 +548,8 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     php: ['php -S 0.0.0.0:8000', 'php artisan serve'],
     rust: ['cargo run --release', './target/release/app'],
     dotnet: ['dotnet run'],
+    c: [],
+    cpp: [],
     elixir: ['mix phx.server', 'iex -S mix'],
     ruby: ['rails server', 'ruby app.rb', 'bundle exec puma'],
     'jvm-generic': ['java -jar *.jar', 'gradle run'],

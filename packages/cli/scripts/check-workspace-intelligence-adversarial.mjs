@@ -9,7 +9,20 @@ import process from 'node:process';
 const packageRoot = process.cwd();
 const cliPath = path.join(packageRoot, 'dist', 'index.js');
 const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-adversarial-'));
+const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-adversarial-home-'));
 const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+
+const isolatedEnvironment = {
+  ...process.env,
+  CI: '1',
+  NO_COLOR: '1',
+  RAPIDKIT_SKIP_LOCK_SYNC: '1',
+  WORKSPAI_NO_UPDATE_CHECK: '1',
+  HOME: isolatedHome,
+  USERPROFILE: isolatedHome,
+  XDG_CONFIG_HOME: path.join(isolatedHome, '.config'),
+  APPDATA: path.join(isolatedHome, 'AppData', 'Roaming'),
+};
 
 function fail(message) {
   throw new Error(`[workspace-intelligence-adversarial] ${message}`);
@@ -29,13 +42,7 @@ function runCli(args, timeoutMs = 120_000) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd: workspacePath,
-      env: {
-        ...process.env,
-        CI: '1',
-        NO_COLOR: '1',
-        RAPIDKIT_SKIP_LOCK_SYNC: '1',
-        WORKSPAI_NO_UPDATE_CHECK: '1',
-      },
+      env: isolatedEnvironment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -55,12 +62,7 @@ function killDuringAtomicWrite(args) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd: workspacePath,
-      env: {
-        ...process.env,
-        CI: '1',
-        NO_COLOR: '1',
-        WORKSPAI_TEST_ATOMIC_WRITE_DELAY_MS: '10000',
-      },
+      env: { ...isolatedEnvironment, WORKSPAI_TEST_ATOMIC_WRITE_DELAY_MS: '10000' },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
@@ -377,4 +379,5 @@ try {
     fs.chmodSync(reportsPath, 0o700);
   } catch {}
   fs.rmSync(workspacePath, { recursive: true, force: true });
+  fs.rmSync(isolatedHome, { recursive: true, force: true });
 }

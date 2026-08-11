@@ -129,6 +129,79 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(workspacePath);
   });
 
+  it('plans every runtime unit for a linked polyglot project from the canonical model', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-model-'));
+    const projectPath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-polyglot-linked-'));
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'linked-sdk',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'node', 'package.json'), {
+      scripts: { test: 'node --test', build: 'tsc' },
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json'),
+      {
+        projects: [{ name: 'linked-sdk', path: path.relative(workspacePath, projectPath) }],
+      }
+    );
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockClear();
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      scope: 'project:linked-sdk',
+      planOnly: true,
+      json: true,
+    });
+
+    expect(report.summary.selectedCount).toBe(1);
+    expect(report.options).toMatchObject({ planOnly: true, runtime: null });
+    expect(report.projects[0]?.runtimeExecutions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: 'go', command: 'go test ./...', status: 'planned' }),
+        expect.objectContaining({ runtime: 'node', command: 'npm run test', status: 'planned' }),
+      ])
+    );
+    expect(execaMock).not.toHaveBeenCalled();
+
+    await fsExtra.remove(workspacePath);
+    await fsExtra.remove(projectPath);
+  });
+
+  it('executes every manifest-backed runtime unit in a polyglot project', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-polyglot-run-'));
+    const projectPath = path.join(workspacePath, 'sdk');
+    await fsExtra.outputJson(path.join(projectPath, '.rapidkit', 'context.json'), {
+      name: 'sdk',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      scripts: { build: 'node -e "process.exit(0)"' },
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
+    noGateMock();
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.summary).toMatchObject({ passed: 1, failed: 0, exitCode: 0 });
+    expect(report.projects[0]?.runtimeExecutions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runtime: 'go', command: 'go build ./...', status: 'passed' }),
+        expect.objectContaining({ runtime: 'node', command: 'npm run build', status: 'passed' }),
+      ])
+    );
+
+    await fsExtra.remove(workspacePath);
+  });
+
   it('reuses a previously passed project result without executing the stage again', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-reuse-'));
     await createProject(workspacePath, 'apps/api');

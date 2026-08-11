@@ -51,7 +51,10 @@ import {
   type WorkspaceIntelligenceRunStage,
 } from './contracts/workspace-intelligence-run-contract.js';
 import { historyEntryFromVerify, recordWorkspaceHistory } from './workspace-history.js';
-import { writeWorkspaceArtifactJson } from './utils/artifact-path-compat.js';
+import {
+  withWorkspaceArtifactLock,
+  writeWorkspaceArtifactJson,
+} from './utils/artifact-path-compat.js';
 import { emitWorkspacePhase } from './observability/cli-progress.js';
 
 export type { WorkspaceIntelligenceRunReport } from './contracts/workspace-intelligence-run-contract.js';
@@ -96,6 +99,26 @@ export async function runWorkspaceIntelligenceChain(input: {
   agent?: string;
 }): Promise<WorkspaceIntelligenceRunReport> {
   const workspacePath = path.resolve(input.workspacePath);
+  return withWorkspaceArtifactLock(
+    workspacePath,
+    REPORT_PATH,
+    () => runWorkspaceIntelligenceChainLocked({ ...input, workspacePath }),
+    {
+      // A full enterprise scan can legitimately take several minutes. A
+      // competing writer must wait for the governed run instead of publishing
+      // a newer model with no matching run receipt.
+      timeoutMs: 15 * 60_000,
+      staleAfterMs: 30_000,
+    }
+  );
+}
+
+async function runWorkspaceIntelligenceChainLocked(input: {
+  workspacePath: string;
+  strict?: boolean;
+  agent?: string;
+}): Promise<WorkspaceIntelligenceRunReport> {
+  const workspacePath = input.workspacePath;
   const preflight: WorkspaceIntelligenceRunPreflight[] = [];
   const stages: WorkspaceIntelligenceRunStage[] = [];
   let hardFailure = false;
@@ -388,7 +411,15 @@ export async function runWorkspaceIntelligenceChain(input: {
       strict: input.strict === true,
       preset: 'enterprise',
     });
-    return { message: `${result.writtenFiles.length} grounding files written` };
+    const strictViolations = result.strictViolations ?? [];
+    const blocked = input.strict === true && strictViolations.length > 0;
+    return {
+      blocked,
+      exitCode: blocked ? 2 : 0,
+      message: blocked
+        ? `${result.writtenFiles.length} grounding files written; ${strictViolations.length} strict grounding violation(s): ${strictViolations.join('; ')}`
+        : `${result.writtenFiles.length} grounding files written`,
+    };
   });
 
   await stage('explain', async () => {

@@ -2596,6 +2596,10 @@
           "description": "Bound graph query results (1–100)."
         },
         {
+          "flag": "--refresh-graph",
+          "description": "Bypass the compatible persisted graph and rebuild from live sources."
+        },
+        {
           "flag": "--include-paths",
           "description": "Include absolute filesystem paths."
         },

@@ -258,6 +258,11 @@ return bounded Knowledge Graph projections with proof references; `benchmark`
 measures corpus-versus-retrieval payload; `overlay --from` compares a proposed
 or earlier graph with the current graph; `emit` returns the complete
 interchange graph; and `dot|mermaid` render deterministic dependency views.
+Read-oriented modes accept a persisted graph only after model binding, proof
+freshness, canonical project scopes, and the live `hybrid-git-content-v2`
+fingerprint pass. `--refresh-graph` bypasses that snapshot. Search and benchmark
+accept `--scope project:<name>` and the agent projection reports explicit
+omission budgets instead of silently expanding its payload.
 Canonical sources are `src/workspace-graph.ts`,
 `src/workspace-knowledge-graph-query.ts`,
 `src/workspace-knowledge-graph-change-overlay.ts`, and
@@ -409,7 +414,7 @@ canonical file. Legacy files remain readable during the compatibility window.
 2. **Workspace Intelligence chain:** run `workspace intelligence run --for-agent generic --strict --json` to preserve Model → Diff → Impact → Doctor + Contract Verify + Analyze → Readiness → Verify → Context → Agent Sync → Explain. `pipeline` is the broader governance/release orchestrator and `autopilot` is a separate release surface; neither redefines the canonical chain. Use `pipeline-last-run.json` only for the pipeline orchestration summary.
 3. **Do not** use `workspace.json.projects` (removed in schema 1.0).
 4. Prefer `schemaVersion` constants in each artifact; legacy `v1` on readiness is accepted when reading old reports.
-5. **Agent retrieval:** start with `AGENTS.md` and `.workspai/reports/INDEX.json`, then use `workspace graph search <query> --limit <n> --json` or MCP `searchWorkspaceGraph` for question-sized facts. Follow returned proof paths to source evidence. Read the full context, model, or graph only when the bounded result is insufficient.
+5. **Agent retrieval:** start with `AGENTS.md` and `.workspai/reports/INDEX.json`, then use `workspace graph search <query> --limit <n> --json` or MCP `searchWorkspaceGraph` for question-sized facts. Use `--scope project:<name>` when the task has one registered project boundary, inspect `budget.omitted` before assuming the result is complete, and follow returned proof paths to source evidence. Read the full context, model, or graph only when the bounded result is insufficient.
 6. **Agent customization state:** use `.workspai/reports/agent-customization-pack.json` to inspect generated surfaces and drift; regenerate with `workspace agent-sync --write --refresh-context --preset enterprise`.
 
 ## Agent customization files (repo hooks)

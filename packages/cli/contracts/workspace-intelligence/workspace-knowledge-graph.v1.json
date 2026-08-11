@@ -37,6 +37,34 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$",
           "description": "SHA-256 of the stable structural Workspace Model projection. Volatile timestamps, run correlation, live evidence and freshness fields are intentionally excluded."
+        },
+        "inputs": {
+          "type": "object",
+          "required": ["schemaVersion", "strategy", "hashAlgorithm", "hash", "scopes"],
+          "properties": {
+            "schemaVersion": { "const": "workspace-knowledge-graph-inputs.v1" },
+            "strategy": { "const": "hybrid-git-content-v2" },
+            "hashAlgorithm": { "const": "sha256" },
+            "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["kind", "id", "strategy", "hash", "fileCount", "fileLimit", "truncated"],
+                "properties": {
+                  "kind": { "enum": ["workspace", "project"] },
+                  "id": { "type": "string", "minLength": 1 },
+                  "strategy": { "enum": ["git-worktree-v2", "content-merkle-v1"] },
+                  "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                  "fileCount": { "type": "integer", "minimum": 0 },
+                  "fileLimit": { "type": "integer", "minimum": 1 },
+                  "truncated": { "type": "boolean" }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -66,7 +94,11 @@
               "api",
               "endpoint",
               "schema",
+              "protocol",
+              "language",
               "package",
+              "runtime-unit",
+              "lifecycle-stage",
               "module",
               "file",
               "symbol",
@@ -128,6 +160,9 @@
               "depends-on",
               "exposes",
               "implements",
+              "implements-protocol",
+              "uses-language",
+              "equivalent-to",
               "calls",
               "reads-from",
               "writes-to",
@@ -141,6 +176,7 @@
               "tests",
               "owns",
               "generated-by",
+              "generated-from",
               "configured-by",
               "references"
             ]

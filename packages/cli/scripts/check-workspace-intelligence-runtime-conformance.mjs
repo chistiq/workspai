@@ -87,6 +87,7 @@ const artifactRegistry = new Map(
   contract.runtimeRegistry.artifacts.map((artifact) => [artifact.path, artifact])
 );
 const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-runtime-contract-'));
+const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-runtime-home-'));
 
 function writeJson(relativePath, payload) {
   const target = path.join(workspacePath, relativePath);
@@ -133,6 +134,10 @@ function runCli(command, label, exitPolicy = 'stop-on-error') {
       RAPIDKIT_SKIP_LOCK_SYNC: '1',
       WORKSPAI_NO_UPDATE_CHECK: '1',
       WORKSPAI_DEBUG_ARGS: '1',
+      HOME: isolatedHome,
+      USERPROFILE: isolatedHome,
+      XDG_CONFIG_HOME: path.join(isolatedHome, '.config'),
+      APPDATA: path.join(isolatedHome, 'AppData', 'Roaming'),
     },
   });
   if (result.error) fail(`${label} could not execute: ${result.error.message}`);
@@ -212,4 +217,5 @@ try {
   );
 } finally {
   fs.rmSync(workspacePath, { recursive: true, force: true });
+  fs.rmSync(isolatedHome, { recursive: true, force: true });
 }

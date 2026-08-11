@@ -43,6 +43,8 @@ import {
   workspaceMetadataPath,
 } from './utils/workspace-paths.js';
 import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
+import { buildPolyglotLifecyclePlan, type PolyglotRuntimeUnit } from './polyglot-lifecycle-plan.js';
 
 export type WorkspaceRunStage = 'init' | 'test' | 'build' | 'start';
 export type WorkspaceRunStageName = WorkspaceRunStage | (string & {});
@@ -61,6 +63,10 @@ export interface WorkspaceRunOptions {
   json?: boolean;
   enforceGates?: boolean;
   reusePassed?: boolean;
+  /** Resolve and report native runtime units without executing commands. */
+  planOnly?: boolean;
+  /** Limit a polyglot project to one runtime family. */
+  runtime?: string;
 }
 
 type GateStatus = 'pass' | 'warn' | 'fail' | 'skipped';
@@ -84,6 +90,19 @@ interface ProjectExecutionResult {
   framework?: string;
   runtimeDetected?: RuntimeFamily;
   executionCommand?: string;
+  runtimeExecutions?: Array<{
+    unitId: string;
+    runtime: string;
+    role: 'production' | 'tooling' | 'test' | 'example';
+    root: string;
+    manifest: string;
+    stage: string;
+    command: string;
+    status: 'planned' | 'passed' | 'failed' | 'skipped';
+    exitCode: number | null;
+    durationMs: number;
+    reason?: string;
+  }>;
   // Enterprise features
   errorCategory?: ErrorCategory;
   errorMessage?: string;
@@ -121,6 +140,8 @@ export interface WorkspaceRunReport {
     enforceGates: boolean;
     scope: string | null;
     reusePassed: boolean;
+    planOnly: boolean;
+    runtime: string | null;
   };
   selection: {
     mode: SelectionMode;
@@ -247,6 +268,22 @@ function normalizeScope(value: string | undefined): string | null {
 }
 
 async function discoverWorkspaceProjects(workspacePath: string): Promise<string[]> {
+  const modelPath = path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model);
+  if (await pathExists(modelPath)) {
+    try {
+      const model = await readJsonFile<{ projects?: Array<{ path?: unknown }> }>(modelPath);
+      const modeledProjects = (model.projects ?? [])
+        .map((project) =>
+          typeof project.path === 'string' ? path.resolve(workspacePath, project.path) : null
+        )
+        .filter((projectPath): projectPath is string => Boolean(projectPath))
+        .filter((projectPath, index, values) => values.indexOf(projectPath) === index)
+        .filter((projectPath) => fs.existsSync(projectPath));
+      if (modeledProjects.length > 0) return modeledProjects.sort();
+    } catch {
+      // Fall back to bounded local discovery when canonical model evidence is unavailable.
+    }
+  }
   return discoverWorkspaceProjectsShared(workspacePath, {
     skipDirs: SKIP_DIRS,
     includeHiddenDirs: false,
@@ -1361,7 +1398,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   }
 
   const enforceGates =
-    options.stage === 'init'
+    options.stage === 'init' || options.planOnly === true
       ? false
       : await shouldEnforceWorkspaceRunGates(workspacePath, options.enforceGates);
   const gateResults: GateResult[] = enforceGates
@@ -1442,6 +1479,109 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       row.selected = true;
       row.affected = true;
       const started = Date.now();
+
+      const lifecyclePlan = buildPolyglotLifecyclePlan(projectPath);
+      const runtimeFilter = options.runtime?.trim().toLowerCase();
+      const plannedUnits = lifecyclePlan.units
+        .filter((unit) => !runtimeFilter || unit.runtime === runtimeFilter)
+        .map((unit) => ({
+          unit,
+          stage: unit.stages.find((candidate) => candidate.stage === options.stage),
+        }))
+        .filter(
+          (
+            entry
+          ): entry is { unit: PolyglotRuntimeUnit; stage: PolyglotRuntimeUnit['stages'][number] } =>
+            Boolean(entry.stage)
+        );
+      const runtimeExecutions: NonNullable<ProjectExecutionResult['runtimeExecutions']> =
+        plannedUnits.map(({ unit, stage }) => ({
+          unitId: unit.id,
+          runtime: unit.runtime,
+          role: unit.role,
+          root: unit.root,
+          manifest: unit.manifest,
+          stage: stage.stage,
+          command: stage.command,
+          status: 'planned',
+          exitCode: null,
+          durationMs: 0,
+        }));
+      row.runtimeExecutions = runtimeExecutions;
+
+      if (options.planOnly) {
+        row.runtimeDetected = plannedUnits[0]?.unit.runtime;
+        row.status = 'skipped';
+        row.reason =
+          plannedUnits.length > 0
+            ? `plan only: ${plannedUnits.length} runtime unit(s)`
+            : runtimeFilter
+              ? `no ${runtimeFilter} runtime unit supports stage "${options.stage}"`
+              : `no runtime unit supports stage "${options.stage}"`;
+        row.durationMs = Date.now() - started;
+        completedTargets += 1;
+        return;
+      }
+
+      if (lifecyclePlan.polyglot || runtimeFilter) {
+        if (plannedUnits.length === 0) {
+          row.status = 'failed';
+          row.reason = runtimeFilter
+            ? `No ${runtimeFilter} runtime unit supports stage "${options.stage}"`
+            : `No runtime unit supports stage "${options.stage}"`;
+          row.errorCategory = 'setup';
+          row.errorMessage = row.reason;
+          row.exitCode = 127;
+          row.durationMs = Date.now() - started;
+          completedTargets += 1;
+          return;
+        }
+
+        let firstFailure: string | undefined;
+        for (let unitIndex = 0; unitIndex < plannedUnits.length; unitIndex += 1) {
+          const { unit, stage } = plannedUnits[unitIndex];
+          const execution = runtimeExecutions[unitIndex];
+          const unitPath = path.resolve(projectPath, unit.root);
+          const unitStarted = Date.now();
+          const detected = await detectProjectFramework(unitPath);
+          const result = await executeStageCommand(
+            unitPath,
+            options.stage,
+            unit.runtime,
+            detected.framework,
+            { [options.stage]: stage.command },
+            detected.environmentCommandVariants,
+            detected.environment
+          );
+          execution.durationMs = Date.now() - unitStarted;
+          execution.exitCode = result.exitCode;
+          execution.status = result.exitCode === 0 ? 'passed' : 'failed';
+          execution.reason = result.message;
+          if (result.exitCode !== 0 && !firstFailure)
+            firstFailure = result.message ?? stage.command;
+          if (result.exitCode !== 0 && !continueOnError) {
+            for (const pending of runtimeExecutions.slice(unitIndex + 1)) {
+              pending.status = 'skipped';
+              pending.reason = 'stopped after runtime-unit failure';
+            }
+            break;
+          }
+        }
+        const failedUnit = runtimeExecutions.find((execution) => execution.status === 'failed');
+        row.runtimeDetected = plannedUnits[0]?.unit.runtime;
+        row.executionCommand = runtimeExecutions
+          .filter((execution) => execution.status !== 'skipped')
+          .map((execution) => `[${execution.runtime}:${execution.root}] ${execution.command}`)
+          .join(' && ');
+        row.durationMs = Date.now() - started;
+        row.exitCode = failedUnit?.exitCode ?? 0;
+        row.status = failedUnit ? 'failed' : 'passed';
+        row.reason = failedUnit ? (firstFailure ?? 'runtime-unit stage failed') : undefined;
+        row.errorCategory = failedUnit ? 'runtime' : undefined;
+        row.errorMessage = row.reason;
+        completedTargets += 1;
+        return;
+      }
 
       // Detect framework and runtime for this project (with overrides)
       const { runtime, framework, commandOverrides, environmentCommandVariants, environment } =
@@ -1651,6 +1791,8 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       enforceGates,
       scope: normalizedScope,
       reusePassed: options.reusePassed === true,
+      planOnly: options.planOnly === true,
+      runtime: options.runtime?.trim() || null,
     },
     selection: {
       mode: selectionMode,

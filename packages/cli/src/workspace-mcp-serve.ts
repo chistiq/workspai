@@ -124,6 +124,7 @@ const READ_TOOLS: McpTool[] = [
       properties: {
         query: { type: 'string', description: 'Text, path, symbol, service, or concept to find' },
         kind: { type: 'string', description: 'Optional entity kind filter' },
+        projectId: { type: 'string', description: 'Optional canonical project id filter' },
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 12 },
       },
       required: ['query'],
@@ -339,7 +340,11 @@ async function invokeTool(
       return searchKnowledgeGraph(graph, {
         query: String(args.query ?? ''),
         ...(typeof args.kind === 'string' && args.kind.trim() ? { kind: args.kind.trim() } : {}),
+        ...(typeof args.projectId === 'string' && args.projectId.trim()
+          ? { projectId: args.projectId.trim() }
+          : {}),
         limit: Number.isFinite(rawLimit) ? rawLimit : 12,
+        projection: 'agent',
       });
     }
     case 'getWorkspaceGraphEvidence': {

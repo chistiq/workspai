@@ -63,6 +63,7 @@ export interface ProjectContextAgent {
     relativePath: string;
     kind?: string;
     runtime?: string;
+    runtimeCandidates?: string[];
     framework?: string;
     kit?: string;
     supportTier?: string;
@@ -82,6 +83,19 @@ export interface ProjectContextAgent {
     proofCount: number;
     entitiesByKind: Record<string, number>;
     relationsByKind: Record<string, number>;
+    languages: Record<
+      string,
+      { fileCount: number; symbolCount: number; generatedFileCount: number }
+    >;
+    semantic: {
+      protocolConceptCount: number;
+      protocolImplementationBindings: number;
+      equivalenceBindings: number;
+      generationBindings: number;
+      runtimeUnitCount: number;
+      lifecycleStageCount: number;
+      runtimeCoverage: string[];
+    };
     relatedProjects: string[];
     freshness: {
       model: 'fresh' | 'stale' | 'unknown' | 'missing';
@@ -95,6 +109,10 @@ export interface ProjectContextAgent {
     };
     surfaces: {
       services: ProjectLensEntity[];
+      packages: ProjectLensEntity[];
+      protocols: ProjectLensEntity[];
+      runtimeUnits: ProjectLensEntity[];
+      lifecycleStages: ProjectLensEntity[];
       apis: ProjectLensEntity[];
       endpoints: ProjectLensEntity[];
       dataStores: ProjectLensEntity[];
@@ -119,6 +137,27 @@ export interface ProjectContextAgent {
     proofs: ProjectLensProof[];
   };
   blockers: ProjectLensBlocker[];
+  agentRouting: {
+    enforcement: 'required';
+    mandatoryPreflight: {
+      command: string;
+      successCondition: 'resolved';
+    };
+    workspaceEvidenceRequiredFor: Array<
+      | 'repository-analysis'
+      | 'architecture-analysis'
+      | 'change-impact'
+      | 'cross-project-change'
+      | 'contract-change'
+      | 'infrastructure-change'
+      | 'release-readiness'
+    >;
+    requiredReadOrder: string[];
+    degradedMode: {
+      allowCompleteArchitectureClaims: false;
+      requireDisclosure: true;
+    };
+  };
   commands: {
     refresh: string;
     verify: string;
@@ -311,6 +350,65 @@ function increment(target: Record<string, number>, key: string): void {
   target[key] = (target[key] ?? 0) + 1;
 }
 
+const PROJECT_LENS_ENTITY_KIND_ORDER: WorkspaceKnowledgeEntity['kind'][] = [
+  'project',
+  'language',
+  'service',
+  'api',
+  'endpoint',
+  'schema',
+  'protocol',
+  'runtime-unit',
+  'lifecycle-stage',
+  'database',
+  'queue',
+  'container',
+  'deployment',
+  'pipeline',
+  'environment',
+  'test-suite',
+  'owner',
+  'decision',
+  'document',
+  'package',
+  'file',
+  'module',
+  'symbol',
+];
+
+function boundedProjectLensEntities(
+  entities: WorkspaceKnowledgeEntity[],
+  limit = 160
+): WorkspaceKnowledgeEntity[] {
+  const perKindLimits: Partial<Record<WorkspaceKnowledgeEntity['kind'], number>> = {
+    language: 32,
+    api: 32,
+    service: 32,
+    endpoint: 32,
+    schema: 32,
+    protocol: 32,
+    'runtime-unit': 32,
+    'lifecycle-stage': 32,
+    file: 8,
+    module: 8,
+    symbol: 8,
+  };
+  const selected: WorkspaceKnowledgeEntity[] = [];
+  for (const kind of PROJECT_LENS_ENTITY_KIND_ORDER) {
+    const candidates = entities
+      .filter((entity) => entity.kind === kind)
+      .sort(
+        (left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id)
+      )
+      .slice(0, perKindLimits[kind] ?? 32);
+    for (const entity of candidates) {
+      if (selected.length >= limit) return selected;
+      selected.push(entity);
+    }
+  }
+  return selected;
+}
+
 function relatedGraphProjection(
   graph: WorkspaceKnowledgeGraph | null,
   projectName: string
@@ -320,6 +418,8 @@ function relatedGraphProjection(
   proofCount: number;
   entitiesByKind: Record<string, number>;
   relationsByKind: Record<string, number>;
+  languages: ProjectContextAgent['intelligence']['languages'];
+  semantic: ProjectContextAgent['intelligence']['semantic'];
   relatedProjects: string[];
   proofArtifacts: string[];
   entities: WorkspaceKnowledgeEntity[];
@@ -335,6 +435,16 @@ function relatedGraphProjection(
       proofCount: 0,
       entitiesByKind: {},
       relationsByKind: {},
+      languages: {},
+      semantic: {
+        protocolConceptCount: 0,
+        protocolImplementationBindings: 0,
+        equivalenceBindings: 0,
+        generationBindings: 0,
+        runtimeUnitCount: 0,
+        lifecycleStageCount: 0,
+        runtimeCoverage: [],
+      },
       relatedProjects: [],
       proofArtifacts: [],
       entities: [],
@@ -378,8 +488,41 @@ function relatedGraphProjection(
   const proofIds = new Set<string>();
   const entitiesByKind: Record<string, number> = {};
   const relationsByKind: Record<string, number> = {};
+  const languages: ProjectContextAgent['intelligence']['languages'] = {};
+  const inventoriedLanguages = new Set(
+    entities
+      .filter((entity) => entity.kind === 'language')
+      .map((entity) => entity.attributes.language)
+      .filter((language): language is string => typeof language === 'string')
+  );
   for (const entity of entities) {
     increment(entitiesByKind, entity.kind);
+    const language =
+      typeof entity.attributes.language === 'string' ? entity.attributes.language : undefined;
+    if (language && entity.kind === 'language') {
+      languages[language] = {
+        fileCount:
+          typeof entity.attributes.fileCount === 'number' ? entity.attributes.fileCount : 0,
+        symbolCount: languages[language]?.symbolCount ?? 0,
+        generatedFileCount:
+          typeof entity.attributes.generatedFileCount === 'number'
+            ? entity.attributes.generatedFileCount
+            : 0,
+      };
+    } else if (language && (entity.kind === 'file' || entity.kind === 'symbol')) {
+      const summary = languages[language] ?? {
+        fileCount: 0,
+        symbolCount: 0,
+        generatedFileCount: 0,
+      };
+      if (entity.kind === 'file' && !inventoriedLanguages.has(language)) {
+        summary.fileCount += 1;
+        if (entity.attributes.generated === true) summary.generatedFileCount += 1;
+      } else if (entity.kind === 'symbol') {
+        summary.symbolCount += 1;
+      }
+      languages[language] = summary;
+    }
     for (const proofId of entity.proofIds) proofIds.add(proofId);
   }
   for (const relation of relations) {
@@ -433,17 +576,57 @@ function relatedGraphProjection(
     .sort((left, right) =>
       `${left.project}:${left.kind}`.localeCompare(`${right.project}:${right.kind}`)
     );
+  const projectedEntities = boundedProjectLensEntities(entities);
+  const runtimeUnits = entities.filter((entity) => entity.kind === 'runtime-unit');
+  const projectedEntityIds = new Set(projectedEntities.map((entity) => entity.id));
+  const projectedRelations = [...relations]
+    .sort((left, right) => {
+      const leftPriority = Number(
+        projectedEntityIds.has(left.from) || projectedEntityIds.has(left.to)
+      );
+      const rightPriority = Number(
+        projectedEntityIds.has(right.from) || projectedEntityIds.has(right.to)
+      );
+      return rightPriority - leftPriority || left.id.localeCompare(right.id);
+    })
+    .slice(0, 128);
+  const projectedProofIds = new Set([
+    ...projectedEntities.flatMap((entity) => entity.proofIds),
+    ...projectedRelations.flatMap((relation) => relation.proofIds),
+  ]);
   return {
     entityCount: entities.length,
     relationCount: relations.length,
     proofCount: proofs.length,
     entitiesByKind,
     relationsByKind,
+    languages: Object.fromEntries(
+      Object.entries(languages).sort(([left], [right]) => left.localeCompare(right))
+    ),
+    semantic: {
+      protocolConceptCount: entitiesByKind.protocol ?? 0,
+      protocolImplementationBindings: relationsByKind['implements-protocol'] ?? 0,
+      equivalenceBindings: relationsByKind['equivalent-to'] ?? 0,
+      generationBindings:
+        (relationsByKind['generated-from'] ?? 0) + (relationsByKind['generated-by'] ?? 0),
+      runtimeUnitCount: runtimeUnits.length,
+      lifecycleStageCount: entitiesByKind['lifecycle-stage'] ?? 0,
+      runtimeCoverage: [
+        ...new Set(
+          runtimeUnits
+            .map((entity) => entity.attributes.runtime)
+            .filter((runtime): runtime is string => typeof runtime === 'string')
+        ),
+      ].sort(),
+    },
     relatedProjects,
     proofArtifacts: [...new Set(proofs.map((proof) => proof.artifact))].sort(),
-    entities: [...entities].sort((left, right) => left.id.localeCompare(right.id)).slice(0, 96),
-    relations: [...relations].sort((left, right) => left.id.localeCompare(right.id)).slice(0, 128),
-    proofs: [...proofs].sort((left, right) => left.id.localeCompare(right.id)).slice(0, 128),
+    entities: projectedEntities,
+    relations: projectedRelations,
+    proofs: proofs
+      .filter((proof) => projectedProofIds.has(proof.id))
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .slice(0, 128),
     topology: {
       status:
         dependencies.length > 0 || dependents.length > 0
@@ -516,6 +699,10 @@ function projectLensSurfaces(
   }
   return {
     services: byKinds('service'),
+    packages: byKinds('package'),
+    protocols: byKinds('protocol'),
+    runtimeUnits: byKinds('runtime-unit'),
+    lifecycleStages: byKinds('lifecycle-stage'),
     apis: byKinds('api'),
     endpoints: byKinds('endpoint'),
     dataStores: byKinds('database', 'queue'),
@@ -763,6 +950,9 @@ export async function buildProjectContextAgent(
       ...(modelProject?.runtime || contractProject?.runtime
         ? { runtime: modelProject?.runtime ?? contractProject?.runtime }
         : {}),
+      ...(modelProject?.runtimeCandidates?.length
+        ? { runtimeCandidates: [...modelProject.runtimeCandidates].sort() }
+        : {}),
       ...(modelProject?.framework || contractProject?.framework
         ? { framework: modelProject?.framework ?? contractProject?.framework }
         : {}),
@@ -792,6 +982,8 @@ export async function buildProjectContextAgent(
       proofCount: graphProjection.proofCount,
       entitiesByKind: graphProjection.entitiesByKind,
       relationsByKind: graphProjection.relationsByKind,
+      languages: graphProjection.languages,
+      semantic: graphProjection.semantic,
       relatedProjects: graphProjection.relatedProjects,
       freshness: {
         model: modelFreshness,
@@ -856,10 +1048,37 @@ export async function buildProjectContextAgent(
         .filter((proof): proof is ProjectLensProof => proof !== null),
     },
     blockers,
+    agentRouting: {
+      enforcement: 'required',
+      mandatoryPreflight: {
+        command: 'npx workspai project workspace status --json',
+        successCondition: 'resolved',
+      },
+      workspaceEvidenceRequiredFor: [
+        'repository-analysis',
+        'architecture-analysis',
+        'change-impact',
+        'cross-project-change',
+        'contract-change',
+        'infrastructure-change',
+        'release-readiness',
+      ],
+      requiredReadOrder: [
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
+        'command:npx workspai project workspace status --json',
+        'workspace:.workspai/reports/INDEX.json',
+        'workspace:.workspai/reports/workspace-context-agent.json',
+        `command:npx workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
+      ],
+      degradedMode: {
+        allowCompleteArchitectureClaims: false,
+        requireDisclosure: true,
+      },
+    },
     commands: {
       refresh: 'npx workspai workspace intelligence run --for-agent generic --strict --json',
       verify: 'npx workspai workspace verify --strict --json',
-      graphSearch: `npx workspai workspace graph search ${JSON.stringify(projectName)} --limit 12 --json`,
+      graphSearch: `npx workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
       doctor: 'npx workspai doctor project --json',
       workspaceStatus: 'npx workspai project workspace status --json',
     },
@@ -917,10 +1136,16 @@ Commands launched from this project resolve that workspace automatically; you do
 
 ## Start here
 
-1. Read \`.workspai/reports/project-context-agent.json\` for the bounded project lens.
-2. Read the workspace report index only when the task crosses the project boundary.
-3. Use graph search/evidence commands instead of loading the full graph into a prompt.
-4. Do not claim healthy, ready, or verified without current Workspai evidence.
+This is a mandatory agent preflight, not optional background material:
+
+1. Read \`.workspai/reports/project-context-agent.json\` before broad source discovery.
+2. Run \`${context.commands.workspaceStatus}\` and require a resolved workspace.
+3. For repository analysis, architecture analysis, change impact, contracts, infrastructure, or release readiness, read the canonical workspace \`.workspai/reports/INDEX.json\` and \`workspace-context-agent.json\` even when the request names only this repository.
+4. Run the bounded agent graph search below before broad source scanning, then use targeted graph evidence/path queries as needed.
+5. Use source inspection to verify and deepen the workspace evidence, not to silently replace it.
+6. Do not claim complete architecture, independence, health, readiness, or verification without current Workspai evidence.
+
+If workspace resolution, required reports, or graph retrieval is unavailable, explicitly report degraded mode and the missing evidence. In degraded mode an agent may inspect source, but must not claim a complete architectural understanding.
 
 The Workspace Model owns canonical project identity and its compact \`projectTopology\`.
 The Workspace Knowledge Graph is a separate, proof-backed enrichment containing
@@ -973,7 +1198,7 @@ function buildProjectAgentsSection(context: ProjectContextAgent): string {
 - Project grounding: \`.workspai/PROJECT-GROUNDING.md\`
 - Workspace discovery: run \`npx workspai project workspace status --json\`
 
-For project-local tasks, start with the project lens. When a change can affect another project, a contract, an API, infrastructure, or release readiness, follow the workspace evidence references and query the Workspai graph. The agent should run the bounded graph search/evidence commands itself when required; the user does not need to preload the full graph. \`projectTopology\` is the compact project dependency view in the canonical Workspace Model, while the Workspace Knowledge Graph is the proof-backed detail layer. Workspai commands launched here resolve the canonical workspace automatically. Never copy the machine-local workspace link into answers, commits, or generated portable artifacts.`;
+Before broad source discovery, every agent must read the project lens and run \`${context.commands.workspaceStatus}\`; continue as fully grounded only when workspace resolution succeeds. Repository analysis, architecture analysis, change impact, contracts, APIs, infrastructure, and release readiness always require canonical workspace evidence and the bounded agent graph search, even when the request names only this repository. Source inspection verifies and deepens that evidence; it does not replace it silently. If required evidence is unavailable or stale, disclose degraded mode and do not claim complete architecture, independence, health, readiness, or verification. The user does not need to preload the graph. \`projectTopology\` is the compact project dependency view in the canonical Workspace Model, while the Workspace Knowledge Graph is the proof-backed detail layer. Workspai commands launched here resolve the canonical workspace automatically. Never copy the machine-local workspace link into answers, commits, or generated portable artifacts.`;
 }
 
 function escapeRegExp(value: string): string {

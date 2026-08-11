@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   buildWorkspaceAgentReportsIndex: vi.fn(),
   buildWorkspaceExplain: vi.fn(),
   writeWorkspaceExplainReport: vi.fn(),
+  withWorkspaceArtifactLock: vi.fn(),
   writeWorkspaceArtifactJson: vi.fn(),
   emitWorkspacePhase: vi.fn(),
 }));
@@ -84,6 +85,7 @@ vi.mock('../workspace-history.js', () => ({
   recordWorkspaceHistory: mocks.recordWorkspaceHistory,
 }));
 vi.mock('../utils/artifact-path-compat.js', () => ({
+  withWorkspaceArtifactLock: mocks.withWorkspaceArtifactLock,
   writeWorkspaceArtifactJson: mocks.writeWorkspaceArtifactJson,
 }));
 vi.mock('../observability/cli-progress.js', () => ({
@@ -100,6 +102,9 @@ import {
 } from '../contracts/workspace-intelligence-runtime-registry.js';
 
 function configurePassingChain(): void {
+  mocks.withWorkspaceArtifactLock.mockImplementation(
+    async (_workspacePath, _relativePath, operation) => operation()
+  );
   mocks.pathExists.mockResolvedValue(false);
   mocks.readJson.mockResolvedValue({ schemaVersion: 'workspace-model-snapshot.v1' });
   mocks.syncWorkspaceProjects.mockResolvedValue({ added: ['api'], skipped: 1 });
@@ -127,7 +132,10 @@ function configurePassingChain(): void {
   mocks.evaluateWorkspaceVerifyGate.mockReturnValue({ passed: true, exitCode: 0 });
   mocks.historyEntryFromVerify.mockReturnValue({ id: 'history-entry' });
   mocks.buildWorkspaceAgentContext.mockResolvedValue({ agent: 'codex' });
-  mocks.syncWorkspaceAgentGrounding.mockResolvedValue({ writtenFiles: ['AGENTS.md'] });
+  mocks.syncWorkspaceAgentGrounding.mockResolvedValue({
+    writtenFiles: ['AGENTS.md'],
+    strictViolations: [],
+  });
   mocks.buildWorkspaceAgentReportsIndex.mockResolvedValue({
     schemaVersion: 'rapidkit-agent-reports-index.v1',
   });
@@ -159,6 +167,12 @@ describe('unified Workspace Intelligence runner', () => {
     expect(report.stages.map((stage) => stage.id)).toEqual(WORKSPACE_INTELLIGENCE_STEP_IDS);
     expect(report.preflight.every((step) => step.status === 'passed')).toBe(true);
     expect(report.stages.every((stage) => stage.status === 'passed')).toBe(true);
+    expect(mocks.withWorkspaceArtifactLock).toHaveBeenCalledWith(
+      workspacePath,
+      WORKSPACE_INTELLIGENCE_RUN_REPORT_PATH,
+      expect.any(Function),
+      expect.objectContaining({ timeoutMs: 15 * 60_000 })
+    );
     expect(
       mocks.emitWorkspacePhase.mock.calls
         .map(([event]) => event.metadata)
@@ -291,6 +305,26 @@ describe('unified Workspace Intelligence runner', () => {
       path.resolve('/tmp/workspai-intelligence-runner-legacy-baseline')
     );
     expect(mocks.diffWorkspaceModel).toHaveBeenCalled();
+  });
+
+  it('fails the strict gate when agent grounding reports strict violations', async () => {
+    mocks.syncWorkspaceAgentGrounding.mockResolvedValue({
+      writtenFiles: ['AGENTS.md'],
+      strictViolations: ['Project api is missing required project grounding'],
+    });
+
+    const report = await runWorkspaceIntelligenceChain({
+      workspacePath: '/tmp/workspai-intelligence-runner-grounding-blocked',
+      strict: true,
+    });
+
+    expect(report).toMatchObject({ status: 'blocked', exitCode: 2 });
+    expect(report.stages.find((stage) => stage.id === 'agent-sync')).toMatchObject({
+      status: 'blocked',
+      exitCode: 2,
+      message: expect.stringContaining('missing required project grounding'),
+    });
+    expect(report.stages.find((stage) => stage.id === 'explain')?.status).toBe('passed');
   });
 
   it('fails closed on preflight failure and deterministically skips all downstream stages', async () => {

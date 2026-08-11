@@ -15,7 +15,11 @@ export const WORKSPACE_KNOWLEDGE_ENTITY_KINDS = [
   'api',
   'endpoint',
   'schema',
+  'protocol',
+  'language',
   'package',
+  'runtime-unit',
+  'lifecycle-stage',
   'module',
   'file',
   'symbol',
@@ -38,6 +42,9 @@ export const WORKSPACE_KNOWLEDGE_RELATION_KINDS = [
   'depends-on',
   'exposes',
   'implements',
+  'implements-protocol',
+  'uses-language',
+  'equivalent-to',
   'calls',
   'reads-from',
   'writes-to',
@@ -51,6 +58,7 @@ export const WORKSPACE_KNOWLEDGE_RELATION_KINDS = [
   'tests',
   'owns',
   'generated-by',
+  'generated-from',
   'configured-by',
   'references',
 ] as const;
@@ -149,6 +157,24 @@ export type WorkspaceKnowledgeBindingCoverage = {
   coverageRatio: number | null;
 };
 
+export type WorkspaceKnowledgeGraphInputScope = {
+  kind: 'workspace' | 'project';
+  id: string;
+  strategy: 'git-worktree-v2' | 'content-merkle-v1';
+  hash: string;
+  fileCount: number;
+  fileLimit: number;
+  truncated: boolean;
+};
+
+export type WorkspaceKnowledgeGraphInputFingerprint = {
+  schemaVersion: 'workspace-knowledge-graph-inputs.v1';
+  strategy: 'hybrid-git-content-v2';
+  hashAlgorithm: 'sha256';
+  hash: string;
+  scopes: WorkspaceKnowledgeGraphInputScope[];
+};
+
 export type WorkspaceKnowledgeGraph = {
   schemaVersion: typeof WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION;
   generatedAt: string;
@@ -160,6 +186,12 @@ export type WorkspaceKnowledgeGraph = {
     hashAlgorithm: 'sha256';
     /** SHA-256 of the model's stable structural projection, not its raw file bytes. */
     hash: string;
+    /**
+     * Content fingerprint of the exact bounded filesystem inventories consumed
+     * by graph providers. Older v1 artifacts can omit it, but are never eligible
+     * for the persisted retrieval fast path.
+     */
+    inputs?: WorkspaceKnowledgeGraphInputFingerprint;
   };
   workspace: { name: string; profile?: string };
   /** Canonical project-level projection used by impact, verify and blast radius. */

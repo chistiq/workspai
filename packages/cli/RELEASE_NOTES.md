@@ -5,13 +5,13 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.56.0 (August 9, 2026)
+## Planned Release: v0.56.0 (publication pending)
 
-### Universal Doctor Intelligence and Exact Evidence Repair
+### Universal Doctor Intelligence and Proof-Backed Polyglot Graphs
 
-This release gives Doctor one causal, fail-closed diagnosis vocabulary across
-polyglot projects and routes missing verification evidence back to the exact
-command that owns it.
+This release candidate gives Doctor one causal, fail-closed diagnosis vocabulary
+and makes persisted Graph retrieval live-source-aware across linked, native, and
+polyglot projects. It is documented on `main` but is not yet published to npm.
 
 **What's New:**
 
@@ -32,21 +32,45 @@ command that owns it.
   - Missing init, test, build, or start evidence points to its exact producer
     command rather than a generic Analyze action.
 
+- **Safe, fast Graph retrieval**
+  - Read queries reuse the persisted graph only when its model binding, proofs,
+    project scopes, and Git/Merkle live-input fingerprint still match.
+  - `--refresh-graph` forces a live rebuild, while `--scope project:<name>` keeps
+    retrieval and benchmarks project-focused without hiding connected shared
+    APIs, schemas, owners, pipelines, or protocol entities.
+
+- **Native and cross-language architecture evidence**
+  - C/C++, CMake, Meson, Bazel, Protocol Buffers, language bridges, runtime
+    units, and lifecycle stages now produce proof-backed graph facts.
+  - Re-adoption refreshes stale runtime/framework metadata, and linked external
+    projects resolve through their portable `external/<project>/...` identity.
+
+- **Bounded consumer payloads**
+  - Agent search publishes deterministic omission budgets instead of returning
+    an accidentally unbounded one-hop neighborhood.
+  - Graph benchmarks can read linked-project proof artifacts and report
+    unreadable inputs explicitly.
+
 - **Stable extension compatibility**
   - Backward-compatible CLI releases no longer raise the extension's minimum
     supported CLI version automatically.
 
 **Breaking changes:** None. New evidence fields and contracts are additive.
 
-**Verification:**
+**Release-candidate verification:**
 
-- 2,388 tests passed across 222 files with 8 explicit skips.
-- Coverage reached 81.65% statements and 82.67% lines.
+- The restricted-environment suite produced 2,413 passes and 8 explicit skips;
+  seven loopback-listener cases were environment-blocked, and their three
+  owning suites passed 60/60 with loopback access.
+- 234 focused graph, adoption, lifecycle, consumer, and contract tests passed.
 - The 170-case Doctor validation corpus passed across all 17 adapters.
-- Type checking, linting, formatting, contracts, docs, runtime acceptance,
-  bundle limits, and zero-vulnerability npm audit passed.
+- A linked gRPC repository produced 4,692 entities, 5,287 relations, and 7,332
+  proofs with 100% proof coverage and no conflicts or unknowns. A bounded query
+  reduced the estimated payload from 2,644,948 to 4,665 tokens (99.82%; results
+  vary by workspace and query).
+- Type checking, linting, formatting, contracts, parity, and docs passed.
 
-**Upgrade:**
+**After publication:**
 
 ```bash
 npm install -g workspai@0.56.0
@@ -55,7 +79,7 @@ workspai doctor capabilities --validate --json
 workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.56.0/packages/cli/releases/RELEASE_NOTES_v0.56.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.56.0.md)
 
 ---
 

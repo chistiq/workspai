@@ -7,6 +7,7 @@ import {
   type BackendRuntimeFamily,
 } from './utils/backend-framework-contract.js';
 import { discoverWorkspaceProjects } from './utils/workspace-discovery.js';
+import { readImportedProjectsRegistry } from './imported-projects-registry.js';
 import { findWorkspaceRootUp, isWorkspaceShellDirectory } from './utils/workspace-root.js';
 import {
   resolveGovernanceRunId,
@@ -182,8 +183,20 @@ async function discoverProjects(workspacePath: string): Promise<string[]> {
     isProjectDir,
   });
 
-  if (projects.length > 0) {
-    return projects;
+  const importedProjects = await readImportedProjectsRegistry(workspacePath);
+  const adoptedProjectPaths = importedProjects
+    .filter((project) => project.relationship === 'adopted' || project.source === 'adopted-local')
+    .map((project) => path.resolve(project.path))
+    .filter((projectPath) => fs.existsSync(projectPath));
+  const discoveredProjects = [
+    ...new Set([
+      ...projects.map((projectPath) => path.resolve(projectPath)),
+      ...adoptedProjectPaths,
+    ]),
+  ];
+
+  if (discoveredProjects.length > 0) {
+    return discoveredProjects;
   }
 
   if (isWorkspaceShellDirectory(workspacePath)) {
@@ -214,6 +227,30 @@ async function hasAnyAbsolutePath(candidates: string[]): Promise<boolean> {
     }
   }
   return false;
+}
+
+async function hasCiConfiguration(projectPath: string): Promise<boolean> {
+  if (
+    await hasAnyPath(projectPath, [
+      '.gitlab-ci.yml',
+      '.circleci/config.yml',
+      'azure-pipelines.yml',
+      'bitbucket-pipelines.yml',
+      'cloudbuild.yaml',
+    ])
+  ) {
+    return true;
+  }
+  try {
+    const workflows = await fs.promises.readdir(path.join(projectPath, '.github', 'workflows'), {
+      withFileTypes: true,
+    });
+    return workflows.some(
+      (entry) => entry.isFile() && /\.(?:ya?ml)$/i.test(entry.name) && !entry.name.startsWith('.')
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function readFirstJsonObject(candidates: string[]): Promise<Record<string, unknown> | null> {
@@ -325,19 +362,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
     'env.example',
     'config/env.example',
   ]);
-  const hasCiConfig = await hasAnyPath(projectPath, [
-    '.github/workflows/ci.yml',
-    '.github/workflows/ci.yaml',
-    '.github/workflows/main.yml',
-    '.github/workflows/build.yml',
-    '.github/workflows/test.yml',
-    '.github/workflows/deploy.yml',
-    '.gitlab-ci.yml',
-    '.circleci/config.yml',
-    'azure-pipelines.yml',
-    'bitbucket-pipelines.yml',
-    'cloudbuild.yaml',
-  ]);
+  const hasCiConfig = await hasCiConfiguration(projectPath);
   const hasHealthEndpointFlag = await hasHealthEndpoint(projectPath);
 
   const findings: AnalyzeFinding[] = [];
@@ -427,7 +452,10 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
   }
 
   return {
-    name: path.basename(projectPath),
+    name:
+      typeof projectJson?.name === 'string' && projectJson.name.trim()
+        ? projectJson.name.trim()
+        : path.basename(projectPath),
     path: projectPath,
     relativePath,
     runtime,

@@ -25,6 +25,7 @@
         { "$ref": "workspace-knowledge-graph.v1.json#/properties/entities/items/properties/kind" }
       ]
     },
+    "projectId": { "type": "string", "minLength": 1 },
     "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
     "totalMatches": { "type": "integer", "minimum": 0 },
     "truncated": { "type": "boolean" },
@@ -54,6 +55,59 @@
     "proofs": {
       "type": "array",
       "items": { "$ref": "workspace-knowledge-graph.v1.json#/properties/proofs/items" }
+    },
+    "budget": {
+      "description": "Present for the agent projection. Reports every hard payload limit and omission without changing the v1 full projection contract.",
+      "type": "object",
+      "required": ["mode", "limits", "omitted"],
+      "properties": {
+        "mode": { "const": "agent" },
+        "limits": {
+          "type": "object",
+          "required": [
+            "relations",
+            "relatedEntities",
+            "proofs",
+            "proofIdsPerItem",
+            "aliasesPerEntity",
+            "attributeArrayItems",
+            "attributeStringCharacters"
+          ],
+          "properties": {
+            "relations": { "type": "integer", "minimum": 1, "maximum": 24 },
+            "relatedEntities": { "type": "integer", "minimum": 1, "maximum": 24 },
+            "proofs": { "type": "integer", "minimum": 1, "maximum": 16 },
+            "proofIdsPerItem": { "type": "integer", "minimum": 1, "maximum": 4 },
+            "aliasesPerEntity": { "type": "integer", "minimum": 1, "maximum": 8 },
+            "attributeArrayItems": { "type": "integer", "minimum": 1, "maximum": 8 },
+            "attributeStringCharacters": { "type": "integer", "minimum": 1, "maximum": 256 }
+          },
+          "additionalProperties": false
+        },
+        "omitted": {
+          "type": "object",
+          "required": [
+            "entities",
+            "relations",
+            "relatedEntities",
+            "proofs",
+            "proofReferences",
+            "aliases",
+            "attributeValues"
+          ],
+          "properties": {
+            "entities": { "type": "integer", "minimum": 0 },
+            "relations": { "type": "integer", "minimum": 0 },
+            "relatedEntities": { "type": "integer", "minimum": 0 },
+            "proofs": { "type": "integer", "minimum": 0 },
+            "proofReferences": { "type": "integer", "minimum": 0 },
+            "aliases": { "type": "integer", "minimum": 0 },
+            "attributeValues": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

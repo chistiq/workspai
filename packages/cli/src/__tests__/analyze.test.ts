@@ -61,6 +61,57 @@ describe('analyze command', () => {
     expect(report.findings.some((item) => item.id === 'project.health.missing')).toBe(false);
   });
 
+  it('analyzes adopted external projects registered by the workspace', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = await createTempDir();
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' }, null, 2)
+    );
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'imported-projects.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: '2026-08-10T00:00:00.000Z',
+          projects: [
+            {
+              name: 'native-service',
+              path: projectDir,
+              relationship: 'adopted',
+              source: 'adopted-local',
+              stack: 'unknown',
+              runtime: 'cpp',
+              confidence: 'high',
+              importedAt: '2026-08-10T00:00:00.000Z',
+            },
+          ],
+        },
+        null,
+        2
+      )
+    );
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'native-service', runtime: 'cpp', framework: 'cpp' }, null, 2)
+    );
+    await fs.writeFile(path.join(projectDir, 'CMakeLists.txt'), 'project(native_service)\n');
+    await fs.mkdir(path.join(projectDir, '.github', 'workflows'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.github', 'workflows', 'native-presubmit.yaml'),
+      'name: Native presubmit\n'
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.summary.projectCount).toBe(1);
+    expect(report.projects[0]).toMatchObject({ name: 'native-service', runtime: 'cpp' });
+    expect(report.projects[0].hasCiConfig).toBe(true);
+    expect(report.findings.some((item) => item.id === 'workspace.projects.missing')).toBe(false);
+  });
+
   it('throws when the provided workspace path does not exist', async () => {
     const missingPath = path.join(os.tmpdir(), 'rapidkit-analyze-nonexistent');
     await expect(runAnalyze({ workspacePath: missingPath })).rejects.toThrow(
