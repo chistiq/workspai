@@ -733,20 +733,25 @@ async function gitFingerprintScope(input: {
   fileLimit: number;
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint['scopes'][number] | null> {
   try {
-    const reportedGitRoot = path.resolve(
-      (await gitOutput(input.root, ['rev-parse', '--show-toplevel'])).toString('utf8').trim()
-    );
-    // macOS exposes /var through /private/var and Windows runners commonly
-    // place worktrees behind junctions. Git reports the physical worktree root
-    // while Node may retain the logical input path; compare canonical paths so
-    // a valid scope does not fall through to content hashing.
-    const [gitRoot, scopeRoot] = await Promise.all([
-      fsExtra.realpath(reportedGitRoot).catch(() => reportedGitRoot),
-      fsExtra.realpath(input.root).catch(() => path.resolve(input.root)),
-    ]);
-    const scope = path.relative(gitRoot, scopeRoot);
-    if (scope === '..' || scope.startsWith(`..${path.sep}`) || path.isAbsolute(scope)) return null;
-    const treeSpec = scope ? `HEAD:${toPosix(scope)}` : 'HEAD^{tree}';
+    // Ask Git for the repository-relative scope instead of comparing absolute
+    // path strings. Windows may expose the same worktree through long and 8.3
+    // names, macOS commonly aliases /var through /private/var, and junctions or
+    // symlinks can create further equivalent spellings. Git already resolved
+    // the cwd to its worktree, so --show-prefix is the authoritative boundary.
+    const rawScopePrefix = (await gitOutput(input.root, ['rev-parse', '--show-prefix']))
+      .toString('utf8')
+      .trim()
+      .replace(/\\/gu, '/');
+    const scopePrefix = rawScopePrefix ? `${rawScopePrefix.replace(/^\/+|\/+$/gu, '')}/` : '';
+    if (
+      path.posix.isAbsolute(scopePrefix) ||
+      scopePrefix === '../' ||
+      scopePrefix.startsWith('../') ||
+      scopePrefix.includes('/../')
+    )
+      return null;
+    const treeScope = scopePrefix.replace(/\/$/u, '');
+    const treeSpec = treeScope ? `HEAD:${treeScope}` : 'HEAD^{tree}';
     const [tree, diff, untracked, ignored, flags, gitLinks] = await Promise.all([
       gitOutput(input.root, ['rev-parse', treeSpec]),
       gitOutput(input.root, [
@@ -789,17 +794,18 @@ async function gitFingerprintScope(input: {
         .some((line) => /^[a-z] /u.test(line))
     )
       return null;
-    const scannedFiles = input.files.map((file) =>
-      path.resolve(scopeRoot, path.relative(input.root, file))
-    );
+    const scannedFiles = input.files.map((file) => {
+      const scopeRelative = toPosix(path.relative(input.root, file));
+      return `${scopePrefix}${scopeRelative}`;
+    });
     const initializedGitLinkIsScanned = gitLinks
       .toString('utf8')
       .split(/\r?\n/u)
       .filter((line) => line.startsWith('160000 '))
       .map((line) => line.split('\t', 2)[1])
       .filter((value): value is string => Boolean(value))
-      .map((value) => path.resolve(gitRoot, value))
-      .some((gitLink) => scannedFiles.some((file) => file.startsWith(`${gitLink}${path.sep}`)));
+      .map((value) => value.replace(/\\/gu, '/').replace(/\/$/u, ''))
+      .some((gitLink) => scannedFiles.some((file) => file.startsWith(`${gitLink}/`)));
     // An initialized submodule has an independent worktree whose dirty content
     // is not fully represented by the parent diff. Fall back to content only
     // when graph inventory actually traverses that gitlink.
@@ -809,15 +815,22 @@ async function gitFingerprintScope(input: {
       .toString('utf8')
       .split('\0')
       .filter(Boolean)
-      .map((file) => path.resolve(gitRoot, file))
+      .map((file) => file.replace(/\\/gu, '/'))
       .filter((file) => inventory.has(file));
     const extras = await mapWithConcurrency(
       [...new Set(extraPaths)].sort((left, right) => left.localeCompare(right)),
       16,
-      async (filePath) => ({
-        path: toPosix(path.relative(scopeRoot, filePath)),
-        hash: await contentHash(filePath),
-      })
+      async (repositoryRelativePath) => {
+        const scopeRelativePath = scopePrefix
+          ? repositoryRelativePath.slice(scopePrefix.length)
+          : repositoryRelativePath;
+        return {
+          path: scopeRelativePath,
+          hash: await contentHash(
+            path.resolve(input.root, ...scopeRelativePath.split('/').filter(Boolean))
+          ),
+        };
+      }
     );
     const hash = createHash('sha256');
     hash.update(`git-worktree-v2\0${input.kind}\0${input.id}\0${input.fileLimit}\0`);

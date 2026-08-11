@@ -88,6 +88,7 @@ describe('workspace knowledge graph snapshot', () => {
       await execFileAsync('git', ['init', '--quiet'], { cwd: root });
       await execFileAsync('git', ['config', 'user.email', 'test@workspai.local'], { cwd: root });
       await execFileAsync('git', ['config', 'user.name', 'Workspai Test'], { cwd: root });
+      await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], { cwd: root });
       await execFileAsync('git', ['add', 'src/main.rs'], { cwd: root });
       await execFileAsync('git', ['commit', '--quiet', '-m', 'fixture'], { cwd: root });
     }

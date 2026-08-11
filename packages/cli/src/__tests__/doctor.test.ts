@@ -19,6 +19,18 @@ function realpathForAssertion(value: string): string {
   return fs.realpathSync.native(value);
 }
 
+function expectSameFilesystemEntry(actualPath: string, expectedPath: string): void {
+  const actualStat = fs.statSync(actualPath);
+  const expectedStat = fs.statSync(expectedPath);
+  expect({ dev: actualStat.dev, ino: actualStat.ino, directory: actualStat.isDirectory() }).toEqual(
+    {
+      dev: expectedStat.dev,
+      ino: expectedStat.ino,
+      directory: expectedStat.isDirectory(),
+    }
+  );
+}
+
 describe('Doctor Command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2634,10 +2646,10 @@ describe('Doctor Command', () => {
       expect(payload.projects).toHaveLength(1);
       expect(payload.projects[0]).toMatchObject({
         name: 'atlas-api',
-        path: realpathForAssertion(projectPath),
         runtimeFamily: 'dotnet',
         runtimeFamilies: ['dotnet'],
       });
+      expectSameFilesystemEntry(payload.projects[0].path, projectPath);
       expect(
         payload.projects[0].probes.find(
           (probe: { id: string }) => probe.id === 'surface-env-contract'
