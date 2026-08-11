@@ -52,7 +52,7 @@
     "release:minor": "corepack npm --workspace workspai run release:minor",
     "release:major": "corepack npm --workspace workspai run release:major",
     "prepare": "husky",
-    "prepush:check": "corepack npm run check:brand && corepack npm run check && corepack npm run ci && corepack npm --workspace workspai run contracts:validate"
+    "prepush:check": "corepack npm run check:brand && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
   },
   "devDependencies": {
     "chokidar": "^3.6.0",

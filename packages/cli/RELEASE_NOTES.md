@@ -9,9 +9,9 @@
 
 ### Universal Doctor Intelligence and Proof-Backed Polyglot Graphs
 
-This release candidate gives Doctor one causal, fail-closed diagnosis vocabulary
-and makes persisted Graph retrieval live-source-aware across linked, native, and
-polyglot projects. It is documented on `main` but is not yet published to npm.
+This release gives Doctor one causal, fail-closed diagnosis vocabulary and makes
+persisted Graph retrieval live-source-aware across linked, native, and polyglot
+projects.
 
 **What's New:**
 
@@ -57,9 +57,15 @@ polyglot projects. It is documented on `main` but is not yet published to npm.
   - Backward-compatible CLI releases no longer raise the extension's minimum
     supported CLI version automatically.
 
+- **Faster local quality gates**
+  - Pre-commit now checks staged sources plus relevant documentation or contract
+    drift without generating or staging files.
+  - Pre-push keeps the complete local quality boundary while reusing one build,
+    one full test run, and one pass over each conformance family.
+
 **Breaking changes:** None. New evidence fields and contracts are additive.
 
-**Release-candidate verification:**
+**Verification:**
 
 - The restricted-environment suite produced 2,413 passes and 8 explicit skips;
   seven loopback-listener cases were environment-blocked, and their three
@@ -72,7 +78,7 @@ polyglot projects. It is documented on `main` but is not yet published to npm.
   vary by workspace and query).
 - Type checking, linting, formatting, contracts, parity, and docs passed.
 
-**After publication:**
+**Install:**
 
 ```bash
 npm install -g workspai@0.56.0
@@ -81,7 +87,7 @@ workspai doctor capabilities --validate --json
 workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.56.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.56.0/packages/cli/releases/RELEASE_NOTES_v0.56.0.md)
 
 ---
 

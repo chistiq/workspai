@@ -14,7 +14,7 @@ function readMonorepo(relativePath: string): string {
 }
 
 describe('shared contracts workflow (Wave A + B)', () => {
-  it('uses one npm-owned script to generate, sync, and validate shared extension contracts', () => {
+  it('keeps explicit sync available while pre-commit validation remains read-only', () => {
     const npmPackage = JSON.parse(read('package.json'));
     const syncScript = read('scripts/sync-shared-contracts.mjs');
     const preCommit = readMonorepo('.husky/pre-commit');
@@ -38,8 +38,10 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(syncScript).toContain('infra-stack.v1.json');
     expect(syncScript).toContain('--stage-git');
     expect(syncScript).toContain('stageSyncedContracts');
-    expect(preCommit).toContain('sync:shared-contracts -- --stage-git');
-    expect(preCommit).toContain('run validate:contracts');
+    expect(preCommit).toContain('run contracts:check:local');
+    expect(preCommit).toContain('without modifying the index');
+    expect(preCommit).not.toContain('sync:shared-contracts -- --stage-git');
+    expect(preCommit).not.toContain('run validate:contracts');
   });
 
   it('keeps official generator drift coverage release-safe and cost bounded', () => {

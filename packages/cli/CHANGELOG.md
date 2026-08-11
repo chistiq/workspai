@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.56.0] - Unreleased
+## [0.56.0] - 2026-08-11
 
 ### Added
 
@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `--plan` plus runtime selection with `--runtime <runtime>`.
 - Made graph benchmarks resolve portable `external/<project>/...` proof paths
   through the workspace contract for linked projects.
+- Made pre-commit staged and read-only, and consolidated pre-push validation so
+  full tests, builds, contracts, and conformance gates do not run repeatedly.
 
 ### Fixed
 

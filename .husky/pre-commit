@@ -6,59 +6,41 @@ run_without_git_hook_env() {
 	env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX "$@"
 }
 
-# Type checking
-echo "🪟 Checking Windows workspace registry invariants..."
-corepack npm --workspace workspai run check:windows-registry || exit 1
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACMR)"
+CHECK_CONTRACTS=false
+CHECK_DOCS=false
 
-echo "🔍 Running type check..."
-corepack npm --workspace workspai run typecheck || exit 1
+while IFS= read -r file; do
+	case "$file" in
+		contracts/* | packages/cli/contracts/* | packages/cli/src/contracts/* | packages/cli/scripts/sync-contracts.mjs | packages/cli/scripts/sync-shared-contracts.mjs | packages/cli/scripts/generate-shared-contracts.mjs | packages/cli/scripts/check-agent-customization-drift.mjs)
+			CHECK_CONTRACTS=true
+			;;
+	esac
 
-# Linting
-echo "🧹 Running linter..."
+	case "$file" in
+		*.md | packages/cli/package.json | packages/cli/src/index.ts | packages/cli/scripts/docs-drift-guard.mjs | packages/cli/scripts/github-release-notes.mjs | packages/cli/scripts/discord-release-announcement.mjs)
+			CHECK_DOCS=true
+			;;
+	esac
+done <<EOF
+$STAGED_FILES
+EOF
+
+echo "🧹 Checking staged TypeScript..."
 corepack npm --workspace workspai exec lint-staged || exit 1
 
-# Format check
-echo "💅 Checking code formatting..."
-corepack npm --workspace workspai run format:check || exit 1
-
-# Contracts sync check (only when Core schema is available)
-CORE_SCHEMA_PATH=""
-for candidate in \
-	"${RAPIDKIT_CORE_SCHEMA_PATH:-}" \
-	"$REPO_ROOT/../../core/docs/contracts/rapidkit-cli-contracts.json" \
-	"$REPO_ROOT/../core/docs/contracts/rapidkit-cli-contracts.json" \
-	"$REPO_ROOT/core/docs/contracts/rapidkit-cli-contracts.json"; do
-	if [ -n "$candidate" ] && [ -f "$candidate" ]; then
-		CORE_SCHEMA_PATH="$candidate"
-		break
-	fi
-done
-
-if [ -n "$CORE_SCHEMA_PATH" ]; then
-	echo "🔗 Checking Core ↔ NPM contracts (monorepo)..."
-	RAPIDKIT_CORE_SCHEMA_PATH="$CORE_SCHEMA_PATH" corepack npm --workspace workspai run check:contracts || exit 1
-else
-	echo "ℹ️ Skipping contracts check (core schema not found)"
+if [ "$CHECK_CONTRACTS" = true ]; then
+	echo "📋 Checking changed contracts without modifying the index..."
+	run_without_git_hook_env corepack npm --workspace workspai run contracts:check:local || {
+		echo "❌ Contract drift detected."
+		echo "   Run: corepack npm --workspace workspai run contracts:sync"
+		exit 1
+	}
 fi
 
-# Shared contracts (canonical: packages/cli/contracts/)
-echo "📋 Syncing shared contracts..."
-run_without_git_hook_env corepack npm --workspace workspai run sync:shared-contracts -- --stage-git || {
-	echo "❌ Contract sync failed."
-	echo "   Run: corepack npm --workspace workspai run sync:shared-contracts"
-	exit 1
-}
+if [ "$CHECK_DOCS" = true ]; then
+	echo "📚 Checking documentation and release-state drift..."
+	run_without_git_hook_env corepack npm --workspace workspai run check:docs-drift || exit 1
+fi
 
-echo "📋 Validating shared contracts..."
-run_without_git_hook_env corepack npm --workspace workspai run validate:contracts || {
-	echo "❌ Contract validation failed."
-	echo "   1. Change code or run: corepack npm --workspace workspai run sync:shared-contracts"
-	echo "   2. Commit packages/cli/contracts/ in workspai and contracts/ in rapidkit-vscode"
-	exit 1
-}
-
-# Tests
-echo "🧪 Running tests..."
-run_without_git_hook_env corepack npm test || exit 1
-
-echo "✅ All checks passed!"
+echo "✅ Staged checks passed. Full local validation runs at pre-push."

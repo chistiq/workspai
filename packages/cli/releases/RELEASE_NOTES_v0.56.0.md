@@ -26,8 +26,7 @@
 
 # Workspai CLI v0.56.0
 
-Publication status: pending. This release candidate is documented on `main` but
-has not been published to npm.
+Released August 11, 2026.
 
 ## Universal Doctor Intelligence and Proof-Backed Polyglot Graphs
 
@@ -135,7 +134,13 @@ are additive within their versioned contracts. The extension compatibility
 floor remains 0.55.1; publishing a newer backward-compatible CLI no longer
 raises that floor automatically.
 
-## Release-candidate verification
+Local Git hooks also keep the same quality boundary with less repetition.
+Pre-commit is staged and read-only; pre-push performs one build, one complete
+test run, and one pass over each contract and conformance family. Coverage,
+security, platform matrices, and scheduled full generator execution remain
+owned by CI.
+
+## Verification
 
 - The complete restricted-environment suite produced 2,413 passes and 8
   explicit skips. Seven loopback-listener cases were environment-blocked; all
@@ -158,7 +163,7 @@ raises that floor automatically.
 - Type checking, linting, formatting, contract validation, contract parity, and
   documentation gates passed.
 
-## After publication
+## Install
 
 ```bash
 npm install -g workspai@0.56.0
