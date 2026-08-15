@@ -1259,10 +1259,28 @@ async function isAuthoredTrackedDeletion(projectPath: string, fileName: string):
     return false;
   }
   if (gitRootResult?.exitCode !== 0) return false;
-  const gitRoot = path.resolve(gitRootResult.stdout.trim());
-  const targetPath = path.resolve(projectPath, fileName);
+  const reportedGitRoot = gitRootResult.stdout.trim();
+  if (!reportedGitRoot) return false;
+  let gitRoot: string;
+  let canonicalProjectPath: string;
+  try {
+    [gitRoot, canonicalProjectPath] = await Promise.all([
+      fsp.realpath(path.resolve(reportedGitRoot)),
+      fsp.realpath(projectPath),
+    ]);
+  } catch {
+    return false;
+  }
+  const targetPath = path.resolve(canonicalProjectPath, fileName);
   const relativePath = path.relative(gitRoot, targetPath).replace(/\\/g, '/');
-  if (!relativePath || relativePath === '..' || relativePath.startsWith('../')) return false;
+  if (
+    !relativePath ||
+    path.isAbsolute(relativePath) ||
+    relativePath === '..' ||
+    relativePath.startsWith('../')
+  ) {
+    return false;
+  }
   let committed;
   try {
     committed = await execa('git', ['cat-file', '-e', `HEAD:${relativePath}`], {

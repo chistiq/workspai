@@ -540,7 +540,10 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
         policy: { moved_source: false, copied_source: false },
       });
     },
-    30000
+    // This exercises generator, managed-workspace creation, adoption, model,
+    // graph, and grounding. Windows coverage runners can legitimately exceed
+    // the unit-test default while filesystem and process instrumentation are active.
+    60_000
   );
 
   it.each(['gofiber.standard', 'gogin.standard', 'springboot.standard', 'dotnet.webapi.clean'])(
