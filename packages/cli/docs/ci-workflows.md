@@ -93,6 +93,14 @@ the exact preflight, 11-stage, artifact, and exit contract.
 | Docs drift guard              | `npm run check:docs-drift`                                                |
 | README command smoke          | `npm run smoke:readme`                                                    |
 | Agent customization drift     | `npm run check:agent-customization-drift -- --workspace <workspace-root>` |
+| Cross-platform lockfile       | `npm run check:cross-platform-lockfile`                                   |
+
+The root `postinstall` lifecycle runs the lockfile check before build or test
+jobs can start. This prevents a lockfile regenerated from a platform-pruned
+`node_modules` tree from reaching native Vitest/Rolldown startup on another
+operating system. Restore an accidentally deleted lockfile from Git; perform a
+deliberate full regeneration only with both the lockfile and `node_modules`
+absent.
 
 ## Recommended pre-release checks
 

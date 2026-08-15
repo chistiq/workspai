@@ -29,6 +29,7 @@
   "scripts": {
     "workspaces:list": "corepack npm query .workspace",
     "check:brand": "node scripts/check-brand-contract.mjs",
+    "check:cross-platform-lockfile": "node scripts/check-cross-platform-lockfile.mjs",
     "check": "corepack npm --workspaces --if-present run check",
     "fix": "corepack npm --workspaces --if-present run fix",
     "validate": "corepack npm --workspaces --if-present run validate",
@@ -51,8 +52,9 @@
     "release:patch": "corepack npm --workspace workspai run release:patch",
     "release:minor": "corepack npm --workspace workspai run release:minor",
     "release:major": "corepack npm --workspace workspai run release:major",
+    "postinstall": "node scripts/check-cross-platform-lockfile.mjs",
     "prepare": "husky",
-    "prepush:check": "corepack npm run check:brand && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
+    "prepush:check": "corepack npm run check:cross-platform-lockfile && corepack npm run check:brand && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
   },
   "devDependencies": {
     "chokidar": "^3.6.0",

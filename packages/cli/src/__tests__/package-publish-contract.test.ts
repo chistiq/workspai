@@ -88,6 +88,18 @@ describe('npm publish contract', () => {
     expect(rootPackage.workspaces).not.toContain('packages/*');
     expect(rootPackage.workspaces).not.toContain('packages/graph');
     expect(rootPackage.workspaces).not.toContain('packages/shared');
+    expect(rootPackage.scripts?.postinstall).toBe('node scripts/check-cross-platform-lockfile.mjs');
+    expect(rootPackage.scripts?.['prepush:check']).toContain('run check:cross-platform-lockfile');
+
+    const lockfileGuard = fs.readFileSync(
+      path.join(monorepoRoot, 'scripts/check-cross-platform-lockfile.mjs'),
+      'utf8'
+    );
+    expect(lockfileGuard).toContain('packageName: "rolldown"');
+    expect(lockfileGuard).toContain('packageName: "rollup"');
+    expect(lockfileGuard).toContain('packageName: "esbuild"');
+    expect(lockfileGuard).toContain('bindingPrefix: "@rolldown/binding-"');
+    expect(lockfileGuard).toContain('Restore package-lock.json from Git');
     expect(rootPackage.scripts?.['install:local']).toContain('--workspace workspai link');
     expect(rootPackage.scripts?.['install:local']).toContain('--workspace wspai link');
     expect(rootPackage.scripts?.['uninstall:local']).toContain('unlink -g workspai');
@@ -167,6 +179,28 @@ describe('npm publish contract', () => {
         env: { ...env, npm_config_user_agent: userAgent },
       });
       expect(result.status, userAgent).toBe(expectedStatus);
+    }
+  });
+
+  it('locks native test-runner bindings for every supported CI platform', () => {
+    const packageLock = JSON.parse(
+      fs.readFileSync(path.join(monorepoRoot, 'package-lock.json'), 'utf8')
+    ) as {
+      packages?: Record<string, { version?: string; optional?: boolean }>;
+    };
+    const lockedPackages = packageLock.packages ?? {};
+    const requiredBindings = [
+      '@rolldown/binding-linux-x64-gnu',
+      '@rolldown/binding-darwin-arm64',
+      '@rolldown/binding-darwin-x64',
+      '@rolldown/binding-win32-x64-msvc',
+    ];
+
+    for (const binding of requiredBindings) {
+      const entry = lockedPackages[`node_modules/${binding}`];
+      expect(entry, `${binding} must remain represented in package-lock.json`).toBeDefined();
+      expect(entry?.version).toMatch(/^1\./);
+      expect(entry?.optional).toBe(true);
     }
   });
 
