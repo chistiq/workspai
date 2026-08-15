@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { execa } from 'execa';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -678,5 +679,31 @@ describe('project workspace binding', () => {
     const offIgnore = await fsp.readFile(path.join(projectPath, '.gitignore'), 'utf8');
     expect(offIgnore).not.toContain('.workspai/reports/project-context-agent.json');
     expect(offIgnore).toContain('.workspai/workspace-link.local.json');
+  });
+
+  it('preserves an authored tracked deletion of AGENTS.md during managed grounding', async () => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'tracked-deletion-workspace',
+    });
+    await execa('git', ['init', '--quiet'], { cwd: projectPath });
+    await execa('git', ['config', 'user.email', 'test@workspai.local'], { cwd: projectPath });
+    await execa('git', ['config', 'user.name', 'Workspai Test'], { cwd: projectPath });
+    await execa('git', ['config', 'commit.gpgsign', 'false'], { cwd: projectPath });
+    await fsp.writeFile(path.join(projectPath, 'AGENTS.md'), '# Repository agent guide\n');
+    await execa('git', ['add', 'AGENTS.md'], { cwd: projectPath });
+    await execa('git', ['commit', '--quiet', '-m', 'fixture'], { cwd: projectPath });
+    await fsp.rm(path.join(projectPath, 'AGENTS.md'));
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(fs.existsSync(path.join(projectPath, 'AGENTS.md'))).toBe(false);
+    expect(result.writtenFiles).not.toContain('AGENTS.md');
+    expect(fs.existsSync(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))).toBe(true);
   });
 });

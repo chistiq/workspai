@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { execa } from 'execa';
 import fsExtra from 'fs-extra';
 
 import type {
@@ -1247,6 +1248,44 @@ async function writeAtomic(filePath: string, contents: string): Promise<void> {
   }
 }
 
+async function isAuthoredTrackedDeletion(projectPath: string, fileName: string): Promise<boolean> {
+  let gitRootResult;
+  try {
+    gitRootResult = await execa('git', ['rev-parse', '--show-toplevel'], {
+      cwd: projectPath,
+      reject: false,
+    });
+  } catch {
+    return false;
+  }
+  if (gitRootResult?.exitCode !== 0) return false;
+  const gitRoot = path.resolve(gitRootResult.stdout.trim());
+  const targetPath = path.resolve(projectPath, fileName);
+  const relativePath = path.relative(gitRoot, targetPath).replace(/\\/g, '/');
+  if (!relativePath || relativePath === '..' || relativePath.startsWith('../')) return false;
+  let committed;
+  try {
+    committed = await execa('git', ['cat-file', '-e', `HEAD:${relativePath}`], {
+      cwd: gitRoot,
+      reject: false,
+    });
+  } catch {
+    return false;
+  }
+  if (committed?.exitCode !== 0) return false;
+  let deleted;
+  try {
+    deleted = await execa(
+      'git',
+      ['ls-files', '--deleted', '--error-unmatch', '--', `:(top)${relativePath}`],
+      { cwd: gitRoot, reject: false }
+    );
+  } catch {
+    return false;
+  }
+  return deleted?.exitCode === 0;
+}
+
 async function reconcileGroundingIgnores(
   projectPath: string,
   mode: ProjectGroundingMode
@@ -1279,13 +1318,27 @@ async function reconcileProjectAgents(
   context?: ProjectContextAgent
 ): Promise<string | undefined> {
   const agentsPath = path.join(projectPath, 'AGENTS.md');
-  const existed = fs.existsSync(agentsPath);
+  const agentsStat = await fsp.lstat(agentsPath).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  });
+  // Preserve repository-authored symlinks. Workspai still publishes portable
+  // grounding under .workspai without following or replacing the link target.
+  if (agentsStat?.isSymbolicLink()) return undefined;
+  const existed = agentsStat?.isFile() === true;
   const existing = await fsp.readFile(agentsPath, 'utf8').catch((error) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
     throw error;
   });
   if (mode === 'managed' && !context) {
     throw new Error('Managed project grounding requires a project context.');
+  }
+  if (mode === 'managed' && !existed) {
+    if (await isAuthoredTrackedDeletion(projectPath, 'AGENTS.md')) {
+      // A tracked deletion is authored worktree state. The portable project
+      // grounding remains available under .workspai without resurrecting it.
+      return undefined;
+    }
   }
   const updated =
     mode === 'managed' && context

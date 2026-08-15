@@ -428,7 +428,16 @@ async function runWorkspaceIntelligenceChainLocked(input: {
       target: { kind: 'release-blocked' },
     });
     await writeWorkspaceExplainReport(report, workspacePath);
-    return { message: report.summary };
+    const strictBlockedStages =
+      input.strict === true
+        ? stages.filter((item) => item.status === 'blocked').map((item) => item.id)
+        : [];
+    return {
+      message:
+        strictBlockedStages.length > 0 && report.blocking !== true
+          ? `Strict policy blocked advisory or incomplete evidence in ${strictBlockedStages.join(', ')}. ${report.summary}`
+          : report.summary,
+    };
   });
 
   const hasBlocked = stages.some((item) => item.status === 'blocked');

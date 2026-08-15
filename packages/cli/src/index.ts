@@ -830,7 +830,18 @@ async function beginProjectLifecycleTransaction(
   }
 
   try {
-    for (const filePath of files) await transaction.captureFile(filePath);
+    for (const filePath of files) {
+      const isProjectAgentsPath =
+        options.projectPath && filePath === path.join(options.projectPath, 'AGENTS.md');
+      const stat = isProjectAgentsPath
+        ? await fsExtra.lstat(filePath).catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw error;
+          })
+        : null;
+      if (stat?.isSymbolicLink()) continue;
+      await transaction.captureFile(filePath);
+    }
     if (options.ownedDestination) {
       await transaction.captureOwnedTree(options.ownedDestination);
     }
@@ -3174,6 +3185,14 @@ export async function handleAdoptCommand(
       rollbackSnapshot,
     });
     const projectWorkspaceCommand = 'npx workspai project workspace status --json';
+    const existingProjectResolution =
+      options.dryRun === true ? resolveProjectWorkspaceSync({ startPath: sourcePath }) : null;
+    const commandsResolveWorkspaceFromProject =
+      options.dryRun !== true ||
+      (existingProjectResolution !== null &&
+        path.resolve(existingProjectResolution.workspacePath) === path.resolve(workspacePath) &&
+        (!existingProjectResolution.projectPath ||
+          path.resolve(existingProjectResolution.projectPath) === sourcePath));
 
     if (options.dryRun !== true) {
       try {
@@ -3240,7 +3259,7 @@ export async function handleAdoptCommand(
                 ? !hasWorkspaceRootMarkers(workspacePath)
                 : false,
             projectWorkspaceCommand,
-            commandsResolveWorkspaceFromProject: options.dryRun !== true,
+            commandsResolveWorkspaceFromProject,
             dryRun: options.dryRun === true,
             plan: adoptedProject.ingestionPlan,
             adoptedProject,
@@ -3261,6 +3280,18 @@ export async function handleAdoptCommand(
     }
     if (options.dryRun === true) {
       console.log(chalk.yellow(`ℹ Dry run: no adoption files were written.`));
+      console.log(
+        chalk.gray(
+          `   Planned effects: project metadata + workspace registration + model, graph, and agent-grounding sync.`
+        )
+      );
+      if (adoptedProject.effects.repositoryControlFiles.length > 0) {
+        console.log(
+          chalk.gray(
+            `   Repository controls may be reconciled: ${adoptedProject.effects.repositoryControlFiles.map((file) => file.path).join(', ')}.`
+          )
+        );
+      }
     }
 
     console.log(chalk.green(`✔ Adopted project: ${adoptedProject.name}`));
@@ -7447,6 +7478,21 @@ snapshotCommand
         console.log(chalk.gray(`   Mode: ${result.manifest.mode}`));
         console.log(chalk.gray(`   Path: ${result.snapshotPath}`));
       } catch (error) {
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'snapshot create',
+                code: 'snapshot.create.failed',
+                message: (error as Error).message,
+                context: { workspacePath: options.workspace ?? null, name: name ?? null },
+              }),
+              null,
+              2
+            )
+          );
+          process.exit(1);
+        }
         console.log(chalk.red(`❌ Snapshot create failed: ${(error as Error).message}`));
         process.exit(1);
       }
@@ -7482,6 +7528,21 @@ snapshotCommand
         console.log(chalk.gray(`   ${snapshot.snapshotPath}`));
       }
     } catch (error) {
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'snapshot list',
+              code: 'snapshot.list.failed',
+              message: (error as Error).message,
+              context: { workspacePath: options.workspace ?? null },
+            }),
+            null,
+            2
+          )
+        );
+        process.exit(1);
+      }
       console.log(chalk.red(`❌ Snapshot list failed: ${(error as Error).message}`));
       process.exit(1);
     }
@@ -7512,6 +7573,21 @@ snapshotCommand
       console.log(chalk.gray(`   Bytes: ${result.estimatedBytes}`));
       console.log(chalk.gray(`   Path: ${result.snapshotPath}`));
     } catch (error) {
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'snapshot inspect',
+              code: 'snapshot.inspect.failed',
+              message: (error as Error).message,
+              context: { workspacePath: options.workspace ?? null, name },
+            }),
+            null,
+            2
+          )
+        );
+        process.exit(1);
+      }
       console.log(chalk.red(`❌ Snapshot inspect failed: ${(error as Error).message}`));
       process.exit(1);
     }
@@ -7564,6 +7640,21 @@ snapshotCommand
           console.log(chalk.gray(`   Safety snapshot: ${result.safetySnapshotPath}`));
         }
       } catch (error) {
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'snapshot restore',
+                code: 'snapshot.restore.failed',
+                message: (error as Error).message,
+                context: { workspacePath: options.workspace ?? null, name },
+              }),
+              null,
+              2
+            )
+          );
+          process.exit(1);
+        }
         console.log(chalk.red(`❌ Snapshot restore failed: ${(error as Error).message}`));
         process.exit(1);
       }
@@ -8029,6 +8120,7 @@ program
   .option('--project', 'Check only the current project (or nearest parent project)')
   .option('--json [mode]', 'Output JSON: full (default) or summary')
   .option('--fresh', 'Bypass Doctor project scan cache and refresh live evidence')
+  .option('--verbose', 'Show every probe, lifecycle capability, and detailed project signal')
   .option('--strict', 'Exit 1 on health errors or warnings (workspace/project scope)')
   .option('--ci', 'CI gate: exit 1 on errors, exit 2 on warnings only')
   .option('--profile <profile>', 'Doctor policy profile: local | ci | release | enterprise-strict')
@@ -8047,6 +8139,7 @@ program
         project?: boolean;
         json?: boolean | string;
         fresh?: boolean;
+        verbose?: boolean;
         strict?: boolean;
         ci?: boolean;
         profile?: string;
@@ -9872,8 +9965,38 @@ See the command reference for action-specific required inputs and output artifac
 
       const emit = buildGraphEmit(graph);
       const knowledgeGraph = await buildKnowledgeGraph();
+      const payload = { ...emit, knowledgeGraph };
+      const output = workspaceOutputPath();
+      if (output) {
+        const outputPath = path.resolve(workspacePath, output);
+        await fsExtra.outputFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationSuccess(
+                'workspace graph emit',
+                {
+                  format: 'json',
+                  nodeCount: graph.stats.nodeCount,
+                  edgeCount: graph.stats.edgeCount,
+                  entityCount: knowledgeGraph.entities.length,
+                  relationCount: knowledgeGraph.relations.length,
+                  proofCount: knowledgeGraph.proofs.length,
+                },
+                outputPath
+              ),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.green('✔ Workspace graph artifact exported as JSON'));
+          console.log(chalk.gray(`   Written: ${outputPath}`));
+        }
+        return;
+      }
       if (actionOptions.json) {
-        console.log(JSON.stringify({ ...emit, knowledgeGraph }, null, 2));
+        console.log(JSON.stringify(payload, null, 2));
         return;
       }
       console.log(chalk.green('✔ Workspace dependency graph'));
@@ -10139,7 +10262,8 @@ See the command reference for action-specific required inputs and output artifac
         WORKSPACE_CONTRACT_PATH,
       } = await import('./utils/workspace-contract.js');
       const contractAction = subaction || 'inspect';
-      const contractPath = workspaceOutputPath();
+      const requestedOutput = workspaceOutputPath();
+      const contractPath = contractAction === 'graph' ? undefined : requestedOutput;
 
       try {
         if (contractAction === 'init') {
@@ -10206,6 +10330,33 @@ See the command reference for action-specific required inputs and output artifac
 
         if (contractAction === 'graph') {
           const result = await buildWorkspaceContractGraph({ workspacePath, contractPath });
+          if (requestedOutput) {
+            const outputPath = path.resolve(workspacePath, requestedOutput);
+            await fsExtra.outputFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+            if (actionOptions.json) {
+              console.log(
+                JSON.stringify(
+                  cliOperationSuccess(
+                    'workspace contract graph',
+                    {
+                      projectCount: result.graph.summary.projectCount,
+                      relationshipEdges: result.graph.summary.relationshipEdges,
+                      entityCount: result.graph.summary.entityCount,
+                      knowledgeRelations: result.graph.summary.knowledgeRelations,
+                      proofCount: result.graph.summary.proofCount,
+                    },
+                    outputPath
+                  ),
+                  null,
+                  2
+                )
+              );
+            } else {
+              console.log(chalk.green('✔ Workspace contract graph exported as JSON'));
+              console.log(chalk.gray(`   Written: ${outputPath}`));
+            }
+            return;
+          }
           if (actionOptions.json) {
             console.log(JSON.stringify(result, null, 2));
             return;

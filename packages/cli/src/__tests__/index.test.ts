@@ -1291,6 +1291,111 @@ describe('CLI Entry Point', () => {
       }
     });
 
+    it('writes the full graph emit artifact to --output without flooding JSON stdout', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-graph-emit-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      const outputPath = path.join(workspaceRoot, 'workspace-graph.json');
+
+      const result = await execa(
+        'node',
+        [CLI_PATH, 'workspace', 'graph', 'emit', '--output', outputPath, '--json'],
+        { cwd: workspaceRoot, reject: false }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const receipt = JSON.parse(result.stdout);
+      expect(receipt).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'workspace graph emit',
+        status: 'success',
+        outputPath,
+        artifact: {
+          format: 'json',
+          nodeCount: 0,
+          edgeCount: 0,
+          entityCount: expect.any(Number),
+          relationCount: expect.any(Number),
+          proofCount: expect.any(Number),
+        },
+      });
+      expect(result.stdout).not.toContain('"knowledgeGraph"');
+      const artifact = await fs.readJson(outputPath);
+      expect(artifact).toMatchObject({
+        graph: { schemaVersion: 'workspace-dependency-graph.v1' },
+        knowledgeGraph: { schemaVersion: 'workspace-knowledge-graph.v1' },
+      });
+    });
+
+    it('writes the rich contract graph to --output with a bounded JSON receipt', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-contract-graph-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      await fs.outputJson(path.join(workspaceRoot, '.workspai', 'workspace.contract.json'), {
+        schemaVersion: 1,
+        kind: 'rapidkit.workspace.contract',
+        workspace: { name: 'contract-graph-test' },
+        projects: [],
+      });
+      const outputPath = path.join(workspaceRoot, 'contract-graph.json');
+
+      const result = await execa(
+        'node',
+        [CLI_PATH, 'workspace', 'contract', 'graph', '--output', outputPath, '--json'],
+        { cwd: workspaceRoot, reject: false }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'workspace contract graph',
+        status: 'success',
+        outputPath,
+        artifact: {
+          projectCount: 0,
+          relationshipEdges: 0,
+          entityCount: expect.any(Number),
+          knowledgeRelations: expect.any(Number),
+          proofCount: expect.any(Number),
+        },
+      });
+      expect(result.stdout).not.toContain('"knowledgeGraph"');
+      expect(await fs.readJson(outputPath)).toMatchObject({
+        graph: {
+          kind: 'rapidkit.workspace.contract.graph',
+          knowledgeGraph: { schemaVersion: 'workspace-knowledge-graph.v1' },
+        },
+      });
+    });
+
+    it('keeps snapshot failures machine-readable under --json', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'snapshot-json-errors-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      const invocation = [
+        CLI_PATH,
+        'snapshot',
+        'create',
+        'duplicate',
+        '--workspace',
+        workspaceRoot,
+        '--json',
+      ];
+
+      const first = await execa('node', invocation, { cwd: workspaceRoot, reject: false });
+      expect(first.exitCode).toBe(0);
+      const duplicate = await execa('node', invocation, { cwd: workspaceRoot, reject: false });
+
+      expect(duplicate.exitCode).toBe(1);
+      expect(JSON.parse(duplicate.stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'snapshot create',
+        status: 'error',
+        error: {
+          code: 'snapshot.create.failed',
+          message: expect.stringContaining('Snapshot already exists'),
+        },
+      });
+      expect(duplicate.stdout).not.toContain('❌');
+    });
+
     it('honors pipeline --no-agent-sync at the CLI boundary', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'pipeline-no-agent-sync-'));
       await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');

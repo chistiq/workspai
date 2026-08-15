@@ -4,9 +4,39 @@
 [![Downloads](https://img.shields.io/npm/dm/workspai.svg?style=flat-square)](https://www.npmjs.com/package/workspai)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-## Workspace Intelligence for software systems
+## Give your AI agent the system—not just the repository
+
+Your coding agent should not have to rediscover your architecture in every
+session. Workspai builds a current, evidence-backed view of your projects,
+APIs, dependencies, infrastructure, and change boundaries, then gives agents
+the bounded context they need.
 
 > One workspace. One truth. Humans and AI aligned.
+
+```bash
+npx workspai adopt .
+npx workspai workspace intelligence run --for-agent generic
+```
+
+A single run gives developers and tools the same operational picture:
+
+```text
+System     projects · runtimes · APIs · dependencies · infrastructure
+Evidence   relationships linked back to canonical proof
+Change     affected projects and verification targets
+Agents     bounded context instead of an unfiltered repository dump
+```
+
+**Understand the system before an agent changes it.**
+
+![Workspai CLI adopting and analyzing the gRPC repository](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
+
+[Get started](#start-in-two-minutes) ·
+[See what you get](#what-happens-after-the-first-run) ·
+[How it works](#how-workspace-intelligence-works) ·
+[Documentation](docs/README.md)
+
+## Workspace Intelligence for software systems
 
 Workspai is an open-source CLI that brings related software projects together,
 so people and AI tools can understand and work with the same system.
@@ -16,11 +46,6 @@ so people and AI tools can understand and work with the same system.
 - **Ask with proof:** search relationships and trace them back to source files.
 - **Act with confidence:** understand impact, verify changes, and prepare focused
   context for AI tools.
-
-[Quickstart](#start-in-two-minutes) ·
-[Everyday workflows](#everyday-workflows) ·
-[How it works](#how-workspace-intelligence-works) ·
-[Documentation](docs/README.md)
 
 ![From Code to Shared Understanding](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png)
 
@@ -38,14 +63,17 @@ npx workspai adopt .
 The project stays where it is. Workspai creates or reuses a minimal workspace
 in the default system location and records a validated local link.
 
-Stay in the same project directory and run the complete intelligence loop:
+Stay in the same project directory and run Workspace Intelligence:
 
 ```bash
-npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai workspace intelligence run --for-agent generic
 ```
 
 Workspai now knows which workspace owns the project. You only need
 `--workspace <path>` when a moved or ambiguous binding cannot be resolved.
+The shorter command is intended for a human-readable first run. CI, agents, and
+other machine consumers should use the strict JSON form shown in
+[How Workspace Intelligence works](#how-workspace-intelligence-works).
 
 ### Start new software
 

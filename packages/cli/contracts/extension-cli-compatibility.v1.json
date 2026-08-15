@@ -13,6 +13,7 @@
     "workspaceArchiveOperationResult": "workspai-workspace-archive-operation-result-v1",
     "ingestionPlan": "workspai.ingestion-plan.v1",
     "ingestionResult": "workspai.ingestion-result.v1",
+    "adoptEffects": "workspai.adopt-effects.v1",
     "projectEntryCapability": "workspai-project-entry-capability-v1",
     "projectWorkspaceLink": "project-workspace-link.v1",
     "projectWorkspaceResolution": "project-workspace-resolution.v1",

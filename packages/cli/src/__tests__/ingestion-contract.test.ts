@@ -5,6 +5,8 @@ import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  ADOPT_EFFECTS_SCHEMA_VERSION,
+  buildAdoptEffectsSchema,
   buildIngestionPlan,
   buildIngestionPlanSchema,
   buildIngestionResultSchema,
@@ -52,6 +54,9 @@ describe('canonical ingestion contract', () => {
     ]);
     expect(buildIngestionResultSchema().properties.schemaVersion.const).toBe(
       INGESTION_RESULT_SCHEMA_VERSION
+    );
+    expect(buildAdoptEffectsSchema().properties.schemaVersion.const).toBe(
+      ADOPT_EFFECTS_SCHEMA_VERSION
     );
   });
 

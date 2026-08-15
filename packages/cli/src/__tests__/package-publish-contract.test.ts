@@ -27,12 +27,22 @@ describe('npm publish contract', () => {
   };
 
   function isPublishedByFiles(assetPath: string): boolean {
-    return (packageJson.files ?? []).some((entry) => {
-      if (entry === assetPath) {
-        return true;
+    const matches = (entry: string): boolean => {
+      const normalizedEntry = entry.replace(/\/$/, '');
+      if (!normalizedEntry.includes('*')) {
+        return assetPath === normalizedEntry || assetPath.startsWith(`${normalizedEntry}/`);
       }
-      return assetPath.startsWith(`${entry.replace(/\/$/, '')}/`);
-    });
+      const expression = normalizedEntry
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replaceAll('*', '.*')
+        .replaceAll('?', '.');
+      return new RegExp(`^${expression}$`).test(assetPath);
+    };
+    const entries = packageJson.files ?? [];
+    if (entries.some((entry) => entry.startsWith('!') && matches(entry.slice(1)))) {
+      return false;
+    }
+    return entries.some((entry) => !entry.startsWith('!') && matches(entry));
   }
 
   const enterpriseSmokeScript = 'scripts/enterprise-package-smoke.mjs';
@@ -255,7 +265,7 @@ describe('npm publish contract', () => {
     expect(commit).toBeGreaterThan(dryRun);
   });
 
-  it('publishes README image assets referenced from npm-safe raw GitHub URLs', () => {
+  it('keeps README image assets resolvable from npm-safe raw GitHub URLs', () => {
     const readme = fs.readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
     const rawImageUrls = [
       ...readme.matchAll(/!\[[^\]]+\]\((https:\/\/raw\.githubusercontent\.com\/[^)]+)\)/g),
@@ -275,12 +285,26 @@ describe('npm publish contract', () => {
       expect(match, imageUrl).not.toBeNull();
 
       const encodedAssetPath = match?.[1] ?? '';
-      expect(encodedAssetPath, imageUrl).toContain('%20');
       const assetPath = decodeURIComponent(encodedAssetPath);
 
       expect(fs.existsSync(path.join(process.cwd(), assetPath)), assetPath).toBe(true);
-      expect(isPublishedByFiles(assetPath), assetPath).toBe(true);
+      if (assetPath.endsWith('.gif')) {
+        expect(isPublishedByFiles(assetPath), assetPath).toBe(false);
+      } else {
+        expect(isPublishedByFiles(assetPath), assetPath).toBe(true);
+      }
     }
+  });
+
+  it('keeps generated video masters and README GIFs out of the published package', () => {
+    const npmIgnore = fs.readFileSync(path.join(process.cwd(), '.npmignore'), 'utf8');
+
+    expect(npmIgnore).toContain('docs/*.mp4');
+    expect(npmIgnore).toContain('docs/*.gif');
+    expect(packageJson.files).toContain('!docs/*.mp4');
+    expect(packageJson.files).toContain('!docs/*.gif');
+    expect(packageJson.files).not.toContain('docs/workspai-grpc-readme-cli.mp4');
+    expect(packageJson.files).not.toContain('docs/workspai-grpc-readme-cli.gif');
   });
 
   it('publishes local documentation linked from the npm README', () => {

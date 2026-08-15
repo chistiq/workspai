@@ -18,6 +18,7 @@ import { resolveWorkspaceProjectPaths } from './utils/workspace-project-paths.js
 import { assertSafeProjectMetadataDirectories } from './utils/project-metadata-path-safety.js';
 import {
   detectBackendFrameworkFromProject,
+  detectNestedRuntimeCandidatesFromProject,
   type BackendConfidence,
   type BackendImportStack,
   type BackendRuntimeFamily,
@@ -45,7 +46,12 @@ import {
   type WorkspaceProfileCompatibilityResult,
   type WorkspaceProfilePolicyMode,
 } from './workspace-profile-compatibility.js';
-import { buildIngestionPlan, type IngestionPlan } from './contracts/ingestion-contract.js';
+import {
+  ADOPT_EFFECTS_SCHEMA_VERSION,
+  buildIngestionPlan,
+  type AdoptProjectEffects,
+  type IngestionPlan,
+} from './contracts/ingestion-contract.js';
 
 export interface AdoptProjectOptions {
   workspacePath: string;
@@ -62,6 +68,7 @@ export interface AdoptProjectOptions {
 interface AdoptProjectFilePreimage {
   path: string;
   contents: Buffer | null;
+  preserve?: 'symbolic-link';
 }
 
 export interface AdoptProjectRollbackSnapshot {
@@ -80,6 +87,7 @@ export interface AdoptProjectResult {
   relationship: 'adopted';
   stack: BackendImportStack;
   runtime: BackendRuntimeFamily;
+  runtimeCandidates: BackendRuntimeFamily[];
   framework: string;
   frameworkDisplayName: string;
   supportTier: BackendSupportTier;
@@ -89,7 +97,49 @@ export interface AdoptProjectResult {
   adoptJsonPath: string;
   adoptReadinessPath: string;
   profileCompatibility: WorkspaceProfileCompatibilityResult;
+  effects: AdoptProjectEffects;
   wroteFiles: boolean;
+}
+
+function buildAdoptProjectEffects(mode: ProjectGroundingMode): AdoptProjectEffects {
+  return {
+    schemaVersion: ADOPT_EFFECTS_SCHEMA_VERSION,
+    sourceMode: 'linked',
+    sourceCodeModified: false,
+    projectMetadataFiles: [
+      '.workspai/project.json',
+      '.workspai/adopt.json',
+      '.workspai/adopt-readiness.json',
+      PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
+      ...(mode === 'off'
+        ? []
+        : [PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH, PROJECT_GROUNDING_RELATIVE_PATH]),
+    ],
+    repositoryControlFiles: [
+      {
+        path: '.gitignore',
+        action: 'reconcile',
+        condition: 'machine-local workspace binding and project-grounding portability rules',
+      },
+      ...(mode === 'managed'
+        ? [
+            {
+              path: 'AGENTS.md',
+              action: 'reconcile' as const,
+              condition:
+                'managed grounding is enabled and the path is a regular file; authored deletions and symbolic links are preserved',
+            },
+          ]
+        : []),
+    ],
+    workspaceOperations: [
+      'register-project',
+      'sync-contract',
+      'rebuild-model',
+      'rebuild-graph',
+      'sync-agent-grounding',
+    ],
+  };
 }
 
 function normalizeProjectName(raw: string): string {
@@ -161,10 +211,19 @@ export async function captureAdoptProjectRollbackSnapshot(
     workspacePath: resolvedWorkspacePath,
     projectPath: resolvedProjectPath,
     files: await Promise.all(
-      filePaths.map(async (filePath) => ({
-        path: filePath,
-        contents: (await fsExtra.pathExists(filePath)) ? await fsExtra.readFile(filePath) : null,
-      }))
+      filePaths.map(async (filePath) => {
+        const stat = await fsExtra.lstat(filePath).catch((error) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw error;
+        });
+        if (stat?.isSymbolicLink()) {
+          return { path: filePath, contents: null, preserve: 'symbolic-link' as const };
+        }
+        return {
+          path: filePath,
+          contents: stat?.isFile() ? await fsExtra.readFile(filePath) : null,
+        };
+      })
     ),
   };
 }
@@ -202,6 +261,7 @@ function buildAdoptedProjectJson(input: {
   isExternal: boolean;
   discoveredRelativePath: string;
   detection: ReturnType<typeof detectBackendFrameworkFromProject>;
+  runtimeCandidates: BackendRuntimeFamily[];
   existingProjectJson: Record<string, unknown> | null;
   refreshManagedDetection: boolean;
   projectKind: WorkspaceProjectKind;
@@ -243,6 +303,7 @@ function buildAdoptedProjectJson(input: {
     category: categorizeWorkspaceProjectKind(input.projectKind),
     project_type: categorizeWorkspaceProjectKind(input.projectKind),
     runtime: input.detection.runtime,
+    runtime_candidates: input.runtimeCandidates,
     framework: input.detection.key,
     kit:
       !input.refreshManagedDetection && typeof input.existingProjectJson?.kit === 'string'
@@ -269,6 +330,7 @@ function buildAdoptedProjectJson(input: {
       detection: {
         framework: input.detection.key,
         runtime: input.detection.runtime,
+        runtime_candidates: input.runtimeCandidates,
         confidence: input.detection.confidence,
         support_tier: input.detection.supportTier,
         source: input.detection.source,
@@ -287,6 +349,7 @@ export async function cleanupAdoptedProjectImport(
   const failures: unknown[] = [];
   for (const file of snapshot.files) {
     try {
+      if (file.preserve === 'symbolic-link') continue;
       if (file.contents === null) {
         await fsExtra.remove(file.path);
       } else {
@@ -334,6 +397,12 @@ export async function adoptProjectIntoWorkspace(
     projectPath,
     refreshManagedDetection ? null : existingProjectJson
   );
+  const nestedRuntimeCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
+  const runtimeCandidates = [
+    detection.runtime,
+    ...nestedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
+  ].filter((runtime, index, values) => runtime !== 'unknown' && values.indexOf(runtime) === index);
+  if (runtimeCandidates.length === 0) runtimeCandidates.push('unknown');
   const projectKind = await inferWorkspaceProjectKind(projectPath, existingProjectJson);
   const projectName =
     normalizeProjectName(
@@ -370,7 +439,7 @@ export async function adoptProjectIntoWorkspace(
   const workspaceProfileCompatibility = resolveWorkspaceProfileCompatibility({
     profile: workspaceProfile,
     runtimes: await collectWorkspaceProfileRuntimes(workspacePath, {
-      additionalRuntimes: [detection.runtime],
+      additionalRuntimes: runtimeCandidates,
     }),
     mode: profilePolicyMode,
   });
@@ -387,6 +456,7 @@ export async function adoptProjectIntoWorkspace(
     isExternal: paths.isExternal,
     discoveredRelativePath: paths.relativePath,
     detection,
+    runtimeCandidates,
     existingProjectJson,
     refreshManagedDetection,
     projectKind,
@@ -416,6 +486,7 @@ export async function adoptProjectIntoWorkspace(
       framework: detection.key,
       framework_display_name: detection.displayName,
       runtime: detection.runtime,
+      runtime_candidates: runtimeCandidates,
       kind: projectKind,
       category: categorizeWorkspaceProjectKind(projectKind),
       confidence: detection.confidence,
@@ -519,6 +590,7 @@ export async function adoptProjectIntoWorkspace(
     relationship: 'adopted',
     stack: detection.importStack,
     runtime: detection.runtime,
+    runtimeCandidates,
     framework: detection.key,
     frameworkDisplayName: detection.displayName,
     supportTier: detection.supportTier,
@@ -528,6 +600,7 @@ export async function adoptProjectIntoWorkspace(
     adoptJsonPath,
     adoptReadinessPath,
     profileCompatibility,
+    effects: buildAdoptProjectEffects(options.projectGrounding ?? 'managed'),
     wroteFiles: options.dryRun !== true,
   };
 }

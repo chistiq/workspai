@@ -631,10 +631,19 @@ function stringValue(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === 'string').sort();
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .sort();
   }
   const record = asRecord(value);
-  return record ? Object.keys(record).sort() : [];
+  return record
+    ? Object.keys(record)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .sort()
+    : [];
 }
 
 function environmentKeys(value: unknown): string[] {
@@ -1111,6 +1120,7 @@ class KnowledgeGraphState {
   readonly diagnostics: WorkspaceKnowledgeDiagnostic[] = [];
   private readonly contentHashes = new Map<string, string | null>();
   private readonly attributeConflicts = new Set<string>();
+  private readonly emptyLabelDiagnostics = new Set<string>();
 
   constructor(
     readonly workspacePath: string,
@@ -1191,6 +1201,19 @@ class KnowledgeGraphState {
     const id = stableId(input.kind, input.key);
     const attributes = portableAttributes(input.attributes ?? {});
     const existing = this.entities.get(id);
+    const requestedLabel = input.label.trim();
+    const label = requestedLabel || existing?.label || input.key.trim() || input.kind;
+    if (!requestedLabel && !this.emptyLabelDiagnostics.has(id)) {
+      this.emptyLabelDiagnostics.add(id);
+      this.diagnostics.push({
+        code: 'graph.knowledge.empty_label_normalized',
+        severity: 'warning',
+        message: `An empty ${input.kind} label was normalized to ${label}.`,
+        entityIds: [id],
+        recommendation:
+          'Inspect the provider proof and preserve a non-empty source identifier before publishing the entity.',
+      });
+    }
     const mergedAttributes = { ...(existing?.attributes ?? {}) };
     for (const [attribute, value] of Object.entries(attributes)) {
       if (
@@ -1203,7 +1226,7 @@ class KnowledgeGraphState {
           this.diagnostics.push({
             code: 'graph.knowledge.attribute_conflict',
             severity: 'warning',
-            message: `Conflicting ${attribute} values were observed for ${input.kind} ${input.label}.`,
+            message: `Conflicting ${attribute} values were observed for ${input.kind} ${label}.`,
             entityIds: [id],
             recommendation:
               'Inspect the entity proof paths and make the authoritative source explicit.',
@@ -1214,7 +1237,11 @@ class KnowledgeGraphState {
       mergedAttributes[attribute] = value;
     }
     const aliases = [
-      ...new Set([...(existing?.identity.aliases ?? []), ...(input.aliases ?? [])]),
+      ...new Set(
+        [...(existing?.identity.aliases ?? []), ...(input.aliases ?? [])]
+          .map((alias) => alias.trim())
+          .filter(Boolean)
+      ),
     ].sort();
     const proofIds = [
       ...new Set([...(existing?.proofIds ?? []), ...(input.proofIds ?? [])]),
@@ -1222,7 +1249,7 @@ class KnowledgeGraphState {
     this.entities.set(id, {
       id,
       kind: input.kind,
-      label: input.label,
+      label,
       ...(input.projectId ? { projectId: input.projectId } : {}),
       identity: {
         key: input.key,
@@ -2424,6 +2451,8 @@ const sourceStructureProvider: Provider = {
       const projectInventory = (context.filesByProject.get(project.id) ?? []).filter(
         (file) => !isNonProductionArtifact(project.root, file)
       );
+      const resolutionInventory =
+        context.semanticFilesByProject.get(project.id) ?? projectInventory;
       const files = balancedSourceSelection(
         (context.filesByProject.get(project.id) ?? []).filter(
           (file) =>
@@ -2432,7 +2461,15 @@ const sourceStructureProvider: Provider = {
         ),
         1_000
       );
-      const usableFiles = new Set<string>();
+      // Extraction stays deliberately bounded, but local import resolution
+      // must see the complete fingerprint inventory. Otherwise imports from a
+      // sampled file to a valid file outside the extraction window become
+      // false unresolved modules in large repositories.
+      const usableFiles = new Set<string>(
+        resolutionInventory
+          .filter((file) => !isNonProductionArtifact(project.root, file))
+          .map((file) => path.resolve(file))
+      );
       const usableFileSizes = new Map<string, number>();
       await Promise.all(
         projectInventory.map(async (file) => {
@@ -2511,15 +2548,19 @@ const sourceStructureProvider: Provider = {
           );
           if (localTarget) {
             const targetArtifact = context.state.artifactPath(localTarget, project);
-            if (!SOURCE_EXTENSIONS.has(path.extname(localTarget).toLowerCase())) {
+            const targetEntityId = stableId('file', `file:${project.id}:${targetArtifact}`);
+            if (!context.state.entities.has(targetEntityId)) {
+              const targetStats = await fsExtra.stat(localTarget).catch(() => null);
               const targetProof = await context.state.addProof({
                 provider: this.id,
                 artifact: targetArtifact,
-                absolutePath: localTarget,
+                ...(targetStats?.isFile() && targetStats.size <= 2 * 1024 * 1024
+                  ? { absolutePath: localTarget }
+                  : {}),
                 derivation: 'extracted',
                 trust: 'observed',
                 confidence: 'high',
-                detail: 'Locally imported non-source artifact',
+                detail: 'Locally imported artifact resolved from the project inventory',
               });
               const targetFileEntity = context.state.addEntity({
                 kind: 'file',
@@ -2530,7 +2571,9 @@ const sourceStructureProvider: Provider = {
                 attributes: {
                   artifact: targetArtifact,
                   language: sourceLanguage(localTarget, project.runtime),
-                  bytes: usableFileSizes.get(path.resolve(localTarget)),
+                  bytes:
+                    usableFileSizes.get(path.resolve(localTarget)) ??
+                    (targetStats?.isFile() ? targetStats.size : undefined),
                 },
                 proofIds: [targetProof],
               });
@@ -2543,7 +2586,7 @@ const sourceStructureProvider: Provider = {
             }
             context.state.addRelation({
               from: fileEntity,
-              to: stableId('file', `file:${project.id}:${targetArtifact}`),
+              to: targetEntityId,
               kind: 'imports',
               confidence: 'high',
               proofIds: [proof],
@@ -2655,9 +2698,9 @@ const sourceStructureProvider: Provider = {
         context.state.diagnostics.push({
           code: 'graph.provider.source_structure.limit_reached',
           severity: 'info',
-          message: `Source extraction for ${project.id} reached its bounded inventory limit.`,
+          message: `Source extraction for ${project.id} sampled ${files.length} file(s) from ${projectInventory.length} indexed candidate(s).`,
           recommendation:
-            'Use the standalone graph package provider configuration for deeper symbol indexing.',
+            'Use bounded graph search, evidence, and path queries for proof-backed retrieval; do not treat the sampled symbol inventory as exhaustive.',
         });
       }
       if (unresolvedLocalImports > 0) {

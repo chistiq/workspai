@@ -20,6 +20,7 @@ import {
 } from './utils/platform-capabilities.js';
 import {
   detectBackendFrameworkFromProject,
+  detectNestedRuntimeCandidatesFromProject,
   type BackendFrameworkDetection,
   type BackendPlatformKey,
   type BackendImportStack,
@@ -78,7 +79,7 @@ import {
 } from './utils/doctor-repair-capabilities.js';
 import { buildEnterpriseSurfaceProbes } from './utils/doctor-surface-probes.js';
 import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './workspace-history.js';
-import { isWorkspaceShellDirectory } from './utils/workspace-root.js';
+import { findWorkspaceRootUp, isWorkspaceShellDirectory } from './utils/workspace-root.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
@@ -192,22 +193,20 @@ function sortRapidkitInstalledPaths(
 
 interface HealthCheckResult {
   status: 'ok' | 'warn' | 'error';
+  applicability?: 'applicable' | 'not-applicable';
   message: string;
   details?: string;
   paths?: { location: string; path: string; version?: string }[]; // Multiple installation paths
 }
 
 function optionalizeHealthCheck(check: HealthCheckResult, reason: string): HealthCheckResult {
-  if (check.status !== 'error') {
-    return check;
-  }
-
   const details = [check.details, reason]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join(' ');
   return {
     ...check,
-    status: 'warn',
+    status: check.status === 'error' ? 'warn' : check.status,
+    applicability: 'not-applicable',
     ...(details ? { details } : {}),
   };
 }
@@ -223,6 +222,7 @@ function contextualizeDoctorSystemChecks(
   projects: ProjectHealth[]
 ): typeof checks {
   const hasPythonProject = projects.some((project) => project.runtimeFamily === 'python');
+  const hasGoProject = projects.some((project) => project.runtimeFamily === 'go');
   return {
     ...checks,
     python: hasPythonProject
@@ -231,12 +231,23 @@ function contextualizeDoctorSystemChecks(
           checks.python,
           'Python is optional because this scope has no detected Python project.'
         ),
-    rapidkitCore: /not installed/i.test(checks.rapidkitCore.message)
-      ? optionalizeHealthCheck(
-          checks.rapidkitCore,
-          'RapidKit Core is an optional engine for Python-backed kits and modules; Workspai CLI diagnostics remain available without it.'
-        )
-      : checks.rapidkitCore,
+    poetry: hasPythonProject
+      ? checks.poetry
+      : optionalizeHealthCheck(checks.poetry, 'Poetry is not applicable to this project scope.'),
+    pipx: hasPythonProject
+      ? checks.pipx
+      : optionalizeHealthCheck(checks.pipx, 'pipx is not applicable to this project scope.'),
+    go: hasGoProject
+      ? checks.go
+      : optionalizeHealthCheck(checks.go, 'Go is not applicable to this project scope.'),
+    rapidkitCore:
+      /not installed/i.test(checks.rapidkitCore.message) ||
+      (!hasPythonProject && checks.rapidkitCore.status !== 'error')
+        ? optionalizeHealthCheck(
+            checks.rapidkitCore,
+            'RapidKit Core is an optional engine for Python-backed kits and modules; Workspai CLI diagnostics remain available without it.'
+          )
+        : checks.rapidkitCore,
   };
 }
 
@@ -307,6 +318,8 @@ type ProjectRuntimeFamily =
   | 'cpp'
   | 'unknown';
 type ProjectKind = 'backend' | 'frontend' | 'desktop' | 'extension' | 'fullstack' | 'generic';
+type ProjectArchetype =
+  'application' | 'service' | 'library' | 'sdk' | 'platform' | 'plugin' | 'monorepo' | 'unknown';
 type FrameworkConfidence = 'high' | 'medium' | 'low';
 
 interface ProjectHealth {
@@ -328,6 +341,7 @@ interface ProjectHealth {
   runtimeFamily?: ProjectRuntimeFamily;
   runtimeFamilies?: ProjectRuntimeFamily[];
   projectKind?: ProjectKind;
+  projectArchetype?: ProjectArchetype;
   frameworkConfidence?: FrameworkConfidence;
   isGoProject?: boolean;
   kit?: string;
@@ -364,6 +378,8 @@ interface DoctorProbeSummary {
   failed: number;
   blockingFindings: number;
   advisoryFindings: number;
+  unknownFindings: number;
+  contradictionFindings: number;
   verdict: DoctorVerdict;
 }
 
@@ -469,6 +485,17 @@ interface HealthScore {
   warnings: number;
   errors: number;
   verdict: DoctorVerdict;
+  presentation: {
+    policy: 'doctor-multi-axis-v1';
+    diagnosticPassRatePercent: number | null;
+    blockingFindings: number;
+    advisoryFindings: number;
+    unknownFindings: number;
+    contradictionFindings: number;
+    notApplicableChecks: number;
+    /** A pass rate is accounting telemetry, never an overall health claim. */
+    label: 'diagnostic-pass-rate';
+  };
   components: {
     host: {
       total: number;
@@ -1003,6 +1030,7 @@ function applyUniversalDoctorDiagnosis(project: ProjectHealth): void {
     runtimeFamilies: project.runtimeFamilies,
     framework: project.framework,
     projectKind: project.projectKind,
+    projectArchetype: project.projectArchetype,
     probes: project.probes ?? [],
     legacyIssues: project.issues,
     dependencySubjects: project.dependencyAudit?.subjects,
@@ -4600,6 +4628,15 @@ function normalizeProjectFixCommands(health: ProjectHealth): ProjectHealth {
 }
 
 async function detectProjectRuntimeFamilies(projectPath: string): Promise<ProjectRuntimeFamily[]> {
+  // Keep Doctor's composite-runtime truth aligned with the canonical workspace
+  // model. Linked/adopted repositories are authorized project boundaries, so
+  // manifests below that boundary are evidence about the project composition,
+  // not independently discovered workspace projects.
+  const nestedCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
+  if (nestedCandidates.length > 0) {
+    return nestedCandidates as ProjectRuntimeFamily[];
+  }
+
   const exists = async (name: string): Promise<boolean> =>
     fsExtra.pathExists(path.join(projectPath, name));
   const entries = await fsExtra.readdir(projectPath).catch(() => [] as string[]);
@@ -4646,6 +4683,111 @@ async function detectProjectRuntimeFamilies(projectPath: string): Promise<Projec
   return families.length > 0 ? families : ['unknown'];
 }
 
+async function detectProjectArchetype(
+  projectPath: string,
+  health: ProjectHealth
+): Promise<ProjectArchetype> {
+  if (health.projectKind === 'extension') return 'plugin';
+  if (
+    health.projectKind === 'frontend' ||
+    health.projectKind === 'desktop' ||
+    health.projectKind === 'fullstack'
+  ) {
+    return 'application';
+  }
+
+  const packageJson = await fsExtra
+    .readJson(path.join(projectPath, 'package.json'))
+    .catch(() => null);
+  const hasWorkspaceDeclaration = Boolean(
+    packageJson &&
+    (Array.isArray(packageJson.workspaces) ||
+      (packageJson.workspaces && typeof packageJson.workspaces === 'object'))
+  );
+  const hasNativeBuild =
+    (await fsExtra.pathExists(path.join(projectPath, 'CMakeLists.txt'))) ||
+    (await fsExtra.pathExists(path.join(projectPath, 'meson.build')));
+  const hasPublicHeaders = await fsExtra.pathExists(path.join(projectPath, 'include'));
+  const hasBindingSurface = (
+    await Promise.all(
+      ['bindings', 'src/proto', 'proto', 'python', 'ruby', 'php', 'csharp', 'objective-c'].map(
+        (relativePath) => fsExtra.pathExists(path.join(projectPath, relativePath))
+      )
+    )
+  ).some(Boolean);
+
+  if (
+    (health.runtimeFamilies?.length ?? 0) >= 3 ||
+    ((health.runtimeFamilies?.length ?? 0) >= 2 && hasNativeBuild && hasBindingSurface)
+  ) {
+    return 'platform';
+  }
+  if (hasWorkspaceDeclaration) return 'monorepo';
+
+  const packageScripts =
+    packageJson?.scripts && typeof packageJson.scripts === 'object' ? packageJson.scripts : {};
+  const exposesPackageApi = Boolean(
+    packageJson?.exports || packageJson?.types || packageJson?.main
+  );
+  const hasApplicationLifecycle = Boolean(
+    packageScripts.start || packageScripts.dev || packageScripts.serve
+  );
+  if (exposesPackageApi && !hasApplicationLifecycle) {
+    return /sdk|client/i.test(String(packageJson?.name ?? health.name)) ? 'sdk' : 'library';
+  }
+  if (hasNativeBuild && hasPublicHeaders) return 'library';
+  if (health.projectKind === 'backend') return 'service';
+  return 'unknown';
+}
+
+function applyArchetypeApplicability(project: ProjectHealth): void {
+  const probes = project.probes ?? [];
+  const duplicateConfigIndexes = probes
+    .map((probe, index) => (probe.id === 'config-surface' ? index : -1))
+    .filter((index) => index >= 0);
+  if (probes.some((probe) => probe.id === 'surface-env-contract')) {
+    project.probes = probes.filter((_, index) => !duplicateConfigIndexes.includes(index));
+  }
+
+  const nonDeployable = new Set<ProjectArchetype>(['library', 'sdk', 'platform', 'plugin']);
+  if (!project.projectArchetype || !nonDeployable.has(project.projectArchetype)) return;
+
+  const suppressedCommands = new Set<string>();
+  project.probes = (project.probes ?? []).map((probe) => {
+    const isDeployableOnly =
+      probe.id === 'migration-surface' ||
+      probe.id === 'runtime-health-surface' ||
+      probe.id.endsWith('-boot-entrypoint') ||
+      (probe.id === 'runtime-security-tooling' &&
+        project.probes?.some((candidate) => candidate.id === 'surface-security-hygiene')) ||
+      (probe.id === 'surface-env-contract' && probe.status !== 'pass');
+    if (!isDeployableOnly) return probe;
+    if (probe.repairCapability?.command) suppressedCommands.add(probe.repairCapability.command);
+    return {
+      ...probe,
+      status: 'pass',
+      severity: 'info',
+      applicability: 'not-applicable',
+      reason: `${probe.label} is not required for the detected ${project.projectArchetype} archetype.`,
+      recommendation: undefined,
+      repairCapability: undefined,
+      repairIntent: undefined,
+    };
+  });
+
+  const activeCapabilityIds = new Set(
+    (project.probes ?? [])
+      .map((probe) => probe.repairCapability?.id)
+      .filter((id): id is string => Boolean(id))
+  );
+  project.repairCapabilities = (project.repairCapabilities ?? []).filter((capability) =>
+    activeCapabilityIds.has(capability.id)
+  );
+  project.fixCommands = (project.fixCommands ?? []).filter(
+    (command) => !suppressedCommands.has(command)
+  );
+}
+
 async function checkProject(
   projectPath: string,
   options: { allowNonRapidkit?: boolean; freshAudit?: boolean } = {}
@@ -4690,6 +4832,16 @@ async function checkProject(
   } else if (!health.projectKind) {
     health.projectKind = 'generic';
   }
+  health.projectArchetype = await detectProjectArchetype(projectPath, health);
+  if (health.projectArchetype === 'platform') {
+    const compositionProbe = health.probes?.find((probe) => probe.id === 'runtime-composition');
+    if (compositionProbe) {
+      compositionProbe.reason = `Cross-language platform boundary detected: ${health.runtimeFamilies.join(', ')}. The primary ${health.runtimeFamily ?? 'unknown'} adapter is combined with portable cross-runtime evidence.`;
+      compositionProbe.recommendation =
+        'Add explicit adapters only for runtime-specific checks that are not represented by the portable evidence contract.';
+    }
+  }
+  applyArchetypeApplicability(health);
   finalizeUniversalDoctorDiagnosis(health);
   return health;
 }
@@ -4841,22 +4993,20 @@ async function findRapidkitProjectsDeep(
 }
 
 async function findWorkspace(startPath: string): Promise<string | null> {
+  // Use the canonical resolver so Doctor behaves like every other workspace
+  // intelligence command when launched from an adopted/linked project.
+  const canonical = findWorkspaceRootUp(startPath);
+  if (canonical) return canonical;
+
+  // Preserve read compatibility with pre-contract RapidKit workspace markers
+  // that are intentionally outside the canonical project-link resolver.
   let currentPath = path.resolve(startPath);
   const root = path.parse(currentPath).root;
-
   while (true) {
-    if (await hasWorkspaceRootMarkers(currentPath)) {
-      return currentPath;
-    }
-
-    if (currentPath === root) {
-      break;
-    }
-
+    if (await hasWorkspaceRootMarkers(currentPath)) return currentPath;
+    if (currentPath === root) return null;
     currentPath = path.dirname(currentPath);
   }
-
-  return null;
 }
 
 async function findProjectRoot(startPath: string): Promise<string | null> {
@@ -4955,6 +5105,7 @@ function calculateHealthScore(
   const projectScore = { total: 0, passed: 0, warnings: 0, errors: 0 };
 
   systemChecks.forEach((check) => {
+    if (check.applicability === 'not-applicable') return;
     host.total += 1;
     if (check.status === 'ok') host.passed += 1;
     else if (check.status === 'warn') host.warnings += 1;
@@ -5012,12 +5163,24 @@ function calculateHealthScore(
   const passed = host.passed + projectScore.passed;
   const warnings = host.warnings + projectScore.warnings;
   const errors = host.errors + projectScore.errors;
+  const counts = buildDoctorCountSummary(projects, systemChecks);
+  const total = host.total + projectScore.total;
   return {
-    total: host.total + projectScore.total,
+    total,
     passed,
     warnings,
     errors,
     verdict: errors > 0 ? 'blocked' : warnings > 0 ? 'attention' : 'passed',
+    presentation: {
+      policy: 'doctor-multi-axis-v1',
+      diagnosticPassRatePercent: total > 0 ? Math.round((passed / total) * 100) : null,
+      blockingFindings: counts.blockingCauses + counts.systemErrors,
+      advisoryFindings: counts.advisoryFindings,
+      unknownFindings: counts.unknownFindings,
+      contradictionFindings: counts.contradictionFindings,
+      notApplicableChecks: counts.notApplicableChecks,
+      label: 'diagnostic-pass-rate',
+    },
     components: { host, projects: projectScore },
   };
 }
@@ -5029,12 +5192,11 @@ function buildDoctorProbeSummary(project: ProjectHealth): DoctorProbeSummary {
   const failed = probes.filter((probe) => probe.status === 'fail').length;
   const blockingFindings =
     project.diagnosis?.coverage.blockingFindings ?? failed + project.issues.length;
-  const diagnosisTrustGaps = project.diagnosis
-    ? project.diagnosis.coverage.unknownFindings + project.diagnosis.coverage.contradictionCount
-    : 0;
   const advisoryFindings = project.diagnosis
-    ? project.diagnosis.coverage.advisoryFindings + diagnosisTrustGaps
+    ? project.diagnosis.coverage.advisoryFindings
     : warnings;
+  const unknownFindings = project.diagnosis?.coverage.unknownFindings ?? 0;
+  const contradictionFindings = project.diagnosis?.coverage.contradictionCount ?? 0;
   return {
     total: probes.length,
     passed,
@@ -5042,7 +5204,14 @@ function buildDoctorProbeSummary(project: ProjectHealth): DoctorProbeSummary {
     failed,
     blockingFindings,
     advisoryFindings,
-    verdict: blockingFindings > 0 ? 'blocked' : advisoryFindings > 0 ? 'attention' : 'passed',
+    unknownFindings,
+    contradictionFindings,
+    verdict:
+      blockingFindings > 0
+        ? 'blocked'
+        : advisoryFindings + unknownFindings + contradictionFindings > 0
+          ? 'attention'
+          : 'passed',
   };
 }
 
@@ -5054,12 +5223,10 @@ function buildDoctorCountSummary(
   const summaries = projects.map(buildDoctorProbeSummary);
   return {
     projectsScanned: projects.length,
-    affectedProjects: summaries.filter(
-      (summary) => summary.blockingFindings > 0 || summary.advisoryFindings > 0
-    ).length,
+    affectedProjects: summaries.filter((summary) => summary.verdict !== 'passed').length,
     projectsBlocked: summaries.filter((summary) => summary.blockingFindings > 0).length,
     projectsNeedingAttention: summaries.filter(
-      (summary) => summary.blockingFindings === 0 && summary.advisoryFindings > 0
+      (summary) => summary.blockingFindings === 0 && summary.verdict === 'attention'
     ).length,
     blockingCauses: diagnoses.reduce(
       (sum, diagnosis) => sum + (diagnosis?.coverage.blockingFindings ?? 0),
@@ -5097,12 +5264,13 @@ function buildDoctorCountSummary(
       (sum, project) => sum + (project.dependencyAudit?.findingCount ?? 0),
       0
     ),
-    notApplicableChecks: projects.reduce(
-      (sum, project) =>
-        sum +
-        (project.probes ?? []).filter((probe) => probe.applicability === 'not-applicable').length,
-      0
-    ),
+    notApplicableChecks:
+      projects.reduce(
+        (sum, project) =>
+          sum +
+          (project.probes ?? []).filter((probe) => probe.applicability === 'not-applicable').length,
+        0
+      ) + systemChecks.filter((check) => check.applicability === 'not-applicable').length,
     systemErrors: systemChecks.filter((check) => check.status === 'error').length,
   };
 }
@@ -5443,6 +5611,7 @@ function serializeDoctorProjectForOutput(project: ProjectHealth): Record<string,
     runtimeFamily: project.runtimeFamily,
     runtimeFamilies: project.runtimeFamilies,
     projectKind: project.projectKind,
+    projectArchetype: project.projectArchetype,
     supportTier: project.supportTier,
     frameworkConfidence: project.frameworkConfidence,
     kit: project.kit,
@@ -5915,13 +6084,31 @@ function humanFixDescription(project: ProjectHealth, command: string): string {
   const runnable = separator
     ? command.slice((separator.index ?? 0) + separator[0].length)
     : command;
-  return `Run in project: ${runnable}`;
+  return `Run in project: ${runnable.replace(/^npx\s+(?:--no-install\s+)?workspai\b/, 'workspai')}`;
 }
 
-function renderProjectHealth(project: ProjectHealth, hostCore?: HealthCheckResult): void {
-  const hasIssues = project.issues.length > 0;
-  const icon = hasIssues ? '⚠️' : '✅';
-  const nameColor = hasIssues ? chalk.yellow : chalk.green;
+function portableDoctorPath(projectPath: string, workspacePath?: string): string {
+  if (!workspacePath) return '$PROJECT';
+  const relative = path.relative(workspacePath, projectPath).split(path.sep).join('/');
+  if (relative && !relative.startsWith('../') && relative !== '..') {
+    return relative === '' ? '$WORKSPACE' : `$WORKSPACE/${relative}`;
+  }
+  return `external/${path.basename(projectPath)}`;
+}
+
+function renderProjectHealth(
+  project: ProjectHealth,
+  hostCore?: HealthCheckResult,
+  options: { verbose?: boolean; workspacePath?: string; scope?: 'workspace' | 'project' } = {}
+): void {
+  const summary = buildDoctorProbeSummary(project);
+  const icon = summary.verdict === 'blocked' ? '❌' : summary.verdict === 'attention' ? '⚠️' : '✅';
+  const nameColor =
+    summary.verdict === 'blocked'
+      ? chalk.red
+      : summary.verdict === 'attention'
+        ? chalk.yellow
+        : chalk.green;
 
   console.log(`\n${icon} ${chalk.bold('Project')}: ${nameColor(project.name)}`);
 
@@ -5975,8 +6162,11 @@ function renderProjectHealth(project: ProjectHealth, hostCore?: HealthCheckResul
                                             : project.framework === 'ASP.NET'
                                               ? '🔷'
                                               : '📦';
+    const frameworkLabel = ['C', 'C++', 'Python', 'Unknown'].includes(project.framework)
+      ? 'Detected stack'
+      : 'Framework';
     console.log(
-      `   ${frameworkIcon} Framework: ${chalk.cyan(project.framework)}${project.kit ? chalk.gray(` (${project.kit})`) : ''}`
+      `   ${frameworkIcon} ${frameworkLabel}: ${chalk.cyan(project.framework)}${project.kit ? chalk.gray(` (${project.kit})`) : ''}`
     );
 
     const profileParts: string[] = [];
@@ -5986,8 +6176,14 @@ function renderProjectHealth(project: ProjectHealth, hostCore?: HealthCheckResul
     if (project.projectKind) {
       profileParts.push(`kind: ${project.projectKind}`);
     }
+    if (project.projectArchetype) {
+      profileParts.push(`archetype: ${project.projectArchetype}`);
+    }
     if (project.supportTier) {
-      profileParts.push(`support: ${project.supportTier}`);
+      profileParts.push(`lifecycle support: ${project.supportTier}`);
+    }
+    if (project.diagnosis?.capability.tier) {
+      profileParts.push(`diagnostic adapter: ${project.diagnosis.capability.tier}`);
     }
     if (project.frameworkConfidence) {
       profileParts.push(`confidence: ${project.frameworkConfidence}`);
@@ -5997,7 +6193,39 @@ function renderProjectHealth(project: ProjectHealth, hostCore?: HealthCheckResul
     }
   }
 
-  console.log(`   ${chalk.gray(`Path: ${project.path}`)}`);
+  console.log(
+    `   ${chalk.gray(`Boundary: ${portableDoctorPath(project.path, options.workspacePath)}`)}`
+  );
+
+  if (!options.verbose) {
+    if (project.runtimeFamily === 'python' && !project.coreInstalled && hostCore?.status !== 'ok') {
+      console.log(
+        `   ${chalk.dim('ℹ')} RapidKit Core: ${chalk.gray('Not detected locally or globally')}`
+      );
+    }
+    console.log(
+      `   ${chalk.green(`${summary.passed} passed`)} ${chalk.gray('·')} ${chalk.yellow(`${summary.advisoryFindings} advisory`)} ${chalk.gray('·')} ${chalk.red(`${summary.blockingFindings} blocking`)}${project.diagnosis?.coverage.unknownFindings ? ` ${chalk.gray('·')} ${project.diagnosis.coverage.unknownFindings} unknown` : ''}`
+    );
+    const findings = (project.diagnosis?.findings ?? []).filter(
+      (finding) =>
+        finding.status === 'blocking' ||
+        finding.status === 'unknown' ||
+        finding.status === 'advisory'
+    );
+    for (const finding of findings.slice(0, 4)) {
+      const findingIcon =
+        finding.status === 'blocking' ? '✖' : finding.status === 'unknown' ? '?' : '!';
+      const color = finding.status === 'blocking' ? chalk.red : chalk.yellow;
+      console.log(`     ${color(findingIcon)} ${finding.label}: ${chalk.gray(finding.symptom)}`);
+    }
+    if (findings.length > 4) {
+      const verboseScope = options.scope ?? 'workspace';
+      console.log(
+        `     ${chalk.dim(`… ${findings.length - 4} more finding(s); run workspai doctor ${verboseScope} --verbose`)}`
+      );
+    }
+    return;
+  }
 
   const isPythonProject = project.runtimeFamily === 'python';
 
@@ -8648,6 +8876,7 @@ export async function runDoctor(
     fix?: boolean;
     plan?: boolean;
     apply?: boolean;
+    verbose?: boolean;
     strict?: boolean;
     ci?: boolean;
     profile?: string;
@@ -8694,7 +8923,7 @@ export async function runDoctor(
         );
       }
       console.log(chalk.bold(`Workspace: ${chalk.cyan(path.basename(workspacePath))}`));
-      console.log(chalk.gray(`Path: ${workspacePath}`));
+      console.log(chalk.gray('Boundary: $WORKSPACE'));
     }
 
     const allowProjectScanCache = !(options.plan || options.fix || options.apply);
@@ -8714,7 +8943,11 @@ export async function runDoctor(
         );
       }
       if (health.evidencePath) {
-        console.log(chalk.gray(`ℹ️  Evidence saved: ${health.evidencePath}`));
+        console.log(
+          chalk.gray(
+            `ℹ️  Evidence saved: ${path.relative(workspacePath, health.evidencePath).split(path.sep).join('/')}`
+          )
+        );
       }
     }
 
@@ -8839,6 +9072,7 @@ export async function runDoctor(
                       name: project.name,
                       path: project.path,
                       runtimeFamily: project.runtimeFamily ?? 'unknown',
+                      projectArchetype: project.projectArchetype ?? 'unknown',
                       verdict: summary.verdict,
                       blockingCauses:
                         project.diagnosis?.coverage.blockingFindings ?? summary.blockingFindings,
@@ -8870,28 +9104,60 @@ export async function runDoctor(
       );
     }
 
-    // Render health score
+    const headlineCounts = buildDoctorCountSummary(health.projects, [
+      health.python,
+      health.poetry,
+      health.pipx,
+      health.go,
+      health.rapidkitCore,
+    ]);
+    const headlineVerdict = health.healthScore?.verdict ?? 'passed';
+    const verdictIcon =
+      headlineVerdict === 'blocked' ? '❌' : headlineVerdict === 'attention' ? '⚠️' : '✅';
+    const verdictColor =
+      headlineVerdict === 'blocked'
+        ? chalk.red
+        : headlineVerdict === 'attention'
+          ? chalk.yellow
+          : chalk.green;
+    console.log(
+      `\n${verdictIcon} ${verdictColor.bold(headlineVerdict.toUpperCase())} ${chalk.gray('·')} ${health.projects.length} project(s) ${chalk.gray('·')} ${headlineCounts.projectsBlocked} blocked ${chalk.gray('·')} ${headlineCounts.projectsNeedingAttention} need attention`
+    );
+    console.log(
+      `   ${headlineCounts.blockingCauses + headlineCounts.systemErrors} blocking ${chalk.gray('·')} ${headlineCounts.advisoryFindings} advisory ${chalk.gray('·')} ${headlineCounts.unknownFindings} unknown ${chalk.gray('·')} ${headlineCounts.notApplicableChecks} not applicable`
+    );
+
+    // Diagnostic accounting is deliberately multi-axis. A single percentage
+    // must not make a blocked workspace look partially healthy.
     if (health.healthScore) {
       const score = health.healthScore;
-      const percentage = Math.round((score.passed / score.total) * 100);
-      const scoreColor =
-        percentage >= 80 ? chalk.green : percentage >= 50 ? chalk.yellow : chalk.red;
-      const bar =
-        '█'.repeat(Math.floor(percentage / 5)) + '░'.repeat(20 - Math.floor(percentage / 5));
-
-      console.log(chalk.bold('\n📊 Health Score:'));
-      console.log(`   ${scoreColor(`${percentage}%`)} ${chalk.gray(bar)}`);
+      console.log(chalk.bold('\n📊 Diagnostic accounting:'));
       console.log(
-        `   ${chalk.green(`✅ ${score.passed} passed`)} ${chalk.gray('|')} ${chalk.yellow(`⚠️ ${score.warnings} warnings`)} ${chalk.gray('|')} ${chalk.red(`❌ ${score.errors} errors`)}`
+        `   ${chalk.green(`${score.passed} passed`)} ${chalk.gray('|')} ${chalk.yellow(`${score.warnings} warnings`)} ${chalk.gray('|')} ${chalk.red(`${score.errors} errors`)} ${chalk.gray('|')} ${score.presentation.notApplicableChecks} N/A`
+      );
+      console.log(
+        chalk.dim(
+          `   Diagnostic pass rate: ${score.presentation.diagnosticPassRatePercent ?? 'n/a'}% (accounting only; verdict and blocking findings govern readiness)`
+        )
       );
     }
 
+    const workspaceSystemTools: Array<[HealthCheckResult, string]> = [
+      [health.python, 'Python'],
+      [health.poetry, 'Poetry'],
+      [health.pipx, 'pipx'],
+      [health.go, 'Go'],
+      [health.rapidkitCore, 'RapidKit Core'],
+    ];
+    const visibleWorkspaceSystemTools = options.verbose
+      ? workspaceSystemTools
+      : workspaceSystemTools.filter(([check]) => check.applicability !== 'not-applicable');
     console.log(chalk.bold('\n\nSystem Tools:\n'));
-    renderHealthCheck(health.python, 'Python');
-    renderHealthCheck(health.poetry, 'Poetry');
-    renderHealthCheck(health.pipx, 'pipx');
-    renderHealthCheck(health.go, 'Go');
-    renderHealthCheck(health.rapidkitCore, 'RapidKit Core');
+    if (visibleWorkspaceSystemTools.length === 0) {
+      console.log(chalk.gray('No host prerequisites apply to the detected primary runtimes.'));
+    } else {
+      visibleWorkspaceSystemTools.forEach(([check, label]) => renderHealthCheck(check, label));
+    }
 
     // Version compatibility warning. Core and npm use independent minor streams;
     // only warn on incompatible major streams to avoid false-positive release noise.
@@ -8911,7 +9177,13 @@ export async function runDoctor(
 
     if (health.projects.length > 0) {
       console.log(chalk.bold(`\n📦 Projects (${health.projects.length}):`));
-      health.projects.forEach((project) => renderProjectHealth(project, health.rapidkitCore));
+      health.projects.forEach((project) =>
+        renderProjectHealth(project, health.rapidkitCore, {
+          verbose: options.verbose,
+          workspacePath,
+          scope: 'workspace',
+        })
+      );
     } else {
       console.log(chalk.bold('\n📦 Projects:'));
       console.log(chalk.gray('   No Workspai projects found in workspace'));
@@ -8927,12 +9199,16 @@ export async function runDoctor(
       (sum, summary) => sum + summary.advisoryFindings,
       0
     );
+    const trustGapCount = projectSummaries.reduce(
+      (sum, summary) => sum + summary.unknownFindings + summary.contradictionFindings,
+      0
+    );
     const hasSystemIssues = [health.python, health.rapidkitCore].some((c) => c.status === 'error');
 
-    if (hasSystemIssues || totalIssues > 0 || advisoryWarningCount > 0) {
+    if (hasSystemIssues || totalIssues > 0 || advisoryWarningCount > 0 || trustGapCount > 0) {
       console.log(
         chalk.bold.yellow(
-          `\n⚠️  Doctor verdict: ${health.healthScore?.verdict ?? 'attention'} · ${totalIssues} blocking finding(s) · ${advisoryWarningCount} advisory finding(s)`
+          `\n⚠️  Doctor verdict: ${health.healthScore?.verdict ?? 'attention'} · ${totalIssues} blocking · ${advisoryWarningCount} advisory · ${trustGapCount} trust gap(s)`
         )
       );
       if (hasSystemIssues) {
@@ -8999,7 +9275,10 @@ export async function runDoctor(
           }
         }
       } else if (totalIssues > 0) {
-        await executeFixCommands(health.projects, false);
+        console.log(chalk.bold.cyan('\nNext action:'));
+        console.log('   Review the governed remediation plan:');
+        console.log(chalk.white('   workspai doctor workspace --plan'));
+        console.log(chalk.dim('   Apply only after review: workspai doctor workspace --apply'));
       }
     } else {
       console.log(chalk.bold.green('\n✅ All checks passed! Workspace is healthy.'));
@@ -9031,6 +9310,16 @@ export async function runDoctor(
             warnings: 0,
             errors: 1,
             verdict: 'blocked',
+            presentation: {
+              policy: 'doctor-multi-axis-v1',
+              diagnosticPassRatePercent: 0,
+              blockingFindings: 1,
+              advisoryFindings: 0,
+              unknownFindings: 0,
+              contradictionFindings: 0,
+              notApplicableChecks: 0,
+              label: 'diagnostic-pass-rate',
+            },
             components: {
               host: { total: 0, passed: 0, warnings: 0, errors: 0 },
               projects: { total: 1, passed: 0, warnings: 0, errors: 1 },
@@ -9199,6 +9488,7 @@ export async function runDoctor(
                   path: reportedProjectPath,
                   runtimeFamily: envelope.project.runtimeFamily ?? 'unknown',
                   framework: envelope.project.framework ?? 'Unknown',
+                  projectArchetype: envelope.project.projectArchetype ?? 'unknown',
                 },
                 verdict: probeSummary.verdict,
                 counts,
@@ -9232,35 +9522,53 @@ export async function runDoctor(
     }
 
     console.log(chalk.bold(`Project: ${chalk.cyan(path.basename(projectPath))}`));
-    console.log(chalk.gray(`Path: ${projectPath}`));
+    console.log(chalk.gray('Boundary: $PROJECT'));
     if (envelope.workspacePath) {
       console.log(chalk.gray(`Workspace: ${path.basename(envelope.workspacePath)}`));
     }
     if (envelope.evidencePath) {
-      console.log(chalk.gray(`ℹ️  Evidence saved: ${envelope.evidencePath}`));
+      const evidenceRoot = envelope.workspacePath ?? projectPath;
+      console.log(
+        chalk.gray(
+          `ℹ️  Evidence saved: ${path.relative(evidenceRoot, envelope.evidencePath).split(path.sep).join('/')}`
+        )
+      );
     }
 
     const score = envelope.healthScore;
-    const percentage = score.total > 0 ? Math.round((score.passed / score.total) * 100) : 0;
-    const scoreColor = percentage >= 80 ? chalk.green : percentage >= 50 ? chalk.yellow : chalk.red;
-    const bar =
-      '█'.repeat(Math.floor(percentage / 5)) + '░'.repeat(20 - Math.floor(percentage / 5));
-
-    console.log(chalk.bold('\n📊 Health Score:'));
-    console.log(`   ${scoreColor(`${percentage}%`)} ${chalk.gray(bar)}`);
+    console.log(chalk.bold('\n📊 Diagnostic accounting:'));
     console.log(
-      `   ${chalk.green(`✅ ${score.passed} passed`)} ${chalk.gray('|')} ${chalk.yellow(`⚠️ ${score.warnings} warnings`)} ${chalk.gray('|')} ${chalk.red(`❌ ${score.errors} errors`)}`
+      `   ${chalk.green(`${score.passed} passed`)} ${chalk.gray('|')} ${chalk.yellow(`${score.warnings} warnings`)} ${chalk.gray('|')} ${chalk.red(`${score.errors} errors`)} ${chalk.gray('|')} ${score.presentation.notApplicableChecks} N/A`
+    );
+    console.log(
+      chalk.dim(
+        `   Diagnostic pass rate: ${score.presentation.diagnosticPassRatePercent ?? 'n/a'}% (accounting only; verdict and blockers govern readiness)`
+      )
     );
 
+    const projectSystemTools: Array<[HealthCheckResult, string]> = [
+      [envelope.python, 'Python'],
+      [envelope.poetry, 'Poetry'],
+      [envelope.pipx, 'pipx'],
+      [envelope.go, 'Go'],
+      [envelope.rapidkitCore, 'RapidKit Core'],
+    ];
+    const visibleProjectSystemTools = options.verbose
+      ? projectSystemTools
+      : projectSystemTools.filter(([check]) => check.applicability !== 'not-applicable');
     console.log(chalk.bold('\n\nSystem Tools:\n'));
-    renderHealthCheck(envelope.python, 'Python');
-    renderHealthCheck(envelope.poetry, 'Poetry');
-    renderHealthCheck(envelope.pipx, 'pipx');
-    renderHealthCheck(envelope.go, 'Go');
-    renderHealthCheck(envelope.rapidkitCore, 'RapidKit Core');
+    if (visibleProjectSystemTools.length === 0) {
+      console.log(chalk.gray('No host prerequisites apply to the detected primary runtime.'));
+    } else {
+      visibleProjectSystemTools.forEach(([check, label]) => renderHealthCheck(check, label));
+    }
 
     console.log(chalk.bold('\n📦 Project (1):'));
-    renderProjectHealth(envelope.project, envelope.rapidkitCore);
+    renderProjectHealth(envelope.project, envelope.rapidkitCore, {
+      verbose: options.verbose,
+      workspacePath: envelope.workspacePath,
+      scope: 'project',
+    });
 
     const hasSystemIssues = [envelope.python, envelope.rapidkitCore].some(
       (c) => c.status === 'error'
@@ -9268,11 +9576,12 @@ export async function runDoctor(
     const probeSummary = buildDoctorProbeSummary(envelope.project);
     const issueCount = probeSummary.blockingFindings;
     const advisoryWarningCount = probeSummary.advisoryFindings;
+    const trustGapCount = probeSummary.unknownFindings + probeSummary.contradictionFindings;
 
-    if (hasSystemIssues || issueCount > 0 || advisoryWarningCount > 0) {
+    if (hasSystemIssues || issueCount > 0 || advisoryWarningCount > 0 || trustGapCount > 0) {
       console.log(
         chalk.bold.yellow(
-          `\n⚠️  Doctor verdict: ${probeSummary.verdict} · ${issueCount} blocking finding(s) · ${advisoryWarningCount} advisory finding(s)`
+          `\n⚠️  Doctor verdict: ${probeSummary.verdict} · ${issueCount} blocking · ${advisoryWarningCount} advisory · ${trustGapCount} trust gap(s)`
         )
       );
       if (hasSystemIssues) {
@@ -9309,7 +9618,9 @@ export async function runDoctor(
           historyScope: 'project',
         });
       } else if (issueCount > 0) {
-        await executeFixCommands([envelope.project], false);
+        console.log(chalk.bold.cyan('\nNext action:'));
+        console.log(chalk.white('   workspai doctor project --plan'));
+        console.log(chalk.dim('   Apply only after review: workspai doctor project --apply'));
       }
     } else {
       console.log(chalk.bold.green('\n✅ All checks passed! Project is healthy.'));

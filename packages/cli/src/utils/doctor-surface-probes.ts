@@ -82,8 +82,8 @@ const DEPENDENCY_LOCKFILES: Record<DoctorSurfaceRuntimeFamily, string[]> = {
   dotnet: ['packages.lock.json', 'Directory.Packages.props'],
   scala: ['project/build.properties', 'project/plugins.sbt'],
   kotlin: ['gradle.lockfile', 'gradle/libs.versions.toml'],
-  c: ['conan.lock', 'vcpkg-lock.json'],
-  cpp: ['conan.lock', 'vcpkg-lock.json'],
+  c: ['conan.lock', 'vcpkg-lock.json', 'MODULE.bazel.lock', 'requirements.bazel.lock'],
+  cpp: ['conan.lock', 'vcpkg-lock.json', 'MODULE.bazel.lock', 'requirements.bazel.lock'],
   unknown: [],
 };
 
@@ -102,8 +102,8 @@ const DEPENDENCY_MANIFESTS: Record<DoctorSurfaceRuntimeFamily, string[]> = {
   dotnet: ['*.csproj', '*.sln'],
   scala: ['build.sbt'],
   kotlin: ['build.gradle', 'build.gradle.kts', 'pom.xml'],
-  c: ['CMakeLists.txt', 'meson.build', 'Makefile'],
-  cpp: ['CMakeLists.txt', 'meson.build', 'Makefile'],
+  c: ['CMakeLists.txt', 'meson.build', 'Makefile', 'MODULE.bazel', 'WORKSPACE'],
+  cpp: ['CMakeLists.txt', 'meson.build', 'Makefile', 'MODULE.bazel', 'WORKSPACE'],
   unknown: [],
 };
 

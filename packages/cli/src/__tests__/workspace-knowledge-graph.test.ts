@@ -352,6 +352,36 @@ describe('workspace knowledge graph', () => {
     expect(JSON.stringify(result).length).toBeLessThan(JSON.stringify(graph).length);
   });
 
+  it('rejects empty manifest identifiers and guarantees schema-safe entity identity text', async () => {
+    const root = await fixture();
+    await fsExtra.outputJson(path.join(root, 'api', 'package.json'), {
+      name: '@platform/api',
+      version: '1.0.0',
+      dependencies: { '': '1.0.0', '  ': '2.0.0', '@nestjs/core': '^11.0.0' },
+    });
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(graph.entities.every((entity) => entity.label.trim().length > 0)).toBe(true);
+    expect(
+      graph.entities.every((entity) =>
+        entity.identity.aliases.every((alias) => alias.trim().length > 0)
+      )
+    ).toBe(true);
+    expect(
+      graph.entities.some((entity) => entity.kind === 'module' && entity.label === '@nestjs/core')
+    ).toBe(true);
+    expect(graph.entities.some((entity) => entity.identity.key === 'dependency:npm:')).toBe(false);
+  });
+
   it('keeps generated test hosts and fixture code out of production architecture surfaces', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -598,6 +628,56 @@ describe('workspace knowledge graph', () => {
         (entity) => entity.kind === 'test-suite' && entity.attributes.language === 'python'
       )
     ).toMatchObject({ attributes: { fileCount: 1, language: 'python' } });
+  });
+
+  it('resolves local imports against the full fingerprint inventory beyond the extraction window', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-large-imports-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'api', 'package.json'), {
+      name: '@example/large-api',
+    });
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', '000-importer.ts'),
+      "import { target } from './zzz-target';\nexport const value = target;\n"
+    );
+    await Promise.all(
+      Array.from({ length: 105 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(root, 'api', 'src', `middle-${String(index).padStart(3, '0')}.ts`),
+          `export const value${index} = ${index};\n`
+        )
+      )
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', 'zzz-target.ts'),
+      'export const target = true;\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'large-imports' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      maxFilesPerProject: 100,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.kind === 'module' &&
+          entity.attributes.specifier === './zzz-target' &&
+          entity.attributes.resolution === 'unresolved-local'
+      )
+    ).toBe(false);
+    expect(
+      graph.relations.some((relation) => {
+        if (relation.kind !== 'imports') return false;
+        const target = graph.entities.find((entity) => entity.id === relation.to);
+        return String(target?.label).endsWith('src/zzz-target.ts');
+      })
+    ).toBe(true);
   });
 
   it('parses Python, Cargo, and Maven dependencies without manifest metadata pollution', async () => {
@@ -977,6 +1057,60 @@ describe('workspace knowledge graph', () => {
     expect(
       result.entities.filter((entity) => entity.label.startsWith('check-windows')).length
     ).toBe(0);
+  });
+
+  it('does not let a generic service intent outrank multi-term repository evidence', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [
+        { id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' },
+        { id: 'web', path: 'web', runtime: 'python', framework: 'fastapi' },
+      ],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-generic-service',
+        kind: 'api',
+        label: 'EchoService',
+        projectId: 'api',
+        identity: {
+          key: 'api:echo-service',
+          scope: 'project',
+          aliases: ['service'],
+          fingerprint: 'echo-service',
+        },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-extension-host-ipc',
+        kind: 'file',
+        label: 'src/workbench/services/extensions/common/extensionHostIpc.ts',
+        projectId: 'web',
+        identity: {
+          key: 'file:web:extension-host-ipc',
+          scope: 'project',
+          aliases: ['extension host IPC'],
+          fingerprint: 'extension-host-ipc',
+        },
+        attributes: {},
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'extension host workbench IPC service',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('synthetic-extension-host-ipc');
+    expect(result.entities.some((entity) => entity.id === 'synthetic-generic-service')).toBe(false);
   });
 
   it('diversifies broad operational architecture searches across consumer surfaces', async () => {

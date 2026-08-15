@@ -343,7 +343,10 @@ export function assertDoctorEvidenceSemanticInvariants(payload: unknown): void {
       const expectedProjectVerdict =
         blockingFindings > 0
           ? 'blocked'
-          : integerField(summary, 'advisoryFindings') > 0
+          : integerField(summary, 'advisoryFindings') +
+                Number(summary.unknownFindings ?? 0) +
+                Number(summary.contradictionFindings ?? 0) >
+              0
             ? 'attention'
             : 'passed';
       if (

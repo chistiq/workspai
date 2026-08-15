@@ -385,6 +385,10 @@
           "attributeName": "fresh"
         },
         {
+          "flags": "--verbose",
+          "attributeName": "verbose"
+        },
+        {
           "flags": "--strict",
           "attributeName": "strict"
         },

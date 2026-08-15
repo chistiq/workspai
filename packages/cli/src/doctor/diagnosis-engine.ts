@@ -64,6 +64,7 @@ export type BuildDoctorDiagnosisInput = {
   runtimeFamilies?: string[];
   framework?: string;
   projectKind?: string;
+  projectArchetype?: string;
   probes: DoctorDiagnosisProbeInput[];
   legacyIssues?: string[];
   dependencySubjects?: Array<{
@@ -499,7 +500,10 @@ export function buildDoctorDiagnosis(input: BuildDoctorDiagnosisInput): DoctorDi
       })),
     ...unevaluatedRuntimeFamilies.map((runtime) => ({
       id: `unknown:runtime:${slug(runtime)}:${stableToken(input.projectPath)}`,
-      reason: `${runtime} was detected inside this composite project boundary, but the ${primaryRuntime} adapter is the only runtime-specific adapter evaluated for this scan. Declare a nested project boundary or a typed Doctor adapter before treating ${runtime} as healthy.`,
+      reason:
+        input.projectArchetype === 'platform'
+          ? `${runtime} is part of this cross-language platform, but only portable evidence and the primary ${primaryRuntime} runtime adapter were evaluated. Add a typed ${runtime} adapter before making runtime-specific health claims.`
+          : `${runtime} was detected inside this composite project boundary, but the ${primaryRuntime} adapter is the only runtime-specific adapter evaluated for this scan. Declare a nested project boundary or a typed Doctor adapter before treating ${runtime} as healthy.`,
     })),
   ];
   const diagnosedFindings = findings.filter(

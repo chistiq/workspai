@@ -26,6 +26,7 @@ import {
 import { buildPublishedContractCatalog } from '../../contracts/published-contract-versions';
 import { buildOperationalJsonSchemas } from '../../contracts/operational-json-schemas';
 import {
+  buildAdoptEffectsSchema,
   buildIngestionPlanSchema,
   buildIngestionResultSchema,
 } from '../../contracts/ingestion-contract';
@@ -105,6 +106,7 @@ describe('generated shared contracts (Wave B + C)', () => {
   it('keeps the canonical ingestion plan and result schemas aligned with their generators', () => {
     expect(readJsonContract('ingestion-plan.v1.json')).toEqual(buildIngestionPlanSchema());
     expect(readJsonContract('ingestion-result.v1.json')).toEqual(buildIngestionResultSchema());
+    expect(readJsonContract('adopt-effects.v1.json')).toEqual(buildAdoptEffectsSchema());
   });
 
   it('keeps committed create planner capabilities aligned with the generator', () => {

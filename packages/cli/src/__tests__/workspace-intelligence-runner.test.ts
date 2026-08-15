@@ -325,6 +325,9 @@ describe('unified Workspace Intelligence runner', () => {
       message: expect.stringContaining('missing required project grounding'),
     });
     expect(report.stages.find((stage) => stage.id === 'explain')?.status).toBe('passed');
+    expect(report.stages.find((stage) => stage.id === 'explain')?.message).toContain(
+      'Strict policy blocked advisory or incomplete evidence in agent-sync.'
+    );
   });
 
   it('fails closed on preflight failure and deterministically skips all downstream stages', async () => {

@@ -5,9 +5,39 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/chistiq/workspai/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/chistiq/workspai/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-## Workspace Intelligence for software systems
+## Give your AI agent the system—not just the repository
+
+Your coding agent should not have to rediscover your architecture in every
+session. Workspai builds a current, evidence-backed view of your projects,
+APIs, dependencies, infrastructure, and change boundaries, then gives agents
+the bounded context they need.
 
 > One workspace. One truth. Humans and AI aligned.
+
+```bash
+npx workspai adopt .
+npx workspai workspace intelligence run --for-agent generic
+```
+
+A single run gives developers and tools the same operational picture:
+
+```text
+System     projects · runtimes · APIs · dependencies · infrastructure
+Evidence   relationships linked back to canonical proof
+Change     affected projects and verification targets
+Agents     bounded context instead of an unfiltered repository dump
+```
+
+**Understand the system before an agent changes it.**
+
+![Workspai CLI adopting and analyzing the gRPC repository](packages/cli/docs/workspai-grpc-readme-cli.gif)
+
+[Get started](#start-with-your-software) ·
+[See what you get](#what-workspai-gives-you) ·
+[How it works](#how-it-works) ·
+[Documentation](packages/cli/docs/README.md)
+
+## Workspace Intelligence for software systems
 
 Software is more than a folder of source files. It includes projects, services,
 APIs, dependencies, infrastructure, documentation, tests, policies, and release
@@ -21,9 +51,6 @@ understand and work with the same software system:
 - **Change with confidence:** see impact, run the right checks, and give AI tools
   focused context.
 
-[Get started](#start-with-your-software) ·
-[How it works](#how-it-works) ·
-[Documentation](packages/cli/docs/README.md) ·
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
 
 ![From Code to Shared Understanding](packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png)
@@ -47,7 +74,9 @@ npx workspai workspace intelligence run --for-agent generic --strict --json
 This run builds the current system view, checks its evidence, and prepares
 shared context for people and tools. Results are saved under `.workspai/`.
 When something is missing or blocked, Workspai reports it instead of claiming
-the workspace is healthy.
+the workspace is healthy. This canonical form gives CI, agents, and other
+machine consumers strict gate semantics through the versioned JSON contract;
+omit `--strict --json` for the shorter human-readable first run shown above.
 
 Starting from scratch? Use the guided flow:
 

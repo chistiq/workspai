@@ -55,8 +55,12 @@ npx workspai workspace import team.workspai-archive.zip --output ./team --json
 - Registry and contract sync include adopted projects for `workspace model`, `workspace context`, Dashboard, and agents.
 - Managed grounding writes a portable project lens, project grounding, and a
   bounded managed section in `AGENTS.md`. User-authored `AGENTS.md` content is
-  preserved.
-- `--dry-run --json` previews detection without writing metadata.
+  preserved, and an authored tracked deletion of that file is never resurrected.
+- `--dry-run --json` previews detection without writing metadata. Its versioned
+  `adoptedProject.effects` record also declares project metadata files,
+  conditional `.gitignore`/`AGENTS.md` reconciliation, and the registration,
+  contract, model, graph, and agent-grounding operations that a real run would
+  perform.
 
 ### Existing workspace behavior
 
@@ -103,6 +107,7 @@ entry point into its canonical workspace:
 ```bash
 cd /absolute/path/to/project
 npx workspai project workspace status --json
+npx workspai doctor workspace --json=summary
 npx workspai doctor project --json
 npx workspai workspace graph search "authentication endpoint" --limit 12 --json
 npx workspai workspace intelligence run --for-agent generic --strict --json
@@ -208,6 +213,7 @@ npx workspai workspace contract init
 npx workspai workspace contract inspect
 npx workspai workspace contract verify --strict
 npx workspai workspace contract graph
+npx workspai workspace contract graph --output ./contract-graph.json --json
 ```
 
 Contract file: `.workspai/workspace.contract.json`. Verification checks schema, duplicate slugs, port collisions, and unknown dependencies.
@@ -221,6 +227,12 @@ orphans, hotspots, and cycles. Project nodes also expose safe package metadata,
 public environment-template keys, command capabilities, key manifests,
 entrypoints, API specifications, infrastructure, documentation, and an
 operational verification profile. Environment values are never emitted.
+
+The full contract graph can be large because it includes the Knowledge Graph.
+For automation, IDEs, and agents, pass `--output`; the complete portable graph
+is written to that file and stdout remains a bounded
+`workspai-cli-operation-result-v1` receipt. Without `--output`, the existing
+full JSON response remains backward compatible.
 
 The same response also exposes `knowledgeGraph` under the public
 `workspace-knowledge-graph.v1` contract. It is a provider-neutral,

@@ -102,6 +102,20 @@ they are in the current graph. Exact labels and identities still win. This keeps
 a common word such as `check` from outranking a rarer term such as `user` merely
 because it appears in more files. No embedding service or model call is involved.
 
+For multi-term questions, a generic kind intent such as `service` or `api`
+cannot qualify an otherwise unrelated entity by itself. The result must cover
+the query's meaningful terms, except for deliberate broad architecture queries
+whose purpose is to return a diversified set of languages, bindings,
+dependencies, ownership, CI, deployment, documentation, and contracts.
+
+Source-structure extraction is also deliberately sampled. Local import
+resolution uses the larger bounded fingerprint inventory, so a sampled source
+file can still link to a valid target outside the extraction window. A target
+outside the sample receives a lightweight proof-backed file entity; its full
+symbols are not implied to have been extracted. The graph diagnostic reports
+the sampled and indexed candidate counts and must not be read as exhaustive
+symbol coverage.
+
 ### Fast reads without stale answers
 
 The read-oriented `search`, `entities`, `evidence`, `path`, and `benchmark`
@@ -142,11 +156,18 @@ files beyond that declared limit.
 | Why does Workspai believe an item exists?            | `workspace graph evidence <entity-or-relation> --json`  |
 | How are two things connected?                        | `workspace graph path <from> <to> --json`               |
 | What changed between graph revisions?                | `workspace graph overlay --from <graph.json> --json`    |
-| What is the full portable graph?                     | `workspace graph emit --json`                           |
-| How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`       |
+| What is the full portable graph?                     | `workspace graph emit --output graph.json --json`       |
+| How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`        |
 | How do I export to semantic or graph-analysis tools? | `workspace graph jsonld\|graphml\|gexf --output <file>` |
 | How much retrieval payload did one query avoid?      | `workspace graph benchmark <query> --limit <n> --json`  |
-| How should an MCP-compatible agent retrieve context? | `workspace mcp serve` → `searchWorkspaceGraph`          |
+
+`graph emit --json` writes the complete dependency and Knowledge Graph to
+stdout and can be very large. Automation, IDEs, and agents should pass
+`--output`; stdout then contains only a bounded
+`workspai-cli-operation-result-v1` receipt. Use `search`, `entities`,
+`evidence`, or `path` for bounded retrieval rather than loading the full
+export.
+| How should an MCP-compatible agent retrieve context? | `workspace mcp serve` → `searchWorkspaceGraph` |
 
 ## What it models
 

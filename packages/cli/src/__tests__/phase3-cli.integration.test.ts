@@ -113,6 +113,74 @@ describe('Phase 3 commands - CLI process integration', () => {
     }
   }, 60_000);
 
+  it('resolves Doctor workspace scope from an adopted project link', () => {
+    const dist = ensureDistBuilt();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-doctor-adopt-link-'));
+    const isolatedHome = path.join(tempDir, 'home');
+    const workspaceDir = path.join(tempDir, 'workspace');
+    const projectDir = path.join(tempDir, 'api');
+
+    try {
+      fs.mkdirSync(path.join(workspaceDir, '.workspai'), { recursive: true });
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.mkdirSync(isolatedHome, { recursive: true });
+      fs.writeFileSync(path.join(workspaceDir, '.workspai-workspace'), 'workspace\n');
+      fs.writeFileSync(
+        path.join(workspaceDir, '.workspai', 'workspace.json'),
+        JSON.stringify({ workspace_name: 'workspace', profile: 'minimal' })
+      );
+      fs.writeFileSync(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'api', scripts: { test: 'node --test' } })
+      );
+
+      const adopt = spawnSync(
+        process.execPath,
+        [dist, 'adopt', projectDir, '--workspace', workspaceDir, '--json'],
+        {
+          cwd: projectDir,
+          encoding: 'utf8',
+          env: cliEnv({ HOME: isolatedHome, USERPROFILE: isolatedHome }),
+        }
+      );
+      expect(adopt.status).toBe(0);
+
+      const doctor = spawnSync(
+        process.execPath,
+        [dist, 'doctor', 'workspace', '--json', 'summary'],
+        {
+          cwd: projectDir,
+          encoding: 'utf8',
+          env: cliEnv({ HOME: isolatedHome, USERPROFILE: isolatedHome }),
+        }
+      );
+
+      expect(doctor.stdout).not.toContain('No Workspai workspace found');
+      expect(() => JSON.parse(doctor.stdout)).not.toThrow();
+      expect(JSON.parse(doctor.stdout)).toMatchObject({
+        scope: 'workspace',
+        workspace: { name: 'workspace', path: workspaceDir },
+      });
+
+      const preview = spawnSync(
+        process.execPath,
+        [dist, 'adopt', projectDir, '--workspace', workspaceDir, '--dry-run', '--json'],
+        {
+          cwd: projectDir,
+          encoding: 'utf8',
+          env: cliEnv({ HOME: isolatedHome, USERPROFILE: isolatedHome }),
+        }
+      );
+      expect(preview.status).toBe(0);
+      expect(JSON.parse(preview.stdout)).toMatchObject({
+        dryRun: true,
+        commandsResolveWorkspaceFromProject: true,
+      });
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  }, 60_000);
+
   it.each([
     { label: 'without a source argument', sourceArgs: [] },
     { label: 'with the current-directory source', sourceArgs: ['.'] },

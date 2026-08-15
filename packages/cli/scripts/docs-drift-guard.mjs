@@ -45,6 +45,7 @@ const requiredSnippets = [
 const errors = [];
 
 const requiredCliReadmeHeadings = [
+  '## Give your AI agent the system—not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start in two minutes',
   '## What happens after the first run',
@@ -208,6 +209,7 @@ for (const selector of [
 }
 
 const requiredRepositoryReadmeHeadings = [
+  '## Give your AI agent the system—not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start with your software',
   '## What Workspai gives you',
@@ -258,6 +260,7 @@ if (!fs.existsSync(readmeContentContractPath)) {
     'published-contract-catalog.v1.json',
     'workspace-intelligence-architecture.v1.json',
     'Results vary by workspace and query',
+    'Keep videos outside the npm package tarball',
   ]) {
     if (!readmeContentContract.includes(semantic)) {
       errors.push(`README content contract is missing required policy: ${semantic}`);

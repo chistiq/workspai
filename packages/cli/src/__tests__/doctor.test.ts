@@ -911,7 +911,11 @@ describe('Doctor Command', () => {
       expect(payload.system.python.details).toContain('no detected Python project');
       expect(payload.system.rapidkitCore).toMatchObject({ status: 'warn' });
       expect(payload.system.rapidkitCore.details).toContain('optional engine');
-      expect(payload.healthScore).toMatchObject({ errors: 0, verdict: 'attention' });
+      expect(payload.healthScore).toMatchObject({ errors: 0, verdict: 'passed' });
+      expect(payload.healthScore.presentation).toMatchObject({
+        diagnosticPassRatePercent: null,
+        notApplicableChecks: 5,
+      });
     } finally {
       process.chdir(originalCwd);
       if (originalHome === undefined) delete process.env.HOME;
@@ -2866,6 +2870,129 @@ describe('Doctor Command', () => {
         )
       );
       expect(namespacedEvidence).toEqual(projectEvidence);
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('classifies cross-language platforms without service-only false warnings', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-platform-'));
+    const projectPath = path.join(tempRoot, 'polyglot-core');
+    await fsExtra.ensureDir(path.join(projectPath, 'src'));
+    await fsExtra.ensureDir(path.join(projectPath, 'include'));
+    await fsExtra.ensureDir(path.join(projectPath, 'bindings'));
+    await fsExtra.writeFile(path.join(projectPath, 'CMakeLists.txt'), 'project(polyglot_core)\n');
+    await fsExtra.writeFile(
+      path.join(projectPath, 'src', 'core.cpp'),
+      'int core() { return 1; }\n'
+    );
+    await fsExtra.writeFile(path.join(projectPath, 'go.mod'), 'module example.test/polyglot\n');
+    await fsExtra.writeFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[project]\nname="polyglot"\n'
+    );
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'polyglot-bindings',
+      version: '1.0.0',
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.project.projectArchetype).toBe('platform');
+      for (const probeId of [
+        'surface-env-contract',
+        'migration-surface',
+        'runtime-health-surface',
+        'adapter-cpp-boot-entrypoint',
+      ]) {
+        const probe = payload.project.probes.find(
+          (candidate: { id?: string }) => candidate.id === probeId
+        );
+        if (probe) {
+          expect(probe.applicability).toBe('not-applicable');
+          expect(probe.status).toBe('pass');
+        }
+      }
+      expect(
+        payload.project.probes.filter((probe: { id?: string }) => probe.id === 'config-surface')
+      ).toHaveLength(0);
+      expect(payload.healthScore.presentation.policy).toBe('doctor-multi-axis-v1');
+      expect(payload.healthScore.presentation.notApplicableChecks).toBeGreaterThan(0);
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('uses nested runtime manifests for an adopted polyglot SDK boundary', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-sdk-'));
+    const projectPath = path.join(tempRoot, 'polyglot-sdk');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'dotnet', 'src', 'Sdk.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk" />\n'
+    );
+    await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'java', 'pom.xml'),
+      '<project><modelVersion>4.0.0</modelVersion></project>\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'nodejs', 'package.json'),
+      JSON.stringify({ name: 'example-sdk', version: '1.0.0' })
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'python', 'pyproject.toml'),
+      '[project]\nname="example-sdk"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'rust', 'Cargo.toml'),
+      '[package]\nname="example-sdk"\nversion="1.0.0"\n'
+    );
+    await fsExtra.outputJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'polyglot-sdk',
+      managed_by: 'workspai',
+      relationship: 'adopted',
+      runtime: 'dotnet',
+      framework: 'dotnet',
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.project.runtimeFamilies).toEqual([
+        'go',
+        'rust',
+        'java',
+        'dotnet',
+        'node',
+        'python',
+      ]);
+      expect(payload.project.projectArchetype).toBe('platform');
+      expect(payload.project.diagnosis.project.runtimeFamilies).toHaveLength(6);
+      expect(
+        payload.project.diagnosis.unknowns.filter((item: { id?: string }) =>
+          item.id?.startsWith('unknown:runtime:')
+        )
+      ).toHaveLength(5);
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();

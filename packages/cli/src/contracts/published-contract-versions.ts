@@ -56,6 +56,7 @@ import {
 } from '../utils/doctor-evidence-contract.js';
 import { PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION } from './project-workspace-resolution-contract.js';
 import {
+  ADOPT_EFFECTS_SCHEMA_VERSION,
   INGESTION_PLAN_SCHEMA_VERSION,
   INGESTION_RESULT_SCHEMA_VERSION,
 } from './ingestion-contract.js';
@@ -81,6 +82,7 @@ export function getPublishedContractVersions() {
     workspaceArchiveOperationResult: WORKSPACE_ARCHIVE_OPERATION_RESULT_SCHEMA_VERSION,
     ingestionPlan: INGESTION_PLAN_SCHEMA_VERSION,
     ingestionResult: INGESTION_RESULT_SCHEMA_VERSION,
+    adoptEffects: ADOPT_EFFECTS_SCHEMA_VERSION,
     projectEntryCapability: PROJECT_ENTRY_CAPABILITY_SCHEMA_VERSION,
     projectWorkspaceLink:
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectWorkspaceLink.schemaVersion,
@@ -184,6 +186,7 @@ export function getPublishedContractCatalog() {
     workspaceArchiveOperationResult: 'contracts/workspace-archive-operation-result.v1.json',
     ingestionPlan: 'contracts/ingestion-plan.v1.json',
     ingestionResult: 'contracts/ingestion-result.v1.json',
+    adoptEffects: 'contracts/adopt-effects.v1.json',
     projectEntryCapability: 'contracts/project-entry-capability.v1.json',
     projectWorkspaceLink: 'contracts/project-workspace-link.v1.json',
     projectWorkspaceResolution: 'contracts/project-workspace-resolution.v1.json',

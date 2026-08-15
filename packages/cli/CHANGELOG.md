@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Reworked Doctor's human output around an authoritative verdict and separate
+  blocking, advisory, unknown, contradiction, and not-applicable accounting;
+  the legacy percentage is now explicitly a diagnostic pass rate rather than a
+  workspace health claim.
+- Added independent project archetype classification so libraries, SDKs,
+  plugins, monorepos, and cross-language platforms do not receive service-only
+  migration, health-endpoint, environment, or boot-entrypoint warnings.
+- Made Doctor's default terminal output summary-first, portable-path safe, and
+  remediation-plan first; `--verbose` retains full probe and lifecycle detail.
+- Made source-structure extraction resolve local imports against the complete
+  bounded fingerprint inventory while retaining a smaller extraction sample,
+  reducing false unresolved edges in large repositories without unbounded
+  graph growth.
+- Made multi-term graph retrieval require meaningful term coverage before a
+  generic service/API intent boost can qualify a result.
+- Added versioned `workspai.adopt-effects.v1` preview data so adoption consumers
+  can show project metadata, repository-control reconciliation, and downstream
+  workspace intelligence operations before writing.
+- Added reproducible isolated and cumulative real-world qualification harnesses
+  for polyglot repositories and the read-mostly enterprise command surface.
+- Made qualification reports publication-safe by default: machine-specific
+  roots are mandatory runtime inputs, project identifiers are anonymized, raw
+  command output and invocation paths are omitted, and a fail-closed guard
+  rejects local paths before a report can be written.
+- Made nested runtime composition first-class across adoption, Doctor, project
+  metadata, and command capabilities; composite repositories now state when
+  lifecycle coverage belongs only to the primary runtime adapter.
+- Added bounded JSON receipts for full `workspace graph emit` and
+  `workspace contract graph` exports when `--output` is supplied, preventing
+  large graph artifacts from flooding agent, IDE, or CI stdout buffers.
+
+### Fixed
+
+- Fixed `doctor workspace` and `doctor --workspace` failing to resolve the
+  canonical workspace when invoked from an adopted or linked project.
+- Fixed managed project grounding recreating an intentionally deleted tracked
+  `AGENTS.md` file.
+- Fixed re-adopt dry runs reporting that workspace commands could not resolve
+  even when the existing project binding was valid.
+- Fixed strict Workspace Intelligence summaries reporting zero blocking reasons
+  without identifying that strict policy had gated advisory or incomplete
+  evidence.
+- Fixed local import relations targeting source files outside the extraction
+  sample producing missing target entities.
+- Fixed adoption following or replacing authored `AGENTS.md` symbolic links;
+  repository symlinks are preserved while portable project grounding remains
+  available under `.workspai`.
+- Fixed empty manifest identifiers producing schema-invalid Knowledge Graph
+  entity labels; providers now reject empty identifiers and the graph state
+  enforces non-empty labels and aliases as a final invariant.
+- Fixed snapshot create, list, inspect, and restore failures emitting human
+  prose under `--json`; failures now use the shared versioned operation-error
+  envelope for CI, IDE, and agent consumers.
+- Updated the transitive development-toolchain `nanoid` dependency to the
+  patched release so both production and full npm audits report zero known
+  vulnerabilities.
+
 ## [0.56.0] - 2026-08-11
 
 ### Added
@@ -144,7 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed missing Python launchers leaking a raw `--version exited with code
-  undefined` failure instead of the actionable `PYTHON_NOT_FOUND` diagnostic.
+undefined` failure instead of the actionable `PYTHON_NOT_FOUND` diagnostic.
 - Fixed `workspace repair capabilities --project <name>` inspecting the
   workspace root instead of the selected managed or externally linked project.
 - Fixed the final agent report index being published before Explain and the

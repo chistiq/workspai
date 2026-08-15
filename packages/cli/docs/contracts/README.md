@@ -24,15 +24,17 @@ Do not copy a schema from `main` and assume it matches an older installed CLI.
 
 Canonical JSON lives in **`../../contracts/`** (CLI package root, published in the tarball).
 
-| Script                                    | Purpose                                                                                                               |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `npm run generate:contracts`              | Regenerate runtime surface, create planner, agent customization pack, import-stack parity, module-layout, infra-stack |
-| `npm run check:generated-contracts`       | Verify committed JSON matches generators                                                                              |
-| `npm run sync:parity-snapshot`            | Copy canonical → vscode `contracts/` mirror                                                                           |
-| `npm run check:parity-snapshot`           | Verify mirrors match canonical                                                                                        |
-| `npm run validate:contracts`              | Shared-contract checks and focused contract tests                                                                     |
-| `npm run contracts:validate`              | Comprehensive generated/shared contract, parity, runtime-conformance, and adversarial gate                            |
-| `npm run check:agent-customization-drift` | Verify generated agent customization files are committed in a consumer workspace                                      |
+| Script                                      | Purpose                                                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `npm run generate:contracts`                | Regenerate runtime surface, create planner, agent customization pack, import-stack parity, module-layout, infra-stack |
+| `npm run check:generated-contracts`         | Verify committed JSON matches generators                                                                              |
+| `npm run sync:parity-snapshot`              | Copy canonical → vscode `contracts/` mirror                                                                           |
+| `npm run check:parity-snapshot`             | Verify mirrors match canonical                                                                                        |
+| `npm run validate:contracts`                | Shared-contract checks and focused contract tests                                                                     |
+| `npm run contracts:validate`                | Comprehensive generated/shared contract, parity, runtime-conformance, and adversarial gate                            |
+| `npm run check:agent-customization-drift`   | Verify generated agent customization files are committed in a consumer workspace                                      |
+| `npm run test:real-world -- ...`            | Qualify explicitly selected linked repositories in isolated or cumulative workspaces                                  |
+| `npm run test:real-world:enterprise -- ...` | Exercise the read-mostly, export, archive, agent dry-run, snapshot, and destructive dry-run command surface           |
 
 Workflow: change code → `npm run generate:contracts` → `npm run sync:parity-snapshot` → commit npm + vscode `contracts/`.
 
@@ -72,6 +74,7 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `analyze-last-run.v1.json` — analyze evidence
 - `pipeline-last-run.v1.json` — governance pipeline orchestration
 - `project-entry-capability.v1.json` — open-ended adopt/import contract for readable projects
+- `adopt-effects.v1.json` — dry-run disclosure of project metadata, conditional repository-control reconciliation, and workspace operations before adoption
 - `create-planner-capabilities.v1.json` — native, official, and existing capability lanes
 - `agent-customization-pack.v1.json` — generated instructions, prompts, skills, agents, optional hooks, MCP-ready design metadata, target matrix, and drift state for AI agent surfaces
 - `workspace-list.v1.json`, `workspace-sync.v1.json`, and `compatibility-matrix.v1.json` — workspace discovery, synchronization, and platform compatibility
@@ -135,3 +138,4 @@ CLI commands: see [commands-reference.md](../commands-reference.md) and the
 - [Documentation index](../README.md)
 - [commands-reference.md](../commands-reference.md)
 - [workspace-operations.md](../workspace-operations.md)
+- [real-world-qualification.md](../real-world-qualification.md)

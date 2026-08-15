@@ -51,6 +51,11 @@
       "contractPath": "contracts/ingestion-result.v1.json",
       "publication": "json-schema"
     },
+    "adoptEffects": {
+      "schemaVersion": "workspai.adopt-effects.v1",
+      "contractPath": "contracts/adopt-effects.v1.json",
+      "publication": "json-schema"
+    },
     "projectEntryCapability": {
       "schemaVersion": "workspai-project-entry-capability-v1",
       "contractPath": "contracts/project-entry-capability.v1.json",

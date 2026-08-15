@@ -5,26 +5,28 @@ you to replace your frameworks or move existing source code.
 
 ```mermaid
 flowchart TB
-    Code["Your projects and repositories"]
+    Sources["Projects · APIs · packages<br/>infrastructure · docs · CI"]
 
-    Routes["Create a project<br/>Adopt it in place<br/>or Import a repository"]
+    Connect["Create · Adopt in place · Import"]
 
-    Workspace["Workspai builds one model of<br/>projects, dependencies, rules, and commands"]
+    Model["Canonical Workspace Model<br/>identity · inventory · boundaries"]
 
-    Change["What changed?<br/>What is affected?<br/>Is the evidence ready?"]
+    Graph["Derived Knowledge Graph<br/>relationships · facts · canonical proof"]
 
-    Outputs["Context, impact, verification,<br/>explanations, and release evidence"]
+    Decide["Diff · Impact · Evidence gates<br/>Readiness · Verify"]
 
-    Code --> Routes
-    Routes --> Workspace
-    Workspace --> Change
-    Change --> Outputs
+    Ground["Reports · bounded context<br/>Agent sync · Explain"]
 
-    Outputs --> Developers["Developers"]
-    Outputs --> CI["CI and releases"]
-    Outputs --> IDEs["IDEs"]
-    Outputs --> Agents["AI agents"]
-    Outputs --> MCP["MCP clients"]
+    Sources --> Connect
+    Connect --> Model
+    Model -->|derives, revision-bound| Graph
+    Model --> Decide
+    Graph --> Decide
+    Decide --> Ground
+
+    Ground --> Humans["Developers"]
+    Ground --> Automation["CI · releases"]
+    Ground --> Tools["IDEs · MCP · AI agents"]
 ```
 
 ## What This Means
@@ -40,8 +42,8 @@ flowchart TB
    the evidence needed for a safe decision.
 4. **Share the result.** Developers, CI, IDEs, AI agents, and MCP clients consume
    the same workspace truth instead of building separate assumptions. The
-   current CLI exposes a read-mostly `workspace mcp serve` bridge; a dedicated
-   `packages/mcp` boundary is planned.
+   current CLI exposes the governed evidence through its reports, agent context,
+   graph queries, and read-mostly `workspace mcp serve` bridge.
 
 This is the user-facing view. The implementation uses a versioned chain of
 model, change, evidence, verification, context, grounding, and explanation
@@ -57,7 +59,10 @@ baseline lifecycle, exit codes, and failure propagation are specified in
 [Unified Workspace Intelligence Runner](./workspace-intelligence-runner.md).
 
 The npm README uses a PNG rendering because npm package pages do not reliably
-render Mermaid. When this source changes, regenerate
+render Mermaid. npm also does not provide a dependable embedded-video player
+for package READMEs. Keep the full MP4 outside the published package. For inline
+motion, use a bounded, silent GIF hosted as a public asset; retain a linked MP4
+for full-resolution playback and audio. When this source changes, regenerate
 `From Code to Shared Understanding.png` before publishing.
 
 ## Execute the Contract

@@ -18,21 +18,23 @@ versioned contracts and focused guides.
 
 The root README keeps this order:
 
-1. product category, slogan, and three outcomes;
-2. one copyable path for existing software and one guided path for new software;
-3. a short outcome-oriented view of what Workspai provides;
-4. the canonical Model → derived Graph boundary and intelligence chain;
-5. consumer surfaces and goal-based documentation links;
-6. package, contributor, community, and license routes.
+1. a problem-first product promise, slogan, and copyable first run;
+2. product category and three durable outcomes;
+3. one copyable path for existing software and one guided path for new software;
+4. a short outcome-oriented view of what Workspai provides;
+5. the canonical Model → derived Graph boundary and intelligence chain;
+6. consumer surfaces and goal-based documentation links;
+7. package, contributor, community, and license routes.
 
 The CLI README keeps this order:
 
-1. product category, slogan, and value;
-2. a two-minute existing-project path and the guided create path;
-3. the small set of durable outputs a user should recognize;
-4. the canonical Model → derived Graph boundary and intelligence chain;
-5. everyday workflows grouped by goal;
-6. outputs, requirements, documentation, troubleshooting, and contribution.
+1. a problem-first product promise, slogan, and copyable first run;
+2. product category and durable value;
+3. a two-minute existing-project path and the guided create path;
+4. the small set of durable outputs a user should recognize;
+5. the canonical Model → derived Graph boundary and intelligence chain;
+6. everyday workflows grouped by goal;
+7. outputs, requirements, documentation, troubleshooting, and contribution.
 
 ## What does not belong in a main README
 
@@ -109,6 +111,17 @@ task-success claim.
 - Prefer one representative command over a wall of variants.
 - Link to deeper guidance instead of duplicating it.
 - Do not add a README section for every feature or release.
+
+## Media policy
+
+- Keep videos outside the npm package tarball; use a stable website, CDN, or
+  GitHub Release asset.
+- npm READMEs may use a lightweight poster or a bounded, silent GIF instead of
+  relying on an embedded video player. Link to the hosted MP4 when full
+  resolution or audio matters.
+- Keep the poster or first GIF frame meaningful without playback and give it
+  useful alternative text.
+- Do not commit generated social-video masters under `packages/cli/docs/`.
 
 ## Validation
 
