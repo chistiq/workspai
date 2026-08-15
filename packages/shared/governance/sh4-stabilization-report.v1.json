@@ -1,0 +1,192 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/shared",
+  "stage": "SH4-registered-internal-consumer-migration",
+  "asOf": "2026-08-14",
+  "status": "approved",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "The registered consumer set is derived from the package registry, Graph composes canonical Shared contracts, and the nonexistent Model package is explicitly deferred.",
+      "evidence": [
+        "packages/shared/governance/sh4-internal-consumers.v1.json",
+        "packages/graph/src/contracts/provider.ts",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Consumer discovery and cycle validation are registry-driven, so later admitted packages use the same policy without a Graph-specific dependency algorithm.",
+      "evidence": [
+        "independent-packages.json",
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/shared/governance/sh4-internal-consumers.v1.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "not-applicable",
+      "summary": "SH4 changes contract ownership and build-time guards without adding a runtime algorithm, traversal or allocation path.",
+      "evidence": [
+        "packages/graph/src/application/package-status.ts",
+        "packages/graph/src/contracts/provider.ts"
+      ],
+      "justification": "The existing status operation performs the same bounded object construction; installed package size remains covered by pack:check."
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Undeclared Shared deep imports, ambiguous root imports, dependency cycles and premature CLI bridges now fail closed.",
+      "evidence": [
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "not-applicable",
+      "summary": "The migration processes package metadata and source import specifiers only; it reads no repository content, user path, credential or telemetry data.",
+      "evidence": [
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/shared/governance/sh4-internal-consumers.v1.json"
+      ],
+      "justification": "No new runtime data collection or artifact content is introduced by SH4."
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Portable path-free package identities and Node APIs pass locally; the Linux, macOS and Windows remote matrix is still required for admission evidence.",
+      "evidence": [
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Shared remains a zero-runtime-dependency leaf, Graph depends only on Shared, and the central CLI consumes neither development package.",
+      "evidence": [
+        "packages/shared/package.json",
+        "packages/graph/package.json",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Graph contract references and result envelopes are type-checked, immutable and accepted by the canonical generated Shared validator.",
+      "evidence": [
+        "packages/graph/test/contracts/shared-interoperability.test.ts",
+        "packages/graph/test/package/public-api.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Graph preserves its existing public API while replacing a locally constructed contract reference with the canonical Shared constructor and type.",
+      "evidence": [
+        "packages/graph/src/contracts/provider.ts",
+        "packages/graph/test/contracts/provider-manifest.test.ts",
+        "packages/graph/test/package/public-api.test.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "not-applicable",
+      "summary": "SH4 adds no long-running operation, external resource or recoverable runtime state; failures are synchronous build-gate failures with actionable paths.",
+      "evidence": [
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ],
+      "justification": "Runtime retry, rollback and cancellation behavior is unchanged because no runtime orchestration was introduced."
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "One machine-readable consumer inventory drives a generic boundary guard and focused package conformance tests; no internal package documentation was duplicated.",
+      "evidence": [
+        "packages/shared/governance/sh4-internal-consumers.v1.json",
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/graph/test/contracts/shared-interoperability.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "Independent Shared and Graph tarballs install into an isolated consumer, validate an actual Graph result and retain publication refusal and package allowlists.",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/package.json",
+        "packages/shared/package.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "registered-package-boundary",
+      "status": "passed",
+      "command": "npm run check:package-boundaries",
+      "evidence": "2 registered packages; acyclic Shared consumers; no CLI runtime bridge"
+    },
+    {
+      "id": "graph-quality",
+      "status": "passed",
+      "command": "npm --workspace @workspai/graph run check",
+      "evidence": "5 test files and 15 tests passed; build and formatting passed"
+    },
+    {
+      "id": "installed-consumer",
+      "status": "passed",
+      "command": "npm --workspace @workspai/graph run pack:check",
+      "evidence": "16 installed files; 5294 compressed bytes of 262144 budget; Shared validation passed"
+    },
+    {
+      "id": "shared-regression",
+      "status": "passed",
+      "command": "npm --workspace @workspai/shared run test",
+      "evidence": "11 test files and 85 tests passed"
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Linux, macOS and Windows CI evidence is not available in this local closure"
+    }
+  ],
+  "measurements": {
+    "registeredPackages": 2,
+    "migratedConsumers": 1,
+    "deferredUnregisteredConsumers": 1,
+    "dependencyCycles": 0,
+    "ambiguousSharedRootImports": 0,
+    "undeclaredSharedSubpathImports": 0,
+    "graphTestFiles": 5,
+    "graphTests": 15,
+    "sharedRegressionTests": 85,
+    "packedGraphFiles": 16,
+    "packedGraphCompressedBytes": 5294,
+    "packedGraphBudgetBytes": 262144
+  },
+  "environment": {
+    "local": ["linux-6.12.101+deb13-amd64-x86_64", "node-24.18.1", "npm-10.8.2"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "Remote Linux, macOS and Windows evidence remains pending and cannot be inferred from local success.",
+    "Model is intentionally deferred until it is admitted to the independent-package registry after Graph; SH4 does not create or validate a placeholder Model package.",
+    "SH0 evidence and SH1 WIS semantic lock remain unaccepted.",
+    "Standalone external-consumer value and publication admission are not proven."
+  ],
+  "nextStage": "SH5",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-08-15",
+    "rule": "Bounded SH5 external validation preview is approved. Remote evidence still cannot authorize publication or standalone admission."
+  }
+}

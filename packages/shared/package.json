@@ -1,0 +1,113 @@
+{
+  "name": "@workspai/shared",
+  "version": "0.0.0-development",
+  "private": true,
+  "type": "module",
+  "description": "Unpublished WIS protocol foundation for independent Workspai packages.",
+  "keywords": [
+    "workspai",
+    "workspace-intelligence",
+    "contracts",
+    "schemas",
+    "wis"
+  ],
+  "author": "Chistiq",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "workspai-shared": "./dist/cli/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chistiq/workspai.git",
+    "directory": "packages/shared"
+  },
+  "bugs": {
+    "url": "https://github.com/chistiq/workspai/issues"
+  },
+  "homepage": "https://github.com/chistiq/workspai#readme",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js"
+    },
+    "./compatibility": {
+      "types": "./dist/compatibility/index.d.ts",
+      "import": "./dist/compatibility/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation/index.d.ts",
+      "import": "./dist/validation/index.js"
+    },
+    "./registry": {
+      "types": "./dist/registry/index.d.ts",
+      "import": "./dist/registry/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "schemas/src",
+    "schemas/compatibility",
+    "schemas/cli",
+    "schemas/generated/registry.v2.json",
+    "fixtures",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepublishOnly": "node scripts/refuse-publish.mjs",
+    "generate": "node scripts/generate-contracts.mjs",
+    "generate:check": "node scripts/generate-contracts.mjs --check",
+    "build": "corepack npm run generate:check && tsup",
+    "size:check": "node scripts/check-bundle-budget.mjs",
+    "runtime:check": "node scripts/check-runtime-surfaces.mjs",
+    "scale:check": "node --expose-gc scripts/check-scale-profile.mjs",
+    "scale:json": "node --expose-gc scripts/check-scale-profile.mjs --json",
+    "admission:audit": "node scripts/check-standalone-admission.mjs --allow-blocked",
+    "admission:check": "node scripts/check-standalone-admission.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"cli/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\"",
+    "lint:fix": "corepack npm run lint -- --fix",
+    "format": "prettier --write \"{src,cli,test}/**/*.ts\" \"scripts/**/*.{mjs,mts}\" \"{fixtures,schemas,governance}/**/*.{md,json}\" \"!schemas/generated/**\" \"*.{md,json}\"",
+    "format:check": "prettier --check \"{src,cli,test}/**/*.ts\" \"scripts/**/*.{mjs,mts}\" \"{fixtures,schemas,governance}/**/*.{md,json}\" \"!schemas/generated/**\" \"*.{md,json}\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check": "corepack npm run generate:check && corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm run test:coverage && corepack npm run build && corepack npm run size:check && corepack npm run runtime:check && corepack npm run scale:check && corepack npm run pack:check && corepack npm run admission:audit",
+    "pack:dry": "corepack npm pack --dry-run",
+    "pack:check": "node scripts/check-packed-package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.2",
+    "@typescript-eslint/parser": "^8.46.2",
+    "@vitest/coverage-v8": "^4.0.15",
+    "ajv": "8.20.0",
+    "esbuild": "0.28.1",
+    "eslint": "^9.39.2",
+    "json-schema-to-typescript": "15.0.4",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.15"
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": "workspai-shared-standalone-admission.v1",
+  "asOf": "2026-08-15",
+  "package": "@workspai/shared",
+  "version": "0.0.0-development",
+  "status": "blocked",
+  "admitted": false,
+  "policy": {
+    "allRequiredGatesMustPass": true,
+    "pendingIsBlocking": true,
+    "localProxyCannotSatisfyRemoteEvidence": true,
+    "internalConsumerCannotSatisfyIndependentExternalValue": true,
+    "publicationMustRemainDisabledUntilAdmission": true,
+    "cliBridgeMustRemainDisabledUntilAdmission": true
+  },
+  "gates": [
+    {
+      "id": "normative-semantic-lock",
+      "category": "architecture",
+      "status": "blocked",
+      "evidence": [
+        "packages/shared/governance/semantic-lock-decisions.v1.json",
+        "packages/shared/governance/shared-package-gates.v1.json"
+      ],
+      "reason": "WIS RFC-0001/RFC-0002 and SH1 semantic decisions are review-ready but not accepted."
+    },
+    {
+      "id": "local-cumulative-quality",
+      "category": "quality",
+      "status": "passed",
+      "evidence": [
+        "packages/shared/governance/sh6-stabilization-report.v1.json",
+        "independent-package-quality-policy.v1.json"
+      ],
+      "reason": "All local cumulative Shared, Graph, boundary, scale, browser-proxy and packed-consumer gates pass."
+    },
+    {
+      "id": "linux-installed-consumer",
+      "category": "portability",
+      "status": "passed-local",
+      "evidence": [
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/governance/sh6-stabilization-report.v1.json"
+      ],
+      "reason": "Linux local isolated tarball installation and CLI/library execution pass."
+    },
+    {
+      "id": "macos-installed-consumer",
+      "category": "portability",
+      "status": "pending-remote",
+      "evidence": [".github/workflows/ci.yml"],
+      "reason": "The CI matrix is configured, but a retained run-bound admission attestation is not present."
+    },
+    {
+      "id": "windows-installed-consumer",
+      "category": "portability",
+      "status": "pending-remote",
+      "evidence": [".github/workflows/ci.yml"],
+      "reason": "The CI matrix is configured, but a retained run-bound admission attestation is not present."
+    },
+    {
+      "id": "real-browser-runtime",
+      "category": "portability",
+      "status": "pending-remote",
+      "evidence": [
+        "packages/shared/scripts/check-runtime-surfaces.mjs",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json"
+      ],
+      "reason": "Browser-platform bundling passes, but execution in a supported real browser is not evidenced."
+    },
+    {
+      "id": "peak-memory-profile",
+      "category": "performance",
+      "status": "pending-remote",
+      "evidence": [
+        "packages/shared/scripts/check-scale-profile.mjs",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json"
+      ],
+      "reason": "Observed retained heap passes locally; platform peak RSS/profiler evidence is still required."
+    },
+    {
+      "id": "security-and-dependency-audit",
+      "category": "security",
+      "status": "passed-local",
+      "evidence": [
+        "package-lock.json",
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/governance/sh5-stabilization-report.v1.json"
+      ],
+      "reason": "The package has zero runtime dependencies; local audit/hostile-input gates pass and the installed tarball produces a validated CycloneDX 1.5 component."
+    },
+    {
+      "id": "sbom-provenance-and-release-identity",
+      "category": "supply-chain",
+      "status": "pending-remote",
+      "evidence": [".github/workflows/ci.yml", "packages/shared/package.json"],
+      "reason": "A local CycloneDX SBOM exists, but no signed release provenance or immutable npm release identity exists for the private candidate."
+    },
+    {
+      "id": "independent-external-consumer-value",
+      "category": "product",
+      "status": "blocked",
+      "evidence": [
+        "packages/shared/governance/sh5-external-validation.v1.json",
+        "packages/shared/governance/sh6-domain-adoption.v1.json",
+        "packages/shared/governance/sh7-external-consumer-evidence-policy.v1.json"
+      ],
+      "reason": "Isolated and Graph consumers prove mechanics, but neither is an independently owned external consumer/value report."
+    },
+    {
+      "id": "support-deprecation-and-incident-policy",
+      "category": "operations",
+      "status": "blocked",
+      "evidence": ["packages/shared/README.md", "packages/shared/CHANGELOG.md"],
+      "reason": "Candidate documentation exists, but production support/deprecation commitments cannot activate before normative and release admission."
+    },
+    {
+      "id": "publication-and-rollback-readiness",
+      "category": "release",
+      "status": "blocked",
+      "evidence": [
+        "packages/shared/package.json",
+        "packages/shared/scripts/refuse-publish.mjs",
+        "package-mirrors.json"
+      ],
+      "reason": "Publication is correctly fail-closed; release provenance, staged rollout and rollback evidence do not yet exist."
+    },
+    {
+      "id": "central-cli-bridge-absence",
+      "category": "independence",
+      "status": "passed",
+      "evidence": [
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/shared/governance/sh6-domain-adoption.v1.json"
+      ],
+      "reason": "The central CLI has no Shared/Graph runtime dependency or source import."
+    }
+  ],
+  "admissionRule": "Admission is allowed only when every gate is passed and separately reviewed; passed-local and pending-remote are not admission pass states."
+}
