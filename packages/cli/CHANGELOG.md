@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.0] - Unreleased
+
 ### Changed
 
 - Reworked Doctor's human output around an authoritative verdict and separate
@@ -65,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the transitive development-toolchain `nanoid` dependency to the
   patched release so both production and full npm audits report zero known
   vulnerabilities.
+- Fixed canonical Git containment checks across macOS physical-path aliases and
+  Windows cross-drive workspace paths so managed grounding preserves authored
+  tracked deletion without misclassifying unrelated repositories.
+- Restored the complete cross-platform native dependency lock and added
+  install/pre-push validation derived from Rolldown, Rollup, and esbuild
+  metadata, preventing platform-pruned locks from reaching build or test
+  startup.
 
 ## [0.56.0] - 2026-08-11
 

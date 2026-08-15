@@ -5,7 +5,65 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.56.0 (August 11, 2026)
+## Planned Release: v0.57.0 (publication pending)
+
+### Truthful Repository Intelligence and Enterprise Qualification
+
+This minor release makes Workspai more accurate on large, composite, and
+non-service repositories, adds publication-safe real-world qualification, and
+hardens every bounded output consumed by developers, CI, IDEs, and agents.
+
+**What's New:**
+
+- **Repository-aware Doctor output**
+  - Libraries, SDKs, plugins, monorepos, and cross-language platforms no longer
+    inherit service-only health, migration, environment, or entrypoint advice.
+  - Human output leads with the authoritative verdict and separates blockers,
+    advisories, unknowns, contradictions, and not-applicable evidence.
+
+- **Stronger large-repository intelligence**
+  - Source relations resolve against the complete bounded fingerprint inventory
+    instead of being limited to the smaller extraction sample.
+  - Multi-term Graph retrieval requires meaningful query coverage before broad
+    service or API intent can boost a result.
+
+- **Previewable and testable adoption**
+  - The versioned `workspai.adopt-effects.v1` contract describes project,
+    repository-control, and downstream intelligence effects before mutation.
+  - Isolated and cumulative qualification harnesses exercise real polyglot
+    repositories without publishing machine paths or raw local command output.
+
+- **Composite-runtime and bounded export contracts**
+  - Nested runtime composition is explicit across adoption, Doctor, metadata,
+    and command capabilities.
+  - Full Graph exports written with `--output` return bounded JSON receipts
+    instead of flooding agent, IDE, or CI stdout buffers.
+
+- **Cross-platform release integrity**
+  - Managed grounding preserves intentional tracked deletion and authored
+    symlinks while keeping portable `.workspai` context available.
+  - Install and pre-push validation reject platform-pruned npm lockfiles before
+    native build or test startup; the patched development dependency graph also
+    remains valid for SBOM generation.
+
+**Breaking changes:** None. New adoption and evidence fields are additive.
+
+**Publication status:** Release verification and npm publication are pending.
+
+**Install after publication:**
+
+```bash
+npm install -g workspai@0.57.0
+workspai --version
+workspai doctor workspace
+workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.57.0.md)
+
+---
+
+## Previous Release: v0.56.0 (August 11, 2026)
 
 ### Universal Doctor Intelligence and Proof-Backed Polyglot Graphs
 
