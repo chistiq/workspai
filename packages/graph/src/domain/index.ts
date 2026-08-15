@@ -1,0 +1,1 @@
+export { GRAPH_TRUTH_DEPENDENCY_DIRECTION, GRAPH_TRUTH_INVARIANTS } from './truth-ownership.js';

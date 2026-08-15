@@ -1,0 +1,96 @@
+{
+  "name": "@workspai/graph",
+  "version": "0.0.0-development",
+  "private": true,
+  "type": "module",
+  "description": "Development scaffold for the evidence-backed Workspai workspace graph engine.",
+  "keywords": [
+    "workspai",
+    "workspace-intelligence",
+    "workspace-graph",
+    "knowledge-graph",
+    "code-intelligence",
+    "evidence"
+  ],
+  "author": "Chistiq",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chistiq/workspai.git",
+    "directory": "packages/graph"
+  },
+  "bugs": {
+    "url": "https://github.com/chistiq/workspai/issues"
+  },
+  "homepage": "https://github.com/chistiq/workspai#readme",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "import": "./dist/providers/index.js"
+    },
+    "./conformance": {
+      "types": "./dist/conformance/index.d.ts",
+      "import": "./dist/conformance/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "schemas",
+    "fixtures",
+    "conformance",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepublishOnly": "node scripts/refuse-publish.mjs",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\"",
+    "lint:fix": "corepack npm run lint -- --fix",
+    "format": "prettier --write \"{src,test}/**/*.ts\" \"scripts/**/*.mjs\" \"{fixtures,schemas,conformance,governance}/**/*.{md,json}\" \"*.{md,json}\"",
+    "format:check": "prettier --check \"{src,test}/**/*.ts\" \"scripts/**/*.mjs\" \"{fixtures,schemas,conformance,governance}/**/*.{md,json}\" \"*.{md,json}\"",
+    "test": "vitest run",
+    "test:architecture": "vitest run test/architecture",
+    "test:contracts": "vitest run test/contracts",
+    "test:package": "vitest run test/package",
+    "test:coverage": "vitest run --coverage",
+    "check": "corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm run test && corepack npm run build && corepack npm run pack:check",
+    "pack:dry": "corepack npm pack --dry-run",
+    "pack:check": "node scripts/check-packed-package.mjs"
+  },
+  "dependencies": {
+    "@workspai/shared": "0.0.0-development"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.2",
+    "@typescript-eslint/parser": "^8.46.2",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.15"
+  }
+}

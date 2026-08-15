@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "id": "workspai.graph.conformance",
+  "version": "0.1.0-draft",
+  "maturity": "seed",
+  "requiredSuites": [
+    "contracts",
+    "semantic-invalid",
+    "architecture-boundaries",
+    "determinism",
+    "security-adversarial",
+    "cross-platform",
+    "package-consumer"
+  ]
+}
