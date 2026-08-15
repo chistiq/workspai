@@ -35,6 +35,13 @@ family. Vendored trees, build outputs, fixtures, and nested test fixture package
 manifests are excluded from lifecycle discovery so orchestration does not turn
 sample inputs into install targets.
 
+Planning and `init` do not require Doctor or release-readiness evidence. Real
+`test`, `build`, and `start` runs enforce the `doctor-workspace` and `readiness`
+gates by default. A failed gate prevents project commands from starting and is
+recorded as `gates.blocked` in the result. `--strict` converts a failing or
+warning gate into a non-zero process exit; without it, the structured gate
+result remains available without turning advisory policy into a process error.
+
 The authoritative scaffold/import/lifecycle tiers are in
 [contracts/RUNTIME_SUPPORT_MATRIX.md](./contracts/RUNTIME_SUPPORT_MATRIX.md).
 Inspect one project's effective surface with
@@ -98,15 +105,20 @@ both command context and the final root cause without copying the full log.
 Consumers should render these fields rather than reconstructing a diagnosis
 from arbitrary stdout lines.
 
+The canonical report is `.workspai/reports/workspace-run-last.json`. Workspace
+verification binds a finding to its exact producer through `sourceCommand` and
+`sourceArtifact`; consumers should run the cited producer and read that artifact
+instead of guessing which command can refresh the evidence.
+
 ## Command semantics
 
 Workspai has two workspace-level execution surfaces and three equivalent full-init aliases at workspace root:
 
-| Command | Intent | Scope |
-| --- | --- | --- |
+| Command                                                            | Intent                                             | Scope             |
+| ------------------------------------------------------------------ | -------------------------------------------------- | ----------------- |
 | `init`, `workspace init`, `workspace run init` (at workspace root) | Mirrored full-init (workspace deps + project init) | Workspace + fleet |
-| `workspace run <test\|build\|start>` | Fleet stage execution | Selected projects |
-| `init`, `test`, `build`, `start`, `dev` (inside project dir) | Project primitive | Single project |
+| `workspace run <test\|build\|start>`                               | Fleet stage execution                              | Selected projects |
+| `init`, `test`, `build`, `start`, `dev` (inside project dir)       | Project primitive                                  | Single project    |
 
 At workspace root, `npx workspai init`, `npx workspai workspace init`, and `npx workspai workspace run init` are equivalent aliases.
 

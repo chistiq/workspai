@@ -14,6 +14,8 @@ const runtimeContract = JSON.parse(
 );
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const commandReference = fs.readFileSync(path.join(root, 'docs', 'commands-reference.md'), 'utf8');
+const ciWorkflowsGuide = fs.readFileSync(path.join(root, 'docs', 'ci-workflows.md'), 'utf8');
+const contractsReadme = fs.readFileSync(path.join(root, 'docs', 'contracts', 'README.md'), 'utf8');
 const architectureContract = JSON.parse(
   fs.readFileSync(
     path.join(root, 'contracts', 'workspace-intelligence-architecture.v1.json'),
@@ -151,7 +153,10 @@ for (const command of runtimeContract.npmOwnedTopLevelCommands ?? []) {
   }
 }
 for (const action of runtimeContract.workspaceSubcommands ?? []) {
-  const pattern = new RegExp(`workspai\\s+workspace\\s+${escapedPattern(action)}(?:\\s|<|\\[|$)`, 'u');
+  const pattern = new RegExp(
+    `workspai\\s+workspace\\s+${escapedPattern(action)}(?:\\s|<|\\[|$)`,
+    'u'
+  );
   if (!pattern.test(commandReference)) {
     errors.push(`Command Reference is missing the workspace action: ${action}`);
   }
@@ -166,11 +171,15 @@ const versionedReleaseNotes = fs.readFileSync(
 );
 const currentIsPending = changelog.includes(`## [${currentVersion}] - Unreleased`);
 if (currentIsPending) {
-  if (!aggregateReleaseNotes.includes(`## Planned Release: v${currentVersion} (publication pending)`)) {
+  if (
+    !aggregateReleaseNotes.includes(`## Planned Release: v${currentVersion} (publication pending)`)
+  ) {
     errors.push('Aggregate release notes must identify the unreleased package version as planned');
   }
   if (!versionedReleaseNotes.includes('Publication status: pending.')) {
-    errors.push('Versioned notes must identify an unreleased package version as publication pending');
+    errors.push(
+      'Versioned notes must identify an unreleased package version as publication pending'
+    );
   }
   const pendingUrl = `https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v${currentVersion}.md`;
   if (!aggregateReleaseNotes.includes(pendingUrl)) {
@@ -223,9 +232,7 @@ for (const heading of requiredRepositoryReadmeHeadings) {
   previousReadmeHeadingIndex = index;
 }
 
-const normalizedRepositoryReadme = repositoryReadme
-  .replace(/[*`]/g, '')
-  .replace(/\s+/g, ' ');
+const normalizedRepositoryReadme = repositoryReadme.replace(/[*`]/g, '').replace(/\s+/g, ' ');
 for (const semantic of [
   'One workspace. One truth. Humans and AI aligned.',
   'The Workspace Model is the canonical source of truth.',
@@ -477,6 +484,42 @@ for (const semantic of ['`--plan`', '`--runtime <runtime>`', 'CMake', 'Meson']) 
   if (!workspaceRunGuide.includes(semantic)) {
     errors.push(`Workspace Run documentation is missing polyglot lifecycle semantics: ${semantic}`);
   }
+}
+for (const semantic of [
+  '`doctor-workspace`',
+  '`readiness`',
+  '`gates.blocked`',
+  '`--strict`',
+  '`.workspai/reports/workspace-run-last.json`',
+  '`sourceCommand`',
+  '`sourceArtifact`',
+]) {
+  if (!workspaceRunGuide.includes(semantic)) {
+    errors.push(`Workspace Run documentation is missing governed execution semantics: ${semantic}`);
+  }
+}
+for (const command of [
+  '`workspai version --json`',
+  '`workspai project detect --json`',
+  '`workspai modules list --json-schema 1`',
+]) {
+  if (!contractsReadme.includes(command)) {
+    errors.push(`Contract documentation is missing the canonical Workspai command: ${command}`);
+  }
+}
+for (const obsoleteCommand of [
+  '`rapidkit version --json`',
+  '`rapidkit project detect --json`',
+  '`rapidkit modules list --json-schema 1`',
+]) {
+  if (contractsReadme.includes(obsoleteCommand)) {
+    errors.push(`Contract documentation still teaches an obsolete command: ${obsoleteCommand}`);
+  }
+}
+if (!ciWorkflowsGuide.includes(`--tag v${packageJson.version}`)) {
+  errors.push(
+    `CI workflow documentation must preview the current package tag v${packageJson.version}`
+  );
 }
 for (const flag of ['--refresh-graph', '--plan', '--runtime <runtime>']) {
   if (!commandReference.includes(flag)) {

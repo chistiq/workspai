@@ -119,10 +119,10 @@ CLI commands: see [commands-reference.md](../commands-reference.md) and the
 
 `rapidkit-cli-contracts.json` describes:
 
-- `VersionResponse` — `rapidkit version --json`
+- `VersionResponse` — `workspai version --json`
 - `CommandsResponse` — `workspai commands --json`
-- `ProjectDetectResponse` — `rapidkit project detect --json`
-- `ModulesListResponseV1` — `rapidkit modules list --json-schema 1`
+- `ProjectDetectResponse` — `workspai project detect --json`
+- `ModulesListResponseV1` — `workspai modules list --json-schema 1`
 
 ## Versioning
 
