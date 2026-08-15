@@ -39,7 +39,7 @@ jobs:
         if: steps.changes.outputs.phase4 == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -54,14 +54,14 @@ jobs:
       - name: Run phase3 CLI integration fast guard
         if: steps.changes.outputs.phase4 == 'true'
         env:
-          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: '1'
+          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: "1"
         run: npm --workspace workspai run test -- src/__tests__/phase3-cli.integration.test.ts
 
   build-test-matrix:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
-      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: '3000'
+      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: "3000"
 
     strategy:
       fail-fast: false
@@ -87,7 +87,7 @@ jobs:
         if: runner.os != 'Windows'
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       # Install rapidkit-core (Python)
       - name: Install rapidkit-core (Python)
@@ -128,6 +128,27 @@ jobs:
       # Organization ownership and public-link contract
       - name: Validate Chistiq brand contract
         run: npm run check:brand
+
+      # Independent package boundaries, evidence, mirrors and package checks
+      - name: Validate independent package infrastructure
+        run: npm run check:package-infrastructure
+
+      - name: Capture Shared standalone-admission platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+        run: >-
+          npm --workspace @workspai/shared run admission:audit --
+          --ci-evidence --json
+          --output artifacts/shared-standalone-admission-${{ runner.os }}.json
+
+      - name: Upload Shared standalone-admission platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-standalone-admission-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/shared-standalone-admission-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
 
       # Shared parity contract gate (npm <-> extension snapshot)
       - name: Validate import stack parity contract snapshot
@@ -212,7 +233,7 @@ jobs:
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -235,7 +256,7 @@ jobs:
 
       - name: Run Phase 4 adapter/contract regression suites
         env:
-          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: '1'
+          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: "1"
         run: npm --workspace workspai run test -- src/__tests__/phase3-commands.test.ts src/__tests__/phase3-commands.integration.test.ts src/__tests__/phase3-cli.integration.test.ts src/__tests__/init-scenarios.integration.test.ts src/__tests__/runtime-adapters.test.ts
 
       - name: Run type check

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "workspai-package-mirrors.v1",
+  "canonicalRepository": "https://github.com/chistiq/workspai",
+  "authority": {
+    "development": "canonical-monorepo-only",
+    "versioning": "canonical-monorepo-only",
+    "tags": "canonical-monorepo-only",
+    "githubReleases": "canonical-monorepo-only",
+    "npmPublishing": "canonical-monorepo-only",
+    "mirrorDirection": "one-way",
+    "documentation": "consumer-facing-only"
+  },
+  "packages": [
+    {
+      "name": "@workspai/shared",
+      "sourceDirectory": "packages/shared",
+      "mirrorRepository": "https://github.com/chistiq/workspai-shared",
+      "status": "planned",
+      "include": [
+        "src",
+        "test",
+        "schemas",
+        "fixtures",
+        "scripts",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE",
+        "package.json",
+        "tsconfig.json",
+        "tsup.config.ts",
+        "vitest.config.ts"
+      ]
+    },
+    {
+      "name": "@workspai/graph",
+      "sourceDirectory": "packages/graph",
+      "mirrorRepository": "https://github.com/chistiq/workspai-graph",
+      "status": "planned",
+      "include": [
+        "src",
+        "test",
+        "schemas",
+        "fixtures",
+        "conformance",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE",
+        "package.json",
+        "tsconfig.json",
+        "tsup.config.ts",
+        "vitest.config.ts"
+      ]
+    }
+  ],
+  "forbiddenMirrorPaths": [
+    ".github/workflows",
+    ".env",
+    ".workspai",
+    "coverage",
+    "dist",
+    "docs",
+    "governance",
+    "node_modules",
+    "test-results"
+  ]
+}

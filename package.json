@@ -15,6 +15,8 @@
   },
   "packageManager": "npm@10.8.2",
   "workspaces": [
+    "packages/shared",
+    "packages/graph",
     "packages/cli",
     "packages/wspai"
   ],
@@ -28,8 +30,13 @@
   },
   "scripts": {
     "workspaces:list": "corepack npm query .workspace",
+    "check:package-boundaries": "node scripts/check-independent-package-boundaries.mjs",
+    "check:package-quality": "node scripts/check-independent-package-quality.mjs",
+    "check:package-mirrors": "node scripts/check-package-mirror-config.mjs",
+    "package-mirror:export": "node scripts/export-package-mirror.mjs",
+    "check:package-infrastructure": "corepack npm run check:package-quality && corepack npm run check:package-boundaries && corepack npm run check:package-mirrors && corepack npm --workspace @workspai/shared run check && corepack npm --workspace @workspai/graph run check",
     "check:brand": "node scripts/check-brand-contract.mjs",
-    "check": "corepack npm --workspaces --if-present run check",
+    "check": "corepack npm run check:package-quality && corepack npm run check:package-boundaries && corepack npm run check:package-mirrors && corepack npm --workspaces --if-present run check",
     "fix": "corepack npm --workspaces --if-present run fix",
     "validate": "corepack npm --workspaces --if-present run validate",
     "ci": "corepack npm --workspaces --if-present run ci",
@@ -52,7 +59,7 @@
     "release:minor": "corepack npm --workspace workspai run release:minor",
     "release:major": "corepack npm --workspace workspai run release:major",
     "prepare": "husky",
-    "prepush:check": "corepack npm run check:brand && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
+    "prepush:check": "corepack npm run check:brand && corepack npm run check:package-quality && corepack npm run check:package-boundaries && corepack npm run check:package-mirrors && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
   },
   "devDependencies": {
     "chokidar": "^3.6.0",
