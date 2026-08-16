@@ -23,6 +23,11 @@ const projectNames = (args.projects ?? '')
   .map((value) => value.trim())
   .filter(Boolean);
 const sharedWorkspaceName = args.sharedWorkspace ? slug(args.sharedWorkspace) : null;
+const sourceMode = args.sourceMode ?? 'snapshot';
+
+if (!['snapshot', 'linked'].includes(sourceMode)) {
+  fail('--source-mode must be snapshot or linked.');
+}
 
 if (projectNames.length === 0) {
   fail(
@@ -43,8 +48,9 @@ const report = {
   },
   workspaceLayout: sharedWorkspaceName ? 'shared' : 'isolated',
   safety: {
-    sourceMode: 'linked',
+    sourceMode: sourceMode === 'snapshot' ? 'local-git-snapshot' : 'linked',
     sourceCodeMutationAllowed: false,
+    sourceMetadataMutationAllowed: sourceMode === 'linked',
     dependencyInstallationAllowed: false,
     lifecycleExecutionAllowed: false,
     infrastructureMutationAllowed: false,
@@ -54,7 +60,7 @@ const report = {
 };
 
 for (const [projectIndex, projectName] of projectNames.entries()) {
-  const projectPath = path.join(referenceRoot, projectName);
+  const sourceProjectPath = path.join(referenceRoot, projectName);
   const workspaceName = sharedWorkspaceName ?? slug(projectName);
   const workspacePath = path.join(runRoot, workspaceName);
   const project = {
@@ -65,9 +71,27 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
   };
   report.projects.push(project);
 
-  if (!isDirectory(projectPath)) {
+  if (!isDirectory(sourceProjectPath)) {
     project.status = 'invalid-source';
     project.assertions.push(assertion('source.exists', false, 'Reference repository is missing.'));
+    continue;
+  }
+
+  const projectPath =
+    sourceMode === 'snapshot'
+      ? prepareSourceSnapshot({ sourceProjectPath, runRoot, projectId: project.id })
+      : sourceProjectPath;
+  if (!projectPath) {
+    project.status = 'failed';
+    project.assertions.push(
+      assertion(
+        'source.snapshot-created',
+        false,
+        'A local Git snapshot could not be created; linked fallback requires explicit --source-mode linked.'
+      )
+    );
+    project.durationMs = project.commands.reduce((sum, command) => sum + command.durationMs, 0);
+    writeReport();
     continue;
   }
 
@@ -200,6 +224,122 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
         intelligence.json.stages.some((stage) => stage?.id === 'model') &&
         intelligence.json.stages.some((stage) => stage?.id === 'context'),
       'The canonical chain must retain model and agent-context stages on blocked repositories.'
+    )
+  );
+
+  if (sharedWorkspaceName) {
+    const workspaceGoal = run(project, {
+      id: 'goal.cumulative-workspace-preview',
+      cwd: workspacePath,
+      argv: [
+        'goal',
+        'Map the workspace architecture',
+        '--scope',
+        'workspace',
+        '--dry-run',
+        '--json',
+      ],
+      acceptedExitCodes: [0],
+      timeoutMs: 600_000,
+    });
+    project.assertions.push(
+      assertion(
+        'goal.cumulative-workspace-scope',
+        workspaceGoal.json?.schemaVersion === 'workspai.goal-plan-result.v1' &&
+          workspaceGoal.json?.dryRun === true &&
+          workspaceGoal.json?.goalPack?.scope?.kind === 'workspace' &&
+          workspaceGoal.json?.goalPack?.scope?.selectionSource === 'explicit' &&
+          workspaceGoal.json?.goalPack?.scope?.projects?.length === projectIndex + 1 &&
+          workspaceGoal.json?.goalPack?.baseline?.projectCount === projectIndex + 1,
+        'A cumulative workspace Goal must bind every project adopted so far without writing Goal artifacts.'
+      )
+    );
+  }
+
+  const goalPlan = run(project, {
+    id: 'goal.system-understanding-plan',
+    cwd: projectPath,
+    argv: ['goal', 'Map the project architecture', '--for-agent', 'generic', '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 600_000,
+  });
+  const goalId = goalPlan.json?.goalPack?.id;
+  const portableGoal = JSON.stringify(goalPlan.json ?? {});
+  project.assertions.push(
+    assertion(
+      'goal.plan-contract',
+      goalPlan.json?.schemaVersion === 'workspai.goal-plan-result.v1' &&
+        goalPlan.json?.goalPack?.scope?.kind === 'project' &&
+        goalPlan.json?.goalPack?.scope?.projects?.length === 1 &&
+        goalPlan.json?.agentHandoff?.goalId === goalId,
+      'Goal planning must bind the project invocation to one portable Goal Pack and matching agent handoff.'
+    )
+  );
+  project.assertions.push(
+    assertion(
+      'goal.portable-output',
+      ![referenceRoot, runRoot, projectPath, workspacePath].some((candidate) =>
+        portableGoal.includes(candidate)
+      ),
+      'Goal command output must not retain qualification or machine-local paths.'
+    )
+  );
+  if (typeof goalId === 'string' && goalId.length > 0) {
+    const goalStatus = run(project, {
+      id: 'goal.status',
+      cwd: projectPath,
+      argv: ['goal', '--status', goalId, '--json'],
+      acceptedExitCodes: [0],
+      timeoutMs: 600_000,
+    });
+    project.assertions.push(
+      assertion(
+        'goal.lifecycle-contract',
+        goalStatus.json?.schemaVersion === 'workspai.goal-lifecycle-result.v1' &&
+          goalStatus.json?.operation === 'status' &&
+          goalStatus.json?.activeGoalId === goalId &&
+          goalStatus.json?.goal?.lifecycle === 'active',
+        'Goal status must validate immutable bindings through the shared lifecycle result contract.'
+      )
+    );
+  }
+
+  const coverageGoal = run(project, {
+    id: 'goal.coverage-preview',
+    cwd: projectPath,
+    argv: ['goal', 'Raise test coverage to 80%', '--dry-run', '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 600_000,
+  });
+  project.assertions.push(
+    assertion(
+      'goal.coverage-preflight',
+      coverageGoal.json?.schemaVersion === 'workspai.goal-plan-result.v1' &&
+        coverageGoal.json?.dryRun === true &&
+        ['ready-to-plan', 'needs-evidence', 'blocked'].includes(
+          coverageGoal.json?.goalPack?.state
+        ) &&
+        typeof coverageGoal.json?.goalPack?.preflight?.measurement?.runtime === 'string' &&
+        coverageGoal.json.goalPack.preflight.measurement.runtime.length > 0,
+      'Coverage goals must report a runtime-specific measurement capability without writing artifacts.'
+    )
+  );
+
+  const releaseGoal = run(project, {
+    id: 'goal.release-preview',
+    cwd: projectPath,
+    argv: ['goal', 'Prepare this project for release', '--dry-run', '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 600_000,
+  });
+  project.assertions.push(
+    assertion(
+      'goal.release-intent',
+      releaseGoal.json?.goalPack?.intent?.category === 'release-readiness' &&
+        releaseGoal.json?.goalPack?.commands?.planVerifiedGoal?.includes(
+          'workspace goal plan release-readiness'
+        ),
+      'The documented release phrase must compile to the deterministic release-readiness primitive.'
     )
   );
 
@@ -383,6 +523,34 @@ function isWorkspace(target) {
     fs.existsSync(path.join(target, '.workspai-workspace')) ||
     fs.existsSync(path.join(target, '.rapidkit-workspace'))
   );
+}
+
+function prepareSourceSnapshot({ sourceProjectPath, runRoot, projectId }) {
+  const snapshotPath = path.join(runRoot, 'sources', projectId);
+  if (fs.existsSync(snapshotPath)) return null;
+  fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+  const clone = spawnSync(
+    'git',
+    ['clone', '--quiet', '--shared', '--no-tags', sourceProjectPath, snapshotPath],
+    {
+      encoding: 'utf8',
+      timeout: 600_000,
+      maxBuffer: 8 * 1024 * 1024,
+      shell: false,
+    }
+  );
+  // Some restricted runners report a non-fatal spawn error after Git has
+  // completed successfully. The process exit code and resulting Git worktree
+  // are the authoritative success signals; stderr/error objects are never
+  // persisted because they may contain machine-local paths.
+  if (clone.status !== 0 || !isDirectory(snapshotPath)) return null;
+  const verified = spawnSync('git', ['-C', snapshotPath, 'rev-parse', '--verify', 'HEAD'], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    maxBuffer: 1024 * 1024,
+    shell: false,
+  });
+  return verified.status === 0 ? snapshotPath : null;
 }
 
 function slug(value) {

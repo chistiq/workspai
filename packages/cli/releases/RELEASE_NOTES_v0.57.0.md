@@ -37,20 +37,6 @@ retrieval remain reliable at large scale, adoption effects are previewable, and
 real-world qualification can be retained or published without exposing local
 machine data.
 
-## Plain-language goals remain governed
-
-`workspai goal "<intent>"` now turns a human outcome into an immutable,
-scope-bound Goal Pack and portable agent handoff. A canonical Goal index tells
-agents and IDEs which objective is active, while deterministic retrieval
-anchors and capability preflight prevent broad repository scanning and false
-readiness claims. Goal status, activation, cancellation, verification
-preparation, and verification remain explicit CLI lifecycle operations behind
-one published lifecycle-result JSON contract and operation-specific errors.
-
-Model structural hashes, Graph/Goal canonical JSON hashes, and the Goal identity
-fingerprint are labeled separately. Goal-bound Repair Engine proposals must
-reference the active Goal and cannot silently widen a project-scoped objective.
-
 ## Doctor reasons about the repository it observes
 
 Doctor now classifies project archetype independently from runtime detection.
@@ -144,13 +130,10 @@ JSON consumers receive more explicit and bounded output contracts.
 
 ## Verification status
 
-Publication remains pending until the complete release matrix, package smoke,
-security, documentation, contract, and npm dry-run gates pass for the release
-commit. Focused source, Graph, adoption, grounding, package-contract,
-cross-platform lockfile, documentation, build, and SBOM checks pass on the
-current candidate.
+The release matrix, package smoke, security, documentation, contract, and npm
+dry-run gates passed for the published release.
 
-## Install after publication
+## Install
 
 ```bash
 npm install -g workspai@0.57.0
@@ -159,7 +142,7 @@ workspai doctor workspace
 workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-Expected version after publication:
+Expected version:
 
 ```text
 0.57.0

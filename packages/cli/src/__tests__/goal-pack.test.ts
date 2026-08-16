@@ -9,7 +9,9 @@ import { planGoalPack } from '../goal-pack.js';
 import {
   buildGoalLifecycleResult,
   inspectGoalLifecycle,
+  prepareGoalVerification,
   transitionGoalLifecycle,
+  verifyGoalLifecycle,
 } from '../goal-lifecycle.js';
 import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js';
 import { planWorkspaceRepairProposal } from '../workspace-repair-engine.js';
@@ -188,6 +190,47 @@ describe('goal pack workspace adapter', () => {
     );
   });
 
+  it('bridges an active deterministic goal through preparation and blocked verification', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Prepare this project for release',
+    });
+
+    const prepared = await prepareGoalVerification({
+      workspacePath,
+      goalId: planned.goalPack.id,
+    });
+    expect(prepared.goal.lifecycle).toBe('verification-ready');
+    expect(prepared.verifiedGoalId).toBeTruthy();
+    expect((await inspectGoalLifecycle({ workspacePath })).index.activeGoalId).toBe(
+      planned.goalPack.id
+    );
+
+    const verification = await verifyGoalLifecycle({
+      workspacePath,
+      goalId: planned.goalPack.id,
+      run: false,
+    });
+    expect(verification.goal.lifecycle).toBe('verification-ready');
+    expect((await inspectGoalLifecycle({ workspacePath })).index.activeGoalId).toBe(
+      planned.goalPack.id
+    );
+  });
+
+  it('requires explicit activation before preparing an older deterministic goal', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const older = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Prepare this project for release',
+    });
+    await planGoalPack({ startPath: projectPath, intent: 'Map the system architecture' });
+
+    await expect(
+      prepareGoalVerification({ workspacePath, goalId: older.goalPack.id })
+    ).rejects.toThrow('is not active');
+  });
+
   it('binds Repair Engine proposals to the active goal and rejects scope widening', async () => {
     const { workspacePath, projectPath } = await fixture();
     const planned = await planGoalPack({
@@ -297,6 +340,47 @@ describe('goal pack workspace adapter', () => {
     await expect(
       planGoalPack({ startPath: projectPath, intent: 'Map the system architecture' })
     ).rejects.toThrow('Goal index violates');
+  });
+
+  it('rejects malformed Goal index JSON instead of treating it as an empty registry', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    await fsExtra.outputFile(
+      path.join(workspacePath, '.workspai', 'goals', 'index.json'),
+      '{ malformed'
+    );
+
+    await expect(
+      planGoalPack({ startPath: projectPath, intent: 'Map the system architecture' })
+    ).rejects.toThrow();
+  });
+
+  it('allows stale goals to be listed and cancelled but not activated', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Map the system architecture',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'health.controller.ts'),
+      "export const health = () => 'stale';\n"
+    );
+
+    await expect(inspectGoalLifecycle({ workspacePath })).rejects.toThrow('stale');
+    const listed = await inspectGoalLifecycle({ workspacePath, validateBindings: false });
+    expect(listed.active?.id).toBe(planned.goalPack.id);
+    await expect(
+      transitionGoalLifecycle({
+        workspacePath,
+        goalId: planned.goalPack.id,
+        action: 'activate',
+      })
+    ).rejects.toThrow('stale');
+    const cancelled = await transitionGoalLifecycle({
+      workspacePath,
+      goalId: planned.goalPack.id,
+      action: 'cancel',
+    });
+    expect(cancelled.index.activeGoalId).toBeNull();
   });
 
   it('serializes concurrent publication and reuses one immutable instance', async () => {

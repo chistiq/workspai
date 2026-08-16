@@ -504,7 +504,8 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
       modes: [{ selector: '--json', format: 'json', mediaType: 'application/json' }],
     },
     exitSemantics: {
-      default: 'A valid ready or decision-required Goal Pack returns exit code 0.',
+      default:
+        'A contract-valid Goal Pack returns exit code 0, including explicit needs-confirmation, needs-evidence, or blocked planning states.',
       strict: 'Not applicable; Goal planning does not execute or verify source changes.',
       failure:
         'Resolution, freshness, contract, integrity, or publication failure returns exit code 1.',

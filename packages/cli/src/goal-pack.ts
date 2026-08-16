@@ -55,7 +55,7 @@ export type PlanGoalPackOptions = {
 
 export type PlanGoalPackResult = {
   schemaVersion: typeof GOAL_PLAN_RESULT_SCHEMA_VERSION;
-  result: 'planned' | 'needs-confirmation' | 'needs-evidence';
+  result: 'planned' | 'needs-confirmation' | 'needs-evidence' | 'blocked';
   resolution: {
     source: 'explicit' | 'parent' | 'local-link' | 'registry';
     invocationScope: 'workspace' | 'project';
@@ -309,7 +309,10 @@ async function buildGoalPreflight(input: {
                 candidate.sha256 === item.sha256
             ) === index
         )
-        .sort((left, right) => left.path.localeCompare(right.path)),
+        .sort(
+          (left, right) =>
+            left.project.localeCompare(right.project) || left.path.localeCompare(right.path)
+        ),
       prerequisites: [
         ...new Set(capabilities.flatMap((item) => item.capability.prerequisites)),
       ].sort(),
@@ -359,10 +362,8 @@ async function buildGoalPreflight(input: {
 }
 
 async function readGoalIndex(workspacePath: string): Promise<GoalIndex> {
-  const existing = (await fsExtra
-    .readJson(path.join(workspacePath, GOAL_INDEX_PATH))
-    .catch(() => null)) as GoalIndex | null;
-  if (!existing) {
+  const indexPath = path.join(workspacePath, GOAL_INDEX_PATH);
+  if (!(await fsExtra.pathExists(indexPath))) {
     return {
       schemaVersion: GOAL_INDEX_SCHEMA_VERSION,
       generatedAt: new Date(0).toISOString(),
@@ -370,13 +371,15 @@ async function readGoalIndex(workspacePath: string): Promise<GoalIndex> {
       goals: [],
     };
   }
+  const existing = (await fsExtra.readJson(indexPath)) as GoalIndex;
   assertJsonSchemaContract(existing, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
+  assertGoalIndexSemantics(existing);
   // Planning is the explicit reconciliation boundary: upsertGoalIndex retains
   // history while demoting any formerly active entry before publication.
   return existing;
 }
 
-function upsertGoalIndex(index: GoalIndex, goal: GoalPack): GoalIndex {
+function upsertGoalIndex(index: GoalIndex, goal: GoalPack, updatedAt: string): GoalIndex {
   const existing = index.goals.find((entry) => entry.id === goal.id);
   const entry = {
     id: goal.id,
@@ -387,7 +390,7 @@ function upsertGoalIndex(index: GoalIndex, goal: GoalPack): GoalIndex {
     lifecycle: existing?.lifecycle === 'cancelled' ? ('cancelled' as const) : ('active' as const),
     scope: goal.scope,
     createdAt: existing?.createdAt ?? goal.generatedAt,
-    updatedAt: goal.generatedAt,
+    updatedAt,
     goalPack: goal.artifacts.goalPack,
     agentHandoff: goal.artifacts.agentHandoff,
     ...(existing?.verifiedGoalId ? { verifiedGoalId: existing.verifiedGoalId } : {}),
@@ -395,14 +398,14 @@ function upsertGoalIndex(index: GoalIndex, goal: GoalPack): GoalIndex {
   };
   return {
     schemaVersion: GOAL_INDEX_SCHEMA_VERSION,
-    generatedAt: goal.generatedAt,
+    generatedAt: updatedAt,
     activeGoalId: entry.lifecycle === 'cancelled' ? index.activeGoalId : goal.id,
     goals: [
       ...index.goals
         .filter((item) => item.id !== goal.id)
         .map((item) =>
           entry.lifecycle === 'active' && item.lifecycle === 'active'
-            ? { ...item, lifecycle: 'planned' as const, updatedAt: goal.generatedAt }
+            ? { ...item, lifecycle: 'planned' as const, updatedAt }
             : item
         ),
       entry,
@@ -432,6 +435,9 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
   const selectedProjects = model.projects.filter((project) =>
     scope.projects.includes(project.name)
   );
+  if (selectedProjects.length === 0) {
+    throw new Error('A Goal Pack requires at least one registered project in its selected scope.');
+  }
   const maxAttempts = options.maxAttempts ?? 5;
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 25) {
     throw new Error('--max-attempts must be an integer from 1 to 25.');
@@ -534,7 +540,11 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
       // Recheck after acquiring the per-goal lock. Concurrent planners must reuse the
       // first immutable publication instead of replacing it with a newer timestamp.
       await resolvePublishedInstance();
-      const index = upsertGoalIndex(await readGoalIndex(workspacePath), goalPack);
+      const index = upsertGoalIndex(
+        await readGoalIndex(workspacePath),
+        goalPack,
+        new Date().toISOString()
+      );
       assertJsonSchemaContract(index, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
       assertGoalIndexSemantics(index);
       await writeWorkspaceArtifactJsonSet(
@@ -567,9 +577,11 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
     result:
       goalPack.state === 'needs-confirmation'
         ? 'needs-confirmation'
-        : goalPack.state === 'needs-evidence'
-          ? 'needs-evidence'
-          : 'planned',
+        : goalPack.state === 'blocked'
+          ? 'blocked'
+          : goalPack.state === 'needs-evidence'
+            ? 'needs-evidence'
+            : 'planned',
     resolution: {
       source: resolution.source,
       invocationScope: resolution.projectPath ? 'project' : 'workspace',

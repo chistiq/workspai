@@ -37,10 +37,8 @@ export function buildGoalLifecycleResult(input: Omit<GoalLifecycleResult, 'schem
 }
 
 async function readIndex(workspacePath: string): Promise<GoalIndex> {
-  const index = (await fsExtra
-    .readJson(path.join(workspacePath, GOAL_INDEX_PATH))
-    .catch(() => null)) as GoalIndex | null;
-  if (!index) {
+  const indexPath = path.join(workspacePath, GOAL_INDEX_PATH);
+  if (!(await fsExtra.pathExists(indexPath))) {
     return {
       schemaVersion: GOAL_INDEX_SCHEMA_VERSION,
       generatedAt: new Date(0).toISOString(),
@@ -48,6 +46,7 @@ async function readIndex(workspacePath: string): Promise<GoalIndex> {
       goals: [],
     };
   }
+  const index = (await fsExtra.readJson(indexPath)) as GoalIndex;
   assertJsonSchemaContract(index, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
   assertGoalIndexSemantics(index);
   return index;
@@ -138,13 +137,17 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
 export async function inspectGoalLifecycle(input: {
   workspacePath: string;
   goalId?: string;
+  validateBindings?: boolean;
 }): Promise<{ index: GoalIndex; active: GoalIndexEntry | null; goalPack: GoalPack | null }> {
   const workspacePath = path.resolve(input.workspacePath);
   const index = await readIndex(workspacePath);
   const id = input.goalId ?? index.activeGoalId;
   const active = id ? (index.goals.find((entry) => entry.id === id) ?? null) : null;
   if (id && !active) throw new Error(`Goal is not registered in this workspace: ${id}`);
-  const goalPack = active ? await assertGoalBindings(workspacePath, active) : null;
+  const goalPack =
+    active && input.validateBindings !== false
+      ? await assertGoalBindings(workspacePath, active)
+      : null;
   return { index, active, goalPack };
 }
 
@@ -158,7 +161,7 @@ export async function transitionGoalLifecycle(input: {
     const current = await readIndex(workspacePath);
     const existing = current.goals.find((entry) => entry.id === input.goalId);
     if (!existing) throw new Error(`Goal is not registered in this workspace: ${input.goalId}`);
-    await assertGoalBindings(workspacePath, existing);
+    if (input.action === 'activate') await assertGoalBindings(workspacePath, existing);
     const now = new Date().toISOString();
     const updated: GoalIndexEntry = {
       ...existing,
@@ -213,7 +216,7 @@ async function updateLifecycleLink(input: {
       const index: GoalIndex = {
         ...current,
         generatedAt: updated.updatedAt,
-        activeGoalId: input.goalId,
+        activeGoalId: input.lifecycle === 'verified' ? null : input.goalId,
         goals: current.goals.map((entry) => (entry.id === input.goalId ? updated : entry)),
       };
       assertJsonSchemaContract(index, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
@@ -233,13 +236,18 @@ export async function prepareGoalVerification(input: {
   const inspected = await inspectGoalLifecycle(input);
   if (!inspected.active || !inspected.goalPack)
     throw new Error('No active Goal Pack is available.');
+  if (inspected.index.activeGoalId !== inspected.active.id) {
+    throw new Error(
+      `Goal ${inspected.active.id} is not active. Activate it before preparing verification.`
+    );
+  }
   const pack = inspected.goalPack;
   if (!pack.commands.planVerifiedGoal) {
     throw new Error(
       `Goal ${pack.id} has no deterministic verification primitive. An agent proposal and explicit review are required first.`
     );
   }
-  if (pack.state === 'needs-confirmation' || pack.state === 'needs-evidence') {
+  if (pack.state !== 'ready-to-plan') {
     throw new Error(`Goal ${pack.id} cannot enter verification while its state is ${pack.state}.`);
   }
   const { planVerifiedGoal } = await import('./verified-goal.js');
@@ -273,6 +281,11 @@ export async function verifyGoalLifecycle(input: {
 }): Promise<{ goal: GoalIndexEntry; verifiedGoalId: string; verification: unknown }> {
   const inspected = await inspectGoalLifecycle(input);
   if (!inspected.active) throw new Error('No active Goal Pack is available.');
+  if (inspected.index.activeGoalId !== inspected.active.id) {
+    throw new Error(
+      `Goal ${inspected.active.id} is not active. Activate it before running verification.`
+    );
+  }
   if (!inspected.active.verifiedGoalId) {
     throw new Error(
       `Goal ${inspected.active.id} has no linked verification contract. Run workspai goal --prepare ${inspected.active.id} --json first.`

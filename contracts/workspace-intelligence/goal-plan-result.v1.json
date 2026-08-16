@@ -6,7 +6,7 @@
   "required": ["schemaVersion", "result", "resolution", "goalPack", "agentHandoff", "writtenArtifacts", "dryRun", "resumed"],
   "properties": {
     "schemaVersion": { "const": "workspai.goal-plan-result.v1" },
-    "result": { "enum": ["planned", "needs-confirmation", "needs-evidence"] },
+    "result": { "enum": ["planned", "needs-confirmation", "needs-evidence", "blocked"] },
     "resolution": {
       "type": "object",
       "required": ["source", "invocationScope"],

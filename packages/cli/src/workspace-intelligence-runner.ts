@@ -25,6 +25,7 @@ import {
   writeWorkspaceVerify,
 } from './workspace-verify.js';
 import { buildWorkspaceAgentContext, writeWorkspaceAgentContext } from './workspace-context.js';
+import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
 import {
   buildWorkspaceAgentReportsIndex,
   syncWorkspaceAgentGrounding,
@@ -403,7 +404,7 @@ async function runWorkspaceIntelligenceChainLocked(input: {
   });
 
   await stage('agent-sync', async () => {
-    const result = await syncWorkspaceAgentGrounding({
+    let result = await syncWorkspaceAgentGrounding({
       workspacePath,
       agent: input.agent ?? 'generic',
       write: true,
@@ -411,6 +412,57 @@ async function runWorkspaceIntelligenceChainLocked(input: {
       strict: input.strict === true,
       preset: 'enterprise',
     });
+    let reconciled = false;
+    const postGroundingSnapshot = await readWorkspaceKnowledgeGraphSnapshot(workspacePath);
+    if (postGroundingSnapshot.status === 'miss') {
+      if (postGroundingSnapshot.reason !== 'live-input-mismatch') {
+        throw new Error(
+          `Agent grounding left canonical evidence invalid (${postGroundingSnapshot.reason}).`
+        );
+      }
+      // Managed project grounding can update tracked AGENTS.md/.gitignore
+      // after the first model stage. Seal those CLI-owned writes into a fresh
+      // Model/Graph pair, then republish context and grounding once. Without
+      // this reconciliation the intelligence command can invalidate its own
+      // output before a Goal or graph consumer gets a chance to read it.
+      model = {
+        ...(await buildWorkspaceModel({ workspacePath, includeEvidence: true })),
+        build: createWorkspaceModelBuildProvenance({
+          mode: 'full',
+          engineStatus: 'disabled',
+        }),
+      };
+      await writeWorkspaceModel(model, workspacePath);
+      const reconciledContext = await buildWorkspaceAgentContext({
+        workspacePath,
+        model,
+        agent: input.agent ?? 'generic',
+        includeEvidence: true,
+      });
+      await writeWorkspaceAgentContext(reconciledContext, workspacePath);
+      const secondPass = await syncWorkspaceAgentGrounding({
+        workspacePath,
+        agent: input.agent ?? 'generic',
+        write: true,
+        refreshContext: false,
+        strict: input.strict === true,
+        preset: 'enterprise',
+      });
+      result = {
+        ...secondPass,
+        writtenFiles: [...new Set([...result.writtenFiles, ...secondPass.writtenFiles])].sort(),
+        strictViolations: [
+          ...new Set([...(result.strictViolations ?? []), ...(secondPass.strictViolations ?? [])]),
+        ].sort(),
+      };
+      const sealedSnapshot = await readWorkspaceKnowledgeGraphSnapshot(workspacePath);
+      if (sealedSnapshot.status === 'miss') {
+        throw new Error(
+          `Agent grounding reconciliation did not produce fresh canonical evidence (${sealedSnapshot.reason}).`
+        );
+      }
+      reconciled = true;
+    }
     const strictViolations = result.strictViolations ?? [];
     const blocked = input.strict === true && strictViolations.length > 0;
     return {
@@ -418,7 +470,7 @@ async function runWorkspaceIntelligenceChainLocked(input: {
       exitCode: blocked ? 2 : 0,
       message: blocked
         ? `${result.writtenFiles.length} grounding files written; ${strictViolations.length} strict grounding violation(s): ${strictViolations.join('; ')}`
-        : `${result.writtenFiles.length} grounding files written`,
+        : `${result.writtenFiles.length} grounding files written${reconciled ? '; canonical Model/Graph freshness sealed' : ''}`,
     };
   });
 

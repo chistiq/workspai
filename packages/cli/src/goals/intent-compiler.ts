@@ -3,9 +3,9 @@ import type { CompiledGoalIntent, GoalIntentCategory } from './goal-pack-contrac
 const MAX_INTENT_LENGTH = 2_000;
 const CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const MACHINE_LOCAL_PATH =
-  /(?:^|\s)(?:\/(?:home|Users|private|var\/folders)\/[^\s]+|[A-Za-z]:\\(?:Users|Documents and Settings)\\[^\s]+)/;
+  /(?:^|\s)(?:\/(?:home|Users|private|var|tmp|mnt|opt|srv|root|workspace|workspaces|data|Volumes|etc|usr|run|dev|proc|sys)\/[^\s]+|[A-Za-z]:[\\/][^\s]+|\\\\[^\\\s]+\\[^\s]+)/;
 const SECRET_MATERIAL =
-  /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_|ghp_|sk-)[A-Za-z0-9_-]{12,}|\bAKIA[A-Z0-9]{16}\b|\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s]{6,})/i;
+  /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_|gh[pousr]_|glpat-|npm_|xox[baprs]-|sk-(?:proj-)?)[A-Za-z0-9_-]{12,}|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\bAIza[A-Za-z0-9_-]{20,}|\bBearer\s+[A-Za-z0-9._~+/-]{16,}|[a-z][a-z0-9+.-]*:\/\/[^\s:/]+:[^\s@/]+@|\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s]{6,})/i;
 
 const CATEGORY_RULES: ReadonlyArray<{
   category: GoalIntentCategory;
@@ -27,6 +27,7 @@ const CATEGORY_RULES: ReadonlyArray<{
     patterns: [
       /\brelease[ -]readiness\b/i,
       /\bready (?:this |the )?(?:workspace|project) for release\b/i,
+      /\bprepare (?:this |the )?(?:workspace|project) for release\b/i,
     ],
   },
   {

@@ -22,12 +22,12 @@ agent plugin, approve a repair, or claim that the outcome is complete.
 
 A successful plan atomically publishes four portable artifacts:
 
-| Artifact | Purpose |
-| --- | --- |
-| `.workspai/goals/<goal-id>/goal-pack.json` | Canonical intent, scope, evidence bindings, policy, criteria, and orchestration state |
-| `.workspai/goals/<goal-id>/agent-handoff.json` | Bounded consumer projection for `generic`, `claude`, or `codex` |
-| `.workspai/goals/index.json` | Active-goal and lifecycle discovery authority for agents and IDEs |
-| `.workspai/reports/goal-pack-last-run.json` | Latest Goal Pack for IDE, CI, and automation discovery |
+| Artifact                                       | Purpose                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `.workspai/goals/<goal-id>/goal-pack.json`     | Canonical intent, scope, evidence bindings, policy, criteria, and orchestration state |
+| `.workspai/goals/<goal-id>/agent-handoff.json` | Bounded consumer projection for `generic`, `claude`, or `codex`                       |
+| `.workspai/goals/index.json`                   | Active-goal and lifecycle discovery authority for agents and IDEs                     |
+| `.workspai/reports/goal-pack-last-run.json`    | Latest Goal Pack for IDE, CI, and automation discovery                                |
 
 Agents start from the index. They do not infer the active objective by walking
 directories or treating the newest timestamp as authority.
@@ -75,12 +75,16 @@ executing a proposal against stale architecture.
 
 ## Honest preflight states
 
-`ready-to-plan` means intent, scope, retrieval anchors, and required
+`ready-to-plan` means intent, scope, at least one bounded retrieval anchor, and required
 measurement capability are available. It does not mean source changed or the
 goal passed. `needs-evidence` means a measurable target is valid but its
 machine-readable producer or baseline still needs setup. A native C/C++
 project without instrumented LCOV, Cobertura, or LLVM output is therefore
 reported as `needs-evidence`, never as ready.
+
+`blocked` means the CLI cannot provide bounded proof-backed retrieval for the
+selected intent and scope. Workspai refuses to hand broad source inspection to
+an agent until Workspace Intelligence is refreshed or the intent is clarified.
 
 Preflight also carries the current Workspace Intelligence status, blocked
 stages, deterministic category queries, and bounded graph anchors.
@@ -89,9 +93,9 @@ stages, deterministic category queries, and bounded graph anchors.
 
 The two goal surfaces have different jobs:
 
-| Surface | Job |
-| --- | --- |
-| `workspai goal "<intent>"` | Compile plain language, resolve scope, pin Model/Graph evidence, and prepare an agent handoff |
+| Surface                            | Job                                                                                                                           |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `workspai goal "<intent>"`         | Compile plain language, resolve scope, pin Model/Graph evidence, and prepare an agent handoff                                 |
 | `workspai workspace goal plan ...` | Create or resume one of the shipped deterministic success contracts: release readiness, dependency security, or test coverage |
 
 When a plain-language intent maps exactly to one of those three measurable
@@ -109,6 +113,10 @@ workspai goal --verify <goal-id> --json
 Preparation is refused while clarification or measurement evidence is
 missing. Verification is refused until a CLI verified-goal contract is linked,
 and only CLI evidence may transition the lifecycle to `verified`.
+Only the selected `activeGoalId` may enter preparation or verification. A
+completed verified goal clears the active selection. `--list` and `--cancel`
+remain available when an old Goal is stale, so operators can recover safely;
+`--status`, `--activate`, `--prepare`, and `--verify` require current bindings.
 
 ## Ownership and safety boundary
 
@@ -147,6 +155,10 @@ Repair Engine and, ultimately, the independent Decisions architecture.
 --no-run                 Read verification evidence without executing producers
 --json                  Machine-readable result
 ```
+
+Choose exactly one lifecycle option. Lifecycle options cannot be combined with
+an intent, `--scope`, `--refresh`, or `--dry-run`; `--no-run` applies only to
+`--verify`. Invalid combinations fail before workspace resolution or writes.
 
 Schemas:
 

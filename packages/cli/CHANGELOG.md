@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.57.0] - 2026-08-15
+## [0.58.0] - 2026-08-16
 
-### Changed
+### Added
 
 - Added the governed `goal <intent>` front door with immutable Goal Packs,
   consumer handoffs, deterministic retrieval anchors, measurement-capability
@@ -20,8 +20,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unified all successful Goal lifecycle JSON responses behind the published
   `workspai.goal-lifecycle-result.v1` contract and made lifecycle failures use
   operation-specific machine-readable error codes.
+
+### Changed
+
 - Made Goal integrity semantics explicit: structural Model hashes and canonical
   JSON Graph/Goal hashes are distinct from the stable Goal identity fingerprint.
+- Hardened Goal lifecycle recovery and state invariants: successful
+  prepare/verify flows retain one selected objective, verified completion clears
+  it, stale goals remain listable/cancellable, and malformed or duplicate index
+  entries fail closed.
+- Added strict option exclusivity, empty-scope and empty-retrieval blocking,
+  broader local-path/secret rejection, shell-safe generated commands, and
+  permanent real-repository Goal qualification scenarios.
+- Sealed canonical Model/Graph freshness after CLI-managed agent grounding so
+  a completed Intelligence chain cannot invalidate itself before Goal, Graph,
+  IDE, or agent consumers read it.
+- Made real-world qualification snapshot-first and added cumulative
+  workspace-scoped Goal assertions without retaining raw output or local paths.
+
+## [0.57.0] - 2026-08-15
+
+### Changed
 
 - Reworked Doctor's human output around an authoritative verdict and separate
   blocking, advisory, unknown, contradiction, and not-applicable accounting;

@@ -60,7 +60,7 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
 function verifiedGoalCommand(input: GoalPackKernelInput): string | undefined {
   const scope =
     input.scope.kind === 'project' && input.scope.projects[0]
-      ? ` --scope project:${input.scope.projects[0]}`
+      ? ` --scope ${portableCommandArgument(`project:${input.scope.projects[0]}`)}`
       : '';
   if (input.intent.category === 'release-readiness') {
     return `workspai workspace goal plan release-readiness${scope} --json`;
@@ -72,6 +72,10 @@ function verifiedGoalCommand(input: GoalPackKernelInput): string | undefined {
     return `workspai workspace goal plan test-coverage${scope} --target ${input.intent.requestedTarget.value} --json`;
   }
   return undefined;
+}
+
+function portableCommandArgument(value: string): string {
+  return /^[A-Za-z0-9._:@+-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 export function buildGoalPack(
@@ -87,10 +91,11 @@ export function buildGoalPack(
     !requiresDecision &&
     input.intent.category === 'test-coverage' &&
     input.preflight.measurement.status !== 'available';
+  const retrievalBlocked = !requiresDecision && input.preflight.retrieval.status === 'empty';
   const identity = {
     // Any semantic compiler change must advance this revision so an older
     // immutable Goal Pack can never be mistaken for current output.
-    kernelRevision: 'goal-pack-kernel-v3',
+    kernelRevision: 'goal-pack-kernel-v5',
     intent: input.intent.normalized,
     workspace: input.workspaceName,
     scope: input.scope,
@@ -106,9 +111,11 @@ export function buildGoalPack(
   const planVerifiedGoal = verifiedGoalCommand(input);
   const state = requiresDecision
     ? 'needs-confirmation'
-    : requiresEvidence
-      ? 'needs-evidence'
-      : 'ready-to-plan';
+    : retrievalBlocked
+      ? 'blocked'
+      : requiresEvidence
+        ? 'needs-evidence'
+        : 'ready-to-plan';
 
   const goalPack: GoalPack = {
     schemaVersion: GOAL_PACK_SCHEMA_VERSION,
@@ -150,7 +157,7 @@ export function buildGoalPack(
       {
         id: 'propose',
         owner: 'agent',
-        status: requiresDecision || requiresEvidence ? 'blocked' : 'pending',
+        status: requiresDecision || requiresEvidence || retrievalBlocked ? 'blocked' : 'pending',
         summary: 'Produce a bounded source-change proposal; do not mutate evidence artifacts.',
       },
       {
@@ -172,17 +179,21 @@ export function buildGoalPack(
         summary: 'Independently verify the exact success contract from fresh evidence.',
       },
     ],
-    ...(requiresDecision || requiresEvidence
+    ...(requiresDecision || requiresEvidence || retrievalBlocked
       ? {
           decision: {
             required: true as const,
             reason: requiresDecision
               ? input.intent.ambiguities.join(' ')
-              : input.preflight.measurement.prerequisites.join(' ') ||
-                'No current machine-readable measurement evidence is available.',
+              : retrievalBlocked
+                ? 'No bounded proof-backed Graph anchor matches the selected scope and intent.'
+                : input.preflight.measurement.prerequisites.join(' ') ||
+                  'No current machine-readable measurement evidence is available.',
             question: requiresDecision
               ? 'Clarify the intended outcome or provide a machine-verifiable target.'
-              : 'Establish the listed measurement prerequisites, then regenerate this Goal Pack.',
+              : retrievalBlocked
+                ? 'Refresh Workspace Intelligence or clarify the intent before asking an agent to inspect source.'
+                : 'Establish the listed measurement prerequisites, then regenerate this Goal Pack.',
           },
         }
       : {}),

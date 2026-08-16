@@ -5,7 +5,67 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.57.0 (publication pending)
+## Latest Release: v0.58.0 (August 16, 2026)
+
+### Governed Goals and Agent-Ready Objective Handoffs
+
+This minor release gives developers one plain-language front door for turning
+an intended outcome into bounded, evidence-backed work without transferring
+scope, verification, or rollback ownership away from the Workspai CLI.
+
+**What's New:**
+
+- **Plain language to governed work**
+  - `workspai goal "<intent>"` binds an outcome to the canonical Model and
+    revision-bound Graph, selected projects, proof anchors, measurable
+    capabilities, and immutable policy.
+  - A portable Goal Pack, consumer handoff, and active-goal index let agents,
+    IDEs, and CI follow the same objective without broad repository discovery.
+
+- **Explicit, machine-readable lifecycle control**
+  - Status, list, activate, cancel, prepare-verification, and verify operations
+    share the published `workspai.goal-lifecycle-result.v1` response contract.
+  - Lifecycle failures carry stable operation-specific codes; malformed or
+    duplicate index state fails closed rather than selecting an ambiguous goal.
+
+- **Truthful readiness and bounded retrieval**
+  - Missing measurement evidence becomes `needs-evidence`, and an empty bounded
+    Graph retrieval becomes `blocked` instead of encouraging an agent to scan
+    the entire repository.
+  - Project-scoped goals reject empty scope, unsafe generated commands, local
+    path disclosure, secret-like content, and repair proposals that widen scope.
+
+- **Recovery-safe verification**
+  - Successful preparation and verification retain exactly one selected goal;
+    verified completion clears it, while stale goals remain listable and
+    cancellable for operator recovery.
+  - Workspace Intelligence reconciles Model and Graph bindings after managed
+    grounding writes so its own successful run does not stale downstream Goal,
+    Graph, IDE, or agent evidence.
+
+- **Permanent real-repository qualification**
+  - Snapshot-first qualification covers isolated and cumulative workspaces,
+    including scoped Goal assertions, without retaining raw command output,
+    machine roots, or local paths.
+
+**Breaking changes:** None. Goal commands and contracts are additive.
+
+**Publication status:** Released August 16, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.58.0
+workspai --version
+workspai goal "Raise test coverage to 85%" --for-agent generic
+workspai goal status --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.58.0/packages/cli/releases/RELEASE_NOTES_v0.58.0.md)
+
+---
+
+## Previous Release: v0.57.0 (August 15, 2026)
 
 ### Truthful Repository Intelligence and Enterprise Qualification
 
@@ -14,16 +74,6 @@ non-service repositories, adds publication-safe real-world qualification, and
 hardens every bounded output consumed by developers, CI, IDEs, and agents.
 
 **What's New:**
-
-- **Plain language to governed work**
-  - `workspai goal "<intent>"` binds an outcome to canonical Model, Graph,
-    project scope, proof anchors, capability preflight, and immutable policy.
-  - Agents discover the active objective through a portable Goal index; CLI
-    lifecycle commands retain approval, verification, and rollback ownership.
-  - One versioned lifecycle-result envelope covers status, list, activation,
-    cancellation, preparation, and verification for IDE and agent consumers.
-  - Missing measurable evidence is reported as `needs-evidence` rather than a
-    misleading ready state.
 
 - **Repository-aware Doctor output**
   - Libraries, SDKs, plugins, monorepos, and cross-language platforms no longer
@@ -58,9 +108,9 @@ hardens every bounded output consumed by developers, CI, IDEs, and agents.
 
 **Breaking changes:** None. New adoption and evidence fields are additive.
 
-**Publication status:** Release verification and npm publication are pending.
+**Publication status:** Released August 15, 2026.
 
-**Install after publication:**
+**Install:**
 
 ```bash
 npm install -g workspai@0.57.0

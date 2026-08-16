@@ -2,13 +2,15 @@
 
 Workspai's deterministic unit, contract, integration, and adversarial suites
 remain the release gates. Real-world qualification complements them by running
-the installed CLI against explicitly selected, linked reference repositories
+the installed CLI against explicitly selected reference repositories through
+local, network-free Git snapshots
 without installing dependencies or executing project lifecycle commands.
 
 ## Isolated and cumulative layouts
 
 Use one isolated workspace per repository when diagnosing detection, adoption,
-Doctor, model, graph, context, contract, and readiness behavior:
+Doctor, model, graph, Goal Pack, agent handoff, context, contract, and readiness
+behavior:
 
 ```bash
 REFERENCE_ROOT=/path/to/reference-repositories
@@ -19,6 +21,11 @@ npm run test:real-world -- \
   --projects vscode,grpc,deno \
   --report "$QUALIFICATION_ROOT/isolated.json"
 ```
+
+Snapshot mode is the default and never changes adoption metadata, grounding, or
+workspace links in the source repository. `--source-mode linked` remains an
+explicit diagnostic escape hatch when uncommitted worktree content must be
+qualified; it may update governed Workspai metadata in that linked checkout.
 
 Use `--shared-workspace` to adopt the repositories cumulatively into one fresh
 workspace. Every addition reruns the canonical chain, so transition and scale
@@ -35,6 +42,12 @@ npm run test:real-world -- \
   --report "$QUALIFICATION_ROOT/shared.json"
 ```
 
+At each cumulative adoption boundary, the harness also previews a
+workspace-scoped Goal and requires its scope and baseline count to match every
+project adopted so far. This catches stale Model/Graph or partial-scope
+handoffs before the final large-workspace state hides the transition that
+introduced them.
+
 After the shared workspace qualifies, exercise bounded queries, full graph
 exports, diff/impact/verify/trace, agent dry runs, portable archives, snapshots,
 and destructive-operation dry runs:
@@ -48,7 +61,9 @@ npm run test:real-world:enterprise -- \
 
 ## Safety and interpretation
 
-- Reference repositories are linked; source is never moved or copied.
+- Reference repositories are cloned locally with `git clone --shared`; no
+  network request is made and the original checkout is read-only. Snapshot
+  adoption metadata and agent grounding remain under `--run-root`.
 - `--reference-root` is mandatory. The harness has no developer-machine default.
 - Qualification reports are publication-safe by construction: project names are
   anonymized, absolute paths and command arguments are omitted, and raw command
@@ -60,6 +75,10 @@ npm run test:real-world:enterprise -- \
 - Dependency installation, project build/test/start/init, infrastructure
   mutation, publication, and model network calls are not permitted.
 - Agent customization and destructive project operations are dry-run only.
+- Goal qualification publishes one system-understanding Goal inside the
+  isolated test workspace, validates its lifecycle binding, and previews
+  runtime-specific coverage and release-readiness goals without executing
+  project tests or mutating project source.
 - Exit codes `1` and `2` may be valid domain outcomes when their documented JSON
   contracts parse successfully; unexpected process, timeout, buffer, or schema
   failures fail qualification.

@@ -7489,14 +7489,9 @@ program
       }
     ) => {
       try {
-        if (
-          options.status !== undefined ||
-          options.list ||
-          options.activate ||
-          options.cancel ||
-          options.prepare ||
-          options.verify
-        ) {
+        const { validateGoalCommandSelection } = await import('./goals/goal-command-contract.js');
+        const selection = validateGoalCommandSelection({ intent, ...options });
+        if (selection.operation !== 'plan') {
           const resolution = resolveProjectWorkspaceSync({
             startPath: process.cwd(),
             explicitWorkspacePath: options.workspace,
@@ -7543,20 +7538,10 @@ program
               typeof options.status === 'string'
                 ? options.status
                 : (transition?.goal.id ?? prepared?.goal.id ?? verified?.goal.id),
+            validateBindings: !(options.list || options.cancel),
           });
-          const operation = options.verify
-            ? 'verify'
-            : options.prepare
-              ? 'prepare'
-              : options.activate
-                ? 'activate'
-                : options.cancel
-                  ? 'cancel'
-                  : options.list
-                    ? 'list'
-                    : 'status';
           const payload = buildGoalLifecycleResult({
-            operation,
+            operation: selection.operation,
             activeGoalId: inspected.index.activeGoalId,
             goal: inspected.active,
             goals: inspected.index.goals,
@@ -7582,14 +7567,11 @@ program
           }
           return;
         }
-        if (!intent?.trim()) {
-          throw new Error('Provide a plain-language intent or use --status/--list.');
-        }
         const maxAttempts = Number(options.maxAttempts ?? 5);
         const { planGoalPack } = await import('./goal-pack.js');
         const result = await planGoalPack({
           startPath: process.cwd(),
-          intent,
+          intent: selection.intent,
           workspacePath: options.workspace,
           scope: options.scope,
           consumer: options.forAgent,
@@ -7602,11 +7584,15 @@ program
           return;
         }
         const pack = result.goalPack;
-        console.log(
+        const goalVerdict =
           pack.state === 'ready-to-plan'
-            ? chalk.green('✔ Governed Goal Pack ready')
-            : chalk.yellow('◆ Goal Pack needs one decision')
-        );
+            ? chalk.green('✔ Governed Goal Pack ready to plan')
+            : pack.state === 'blocked'
+              ? chalk.red('■ Goal Pack blocked by missing bounded evidence')
+              : pack.state === 'needs-evidence'
+                ? chalk.yellow('◆ Goal Pack needs measurement evidence')
+                : chalk.yellow('◆ Goal Pack needs clarification');
+        console.log(goalVerdict);
         console.log(chalk.bold(`   ${pack.intent.statement}`));
         console.log(chalk.gray(`   Goal: ${pack.id}`));
         console.log(

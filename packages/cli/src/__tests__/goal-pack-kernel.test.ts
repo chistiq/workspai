@@ -132,12 +132,33 @@ describe('goal pack pure kernel', () => {
     expect(goalPack.orchestration.find((step) => step.id === 'propose')?.status).toBe('blocked');
   });
 
+  it('blocks agent planning when bounded Graph retrieval has no evidence anchors', () => {
+    const pending = input('Map the authentication architecture');
+    pending.preflight.retrieval.status = 'empty';
+    const { goalPack } = buildGoalPack(pending, ports);
+
+    expect(goalPack.state).toBe('blocked');
+    expect(goalPack.decision?.reason).toContain('Graph anchor');
+    expect(goalPack.orchestration.find((step) => step.id === 'propose')?.status).toBe('blocked');
+  });
+
   it('rejects empty, oversized, and control-character intents', () => {
     expect(() => compileGoalIntent('   ')).toThrow('cannot be empty');
     expect(() => compileGoalIntent(`fix\u0000bug`)).toThrow('control characters');
     expect(() => compileGoalIntent('a'.repeat(2_001))).toThrow('safety limit');
     expect(() => compileGoalIntent('Fix /home/alice/private/app.ts')).toThrow('machine-local');
+    expect(() => compileGoalIntent('Fix /mnt/company/private/app.ts')).toThrow('machine-local');
+    expect(() => compileGoalIntent('Read /etc/passwd for configuration')).toThrow('machine-local');
+    expect(() => compileGoalIntent(String.raw`Fix C:\work\private\app.ts`)).toThrow(
+      'machine-local'
+    );
     expect(() => compileGoalIntent('Use token=github_pat_abcdefghijklmnopqrstuvwxyz')).toThrow(
+      'secret material'
+    );
+    expect(() => compileGoalIntent('Use npm_abcdefghijklmnopqrstuvwxyz1234')).toThrow(
+      'secret material'
+    );
+    expect(() => compileGoalIntent('Connect postgres://admin:private-pass@db/app')).toThrow(
       'secret material'
     );
   });
@@ -152,5 +173,13 @@ describe('goal pack pure kernel', () => {
     expect(serialized).not.toContain('/home/');
     expect(serialized).not.toContain('C:\\');
     expect(goalPack.artifacts.goalPack).toMatch(/^\.workspai\/goals\//);
+  });
+
+  it('quotes non-shell-safe project names in executable guidance', () => {
+    const unsafe = input('Prepare this project for release');
+    unsafe.scope.projects = ['API service'];
+    const { goalPack } = buildGoalPack(unsafe, ports);
+
+    expect(goalPack.commands.planVerifiedGoal).toContain('--scope "project:API service"');
   });
 });

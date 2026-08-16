@@ -188,7 +188,7 @@
       "required": ["kind", "projects", "selectionSource"],
       "properties": {
         "kind": { "enum": ["workspace", "project"] },
-        "projects": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "projects": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "selectionSource": { "enum": ["workspace", "invocation-project", "explicit"] }
       },
       "additionalProperties": false

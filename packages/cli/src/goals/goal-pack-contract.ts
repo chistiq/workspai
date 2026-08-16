@@ -232,6 +232,29 @@ export type GoalIndex = {
 };
 
 export function assertGoalIndexSemantics(index: GoalIndex): void {
+  const ids = new Set<string>();
+  const fingerprints = new Set<string>();
+  const generatedAt = Date.parse(index.generatedAt);
+  for (const entry of index.goals) {
+    if (ids.has(entry.id)) throw new Error(`Goal index contains duplicate id: ${entry.id}`);
+    if (fingerprints.has(entry.fingerprint)) {
+      throw new Error(`Goal index contains duplicate fingerprint: ${entry.fingerprint}`);
+    }
+    ids.add(entry.id);
+    fingerprints.add(entry.fingerprint);
+    if (
+      entry.goalPack !== `.workspai/goals/${entry.id}/goal-pack.json` ||
+      entry.agentHandoff !== `.workspai/goals/${entry.id}/agent-handoff.json`
+    ) {
+      throw new Error(`Goal index artifact paths do not match goal id: ${entry.id}`);
+    }
+    if (Date.parse(entry.createdAt) > Date.parse(entry.updatedAt)) {
+      throw new Error(`Goal index timestamps are inconsistent for: ${entry.id}`);
+    }
+    if (Date.parse(entry.updatedAt) > generatedAt) {
+      throw new Error(`Goal index generatedAt predates entry update: ${entry.id}`);
+    }
+  }
   const activeEntries = index.goals.filter((entry) => entry.lifecycle === 'active');
   if (index.activeGoalId === null) {
     if (activeEntries.length > 0) {
@@ -239,13 +262,14 @@ export function assertGoalIndexSemantics(index: GoalIndex): void {
     }
     return;
   }
+  const selected = index.goals.find((entry) => entry.id === index.activeGoalId);
   if (
-    activeEntries.length !== 1 ||
-    activeEntries[0]?.id !== index.activeGoalId ||
-    !index.goals.some((entry) => entry.id === index.activeGoalId)
+    !selected ||
+    !['active', 'verification-ready', 'failed'].includes(selected.lifecycle) ||
+    activeEntries.some((entry) => entry.id !== index.activeGoalId)
   ) {
     throw new Error(
-      'Goal index is inconsistent: activeGoalId must identify the only active lifecycle entry.'
+      'Goal index is inconsistent: activeGoalId must identify the only selected actionable lifecycle entry.'
     );
   }
 }
