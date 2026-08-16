@@ -48,6 +48,7 @@ const requiredCliReadmeHeadings = [
   '## Give your AI agent the system—not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start in two minutes',
+  '## Give your agent a goal—not an open-ended prompt',
   '## What happens after the first run',
   '## How Workspace Intelligence works',
   '## Everyday workflows',
@@ -79,6 +80,9 @@ for (const semantic of [
   'not "these projects are independent."',
   'npx workspai create',
   'npx workspai adopt .',
+  'npx workspai goal "Raise test coverage to 85%" --for-agent generic',
+  'The agent gets a focused objective, not permission to scan or change everything.',
+  'does not edit source or claim that the outcome is complete.',
   'A blocked result is useful evidence, not a crashed command.',
   'do not require an AI API key',
 ]) {
@@ -212,6 +216,7 @@ const requiredRepositoryReadmeHeadings = [
   '## Give your AI agent the system—not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start with your software',
+  '## Give your agent a goal—not an open-ended prompt',
   '## What Workspai gives you',
   '## How it works',
   '## One foundation, many consumers',
@@ -242,6 +247,9 @@ for (const semantic of [
   'not “these projects are independent.”',
   'not a list of missing',
   'README_CONTENT_CONTRACT.md',
+  'npx workspai goal "Raise test coverage to 85%" --for-agent generic',
+  'The agent gets a focused objective, not permission to scan or change everything.',
+  'does not edit source or claim that the outcome is complete.',
 ]) {
   if (!normalizedRepositoryReadme.includes(semantic)) {
     errors.push(`Repository README is missing required product truth: ${semantic}`);

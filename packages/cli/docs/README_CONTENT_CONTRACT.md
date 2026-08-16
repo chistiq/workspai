@@ -21,20 +21,22 @@ The root README keeps this order:
 1. a problem-first product promise, slogan, and copyable first run;
 2. product category and three durable outcomes;
 3. one copyable path for existing software and one guided path for new software;
-4. a short outcome-oriented view of what Workspai provides;
-5. the canonical Model → derived Graph boundary and intelligence chain;
-6. consumer surfaces and goal-based documentation links;
-7. package, contributor, community, and license routes.
+4. one plain-language Goal path with explicit scope and verification ownership;
+5. a short outcome-oriented view of what Workspai provides;
+6. the canonical Model → derived Graph boundary and intelligence chain;
+7. consumer surfaces and goal-based documentation links;
+8. package, contributor, community, and license routes.
 
 The CLI README keeps this order:
 
 1. a problem-first product promise, slogan, and copyable first run;
 2. product category and durable value;
 3. a two-minute existing-project path and the guided create path;
-4. the small set of durable outputs a user should recognize;
-5. the canonical Model → derived Graph boundary and intelligence chain;
-6. everyday workflows grouped by goal;
-7. outputs, requirements, documentation, troubleshooting, and contribution.
+4. one plain-language Goal path with explicit scope and verification ownership;
+5. the small set of durable outputs a user should recognize;
+6. the canonical Model → derived Graph boundary and intelligence chain;
+7. everyday workflows grouped by goal;
+8. outputs, requirements, documentation, troubleshooting, and contribution.
 
 ## What does not belong in a main README
 
@@ -100,6 +102,8 @@ task-success claim.
 - Quickstarts must be copyable and use the canonical `workspai` package.
 - `wspai` is only an optional short alias.
 - The main path uses the complete contract-backed intelligence runner.
+- The Goal path states that it prepares bounded work and does not itself edit
+  source or claim completion.
 - A partial command sequence must not be presented as a replacement loop.
 - Exhaustive syntax belongs in `docs/commands-reference.md`.
 

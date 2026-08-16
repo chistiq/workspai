@@ -96,6 +96,29 @@ workspai --help
 
 `wspai` is an optional short alias for the same CLI.
 
+## Give your agent a goal—not an open-ended prompt
+
+Describe the outcome in plain language from the adopted project:
+
+```bash
+npx workspai goal "Raise test coverage to 85%" --for-agent generic
+```
+
+Workspai turns it into a bounded, evidence-backed handoff:
+
+```text
+Intent → project scope → proof-backed context → governed plan → CLI verification
+```
+
+The agent gets a focused objective, not permission to scan or change
+everything. Workspai keeps approval, verification, and rollback under CLI
+control. The command prepares governed work; it does not edit source or claim
+that the outcome is complete.
+
+![Workspai turns a plain-language objective into a governed Goal Pack](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-goal-readme-cli.gif)
+
+[Learn how Goal Packs work](docs/goal-packs.md)
+
 ## What happens after the first run
 
 Workspai saves reusable results under `.workspai/`:

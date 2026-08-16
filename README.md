@@ -71,16 +71,6 @@ and links the project to it. You can stay in the project directory:
 npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-Turn a plain-language outcome into a scope-bound plan from the same project:
-
-```bash
-npx workspai goal "Fix the authentication regression"
-```
-
-This writes a portable Goal Pack, agent handoff, and active-goal index. Agents
-can discover it with `workspai goal --status --json`; source mutation and final
-verification remain CLI-governed.
-
 This run builds the current system view, checks its evidence, and prepares
 shared context for people and tools. Results are saved under `.workspai/`.
 When something is missing or blocked, Workspai reports it instead of claiming
@@ -95,6 +85,29 @@ npx workspai create
 ```
 
 It can create a workspace, scaffold a project, or add existing software.
+
+## Give your agent a goal—not an open-ended prompt
+
+Describe the outcome in plain language from the adopted project:
+
+```bash
+npx workspai goal "Raise test coverage to 85%" --for-agent generic
+```
+
+Workspai turns it into a bounded, evidence-backed handoff:
+
+```text
+Intent → project scope → proof-backed context → governed plan → CLI verification
+```
+
+The agent gets a focused objective, not permission to scan or change
+everything. Workspai keeps approval, verification, and rollback under CLI
+control. The command prepares governed work; it does not edit source or claim
+that the outcome is complete.
+
+![Workspai turns a plain-language objective into a governed Goal Pack](packages/cli/docs/workspai-goal-readme-cli.gif)
+
+[Learn how Goal Packs work](packages/cli/docs/goal-packs.md)
 
 ## What Workspai gives you
 
