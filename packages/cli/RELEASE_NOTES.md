@@ -5,7 +5,7 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Planned Release: v0.57.0 (publication pending)
+## Latest Release: v0.57.0 (publication pending)
 
 ### Truthful Repository Intelligence and Enterprise Qualification
 

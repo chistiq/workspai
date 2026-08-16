@@ -26,7 +26,7 @@
 
 # Workspai CLI v0.57.0
 
-Publication status: pending.
+Released August 15, 2026.
 
 ## Truthful Repository Intelligence and Enterprise Qualification
 
