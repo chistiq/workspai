@@ -1022,6 +1022,8 @@ export async function buildProjectContextAgent(
         '.workspai/PROJECT-GROUNDING.md',
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
         'AGENTS.md',
+        'workspace:.workspai/goals/index.json',
+        `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun}`,
         'workspace:.workspai/reports/INDEX.json',
         'workspace:.workspai/reports/workspace-context-agent.json',
         `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`,
@@ -1141,10 +1143,11 @@ This is a mandatory agent preflight, not optional background material:
 
 1. Read \`.workspai/reports/project-context-agent.json\` before broad source discovery.
 2. Run \`${context.commands.workspaceStatus}\` and require a resolved workspace.
-3. For repository analysis, architecture analysis, change impact, contracts, infrastructure, or release readiness, read the canonical workspace \`.workspai/reports/INDEX.json\` and \`workspace-context-agent.json\` even when the request names only this repository.
-4. Run the bounded agent graph search below before broad source scanning, then use targeted graph evidence/path queries as needed.
-5. Use source inspection to verify and deepen the workspace evidence, not to silently replace it.
-6. Do not claim complete architecture, independence, health, readiness, or verification without current Workspai evidence.
+3. If \`.workspai/goals/index.json\` exists in the canonical workspace, read its active Goal Pack and agent handoff before choosing or expanding work. Use \`workspai goal --status --json\` to validate live bindings.
+4. For repository analysis, architecture analysis, change impact, contracts, infrastructure, or release readiness, read the canonical workspace \`.workspai/reports/INDEX.json\` and \`workspace-context-agent.json\` even when the request names only this repository.
+5. Run the Goal Pack retrieval queries or bounded agent graph search before broad source scanning, then use targeted graph evidence/path queries as needed.
+6. Use source inspection to verify and deepen the workspace evidence, not to silently replace it.
+7. Do not claim complete architecture, independence, health, readiness, goal completion, or verification without current Workspai evidence.
 
 If workspace resolution, required reports, or graph retrieval is unavailable, explicitly report degraded mode and the missing evidence. In degraded mode an agent may inspect source, but must not claim a complete architectural understanding.
 
@@ -1198,6 +1201,7 @@ function buildProjectAgentsSection(context: ProjectContextAgent): string {
 - Portable project lens: \`.workspai/reports/project-context-agent.json\`
 - Project grounding: \`.workspai/PROJECT-GROUNDING.md\`
 - Workspace discovery: run \`npx workspai project workspace status --json\`
+- Active goal discovery: run \`workspai goal --status --json\`; if a goal is active, read its immutable Goal Pack and handoff before acting.
 
 Before broad source discovery, every agent must read the project lens and run \`${context.commands.workspaceStatus}\`; continue as fully grounded only when workspace resolution succeeds. Repository analysis, architecture analysis, change impact, contracts, APIs, infrastructure, and release readiness always require canonical workspace evidence and the bounded agent graph search, even when the request names only this repository. Source inspection verifies and deepens that evidence; it does not replace it silently. If required evidence is unavailable or stale, disclose degraded mode and do not claim complete architecture, independence, health, readiness, or verification. The user does not need to preload the graph. \`projectTopology\` is the compact project dependency view in the canonical Workspace Model, while the Workspace Knowledge Graph is the proof-backed detail layer. Workspai commands launched here resolve the canonical workspace automatically. Never copy the machine-local workspace link into answers, commits, or generated portable artifacts.`;
 }

@@ -432,6 +432,82 @@
     },
     {
       "path": [
+        "goal"
+      ],
+      "command": "goal",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Compile a plain-language engineering intent into a governed, evidence-bound Goal Pack",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "intent",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--scope <scope>",
+          "attributeName": "scope"
+        },
+        {
+          "flags": "--for-agent <consumer>",
+          "attributeName": "forAgent"
+        },
+        {
+          "flags": "--max-attempts <count>",
+          "attributeName": "maxAttempts"
+        },
+        {
+          "flags": "--refresh",
+          "attributeName": "refresh"
+        },
+        {
+          "flags": "--dry-run",
+          "attributeName": "dryRun"
+        },
+        {
+          "flags": "--status [goal-id]",
+          "attributeName": "status"
+        },
+        {
+          "flags": "--list",
+          "attributeName": "list"
+        },
+        {
+          "flags": "--activate <goal-id>",
+          "attributeName": "activate"
+        },
+        {
+          "flags": "--cancel <goal-id>",
+          "attributeName": "cancel"
+        },
+        {
+          "flags": "--prepare <goal-id>",
+          "attributeName": "prepare"
+        },
+        {
+          "flags": "--verify <goal-id>",
+          "attributeName": "verify"
+        },
+        {
+          "flags": "--no-run",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
         "import"
       ],
       "command": "import",
@@ -1530,6 +1606,7 @@
     "config",
     "create",
     "doctor",
+    "goal",
     "import",
     "infra",
     "mirror",

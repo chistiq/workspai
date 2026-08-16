@@ -64,6 +64,13 @@ import { STUDIO_CARD_REPAIR_CAPABILITIES_SCHEMA_VERSION } from './studio-card-re
 import { WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION } from './workspace-repair-transaction-contract.js';
 import { WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION } from './workspace-repair-proposal-contract.js';
 import { WORKSPACE_REPAIR_CAPABILITIES_SCHEMA_VERSION } from './workspace-repair-capabilities-contract.js';
+import {
+  GOAL_AGENT_HANDOFF_SCHEMA_VERSION,
+  GOAL_INDEX_SCHEMA_VERSION,
+  GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
+  GOAL_PACK_SCHEMA_VERSION,
+  GOAL_PLAN_RESULT_SCHEMA_VERSION,
+} from '../goals/goal-pack-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -101,6 +108,11 @@ export function getPublishedContractVersions() {
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectTestCoverage.schemaVersion,
     verifiedGoal: 'workspai.verified-goal.v1',
     verifiedGoalStatus: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.verifiedGoalStatus,
+    goalPack: GOAL_PACK_SCHEMA_VERSION,
+    goalAgentHandoff: GOAL_AGENT_HANDOFF_SCHEMA_VERSION,
+    goalPlanResult: GOAL_PLAN_RESULT_SCHEMA_VERSION,
+    goalIndex: GOAL_INDEX_SCHEMA_VERSION,
+    goalLifecycleResult: GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
     workspaceIntelligenceArchitecture: WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION,
     workspaceIntelligenceChain: WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION,
     workspaceIntelligenceArtifacts: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
@@ -202,6 +214,11 @@ export function getPublishedContractCatalog() {
     projectTestCoverage: 'contracts/project-test-coverage.v1.json',
     verifiedGoal: 'contracts/workspace-intelligence/verified-goal.v1.json',
     verifiedGoalStatus: 'contracts/workspace-intelligence/verified-goal-status.v1.json',
+    goalPack: 'contracts/workspace-intelligence/goal-pack.v1.json',
+    goalAgentHandoff: 'contracts/workspace-intelligence/goal-agent-handoff.v1.json',
+    goalPlanResult: 'contracts/workspace-intelligence/goal-plan-result.v1.json',
+    goalIndex: 'contracts/workspace-intelligence/goal-index.v1.json',
+    goalLifecycleResult: 'contracts/workspace-intelligence/goal-lifecycle-result.v1.json',
     workspaceIntelligenceArchitecture: 'contracts/workspace-intelligence-architecture.v1.json',
     workspaceIntelligenceChain: 'contracts/workspace-intelligence-chain.v1.json',
     workspaceIntelligenceArtifacts: null,

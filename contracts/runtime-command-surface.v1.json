@@ -48,6 +48,7 @@
     "pipeline",
     "import",
     "adopt",
+    "goal",
     "snapshot",
     "bootstrap",
     "setup",
@@ -419,6 +420,30 @@
       "canonicalArgv": [
         "frameworks"
       ]
+    },
+    {
+      "invocation": "goal",
+      "summary": "Compile a plain-language engineering intent into a scope-bound, evidence-pinned Goal Pack and portable agent handoff without mutating source.",
+      "canonicalArgv": [
+        "goal",
+        "<intent>",
+        "--json"
+      ],
+      "output": {
+        "defaultFormat": "human-or-json",
+        "modes": [
+          {
+            "selector": "--json",
+            "format": "json",
+            "mediaType": "application/json"
+          }
+        ]
+      },
+      "exitSemantics": {
+        "default": "A valid ready or decision-required Goal Pack returns exit code 0.",
+        "strict": "Not applicable; Goal planning does not execute or verify source changes.",
+        "failure": "Resolution, freshness, contract, integrity, or publication failure returns exit code 1."
+      }
     },
     {
       "invocation": "help",
@@ -1791,6 +1816,16 @@
       ]
     },
     {
+      "artifactPath": ".workspai/goals/index.json",
+      "schemaVersion": "workspai.goal-index.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-index.v1.json",
+      "producerCommands": [
+        [
+          "goal"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/workspace-link.local.json",
       "schemaVersion": "project-workspace-link.v1",
       "contractPath": "contracts/project-workspace-link.v1.json",
@@ -1995,6 +2030,16 @@
         [
           "project",
           "coverage"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/reports/goal-pack-last-run.json",
+      "schemaVersion": "workspai.goal-pack.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-pack.v1.json",
+      "producerCommands": [
+        [
+          "goal"
         ]
       ]
     },

@@ -131,6 +131,31 @@
       "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json",
       "publication": "json-schema"
     },
+    "goalPack": {
+      "schemaVersion": "workspai.goal-pack.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-pack.v1.json",
+      "publication": "json-schema"
+    },
+    "goalAgentHandoff": {
+      "schemaVersion": "workspai.goal-agent-handoff.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-agent-handoff.v1.json",
+      "publication": "json-schema"
+    },
+    "goalPlanResult": {
+      "schemaVersion": "workspai.goal-plan-result.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-plan-result.v1.json",
+      "publication": "json-schema"
+    },
+    "goalIndex": {
+      "schemaVersion": "workspai.goal-index.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-index.v1.json",
+      "publication": "json-schema"
+    },
+    "goalLifecycleResult": {
+      "schemaVersion": "workspai.goal-lifecycle-result.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-lifecycle-result.v1.json",
+      "publication": "json-schema"
+    },
     "workspaceIntelligenceArchitecture": {
       "schemaVersion": "workspai-workspace-intelligence-architecture-v1",
       "contractPath": "contracts/workspace-intelligence-architecture.v1.json",

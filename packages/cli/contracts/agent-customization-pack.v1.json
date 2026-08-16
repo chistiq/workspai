@@ -96,6 +96,16 @@
   ],
   "requiredReports": [
     {
+      "path": ".workspai/goals/index.json",
+      "label": "Active Goal Pack index",
+      "required": false
+    },
+    {
+      "path": ".workspai/reports/goal-pack-last-run.json",
+      "label": "Latest governed Goal Pack",
+      "required": false
+    },
+    {
       "path": ".workspai/reports/workspace-context-agent.json",
       "label": "Agent context pack",
       "required": true

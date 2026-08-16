@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/goal-plan-result.v1.json",
+  "title": "Workspai Goal Plan Result",
+  "type": "object",
+  "required": ["schemaVersion", "result", "resolution", "goalPack", "agentHandoff", "writtenArtifacts", "dryRun", "resumed"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.goal-plan-result.v1" },
+    "result": { "enum": ["planned", "needs-confirmation", "needs-evidence"] },
+    "resolution": {
+      "type": "object",
+      "required": ["source", "invocationScope"],
+      "properties": {
+        "source": { "enum": ["explicit", "parent", "local-link", "registry"] },
+        "invocationScope": { "enum": ["workspace", "project"] }
+      },
+      "additionalProperties": false
+    },
+    "goalPack": {
+      "type": "object",
+      "required": ["schemaVersion", "id", "fingerprint"],
+      "properties": {
+        "schemaVersion": { "const": "workspai.goal-pack.v1" },
+        "id": { "type": "string" },
+        "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "agentHandoff": {
+      "type": "object",
+      "required": ["schemaVersion", "goalId", "goalFingerprint"],
+      "properties": {
+        "schemaVersion": { "const": "workspai.goal-agent-handoff.v1" },
+        "goalId": { "type": "string" },
+        "goalFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "writtenArtifacts": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^\\.workspai/" },
+      "uniqueItems": true
+    },
+    "dryRun": { "type": "boolean" },
+    "resumed": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

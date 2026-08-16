@@ -33,6 +33,7 @@ These commands are implemented and orchestrated by Workspai CLI:
 - `infra`
 - `commands`
 - `create`
+- `goal`
 - `project`
 - `shell activate`
 

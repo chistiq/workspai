@@ -7445,6 +7445,242 @@ program
     }
   );
 
+program
+  .command('goal [intent]')
+  .description(
+    'Compile a plain-language engineering intent into a governed, evidence-bound Goal Pack'
+  )
+  .option('--workspace <path>', 'Explicit canonical workspace path')
+  .option('--scope <scope>', 'Bound the goal to workspace or project:<name>')
+  .addOption(
+    new Option('--for-agent <consumer>', 'Portable handoff consumer')
+      .choices(['generic', 'claude', 'codex'])
+      .default('generic')
+  )
+  .option('--max-attempts <count>', 'Maximum bounded proposal attempts', '5')
+  .option('--refresh', 'Refresh the canonical Workspace Intelligence chain before planning')
+  .option('--dry-run', 'Validate and preview the Goal Pack without writing artifacts')
+  .option('--status [goal-id]', 'Inspect the active or named Goal Pack and validate its bindings')
+  .option('--list', 'List registered Goal Packs in the resolved workspace')
+  .option('--activate <goal-id>', 'Make a registered Goal Pack the active agent objective')
+  .option('--cancel <goal-id>', 'Cancel a registered Goal Pack without deleting evidence')
+  .option('--prepare <goal-id>', 'Create and link the deterministic CLI verification contract')
+  .option('--verify <goal-id>', 'Run CLI-owned verification for a prepared Goal Pack')
+  .option('--no-run', 'Read verification evidence without executing producer commands')
+  .option('--json', 'Emit machine-readable JSON output')
+  .action(
+    async (
+      intent: string | undefined,
+      options: {
+        workspace?: string;
+        scope?: string;
+        forAgent?: 'generic' | 'claude' | 'codex';
+        maxAttempts?: string;
+        refresh?: boolean;
+        dryRun?: boolean;
+        status?: boolean | string;
+        list?: boolean;
+        activate?: string;
+        cancel?: string;
+        prepare?: string;
+        verify?: string;
+        run?: boolean;
+        json?: boolean;
+      }
+    ) => {
+      try {
+        if (
+          options.status !== undefined ||
+          options.list ||
+          options.activate ||
+          options.cancel ||
+          options.prepare ||
+          options.verify
+        ) {
+          const resolution = resolveProjectWorkspaceSync({
+            startPath: process.cwd(),
+            explicitWorkspacePath: options.workspace,
+            strict: true,
+            requireProjectMembership: true,
+          });
+          if (!resolution) throw new Error('No canonical Workspai workspace could be resolved.');
+          const {
+            buildGoalLifecycleResult,
+            inspectGoalLifecycle,
+            prepareGoalVerification,
+            transitionGoalLifecycle,
+            verifyGoalLifecycle,
+          } = await import('./goal-lifecycle.js');
+          const prepared = options.prepare
+            ? await prepareGoalVerification({
+                workspacePath: resolution.workspacePath,
+                goalId: options.prepare,
+              })
+            : null;
+          const verified = options.verify
+            ? await verifyGoalLifecycle({
+                workspacePath: resolution.workspacePath,
+                goalId: options.verify,
+                run: options.run !== false,
+              })
+            : null;
+          const transition = options.activate
+            ? await transitionGoalLifecycle({
+                workspacePath: resolution.workspacePath,
+                goalId: options.activate,
+                action: 'activate',
+              })
+            : options.cancel
+              ? await transitionGoalLifecycle({
+                  workspacePath: resolution.workspacePath,
+                  goalId: options.cancel,
+                  action: 'cancel',
+                })
+              : null;
+          const inspected = await inspectGoalLifecycle({
+            workspacePath: resolution.workspacePath,
+            goalId:
+              typeof options.status === 'string'
+                ? options.status
+                : (transition?.goal.id ?? prepared?.goal.id ?? verified?.goal.id),
+          });
+          const operation = options.verify
+            ? 'verify'
+            : options.prepare
+              ? 'prepare'
+              : options.activate
+                ? 'activate'
+                : options.cancel
+                  ? 'cancel'
+                  : options.list
+                    ? 'list'
+                    : 'status';
+          const payload = buildGoalLifecycleResult({
+            operation,
+            activeGoalId: inspected.index.activeGoalId,
+            goal: inspected.active,
+            goals: inspected.index.goals,
+            goalPack: inspected.goalPack,
+            verifiedGoalId: verified?.verifiedGoalId ?? prepared?.verifiedGoalId ?? null,
+            verification: verified?.verification ?? null,
+          });
+          if (options.json) console.log(JSON.stringify(payload, null, 2));
+          else if (options.list) {
+            console.log(chalk.bold(`Goals · ${inspected.index.goals.length}`));
+            for (const goal of inspected.index.goals) {
+              console.log(
+                `${goal.id === inspected.index.activeGoalId ? chalk.green('●') : chalk.gray('○')} ${goal.objective} · ${goal.lifecycle} · ${goal.state}`
+              );
+            }
+          } else if (inspected.active) {
+            console.log(chalk.bold(inspected.active.objective));
+            console.log(chalk.gray(`   Goal: ${inspected.active.id}`));
+            console.log(chalk.gray(`   Lifecycle: ${inspected.active.lifecycle}`));
+            console.log(chalk.gray(`   Planning state: ${inspected.active.state}`));
+          } else {
+            console.log(chalk.yellow('No active Goal Pack is registered.'));
+          }
+          return;
+        }
+        if (!intent?.trim()) {
+          throw new Error('Provide a plain-language intent or use --status/--list.');
+        }
+        const maxAttempts = Number(options.maxAttempts ?? 5);
+        const { planGoalPack } = await import('./goal-pack.js');
+        const result = await planGoalPack({
+          startPath: process.cwd(),
+          intent,
+          workspacePath: options.workspace,
+          scope: options.scope,
+          consumer: options.forAgent,
+          maxAttempts,
+          refresh: options.refresh === true,
+          dryRun: options.dryRun === true || process.argv.includes('--dry-run'),
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+        const pack = result.goalPack;
+        console.log(
+          pack.state === 'ready-to-plan'
+            ? chalk.green('✔ Governed Goal Pack ready')
+            : chalk.yellow('◆ Goal Pack needs one decision')
+        );
+        console.log(chalk.bold(`   ${pack.intent.statement}`));
+        console.log(chalk.gray(`   Goal: ${pack.id}`));
+        console.log(
+          chalk.gray(
+            `   Scope: ${pack.scope.kind} · ${pack.scope.projects.length} project(s) · ${pack.baseline.runtimes.length} runtime(s)`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Evidence: ${pack.baseline.graph.entities} entities · ${pack.baseline.graph.relationships} relationships · ${pack.baseline.graph.proofCoveragePercent}% relation proof coverage`
+          )
+        );
+        console.log(
+          chalk.gray('   Mutation: proposal only · explicit approval · CLI-owned verify/rollback')
+        );
+        if (pack.decision) console.log(chalk.yellow(`   Decision: ${pack.decision.question}`));
+        if (result.dryRun) {
+          console.log(chalk.cyan('   Preview only; no artifacts were written.'));
+        } else {
+          console.log(chalk.gray(`   Goal Pack: ${pack.artifacts.goalPack}`));
+          console.log(chalk.gray(`   Agent handoff: ${pack.artifacts.agentHandoff}`));
+        }
+        console.log(
+          chalk.gray(`   Next: ${pack.commands.planVerifiedGoal ?? pack.commands.inspectGraph}`)
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const lifecycleOperation = options.verify
+          ? 'verify'
+          : options.prepare
+            ? 'prepare'
+            : options.activate
+              ? 'activate'
+              : options.cancel
+                ? 'cancel'
+                : options.list
+                  ? 'list'
+                  : options.status !== undefined
+                    ? 'status'
+                    : null;
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: lifecycleOperation ? `goal.${lifecycleOperation}` : 'goal.plan',
+                code: lifecycleOperation ? `goal.${lifecycleOperation}.failed` : 'goal.plan.failed',
+                message,
+                context: {
+                  scope: options.scope ?? null,
+                  refresh: options.refresh === true,
+                  goalId:
+                    options.prepare ??
+                    options.verify ??
+                    options.activate ??
+                    options.cancel ??
+                    (typeof options.status === 'string' ? options.status : null),
+                },
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(
+            chalk.red(
+              `❌ Goal ${lifecycleOperation ? `${lifecycleOperation} operation` : 'planning'} failed: ${message}`
+            )
+          );
+        }
+        process.exit(1);
+      }
+    }
+  );
+
 const snapshotCommand = program
   .command('snapshot')
   .description('Create, list, and restore Workspai workspace snapshots');

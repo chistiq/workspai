@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/goal-lifecycle-result.v1.json",
+  "title": "Workspai Goal Lifecycle Result",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "operation",
+    "activeGoalId",
+    "goal",
+    "goals",
+    "goalPack",
+    "verifiedGoalId",
+    "verification"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.goal-lifecycle-result.v1" },
+    "operation": { "enum": ["status", "list", "activate", "cancel", "prepare", "verify"] },
+    "activeGoalId": { "type": ["string", "null"] },
+    "goal": { "anyOf": [{ "$ref": "#/$defs/goalEntry" }, { "type": "null" }] },
+    "goals": { "type": "array", "items": { "$ref": "#/$defs/goalEntry" } },
+    "goalPack": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["schemaVersion", "id", "fingerprint", "state"],
+          "properties": {
+            "schemaVersion": { "const": "workspai.goal-pack.v1" },
+            "id": { "type": "string" },
+            "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "state": { "enum": ["ready-to-plan", "needs-confirmation", "needs-evidence", "blocked"] }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "verifiedGoalId": { "type": ["string", "null"] },
+    "verification": { "type": ["object", "null"] }
+  },
+  "$defs": {
+    "goalEntry": {
+      "type": "object",
+      "required": [
+        "id",
+        "fingerprint",
+        "objective",
+        "category",
+        "state",
+        "lifecycle",
+        "scope",
+        "createdAt",
+        "updatedAt",
+        "goalPack",
+        "agentHandoff"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "objective": { "type": "string", "minLength": 1 },
+        "category": {
+          "enum": [
+            "release-readiness",
+            "dependency-security",
+            "test-coverage",
+            "defect-repair",
+            "feature-change",
+            "refactor",
+            "performance",
+            "documentation",
+            "system-understanding"
+          ]
+        },
+        "state": { "enum": ["ready-to-plan", "needs-confirmation", "needs-evidence", "blocked"] },
+        "lifecycle": { "enum": ["planned", "active", "cancelled", "verification-ready", "verified", "failed"] },
+        "scope": {
+          "type": "object",
+          "required": ["kind", "projects", "selectionSource"],
+          "properties": {
+            "kind": { "enum": ["workspace", "project"] },
+            "projects": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+            "selectionSource": { "enum": ["workspace", "invocation-project", "explicit"] }
+          },
+          "additionalProperties": false
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "goalPack": { "type": "string" },
+        "agentHandoff": { "type": "string" },
+        "verifiedGoalId": { "type": "string" },
+        "repairTransactionId": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

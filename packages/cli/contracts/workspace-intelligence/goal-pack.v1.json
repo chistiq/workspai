@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/goal-pack.v1.json",
+  "title": "Workspai Goal Pack",
+  "type": "object",
+  "required": ["schemaVersion", "id", "fingerprint", "generatedAt", "state", "intent", "workspace", "scope", "sourceBinding", "baseline", "preflight", "successCriteria", "policy", "orchestration", "artifacts", "commands"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.goal-pack.v1" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,95}$" },
+    "fingerprint": { "$ref": "#/$defs/hash" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "state": { "enum": ["ready-to-plan", "needs-confirmation", "needs-evidence", "blocked"] },
+    "intent": {
+      "type": "object",
+      "required": ["original", "normalized", "statement", "category", "confidence", "ambiguities"],
+      "properties": {
+        "original": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "normalized": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "category": { "enum": ["release-readiness", "dependency-security", "test-coverage", "defect-repair", "feature-change", "refactor", "performance", "documentation", "system-understanding"] },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "ambiguities": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "requestedTarget": {
+          "type": "object",
+          "required": ["metric", "operator", "value"],
+          "properties": {
+            "metric": { "const": "test-coverage-percent" },
+            "operator": { "const": "at-least" },
+            "value": { "type": "number", "minimum": 0, "maximum": 100 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "workspace": {
+      "type": "object",
+      "required": ["name"],
+      "properties": { "name": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "scope": { "$ref": "#/$defs/scope" },
+    "sourceBinding": {
+      "type": "object",
+      "required": ["model", "graph"],
+      "properties": {
+        "model": { "$ref": "#/$defs/modelBinding" },
+        "graph": { "$ref": "#/$defs/graphBinding" }
+      },
+      "additionalProperties": false
+    },
+    "baseline": {
+      "type": "object",
+      "required": ["projectCount", "runtimes", "frameworks", "graph"],
+      "properties": {
+        "projectCount": { "type": "integer", "minimum": 0 },
+        "runtimes": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "frameworks": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "graph": {
+          "type": "object",
+          "required": ["entities", "relationships", "proofs", "unresolved", "proofCoveragePercent"],
+          "properties": {
+            "entities": { "type": "integer", "minimum": 0 },
+            "relationships": { "type": "integer", "minimum": 0 },
+            "proofs": { "type": "integer", "minimum": 0 },
+            "unresolved": { "type": "integer", "minimum": 0 },
+            "proofCoveragePercent": { "type": "number", "minimum": 0, "maximum": 100 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "preflight": {
+      "type": "object",
+      "required": ["workspaceIntelligence", "measurement", "retrieval"],
+      "properties": {
+        "workspaceIntelligence": {
+          "type": "object",
+          "required": ["status", "artifact", "blockedStages"],
+          "properties": {
+            "status": { "enum": ["passed", "blocked", "unknown"] },
+            "artifact": { "const": ".workspai/reports/workspace-intelligence-run-last-run.json" },
+            "blockedStages": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        },
+        "measurement": {
+          "type": "object",
+          "required": ["status", "runtime", "runner", "existingEvidence", "prerequisites"],
+          "properties": {
+            "status": { "enum": ["available", "requires-setup", "unsupported", "not-applicable"] },
+            "runtime": { "type": ["string", "null"] },
+            "runner": { "type": ["string", "null"] },
+            "existingEvidence": { "type": "array", "items": { "type": "object", "required": ["project", "path", "sha256"], "properties": { "project": { "type": "string", "minLength": 1 }, "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/hash" } }, "additionalProperties": false } },
+            "prerequisites": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        },
+        "retrieval": { "$ref": "#/$defs/retrieval" }
+      },
+      "additionalProperties": false
+    },
+    "successCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "expected", "producerCommand", "machineVerifiable"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["workspace-verify", "release-readiness", "dependency-security", "test-coverage"] },
+          "expected": { "type": "string", "minLength": 1 },
+          "producerCommand": { "type": "string", "minLength": 1 },
+          "machineVerifiable": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["mutationMode", "approval", "verificationOwner", "rollbackOwner", "maxAttempts", "allowBreakingChanges", "allowForce", "networkAccess", "scopeExpansion"],
+      "properties": {
+        "mutationMode": { "const": "proposal-only" },
+        "approval": { "const": "required-before-mutation" },
+        "verificationOwner": { "const": "workspai-cli" },
+        "rollbackOwner": { "const": "workspai-cli" },
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 25 },
+        "allowBreakingChanges": { "const": false },
+        "allowForce": { "const": false },
+        "networkAccess": { "const": "not-granted" },
+        "scopeExpansion": { "const": "requires-decision" }
+      },
+      "additionalProperties": false
+    },
+    "orchestration": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["id", "owner", "status", "summary"],
+        "properties": {
+          "id": { "enum": ["understand", "impact", "propose", "approve", "execute", "verify"] },
+          "owner": { "enum": ["workspai-cli", "agent", "human"] },
+          "status": { "enum": ["complete", "pending", "blocked"] },
+          "summary": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["required", "reason", "question"],
+      "properties": {
+        "required": { "const": true },
+        "reason": { "type": "string", "minLength": 1 },
+        "question": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["goalPack", "agentHandoff", "latestReport"],
+      "properties": {
+        "goalPack": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/goal-pack\\.json$" },
+        "agentHandoff": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/agent-handoff\\.json$" },
+        "latestReport": { "const": ".workspai/reports/goal-pack-last-run.json" }
+      },
+      "additionalProperties": false
+    },
+    "commands": {
+      "type": "object",
+      "required": ["refreshEvidence", "inspectGraph", "proposeRepair"],
+      "properties": {
+        "refreshEvidence": { "const": "workspai workspace intelligence run --for-agent generic --strict --json" },
+        "inspectGraph": { "type": "string", "pattern": "^workspai workspace graph search " },
+        "planVerifiedGoal": { "type": "string", "pattern": "^workspai workspace goal plan " },
+        "proposeRepair": { "const": "workspai workspace repair propose --file <proposal.json> --json" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "scope": {
+      "type": "object",
+      "required": ["kind", "projects", "selectionSource"],
+      "properties": {
+        "kind": { "enum": ["workspace", "project"] },
+        "projects": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "selectionSource": { "enum": ["workspace", "invocation-project", "explicit"] }
+      },
+      "additionalProperties": false
+    },
+    "modelBinding": {
+      "type": "object",
+      "required": ["artifact", "schemaVersion", "hashAlgorithm", "hashSemantics", "hash", "generatedAt"],
+      "properties": {
+        "artifact": { "const": ".workspai/reports/workspace-model.json" },
+        "schemaVersion": { "const": "workspace-model.v1" },
+        "hashAlgorithm": { "const": "sha256" },
+        "hashSemantics": { "const": "workspace-model-structural-v1" },
+        "hash": { "$ref": "#/$defs/hash" },
+        "generatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "graphBinding": {
+      "type": "object",
+      "required": ["artifact", "schemaVersion", "hashAlgorithm", "hashSemantics", "hash", "generatedAt", "modelHash"],
+      "properties": {
+        "artifact": { "const": ".workspai/reports/workspace-knowledge-graph.json" },
+        "schemaVersion": { "const": "workspace-knowledge-graph.v1" },
+        "hashAlgorithm": { "const": "sha256" },
+        "hashSemantics": { "const": "canonical-json-v1" },
+        "hash": { "$ref": "#/$defs/hash" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "modelHash": { "$ref": "#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+    "retrieval": {
+      "type": "object",
+      "required": ["status", "strategy", "queries", "anchors"],
+      "properties": {
+        "status": { "enum": ["grounded", "partial", "empty"] },
+        "strategy": { "const": "deterministic-category-v1" },
+        "queries": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "anchors": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["entityId", "kind", "label", "proofIds"],
+            "properties": {
+              "entityId": { "type": "string", "minLength": 1 },
+              "kind": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "proofIds": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

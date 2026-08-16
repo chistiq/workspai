@@ -162,6 +162,7 @@ The deterministic model, graph, and checks do not require an AI API key.
 | --- | --- |
 | Use guided setup | `npx workspai create` |
 | Link a project without moving it | `npx workspai adopt .` |
+| Turn an outcome into governed work | `npx workspai goal "Raise test coverage to 85%"` |
 | Copy or clone a project into a workspace | `npx workspai import <path-or-git-url> --workspace <path>` |
 | Check the current project | `npx workspai doctor project` |
 | Check the whole workspace | `npx workspai doctor workspace` |
@@ -212,6 +213,7 @@ modules; Workspai remains the workspace-level CLI.
 | Understand the exact decision loop | [Workspace Intelligence runner](docs/workspace-intelligence-runner.md) |
 | Plan, approve, execute, or roll back a repair | [Workspace Repair Engine](docs/workspace-repair-engine.md) |
 | Set a release, security, or coverage outcome | [Verified engineering goals](docs/workspace-intelligence-runner.md#verified-engineering-goals) |
+| Compile plain language into a governed plan | [Goal Packs](docs/goal-packs.md) |
 | Integrate CI | [CI workflows](docs/ci-workflows.md) |
 | Find generated files and schemas | [Artifact Catalog](docs/contracts/ARTIFACT_CATALOG.md) |
 | Browse all documentation | [Documentation index](docs/README.md) |

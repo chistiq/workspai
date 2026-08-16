@@ -19,6 +19,7 @@ npx workspai pipeline [--json] [--strict] [--skip-verify] [--skip-analyze] [--sk
 npx workspai analyze [--workspace <path>] [--json] [--strict] [--output <file>]
 npx workspai readiness [--workspace <path>] [--json] [--strict] [--skip-verify]
 npx workspai autopilot release [--mode <audit|safe-fix|enforce>] [--json] [--output <file>] [--since <ref>] [--parallel] [--max-workers <n>]
+npx workspai goal <intent> [--workspace <path>] [--scope <workspace|project:name>] [--for-agent <generic|claude|codex>] [--max-attempts <1-25>] [--refresh] [--dry-run] [--json]
 ```
 
 Recommended CI:
@@ -152,6 +153,14 @@ portable verdict is written to
 `.workspai/reports/verified-goal-last-run.json`. See
 [Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals)
 for the supported scopes, safety constraints, and verification boundary.
+
+Top-level `goal <intent>` is the plain-language planning front door. It binds
+the intent to the current canonical Model and Graph, resolves project/workspace
+scope, runs capability/retrieval preflight, and atomically writes a Goal Pack,
+portable agent handoff, and active-goal index. Use `goal --status`, `--list`,
+`--activate`, or `--cancel` for discovery/lifecycle; deterministic goals may use
+`--prepare` and `--verify`. It does not silently mutate source or let an agent
+claim verification. See [Goal Packs](./goal-packs.md).
 
 `workspace feedback record` is a non-interactive machine interface. It requires
 exactly one JSON object on stdin and `--json`; an empty stdin or interactive TTY

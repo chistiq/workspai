@@ -58,6 +58,15 @@ export interface ProjectCoverageInvocation {
   args: string[];
 }
 
+export interface ProjectCoverageCapability {
+  runtime: ProjectCoverageRuntime;
+  runner: string | null;
+  status: 'available' | 'requires-setup' | 'unsupported';
+  existingEvidence: Array<{ path: string; sha256: string }>;
+  invocations: ProjectCoverageInvocation[];
+  prerequisites: string[];
+}
+
 export interface ProjectTestCoverageEvidence {
   schemaVersion: typeof PROJECT_TEST_COVERAGE_SCHEMA;
   generatedAt: string;
@@ -598,7 +607,10 @@ async function parseSimpleCov(projectPath: string, filePath: string): Promise<Co
   };
 }
 
-async function discoverCoverage(projectPath: string): Promise<CoverageParseResult | null> {
+async function discoverCoverage(
+  projectPath: string,
+  options: { recursive?: boolean } = {}
+): Promise<CoverageParseResult | null> {
   const exactCandidates: Array<{
     relativePath: string;
     parser: (filePath: string) => Promise<CoverageParseResult>;
@@ -641,6 +653,7 @@ async function discoverCoverage(projectPath: string): Promise<CoverageParseResul
     const filePath = path.join(projectPath, candidate.relativePath);
     if (await fsExtra.pathExists(filePath)) return candidate.parser(filePath);
   }
+  if (options.recursive === false) return null;
   const recursive = await findFiles(
     projectPath,
     (name, relative) =>
@@ -859,6 +872,42 @@ async function coverageInvocations(
       ],
     };
   return { runner: null, invocations: [], diagnostics: ['Project runtime could not be detected.'] };
+}
+
+/** Read-only capability probe used by governed goal planning. It never executes tests or writes evidence. */
+export async function inspectProjectTestCoverageCapability(
+  projectPathInput: string,
+  runtimeHint?: ProjectCoverageRuntime
+): Promise<ProjectCoverageCapability> {
+  const projectPath = await findProjectRoot(projectPathInput);
+  const runtime = runtimeHint ?? (await detectRuntime(projectPath));
+  const execution = await coverageInvocations(projectPath, runtime);
+  const parsed = await discoverCoverage(projectPath, { recursive: false }).catch(() => null);
+  const existingEvidence =
+    parsed?.source.path && parsed.source.sha256
+      ? [
+          {
+            path: path.relative(projectPath, parsed.source.path).split(path.sep).join('/'),
+            sha256: parsed.source.sha256,
+          },
+        ]
+      : [];
+  const prerequisites = [...execution.diagnostics];
+  const status = parsed
+    ? 'available'
+    : execution.invocations.length === 0 || runtime === 'unknown'
+      ? 'unsupported'
+      : prerequisites.length > 0
+        ? 'requires-setup'
+        : 'available';
+  return {
+    runtime,
+    runner: execution.runner,
+    status,
+    existingEvidence,
+    invocations: execution.invocations,
+    prerequisites,
+  };
 }
 
 function stableProjectKey(workspacePath: string | null, projectPath: string): string {

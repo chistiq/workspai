@@ -37,6 +37,20 @@ retrieval remain reliable at large scale, adoption effects are previewable, and
 real-world qualification can be retained or published without exposing local
 machine data.
 
+## Plain-language goals remain governed
+
+`workspai goal "<intent>"` now turns a human outcome into an immutable,
+scope-bound Goal Pack and portable agent handoff. A canonical Goal index tells
+agents and IDEs which objective is active, while deterministic retrieval
+anchors and capability preflight prevent broad repository scanning and false
+readiness claims. Goal status, activation, cancellation, verification
+preparation, and verification remain explicit CLI lifecycle operations behind
+one published lifecycle-result JSON contract and operation-specific errors.
+
+Model structural hashes, Graph/Goal canonical JSON hashes, and the Goal identity
+fingerprint are labeled separately. Goal-bound Repair Engine proposals must
+reference the active Goal and cannot silently widen a project-scoped objective.
+
 ## Doctor reasons about the repository it observes
 
 Doctor now classifies project archetype independently from runtime detection.

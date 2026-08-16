@@ -29,6 +29,11 @@
     "projectTestCoverage": "workspai.project-test-coverage.v1",
     "verifiedGoal": "workspai.verified-goal.v1",
     "verifiedGoalStatus": "workspai.verified-goal-status.v1",
+    "goalPack": "workspai.goal-pack.v1",
+    "goalAgentHandoff": "workspai.goal-agent-handoff.v1",
+    "goalPlanResult": "workspai.goal-plan-result.v1",
+    "goalIndex": "workspai.goal-index.v1",
+    "goalLifecycleResult": "workspai.goal-lifecycle-result.v1",
     "workspaceIntelligenceArchitecture": "workspai-workspace-intelligence-architecture-v1",
     "workspaceIntelligenceChain": "workspai-workspace-intelligence-chain-v1",
     "workspaceIntelligenceArtifacts": {

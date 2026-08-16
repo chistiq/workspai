@@ -173,6 +173,16 @@ export type AgentReportCatalogEntry = {
 
 export const AGENT_REPORT_CATALOG: AgentReportCatalogEntry[] = [
   {
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex,
+    label: 'Active Goal Pack index',
+    required: false,
+  },
+  {
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun,
+    label: 'Latest governed Goal Pack',
+    required: false,
+  },
+  {
     relativePath: WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
     label: 'Agent context pack',
     required: true,
@@ -280,7 +290,14 @@ export function buildCanonicalAgentReportReadOrder(): string[] {
   const prioritized = contracted.filter(
     (reportPath) => reportPath !== AGENT_REPORTS_INDEX_PATH && catalogPaths.includes(reportPath)
   );
-  return [...new Set([...prioritized, ...catalogPaths])];
+  return [
+    ...new Set([
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex,
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun,
+      ...prioritized,
+      ...catalogPaths,
+    ]),
+  ];
 }
 
 export type AgentReportIndexEntry = {
@@ -720,9 +737,10 @@ function buildAgentsMarkdown(input: {
     '## Read order (mandatory before workspace diagnosis)',
     '',
     `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` — latest blockers, timestamps, and report paths`,
-    `2. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\` — read only task-relevant context`,
-    '3. Read only the task-relevant evidence artifacts listed in the index.',
-    '4. Use `workspace graph search <query> --limit 12 --json` or MCP `searchWorkspaceGraph` before loading the full graph.',
+    `2. \`${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}\` — when present, read the active Goal Pack and its handoff before choosing work.`,
+    `3. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\` — read only task-relevant context`,
+    '4. Read only the task-relevant evidence artifacts listed in the index.',
+    '5. Use the Goal Pack retrieval queries, `workspace graph search <query> --limit 12 --json`, or MCP `searchWorkspaceGraph` before loading the full graph.',
     '',
     'Do **not** full-repo scan or inject the complete graph when a bounded query can answer the task.',
     '',
@@ -759,6 +777,7 @@ function buildAgentsMarkdown(input: {
     '- Prefer deterministic Workspai CLI commands over heuristic framework guesses.',
     '- If evidence is missing or stale, run the refresh commands above before proposing fixes.',
     '- Keep project-scoped advice aligned with the active project named in the context pack.',
+    '- Never claim that an active goal is satisfied until its CLI-owned verification lifecycle is `verified`.',
     ''
   );
 

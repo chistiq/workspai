@@ -53,6 +53,7 @@ import {
   type DoctorRepairOperation,
 } from './utils/doctor-repair-capabilities.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
+import { inspectGoalLifecycle, linkGoalRepairTransaction } from './goal-lifecycle.js';
 
 const REPAIR_ROOT = '.workspai/repair';
 const TRANSACTION_FILE = 'transaction.json';
@@ -2610,6 +2611,25 @@ export async function planWorkspaceRepairProposal(
   );
   const workspacePath = path.resolve(input.workspacePath);
   const proposal = JSON.parse(JSON.stringify(input.proposal)) as WorkspaceRepairProposal;
+  if (proposal.goalId) {
+    const governedGoal = await inspectGoalLifecycle({ workspacePath, goalId: proposal.goalId });
+    if (!governedGoal.active || governedGoal.index.activeGoalId !== proposal.goalId) {
+      throw new Error(`Repair proposal Goal Pack is not active: ${proposal.goalId}`);
+    }
+    if (governedGoal.goalPack?.state !== 'ready-to-plan') {
+      throw new Error(
+        `Repair proposal Goal Pack is not ready for proposal execution: ${governedGoal.goalPack?.state ?? 'missing'}`
+      );
+    }
+    if (governedGoal.goalPack.scope.kind === 'project') {
+      const permittedProject = governedGoal.goalPack.scope.projects[0];
+      if (!proposal.projectName || proposal.projectName !== permittedProject) {
+        throw new Error(
+          `Goal-bound repair must declare the exact permitted projectName (${permittedProject}).`
+        );
+      }
+    }
+  }
   const maxRisk = input.maxRisk ?? 'guarded';
   const policy: WorkspaceRepairTransaction['policy'] = {
     maxRisk,
@@ -2938,6 +2958,13 @@ export async function planWorkspaceRepairProposal(
   await atomicJson(sourcePlanPath(workspacePath, transactionId), proposal);
   await atomicJson(transactionPath(workspacePath, transactionId), transaction);
   await atomicJson(path.join(workspacePath, WORKSPACE_REPAIR_LAST_RUN_REPORT_PATH), transaction);
+  if (proposal.goalId) {
+    await linkGoalRepairTransaction({
+      workspacePath,
+      goalId: proposal.goalId,
+      transactionId,
+    });
+  }
   return transaction;
 }
 

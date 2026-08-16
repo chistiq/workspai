@@ -113,7 +113,11 @@ describe('workspace agent sync', () => {
       contractPath: 'contracts/workspace-intelligence-chain.v1.json',
       currentStep: 'agent-sync',
     });
-    expect(index.readOrder[0]).toBe(WORKSPACE_CONTEXT_AGENT_REPORT_PATH);
+    expect(index.readOrder.slice(0, 3)).toEqual([
+      '.workspai/goals/index.json',
+      '.workspai/reports/goal-pack-last-run.json',
+      WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+    ]);
     expect(index.readOrder).toEqual(
       expect.arrayContaining([
         '.workspai/reports/doctor-project-last-run.json',

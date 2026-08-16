@@ -1,0 +1,343 @@
+import os from 'node:os';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+
+import fsExtra from 'fs-extra';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { planGoalPack } from '../goal-pack.js';
+import {
+  buildGoalLifecycleResult,
+  inspectGoalLifecycle,
+  transitionGoalLifecycle,
+} from '../goal-lifecycle.js';
+import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js';
+import { planWorkspaceRepairProposal } from '../workspace-repair-engine.js';
+import { WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION } from '../contracts/workspace-repair-proposal-contract.js';
+
+const roots: string[] = [];
+
+async function fixture(): Promise<{ workspacePath: string; projectPath: string }> {
+  const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-goal-pack-'));
+  roots.push(workspacePath);
+  const projectPath = path.join(workspacePath, 'api');
+  await fsExtra.outputJson(path.join(workspacePath, '.workspai-workspace'), {
+    name: 'platform',
+    profile: 'polyglot',
+  });
+  await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+    schemaVersion: 1,
+    kind: 'rapidkit.workspace.contract',
+    generatedAt: '2026-08-15T00:00:00.000Z',
+    workspace: { name: 'platform', profile: 'polyglot' },
+    projects: [
+      {
+        slug: 'api',
+        relativePath: 'api',
+        runtime: 'node',
+        framework: 'nestjs',
+        kit: 'nestjs.standard',
+        modules: [],
+        ports: [],
+        contracts: {
+          owns: [],
+          apis: [],
+          publishes: [],
+          consumes: [],
+          dependsOn: [],
+          env: [],
+        },
+      },
+    ],
+  });
+  await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+    name: 'api',
+    runtime: 'node',
+    framework: 'nestjs',
+  });
+  await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+    name: '@platform/api',
+    version: '1.0.0',
+    scripts: { 'test:coverage': 'vitest run --coverage' },
+    dependencies: { '@nestjs/core': '^11.0.0' },
+  });
+  await fsExtra.outputFile(
+    path.join(projectPath, 'src', 'health.controller.ts'),
+    "export const health = () => 'ok';\n"
+  );
+  const model = await buildWorkspaceModel({
+    workspacePath,
+    includeAbsolutePaths: true,
+    now: new Date('2026-08-15T00:00:00.000Z'),
+  });
+  await writeWorkspaceModel(model, workspacePath);
+  return { workspacePath, projectPath };
+}
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
+});
+
+describe('goal pack workspace adapter', () => {
+  it('resolves project invocation, publishes an atomic portable pack, and preserves CLI ownership', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const result = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Raise test coverage to 82%',
+      consumer: 'codex',
+    });
+
+    expect(result.resolution).toEqual({ source: 'parent', invocationScope: 'project' });
+    expect(result.goalPack.scope).toEqual({
+      kind: 'project',
+      projects: ['api'],
+      selectionSource: 'invocation-project',
+    });
+    expect(result.goalPack.policy).toMatchObject({
+      mutationMode: 'proposal-only',
+      approval: 'required-before-mutation',
+      verificationOwner: 'workspai-cli',
+      rollbackOwner: 'workspai-cli',
+    });
+    expect(result.writtenArtifacts).toHaveLength(4);
+    for (const relativePath of result.writtenArtifacts) {
+      expect(await fsExtra.pathExists(path.join(workspacePath, relativePath))).toBe(true);
+    }
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(workspacePath);
+    expect(serialized).not.toContain(os.tmpdir());
+    expect(result.goalPack.state).toBe('ready-to-plan');
+    expect(result.goalPack.preflight.retrieval.queries[0]).toContain('test suite');
+    expect(result.agentHandoff.discovery.index).toBe('.workspai/goals/index.json');
+
+    const resumed = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Raise test coverage to 82%',
+      consumer: 'codex',
+    });
+    expect(resumed.resumed).toBe(true);
+    expect(resumed.goalPack.generatedAt).toBe(result.goalPack.generatedAt);
+  });
+
+  it('supports side-effect-free preview and explicit workspace scope', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const result = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Map the system architecture',
+      scope: 'workspace',
+      dryRun: true,
+    });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.writtenArtifacts).toEqual([]);
+    expect(result.goalPack.scope).toMatchObject({ kind: 'workspace', selectionSource: 'explicit' });
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, result.goalPack.artifacts.goalPack))
+    ).toBe(false);
+  });
+
+  it('publishes an agent-discoverable active index and preserves auditable cancellation', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Map the system architecture',
+    });
+    const inspected = await inspectGoalLifecycle({ workspacePath });
+    expect(inspected.active?.id).toBe(planned.goalPack.id);
+    expect(inspected.goalPack?.fingerprint).toBe(planned.goalPack.fingerprint);
+    expect(
+      buildGoalLifecycleResult({
+        operation: 'status',
+        activeGoalId: inspected.index.activeGoalId,
+        goal: inspected.active,
+        goals: inspected.index.goals,
+        goalPack: inspected.goalPack,
+        verifiedGoalId: null,
+        verification: null,
+      }).schemaVersion
+    ).toBe('workspai.goal-lifecycle-result.v1');
+
+    const cancelled = await transitionGoalLifecycle({
+      workspacePath,
+      goalId: planned.goalPack.id,
+      action: 'cancel',
+    });
+    expect(cancelled.index.activeGoalId).toBeNull();
+    expect(cancelled.goal.lifecycle).toBe('cancelled');
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, planned.goalPack.artifacts.goalPack))
+    ).toBe(true);
+  });
+
+  it('keeps exactly one lifecycle entry active as newer goals become current', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const first = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Map the system architecture',
+    });
+    const second = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Understand the API architecture',
+    });
+
+    const inspected = await inspectGoalLifecycle({ workspacePath });
+    expect(inspected.index.activeGoalId).toBe(second.goalPack.id);
+    expect(inspected.index.goals.filter((goal) => goal.lifecycle === 'active')).toHaveLength(1);
+    expect(inspected.index.goals.find((goal) => goal.id === first.goalPack.id)?.lifecycle).toBe(
+      'planned'
+    );
+  });
+
+  it('binds Repair Engine proposals to the active goal and rejects scope widening', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Map the system architecture',
+    });
+    const sourcePath = path.join(projectPath, 'src', 'health.controller.ts');
+    const before = await fsExtra.readFile(sourcePath, 'utf8');
+    const proposal = {
+      schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+      goalId: planned.goalPack.id,
+      cardId: 'goal-source-proposal',
+      rationale: 'Apply one bounded source edit for the active goal.',
+      changes: [
+        {
+          id: 'health-source',
+          path: 'api/src/health.controller.ts',
+          operation: 'write' as const,
+          expectedBeforeHash: createHash('sha256').update(before).digest('hex'),
+          content: `${before}// proposed\n`,
+          risk: 'safe' as const,
+          summary: 'Keep the proposal inside the selected project.',
+        },
+      ],
+    };
+    await expect(planWorkspaceRepairProposal({ workspacePath, proposal })).rejects.toThrow(
+      'exact permitted projectName'
+    );
+
+    const transaction = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: { ...proposal, projectName: 'api', projectPath: 'api' },
+    });
+    const inspected = await inspectGoalLifecycle({ workspacePath });
+    expect(inspected.active?.repairTransactionId).toBe(transaction.transactionId);
+  });
+
+  it('fails closed when graph evidence no longer matches the canonical model', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const graphPath = path.join(
+      workspacePath,
+      '.workspai',
+      'reports',
+      'workspace-knowledge-graph.json'
+    );
+    const graph = await fsExtra.readJson(graphPath);
+    graph.source.hash = '0'.repeat(64);
+    await fsExtra.writeJson(graphPath, graph, { spaces: 2 });
+
+    await expect(
+      planGoalPack({ startPath: projectPath, intent: 'Fix the failing authentication bug' })
+    ).rejects.toThrow('source-mismatch');
+  });
+
+  it('rejects planning after live source changes invalidate the graph fingerprint', async () => {
+    const { projectPath } = await fixture();
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'health.controller.ts'),
+      "export const health = () => 'changed';\n"
+    );
+
+    await expect(
+      planGoalPack({ startPath: projectPath, intent: 'Fix the failing authentication bug' })
+    ).rejects.toThrow('live-input-mismatch');
+  });
+
+  it('fails closed when an immutable Goal Pack is edited after publication', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const first = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Raise test coverage to 81%',
+    });
+    const goalPath = path.join(workspacePath, first.goalPack.artifacts.goalPack);
+    const tampered = await fsExtra.readJson(goalPath);
+    tampered.policy.maxAttempts = 20;
+    await fsExtra.writeJson(goalPath, tampered, { spaces: 2 });
+
+    await expect(
+      planGoalPack({ startPath: projectPath, intent: 'Raise test coverage to 81%' })
+    ).rejects.toThrow('immutable integrity validation');
+  });
+
+  it('fails closed when an indexed agent handoff no longer matches its Goal Pack', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Map the system architecture',
+    });
+    const handoffPath = path.join(workspacePath, planned.goalPack.artifacts.agentHandoff);
+    const handoff = await fsExtra.readJson(handoffPath);
+    handoff.objective = 'tampered objective';
+    await fsExtra.writeJson(handoffPath, handoff, { spaces: 2 });
+
+    await expect(inspectGoalLifecycle({ workspacePath })).rejects.toThrow(
+      'handoff integrity validation'
+    );
+  });
+
+  it('fails closed instead of repairing a tampered Goal index during replanning', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    await planGoalPack({ startPath: projectPath, intent: 'Map the system architecture' });
+    const indexPath = path.join(workspacePath, '.workspai', 'goals', 'index.json');
+    const index = await fsExtra.readJson(indexPath);
+    index.goals[0].fingerprint = 'not-a-valid-digest';
+    await fsExtra.writeJson(indexPath, index, { spaces: 2 });
+
+    await expect(
+      planGoalPack({ startPath: projectPath, intent: 'Map the system architecture' })
+    ).rejects.toThrow('Goal index violates');
+  });
+
+  it('serializes concurrent publication and reuses one immutable instance', async () => {
+    const { projectPath } = await fixture();
+    const [first, second] = await Promise.all([
+      planGoalPack({ startPath: projectPath, intent: 'Raise test coverage to 83%' }),
+      planGoalPack({ startPath: projectPath, intent: 'Raise test coverage to 83%' }),
+    ]);
+
+    expect([first.resumed, second.resumed].sort()).toEqual([false, true]);
+    expect(first.goalPack.id).toBe(second.goalPack.id);
+    expect(first.goalPack.generatedAt).toBe(second.goalPack.generatedAt);
+    expect(first.agentHandoff.generatedAt).toBe(second.agentHandoff.generatedAt);
+  });
+
+  it('rolls back every Goal Pack artifact when atomic publication fails', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const preview = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Raise test coverage to 84%',
+      dryRun: true,
+    });
+    process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER = '1';
+    try {
+      await expect(
+        planGoalPack({ startPath: projectPath, intent: 'Raise test coverage to 84%' })
+      ).rejects.toThrow();
+    } finally {
+      delete process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER;
+    }
+
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, preview.goalPack.artifacts.goalPack))
+    ).toBe(false);
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, preview.goalPack.artifacts.agentHandoff))
+    ).toBe(false);
+    expect(
+      await fsExtra.pathExists(
+        path.join(workspacePath, '.workspai', 'reports', 'goal-pack-last-run.json')
+      )
+    ).toBe(false);
+  });
+});

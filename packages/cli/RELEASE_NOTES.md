@@ -15,6 +15,16 @@ hardens every bounded output consumed by developers, CI, IDEs, and agents.
 
 **What's New:**
 
+- **Plain language to governed work**
+  - `workspai goal "<intent>"` binds an outcome to canonical Model, Graph,
+    project scope, proof anchors, capability preflight, and immutable policy.
+  - Agents discover the active objective through a portable Goal index; CLI
+    lifecycle commands retain approval, verification, and rollback ownership.
+  - One versioned lifecycle-result envelope covers status, list, activation,
+    cancellation, preparation, and verification for IDE and agent consumers.
+  - Missing measurable evidence is reported as `needs-evidence` rather than a
+    misleading ready state.
+
 - **Repository-aware Doctor output**
   - Libraries, SDKs, plugins, monorepos, and cross-language platforms no longer
     inherit service-only health, migration, environment, or entrypoint advice.
@@ -59,7 +69,7 @@ workspai doctor workspace
 workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.57.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.57.0/packages/cli/releases/RELEASE_NOTES_v0.57.0.md)
 
 ---
 

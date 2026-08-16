@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/goal-index.v1.json",
+  "title": "Workspai Goal Index",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "activeGoalId", "goals"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.goal-index.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "activeGoalId": { "type": ["string", "null"] },
+    "goals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "fingerprint", "objective", "category", "state", "lifecycle", "scope", "createdAt", "updatedAt", "goalPack", "agentHandoff"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,95}$" },
+          "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "category": { "enum": ["release-readiness", "dependency-security", "test-coverage", "defect-repair", "feature-change", "refactor", "performance", "documentation", "system-understanding"] },
+          "state": { "enum": ["ready-to-plan", "needs-confirmation", "needs-evidence", "blocked"] },
+          "lifecycle": { "enum": ["planned", "active", "cancelled", "verification-ready", "verified", "failed"] },
+          "scope": {
+            "type": "object",
+            "required": ["kind", "projects", "selectionSource"],
+            "properties": {
+              "kind": { "enum": ["workspace", "project"] },
+              "projects": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+              "selectionSource": { "enum": ["workspace", "invocation-project", "explicit"] }
+            },
+            "additionalProperties": false
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "goalPack": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/goal-pack\\.json$" },
+          "agentHandoff": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/agent-handoff\\.json$" },
+          "verifiedGoalId": { "type": "string", "minLength": 1 },
+          "repairTransactionId": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -71,6 +71,16 @@ and links the project to it. You can stay in the project directory:
 npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
+Turn a plain-language outcome into a scope-bound plan from the same project:
+
+```bash
+npx workspai goal "Fix the authentication regression"
+```
+
+This writes a portable Goal Pack, agent handoff, and active-goal index. Agents
+can discover it with `workspai goal --status --json`; source mutation and final
+verification remain CLI-governed.
+
 This run builds the current system view, checks its evidence, and prepares
 shared context for people and tools. Results are saved under `.workspai/`.
 When something is missing or blocked, Workspai reports it instead of claiming
@@ -154,6 +164,7 @@ API key. AI providers are optional consumers of the same governed context.
 | Query the graph and inspect proof | [Workspace Knowledge Graph](packages/cli/docs/workspace-knowledge-graph.md) |
 | Understand the full decision loop | [Workspace Intelligence runner](packages/cli/docs/workspace-intelligence-runner.md) |
 | Repair a governed blocker safely | [Workspace Repair Engine](packages/cli/docs/workspace-repair-engine.md) |
+| Compile intent into a scope-bound agent handoff | [Goal Packs](packages/cli/docs/goal-packs.md) |
 | Integrate CI | [CI workflows](packages/cli/docs/ci-workflows.md) |
 | Find a command or flag | [Command reference](packages/cli/docs/commands-reference.md) |
 | Inspect schemas and artifact ownership | [Artifact Catalog](packages/cli/docs/contracts/ARTIFACT_CATALOG.md) |

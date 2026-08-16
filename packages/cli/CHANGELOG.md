@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Added the governed `goal <intent>` front door with immutable Goal Packs,
+  consumer handoffs, deterministic retrieval anchors, measurement-capability
+  preflight, and an agent-discoverable active-goal lifecycle index.
+- Added explicit Goal lifecycle controls for status, list, activate, cancel,
+  deterministic verification preparation, and CLI-owned verification; repair
+  proposals may bind to an active Goal without widening its project scope.
+- Unified all successful Goal lifecycle JSON responses behind the published
+  `workspai.goal-lifecycle-result.v1` contract and made lifecycle failures use
+  operation-specific machine-readable error codes.
+- Made Goal integrity semantics explicit: structural Model hashes and canonical
+  JSON Graph/Goal hashes are distinct from the stable Goal identity fingerprint.
+
 - Reworked Doctor's human output around an authoritative verdict and separate
   blocking, advisory, unknown, contradiction, and not-applicable accounting;
   the legacy percentage is now explicitly a diagnostic pass rate rather than a

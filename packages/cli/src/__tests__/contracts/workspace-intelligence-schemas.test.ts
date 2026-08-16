@@ -22,6 +22,13 @@ import {
   AGENT_CUSTOMIZATION_PACK_SCHEMA,
   AGENT_REPORTS_INDEX_SCHEMA,
 } from '../../workspace-agent-sync.js';
+import {
+  GOAL_AGENT_HANDOFF_SCHEMA_VERSION,
+  GOAL_INDEX_SCHEMA_VERSION,
+  GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
+  GOAL_PACK_SCHEMA_VERSION,
+  GOAL_PLAN_RESULT_SCHEMA_VERSION,
+} from '../../goal-pack.js';
 
 const CONTRACT_DIR = path.resolve(process.cwd(), 'contracts', 'workspace-intelligence');
 
@@ -85,6 +92,26 @@ const WORKSPACE_INTELLIGENCE_CONTRACTS = [
   {
     fileName: 'agent-customization-pack-report.v1.json',
     schemaVersion: AGENT_CUSTOMIZATION_PACK_SCHEMA,
+  },
+  {
+    fileName: 'goal-pack.v1.json',
+    schemaVersion: GOAL_PACK_SCHEMA_VERSION,
+  },
+  {
+    fileName: 'goal-agent-handoff.v1.json',
+    schemaVersion: GOAL_AGENT_HANDOFF_SCHEMA_VERSION,
+  },
+  {
+    fileName: 'goal-plan-result.v1.json',
+    schemaVersion: GOAL_PLAN_RESULT_SCHEMA_VERSION,
+  },
+  {
+    fileName: 'goal-index.v1.json',
+    schemaVersion: GOAL_INDEX_SCHEMA_VERSION,
+  },
+  {
+    fileName: 'goal-lifecycle-result.v1.json',
+    schemaVersion: GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
   },
 ] as const;
 

@@ -64,6 +64,7 @@ export const NPM_ONLY_TOP_LEVEL_COMMANDS = [
   'pipeline',
   'import',
   'adopt',
+  'goal',
   'snapshot',
   'bootstrap',
   'setup',
