@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-08-17
+
 ### Added
 
 - Added a portable canonical-first project entry manifest, adapters for major

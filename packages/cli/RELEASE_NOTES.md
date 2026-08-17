@@ -5,7 +5,68 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.58.0 (August 16, 2026)
+## Latest Release: v0.59.0 (August 17, 2026)
+
+### Canonical-First Agent Entry and Governed Workflow Hardening
+
+This minor release gives every supported coding-agent host one deterministic,
+portable entry into an adopted project while keeping source mutation,
+verification, and rollback under Workspai's governed CLI contracts.
+
+**What's New:**
+
+- **Portable canonical-first bootstrap**
+  - `workspai agent bootstrap --for-agent <agent> --json` validates project and
+    workspace binding, evidence read order, Model/Graph freshness, live inputs,
+    active Goal state, permitted claims, and receipt integrity.
+  - Invalid, stale, mismatched, or non-portable state fails closed before an
+    agent may claim complete architecture or begin source mutation.
+
+- **One generic run, every supported host**
+  - Generic Workspace Intelligence retains provider-neutral context and also
+    publishes the supported Claude, Gemini, Qwen, Amazon Q, Codex-compatible,
+    and generic entry surfaces.
+  - Authored guidance, tracked deletions, and symbolic links remain preserved;
+    the Workspai gate is promoted without replacing repository ownership.
+
+- **Runtime-private workspace resolution**
+  - Portable artifacts distinguish project-local `.workspai` evidence,
+    logical `workspace:` URIs, and the absolute path resolved only at runtime.
+  - Machine-local paths are prohibited from manifests, receipts, and durable
+    agent output.
+
+- **Stronger Goal and Repair invariants**
+  - Arbitrary valid engineering objectives retain governed scope, evidence,
+    approval, rollback, and attempt policy even outside built-in categories.
+  - Goal attempts and successful source transitions are serialized, durable,
+    and bound to post-repair Model, Graph, live-input, checkpoint, and closure
+    hashes.
+
+- **Faster command discovery**
+  - Root help now guides new users through
+    `Understand → Impact → Act → Verify`, including workspace creation,
+    official project kits, adoption, Goals, Graph retrieval, lifecycle commands,
+    and verification.
+
+**Breaking changes:** None. The entry contracts and capability invariants are
+additive.
+
+**Publication status:** Released August 17, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.59.0
+workspai --version
+workspai adopt .
+workspai agent bootstrap --for-agent generic --json
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.59.0/packages/cli/releases/RELEASE_NOTES_v0.59.0.md)
+
+---
+
+## Previous Release: v0.58.0 (August 16, 2026)
 
 ### Governed Goals and Agent-Ready Objective Handoffs
 
