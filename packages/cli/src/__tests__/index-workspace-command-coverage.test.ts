@@ -66,6 +66,7 @@ import {
 } from '../workspace.js';
 
 const temporaryDirectories: string[] = [];
+const HEAVY_IN_PROCESS_TIMEOUT_MS = process.platform === 'win32' ? 120_000 : 60_000;
 
 function resetProgramOptionState(command: Command = program): void {
   for (const option of command.options) {
@@ -1108,117 +1109,128 @@ describe.sequential('in-process workspace Commander coverage', () => {
     }
   });
 
-  it('executes manual command handlers across help, status, and validation paths', async () => {
-    await expect(handleCreateOrFallback(['create', '--help'])).resolves.toBe(0);
-    await expect(handleCreateOrFallback(['create', 'project', '--help'])).resolves.toBe(0);
-    await expect(handleCreateOrFallback(['create', 'workspace', '--help'])).resolves.toBe(0);
-    await expect(
-      handleCreateOrFallback([
-        'create',
-        'project',
-        'fastapi.standard',
-        'dry-run-api',
-        '--output',
-        root,
-        '--dry-run',
-      ])
-    ).resolves.toBe(0);
-    for (const [kit, name] of [
-      ['gofiber.standard', 'direct-fiber'],
-      ['gogin.standard', 'direct-gin'],
-      ['springboot.standard', 'direct-spring'],
-      ['dotnet.webapi.clean', 'direct-dotnet'],
-    ]) {
+  it(
+    'executes manual command handlers across help, status, and validation paths',
+    async () => {
+      await expect(handleCreateOrFallback(['create', '--help'])).resolves.toBe(0);
+      await expect(handleCreateOrFallback(['create', 'project', '--help'])).resolves.toBe(0);
+      await expect(handleCreateOrFallback(['create', 'workspace', '--help'])).resolves.toBe(0);
       await expect(
         handleCreateOrFallback([
           'create',
           'project',
-          kit,
-          name,
+          'fastapi.standard',
+          'dry-run-api',
           '--output',
           root,
-          '--skip-git',
-          '--skip-install',
-          '--no-workspace',
-          '--yes',
+          '--dry-run',
         ])
       ).resolves.toBe(0);
-    }
-    await expect(handleBootstrapCommand(['bootstrap', '--help'])).resolves.toBe(0);
-    await expect(handleBootstrapCommand(['bootstrap', '--profile', 'invalid'])).resolves.toBe(1);
-    for (const profile of [
-      'minimal',
-      'python-only',
-      'node-only',
-      'go-only',
-      'java-only',
-      'dotnet-only',
-      'polyglot',
-      'enterprise',
-    ]) {
+      for (const [kit, name] of [
+        ['gofiber.standard', 'direct-fiber'],
+        ['gogin.standard', 'direct-gin'],
+        ['springboot.standard', 'direct-spring'],
+        ['dotnet.webapi.clean', 'direct-dotnet'],
+      ]) {
+        await expect(
+          handleCreateOrFallback([
+            'create',
+            'project',
+            kit,
+            name,
+            '--output',
+            root,
+            '--skip-git',
+            '--skip-install',
+            '--no-workspace',
+            '--yes',
+          ])
+        ).resolves.toBe(0);
+      }
+      await expect(handleBootstrapCommand(['bootstrap', '--help'])).resolves.toBe(0);
+      await expect(handleBootstrapCommand(['bootstrap', '--profile', 'invalid'])).resolves.toBe(1);
+      for (const profile of [
+        'minimal',
+        'python-only',
+        'node-only',
+        'go-only',
+        'java-only',
+        'dotnet-only',
+        'polyglot',
+        'enterprise',
+      ]) {
+        await expect(
+          handleBootstrapCommand(['bootstrap', '--profile', profile, '--compliance-only', '--json'])
+        ).resolves.toBeTypeOf('number');
+      }
       await expect(
-        handleBootstrapCommand(['bootstrap', '--profile', profile, '--compliance-only', '--json'])
+        handleBootstrapCommand(['bootstrap', '--profile=minimal', '--json'], async () => 0)
       ).resolves.toBeTypeOf('number');
-    }
-    await expect(
-      handleBootstrapCommand(['bootstrap', '--profile=minimal', '--json'], async () => 0)
-    ).resolves.toBeTypeOf('number');
-    await expect(
-      handleBootstrapCommand(['bootstrap', '--profile=enterprise', '--json'], async () => 0)
-    ).resolves.toBeTypeOf('number');
-    await expect(
-      handleBootstrapCommand(['bootstrap', '--profile=minimal', '--compliance-only'], async () => 0)
-    ).resolves.toBeTypeOf('number');
-    const setupRunner = async () => 0;
-    await expect(handleSetupCommand(['setup', '--help'], setupRunner)).resolves.toBe(0);
-    await expect(handleSetupCommand(['setup', 'unknown'], setupRunner)).resolves.toBe(1);
-    await expect(handleSetupCommand(['setup', 'node', '--json'], setupRunner)).resolves.toBeTypeOf(
-      'number'
-    );
-    await expect(handleSetupCommand(['setup', 'go', '--json'], setupRunner)).resolves.toBeTypeOf(
-      'number'
-    );
-    await expect(handleSetupCommand(['setup', 'java', '--json'], setupRunner)).resolves.toBeTypeOf(
-      'number'
-    );
-    await expect(
-      handleSetupCommand(['setup', 'dotnet', '--json'], setupRunner)
-    ).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'node'], setupRunner)).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'go'], setupRunner)).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'java'], setupRunner)).resolves.toBeTypeOf('number');
-    await expect(handleSetupCommand(['setup', 'dotnet'], setupRunner)).resolves.toBeTypeOf(
-      'number'
-    );
-    await expect(
-      handleSetupCommand(['setup', 'node', '--json', '--warm-deps'], setupRunner)
-    ).resolves.toBeTypeOf('number');
-    await expect(
-      handleSetupCommand(['setup', 'go', '--json', '--warm-deps'], setupRunner)
-    ).resolves.toBeTypeOf('number');
-    await expect(
-      handleSetupCommand(['setup', 'java', '--json', '--warm-deps'], setupRunner)
-    ).resolves.toBeTypeOf('number');
-    await expect(
-      handleSetupCommand(['setup', 'dotnet', '--json', '--warm-deps'], setupRunner)
-    ).resolves.toBeTypeOf('number');
-    process.chdir(path.join(root, 'api'));
-    await expect(
-      handleSetupCommand(['setup', 'node', '--json', '--warm-deps'], setupRunner)
-    ).resolves.toBeTypeOf('number');
-    await expect(handleInitCommand(['init'])).resolves.toBe(0);
-    process.chdir(root);
+      await expect(
+        handleBootstrapCommand(['bootstrap', '--profile=enterprise', '--json'], async () => 0)
+      ).resolves.toBeTypeOf('number');
+      await expect(
+        handleBootstrapCommand(
+          ['bootstrap', '--profile=minimal', '--compliance-only'],
+          async () => 0
+        )
+      ).resolves.toBeTypeOf('number');
+      const setupRunner = async () => 0;
+      await expect(handleSetupCommand(['setup', '--help'], setupRunner)).resolves.toBe(0);
+      await expect(handleSetupCommand(['setup', 'unknown'], setupRunner)).resolves.toBe(1);
+      await expect(
+        handleSetupCommand(['setup', 'node', '--json'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      await expect(handleSetupCommand(['setup', 'go', '--json'], setupRunner)).resolves.toBeTypeOf(
+        'number'
+      );
+      await expect(
+        handleSetupCommand(['setup', 'java', '--json'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      await expect(
+        handleSetupCommand(['setup', 'dotnet', '--json'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      await expect(handleSetupCommand(['setup', 'node'], setupRunner)).resolves.toBeTypeOf(
+        'number'
+      );
+      await expect(handleSetupCommand(['setup', 'go'], setupRunner)).resolves.toBeTypeOf('number');
+      await expect(handleSetupCommand(['setup', 'java'], setupRunner)).resolves.toBeTypeOf(
+        'number'
+      );
+      await expect(handleSetupCommand(['setup', 'dotnet'], setupRunner)).resolves.toBeTypeOf(
+        'number'
+      );
+      await expect(
+        handleSetupCommand(['setup', 'node', '--json', '--warm-deps'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      await expect(
+        handleSetupCommand(['setup', 'go', '--json', '--warm-deps'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      await expect(
+        handleSetupCommand(['setup', 'java', '--json', '--warm-deps'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      await expect(
+        handleSetupCommand(['setup', 'dotnet', '--json', '--warm-deps'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      process.chdir(path.join(root, 'api'));
+      await expect(
+        handleSetupCommand(['setup', 'node', '--json', '--warm-deps'], setupRunner)
+      ).resolves.toBeTypeOf('number');
+      await expect(handleInitCommand(['init'])).resolves.toBe(0);
+      process.chdir(root);
 
-    await expect(handleCacheCommand(['cache', '--help'])).resolves.toBe(0);
-    await expect(handleCacheCommand(['cache', 'status', '--json'])).resolves.toBe(0);
-    await expect(handleCacheCommand(['cache', 'status'])).resolves.toBe(0);
-    await expect(handleCacheCommand(['cache', 'unknown'])).resolves.toBe(1);
+      await expect(handleCacheCommand(['cache', '--help'])).resolves.toBe(0);
+      await expect(handleCacheCommand(['cache', 'status', '--json'])).resolves.toBe(0);
+      await expect(handleCacheCommand(['cache', 'status'])).resolves.toBe(0);
+      await expect(handleCacheCommand(['cache', 'unknown'])).resolves.toBe(1);
 
-    await expect(handleMirrorCommand(['mirror', '--help'])).resolves.toBe(0);
-    await expect(handleMirrorCommand(['mirror', 'status', '--json'])).resolves.toBe(0);
-    await expect(handleMirrorCommand(['mirror', 'status'])).resolves.toBe(0);
-    await expect(handleMirrorCommand(['mirror', 'unknown'])).resolves.toBe(1);
-  }, 60_000);
+      await expect(handleMirrorCommand(['mirror', '--help'])).resolves.toBe(0);
+      await expect(handleMirrorCommand(['mirror', 'status', '--json'])).resolves.toBe(0);
+      await expect(handleMirrorCommand(['mirror', 'status'])).resolves.toBe(0);
+      await expect(handleMirrorCommand(['mirror', 'unknown'])).resolves.toBe(1);
+    },
+    HEAVY_IN_PROCESS_TIMEOUT_MS
+  );
 
   it('runs executable bootstrap routing for help and version contracts', async () => {
     const stdoutTty = process.stdout.isTTY;
@@ -1329,64 +1341,68 @@ describe.sequential('in-process workspace Commander coverage', () => {
     await expect(checkStrictPolicyPreflightForDelegation(projectPath)).resolves.toEqual([]);
   });
 
-  it('executes offline create fallback validation and both embedded generators', async () => {
-    await expect(runCreateFallback(['create', '--json'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
-    await expect(runCreateFallback(['other'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
-    await expect(runCreateFallback(['create', 'workspace'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
-    await expect(runCreateFallback(['create', 'project'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
-    await expect(
-      runCreateFallback(
-        ['create', 'project', 'springboot.standard', 'unsupported'],
-        'PYTHON_NOT_FOUND'
-      )
-    ).resolves.toBe(1);
+  it(
+    'executes offline create fallback validation and both embedded generators',
+    async () => {
+      await expect(runCreateFallback(['create', '--json'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
+      await expect(runCreateFallback(['other'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
+      await expect(runCreateFallback(['create', 'workspace'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
+      await expect(runCreateFallback(['create', 'project'], 'PYTHON_NOT_FOUND')).resolves.toBe(1);
+      await expect(
+        runCreateFallback(
+          ['create', 'project', 'springboot.standard', 'unsupported'],
+          'PYTHON_NOT_FOUND'
+        )
+      ).resolves.toBe(1);
 
-    for (const [kit, name] of [
-      ['fastapi.standard', 'fallback-fastapi'],
-      ['nestjs.standard', 'fallback-nest'],
-    ]) {
+      for (const [kit, name] of [
+        ['fastapi.standard', 'fallback-fastapi'],
+        ['nestjs.standard', 'fallback-nest'],
+      ]) {
+        await expect(
+          runCreateFallback(
+            [
+              'create',
+              'project',
+              kit,
+              name,
+              '--output',
+              root,
+              '--skip-git',
+              '--skip-install',
+              '--no-workspace',
+            ],
+            'PYTHON_NOT_FOUND'
+          )
+        ).resolves.toBe(0);
+        await expect(fs.access(path.join(root, name))).resolves.toBeUndefined();
+        await expect(
+          runCreateFallback(['create', 'project', kit, name, '--output', root], 'PYTHON_NOT_FOUND')
+        ).resolves.toBe(1);
+      }
+
       await expect(
         runCreateFallback(
           [
             'create',
             'project',
-            kit,
-            name,
+            'fastapi.standard',
+            'fallback-managed',
             '--output',
             root,
             '--skip-git',
             '--skip-install',
-            '--no-workspace',
+            '--yes',
           ],
           'PYTHON_NOT_FOUND'
         )
       ).resolves.toBe(0);
-      await expect(fs.access(path.join(root, name))).resolves.toBeUndefined();
       await expect(
-        runCreateFallback(['create', 'project', kit, name, '--output', root], 'PYTHON_NOT_FOUND')
-      ).resolves.toBe(1);
-    }
-
-    await expect(
-      runCreateFallback(
-        [
-          'create',
-          'project',
-          'fastapi.standard',
-          'fallback-managed',
-          '--output',
-          root,
-          '--skip-git',
-          '--skip-install',
-          '--yes',
-        ],
-        'PYTHON_NOT_FOUND'
-      )
-    ).resolves.toBe(0);
-    await expect(
-      fs.access(path.join(root, 'fallback-managed', '.workspai', 'project.json'))
-    ).resolves.toBeUndefined();
-  });
+        fs.access(path.join(root, 'fallback-managed', '.workspai', 'project.json'))
+      ).resolves.toBeUndefined();
+    },
+    HEAVY_IN_PROCESS_TIMEOUT_MS
+  );
 
   it('validates every npm-backed kit option contract', () => {
     const invalidCases: Array<[string, string[], string]> = [
@@ -1428,115 +1444,133 @@ describe.sequential('in-process workspace Commander coverage', () => {
     ).toBeNull();
   });
 
-  it('executes every Node lifecycle action through the wrapper adapter', async () => {
-    const projectPath = path.join(root, 'api');
-    await fs.writeFile(
-      path.join(projectPath, 'package.json'),
-      `${JSON.stringify(
-        {
-          name: 'api',
-          version: '1.0.0',
-          scripts: Object.fromEntries(
-            ['dev', 'test', 'build', 'start', 'lint', 'format'].map((name) => [
-              name,
-              'node -e "void 0"',
-            ])
-          ),
-        },
-        null,
-        2
-      )}\n`
-    );
-    const results: number[] = [];
-    for (const action of ['dev', 'test', 'build', 'start', 'lint', 'format'] as const) {
-      results.push(await handleNodeCommand(action, projectPath));
-    }
-    expect(results.every((code) => Number.isInteger(code))).toBe(true);
-    expect(results.every((code) => code === 0 || code === 1)).toBe(true);
-  }, 60_000);
+  it(
+    'executes every Node lifecycle action through the wrapper adapter',
+    async () => {
+      const projectPath = path.join(root, 'api');
+      await fs.writeFile(
+        path.join(projectPath, 'package.json'),
+        `${JSON.stringify(
+          {
+            name: 'api',
+            version: '1.0.0',
+            scripts: Object.fromEntries(
+              ['dev', 'test', 'build', 'start', 'lint', 'format'].map((name) => [
+                name,
+                'node -e "void 0"',
+              ])
+            ),
+          },
+          null,
+          2
+        )}\n`
+      );
+      const results: number[] = [];
+      for (const action of ['dev', 'test', 'build', 'start', 'lint', 'format'] as const) {
+        results.push(await handleNodeCommand(action, projectPath));
+      }
+      expect(results.every((code) => Number.isInteger(code))).toBe(true);
+      expect(results.every((code) => code === 0 || code === 1)).toBe(true);
+    },
+    HEAVY_IN_PROCESS_TIMEOUT_MS
+  );
 
-  it('executes recoverable import, adopt, snapshot, archive, restore, and delete lifecycles', async () => {
-    const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-import-source-'));
-    temporaryDirectories.push(sourceRoot);
-    await fs.mkdir(path.join(sourceRoot, 'src'), { recursive: true });
-    await fs.writeFile(
-      path.join(sourceRoot, 'package.json'),
-      `${JSON.stringify({ name: 'import-source', version: '1.0.0' }, null, 2)}\n`
-    );
-    await fs.writeFile(path.join(sourceRoot, 'src', 'index.js'), 'export const imported = true;\n');
+  it(
+    'executes recoverable import, adopt, snapshot, archive, restore, and delete lifecycles',
+    async () => {
+      const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-import-source-'));
+      temporaryDirectories.push(sourceRoot);
+      await fs.mkdir(path.join(sourceRoot, 'src'), { recursive: true });
+      await fs.writeFile(
+        path.join(sourceRoot, 'package.json'),
+        `${JSON.stringify({ name: 'import-source', version: '1.0.0' }, null, 2)}\n`
+      );
+      await fs.writeFile(
+        path.join(sourceRoot, 'src', 'index.js'),
+        'export const imported = true;\n'
+      );
 
-    await runTopLevelCommand([
-      'adopt',
-      sourceRoot,
-      '--workspace',
-      root,
-      '--name',
-      'adopt-preview',
-      '--dry-run',
-      '--json',
-    ]);
-    await runTopLevelCommand([
-      'import',
-      sourceRoot,
-      '--workspace',
-      root,
-      '--name',
-      'imported-app',
-      '--json',
-    ]);
-    await expect(fs.stat(path.join(root, 'imported-app', 'package.json'))).resolves.toBeDefined();
+      await runTopLevelCommand([
+        'adopt',
+        sourceRoot,
+        '--workspace',
+        root,
+        '--name',
+        'adopt-preview',
+        '--dry-run',
+        '--json',
+      ]);
+      await runTopLevelCommand([
+        'import',
+        sourceRoot,
+        '--workspace',
+        root,
+        '--name',
+        'imported-app',
+        '--json',
+      ]);
+      await expect(fs.stat(path.join(root, 'imported-app', 'package.json'))).resolves.toBeDefined();
 
-    await fs.writeFile(path.join(root, 'lifecycle.txt'), 'before\n');
-    await runTopLevelCommand([
-      'snapshot',
-      'create',
-      'recoverable-state',
-      '--workspace',
-      root,
-      '--reason',
-      'coverage lifecycle',
-      '--include-projects',
-    ]);
-    await fs.writeFile(path.join(root, 'lifecycle.txt'), 'after\n');
-    process.chdir(os.tmpdir());
-    await runTopLevelCommand([
-      'snapshot',
-      'restore',
-      'recoverable-state',
-      '--workspace',
-      root,
-      '--reason',
-      'coverage restore',
-      '--force',
-    ]);
-    process.chdir(root);
+      await fs.writeFile(path.join(root, 'lifecycle.txt'), 'before\n');
+      await runTopLevelCommand([
+        'snapshot',
+        'create',
+        'recoverable-state',
+        '--workspace',
+        root,
+        '--reason',
+        'coverage lifecycle',
+        '--include-projects',
+      ]);
+      await fs.writeFile(path.join(root, 'lifecycle.txt'), 'after\n');
+      process.chdir(os.tmpdir());
+      await runTopLevelCommand([
+        'snapshot',
+        'restore',
+        'recoverable-state',
+        '--workspace',
+        root,
+        '--reason',
+        'coverage restore',
+        '--force',
+      ]);
+      process.chdir(root);
 
-    await runTopLevelCommand([
-      'project',
-      'archive',
-      'imported-app',
-      '--workspace',
-      root,
-      '--reason',
-      'coverage archive',
-      '--json',
-    ]);
-    const archiveEntries = await fs.readdir(path.join(root, '.workspai', 'archive', 'projects'));
-    const archiveName = archiveEntries.find((entry) => entry.includes('imported-app'));
-    expect(archiveName).toBeTruthy();
-    await runTopLevelCommand(['project', 'restore', archiveName!, '--workspace', root, '--force']);
-    await runTopLevelCommand([
-      'project',
-      'delete',
-      'imported-app',
-      '--workspace',
-      root,
-      '--reason',
-      'coverage delete',
-      '--json',
-    ]);
-    await expect(fs.stat(path.join(root, 'imported-app'))).rejects.toThrow();
-  }, 60_000);
+      await runTopLevelCommand([
+        'project',
+        'archive',
+        'imported-app',
+        '--workspace',
+        root,
+        '--reason',
+        'coverage archive',
+        '--json',
+      ]);
+      const archiveEntries = await fs.readdir(path.join(root, '.workspai', 'archive', 'projects'));
+      const archiveName = archiveEntries.find((entry) => entry.includes('imported-app'));
+      expect(archiveName).toBeTruthy();
+      await runTopLevelCommand([
+        'project',
+        'restore',
+        archiveName!,
+        '--workspace',
+        root,
+        '--force',
+      ]);
+      await runTopLevelCommand([
+        'project',
+        'delete',
+        'imported-app',
+        '--workspace',
+        root,
+        '--reason',
+        'coverage delete',
+        '--json',
+      ]);
+      await expect(fs.stat(path.join(root, 'imported-app'))).rejects.toThrow();
+    },
+    HEAVY_IN_PROCESS_TIMEOUT_MS
+  );
 
   it('copies a finalized evaluation to the requested output and reports that path', async () => {
     await runWorkspaceCommand(root, [
@@ -1574,94 +1608,98 @@ describe.sequential('in-process workspace Commander coverage', () => {
     });
   });
 
-  it('audits a heterogeneous enterprise workspace across every supported runtime', async () => {
-    const fixtures = [
-      {
-        name: 'python-service',
-        runtime: 'python',
-        framework: 'fastapi',
-        files: {
-          'pyproject.toml': '[project]\nname = "python-service"\nversion = "1.0.0"\n',
-          'requirements.txt': 'fastapi>=0.100\n',
-          'main.py': 'from fastapi import FastAPI\napp = FastAPI()\n',
-        },
-      },
-      {
-        name: 'go-service',
-        runtime: 'go',
-        framework: 'fiber',
-        files: {
-          'go.mod': 'module example.com/go-service\n\ngo 1.22\n',
-          'main.go': 'package main\nfunc main() {}\n',
-        },
-      },
-      {
-        name: 'java-service',
-        runtime: 'java',
-        framework: 'springboot',
-        files: {
-          'pom.xml': '<project><modelVersion>4.0.0</modelVersion></project>\n',
-          'src/main/java/App.java': 'class App {}\n',
-        },
-      },
-      {
-        name: 'dotnet-service',
-        runtime: 'dotnet',
-        framework: 'aspnetcore',
-        files: {
-          'dotnet-service.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n',
-          'Program.cs': 'var builder = WebApplication.CreateBuilder(args);\n',
-        },
-      },
-    ] as const;
-
-    for (const fixture of fixtures) {
-      const projectRoot = path.join(root, fixture.name);
-      await fs.mkdir(path.join(projectRoot, '.workspai'), { recursive: true });
-      await fs.writeFile(
-        path.join(projectRoot, '.workspai', 'project.json'),
-        `${JSON.stringify(
-          {
-            schema_version: '1.0',
-            name: fixture.name,
-            runtime: fixture.runtime,
-            framework: fixture.framework,
-            relationship: 'managed',
+  it(
+    'audits a heterogeneous enterprise workspace across every supported runtime',
+    async () => {
+      const fixtures = [
+        {
+          name: 'python-service',
+          runtime: 'python',
+          framework: 'fastapi',
+          files: {
+            'pyproject.toml': '[project]\nname = "python-service"\nversion = "1.0.0"\n',
+            'requirements.txt': 'fastapi>=0.100\n',
+            'main.py': 'from fastapi import FastAPI\napp = FastAPI()\n',
           },
-          null,
-          2
-        )}\n`
-      );
-      for (const [relativePath, content] of Object.entries(fixture.files)) {
-        const target = path.join(projectRoot, relativePath);
-        await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.writeFile(target, content);
+        },
+        {
+          name: 'go-service',
+          runtime: 'go',
+          framework: 'fiber',
+          files: {
+            'go.mod': 'module example.com/go-service\n\ngo 1.22\n',
+            'main.go': 'package main\nfunc main() {}\n',
+          },
+        },
+        {
+          name: 'java-service',
+          runtime: 'java',
+          framework: 'springboot',
+          files: {
+            'pom.xml': '<project><modelVersion>4.0.0</modelVersion></project>\n',
+            'src/main/java/App.java': 'class App {}\n',
+          },
+        },
+        {
+          name: 'dotnet-service',
+          runtime: 'dotnet',
+          framework: 'aspnetcore',
+          files: {
+            'dotnet-service.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n',
+            'Program.cs': 'var builder = WebApplication.CreateBuilder(args);\n',
+          },
+        },
+      ] as const;
+
+      for (const fixture of fixtures) {
+        const projectRoot = path.join(root, fixture.name);
+        await fs.mkdir(path.join(projectRoot, '.workspai'), { recursive: true });
+        await fs.writeFile(
+          path.join(projectRoot, '.workspai', 'project.json'),
+          `${JSON.stringify(
+            {
+              schema_version: '1.0',
+              name: fixture.name,
+              runtime: fixture.runtime,
+              framework: fixture.framework,
+              relationship: 'managed',
+            },
+            null,
+            2
+          )}\n`
+        );
+        for (const [relativePath, content] of Object.entries(fixture.files)) {
+          const target = path.join(projectRoot, relativePath);
+          await fs.mkdir(path.dirname(target), { recursive: true });
+          await fs.writeFile(target, content);
+        }
+        await fs.writeFile(path.join(projectRoot, '.env.example'), 'PORT=8080\n');
+        await fs.writeFile(path.join(projectRoot, 'Dockerfile'), 'FROM scratch\n');
       }
-      await fs.writeFile(path.join(projectRoot, '.env.example'), 'PORT=8080\n');
-      await fs.writeFile(path.join(projectRoot, 'Dockerfile'), 'FROM scratch\n');
-    }
 
-    for (const profile of ['local', 'ci', 'release', 'enterprise-strict']) {
-      const exitCode = await runDoctor({ workspace: root, json: true, profile });
-      expect([0, 1, 2]).toContain(exitCode);
-    }
-    const planCode = await runDoctor({ workspace: root, json: true, plan: true });
-    expect([0, 1, 2]).toContain(planCode);
+      for (const profile of ['local', 'ci', 'release', 'enterprise-strict']) {
+        const exitCode = await runDoctor({ workspace: root, json: true, profile });
+        expect([0, 1, 2]).toContain(exitCode);
+      }
+      const planCode = await runDoctor({ workspace: root, json: true, plan: true });
+      expect([0, 1, 2]).toContain(planCode);
 
-    const javaRoot = path.join(root, 'java-service');
-    const mavenWrapper = path.join(javaRoot, 'mvnw');
-    await fs.writeFile(mavenWrapper, '#!/bin/sh\nexit 0\n');
-    await fs.chmod(mavenWrapper, 0o755);
-    await fs.writeFile(
-      path.join(javaRoot, 'pom.xml'),
-      '<project><build><plugins><plugin>spotless-maven-plugin</plugin></plugins></build></project>\n'
-    );
-    const javaResults: number[] = [];
-    for (const action of ['init', 'dev', 'test', 'build', 'start', 'lint', 'format'] as const) {
-      javaResults.push(await handleJavaCommand(action, javaRoot));
-    }
-    expect(javaResults.every((code) => code === 0 || code === 1)).toBe(true);
+      const javaRoot = path.join(root, 'java-service');
+      const mavenWrapper = path.join(javaRoot, 'mvnw');
+      await fs.writeFile(mavenWrapper, '#!/bin/sh\nexit 0\n');
+      await fs.chmod(mavenWrapper, 0o755);
+      await fs.writeFile(
+        path.join(javaRoot, 'pom.xml'),
+        '<project><build><plugins><plugin>spotless-maven-plugin</plugin></plugins></build></project>\n'
+      );
+      const javaResults: number[] = [];
+      for (const action of ['init', 'dev', 'test', 'build', 'start', 'lint', 'format'] as const) {
+        javaResults.push(await handleJavaCommand(action, javaRoot));
+      }
+      expect(javaResults.every((code) => code === 0 || code === 1)).toBe(true);
 
-    expect([0, 1]).toContain(await handleGoInit(path.join(root, 'go-service')));
-  }, 60_000);
+      expect([0, 1]).toContain(await handleGoInit(path.join(root, 'go-service')));
+    },
+    HEAVY_IN_PROCESS_TIMEOUT_MS
+  );
 });

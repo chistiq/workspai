@@ -40,6 +40,13 @@ caching generated projects; every smoke run still exercises the current
 upstream generator, generated artifacts, build surface, registry, and Doctor
 evidence.
 
+The Windows coverage lane intentionally uses bounded Vitest worker concurrency
+and platform-aware transaction timeouts. Filesystem-heavy workspace tests must
+finish their transaction before teardown; cleanup retries transient Windows
+`EBUSY` and `ENOTEMPTY` states instead of converting one slow operation into a
+cascade of unrelated missing-file failures. These budgets remain finite and do
+not retry failed assertions or product operations.
+
 ## Release announcements
 
 `packages/cli/releases/release-products.v1.json` maps a release product to its

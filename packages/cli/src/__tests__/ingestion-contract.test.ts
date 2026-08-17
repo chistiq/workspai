@@ -27,7 +27,16 @@ async function temporaryDirectory(prefix: string): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(cleanup.splice(0).map((item) => fsExtra.remove(item)));
+  await Promise.all(
+    cleanup.splice(0).map((item) =>
+      fsExtra.rm(item, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      })
+    )
+  );
 });
 
 describe('canonical ingestion contract', () => {

@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extension can require capabilities from an already published CLI without
   forcing a redundant CLI release.
 
+### Fixed
+
+- Stabilized the Windows coverage lane by bounding filesystem-heavy test
+  concurrency, using platform-aware transaction budgets, making temporary
+  workspace cleanup retry-safe, and allowing registry-lock acquisition to
+  outlive its stale-lock recovery threshold.  
+
 ## [0.59.0] - 2026-08-17
 
 ### Added

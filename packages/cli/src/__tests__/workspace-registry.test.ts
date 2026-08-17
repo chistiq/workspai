@@ -44,7 +44,12 @@ afterEach(async () => {
   while (createdPaths.length > 0) {
     const target = createdPaths.pop();
     if (target) {
-      await fsExtra.remove(target);
+      await fsExtra.rm(target, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
     }
   }
 });

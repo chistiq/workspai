@@ -6,6 +6,8 @@ import os from 'os';
 import path from 'path';
 import { ensureDistBuilt } from './helpers/dist';
 
+const PROCESS_INTEGRATION_TIMEOUT_MS = process.platform === 'win32' ? 120_000 : 20_000;
+
 function cliEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.NODE_ENV;
@@ -325,84 +327,88 @@ describe('Phase 3 commands - CLI process integration', () => {
     }
   }, 60000);
 
-  it('supports workspace policy set/show for mode, dependency mode, and rules', () => {
-    const dist = ensureDistBuilt();
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-policy-'));
-    const workspaceDir = path.join(tempDir, 'my-workspace');
+  it(
+    'supports workspace policy set/show for mode, dependency mode, and rules',
+    () => {
+      const dist = ensureDistBuilt();
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-policy-'));
+      const workspaceDir = path.join(tempDir, 'my-workspace');
 
-    try {
-      fs.mkdirSync(path.join(workspaceDir, '.workspai'), { recursive: true });
-      fs.writeFileSync(
-        path.join(workspaceDir, '.workspai-workspace'),
-        JSON.stringify({ signature: 'RAPIDKIT_WORKSPACE' }, null, 2)
-      );
-      fs.writeFileSync(
-        path.join(workspaceDir, '.workspai', 'policies.yml'),
-        [
-          'version: "1.0"',
-          'mode: warn # "warn" or "strict"',
-          'dependency_sharing_mode: isolated # "isolated" or "shared-runtime-caches" or "shared-node-deps"',
-          'rules:',
-          '  enforce_workspace_marker: true',
-          '  enforce_toolchain_lock: false',
-          '  disallow_untrusted_tool_sources: false',
-          '',
-        ].join('\n')
-      );
+      try {
+        fs.mkdirSync(path.join(workspaceDir, '.workspai'), { recursive: true });
+        fs.writeFileSync(
+          path.join(workspaceDir, '.workspai-workspace'),
+          JSON.stringify({ signature: 'RAPIDKIT_WORKSPACE' }, null, 2)
+        );
+        fs.writeFileSync(
+          path.join(workspaceDir, '.workspai', 'policies.yml'),
+          [
+            'version: "1.0"',
+            'mode: warn # "warn" or "strict"',
+            'dependency_sharing_mode: isolated # "isolated" or "shared-runtime-caches" or "shared-node-deps"',
+            'rules:',
+            '  enforce_workspace_marker: true',
+            '  enforce_toolchain_lock: false',
+            '  disallow_untrusted_tool_sources: false',
+            '',
+          ].join('\n')
+        );
 
-      const setMode = spawnSync(
-        process.execPath,
-        [dist, 'workspace', 'policy', 'set', 'mode', 'strict'],
-        {
+        const setMode = spawnSync(
+          process.execPath,
+          [dist, 'workspace', 'policy', 'set', 'mode', 'strict'],
+          {
+            cwd: workspaceDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(setMode.status).toBe(0);
+
+        const setDep = spawnSync(
+          process.execPath,
+          [dist, 'workspace', 'policy', 'set', 'dependency_sharing_mode', 'shared-runtime-caches'],
+          {
+            cwd: workspaceDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(setDep.status).toBe(0);
+
+        const setRule = spawnSync(
+          process.execPath,
+          [dist, 'workspace', 'policy', 'set', 'rules.enforce_toolchain_lock', 'true'],
+          {
+            cwd: workspaceDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(setRule.status).toBe(0);
+
+        const show = spawnSync(process.execPath, [dist, 'workspace', 'policy', 'show'], {
           cwd: workspaceDir,
           encoding: 'utf8',
-        }
-      );
-      expect(setMode.status).toBe(0);
+        });
+        expect(show.status).toBe(0);
+        const output = `${show.stdout || ''}\n${show.stderr || ''}`;
+        expect(output).toContain('mode: strict');
+        expect(output).toContain('dependency_sharing_mode: shared-runtime-caches');
+        expect(output).toContain('enforce_toolchain_lock: true');
 
-      const setDep = spawnSync(
-        process.execPath,
-        [dist, 'workspace', 'policy', 'set', 'dependency_sharing_mode', 'shared-runtime-caches'],
-        {
-          cwd: workspaceDir,
-          encoding: 'utf8',
-        }
-      );
-      expect(setDep.status).toBe(0);
-
-      const setRule = spawnSync(
-        process.execPath,
-        [dist, 'workspace', 'policy', 'set', 'rules.enforce_toolchain_lock', 'true'],
-        {
-          cwd: workspaceDir,
-          encoding: 'utf8',
-        }
-      );
-      expect(setRule.status).toBe(0);
-
-      const show = spawnSync(process.execPath, [dist, 'workspace', 'policy', 'show'], {
-        cwd: workspaceDir,
-        encoding: 'utf8',
-      });
-      expect(show.status).toBe(0);
-      const output = `${show.stdout || ''}\n${show.stderr || ''}`;
-      expect(output).toContain('mode: strict');
-      expect(output).toContain('dependency_sharing_mode: shared-runtime-caches');
-      expect(output).toContain('enforce_toolchain_lock: true');
-
-      const policyContent = fs.readFileSync(
-        path.join(workspaceDir, '.workspai', 'policies.yml'),
-        'utf-8'
-      );
-      expect(policyContent).toContain('mode: strict # "warn" or "strict"');
-      expect(policyContent).toContain(
-        'dependency_sharing_mode: shared-runtime-caches # "isolated" or "shared-runtime-caches" or "shared-node-deps"'
-      );
-      expect(policyContent).toContain('  enforce_toolchain_lock: true');
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    }
-  }, 20000);
+        const policyContent = fs.readFileSync(
+          path.join(workspaceDir, '.workspai', 'policies.yml'),
+          'utf-8'
+        );
+        expect(policyContent).toContain('mode: strict # "warn" or "strict"');
+        expect(policyContent).toContain(
+          'dependency_sharing_mode: shared-runtime-caches # "isolated" or "shared-runtime-caches" or "shared-node-deps"'
+        );
+        expect(policyContent).toContain('  enforce_toolchain_lock: true');
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      }
+    },
+    PROCESS_INTEGRATION_TIMEOUT_MS
+  );
 
   it('rejects workspace policy operations outside a workspace', () => {
     const dist = ensureDistBuilt();

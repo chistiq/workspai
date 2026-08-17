@@ -25,7 +25,14 @@ afterEach(async () => {
   vi.restoreAllMocks();
   while (tempDirs.length > 0) {
     const target = tempDirs.pop();
-    if (target) await fs.remove(target);
+    if (target) {
+      await fs.rm(target, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
+    }
   }
 });
 

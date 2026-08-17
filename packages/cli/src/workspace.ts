@@ -44,6 +44,11 @@ interface WorkspaceOptions {
   skipGit?: boolean;
 }
 
+// A waiter must live longer than the stale-lock threshold; otherwise a
+// crashed owner can never be recovered by the same acquisition attempt.
+const WORKSPACE_REGISTRY_LOCK_STALE_MS = 30_000;
+const WORKSPACE_REGISTRY_LOCK_ACQUIRE_TIMEOUT_MS = 45_000;
+
 type GitInitSpinner = {
   start(text?: string): GitInitSpinner;
   succeed(text?: string): GitInitSpinner;
@@ -370,7 +375,7 @@ async function withWorkspaceRegistryLock<T>(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const stat = await fs.stat(lockPath).catch(() => null);
-      if (stat && Date.now() - stat.mtimeMs > 30_000) {
+      if (stat && Date.now() - stat.mtimeMs > WORKSPACE_REGISTRY_LOCK_STALE_MS) {
         const lockPayload = await fs
           .readFile(lockPath, 'utf8')
           .then((content) => JSON.parse(content) as { pid?: unknown })
@@ -390,7 +395,7 @@ async function withWorkspaceRegistryLock<T>(
           continue;
         }
       }
-      if (Date.now() - startedAt > 10_000) {
+      if (Date.now() - startedAt > WORKSPACE_REGISTRY_LOCK_ACQUIRE_TIMEOUT_MS) {
         throw new Error(`Timed out waiting for workspace registry lock: ${lockPath}`);
       }
       await new Promise((resolve) => setTimeout(resolve, 25));
