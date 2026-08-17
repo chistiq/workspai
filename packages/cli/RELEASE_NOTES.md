@@ -25,16 +25,16 @@ and locally available consumers without coupling their release schedules.
 
 **Breaking changes:** None.
 
-**Publication status:** Pending.
+**Publication status:** Released August 17, 2026.
 
-**Install after publication:**
+**Install:**
 
 ```bash
 npm install -g workspai@0.59.1
 workspai --version
 ```
 
-[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.59.1.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.59.1/packages/cli/releases/RELEASE_NOTES_v0.59.1.md)
 
 ---
 
