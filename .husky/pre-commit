@@ -10,6 +10,9 @@ STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACMR)"
 CHECK_CONTRACTS=false
 CHECK_DOCS=false
 
+echo "Checking staged files for English-only authored text..."
+corepack npm run check:english-text:staged || exit 1
+
 while IFS= read -r file; do
 	case "$file" in
 		contracts/* | packages/cli/contracts/* | packages/cli/src/contracts/* | packages/cli/scripts/sync-contracts.mjs | packages/cli/scripts/sync-shared-contracts.mjs | packages/cli/scripts/generate-shared-contracts.mjs | packages/cli/scripts/check-agent-customization-drift.mjs)

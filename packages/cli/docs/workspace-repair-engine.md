@@ -70,8 +70,11 @@ same exact producer runs again before aggregate Workspace Intelligence verificat
 `propose` is the dynamic repair boundary for IDE models. A model may provide bounded complete-file
 writes/deletes and optional structured audit/test/build commands. The CLI rejects stale source
 hashes, duplicate targets, workspace evidence edits, Git internals, installed dependency trees,
-secret-bearing files, path/link escapes, and ungoverned commands. Dependency manifest proposals
-still receive CLI-inferred reconcile, audit, test, and build stages before strict verification.
+secret-bearing files, path/link escapes, and ungoverned commands. For a linked project, proposal
+paths may leave the central workspace only when the target resolves to exactly one canonical
+project in `workspace.contract.json`; the authorized boundary is that project's exact root, never
+its parent or a sibling repository. Dependency manifest proposals still receive CLI-inferred
+reconcile, audit, test, and build stages before strict verification.
 
 Doctor also publishes a distinct `dependency-materialization` transaction when manifests exist
 but the installed runtime tree is missing. Its install or restore invocation is the repair stage
@@ -95,8 +98,10 @@ tool before the environment-creation stage runs.
   package fetching through `npx` is rejected.
 - Force and breaking changes require explicit policy approval. A different policy means a new
   plan and a new approval.
-- Files are bounded to the workspace, regular files only, at most 5 MiB each and 25 MiB per
-  transaction. A source change between planning and execution expires approval.
+- Files are bounded to the workspace or the exact root of one canonically registered linked
+  project, regular files only, at most 5 MiB each and 25 MiB per transaction. Absolute proposal
+  paths, unregistered external roots, parent/sibling escapes, and symbolic-link boundaries fail
+  closed. A source change between planning and execution expires approval.
 - A workspace-level owner lock prevents concurrent repair writers and is not stolen from a live
   process merely because a long transaction exceeded a wall-clock threshold. Resume skips
   durable passed stages.
@@ -112,6 +117,11 @@ tool before the environment-creation stage runs.
   missing or changed toolchain expires approval instead of starting a partial transaction.
 - The exact card producer is run twice: first as a no-mutation causal precondition, then after
   repair as card-local evidence. An aggregate workspace gate cannot substitute for either run.
+- A Goal-bound proposal is linked to the active Goal before execution. Closure seals the fresh
+  structural Model hash, exact canonical Graph hash, and stable Graph input fingerprint into the
+  verification receipt. The receipt receives its own closure hash and remains acceptable as a
+  source transition only while the approved plan, proposal, checkpoint outputs, verification,
+  Goal identity, and current source fingerprints still agree.
 
 ## Runtime adapters
 
@@ -142,7 +152,7 @@ is durable under `.workspai/repair/transactions/<transaction-id>/`. Consumers sh
 the `workspace repair` action from `runtime-command-surface.v1.json`, render its stages and
 events, and send explicit user decisions back to the CLI. They must not reproduce the executor.
 
-The consumer protocol is fail-closed on four additional invariants:
+The consumer protocol is fail-closed on these invariants:
 
 - `mutationAuthority=cli-only`: an IDE or model may inspect and propose, but it cannot run a
   parallel package-manager, file-write, or remediation executor.
@@ -153,6 +163,27 @@ The consumer protocol is fail-closed on four additional invariants:
   transaction recorded a different post-execution hash. Planned checkpoint files are not edits.
 - `consumerTimeline=durable-transaction-events`: progress, decisions, rollback, and closure are
   projections of ordered transaction/session events, not optimistic UI copy.
+- `registeredLinkedProjectMutationBoundary=true`: an external source root is writable only when
+  it is exactly one project in the canonical workspace contract; parent and sibling roots never
+  inherit that authority.
+- `sourceProposalIntegrity=project-bound-hash-pinned`: every proposed change is bound to the
+  selected project and the SHA-256 value observed before planning.
+- `completionAuthority=cli-verification-receipt`: model prose, an IDE diff, or a successful build
+  cannot close a repair without the CLI transaction's exact-target verification receipt.
+- `goalSourceTransition=closed-integrity-bound-transaction`: an immutable Goal may move from its
+  original Model/Graph binding only through a linked, approved, closed Repair transaction whose
+  current output and post-repair source binding still validate. Evidence-only regeneration with
+  identical live inputs remains valid; unlinked or unrelated source drift fails closed.
+
+The runtime advertises this boundary as the capability invariants
+`goalSourceTransition=closed-integrity-bound-v1` and
+`goalAttemptBudget=durable-serialized-v1`. Consumers must probe them before a
+Goal mutation; the package version alone is not sufficient proof.
+
+Consumers must render changed files relative to the selected project (or workspace when no
+project is selected). Portable `../` paths retained by the CLI transaction are execution identity,
+not presentation text; absolute host paths and checkpoint internals must never cross into an IDE
+card, model transcript, export, screenshot, or diagnostic bundle.
 
 IDE-generated input follows
 `contracts/workspace-intelligence/workspace-repair-proposal.v1.json`. The proposal is evidence,

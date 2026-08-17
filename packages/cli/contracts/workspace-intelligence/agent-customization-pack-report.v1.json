@@ -27,7 +27,22 @@
     "targets": {
       "type": "array",
       "items": {
-        "enum": ["all", "vscode", "agents", "copilot", "cursor", "claude", "codex", "orca"]
+        "enum": [
+          "all",
+          "vscode",
+          "agents",
+          "copilot",
+          "cursor",
+          "claude",
+          "codex",
+          "gemini",
+          "qwen",
+          "kimi",
+          "grok",
+          "windsurf",
+          "amazon-q",
+          "orca"
+        ]
       }
     },
     "sourceReports": { "type": "array", "items": { "type": "string", "minLength": 1 } },

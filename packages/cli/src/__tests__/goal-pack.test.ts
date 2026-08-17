@@ -14,7 +14,11 @@ import {
   verifyGoalLifecycle,
 } from '../goal-lifecycle.js';
 import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js';
-import { planWorkspaceRepairProposal } from '../workspace-repair-engine.js';
+import {
+  approveWorkspaceRepair,
+  executeWorkspaceRepair,
+  planWorkspaceRepairProposal,
+} from '../workspace-repair-engine.js';
 import { WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION } from '../contracts/workspace-repair-proposal-contract.js';
 
 const roots: string[] = [];
@@ -67,6 +71,14 @@ async function fixture(): Promise<{ workspacePath: string; projectPath: string }
     path.join(projectPath, 'src', 'health.controller.ts'),
     "export const health = () => 'ok';\n"
   );
+  await fsExtra.outputFile(
+    path.join(projectPath, 'src', 'retry-backoff.ts'),
+    'export const retryBackoff = (attempt: number) => 2 ** attempt;\n'
+  );
+  await fsExtra.outputFile(
+    path.join(projectPath, 'test', 'retry-backoff.test.ts'),
+    "import { retryBackoff } from '../src/retry-backoff';\nvoid retryBackoff(1);\n"
+  );
   const model = await buildWorkspaceModel({
     workspacePath,
     includeAbsolutePaths: true,
@@ -109,7 +121,7 @@ describe('goal pack workspace adapter', () => {
     expect(serialized).not.toContain(workspacePath);
     expect(serialized).not.toContain(os.tmpdir());
     expect(result.goalPack.state).toBe('ready-to-plan');
-    expect(result.goalPack.preflight.retrieval.queries[0]).toContain('test suite');
+    expect(result.goalPack.preflight.retrieval.queries[0]).toBe('Raise test coverage to 82%');
     expect(result.agentHandoff.discovery.index).toBe('.workspai/goals/index.json');
 
     const resumed = await planGoalPack({
@@ -119,6 +131,49 @@ describe('goal pack workspace adapter', () => {
     });
     expect(resumed.resumed).toBe(true);
     expect(resumed.goalPack.generatedAt).toBe(result.goalPack.generatedAt);
+  });
+
+  it('grounds general Goals in objective-relevant anchors before category fallback', async () => {
+    const { projectPath } = await fixture();
+    const result = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve retry backoff diagnostics',
+      dryRun: true,
+    });
+
+    expect(result.goalPack.preflight.retrieval.queries[0]).toBe(
+      'Improve retry backoff diagnostics'
+    );
+    expect(result.goalPack.preflight.retrieval.anchors[0]?.label).toContain('retry-backoff');
+    expect(result.goalPack.preflight.retrieval.status).toBe('partial');
+  });
+
+  it('keeps Goal identity stable across an evidence-only Graph regeneration', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const first = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Raise test coverage to 82%',
+      consumer: 'codex',
+    });
+    const graphPath = path.join(
+      workspacePath,
+      '.workspai',
+      'reports',
+      'workspace-knowledge-graph.json'
+    );
+    const graph = (await fsExtra.readJson(graphPath)) as { generatedAt: string };
+    graph.generatedAt = '2026-08-15T01:00:00.000Z';
+    await fsExtra.writeJson(graphPath, graph, { spaces: 2 });
+
+    const resumed = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Raise test coverage to 82%',
+      consumer: 'codex',
+    });
+
+    expect(resumed.resumed).toBe(true);
+    expect(resumed.goalPack.id).toBe(first.goalPack.id);
+    expect(resumed.goalPack.sourceBinding.graph.hash).toBe(first.goalPack.sourceBinding.graph.hash);
   });
 
   it('supports side-effect-free preview and explicit workspace scope', async () => {
@@ -190,6 +245,25 @@ describe('goal pack workspace adapter', () => {
     );
   });
 
+  it('does not replace an active Goal with a plan that still needs confirmation', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const active = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Map the system architecture',
+    });
+    const incomplete = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve test coverage',
+    });
+
+    expect(incomplete.result).toBe('needs-confirmation');
+    const inspected = await inspectGoalLifecycle({ workspacePath });
+    expect(inspected.index.activeGoalId).toBe(active.goalPack.id);
+    expect(
+      inspected.index.goals.find((goal) => goal.id === incomplete.goalPack.id)?.lifecycle
+    ).toBe('planned');
+  });
+
   it('bridges an active deterministic goal through preparation and blocked verification', async () => {
     const { workspacePath, projectPath } = await fixture();
     const planned = await planGoalPack({
@@ -215,6 +289,43 @@ describe('goal pack workspace adapter', () => {
     expect(verification.goal.lifecycle).toBe('verification-ready');
     expect((await inspectGoalLifecycle({ workspacePath })).index.activeGoalId).toBe(
       planned.goalPack.id
+    );
+  });
+
+  it('enforces the immutable Goal Pack verification-attempt budget', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Prepare this project for release',
+      maxAttempts: 1,
+    });
+    await prepareGoalVerification({ workspacePath, goalId: planned.goalPack.id });
+    await verifyGoalLifecycle({ workspacePath, goalId: planned.goalPack.id, run: false });
+
+    await expect(
+      verifyGoalLifecycle({ workspacePath, goalId: planned.goalPack.id, run: false })
+    ).rejects.toThrow('exhausted its verification budget (1)');
+  });
+
+  it('serializes concurrent verification so consumers cannot race the attempt budget', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Prepare this project for release',
+      maxAttempts: 1,
+    });
+    await prepareGoalVerification({ workspacePath, goalId: planned.goalPack.id });
+
+    const results = await Promise.allSettled([
+      verifyGoalLifecycle({ workspacePath, goalId: planned.goalPack.id, run: false }),
+      verifyGoalLifecycle({ workspacePath, goalId: planned.goalPack.id, run: false }),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect(rejected).toMatchObject({ status: 'rejected' });
+    expect(String((rejected as PromiseRejectedResult).reason)).toContain(
+      'exhausted its verification budget (1)'
     );
   });
 
@@ -266,6 +377,122 @@ describe('goal pack workspace adapter', () => {
     });
     const inspected = await inspectGoalLifecycle({ workspacePath });
     expect(inspected.active?.repairTransactionId).toBe(transaction.transactionId);
+  });
+
+  it('serializes Goal repair proposals so concurrent consumers cannot exceed the budget', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Raise test coverage to 80%',
+      maxAttempts: 1,
+    });
+    const sourcePath = path.join(projectPath, 'src', 'health.controller.ts');
+    const before = await fsExtra.readFile(sourcePath, 'utf8');
+    const proposal = (suffix: string) => ({
+      schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+      goalId: planned.goalPack.id,
+      cardId: `goal-source-${suffix}`,
+      projectName: 'api',
+      projectPath: 'api',
+      rationale: 'Reserve one bounded Goal repair attempt.',
+      changes: [
+        {
+          id: `health-source-${suffix}`,
+          path: 'api/src/health.controller.ts',
+          operation: 'write' as const,
+          expectedBeforeHash: createHash('sha256').update(before).digest('hex'),
+          content: `${before}// ${suffix}\n`,
+          risk: 'safe' as const,
+          summary: 'Keep the proposal inside the selected project.',
+        },
+      ],
+    });
+
+    const results = await Promise.allSettled([
+      planWorkspaceRepairProposal({ workspacePath, proposal: proposal('first') }),
+      planWorkspaceRepairProposal({ workspacePath, proposal: proposal('second') }),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(
+      String(
+        (results.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason
+      )
+    ).toContain('exhausted its repair proposal budget (1)');
+  });
+
+  it('accepts only a closed Goal repair as the sanctioned post-mutation source binding', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Prepare this project for release',
+    });
+    await prepareGoalVerification({ workspacePath, goalId: planned.goalPack.id });
+    const sourcePath = path.join(projectPath, 'src', 'health.controller.ts');
+    const before = await fsExtra.readFile(sourcePath, 'utf8');
+    const transaction = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        goalId: planned.goalPack.id,
+        cardId: 'goal-release-source-proposal',
+        projectName: 'api',
+        projectPath: 'api',
+        rationale: 'Apply one bounded source edit and retain the Goal evidence chain.',
+        changes: [
+          {
+            id: 'health-source',
+            path: 'api/src/health.controller.ts',
+            operation: 'write',
+            expectedBeforeHash: createHash('sha256').update(before).digest('hex'),
+            content: `${before}// governed repair\n`,
+            risk: 'safe',
+            summary: 'Apply the inspected source change.',
+          },
+        ],
+      },
+    });
+    await approveWorkspaceRepair({ workspacePath, transactionId: transaction.transactionId });
+    const closed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: transaction.transactionId },
+      {
+        verify: async () => {
+          const refreshed = await buildWorkspaceModel({
+            workspacePath,
+            includeAbsolutePaths: true,
+            now: new Date('2026-08-15T00:05:00.000Z'),
+          });
+          await writeWorkspaceModel(refreshed, workspacePath);
+          return {
+            status: 'passed',
+            exitCode: 0,
+            artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+          };
+        },
+      }
+    );
+
+    expect(closed.state).toBe('closed');
+    expect(closed.integrity.closureHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(closed.verification?.sourceBinding?.graphInputHash).toMatch(/^[a-f0-9]{64}$/);
+    const inspected = await inspectGoalLifecycle({ workspacePath });
+    expect(inspected.active?.repairTransactionIds).toEqual([transaction.transactionId]);
+    const evidenceRerun = await buildWorkspaceModel({
+      workspacePath,
+      includeAbsolutePaths: true,
+      now: new Date('2026-08-15T00:10:00.000Z'),
+    });
+    await writeWorkspaceModel(evidenceRerun, workspacePath);
+    await expect(inspectGoalLifecycle({ workspacePath })).resolves.toMatchObject({
+      active: { id: planned.goalPack.id },
+    });
+    const unrelatedPath = path.join(projectPath, 'src', 'unrelated.ts');
+    await fsExtra.outputFile(unrelatedPath, 'export const unrelated = true;\n');
+    await expect(inspectGoalLifecycle({ workspacePath })).rejects.toThrow('stale');
+    await fsExtra.remove(unrelatedPath);
+    await expect(
+      verifyGoalLifecycle({ workspacePath, goalId: planned.goalPack.id, run: false })
+    ).resolves.toMatchObject({ goal: { id: planned.goalPack.id } });
   });
 
   it('fails closed when graph evidence no longer matches the canonical model', async () => {

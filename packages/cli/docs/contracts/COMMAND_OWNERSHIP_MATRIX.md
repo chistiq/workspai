@@ -34,6 +34,7 @@ These commands are implemented and orchestrated by Workspai CLI:
 - `commands`
 - `create`
 - `goal`
+- `agent`
 - `project`
 - `shell activate`
 
@@ -58,6 +59,8 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `product manifest`
 - `product manifest create`
 - `product plan`
+- `agent bootstrap`
+- `project agent-entry`
 - `project commands`
 - `project coverage`
 - `project archives`

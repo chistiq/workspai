@@ -1372,6 +1372,9 @@ describe('Workspace Repair Engine', () => {
     expect(planned.state).toBe('decision-required');
     expect(planned.decision?.reason).toContain('expected source hash');
     expect(planned.decision?.reason).toContain('Canonical workspace state and evidence');
+    expect(
+      planned.decision?.reason.match(/Canonical workspace state and evidence/g) ?? []
+    ).toHaveLength(1);
     expect(planned.decision?.causes).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: 'failed-precondition' })])
     );
@@ -1831,5 +1834,194 @@ describe('Workspace Repair Engine', () => {
     expect(
       await readWorkspaceRepairTransaction({ workspacePath, transactionId: blocked.transactionId })
     ).toMatchObject({ state: 'cancelled' });
+  });
+
+  it('repairs a hash-pinned source file inside one canonically registered external project', async () => {
+    const { workspacePath } = await workspaceFixture();
+    const externalProject = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-external-source-')
+    );
+    roots.push(externalProject);
+    await fsExtra.writeJson(path.join(externalProject, 'package.json'), {
+      name: 'external-api',
+      scripts: { test: 'node --test', build: 'node --check src.js' },
+    });
+    await fsExtra.writeFile(path.join(externalProject, 'src.js'), 'export const ready = false;\n');
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      projects: [
+        {
+          slug: 'external-api',
+          relativePath: 'external/external-api',
+          externalPath: externalProject,
+          source: 'adopted-local',
+          relationship: 'adopted',
+        },
+      ],
+    });
+    const projectPath = path.relative(workspacePath, externalProject).replace(/\\/g, '/');
+    const sourcePath = `${projectPath}/src.js`;
+
+    const planned = await planWorkspaceRepairProposal(
+      {
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: 'workspaceRun',
+          projectName: 'external-api',
+          rationale: 'Repair the one failed linked project without widening filesystem scope.',
+          changes: [
+            {
+              id: 'external-source',
+              path: sourcePath,
+              operation: 'write',
+              expectedBeforeHash: sha256('export const ready = false;\n'),
+              content: 'export const ready = true;\n',
+              risk: 'guarded',
+              summary: 'Fix linked project source.',
+            },
+          ],
+        },
+      },
+      { toolAvailable: async () => true }
+    );
+
+    expect(planned.state, planned.decision?.reason).toBe('awaiting-approval');
+    expect(planned.target).toMatchObject({
+      scope: 'project',
+      projectName: 'external-api',
+      projectPath,
+    });
+    expect(planned.checkpoint.files.map((entry) => entry.path)).toContain(sourcePath);
+
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        runInvocation: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+        runTargetProducer: vi.fn(async () => ({ exitCode: 2, stdout: '', stderr: '' })),
+        verify: vi.fn(async () => ({
+          status: 'passed',
+          exitCode: 0,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+        toolAvailable: async () => true,
+      }
+    );
+
+    expect(completed.state).toBe('closed');
+    expect(await fsExtra.readFile(path.join(externalProject, 'src.js'), 'utf8')).toBe(
+      'export const ready = true;\n'
+    );
+
+    const rollbackPlan = await planWorkspaceRepairProposal(
+      {
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: 'workspaceRun',
+          projectName: 'external-api',
+          rationale: 'Prove linked source rollback retains the same canonical boundary.',
+          changes: [
+            {
+              id: 'external-source-rollback',
+              path: sourcePath,
+              operation: 'write',
+              expectedBeforeHash: sha256('export const ready = true;\n'),
+              content: 'export const ready = false;\n',
+              risk: 'guarded',
+              summary: 'Exercise verified rollback for linked source.',
+            },
+          ],
+        },
+      },
+      { toolAvailable: async () => true }
+    );
+    expect(rollbackPlan.state, rollbackPlan.decision?.reason).toBe('awaiting-approval');
+    await approveWorkspaceRepair({ workspacePath, transactionId: rollbackPlan.transactionId });
+    const rolledBack = await executeWorkspaceRepair(
+      { workspacePath, transactionId: rollbackPlan.transactionId },
+      {
+        runInvocation: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+        runTargetProducer: vi.fn(async () => ({ exitCode: 2, stdout: '', stderr: '' })),
+        verify: vi.fn(async () => ({
+          status: 'blocked',
+          exitCode: 2,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+        toolAvailable: async () => true,
+      }
+    );
+    expect(rolledBack.state).toBe('rolled-back');
+    expect(await fsExtra.readFile(path.join(externalProject, 'src.js'), 'utf8')).toBe(
+      'export const ready = true;\n'
+    );
+
+    const siblingProject = path.join(path.dirname(externalProject), 'unregistered-sibling');
+    await fsExtra.ensureDir(siblingProject);
+    await fsExtra.writeFile(path.join(siblingProject, 'src.js'), 'do not touch\n');
+    roots.push(siblingProject);
+    await expect(
+      planWorkspaceRepairProposal({
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: 'workspaceRun',
+          projectName: 'external-api',
+          projectPath,
+          rationale: 'Attempt to widen the linked project boundary.',
+          changes: [
+            {
+              id: 'sibling-escape',
+              path: path
+                .relative(workspacePath, path.join(siblingProject, 'src.js'))
+                .replace(/\\/g, '/'),
+              operation: 'write',
+              expectedBeforeHash: sha256('do not touch\n'),
+              content: 'unsafe\n',
+              risk: 'guarded',
+              summary: 'Must fail closed.',
+            },
+          ],
+        },
+      })
+    ).rejects.toThrow('escapes workspace boundary');
+    expect(await fsExtra.readFile(path.join(siblingProject, 'src.js'), 'utf8')).toBe(
+      'do not touch\n'
+    );
+
+    const linkedSibling = path.join(externalProject, 'linked-sibling');
+    await fsExtra.symlink(
+      siblingProject,
+      linkedSibling,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    const linkedEscape = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'workspaceRun',
+        projectName: 'external-api',
+        projectPath,
+        rationale: 'Attempt to cross the linked project through a symbolic directory.',
+        changes: [
+          {
+            id: 'linked-sibling-escape',
+            path: `${projectPath}/linked-sibling/src.js`,
+            operation: 'write',
+            expectedBeforeHash: sha256('do not touch\n'),
+            content: 'unsafe through link\n',
+            risk: 'guarded',
+            summary: 'Must fail before approval.',
+          },
+        ],
+      },
+    });
+    expect(linkedEscape.state).toBe('decision-required');
+    expect(linkedEscape.decision?.reason).toContain(
+      'resolves through a link outside its authorized boundary'
+    );
+    expect(await fsExtra.readFile(path.join(siblingProject, 'src.js'), 'utf8')).toBe(
+      'do not touch\n'
+    );
   });
 });

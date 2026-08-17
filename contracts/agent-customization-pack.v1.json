@@ -32,7 +32,13 @@
         "vscode",
         "copilot",
         "cursor",
-        "claude"
+        "claude",
+        "gemini",
+        "qwen",
+        "kimi",
+        "grok",
+        "windsurf",
+        "amazon-q"
       ]
     },
     "vscode": {
@@ -78,8 +84,47 @@
         "portable"
       ]
     },
+    "gemini": {
+      "meaning": "Generate Gemini CLI grounding through GEMINI.md and canonical AGENTS.md.",
+      "outputFamilies": [
+        "adapter",
+        "portable"
+      ]
+    },
+    "qwen": {
+      "meaning": "Generate Qwen Code grounding through QWEN.md and canonical AGENTS.md.",
+      "outputFamilies": [
+        "adapter",
+        "portable"
+      ]
+    },
+    "kimi": {
+      "meaning": "Use AGENTS.md and the report index as the Kimi Code grounding layer.",
+      "outputFamilies": [
+        "portable"
+      ]
+    },
+    "grok": {
+      "meaning": "Use AGENTS.md and the report index as the xAI Grok grounding layer.",
+      "outputFamilies": [
+        "portable"
+      ]
+    },
+    "windsurf": {
+      "meaning": "Use AGENTS.md and the report index as the Windsurf grounding layer.",
+      "outputFamilies": [
+        "portable"
+      ]
+    },
+    "amazon-q": {
+      "meaning": "Generate an Amazon Q project rule that routes agents to canonical evidence.",
+      "outputFamilies": [
+        "rules",
+        "portable"
+      ]
+    },
     "orca": {
-      "meaning": "Use AGENTS.md and the report index as the Orca/Grok grounding layer.",
+      "meaning": "Legacy compatibility alias for AGENTS.md consumers; prefer the grok target.",
       "outputFamilies": [
         "portable"
       ]
@@ -238,12 +283,15 @@
     "l2PrefixedMirrorRoots": [
       ".github/",
       ".cursor/",
-      ".claude/"
+      ".claude/",
+      ".amazonq/"
     ],
     "l3SharedIndustryFiles": [
       "AGENTS.md",
       ".github/copilot-instructions.md",
-      "CLAUDE.md"
+      "CLAUDE.md",
+      "GEMINI.md",
+      "QWEN.md"
     ]
   }
 }

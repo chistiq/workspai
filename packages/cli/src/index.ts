@@ -7883,9 +7883,155 @@ snapshotCommand
     }
   );
 
+function portableAgentEntryError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/file:\/\/\/[^\s"']+/g, '<local-path>')
+    .replace(/\\\\[^\\\s"']+[\\][^\s"']+/g, '<local-path>')
+    .replace(/[A-Za-z]:[\\/][^\s"']+/g, '<local-path>')
+    .replace(/\/(?:Users|home|private|var|opt|srv|mnt|Volumes|tmp)\/[^\s"']+/g, '<local-path>');
+}
+
+async function runAgentEntryReceipt(input: {
+  project?: string;
+  forAgent?: string;
+  liveInputs?: boolean;
+  strict?: boolean;
+  json?: boolean;
+  operation: 'agent bootstrap' | 'project agent-entry verify';
+}): Promise<void> {
+  try {
+    const { buildAgentBootstrapReceipt } = await import('./project-agent-entry.js');
+    const receipt = await buildAgentBootstrapReceipt({
+      startPath: input.project,
+      forAgent: input.forAgent,
+      validateLiveInputs: input.liveInputs !== false,
+    });
+    if (input.json) {
+      console.log(JSON.stringify(receipt, null, 2));
+    } else {
+      const color =
+        receipt.status === 'ready'
+          ? chalk.green
+          : receipt.status === 'degraded'
+            ? chalk.yellow
+            : chalk.red;
+      console.log(color(`Agent entry: ${receipt.status}`));
+      console.log(chalk.gray(`   Project: ${receipt.project.name}`));
+      console.log(chalk.gray(`   Workspace: ${receipt.workspace.name}`));
+      console.log(chalk.gray(`   Consumer: ${receipt.resolvedHost}`));
+      console.log(chalk.gray(`   Receipt: ${receipt.receiptId.slice(0, 16)}`));
+      for (const check of receipt.checks.filter((item) => item.status !== 'passed')) {
+        console.log(
+          (check.status === 'failed' ? chalk.red : chalk.yellow)(`   ${check.id}: ${check.message}`)
+        );
+      }
+      console.log(chalk.gray(`   Next: ${receipt.nextActions[0]}`));
+    }
+    if (receipt.status === 'blocked' || (input.strict && receipt.status !== 'ready')) {
+      process.exit(2);
+    }
+  } catch (error) {
+    const message = portableAgentEntryError(error);
+    if (input.json) {
+      console.log(
+        JSON.stringify(
+          cliOperationError({
+            operation: input.operation,
+            code: 'agent.entry.bootstrap.failed',
+            message,
+          }),
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(chalk.red(`Agent entry failed: ${message}`));
+    }
+    process.exit(1);
+  }
+}
+
+const agentCommand = program
+  .command('agent')
+  .description('Bootstrap coding agents from canonical Workspai project evidence');
+
+agentCommand
+  .command('bootstrap')
+  .description('Issue a portable canonical-first grounding receipt for the current project')
+  .option('--project <path>', 'Project path (defaults to the current or nearest parent project)')
+  .option('--for-agent <agent>', 'Agent host identifier', 'generic')
+  .option('--no-live-inputs', 'Skip live project input validation and return degraded evidence')
+  .option('--strict', 'Return exit 2 unless the complete entry receipt is ready')
+  .option('--json', 'Emit the versioned machine-readable receipt')
+  .action(
+    async (options: {
+      project?: string;
+      forAgent?: string;
+      liveInputs?: boolean;
+      strict?: boolean;
+      json?: boolean;
+    }) =>
+      runAgentEntryReceipt({
+        ...options,
+        operation: 'agent bootstrap',
+      })
+  );
+
 const projectCommand = program
   .command('project')
   .description('Safe workspace project lifecycle operations');
+
+projectCommand
+  .command('agent-entry [action]')
+  .description('Verify canonical-first project entry coverage for supported agent hosts')
+  .option('--project <path>', 'Project path (defaults to the current or nearest parent project)')
+  .option('--for-agent <agent>', 'Agent host identifier or all', 'all')
+  .option('--no-live-inputs', 'Skip live project input validation and return degraded evidence')
+  .option('--strict', 'Return exit 2 unless all selected entry checks are ready')
+  .option('--json', 'Emit the versioned machine-readable receipt')
+  .action(
+    async (
+      action: string | undefined,
+      options: {
+        project?: string;
+        forAgent?: string;
+        liveInputs?: boolean;
+        strict?: boolean;
+        json?: boolean;
+      }
+    ) => {
+      const normalizedAction = action ?? 'verify';
+      if (normalizedAction !== 'verify') {
+        const message = `Unknown project agent-entry action: ${normalizedAction}`;
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'project agent-entry',
+                code: 'project.agent-entry.action.invalid',
+                message,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(message));
+          console.log(
+            chalk.gray(
+              '   workspai project agent-entry verify [--for-agent <agent|all>] [--strict] [--json]'
+            )
+          );
+        }
+        process.exit(1);
+      }
+      await runAgentEntryReceipt({
+        ...options,
+        operation: 'project agent-entry verify',
+      });
+    }
+  );
 
 projectCommand
   .command('commands')
@@ -7962,6 +8108,13 @@ projectCommand
             path.join(resolution.projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
           nextCommand:
             'npx workspai workspace intelligence run --for-agent generic --strict --json',
+          pathPolicy: {
+            classification: 'machine-local',
+            portable: false,
+            persistence: 'forbidden',
+            disclosure: 'forbidden',
+            purpose: 'runtime-workspace-resolution',
+          },
         };
         assertProjectWorkspaceResolutionContract(payload);
         if (options.json) {
@@ -8519,7 +8672,7 @@ program
   .option('--no-agent-sync', 'Skip automatic agent grounding sync after context --write')
   .option(
     '--target <targets>',
-    'Agent customization targets for agent-sync (all|vscode|agents,copilot,cursor,claude,codex,orca)'
+    'Agent customization targets for agent-sync (all|vscode|agents,copilot,cursor,claude,codex,gemini,qwen,kimi,grok,windsurf,amazon-q,orca)'
   )
   .option(
     '--preset <preset>',
@@ -9649,7 +9802,7 @@ See the command reference for action-specific required inputs and output artifac
       if (actionOptions.json) {
         console.log(
           JSON.stringify(
-            cliOperationSuccess('workspace verify', { ...verify, gate }, outputPath),
+            cliOperationSuccess('workspace verify', { ...verify, gate }, outputPath, exitCode),
             null,
             2
           )
@@ -11774,7 +11927,19 @@ export function printHelp() {
   const cmd = (text: string): string =>
     text.replace(/\bnpx (?:rapidkit|workspai)\b/g, primaryNpxCommand);
   const line = (command: string, description: string): void => {
-    console.log(chalk.cyan(`  ${cmd(command).padEnd(67)}  `) + chalk.gray(description));
+    const renderedCommand = cmd(command);
+    if (renderedCommand.length > 65) {
+      console.log(chalk.cyan(`  ${renderedCommand}`));
+      console.log(chalk.gray(`      ${description}`));
+      return;
+    }
+    console.log(chalk.cyan(`  ${renderedCommand.padEnd(67)}  `) + chalk.gray(description));
+  };
+  const commandFamily = (label: string, commands: readonly string[]): void => {
+    console.log(chalk.white(`  ${label}`));
+    for (let index = 0; index < commands.length; index += 8) {
+      console.log(chalk.gray(`    ${commands.slice(index, index + 8).join(' · ')}`));
+    }
   };
 
   console.log(chalk.white('Usage:\n'));
@@ -11795,28 +11960,69 @@ export function printHelp() {
 
   printHelpSectionDivider('Workspace Lifecycle');
   console.log('');
-  line('npx workspai create', 'Create a workspace/project or bring in existing software');
+  line(
+    'npx workspai create workspace my-workspace --profile minimal --yes',
+    'Start a new canonical workspace'
+  );
+  line('npx workspai create project', 'Choose an official frontend or backend kit interactively');
+  line(
+    'npx workspai create project nextjs web --yes',
+    'Scaffold an official kit and register the project'
+  );
   line('npx workspai adopt .', 'Link the current project without moving its source');
   line('npx workspai import <path|git-url>', 'Copy or clone software into a workspace');
   line(
     'npx workspai workspace intelligence run --for-agent generic --strict --json',
-    'Refresh the canonical evidence chain'
+    'Build or refresh the complete canonical evidence chain'
+  );
+  line(
+    'npx workspai agent bootstrap --for-agent <host> --strict --json',
+    'Prove agent entry before broad source discovery'
   );
 
-  printHelpSectionDivider('Workspace Intelligence');
+  printHelpSectionDivider('Golden Path · Understand → Impact → Act → Verify');
+  console.log('');
+  line(
+    'npx workspai goal "<outcome>" --scope project:<name> --for-agent generic',
+    'Turn any engineering outcome into bounded, governed work'
+  );
+  line(
+    'npx workspai workspace graph search "<question>" --scope project:<name> --json',
+    'Retrieve focused, proof-backed evidence'
+  );
+  line('npx workspai workspace diff --from git:HEAD~1 --json', 'Model what changed');
+  line(
+    'npx workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json',
+    'Bound the affected system before action'
+  );
+  line('npx workspai workspace repair --help', 'Plan, approve, execute, verify, or roll back');
+  line('npx workspai workspace verify --strict --json', 'Prove canonical workspace evidence');
+
+  printHelpSectionDivider('Workspace Intelligence · What the loop builds');
   console.log(chalk.gray('\n  Code · APIs · infrastructure · docs · policies · runtime evidence'));
   console.log(chalk.gray('                              ↓'));
   console.log(chalk.gray('                   Canonical Workspace Model'));
   console.log(chalk.gray('                              ↓'));
   console.log(chalk.gray('                Evidence-backed Knowledge Graph'));
   console.log(chalk.gray('                              ↓'));
-  console.log(chalk.gray('             Doctor · impact · verify · context · explain\n'));
+  console.log(chalk.gray('       diff · impact · Doctor · context · repair · verify · explain\n'));
 
   line('npx workspai workspace model --write --json', 'Build the canonical system model');
   line('npx workspai workspace graph search <query> --json', 'Ask a bounded, proven question');
   line('npx workspai doctor workspace --json', 'Diagnose projects and workspace health');
   line('npx workspai project coverage --run --target 80 --json', 'Measure one project');
   line('npx workspai workspace explain <target> --write --json', 'Explain a blocker or project');
+  line('npx workspai readiness --strict --json', 'Evaluate release readiness');
+  line('npx workspai pipeline --strict --json', 'Run the broader governance and release loop');
+
+  printHelpSectionDivider('Complete Command Map');
+  console.log(
+    chalk.gray('\n  Commands are grouped by execution owner; use any command with --help.\n')
+  );
+  const commandCapabilities = getGlobalCommandCapabilities().commands;
+  commandFamily('Native Workspai orchestration', commandCapabilities.npmOwned);
+  commandFamily('Core-backed operations', commandCapabilities.coreBacked);
+  commandFamily('Project runtime shortcuts', commandCapabilities.projectScoped);
 
   printHelpSectionDivider('Find the right command');
   console.log('');

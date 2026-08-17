@@ -19,8 +19,8 @@ describe('Edge Cases and Error Scenarios', () => {
       expect(str).toMatch(/^[a-z0-9_-]+$/);
     });
 
-    it('should handle unicode characters', () => {
-      const str = 'naïve-café';
+    it('should handle unicode symbols', () => {
+      const str = `project-${String.fromCodePoint(0x1f680)}`;
       expect(str.length).toBeGreaterThan(0);
     });
 

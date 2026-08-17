@@ -28,6 +28,7 @@ const CATEGORY_RULES: ReadonlyArray<{
       /\brelease[ -]readiness\b/i,
       /\bready (?:this |the )?(?:workspace|project) for release\b/i,
       /\bprepare (?:this |the )?(?:workspace|project) for release\b/i,
+      /\bprepare\b[^\n]{0,80}\bfor release\b/i,
     ],
   },
   {
@@ -93,9 +94,12 @@ export function compileGoalIntent(raw: string): CompiledGoalIntent {
   const target = coverageTarget(original);
   const ambiguities: string[] = [];
 
-  if (matches.length === 0) {
-    ambiguities.push('The requested change type could not be classified with high confidence.');
-  }
+  // Classification tunes retrieval and built-in verification; it is not an
+  // allowlist for what a user may pursue. Preserve an otherwise valid custom
+  // objective as a low-confidence general Goal instead of rejecting it merely
+  // because a deterministic keyword classifier does not know its language or
+  // domain. Scope, evidence, approval, transaction, and attempt policy remain
+  // fail-closed independently of this category hint.
   if (matches.length > 1 && matches[0] !== 'test-coverage') {
     ambiguities.push(`The intent also contains signals for: ${matches.slice(1).join(', ')}.`);
   }
@@ -138,5 +142,7 @@ export function retrievalQueriesForGoal(intent: CompiledGoalIntent): string[] {
     documentation: ['documentation README guide architecture decision'],
     'system-understanding': ['architecture service API dependency ownership'],
   };
-  return [...new Set([...categoryQueries[intent.category], intent.statement])].slice(0, 3);
+  // The complete objective is the primary query. Category vocabulary expands
+  // deterministic recall; it must never displace what the user actually asked.
+  return [...new Set([intent.statement, ...categoryQueries[intent.category]])].slice(0, 3);
 }

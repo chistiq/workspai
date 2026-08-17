@@ -67,6 +67,8 @@ const GENERATED_FILES = [
   'workspace-repair-capabilities.v1.json',
   'workspace-intelligence/workspace-repair-proposal.v1.json',
   'workspace-intelligence/workspace-repair-transaction.v1.json',
+  'workspace-intelligence/project-agent-entry.v1.json',
+  'workspace-intelligence/agent-bootstrap-receipt.v1.json',
 ];
 
 const VSCODE_SRC_CONTRACT_FILES = [
@@ -87,6 +89,8 @@ const VSCODE_SRC_CONTRACT_FILES = [
   'workspace-repair-capabilities.v1.json',
   'workspace-intelligence/workspace-repair-proposal.v1.json',
   'workspace-intelligence/workspace-repair-transaction.v1.json',
+  'workspace-intelligence/project-agent-entry.v1.json',
+  'workspace-intelligence/agent-bootstrap-receipt.v1.json',
 ];
 const LEGACY_CONTRACT_PORTAL_PATTERN = /https:\/\/(?:www\.)?(?:getrapidkit\.com|rapidkit\.dev)\//i;
 const WORKSPAI_CONTRACT_TITLE_PATTERN = /^Workspai\b/;

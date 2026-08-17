@@ -25,7 +25,20 @@ export type AgentCustomizationPackContract = {
     }
   >;
   targets: Record<
-    'all' | 'vscode' | 'agents' | 'copilot' | 'cursor' | 'claude' | 'codex' | 'orca',
+    | 'all'
+    | 'vscode'
+    | 'agents'
+    | 'copilot'
+    | 'cursor'
+    | 'claude'
+    | 'codex'
+    | 'gemini'
+    | 'qwen'
+    | 'kimi'
+    | 'grok'
+    | 'windsurf'
+    | 'amazon-q'
+    | 'orca',
     {
       meaning: string;
       outputFamilies: string[];
@@ -78,7 +91,19 @@ export function buildAgentCustomizationPackContract(): AgentCustomizationPackCon
     targets: {
       all: {
         meaning: 'Generate every supported customization surface.',
-        outputFamilies: ['portable', 'vscode', 'copilot', 'cursor', 'claude'],
+        outputFamilies: [
+          'portable',
+          'vscode',
+          'copilot',
+          'cursor',
+          'claude',
+          'gemini',
+          'qwen',
+          'kimi',
+          'grok',
+          'windsurf',
+          'amazon-q',
+        ],
       },
       vscode: {
         meaning: 'Generate VS Code-native customizations for Copilot Chat and agent workflows.',
@@ -104,8 +129,32 @@ export function buildAgentCustomizationPackContract(): AgentCustomizationPackCon
         meaning: 'Use AGENTS.md and the report index as the Codex grounding layer.',
         outputFamilies: ['portable'],
       },
+      gemini: {
+        meaning: 'Generate Gemini CLI grounding through GEMINI.md and canonical AGENTS.md.',
+        outputFamilies: ['adapter', 'portable'],
+      },
+      qwen: {
+        meaning: 'Generate Qwen Code grounding through QWEN.md and canonical AGENTS.md.',
+        outputFamilies: ['adapter', 'portable'],
+      },
+      kimi: {
+        meaning: 'Use AGENTS.md and the report index as the Kimi Code grounding layer.',
+        outputFamilies: ['portable'],
+      },
+      grok: {
+        meaning: 'Use AGENTS.md and the report index as the xAI Grok grounding layer.',
+        outputFamilies: ['portable'],
+      },
+      windsurf: {
+        meaning: 'Use AGENTS.md and the report index as the Windsurf grounding layer.',
+        outputFamilies: ['portable'],
+      },
+      'amazon-q': {
+        meaning: 'Generate an Amazon Q project rule that routes agents to canonical evidence.',
+        outputFamilies: ['rules', 'portable'],
+      },
       orca: {
-        meaning: 'Use AGENTS.md and the report index as the Orca/Grok grounding layer.',
+        meaning: 'Legacy compatibility alias for AGENTS.md consumers; prefer the grok target.',
         outputFamilies: ['portable'],
       },
     },
@@ -141,8 +190,14 @@ export function buildAgentCustomizationPackContract(): AgentCustomizationPackCon
     ],
     pathLayers: {
       l1CanonicalRoots: [`.workspai/reports/`, `${WORKSPAI_SKILLS_DIR}/`],
-      l2PrefixedMirrorRoots: ['.github/', '.cursor/', '.claude/'],
-      l3SharedIndustryFiles: ['AGENTS.md', '.github/copilot-instructions.md', 'CLAUDE.md'],
+      l2PrefixedMirrorRoots: ['.github/', '.cursor/', '.claude/', '.amazonq/'],
+      l3SharedIndustryFiles: [
+        'AGENTS.md',
+        '.github/copilot-instructions.md',
+        'CLAUDE.md',
+        'GEMINI.md',
+        'QWEN.md',
+      ],
     },
   };
 }

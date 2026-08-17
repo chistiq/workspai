@@ -28,6 +28,7 @@ root:
 | Artifact                                       | Writer                                                                            | Schema / format             | Portability and reader purpose                                                        |
 | ---------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------- |
 | `.workspai/workspace-link.local.json`          | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1` | Machine-local absolute binding; always gitignored and never an agent evidence payload |
+| `.workspai/agent-entry.v1.json`                | Project lens reconciliation and `workspace agent-sync --write`                    | `workspai.agent-entry.v1`   | Portable host-discovery, canonical read-order, authority, and integrity contract      |
 | `.workspai/reports/project-context-agent.json` | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`  | Portable bounded model/graph/proof projection for project-local agents                |
 | `.workspai/PROJECT-GROUNDING.md`               | Project lens reconciliation                                                       | Markdown                    | Portable human/agent entry guide with path-free workspace references                  |
 | `AGENTS.md` managed section                    | Project lens reconciliation in `managed` mode                                     | Managed Markdown block      | Preserves user content and routes compatible agents to project/workspace evidence     |
@@ -41,6 +42,11 @@ sections and ignore rules during transitions; they never make the
 machine-local link publishable. The context is bounded but not count-only: it
 includes topology, API/deployment/test surfaces, blockers, portable proofs,
 and model/graph freshness for the selected project.
+
+`agent bootstrap --json` and `project agent-entry verify --json` emit a
+non-persisted `workspai.agent-bootstrap-receipt.v1` payload. The receipt proves
+the selected host route, contract validity, integrity, persisted and live
+freshness, and active Goal bindings without exposing the machine-local link.
 
 ## Naming conventions
 
@@ -62,9 +68,9 @@ and model/graph freshness for the selected project.
 | `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`              | `contracts/artifact-remediation-plan.v1.json`                           |
 | `workspace repair *`                 | `.workspai/reports/workspace-repair-last-run.json`          | `workspai.workspace-repair-transaction.v1`  | `contracts/workspace-intelligence/workspace-repair-transaction.v1.json` |
 | `workspace repair capabilities`      | CLI capability output                                       | `workspai.workspace-repair-capabilities.v1` | `contracts/workspace-repair-capabilities.v1.json`                       |
-| `goal <intent>`                      | `.workspai/reports/goal-pack-last-run.json`                  | `workspai.goal-pack.v1`                     | `contracts/workspace-intelligence/goal-pack.v1.json`                    |
-| `goal <intent>` / lifecycle options  | `.workspai/goals/index.json`                                 | `workspai.goal-index.v1`                    | `contracts/workspace-intelligence/goal-index.v1.json`                   |
-| `goal --status/--list/... --json`    | stdout                                                       | `workspai.goal-lifecycle-result.v1`         | `contracts/workspace-intelligence/goal-lifecycle-result.v1.json`        |
+| `goal <intent>`                      | `.workspai/reports/goal-pack-last-run.json`                 | `workspai.goal-pack.v1`                     | `contracts/workspace-intelligence/goal-pack.v1.json`                    |
+| `goal <intent>` / lifecycle options  | `.workspai/goals/index.json`                                | `workspai.goal-index.v1`                    | `contracts/workspace-intelligence/goal-index.v1.json`                   |
+| `goal --status/--list/... --json`    | stdout                                                      | `workspai.goal-lifecycle-result.v1`         | `contracts/workspace-intelligence/goal-lifecycle-result.v1.json`        |
 | `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`                       | `contracts/analyze-last-run.v1.json`                                    |
 | `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`                      | `contracts/release-readiness.v1.json`                                   |
 | `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`                      | `contracts/pipeline-last-run.v1.json`                                   |

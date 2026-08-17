@@ -134,6 +134,17 @@ export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
       ['workspace', 'agent-sync', '--write'],
     ],
   },
+  projectAgentEntry: {
+    artifactPath: '.workspai/agent-entry.v1.json',
+    schemaVersion: 'workspai.agent-entry.v1',
+    contractPath: 'contracts/workspace-intelligence/project-agent-entry.v1.json',
+    producerCommands: [
+      ['adopt'],
+      ['import'],
+      ['workspace', 'sync'],
+      ['workspace', 'agent-sync', '--write'],
+    ],
+  },
   workspaceContract: {
     artifactPath: '.workspai/workspace.contract.json',
     schemaVersion: 1,

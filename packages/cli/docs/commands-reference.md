@@ -8,6 +8,20 @@ For behavior and workflows, see
 [workspace-operations.md](./workspace-operations.md) and
 [OPEN_SOURCE_USER_SCENARIOS.md](./OPEN_SOURCE_USER_SCENARIOS.md).
 
+Start with the outcome-oriented root help when you do not yet know a command:
+
+```bash
+npx workspai --help
+npx workspai <command> --help
+npx workspai commands --json
+```
+
+Root help presents the canonical `Understand → Impact → Act → Verify` path,
+common human workflows, interactive official-kit discovery through `create
+project`, and a complete ownership-grouped command map. Scoped help carries
+exact flags and examples. `commands --json` remains the machine-complete
+inventory used to prevent the human map from drifting.
+
 ## Workspace lifecycle
 
 ```bash
@@ -21,6 +35,7 @@ npx workspai readiness [--workspace <path>] [--json] [--strict] [--skip-verify]
 npx workspai autopilot release [--mode <audit|safe-fix|enforce>] [--json] [--output <file>] [--since <ref>] [--parallel] [--max-workers <n>]
 npx workspai goal <intent> [--workspace <path>] [--scope <workspace|project:name>] [--for-agent <generic|claude|codex>] [--max-attempts <1-25>] [--refresh] [--dry-run] [--json]
 npx workspai goal <--status [goal-id]|--list|--activate <goal-id>|--cancel <goal-id>|--prepare <goal-id>|--verify <goal-id>> [--workspace <path>] [--no-run] [--json]
+npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
 ```
 
 Recommended CI:
@@ -59,6 +74,7 @@ npx workspai doctor
 npx workspai doctor workspace [--json] [--strict] [--ci] [--fix] [--plan] [--apply]
 npx workspai doctor project [--json] [--strict] [--ci] [--fix] [--plan] [--apply]
 npx workspai project coverage [--project <path>] [--target <0-100>] [--run] [--strict] [--json]
+npx workspai project agent-entry [verify] [--project <path>] [--for-agent <host|all>] [--no-live-inputs] [--strict] [--json]
 npx workspai workspace list
 npx workspai workspace foundation ensure [--force] [--json]
 npx workspai workspace share [--output <file>] [--include-paths] [--no-doctor]
@@ -71,8 +87,8 @@ npx workspai workspace goal plan <release-readiness|dependency-security|test-cov
 npx workspai workspace goal status <goal-id> [--json]
 npx workspai workspace goal verify <goal-id> [--no-run] [--reuse-intelligence] [--json]
 npx workspai workspace model [--workspace <path>] [--json] [--write] [--strict] [--cache] [--incremental] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace context --for-agent [generic|codex|claude|cursor|orca] [--workspace <path>] [--scope project:<name>] [--json] [--write] [--agent-sync|--no-agent-sync] [--target <targets>] [--preset minimal|enterprise] [--project-grounding managed|local|off] [--include-evidence] [--scan-depth <count>] [--strict]
-npx workspai workspace agent-sync [--workspace <path>] [--write] [--refresh-context] [--strict] [--json] [--preset minimal|enterprise] [--target all|vscode|agents,copilot,cursor,claude,codex,orca] [--project-grounding managed|local|off] [--experimental-hooks] [--hydrate-prompts]
+npx workspai workspace context --for-agent [generic|codex|claude|gemini|qwen|kimi|grok|copilot|cursor|windsurf|amazon-q] [--workspace <path>] [--scope project:<name>] [--json] [--write] [--agent-sync|--no-agent-sync] [--target <targets>] [--preset minimal|enterprise] [--project-grounding managed|local|off] [--include-evidence] [--scan-depth <count>] [--strict]
+npx workspai workspace agent-sync [--workspace <path>] [--write] [--refresh-context] [--strict] [--json] [--preset minimal|enterprise] [--target all|vscode|agents,copilot,cursor,claude,codex,gemini,qwen,kimi,grok,windsurf,amazon-q] [--project-grounding managed|local|off] [--experimental-hooks] [--hydrate-prompts]
 npx workspai workspace remediation-plan [--json] [--write] [--ci] [--include-paths]
 npx workspai workspace repair <capabilities|plan|propose|approve|decide|execute|resume|status|list|rollback|cancel> [--workspace <path>] [--card <id>] [--action-id <id>] [--project <name>] [--proposal <file>] [--transaction <id>] [--approved-by <actor>] [--decision <choice>] [--max-risk safe|guarded|invasive] [--allow-breaking] [--allow-force] [--no-auto-rollback] [--json]
 npx workspai workspace snapshot [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
@@ -164,6 +180,14 @@ portable agent handoff, and active-goal index. Use `goal --status`, `--list`,
 claim verification. Lifecycle operations are mutually exclusive, cannot be
 combined with an intent or planning-only flags, and `--no-run` is valid only
 with `--verify`. See [Goal Packs](./goal-packs.md).
+
+`agent bootstrap` is the project-local canonical-first preflight. It validates
+the host discovery route, project/workspace binding, public artifact schemas,
+integrity hashes, Model/Graph freshness, live source inputs, and active Goal
+handoff before broad repository discovery. `project agent-entry verify` uses
+the same receipt and can audit every supported host with `--for-agent all`.
+Blocked receipts exit `2`; strict mode also maps degraded evidence to exit `2`.
+See [Canonical-first agent entry](./agent-entry.md).
 
 `workspace feedback record` is a non-interactive machine interface. It requires
 exactly one JSON object on stdin and `--json`; an empty stdin or interactive TTY

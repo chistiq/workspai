@@ -26,7 +26,20 @@
       "format": "date-time"
     },
     "agent": {
-      "enum": ["generic", "codex", "claude", "cursor", "orca"]
+      "enum": [
+        "generic",
+        "codex",
+        "claude",
+        "cursor",
+        "gemini",
+        "qwen",
+        "kimi",
+        "grok",
+        "copilot",
+        "windsurf",
+        "amazon-q",
+        "orca"
+      ]
     },
     "workspaceSummary": { "type": "string" },
     "modelRef": { "type": "string" },

@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a portable canonical-first project entry manifest, adapters for major
+  coding-agent hosts, and machine-readable bootstrap/verification receipts that
+  fail closed on broken workspace binding, schema, integrity, Model/Graph
+  freshness, live input, or active Goal evidence.
+
+### Changed
+
+- Reworked root help around the complete `Understand → Impact → Act → Verify`
+  path, outcome-first commands for new users, readable wrapping for long
+  examples, and an ownership-grouped command map generated from the same
+  runtime inventory consumed by `commands --json`.
+- Made managed project grounding route agents through canonical Workspai
+  evidence before broad source discovery while preserving authored instruction
+  files, symbolic links, and explicit degraded-mode semantics.
+- Made `generic` Workspace Intelligence publish one provider-neutral context
+  plus every supported host entry surface, and promoted the mandatory Workspai
+  gate ahead of authored repository guidance without replacing authored text.
+- Distinguished logical workspace identity, project-local `.workspai` paths,
+  portable `workspace:` URIs, and runtime-private absolute path resolution in
+  every project entry contract and host adapter.
+
+- Enforced ASCII English across authored source, tests, fixtures,
+  documentation, release material, and filenames with full-repository and
+  staged-content guards; language-neutral Unicode symbols remain supported.
+- Kept valid user-defined engineering objectives executable even when the local
+  deterministic classifier does not recognize their language or domain. Goal
+  categories now tune retrieval and exact verification instead of acting as an
+  allowlist; custom outcomes retain the original objective, governed scope,
+  evidence bindings, approval, repair, rollback, and attempt policy.
+- Extended model-proposal repair to source files in exactly one canonically
+  registered linked project while retaining CLI-owned checkpoint, validation,
+  verification, and rollback semantics.
+- Enforced each Goal Pack's immutable `maxAttempts` policy in CLI verification
+  using the durable verified-goal attempt record, so a restarted IDE or agent
+  cannot reset the governed execution budget.
+- Serialized Goal-bound proposal creation and verification, retained the
+  bounded transaction history, and sealed every successful source transition
+  with post-repair Model, Graph, stable Graph-input, checkpoint, and closure
+  hashes so concurrent retries and unrelated source drift fail closed.
+- Published explicit Goal source-transition and durable-attempt capability
+  invariants so IDEs can reject older runtimes before a mutation begins instead
+  of relying on package-version inference.
+
+### Fixed
+
+- Aligned `workspace verify --json` envelope exit codes with the evaluated gate
+  and process exit code, so strict-mode consumers never receive `exitCode: 0`
+  for a blocked verification artifact.
+- Made Goal retrieval objective-first and relevance-ranked through the canonical
+  Graph query engine, with bounded category fallback that cannot fill the agent
+  evidence budget before the user's actual request is evaluated.
+- Corrected general Goal completion language so Workspace Verify proves safety
+  and evidence freshness without being presented as machine proof of an
+  arbitrary semantic outcome, and recognized named-project phrasing such as
+  `Prepare gRPC for release` as release readiness.
+- Prevented Goal plans that still need evidence or confirmation from replacing
+  an existing active objective; only `ready-to-plan` entries may become active.
+- Deduplicated protected-path decision reasons so consumers receive one stable,
+  actionable explanation instead of repeated canonical-evidence errors.
+- Kept unchanged live source bindings valid across evidence-only Graph reruns by
+  comparing the stable Graph input fingerprint rather than volatile artifact
+  timestamps.
+- Preserved stale or invalid selected Goals as present in agent bootstrap
+  receipts and emitted an exact evidence-refresh command instead of reporting
+  the Goal as absent or leaving the agent without a recovery path.
+- Made each bootstrap receipt bind its `requiredReadOrder` to the resolved host
+  (or `all` during a complete host audit) instead of routing every consumer
+  back through the provider-neutral `generic` bootstrap step.
+
+### Security
+
+- Kept linked-project repair fail-closed for absolute, unregistered, sibling,
+  parent, and symbolic-link boundaries; portable execution paths remain durable
+  CLI identity and must be projected project-relative by consumers.
+- Prevented agent entry manifests and bootstrap receipts from emitting
+  machine-local absolute paths; contract and integrity validation now happens
+  before an agent may claim complete architecture or verification.
+- Classified the explicit workspace resolver's absolute paths as runtime-only,
+  non-portable data that agents must not persist, disclose, or copy into shared
+  output.
+
 ## [0.58.0] - 2026-08-16
 
 ### Added

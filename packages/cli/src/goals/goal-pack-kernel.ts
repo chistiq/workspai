@@ -14,7 +14,8 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
   const workspaceVerify: GoalSuccessCriterion = {
     id: 'workspace-verify',
     kind: 'workspace-verify',
-    expected: 'Canonical Workspace Verify completes without an execution failure.',
+    expected:
+      'Canonical Workspace Verify proves workspace safety and evidence freshness without claiming arbitrary semantic outcome completion.',
     producerCommand: 'workspai workspace verify --json',
     machineVerifiable: true,
   };
@@ -95,12 +96,12 @@ export function buildGoalPack(
   const identity = {
     // Any semantic compiler change must advance this revision so an older
     // immutable Goal Pack can never be mistaken for current output.
-    kernelRevision: 'goal-pack-kernel-v5',
+    kernelRevision: 'goal-pack-kernel-v7',
     intent: input.intent.normalized,
     workspace: input.workspaceName,
     scope: input.scope,
     modelHash: input.sourceBinding.model.hash,
-    graphHash: input.sourceBinding.graph.hash,
+    graphSourceFingerprint: input.sourceBinding.graph.inputHash ?? input.sourceBinding.graph.hash,
     preflight: input.preflight,
     policy: { maxAttempts: input.maxAttempts, mutationMode: 'proposal-only' },
   };
@@ -109,6 +110,17 @@ export function buildGoalPack(
   const goalPath = `.workspai/goals/${id}/goal-pack.json`;
   const handoffPath = `.workspai/goals/${id}/agent-handoff.json`;
   const planVerifiedGoal = verifiedGoalCommand(input);
+  const hasDeterministicOutcomeVerifier = Boolean(planVerifiedGoal);
+  const projectScopeArgument =
+    input.scope.kind === 'project' && input.scope.projects[0]
+      ? ` --scope ${portableCommandArgument(`project:${input.scope.projects[0]}`)}`
+      : '';
+  const renewalScopeArgument =
+    input.scope.kind === 'project'
+      ? projectScopeArgument
+      : input.scope.kind === 'workspace'
+        ? ' --scope workspace'
+        : '';
   const state = requiresDecision
     ? 'needs-confirmation'
     : retrievalBlocked
@@ -176,7 +188,9 @@ export function buildGoalPack(
         id: 'verify',
         owner: 'workspai-cli',
         status: 'pending',
-        summary: 'Independently verify the exact success contract from fresh evidence.',
+        summary: hasDeterministicOutcomeVerifier
+          ? 'Independently verify the exact success contract from fresh evidence.'
+          : 'Verify workspace safety and evidence freshness; the agent must review the final outcome against the complete objective.',
       },
     ],
     ...(requiresDecision || requiresEvidence || retrievalBlocked
@@ -204,7 +218,7 @@ export function buildGoalPack(
     },
     commands: {
       refreshEvidence: 'workspai workspace intelligence run --for-agent generic --strict --json',
-      inspectGraph: `workspai workspace graph search ${JSON.stringify(input.preflight.retrieval.queries[0] ?? input.intent.statement)} --limit 20 --json`,
+      inspectGraph: `workspai workspace graph search ${JSON.stringify(input.preflight.retrieval.queries[0] ?? input.intent.statement)}${projectScopeArgument} --limit 20 --json`,
       ...(planVerifiedGoal ? { planVerifiedGoal } : {}),
       proposeRepair: 'workspai workspace repair propose --file <proposal.json> --json',
     },
@@ -262,6 +276,11 @@ export function buildGoalPack(
       'Do not edit .workspai evidence, goal, repair, contract, or report artifacts.',
       'Return source edits as a proposal; only Workspai Repair Engine may mutate and verify.',
       'Do not claim success from model output or test narration; require fresh CLI evidence.',
+      ...(hasDeterministicOutcomeVerifier
+        ? []
+        : [
+            'For this general Goal, CLI verification proves workspace safety and freshness; final outcome acceptance requires evidence review against the complete objective.',
+          ]),
     ],
     workflow: [
       { order: 1, owner: 'workspai-cli', instruction: 'Validate source bindings and scope.' },
@@ -269,9 +288,19 @@ export function buildGoalPack(
       { order: 3, owner: 'agent', instruction: 'Return one focused, reviewable proposal.' },
       { order: 4, owner: 'human', instruction: 'Approve the immutable repair plan.' },
       { order: 5, owner: 'workspai-cli', instruction: 'Execute transaction and verify evidence.' },
+      ...(hasDeterministicOutcomeVerifier
+        ? []
+        : [
+            {
+              order: 6,
+              owner: 'agent' as const,
+              instruction:
+                'Inspect the final worktree and fresh evidence against the complete objective; report uncertainty instead of presenting workspace verification as semantic proof.',
+            },
+          ]),
     ],
     renewal: {
-      command: `workspai goal ${JSON.stringify(input.intent.original)} --refresh --for-agent ${input.consumer} --json`,
+      command: `workspai goal ${JSON.stringify(input.intent.original)}${renewalScopeArgument} --refresh --for-agent ${input.consumer} --json`,
       reason: 'Regenerate when the canonical model or graph hash changes.',
     },
   };

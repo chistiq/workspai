@@ -46,20 +46,23 @@ CI workflows, and AI consumers.
 
 ## AI and integration
 
-| Term                | Plain-language meaning                                                                                                        |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Agent grounding     | Instructions and evidence references that keep an AI agent inside the correct workspace, contracts, and command loop.         |
-| Bounded retrieval   | Returning only the most relevant entities and proof paths for a question instead of injecting the complete graph or model.    |
-| Retrieval benchmark | A deterministic comparison of readable proof-source corpus size with one bounded graph response; it is not billing evidence.  |
-| Token provenance    | Whether a token value was provider-reported, counted by a named tokenizer, estimated, or unavailable.                         |
-| MCP                 | Model Context Protocol; Workspai exposes read-oriented workspace tools through `workspace mcp serve`.                         |
-| Module recommender  | The optional embedding-based FastAPI/NestJS recommendation feature. It is separate from deterministic Workspace Intelligence. |
-| Canonical path      | The current `.workspai` path that new writers and consumers should prefer.                                                    |
-| Legacy path         | A `.rapidkit` compatibility path read for older workspaces; it is not the target for new integrations.                        |
+| Term                    | Plain-language meaning                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Agent grounding         | Instructions and evidence references that keep an AI agent inside the correct workspace, contracts, and command loop.                      |
+| Canonical-first entry   | A host-discovered project protocol that validates Workspai identity, evidence, freshness, and Goal bindings before broad source discovery. |
+| Agent bootstrap receipt | A portable per-session result proving which entry and evidence checks passed, degraded, or blocked; it does not prove model compliance.    |
+| Bounded retrieval       | Returning only the most relevant entities and proof paths for a question instead of injecting the complete graph or model.                 |
+| Retrieval benchmark     | A deterministic comparison of readable proof-source corpus size with one bounded graph response; it is not billing evidence.               |
+| Token provenance        | Whether a token value was provider-reported, counted by a named tokenizer, estimated, or unavailable.                                      |
+| MCP                     | Model Context Protocol; Workspai exposes read-oriented workspace tools through `workspace mcp serve`.                                      |
+| Module recommender      | The optional embedding-based FastAPI/NestJS recommendation feature. It is separate from deterministic Workspace Intelligence.              |
+| Canonical path          | The current `.workspai` path that new writers and consumers should prefer.                                                                 |
+| Legacy path             | A `.rapidkit` compatibility path read for older workspaces; it is not the target for new integrations.                                     |
 
 ## Where to continue
 
 - Run the full loop: [Unified Workspace Intelligence Runner](./workspace-intelligence-runner.md)
 - Query evidence: [Workspace Knowledge Graph](./workspace-knowledge-graph.md)
+- Ground an agent: [Canonical-first agent entry](./agent-entry.md)
 - Find an output: [Artifact Catalog](./contracts/ARTIFACT_CATALOG.md)
 - Look up syntax: [Command Reference](./commands-reference.md)

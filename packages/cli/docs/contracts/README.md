@@ -74,6 +74,8 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `analyze-last-run.v1.json` — analyze evidence
 - `pipeline-last-run.v1.json` — governance pipeline orchestration
 - `project-entry-capability.v1.json` — open-ended adopt/import contract for readable projects
+- `workspace-intelligence/project-agent-entry.v1.json` — portable host discovery, canonical read order, authority boundaries, and integrity for an adopted project
+- `workspace-intelligence/agent-bootstrap-receipt.v1.json` — per-session proof of workspace membership, host coverage, schema validity, freshness, live inputs, and active Goal bindings
 - `adopt-effects.v1.json` — dry-run disclosure of project metadata, conditional repository-control reconciliation, and workspace operations before adoption
 - `create-planner-capabilities.v1.json` — native, official, and existing capability lanes
 - `agent-customization-pack.v1.json` — generated instructions, prompts, skills, agents, optional hooks, MCP-ready design metadata, target matrix, and drift state for AI agent surfaces
@@ -114,6 +116,11 @@ These schemas describe durable artifacts or bounded query results. A command's
 stdout may wrap an artifact with operation metadata such as `status`,
 `outputPath`, or a structured error; that envelope follows
 `cli-operation-result.v1.json` and does not change the nested artifact contract.
+`status: "success"` means the command completed and returned its contracted
+artifact; it does not override a policy gate. For gated operations such as
+`workspace verify --strict`, the envelope `exitCode`, process exit code, and
+nested gate exit code are identical even when the artifact was produced
+successfully and the gate blocked progression.
 
 CLI commands: see [commands-reference.md](../commands-reference.md) and the
 [CLI README](../../README.md#one-intelligence-chain).

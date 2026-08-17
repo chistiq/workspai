@@ -122,7 +122,8 @@
       "required": ["planHash", "sourceEvidenceHash"],
       "properties": {
         "planHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "sourceEvidenceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        "sourceEvidenceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "closureHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
       }
     }
   },
@@ -244,7 +245,19 @@
         },
         "artifact": { "const": ".workspai/reports/workspace-intelligence-run-last-run.json" },
         "exitCode": { "type": ["integer", "null"] },
-        "summary": { "type": "string" }
+        "summary": { "type": "string" },
+        "sourceBinding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["modelHash", "modelHashSemantics", "graphHash", "graphHashSemantics", "graphInputHash"],
+          "properties": {
+            "modelHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "modelHashSemantics": { "const": "workspace-model-structural-v1" },
+            "graphHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "graphHashSemantics": { "const": "canonical-json-v1" },
+            "graphInputHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
       }
     },
     "decision": {

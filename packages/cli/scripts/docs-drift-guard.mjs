@@ -416,6 +416,7 @@ const graphBenchmarkGuide = fs.readFileSync(
   'utf8'
 );
 const workspaceRunGuide = fs.readFileSync(path.join(root, 'docs', 'workspace-run.md'), 'utf8');
+const agentEntryGuide = fs.readFileSync(path.join(root, 'docs', 'agent-entry.md'), 'utf8');
 const glossary = fs.readFileSync(path.join(root, 'docs', 'GLOSSARY.md'), 'utf8');
 const aiQuickstart = fs.readFileSync(path.join(root, 'docs', 'AI_QUICKSTART.md'), 'utf8');
 
@@ -423,6 +424,7 @@ const requiredDocumentationLinks = [
   'README_CONTENT_CONTRACT.md',
   'workspace-intelligence-runner.md',
   'workspace-knowledge-graph.md',
+  'agent-entry.md',
   'graph-benchmark-methodology.md',
   'GLOSSARY.md',
   'contracts/ARTIFACT_CATALOG.md',
@@ -455,6 +457,24 @@ for (const schemaName of graphSchemaNames) {
 for (const schemaName of evaluationSchemaNames) {
   if (!contractDocs.includes(schemaName)) {
     errors.push(`Contract documentation is missing the evaluation schema: ${schemaName}`);
+  }
+}
+
+for (const schemaName of ['project-agent-entry.v1.json', 'agent-bootstrap-receipt.v1.json']) {
+  if (!contractDocs.includes(schemaName)) {
+    errors.push(`Contract documentation is missing the agent entry schema: ${schemaName}`);
+  }
+}
+
+for (const semantic of [
+  'host-first, not model-first',
+  'workspai agent bootstrap --for-agent codex --strict --json',
+  'workspai project agent-entry verify --for-agent all --strict --json',
+  'live source owns exact implementation behavior',
+  'does not claim that a model followed the instructions',
+]) {
+  if (!agentEntryGuide.includes(semantic)) {
+    errors.push(`Agent entry documentation is missing required semantics: ${semantic}`);
   }
 }
 

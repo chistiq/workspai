@@ -214,10 +214,15 @@ describe('adopt-project', () => {
       ],
     });
     expect(adopted.effects.projectMetadataFiles).toContain('.workspai/workspace-link.local.json');
+    expect(adopted.effects.projectMetadataFiles).toContain('.workspai/agent-entry.v1.json');
     expect(adopted.effects.repositoryControlFiles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: '.gitignore' }),
         expect.objectContaining({ path: 'AGENTS.md' }),
+        expect.objectContaining({ path: 'CLAUDE.md' }),
+        expect.objectContaining({ path: 'GEMINI.md' }),
+        expect.objectContaining({ path: 'QWEN.md' }),
+        expect.objectContaining({ path: '.amazonq/rules/workspai-agent-entry.md' }),
       ])
     );
     expect(await fsExtra.pathExists(adopted.projectJsonPath)).toBe(false);
@@ -619,6 +624,13 @@ describe('adopt-project', () => {
     const snapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath);
     await fsExtra.writeFile(path.join(projectPath, '.workspai', 'project.json'), 'changed');
     await fsExtra.writeFile(path.join(projectPath, '.workspai', 'adopt.json'), 'created');
+    await fsExtra.writeFile(path.join(projectPath, '.workspai', 'agent-entry.v1.json'), 'created');
+    await fsExtra.writeFile(path.join(projectPath, 'CLAUDE.md'), 'created');
+    await fsExtra.ensureDir(path.join(projectPath, '.amazonq', 'rules'));
+    await fsExtra.writeFile(
+      path.join(projectPath, '.amazonq', 'rules', 'workspai-agent-entry.md'),
+      'created'
+    );
 
     await cleanupAdoptedProjectImport(workspacePath, projectPath, snapshot);
 
@@ -626,6 +638,11 @@ describe('adopt-project', () => {
       canonicalProjectBytes
     );
     expect(await fsExtra.pathExists(path.join(projectPath, '.workspai', 'adopt.json'))).toBe(false);
+    expect(
+      await fsExtra.pathExists(path.join(projectPath, '.workspai', 'agent-entry.v1.json'))
+    ).toBe(false);
+    expect(await fsExtra.pathExists(path.join(projectPath, 'CLAUDE.md'))).toBe(false);
+    expect(await fsExtra.pathExists(path.join(projectPath, '.amazonq'))).toBe(false);
     expect(await fsExtra.readFile(path.join(projectPath, '.rapidkit', 'project.json'))).toEqual(
       legacyProjectBytes
     );

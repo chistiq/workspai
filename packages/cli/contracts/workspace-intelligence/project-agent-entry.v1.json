@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/project-agent-entry.v1.json",
+  "title": "Workspai Project Agent Entry",
+  "description": "Portable host-discovery and canonical-first entry contract for an adopted or managed project.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "project",
+    "workspace",
+    "canonical",
+    "protocol",
+    "hosts",
+    "integrity"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.agent-entry.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "relativePath"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "relativePath": { "$ref": "#/$defs/portablePath" },
+        "runtime": { "type": "string", "minLength": 1 },
+        "framework": { "type": "string", "minLength": 1 }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "relationship",
+        "localBinding",
+        "identityIsFilesystemPath",
+        "resolverCommand",
+        "portableUriScheme",
+        "resolvedPathPolicy"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "relationship": {
+          "enum": ["managed", "adopted", "imported", "linked", "restored"]
+        },
+        "localBinding": { "const": ".workspai/workspace-link.local.json" },
+        "identityIsFilesystemPath": { "const": false },
+        "resolverCommand": { "const": "workspai project workspace status --json" },
+        "portableUriScheme": { "const": "workspace:" },
+        "resolvedPathPolicy": { "const": "runtime-private-never-persist" }
+      }
+    },
+    "canonical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectContext",
+        "projectGrounding",
+        "goalIndex",
+        "workspaceIndex",
+        "workspaceContext",
+        "workspaceModel",
+        "knowledgeGraph"
+      ],
+      "properties": {
+        "projectContext": { "const": ".workspai/reports/project-context-agent.json" },
+        "projectGrounding": { "const": ".workspai/PROJECT-GROUNDING.md" },
+        "goalIndex": { "const": "workspace:.workspai/goals/index.json" },
+        "workspaceIndex": { "const": "workspace:.workspai/reports/INDEX.json" },
+        "workspaceContext": {
+          "const": "workspace:.workspai/reports/workspace-context-agent.json"
+        },
+        "workspaceModel": { "const": "workspace:.workspai/reports/workspace-model.json" },
+        "knowledgeGraph": {
+          "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
+        }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "bootstrapCommand",
+        "verifyCommand",
+        "requiredReadOrder",
+        "sourcePolicy",
+        "degradedMode"
+      ],
+      "properties": {
+        "mode": { "const": "canonical-first" },
+        "bootstrapCommand": { "type": "string", "minLength": 1 },
+        "verifyCommand": { "type": "string", "minLength": 1 },
+        "requiredReadOrder": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sourcePolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "liveSourceAuthority",
+            "workspaceEvidenceAuthority",
+            "broadScanBeforeBootstrap",
+            "sourceMutation",
+            "verificationClaims"
+          ],
+          "properties": {
+            "liveSourceAuthority": { "const": "exact-implementation" },
+            "workspaceEvidenceAuthority": { "const": "identity-topology-readiness-goals" },
+            "broadScanBeforeBootstrap": { "const": false },
+            "sourceMutation": { "const": "governed-only" },
+            "verificationClaims": { "const": "cli-evidence-only" }
+          }
+        },
+        "degradedMode": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "discloseMissingEvidence",
+            "allowCompleteArchitectureClaims",
+            "allowReadOnlySourceInspection"
+          ],
+          "properties": {
+            "discloseMissingEvidence": { "const": true },
+            "allowCompleteArchitectureClaims": { "const": false },
+            "allowReadOnlySourceInspection": { "const": true }
+          }
+        }
+      }
+    },
+    "hosts": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": { "$ref": "#/$defs/host" }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "projectContextHash",
+        "payloadHash",
+        "portable",
+        "absolutePathsEmitted"
+      ],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "projectContextHash": { "$ref": "#/$defs/hash" },
+        "payloadHash": { "$ref": "#/$defs/hash" },
+        "portable": { "const": true },
+        "absolutePathsEmitted": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "portablePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "discovery", "entryFiles", "status", "managed"],
+      "properties": {
+        "id": {
+          "enum": [
+            "generic",
+            "codex",
+            "claude",
+            "gemini",
+            "qwen",
+            "kimi",
+            "grok",
+            "copilot",
+            "cursor",
+            "windsurf",
+            "amazon-q"
+          ]
+        },
+        "discovery": { "enum": ["native", "adapter", "portable-fallback"] },
+        "entryFiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/portablePath" }
+        },
+        "status": { "enum": ["ready", "degraded", "blocked"] },
+        "managed": { "type": "boolean" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -47,6 +47,54 @@
     },
     {
       "path": [
+        "agent"
+      ],
+      "command": "agent",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Bootstrap coding agents from canonical Workspai project evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "agent",
+        "bootstrap"
+      ],
+      "command": "bootstrap",
+      "parent": "agent",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Issue a portable canonical-first grounding receipt for the current project",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--for-agent <agent>",
+          "attributeName": "forAgent"
+        },
+        {
+          "flags": "--no-live-inputs",
+          "attributeName": "liveInputs"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
         "ai"
       ],
       "command": "ai",
@@ -868,6 +916,47 @@
     {
       "path": [
         "project",
+        "agent-entry"
+      ],
+      "command": "agent-entry",
+      "parent": "project",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Verify canonical-first project entry coverage for supported agent hosts",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "action",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--for-agent <agent>",
+          "attributeName": "forAgent"
+        },
+        {
+          "flags": "--no-live-inputs",
+          "attributeName": "liveInputs"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "project",
         "archive"
       ],
       "command": "archive",
@@ -1597,6 +1686,7 @@
   ],
   "topLevelCommands": [
     "adopt",
+    "agent",
     "ai",
     "analyze",
     "autopilot",

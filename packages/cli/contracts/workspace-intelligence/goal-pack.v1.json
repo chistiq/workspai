@@ -216,7 +216,8 @@
         "hashSemantics": { "const": "canonical-json-v1" },
         "hash": { "$ref": "#/$defs/hash" },
         "generatedAt": { "type": "string", "format": "date-time" },
-        "modelHash": { "$ref": "#/$defs/hash" }
+        "modelHash": { "$ref": "#/$defs/hash" },
+        "inputHash": { "$ref": "#/$defs/hash" }
       },
       "additionalProperties": false
     },

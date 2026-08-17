@@ -159,6 +159,10 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Evaluate workspace evidence and produce governance findings for downstream readiness and release decisions.',
   'analyze --json':
     'Emit the workspace analysis result as structured JSON for CI and contract-aware consumers.',
+  agent:
+    'Resolve portable project entry contracts and issue canonical-first grounding receipts for coding agents.',
+  'agent bootstrap':
+    'Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery.',
   autopilot:
     'Coordinate supported automated governance actions while preserving explicit evidence and release gates.',
   'autopilot release':
@@ -232,6 +236,8 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   'project archives': 'List governed project archives and their available restoration metadata.',
   'project commands':
     'Discover commands supported by the selected project runtime and its current capability tier.',
+  'project agent-entry':
+    'Verify portable entry adapters and canonical evidence bindings for one or every supported agent host.',
   'project coverage':
     'Run or inspect runtime-native test coverage and publish normalized, project-scoped evidence against an explicit target.',
   'project workspace':

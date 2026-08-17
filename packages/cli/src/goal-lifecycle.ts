@@ -102,12 +102,43 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
     );
   }
   const { model, graph } = snapshot;
-  if (
-    hashWorkspaceModel(model) !== goal.sourceBinding.model.hash ||
-    hashCanonicalJson(graph) !== goal.sourceBinding.graph.hash
-  ) {
+  const currentModelHash = hashWorkspaceModel(model);
+  const currentGraphHash = hashCanonicalJson(graph);
+  const currentGraphInputHash = graph.source.inputs?.hash;
+  const originalBindingMatches =
+    currentModelHash === goal.sourceBinding.model.hash &&
+    (goal.sourceBinding.graph.inputHash
+      ? currentGraphInputHash === goal.sourceBinding.graph.inputHash
+      : currentGraphHash === goal.sourceBinding.graph.hash);
+  if (!originalBindingMatches) {
+    const transactionIds =
+      entry.repairTransactionIds ?? (entry.repairTransactionId ? [entry.repairTransactionId] : []);
+    const { assertClosedGoalRepairTransactionCurrent } =
+      await import('./workspace-repair-engine.js');
+    let sanctioned = false;
+    for (const transactionId of [...transactionIds].reverse()) {
+      const binding = await assertClosedGoalRepairTransactionCurrent({
+        workspacePath,
+        transactionId,
+        goalId: entry.id,
+      }).catch(() => undefined);
+      if (
+        binding?.modelHash === currentModelHash &&
+        binding.graphInputHash === currentGraphInputHash
+      ) {
+        sanctioned = true;
+        break;
+      }
+    }
+    if (!sanctioned) {
+      throw new Error(
+        `Goal ${entry.id} is stale because its canonical model or graph binding changed outside a closed Goal repair transaction. Regenerate it with --refresh.`
+      );
+    }
+  }
+  if (graph.source.hash !== currentModelHash) {
     throw new Error(
-      `Goal ${entry.id} is stale because its canonical model or graph binding changed. Regenerate it with --refresh.`
+      `Goal ${entry.id} is stale because its current Model and Graph source bindings disagree. Regenerate it with --refresh.`
     );
   }
   const modelRecord = model as {
@@ -279,6 +310,31 @@ export async function verifyGoalLifecycle(input: {
   goalId?: string;
   run?: boolean;
 }): Promise<{ goal: GoalIndexEntry; verifiedGoalId: string; verification: unknown }> {
+  const workspacePath = path.resolve(input.workspacePath);
+  const selected = await inspectGoalLifecycle({
+    workspacePath,
+    goalId: input.goalId,
+    validateBindings: false,
+  });
+  if (!selected.active) throw new Error('No active Goal Pack is available.');
+  const selectedGoalId = selected.active.id;
+  return withWorkspaceArtifactLock(
+    workspacePath,
+    `.workspai/goals/${selectedGoalId}/verification`,
+    () =>
+      verifyGoalLifecycleLocked({
+        workspacePath,
+        goalId: selectedGoalId,
+        run: input.run,
+      })
+  );
+}
+
+async function verifyGoalLifecycleLocked(input: {
+  workspacePath: string;
+  goalId: string;
+  run?: boolean;
+}): Promise<{ goal: GoalIndexEntry; verifiedGoalId: string; verification: unknown }> {
   const inspected = await inspectGoalLifecycle(input);
   if (!inspected.active) throw new Error('No active Goal Pack is available.');
   if (inspected.index.activeGoalId !== inspected.active.id) {
@@ -291,7 +347,16 @@ export async function verifyGoalLifecycle(input: {
       `Goal ${inspected.active.id} has no linked verification contract. Run workspai goal --prepare ${inspected.active.id} --json first.`
     );
   }
-  const { verifyVerifiedGoal } = await import('./verified-goal.js');
+  if (!inspected.goalPack) {
+    throw new Error(`Goal ${inspected.active.id} has no validated immutable Goal Pack.`);
+  }
+  const { readVerifiedGoal, verifyVerifiedGoal } = await import('./verified-goal.js');
+  const current = await readVerifiedGoal(input.workspacePath, inspected.active.verifiedGoalId);
+  if (current.status.attempt >= inspected.goalPack.policy.maxAttempts) {
+    throw new Error(
+      `Goal ${inspected.active.id} exhausted its verification budget (${inspected.goalPack.policy.maxAttempts}). Review the latest evidence before creating or activating another Goal Pack.`
+    );
+  }
   const verification = await verifyVerifiedGoal({
     workspacePath: input.workspacePath,
     goalId: inspected.active.verifiedGoalId,
@@ -320,6 +385,10 @@ export async function linkGoalRepairTransaction(input: {
   if (!inspected.active || inspected.index.activeGoalId !== input.goalId) {
     throw new Error(`Repair proposal goal is not the active workspace goal: ${input.goalId}`);
   }
+  if (!inspected.goalPack) {
+    throw new Error(`Repair proposal Goal Pack is unavailable: ${input.goalId}`);
+  }
+  const maxAttempts = inspected.goalPack.policy.maxAttempts;
   return withWorkspaceArtifactLock(
     input.workspacePath,
     '.workspai/goals/index-lifecycle',
@@ -327,9 +396,24 @@ export async function linkGoalRepairTransaction(input: {
       const current = await readIndex(input.workspacePath);
       const existing = current.goals.find((entry) => entry.id === input.goalId);
       if (!existing) throw new Error(`Goal is not registered in this workspace: ${input.goalId}`);
+      const repairTransactionIds =
+        existing.repairTransactionIds ??
+        (existing.repairTransactionId ? [existing.repairTransactionId] : []);
+      if (
+        !repairTransactionIds.includes(input.transactionId) &&
+        repairTransactionIds.length >= maxAttempts
+      ) {
+        throw new Error(
+          `Goal ${input.goalId} exhausted its repair proposal budget (${maxAttempts}). Review the latest evidence before creating another Goal Pack.`
+        );
+      }
+      const nextRepairTransactionIds = repairTransactionIds.includes(input.transactionId)
+        ? repairTransactionIds
+        : [...repairTransactionIds, input.transactionId];
       const updated: GoalIndexEntry = {
         ...existing,
         repairTransactionId: input.transactionId,
+        repairTransactionIds: nextRepairTransactionIds,
         updatedAt: new Date().toISOString(),
       };
       const index: GoalIndex = {

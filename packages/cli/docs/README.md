@@ -24,15 +24,17 @@ workspace. Continue from the same project terminal:
 ```bash
 npx workspai project workspace status --json
 npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai agent bootstrap --for-agent generic --json
 ```
 
 The first command proves which canonical workspace owns the project. Workspai
 uses a gitignored machine-local binding and portable project grounding, so
 workspace commands and compatible agents do not need a manual `cd`.
 
-Use `generic` for a vendor-neutral context pack, or select `codex`, `claude`,
-`cursor`, or `orca`. Agent Sync also publishes shared files for GitHub Copilot,
-VS Code, and `AGENTS.md` consumers.
+Use `generic` for a vendor-neutral context pack, or select a published host
+target such as `codex`, `claude`, `gemini`, `qwen`, `kimi`, `grok`, `copilot`,
+`cursor`, `windsurf`, or `amazon-q`. Agent Sync publishes shared files and thin
+host adapters that route every consumer to the same evidence.
 
 Use the release pipeline when you need the broader release workflow:
 
@@ -72,21 +74,22 @@ or use `import` to copy or clone one into the workspace.
 
 ## Choose a guide by goal
 
-| I want to…                                        | Start here                                                                  | Expected outcome                                                      |
-| ------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Create a workspace or project                     | [Creating workspaces and projects](./creating-workspaces-and-projects.md)   | A registered project with canonical `.workspai` metadata              |
-| Bring an existing repository under governance     | [Workspace operations](./workspace-operations.md#import-and-adoption)       | Source stays in place with `adopt`, or is copied/cloned with `import` |
-| Run the complete intelligence loop                | [Unified runner](./workspace-intelligence-runner.md)                        | One ordered run report with durable stage evidence                    |
-| Turn plain language into governed work             | [Goal Packs](./goal-packs.md)                                               | A scope-bound, evidence-pinned plan and portable agent handoff         |
-| Repair a blocker through an approved transaction  | [Workspace Repair Engine](./workspace-repair-engine.md)                     | Checkpointed execution, validation, canonical verify, and safe rollback |
-| Set a release, security, or coverage outcome       | [Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals) | A durable success contract with a current evidence-backed verdict     |
-| Ask an architecture or dependency question        | [Workspace Knowledge Graph](./workspace-knowledge-graph.md)                 | A bounded answer with proof references rather than the whole graph    |
-| Measure agent token, cost, and outcome efficiency | [Workspace Intelligence Evaluation](./workspace-intelligence-evaluation.md) | A live, provenance-aware report suitable for CLI, IDE, and CI         |
-| Integrate CI or release gates                     | [CI workflows](./ci-workflows.md)                                           | Machine-readable exit codes and uploadable evidence                   |
-| Find the writer, schema, or path for an output    | [Artifact Catalog](./contracts/ARTIFACT_CATALOG.md)                         | One canonical source instead of path guessing                         |
-| Understand Workspai terminology                   | [Glossary](./GLOSSARY.md)                                                   | Shared meanings for model, graph, evidence, gate, and artifacts       |
-| Review or change the main product README          | [README content contract](./README_CONTENT_CONTRACT.md)                     | Stable narrative, claim boundaries, and machine-enforced drift rules  |
-| Contribute to the CLI                             | [Development](./DEVELOPMENT.md)                                             | Local build, test, contract, and documentation gates                  |
+| I want to…                                        | Start here                                                                                  | Expected outcome                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Create a workspace or project                     | [Creating workspaces and projects](./creating-workspaces-and-projects.md)                   | A registered project with canonical `.workspai` metadata                 |
+| Bring an existing repository under governance     | [Workspace operations](./workspace-operations.md#import-and-adoption)                       | Source stays in place with `adopt`, or is copied/cloned with `import`    |
+| Run the complete intelligence loop                | [Unified runner](./workspace-intelligence-runner.md)                                        | One ordered run report with durable stage evidence                       |
+| Turn plain language into governed work            | [Goal Packs](./goal-packs.md)                                                               | A scope-bound, evidence-pinned plan and portable agent handoff           |
+| Ground an agent before broad source discovery     | [Canonical-first agent entry](./agent-entry.md)                                             | A portable receipt for host discovery, evidence integrity, and freshness |
+| Repair a blocker through an approved transaction  | [Workspace Repair Engine](./workspace-repair-engine.md)                                     | Checkpointed execution, validation, canonical verify, and safe rollback  |
+| Set a release, security, or coverage outcome      | [Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals) | A durable success contract with a current evidence-backed verdict        |
+| Ask an architecture or dependency question        | [Workspace Knowledge Graph](./workspace-knowledge-graph.md)                                 | A bounded answer with proof references rather than the whole graph       |
+| Measure agent token, cost, and outcome efficiency | [Workspace Intelligence Evaluation](./workspace-intelligence-evaluation.md)                 | A live, provenance-aware report suitable for CLI, IDE, and CI            |
+| Integrate CI or release gates                     | [CI workflows](./ci-workflows.md)                                                           | Machine-readable exit codes and uploadable evidence                      |
+| Find the writer, schema, or path for an output    | [Artifact Catalog](./contracts/ARTIFACT_CATALOG.md)                                         | One canonical source instead of path guessing                            |
+| Understand Workspai terminology                   | [Glossary](./GLOSSARY.md)                                                                   | Shared meanings for model, graph, evidence, gate, and artifacts          |
+| Review or change the main product README          | [README content contract](./README_CONTENT_CONTRACT.md)                                     | Stable narrative, claim boundaries, and machine-enforced drift rules     |
+| Contribute to the CLI                             | [Development](./DEVELOPMENT.md)                                                             | Local build, test, contract, and documentation gates                     |
 
 There are two different AI-facing features. Workspace Intelligence is
 deterministic, proof-backed, and does not require an AI API key. The optional
@@ -103,7 +106,8 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 | [workspace-run.md](./workspace-run.md)                                                         | Polyglot fleet orchestration (`workspace run`)                                                                     |
 | [workspace-intelligence-runner.md](./workspace-intelligence-runner.md)                         | Canonical unified runner, execution envelope, report schema, exit codes, failure propagation, and CI consumption   |
 | [workspace-repair-engine.md](./workspace-repair-engine.md)                                     | CLI-owned plan, approval, checkpoint, execution, verification, decision, and rollback state machine                |
-| [goal-packs.md](./goal-packs.md)                                                               | Plain-language intent compilation, scope/evidence binding, agent handoff, and mutation boundary                     |
+| [goal-packs.md](./goal-packs.md)                                                               | Plain-language intent compilation, scope/evidence binding, agent handoff, and mutation boundary                    |
+| [agent-entry.md](./agent-entry.md)                                                             | Host-native discovery, canonical evidence preflight, receipt status, privacy, and consumer integration             |
 | [workspace-knowledge-graph.md](./workspace-knowledge-graph.md)                                 | Two-minute graph quickstart, proof model, AI/MCP consumption, performance, and honest token-efficiency measurement |
 | [graph-benchmark-methodology.md](./graph-benchmark-methodology.md)                             | Reproducible payload-reduction benchmark, formulas, claim boundaries, and publication rules                        |
 | [workspace-intelligence-evaluation.md](./workspace-intelligence-evaluation.md)                 | Provider usage, cost provenance, verified outcomes, comparison, and extension consumption                          |
@@ -124,6 +128,7 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 - Adopt an existing repo: [workspace-operations.md#import-and-adoption](./workspace-operations.md#import-and-adoption)
 - Scaffold a frontend app: [commands-reference.md](./commands-reference.md) (`create project nextjs <name>`)
 - Canonical intelligence gate: `workspace intelligence run --for-agent generic --strict --json`
+- Agent entry preflight: `agent bootstrap --for-agent <host> --json`
 - Broader CI release gate: [commands-reference.md](./commands-reference.md) (`pipeline`, `readiness`)
 - Targeted model/context inspection — schemas in [contracts/workspace-intelligence/](../contracts/workspace-intelligence/)
 

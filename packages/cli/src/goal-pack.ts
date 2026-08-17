@@ -19,6 +19,7 @@ import { buildGoalPack } from './goals/goal-pack-kernel.js';
 import { compileGoalIntent, retrievalQueriesForGoal } from './goals/intent-compiler.js';
 import { inspectProjectTestCoverageCapability } from './project-test-coverage.js';
 import type { ProjectCoverageRuntime } from './project-test-coverage.js';
+import { searchKnowledgeGraph } from './workspace-knowledge-graph-query.js';
 import { resolveProjectWorkspaceSync } from './project-workspace-link.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
@@ -320,40 +321,98 @@ async function buildGoalPreflight(input: {
   }
 
   const queries = retrievalQueriesForGoal(input.intent);
+  const queryMatches = queries.map((query) => {
+    const perProject = input.projects.map(
+      (project) =>
+        searchKnowledgeGraph(input.graph, {
+          query,
+          projectId: project.name,
+          limit: 20,
+          relationsPerEntity: 0,
+          minimumTermMatches: 2,
+        }).entities
+    );
+    const merged: (typeof input.graph.entities)[number][] = [];
+    const seen = new Set<string>();
+    for (let offset = 0; perProject.some((entities) => offset < entities.length); offset += 1) {
+      for (const entities of perProject) {
+        const entity = entities[offset];
+        if (!entity || seen.has(entity.id)) continue;
+        seen.add(entity.id);
+        merged.push(entity);
+      }
+    }
+    return merged;
+  });
+  const fallbackKinds: Record<typeof input.intent.category, string[]> = {
+    'test-coverage': ['test-suite'],
+    'dependency-security': ['package', 'module'],
+    'release-readiness': ['pipeline', 'deployment', 'lifecycle-stage'],
+    'defect-repair': ['test-suite', 'lifecycle-stage'],
+    'feature-change': ['project', 'runtime-unit', 'api', 'package', 'module', 'test-suite'],
+    refactor: ['package', 'module', 'api', 'test-suite'],
+    performance: ['lifecycle-stage', 'test-suite', 'pipeline'],
+    documentation: ['document', 'decision'],
+    'system-understanding': ['project', 'service', 'api', 'package', 'protocol'],
+  };
   const projectNames = new Set(input.projects.map((project) => project.name));
-  const tokens = new Set(
-    queries
-      .join(' ')
-      .toLocaleLowerCase('en-US')
-      .split(/[^a-z0-9+#.-]+/)
-      .filter((token) => token.length > 2)
-  );
-  const anchors = input.graph.entities
+  const structuredFallback = input.graph.entities
     .filter(
       (entity) =>
+        entity.proofIds.length > 0 &&
         (!entity.projectId || projectNames.has(entity.projectId)) &&
-        (entity.kind === 'test-suite' ||
-          entity.kind === 'pipeline' ||
-          entity.kind === 'file' ||
-          [...tokens].some((token) => entity.label.toLocaleLowerCase('en-US').includes(token)))
+        fallbackKinds[input.intent.category].includes(entity.kind)
     )
-    .sort((left, right) => {
-      const leftPriority = left.kind === 'test-suite' ? 0 : left.kind === 'pipeline' ? 1 : 2;
-      const rightPriority = right.kind === 'test-suite' ? 0 : right.kind === 'pipeline' ? 1 : 2;
-      return leftPriority - rightPriority || left.label.localeCompare(right.label);
-    })
-    .slice(0, 20)
-    .map((entity) => ({
-      entityId: entity.id,
-      kind: entity.kind,
-      label: entity.label,
-      proofIds: entity.proofIds.slice(0, 12),
-    }));
+    .sort(
+      (left, right) =>
+        fallbackKinds[input.intent.category].indexOf(left.kind) -
+          fallbackKinds[input.intent.category].indexOf(right.kind) ||
+        left.label.localeCompare(right.label)
+    );
+  const selected: (typeof input.graph.entities)[number][] = [];
+  const selectedIds = new Set<string>();
+  const append = (entity: (typeof input.graph.entities)[number] | undefined): void => {
+    if (!entity || selected.length >= 20 || selectedIds.has(entity.id)) return;
+    selectedIds.add(entity.id);
+    selected.push(entity);
+  };
+  // Keep the objective dominant while reserving bounded capacity for category
+  // recall. A broad category may not consume the evidence budget first.
+  const objectiveSearchable =
+    (input.intent.statement.match(/[A-Za-z][A-Za-z0-9+#.-]{1,}/g) ?? []).length >= 2;
+  const primaryMatches = objectiveSearchable ? (queryMatches[0] ?? []) : [];
+  for (const entity of primaryMatches.slice(0, 12)) append(entity);
+  if (!objectiveSearchable) {
+    for (const entity of structuredFallback) append(entity);
+  }
+  for (
+    let offset = 0;
+    selected.length < 20 && queryMatches.slice(1).some((entities) => offset < entities.length);
+    offset += 1
+  ) {
+    for (const entities of queryMatches.slice(1)) append(entities[offset]);
+  }
+  if (objectiveSearchable) {
+    for (const entity of structuredFallback) append(entity);
+  }
+  for (const entity of primaryMatches.slice(12)) append(entity);
+  const anchors = selected.map((entity) => ({
+    entityId: entity.id,
+    kind: entity.kind,
+    label: entity.label,
+    proofIds: entity.proofIds.slice(0, 12),
+  }));
+  const objectiveAnchorCount = queryMatches[0]?.length ?? 0;
   return {
     workspaceIntelligence,
     measurement,
     retrieval: {
-      status: anchors.length >= 3 ? 'grounded' : anchors.length > 0 ? 'partial' : 'empty',
+      status:
+        objectiveSearchable && objectiveAnchorCount >= 3
+          ? 'grounded'
+          : anchors.length > 0
+            ? 'partial'
+            : 'empty',
       strategy: 'deterministic-category-v1',
       queries,
       anchors,
@@ -381,13 +440,19 @@ async function readGoalIndex(workspacePath: string): Promise<GoalIndex> {
 
 function upsertGoalIndex(index: GoalIndex, goal: GoalPack, updatedAt: string): GoalIndex {
   const existing = index.goals.find((entry) => entry.id === goal.id);
+  const mayBecomeActive = goal.state === 'ready-to-plan';
   const entry = {
     id: goal.id,
     fingerprint: goal.fingerprint,
     objective: goal.intent.statement,
     category: goal.intent.category,
     state: goal.state,
-    lifecycle: existing?.lifecycle === 'cancelled' ? ('cancelled' as const) : ('active' as const),
+    lifecycle:
+      existing?.lifecycle === 'cancelled'
+        ? ('cancelled' as const)
+        : mayBecomeActive
+          ? ('active' as const)
+          : ('planned' as const),
     scope: goal.scope,
     createdAt: existing?.createdAt ?? goal.generatedAt,
     updatedAt,
@@ -395,11 +460,14 @@ function upsertGoalIndex(index: GoalIndex, goal: GoalPack, updatedAt: string): G
     agentHandoff: goal.artifacts.agentHandoff,
     ...(existing?.verifiedGoalId ? { verifiedGoalId: existing.verifiedGoalId } : {}),
     ...(existing?.repairTransactionId ? { repairTransactionId: existing.repairTransactionId } : {}),
+    ...(existing?.repairTransactionIds
+      ? { repairTransactionIds: existing.repairTransactionIds }
+      : {}),
   };
   return {
     schemaVersion: GOAL_INDEX_SCHEMA_VERSION,
     generatedAt: updatedAt,
-    activeGoalId: entry.lifecycle === 'cancelled' ? index.activeGoalId : goal.id,
+    activeGoalId: entry.lifecycle === 'active' ? goal.id : index.activeGoalId,
     goals: [
       ...index.goals
         .filter((item) => item.id !== goal.id)
@@ -473,6 +541,7 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
         hash: hashCanonicalJson(graph),
         generatedAt: graph.generatedAt,
         modelHash: graph.source.hash,
+        ...(graph.source.inputs?.hash ? { inputHash: graph.source.inputs.hash } : {}),
       },
     },
     preflight,
@@ -516,7 +585,14 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
       'Persisted goal agent handoff'
     );
     const expected = buildGoalPack(
-      { ...kernelInput, generatedAt: persistedGoal.generatedAt },
+      {
+        ...kernelInput,
+        generatedAt: persistedGoal.generatedAt,
+        // The artifact hash is an immutable audit receipt, not Goal identity.
+        // When live inputs are unchanged, an evidence-only Graph regeneration
+        // must resume the original publication rather than rewrite it.
+        sourceBinding: persistedGoal.sourceBinding,
+      },
       kernelPorts
     );
     if (

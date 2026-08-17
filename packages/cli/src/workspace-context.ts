@@ -35,7 +35,19 @@ export const WORKSPACE_CONTEXT_SCHEMA_VERSION =
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.agentContext;
 export const WORKSPACE_CONTEXT_AGENT_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext;
 
-export type WorkspaceContextAgent = 'generic' | 'codex' | 'claude' | 'cursor' | 'orca';
+export type WorkspaceContextAgent =
+  | 'generic'
+  | 'codex'
+  | 'claude'
+  | 'cursor'
+  | 'gemini'
+  | 'qwen'
+  | 'kimi'
+  | 'grok'
+  | 'copilot'
+  | 'windsurf'
+  | 'amazon-q'
+  | 'orca';
 
 export type WorkspaceContextSafeCommand = {
   id: string;
@@ -134,6 +146,13 @@ function normalizeAgent(agent: string | boolean | undefined): WorkspaceContextAg
     normalized === 'codex' ||
     normalized === 'claude' ||
     normalized === 'cursor' ||
+    normalized === 'gemini' ||
+    normalized === 'qwen' ||
+    normalized === 'kimi' ||
+    normalized === 'grok' ||
+    normalized === 'copilot' ||
+    normalized === 'windsurf' ||
+    normalized === 'amazon-q' ||
     normalized === 'orca'
   ) {
     return normalized;

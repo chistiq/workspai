@@ -407,6 +407,11 @@ async function runWorkspaceIntelligenceChainLocked(input: {
     let result = await syncWorkspaceAgentGrounding({
       workspacePath,
       agent: input.agent ?? 'generic',
+      // The canonical chain always publishes portable discovery surfaces for
+      // every supported agent host. `--for-agent` selects the shared context
+      // consumer; it must not make an adopted project undiscoverable when the
+      // eventual host is not known yet.
+      targets: ['all'],
       write: true,
       refreshContext: false,
       strict: input.strict === true,
@@ -443,6 +448,7 @@ async function runWorkspaceIntelligenceChainLocked(input: {
       const secondPass = await syncWorkspaceAgentGrounding({
         workspacePath,
         agent: input.agent ?? 'generic',
+        targets: ['all'],
         write: true,
         refreshContext: false,
         strict: input.strict === true,
@@ -470,7 +476,7 @@ async function runWorkspaceIntelligenceChainLocked(input: {
       exitCode: blocked ? 2 : 0,
       message: blocked
         ? `${result.writtenFiles.length} grounding files written; ${strictViolations.length} strict grounding violation(s): ${strictViolations.join('; ')}`
-        : `${result.writtenFiles.length} grounding files written${reconciled ? '; canonical Model/Graph freshness sealed' : ''}`,
+        : `${result.writtenFiles.length} grounding files written; portable entry surfaces prepared for all supported hosts${reconciled ? '; canonical Model/Graph freshness sealed' : ''}`,
     };
   });
 

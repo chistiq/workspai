@@ -205,6 +205,8 @@ const REQUIRED_PACKAGE_FILES = [
   'contracts/workspace-repair-capabilities.v1.json',
   'contracts/workspace-intelligence/workspace-repair-proposal.v1.json',
   'contracts/workspace-intelligence/workspace-repair-transaction.v1.json',
+  'contracts/workspace-intelligence/project-agent-entry.v1.json',
+  'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
   'contracts/extension-cli-compatibility.v1.json',
   'data/modules-embeddings.json',
   'templates/kits/fastapi-standard/README.md.j2',
@@ -507,6 +509,8 @@ for (const relativePath of [
   'contracts/workspace-repair-capabilities.v1.json',
   'contracts/workspace-intelligence/workspace-repair-proposal.v1.json',
   'contracts/workspace-intelligence/workspace-repair-transaction.v1.json',
+  'contracts/workspace-intelligence/project-agent-entry.v1.json',
+  'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
   'contracts/extension-cli-compatibility.v1.json',
   'data/modules-embeddings.json',
 ]) {

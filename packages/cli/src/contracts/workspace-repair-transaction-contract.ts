@@ -148,6 +148,13 @@ export type WorkspaceRepairTransaction = {
     artifact: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['intelligenceRun'];
     exitCode: number | null;
     summary: string;
+    sourceBinding?: {
+      modelHash: string;
+      modelHashSemantics: 'workspace-model-structural-v1';
+      graphHash: string;
+      graphHashSemantics: 'canonical-json-v1';
+      graphInputHash: string;
+    };
   };
   decision?: {
     reason: string;
@@ -175,5 +182,6 @@ export type WorkspaceRepairTransaction = {
   integrity: {
     planHash: string;
     sourceEvidenceHash: string;
+    closureHash?: string;
   };
 };

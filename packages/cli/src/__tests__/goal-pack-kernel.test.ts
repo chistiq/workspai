@@ -142,6 +142,45 @@ describe('goal pack pure kernel', () => {
     expect(goalPack.orchestration.find((step) => step.id === 'propose')?.status).toBe('blocked');
   });
 
+  it('keeps valid custom objectives executable even when classification is low-confidence', () => {
+    const custom = compileGoalIntent('Better contributor onboarding experience');
+
+    expect(custom).toMatchObject({
+      original: 'Better contributor onboarding experience',
+      category: 'feature-change',
+      confidence: 'low',
+      ambiguities: [],
+    });
+    const { goalPack, handoff } = buildGoalPack(
+      { ...input(custom.original), intent: custom },
+      ports
+    );
+    expect(goalPack.state).toBe('ready-to-plan');
+    expect(goalPack.commands.planVerifiedGoal).toBeUndefined();
+    expect(goalPack.successCriteria).toEqual([
+      expect.objectContaining({
+        kind: 'workspace-verify',
+        machineVerifiable: true,
+        expected: expect.stringContaining('without claiming arbitrary semantic outcome'),
+      }),
+    ]);
+    expect(goalPack.orchestration.find((step) => step.id === 'verify')?.summary).toContain(
+      'agent must review'
+    );
+    expect(handoff.guardrails).toContainEqual(
+      expect.stringContaining('final outcome acceptance requires evidence review')
+    );
+    expect(handoff.workflow.at(-1)).toMatchObject({ order: 6, owner: 'agent' });
+  });
+
+  it('recognizes a named project in a natural release-readiness objective', () => {
+    expect(compileGoalIntent('Prepare gRPC for release')).toMatchObject({
+      category: 'release-readiness',
+      confidence: 'high',
+      ambiguities: [],
+    });
+  });
+
   it('rejects empty, oversized, and control-character intents', () => {
     expect(() => compileGoalIntent('   ')).toThrow('cannot be empty');
     expect(() => compileGoalIntent(`fix\u0000bug`)).toThrow('control characters');
@@ -178,8 +217,10 @@ describe('goal pack pure kernel', () => {
   it('quotes non-shell-safe project names in executable guidance', () => {
     const unsafe = input('Prepare this project for release');
     unsafe.scope.projects = ['API service'];
-    const { goalPack } = buildGoalPack(unsafe, ports);
+    const { goalPack, handoff } = buildGoalPack(unsafe, ports);
 
     expect(goalPack.commands.planVerifiedGoal).toContain('--scope "project:API service"');
+    expect(goalPack.commands.inspectGraph).toContain('--scope "project:API service"');
+    expect(handoff.renewal.command).toContain('--scope "project:API service"');
   });
 });

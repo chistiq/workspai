@@ -236,10 +236,14 @@ describe('unified Workspace Intelligence runner', () => {
     expect(mocks.syncWorkspaceAgentGrounding).toHaveBeenCalledWith(
       expect.objectContaining({
         agent: 'codex',
+        targets: ['all'],
         preset: 'enterprise',
         write: true,
         strict: true,
       })
+    );
+    expect(report.stages.find((stage) => stage.id === 'agent-sync')?.message).toContain(
+      'portable entry surfaces prepared for all supported hosts'
     );
     expect(mocks.writeWorkspaceArtifactJson).toHaveBeenCalledWith(
       workspacePath,

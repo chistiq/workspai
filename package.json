@@ -29,6 +29,8 @@
   "scripts": {
     "workspaces:list": "corepack npm query .workspace",
     "check:brand": "node scripts/check-brand-contract.mjs",
+    "check:english-text": "node scripts/english-text-guard.mjs --all",
+    "check:english-text:staged": "node scripts/english-text-guard.mjs --staged",
     "check:cross-platform-lockfile": "node scripts/check-cross-platform-lockfile.mjs",
     "check": "corepack npm --workspaces --if-present run check",
     "fix": "corepack npm --workspaces --if-present run fix",

@@ -234,6 +234,8 @@ export type WorkspaceKnowledgeSearchOptions = {
   limit?: number;
   relationsPerEntity?: number;
   projection?: 'full' | 'agent';
+  /** Internal deterministic relaxation for long goal statements. */
+  minimumTermMatches?: number;
 };
 
 export type WorkspaceKnowledgeSearchBudget = {
@@ -682,8 +684,12 @@ export function searchKnowledgeGraph(
   const languages = requestedLanguages(terms);
   const termSet = new Set(terms);
   const broadArchitectureIntent = hasBroadArchitectureIntent(termSet);
-  const minimumTermMatches =
+  const defaultMinimumTermMatches =
     terms.length <= 1 ? terms.length : Math.min(3, Math.ceil(terms.length / 3));
+  const minimumTermMatches =
+    options.minimumTermMatches === undefined
+      ? defaultMinimumTermMatches
+      : Math.min(defaultMinimumTermMatches, Math.max(1, Math.trunc(options.minimumTermMatches)));
   const limit = Math.max(1, Math.min(Math.trunc(options.limit ?? 12), 100));
   const relationsPerEntity = Math.max(0, Math.min(Math.trunc(options.relationsPerEntity ?? 4), 20));
   const scopedSharedEntityIds = new Set<string>();

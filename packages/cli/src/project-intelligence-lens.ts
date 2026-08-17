@@ -35,6 +35,16 @@ import {
   type ProjectWorkspaceRelationship,
   writeProjectWorkspaceLink,
 } from './project-workspace-link.js';
+import {
+  AGENT_ENTRY_HOST_IDS,
+  PROJECT_AGENT_ADAPTER_ENTRY_FILES,
+  PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  WORKSPAI_AGENT_ENTRY_END,
+  WORKSPAI_AGENT_ENTRY_START,
+  buildProjectAgentEntryManifest,
+  type AgentEntryHostCoverage,
+  type AgentEntryHostId,
+} from './project-agent-entry.js';
 
 export const PROJECT_CONTEXT_AGENT_SCHEMA_VERSION =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectContextAgent.schemaVersion;
@@ -51,12 +61,16 @@ export interface ProjectContextAgent {
     name: string;
     profile?: string;
     relationship: ProjectWorkspaceRelationship;
-    contract: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['workspaceContract'];
-    model: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model'];
-    knowledgeGraph: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph'];
+    contract: `workspace:${(typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['workspaceContract']}`;
+    model: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model']}`;
+    knowledgeGraph: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph']}`;
     access: {
       localBinding: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['projectWorkspaceLink'];
       canonicalEvidenceAvailableAtGeneration: boolean;
+      identityIsFilesystemPath: false;
+      resolverCommand: 'workspai project workspace status --json';
+      portableUriScheme: 'workspace:';
+      resolvedPathPolicy: 'runtime-private-never-persist';
     };
   };
   project: {
@@ -142,7 +156,15 @@ export interface ProjectContextAgent {
     enforcement: 'required';
     mandatoryPreflight: {
       command: string;
+      successCondition: 'ready';
+    };
+    workspaceLocator: {
+      command: 'workspai project workspace status --json';
       successCondition: 'resolved';
+      outputClassification: 'machine-local';
+      persistence: 'forbidden';
+      disclosure: 'forbidden';
+      portableUriScheme: 'workspace:';
     };
     workspaceEvidenceRequiredFor: Array<
       | 'repository-analysis'
@@ -243,7 +265,9 @@ export interface SyncProjectIntelligenceLensResult {
   linkPath?: string;
   groundingPath?: string;
   contextPath?: string;
+  agentEntryPath?: string;
   agentsPath?: string;
+  hostCoverage?: AgentEntryHostCoverage[];
   writtenFiles: string[];
 }
 
@@ -936,12 +960,16 @@ export async function buildProjectContextAgent(
         ? { profile: contract?.workspace?.profile ?? model?.workspace.profile }
         : {}),
       relationship,
-      contract: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
-      model: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
-      knowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      contract: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract}`,
+      model: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`,
+      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`,
       access: {
         localBinding: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectWorkspaceLink,
         canonicalEvidenceAvailableAtGeneration: true,
+        identityIsFilesystemPath: false,
+        resolverCommand: 'workspai project workspace status --json',
+        portableUriScheme: 'workspace:',
+        resolvedPathPolicy: 'runtime-private-never-persist',
       },
     },
     project: {
@@ -1019,6 +1047,7 @@ export async function buildProjectContextAgent(
     },
     evidence: {
       readOrder: [
+        PROJECT_AGENT_ENTRY_RELATIVE_PATH,
         '.workspai/PROJECT-GROUNDING.md',
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
         'AGENTS.md',
@@ -1054,8 +1083,16 @@ export async function buildProjectContextAgent(
     agentRouting: {
       enforcement: 'required',
       mandatoryPreflight: {
-        command: 'npx workspai project workspace status --json',
+        command: 'workspai agent bootstrap --for-agent generic --strict --json',
+        successCondition: 'ready',
+      },
+      workspaceLocator: {
+        command: 'workspai project workspace status --json',
         successCondition: 'resolved',
+        outputClassification: 'machine-local',
+        persistence: 'forbidden',
+        disclosure: 'forbidden',
+        portableUriScheme: 'workspace:',
       },
       workspaceEvidenceRequiredFor: [
         'repository-analysis',
@@ -1067,8 +1104,10 @@ export async function buildProjectContextAgent(
         'release-readiness',
       ],
       requiredReadOrder: [
+        PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+        'command:workspai agent bootstrap --for-agent generic --strict --json',
+        'command:workspai project workspace status --json',
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
-        'command:npx workspai project workspace status --json',
         'workspace:.workspai/reports/INDEX.json',
         'workspace:.workspai/reports/workspace-context-agent.json',
         `command:npx workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
@@ -1079,11 +1118,11 @@ export async function buildProjectContextAgent(
       },
     },
     commands: {
-      refresh: 'npx workspai workspace intelligence run --for-agent generic --strict --json',
-      verify: 'npx workspai workspace verify --strict --json',
-      graphSearch: `npx workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
-      doctor: 'npx workspai doctor project --json',
-      workspaceStatus: 'npx workspai project workspace status --json',
+      refresh: 'workspai workspace intelligence run --for-agent generic --strict --json',
+      verify: 'workspai workspace verify --strict --json',
+      graphSearch: `workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
+      doctor: 'workspai doctor project --json',
+      workspaceStatus: 'workspai project workspace status --json',
     },
   };
   if (containsAbsolutePath(payloadWithoutIntegrity, [workspacePath, projectPath])) {
@@ -1134,27 +1173,49 @@ function buildProjectGroundingMarkdown(context: ProjectContextAgent): string {
       : '- No current project-scoped blocker is recorded.';
   return `# Workspai project grounding
 
-This project is part of the **${context.workspace.name}** Workspai workspace.
-Commands launched from this project resolve that workspace automatically; you do not need to change directories first.
+This project is adopted into the **${context.workspace.name}** Workspai workspace.
+That value is the canonical workspace identity, not its filesystem path. Workspai
+commands launched here resolve the machine-local workspace automatically.
 
-## Start here
+## Mandatory first contact
 
-This is a mandatory agent preflight, not optional background material:
+Do not begin broad repository discovery, architecture claims, planning, or mutation
+until this sequence is complete:
 
-1. Read \`.workspai/reports/project-context-agent.json\` before broad source discovery.
-2. Run \`${context.commands.workspaceStatus}\` and require a resolved workspace.
-3. If \`.workspai/goals/index.json\` exists in the canonical workspace, read its active Goal Pack and agent handoff before choosing or expanding work. Use \`workspai goal --status --json\` to validate live bindings.
-4. For repository analysis, architecture analysis, change impact, contracts, infrastructure, or release readiness, read the canonical workspace \`.workspai/reports/INDEX.json\` and \`workspace-context-agent.json\` even when the request names only this repository.
-5. Run the Goal Pack retrieval queries or bounded agent graph search before broad source scanning, then use targeted graph evidence/path queries as needed.
-6. Use source inspection to verify and deepen the workspace evidence, not to silently replace it.
-7. Do not claim complete architecture, independence, health, readiness, goal completion, or verification without current Workspai evidence.
+1. Read \`.workspai/agent-entry.v1.json\` to discover the portable protocol.
+2. Run \`workspai agent bootstrap --for-agent generic --strict --json\`.
+3. Follow the receipt's \`requiredReadOrder\` exactly.
+4. Read \`.workspai/reports/project-context-agent.json\`.
+5. If the receipt reports an active Goal, read its immutable Goal Pack and agent
+   handoff before choosing or expanding work.
+6. Query the bounded Workspace Graph with the user's actual task before opening broad
+   source, then inspect only returned proof paths and targeted live files.
 
-If workspace resolution, required reports, or graph retrieval is unavailable, explicitly report degraded mode and the missing evidence. In degraded mode an agent may inspect source, but must not claim a complete architectural understanding.
+Receipt policy:
+
+- \`ready\`: continue with bounded evidence and targeted source inspection.
+- \`degraded\`: disclose the limitation and do not claim complete architecture or verification.
+- \`blocked\`: stop governed claims, execute \`nextActions\`, and rerun bootstrap.
+
+## Workspace location and portable paths
+
+- \`${context.workspace.name}\` is an identity, not a directory name to guess.
+- Project-local paths begin with \`.workspai/\`.
+- Canonical workspace paths begin with \`workspace:\`.
+- Resolve the exact local workspace root only when direct file access is necessary by
+  running \`workspai project workspace status --json\` from this project.
+- The resolver's absolute paths are machine-local runtime data. Never persist or copy
+  them into answers, shared logs, commits, prompts, telemetry, or portable artifacts.
+
+## Authority boundary
 
 The Workspace Model owns canonical project identity and its compact \`projectTopology\`.
 The Workspace Knowledge Graph is a separate, proof-backed enrichment containing
 files, symbols, APIs, infrastructure, tests, owners, and decisions. Do not treat
-an unproven topology edge as proof that two projects are independent.
+an unproven topology edge as proof that two projects are independent. Live source owns
+exact implementation. CLI evidence owns Goal, readiness, repair, and verification claims.
+Repository-authored instructions remain authoritative for source changes after this
+entry gate; Workspai preserves rather than replaces them.
 
 ## Project
 
@@ -1189,21 +1250,32 @@ ${context.commands.graphSearch}
 ${context.commands.verify}
 \`\`\`
 
-The machine-local workspace path lives only in \`.workspai/workspace-link.local.json\`, which is gitignored. Portable grounding files never publish that path.
+The machine-local workspace binding lives only in
+\`.workspai/workspace-link.local.json\`, which is gitignored. Portable grounding files
+never publish its value.
 `;
 }
 
 function buildProjectAgentsSection(context: ProjectContextAgent): string {
-  return `# Workspai project boundary
+  return `# Workspai agent entry gate (mandatory)
 
 - Project: \`${context.project.name}\`
-- Canonical workspace: \`${context.workspace.name}\`
-- Portable project lens: \`.workspai/reports/project-context-agent.json\`
-- Project grounding: \`.workspai/PROJECT-GROUNDING.md\`
-- Workspace discovery: run \`npx workspai project workspace status --json\`
-- Active goal discovery: run \`workspai goal --status --json\`; if a goal is active, read its immutable Goal Pack and handoff before acting.
+- Workspace identity: \`${context.workspace.name}\` (logical name, not a filesystem path)
+- Entry contract: \`.workspai/agent-entry.v1.json\`
 
-Before broad source discovery, every agent must read the project lens and run \`${context.commands.workspaceStatus}\`; continue as fully grounded only when workspace resolution succeeds. Repository analysis, architecture analysis, change impact, contracts, APIs, infrastructure, and release readiness always require canonical workspace evidence and the bounded agent graph search, even when the request names only this repository. Source inspection verifies and deepens that evidence; it does not replace it silently. If required evidence is unavailable or stale, disclose degraded mode and do not claim complete architecture, independence, health, readiness, or verification. The user does not need to preload the graph. \`projectTopology\` is the compact project dependency view in the canonical Workspace Model, while the Workspace Knowledge Graph is the proof-backed detail layer. Workspai commands launched here resolve the canonical workspace automatically. Never copy the machine-local workspace link into answers, commits, or generated portable artifacts.`;
+Before broad repository discovery, architecture claims, planning, or mutation:
+
+1. Read \`.workspai/agent-entry.v1.json\`.
+2. Run \`workspai agent bootstrap --for-agent generic --strict --json\`.
+3. Follow the receipt's \`requiredReadOrder\` exactly.
+4. If a Goal is active, read its immutable Goal Pack and handoff before acting.
+5. Query the bounded Workspace Graph with the user's task, then inspect only returned proofs and targeted live source.
+
+Receipt policy: \`ready\` may proceed; \`degraded\` must disclose limitations and may not claim complete architecture or verification; \`blocked\` must stop governed claims, execute \`nextActions\`, and rerun bootstrap.
+
+\`workspace:\` paths belong to the canonical workspace, not this project's \`.workspai\` directory. Resolve their machine-local root at runtime with \`workspai project workspace status --json\`. That output is machine-local: never copy it into answers, shared logs, commits, or portable artifacts.
+
+Authority: Workspai evidence owns identity, topology, goals, readiness, and verification. Live source and repository-authored rules own exact implementation and source conventions.`;
 }
 
 function escapeRegExp(value: string): string {
@@ -1232,7 +1304,7 @@ function removeProjectManagedAgentSection(existing: string): string {
 function upsertProjectManagedAgentSection(existing: string, generated: string): string {
   const withoutManaged = removeProjectManagedAgentSection(existing);
   const block = `${WORKSPAI_PROJECT_GROUNDING_START}\n${generated.trim()}\n${WORKSPAI_PROJECT_GROUNDING_END}`;
-  return withoutManaged ? `${withoutManaged}\n\n${block}\n` : `${block}\n`;
+  return withoutManaged ? `${block}\n\n${withoutManaged}\n` : `${block}\n`;
 }
 
 async function writeAtomic(filePath: string, contents: string): Promise<void> {
@@ -1317,7 +1389,11 @@ async function reconcileGroundingIgnores(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
     throw error;
   });
-  const desired = [PROJECT_GROUNDING_RELATIVE_PATH, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH];
+  const desired = [
+    PROJECT_GROUNDING_RELATIVE_PATH,
+    PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
+    PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  ];
   const retained = existing
     .split(/\r?\n/)
     .filter(
@@ -1332,6 +1408,207 @@ async function reconcileGroundingIgnores(
   }
   const updated = retained.length > 0 ? `${retained.join('\n')}\n` : '';
   if (updated !== existing) await writeAtomic(gitignorePath, updated);
+}
+
+type ProjectAgentAdapter = {
+  host: 'claude' | 'gemini' | 'qwen' | 'amazon-q';
+  relativePath: string;
+  importFromAgents: string;
+  importFromGrounding: string;
+};
+
+const PROJECT_AGENT_ADAPTERS: readonly ProjectAgentAdapter[] = [
+  {
+    host: 'claude',
+    relativePath: 'CLAUDE.md',
+    importFromAgents: '@AGENTS.md',
+    importFromGrounding: '@.workspai/PROJECT-GROUNDING.md',
+  },
+  {
+    host: 'gemini',
+    relativePath: 'GEMINI.md',
+    importFromAgents: '@./AGENTS.md',
+    importFromGrounding: '@./.workspai/PROJECT-GROUNDING.md',
+  },
+  {
+    host: 'qwen',
+    relativePath: 'QWEN.md',
+    importFromAgents: '@AGENTS.md',
+    importFromGrounding: '@.workspai/PROJECT-GROUNDING.md',
+  },
+  {
+    host: 'amazon-q',
+    relativePath: '.amazonq/rules/workspai-agent-entry.md',
+    importFromAgents: '',
+    importFromGrounding: '',
+  },
+] as const;
+
+if (
+  PROJECT_AGENT_ADAPTERS.length !== PROJECT_AGENT_ADAPTER_ENTRY_FILES.length ||
+  PROJECT_AGENT_ADAPTERS.some(
+    (adapter, index) => adapter.relativePath !== PROJECT_AGENT_ADAPTER_ENTRY_FILES[index]
+  )
+) {
+  throw new Error('Project agent adapter paths must match the portable entry contract.');
+}
+
+async function findUnsafeAdapterParent(
+  projectPath: string,
+  relativePath: string
+): Promise<string | null> {
+  const segments = relativePath.split('/').slice(0, -1);
+  let current = projectPath;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    const stat = await fsp.lstat(current).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat) return null;
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      return path.relative(projectPath, current).split(path.sep).join('/');
+    }
+  }
+  return null;
+}
+
+function projectAgentAdapterBody(input: {
+  adapter: ProjectAgentAdapter;
+  agentsAvailable: boolean;
+}): string {
+  const imported = input.agentsAvailable
+    ? input.adapter.importFromAgents
+    : input.adapter.importFromGrounding;
+  if (imported) {
+    return `${imported}
+
+# Workspai host binding · ${input.adapter.host}
+
+The imported Workspai entry gate is mandatory. Validate this host with
+\`workspai agent bootstrap --for-agent ${input.adapter.host} --strict --json\`, then follow
+the receipt's \`requiredReadOrder\`, Goal handoff, bounded Graph queries, proof paths,
+status policy, workspace locator privacy policy, and authority boundary. Do not repeat
+the imported instructions or replace repository-authored source rules.`;
+  }
+  return `# Workspai entry for ${input.adapter.host}
+
+Before broad repository discovery, architecture claims, planning, or mutation:
+
+1. Read \`.workspai/agent-entry.v1.json\`.
+2. Run \`workspai agent bootstrap --for-agent ${input.adapter.host} --strict --json\`.
+3. Follow \`requiredReadOrder\`, any active Goal handoff, bounded Graph queries, and returned proof paths.
+
+Receipt policy: \`ready\` may proceed; \`degraded\` must disclose limitations; \`blocked\` must execute \`nextActions\` and rerun bootstrap before governed claims.
+
+The workspace name is a logical identity, not a path. Resolve \`workspace:\` URIs at runtime with \`workspai project workspace status --json\`; its absolute paths are machine-local and must never be copied into shared output or portable artifacts. Live source owns exact implementation; Workspai evidence owns identity, topology, goals, readiness, and verification. Repository-authored rules remain authoritative for source changes after this entry gate.`;
+}
+
+async function reconcileProjectAgentAdapter(input: {
+  projectPath: string;
+  adapter: ProjectAgentAdapter;
+  mode: ProjectGroundingMode;
+  agentsAvailable: boolean;
+}): Promise<{ path?: string; reason?: string }> {
+  const unsafeParent = await findUnsafeAdapterParent(input.projectPath, input.adapter.relativePath);
+  if (unsafeParent) {
+    return {
+      reason: `${input.adapter.relativePath} has an unsafe repository-authored parent at ${unsafeParent}.`,
+    };
+  }
+  const absolutePath = path.join(input.projectPath, input.adapter.relativePath);
+  const stat = await fsp.lstat(absolutePath).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  });
+  if (stat?.isSymbolicLink()) {
+    return { reason: `${input.adapter.relativePath} is a repository-authored symbolic link.` };
+  }
+  const existed = stat?.isFile() === true;
+  const existing = await fsp.readFile(absolutePath, 'utf8').catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+    throw error;
+  });
+  if (
+    input.mode === 'managed' &&
+    !existed &&
+    (await isAuthoredTrackedDeletion(input.projectPath, input.adapter.relativePath))
+  ) {
+    return { reason: `${input.adapter.relativePath} has an authored tracked deletion.` };
+  }
+  const withoutManaged = existing
+    .replace(managedBlockPattern(WORKSPAI_AGENT_ENTRY_START, WORKSPAI_AGENT_ENTRY_END), '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const updated =
+    input.mode === 'managed'
+      ? [
+          withoutManaged,
+          `${WORKSPAI_AGENT_ENTRY_START}\n${projectAgentAdapterBody(input).trim()}\n${WORKSPAI_AGENT_ENTRY_END}`,
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : withoutManaged;
+  if (!updated) {
+    if (existed) await fsp.rm(absolutePath, { force: true });
+    return {};
+  }
+  const normalized = `${updated.trimEnd()}\n`;
+  if (normalized !== existing) await writeAtomic(absolutePath, normalized);
+  return input.mode === 'managed' ? { path: input.adapter.relativePath } : {};
+}
+
+function hostCoverage(input: {
+  mode: ProjectGroundingMode;
+  agentsAvailable: boolean;
+  adapters: Map<ProjectAgentAdapter['host'], { path?: string; reason?: string }>;
+}): AgentEntryHostCoverage[] {
+  const portableGrounding: AgentEntryHostCoverage = {
+    id: 'generic',
+    discovery: 'portable-fallback',
+    entryFiles: [PROJECT_GROUNDING_RELATIVE_PATH],
+    status: 'ready',
+    managed: input.mode === 'managed',
+  };
+  const agentsHosts: AgentEntryHostId[] = [
+    'codex',
+    'kimi',
+    'grok',
+    'copilot',
+    'cursor',
+    'windsurf',
+  ];
+  const agentsCoverage = agentsHosts.map<AgentEntryHostCoverage>((id) => ({
+    id,
+    discovery: 'native',
+    entryFiles: ['AGENTS.md'],
+    status: input.agentsAvailable ? 'ready' : 'blocked',
+    managed: input.mode === 'managed' && input.agentsAvailable,
+    ...(!input.agentsAvailable
+      ? { reason: 'AGENTS.md could not be managed without overriding authored repository state.' }
+      : {}),
+  }));
+  const adapterCoverage = PROJECT_AGENT_ADAPTERS.map<AgentEntryHostCoverage>((adapter) => {
+    const result = input.adapters.get(adapter.host);
+    return {
+      id: adapter.host,
+      discovery: 'adapter',
+      entryFiles: [adapter.relativePath],
+      status: result?.path ? 'ready' : input.mode === 'managed' ? 'blocked' : 'degraded',
+      managed: Boolean(result?.path),
+      ...(!result?.path
+        ? {
+            reason:
+              result?.reason ??
+              'Provider adapter generation is disabled by the project grounding policy.',
+          }
+        : {}),
+    };
+  });
+  const coverage = [portableGrounding, ...agentsCoverage, ...adapterCoverage];
+  return AGENT_ENTRY_HOST_IDS.map(
+    (id) => coverage.find((entry) => entry.id === id) as AgentEntryHostCoverage
+  );
 }
 
 async function reconcileProjectAgents(
@@ -1402,11 +1679,22 @@ export async function syncProjectIntelligenceLens(
     });
     await reconcileGroundingIgnores(projectPath, mode);
     await reconcileProjectAgents(projectPath, mode);
+    await Promise.all(
+      PROJECT_AGENT_ADAPTERS.map((adapter) =>
+        reconcileProjectAgentAdapter({
+          projectPath,
+          adapter,
+          mode,
+          agentsAvailable: false,
+        })
+      )
+    );
     await Promise.all([
       fsp.rm(path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH), {
         force: true,
       }),
       fsp.rm(path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH), { force: true }),
+      fsp.rm(path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH), { force: true }),
     ]);
     return {
       mode,
@@ -1428,23 +1716,49 @@ export async function syncProjectIntelligenceLens(
   });
   await reconcileGroundingIgnores(projectPath, mode);
   const agentsPath = await reconcileProjectAgents(projectPath, mode, context);
+  const adapterResults = new Map<ProjectAgentAdapter['host'], { path?: string; reason?: string }>();
+  for (const adapter of PROJECT_AGENT_ADAPTERS) {
+    adapterResults.set(
+      adapter.host,
+      await reconcileProjectAgentAdapter({
+        projectPath,
+        adapter,
+        mode,
+        agentsAvailable: Boolean(agentsPath),
+      })
+    );
+  }
+  const coverage = hostCoverage({
+    mode,
+    agentsAvailable: Boolean(agentsPath),
+    adapters: adapterResults,
+  });
   const contextPath = path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH);
   const groundingPath = path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH);
+  const agentEntryPath = path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH);
+  const agentEntry = buildProjectAgentEntryManifest({ context, hosts: coverage });
   await writeAtomic(contextPath, `${JSON.stringify(context, null, 2)}\n`);
   await writeAtomic(groundingPath, `${buildProjectGroundingMarkdown(context).trimEnd()}\n`);
+  await writeAtomic(agentEntryPath, `${JSON.stringify(agentEntry, null, 2)}\n`);
   const writtenFiles = [
     WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectWorkspaceLink,
     PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
     PROJECT_GROUNDING_RELATIVE_PATH,
+    PROJECT_AGENT_ENTRY_RELATIVE_PATH,
   ];
   if (agentsPath) writtenFiles.push('AGENTS.md');
+  for (const result of adapterResults.values()) {
+    if (result.path) writtenFiles.push(result.path);
+  }
   return {
     mode,
     projectPath,
     linkPath: link.linkPath,
     groundingPath,
     contextPath,
+    agentEntryPath,
     agentsPath,
+    hostCoverage: coverage,
     writtenFiles,
   };
 }

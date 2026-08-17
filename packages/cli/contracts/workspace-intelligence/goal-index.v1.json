@@ -35,7 +35,13 @@
           "goalPack": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/goal-pack\\.json$" },
           "agentHandoff": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/agent-handoff\\.json$" },
           "verifiedGoalId": { "type": "string", "minLength": 1 },
-          "repairTransactionId": { "type": "string", "minLength": 1 }
+          "repairTransactionId": { "type": "string", "minLength": 1 },
+          "repairTransactionIds": {
+            "type": "array",
+            "maxItems": 25,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
         },
         "additionalProperties": false
       }

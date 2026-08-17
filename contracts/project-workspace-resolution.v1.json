@@ -12,7 +12,8 @@
     "source",
     "recovered",
     "linkPath",
-    "nextCommand"
+    "nextCommand",
+    "pathPolicy"
   ],
   "properties": {
     "schemaVersion": { "const": "project-workspace-resolution.v1" },
@@ -22,7 +23,19 @@
     "source": { "enum": ["explicit", "parent", "local-link", "registry"] },
     "recovered": { "type": "boolean" },
     "linkPath": { "type": "string", "minLength": 1 },
-    "nextCommand": { "type": "string", "minLength": 1 }
+    "nextCommand": { "type": "string", "minLength": 1 },
+    "pathPolicy": {
+      "type": "object",
+      "required": ["classification", "portable", "persistence", "disclosure", "purpose"],
+      "properties": {
+        "classification": { "const": "machine-local" },
+        "portable": { "const": false },
+        "persistence": { "const": "forbidden" },
+        "disclosure": { "const": "forbidden" },
+        "purpose": { "const": "runtime-workspace-resolution" }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

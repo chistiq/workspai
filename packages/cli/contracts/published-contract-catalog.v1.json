@@ -76,6 +76,16 @@
       "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
       "publication": "json-schema"
     },
+    "projectAgentEntry": {
+      "schemaVersion": "workspai.agent-entry.v1",
+      "contractPath": "contracts/workspace-intelligence/project-agent-entry.v1.json",
+      "publication": "json-schema"
+    },
+    "agentBootstrapReceipt": {
+      "schemaVersion": "workspai.agent-bootstrap-receipt.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json",
+      "publication": "json-schema"
+    },
     "doctorProjectEvidence": {
       "schemaVersion": "doctor-project-evidence-v1",
       "contractPath": "contracts/doctor-project-evidence.v1.json",

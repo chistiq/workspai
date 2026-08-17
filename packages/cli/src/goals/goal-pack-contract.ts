@@ -85,6 +85,7 @@ export type GoalPack = {
       hash: string;
       generatedAt: string;
       modelHash: string;
+      inputHash?: string;
     };
   };
   baseline: {
@@ -222,6 +223,7 @@ export type GoalIndexEntry = {
   agentHandoff: string;
   verifiedGoalId?: string;
   repairTransactionId?: string;
+  repairTransactionIds?: string[];
 };
 
 export type GoalIndex = {
@@ -256,6 +258,18 @@ export function assertGoalIndexSemantics(index: GoalIndex): void {
     }
   }
   const activeEntries = index.goals.filter((entry) => entry.lifecycle === 'active');
+  for (const entry of index.goals) {
+    if (entry.repairTransactionIds) {
+      if (
+        entry.repairTransactionIds.length > 25 ||
+        new Set(entry.repairTransactionIds).size !== entry.repairTransactionIds.length ||
+        (entry.repairTransactionId &&
+          entry.repairTransactionIds.at(-1) !== entry.repairTransactionId)
+      ) {
+        throw new Error(`Goal index repair transaction history is inconsistent: ${entry.id}`);
+      }
+    }
+  }
   if (index.activeGoalId === null) {
     if (activeEntries.length > 0) {
       throw new Error('Goal index is inconsistent: active lifecycle entries require activeGoalId.');

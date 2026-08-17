@@ -74,6 +74,11 @@ import {
   type SyncWorkspaceProjectLensesResult,
 } from './project-intelligence-lens.js';
 import {
+  PROJECT_AGENT_ADAPTER_ENTRY_FILES,
+  PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  type AgentEntryHostId,
+} from './project-agent-entry.js';
+import {
   PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
   PROJECT_GROUNDING_RELATIVE_PATH,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
@@ -103,7 +108,20 @@ export {
 };
 
 export type AgentGroundingTarget =
-  'all' | 'vscode' | 'agents' | 'copilot' | 'cursor' | 'claude' | 'codex' | 'orca';
+  | 'all'
+  | 'vscode'
+  | 'agents'
+  | 'copilot'
+  | 'cursor'
+  | 'claude'
+  | 'codex'
+  | 'gemini'
+  | 'qwen'
+  | 'kimi'
+  | 'grok'
+  | 'windsurf'
+  | 'amazon-q'
+  | 'orca';
 
 export type AgentCustomizationPackPreset = 'minimal' | 'enterprise';
 
@@ -476,6 +494,12 @@ function normalizeTargets(targets: AgentGroundingTarget[] | undefined): Set<Agen
       'cursor',
       'claude',
       'codex',
+      'gemini',
+      'qwen',
+      'kimi',
+      'grok',
+      'windsurf',
+      'amazon-q',
       'orca',
     ]);
   }
@@ -488,6 +512,15 @@ function targetEnabled(selected: Set<AgentGroundingTarget>, target: AgentGroundi
 
 function targetEnabledForCopilot(selected: Set<AgentGroundingTarget>): boolean {
   return targetEnabled(selected, 'copilot') || targetEnabled(selected, 'vscode');
+}
+
+function projectHostSelected(selected: Set<AgentGroundingTarget>, host: AgentEntryHostId): boolean {
+  if (host === 'generic') return targetEnabled(selected, 'agents');
+  if (host === 'copilot') return targetEnabledForCopilot(selected);
+  if (host === 'grok') {
+    return targetEnabled(selected, 'grok') || targetEnabled(selected, 'orca');
+  }
+  return targetEnabled(selected, host);
 }
 
 function normalizePreset(
@@ -558,8 +591,11 @@ function inferOutputTargets(relativePath: string): AgentGroundingTarget[] {
   if (relativePath.startsWith('.claude/') || relativePath === 'CLAUDE.md') {
     return ['claude'];
   }
+  if (relativePath === 'GEMINI.md') return ['gemini'];
+  if (relativePath === 'QWEN.md') return ['qwen'];
+  if (relativePath.startsWith('.amazonq/')) return ['amazon-q'];
   if (relativePath === 'AGENTS.md' || relativePath.startsWith('.rapidkit/')) {
-    return ['agents', 'codex', 'orca', 'vscode'];
+    return ['agents', 'codex', 'kimi', 'grok', 'copilot', 'cursor', 'windsurf', 'orca', 'vscode'];
   }
   if (relativePath.startsWith('.vscode/')) {
     return ['vscode'];
@@ -617,6 +653,12 @@ function buildCapabilityMatrix(input: {
     'cursor',
     'claude',
     'codex',
+    'gemini',
+    'qwen',
+    'kimi',
+    'grok',
+    'windsurf',
+    'amazon-q',
     'orca',
   ];
   return Object.fromEntries(
@@ -837,6 +879,19 @@ function buildClaudeMarkdown(): string {
     '- Use `.claude/rules/workspai-evidence.md` for scoped Workspai evidence rules.',
     '- Treat `.claude/rules/rapidkit-evidence.md` as a legacy compatibility mirror.',
     '- Refresh grounding with `npx workspai workspace agent-sync --write`.',
+    '',
+  ].join('\n');
+}
+
+function buildPortableProviderAdapter(provider: string): string {
+  return [
+    `## ${provider}`,
+    '',
+    '- Treat `AGENTS.md` as the portable workspace instruction authority.',
+    `- Load \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` before diagnosing blockers or architecture.`,
+    `- Read only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '- Use bounded Workspace Knowledge Graph search before broad source discovery.',
+    '- Refresh grounding with `workspai workspace agent-sync --write --refresh-context`.',
     '',
   ].join('\n');
 }
@@ -1305,6 +1360,7 @@ async function writeTextFile(
 }
 
 async function writeManagedMarkdownFile(input: {
+  workspacePath: string;
   absolutePath: string;
   generatedBody: string;
   preamble?: string;
@@ -1313,6 +1369,7 @@ async function writeManagedMarkdownFile(input: {
   if (!input.write) {
     return 'skipped';
   }
+  await assertSafeAgentOutputPath(input.workspacePath, input.absolutePath);
   const existing = (await fsExtra.pathExists(input.absolutePath))
     ? await fsExtra.readFile(input.absolutePath, 'utf8')
     : null;
@@ -1322,6 +1379,59 @@ async function writeManagedMarkdownFile(input: {
   await fsExtra.ensureDir(path.dirname(input.absolutePath));
   await fsExtra.writeFile(input.absolutePath, content, 'utf8');
   return 'written';
+}
+
+async function writeImportedAgentAdapter(input: {
+  workspacePath: string;
+  absolutePath: string;
+  importLine: string;
+  generatedBody: string;
+  write: boolean;
+}): Promise<'written' | 'skipped'> {
+  if (!input.write) return 'skipped';
+  await assertSafeAgentOutputPath(input.workspacePath, input.absolutePath);
+  const existing = (await fsExtra.pathExists(input.absolutePath))
+    ? await fsExtra.readFile(input.absolutePath, 'utf8')
+    : '';
+  const { upsertManagedAgentSection } = await import('./utils/managed-agent-markers.js');
+  const managed = upsertManagedAgentSection(existing, input.generatedBody);
+  const content = managed.includes(input.importLine)
+    ? managed
+    : `${input.importLine}\n\n${managed}`;
+  await fsExtra.ensureDir(path.dirname(input.absolutePath));
+  await fsExtra.writeFile(input.absolutePath, content, 'utf8');
+  return 'written';
+}
+
+async function assertSafeAgentOutputPath(
+  workspacePathInput: string,
+  absolutePathInput: string
+): Promise<void> {
+  const workspacePath = path.resolve(workspacePathInput);
+  const absolutePath = path.resolve(absolutePathInput);
+  const relativePath = path.relative(workspacePath, absolutePath);
+  if (
+    !relativePath ||
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error('Agent output path must remain inside the canonical workspace.');
+  }
+  const segments = relativePath.split(path.sep);
+  let current = workspacePath;
+  for (const [index, segment] of segments.entries()) {
+    current = path.join(current, segment);
+    const stat = await fsExtra.lstat(current).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat) return;
+    const isTarget = index === segments.length - 1;
+    if (stat.isSymbolicLink() || (isTarget ? !stat.isFile() : !stat.isDirectory())) {
+      throw new Error(`Agent output path is blocked by authored repository state: ${relativePath}`);
+    }
+  }
 }
 
 export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget[] | undefined {
@@ -1336,6 +1446,12 @@ export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget
     'cursor',
     'claude',
     'codex',
+    'gemini',
+    'qwen',
+    'kimi',
+    'grok',
+    'windsurf',
+    'amazon-q',
     'orca',
   ]);
   const parsed = input
@@ -1501,9 +1617,21 @@ async function syncWorkspaceAgentGroundingUnsafe(
     AGENT_GROUNDING_DOC_PATH
   );
 
-  if (targetEnabled(selectedTargets, 'agents') || targetEnabled(selectedTargets, 'vscode')) {
+  const agentsMdTargets: AgentGroundingTarget[] = [
+    'agents',
+    'vscode',
+    'copilot',
+    'cursor',
+    'codex',
+    'kimi',
+    'grok',
+    'windsurf',
+    'orca',
+  ];
+  if (agentsMdTargets.some((target) => targetEnabled(selectedTargets, target))) {
     record(
       await writeManagedMarkdownFile({
+        workspacePath,
         absolutePath: path.join(workspacePath, 'AGENTS.md'),
         generatedBody: buildAgentsMarkdown({ index, context }),
         write,
@@ -1515,6 +1643,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
   if (targetEnabled(selectedTargets, 'claude')) {
     const claudePath = path.join(workspacePath, 'CLAUDE.md');
     if (write) {
+      await assertSafeAgentOutputPath(workspacePath, claudePath);
       const { upsertManagedAgentSection } = await import('./utils/managed-agent-markers.js');
       const existing = (await fsExtra.pathExists(claudePath))
         ? await fsExtra.readFile(claudePath, 'utf8')
@@ -1547,6 +1676,44 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
   }
 
+  if (targetEnabled(selectedTargets, 'gemini')) {
+    record(
+      await writeImportedAgentAdapter({
+        workspacePath,
+        absolutePath: path.join(workspacePath, 'GEMINI.md'),
+        importLine: '@./AGENTS.md',
+        generatedBody: buildPortableProviderAdapter('Gemini CLI'),
+        write,
+      }),
+      'GEMINI.md'
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'qwen')) {
+    record(
+      await writeImportedAgentAdapter({
+        workspacePath,
+        absolutePath: path.join(workspacePath, 'QWEN.md'),
+        importLine: '@AGENTS.md',
+        generatedBody: buildPortableProviderAdapter('Qwen Code'),
+        write,
+      }),
+      'QWEN.md'
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'amazon-q')) {
+    record(
+      await writeManagedMarkdownFile({
+        workspacePath,
+        absolutePath: path.join(workspacePath, '.amazonq/rules/workspai-agent-entry.md'),
+        generatedBody: buildPortableProviderAdapter('Amazon Q Developer'),
+        write,
+      }),
+      '.amazonq/rules/workspai-agent-entry.md'
+    );
+  }
+
   if (targetEnabled(selectedTargets, 'cursor')) {
     record(
       await writeTextFile(
@@ -1569,6 +1736,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
   if (targetEnabledForCopilot(selectedTargets)) {
     record(
       await writeManagedMarkdownFile({
+        workspacePath,
         absolutePath: path.join(workspacePath, '.github/copilot-instructions.md'),
         generatedBody: buildCopilotInstructions(),
         write,
@@ -1911,20 +2079,6 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
   }
 
-  if (targetEnabled(selectedTargets, 'codex') || targetEnabled(selectedTargets, 'orca')) {
-    // Codex/Grok/Orca: rely on AGENTS.md + INDEX; no separate proprietary format yet.
-    if (!targetEnabled(selectedTargets, 'agents')) {
-      record(
-        await writeManagedMarkdownFile({
-          absolutePath: path.join(workspacePath, 'AGENTS.md'),
-          generatedBody: buildAgentsMarkdown({ index, context }),
-          write,
-        }),
-        'AGENTS.md'
-      );
-    }
-  }
-
   const finalIndex = write
     ? await buildWorkspaceAgentReportsIndex({
         workspacePath,
@@ -1968,6 +2122,18 @@ async function syncWorkspaceAgentGroundingUnsafe(
         .join(', ')}`
     );
   }
+  if (strict && projectLenses) {
+    const blockedEntries = projectLenses.projects.flatMap((project) =>
+      (project.hostCoverage ?? [])
+        .filter(
+          (host) => host.status === 'blocked' && projectHostSelected(selectedTargets, host.id)
+        )
+        .map((host) => `${path.basename(project.projectPath)}:${host.id}`)
+    );
+    if (blockedEntries.length > 0) {
+      strictViolations.push(`Project agent entry coverage blocked: ${blockedEntries.join(', ')}`);
+    }
+  }
 
   const pack = buildAgentCustomizationPackReport({
     workspacePath,
@@ -1980,7 +2146,21 @@ async function syncWorkspaceAgentGroundingUnsafe(
       {
         path: AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
         kind: 'report',
-        targets: ['agents', 'vscode', 'copilot', 'codex', 'orca'],
+        targets: [
+          'agents',
+          'vscode',
+          'copilot',
+          'cursor',
+          'claude',
+          'codex',
+          'gemini',
+          'qwen',
+          'kimi',
+          'grok',
+          'windsurf',
+          'amazon-q',
+          'orca',
+        ],
         required: true,
         status: write ? 'written' : options.dryRun ? 'planned' : 'skipped',
       },
@@ -2055,6 +2235,8 @@ export async function syncWorkspaceAgentGrounding(
         PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
         PROJECT_GROUNDING_RELATIVE_PATH,
         PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
+        PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+        ...PROJECT_AGENT_ADAPTER_ENTRY_FILES,
         'AGENTS.md',
         '.gitignore',
       ]) {

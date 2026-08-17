@@ -218,8 +218,11 @@ describe('AI Recommender', () => {
       expect(Array.isArray(recommendations)).toBe(true);
     });
 
-    it('should handle unicode characters', async () => {
-      const recommendations = await recommendModules('مصادقة 认证 認証', 3);
+    it('should handle symbolic characters', async () => {
+      const recommendations = await recommendModules(
+        `authentication ${String.fromCodePoint(0x1f510)} security`,
+        3
+      );
 
       expect(Array.isArray(recommendations)).toBe(true);
     });

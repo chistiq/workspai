@@ -49,6 +49,7 @@
     "import",
     "adopt",
     "goal",
+    "agent",
     "snapshot",
     "bootstrap",
     "setup",
@@ -79,6 +80,10 @@
     [
       "ai",
       "update-embeddings"
+    ],
+    [
+      "agent",
+      "bootstrap"
     ],
     [
       "config",
@@ -128,6 +133,10 @@
     [
       "project",
       "commands"
+    ],
+    [
+      "project",
+      "agent-entry"
     ],
     [
       "project",
@@ -183,6 +192,21 @@
       "summary": "Register an existing local repository as a governed Workspai project without recreating its source.",
       "canonicalArgv": [
         "adopt"
+      ]
+    },
+    {
+      "invocation": "agent",
+      "summary": "Resolve portable project entry contracts and issue canonical-first grounding receipts for coding agents.",
+      "canonicalArgv": [
+        "agent"
+      ]
+    },
+    {
+      "invocation": "agent bootstrap",
+      "summary": "Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery.",
+      "canonicalArgv": [
+        "agent",
+        "bootstrap"
       ]
     },
     {
@@ -637,6 +661,14 @@
       "summary": "Expose project-scoped command discovery, archive, restore, and deletion operations.",
       "canonicalArgv": [
         "project"
+      ]
+    },
+    {
+      "invocation": "project agent-entry",
+      "summary": "Verify portable entry adapters and canonical evidence bindings for one or every supported agent host.",
+      "canonicalArgv": [
+        "project",
+        "agent-entry"
       ]
     },
     {
@@ -1851,6 +1883,28 @@
       "artifactPath": ".workspai/reports/project-context-agent.json",
       "schemaVersion": "project-context-agent.v1",
       "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
+      "producerCommands": [
+        [
+          "adopt"
+        ],
+        [
+          "import"
+        ],
+        [
+          "workspace",
+          "sync"
+        ],
+        [
+          "workspace",
+          "agent-sync",
+          "--write"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/agent-entry.v1.json",
+      "schemaVersion": "workspai.agent-entry.v1",
+      "contractPath": "contracts/workspace-intelligence/project-agent-entry.v1.json",
       "producerCommands": [
         [
           "adopt"

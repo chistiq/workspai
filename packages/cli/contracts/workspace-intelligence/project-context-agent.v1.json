@@ -28,17 +28,28 @@
         "relationship": {
           "enum": ["managed", "adopted", "imported", "linked", "restored"]
         },
-        "contract": { "const": ".workspai/workspace.contract.json" },
-        "model": { "const": ".workspai/reports/workspace-model.json" },
+        "contract": { "const": "workspace:.workspai/workspace.contract.json" },
+        "model": { "const": "workspace:.workspai/reports/workspace-model.json" },
         "knowledgeGraph": {
-          "const": ".workspai/reports/workspace-knowledge-graph.json"
+          "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
         },
         "access": {
           "type": "object",
-          "required": ["localBinding", "canonicalEvidenceAvailableAtGeneration"],
+          "required": [
+            "localBinding",
+            "canonicalEvidenceAvailableAtGeneration",
+            "identityIsFilesystemPath",
+            "resolverCommand",
+            "portableUriScheme",
+            "resolvedPathPolicy"
+          ],
           "properties": {
             "localBinding": { "const": ".workspai/workspace-link.local.json" },
-            "canonicalEvidenceAvailableAtGeneration": { "type": "boolean" }
+            "canonicalEvidenceAvailableAtGeneration": { "type": "boolean" },
+            "identityIsFilesystemPath": { "const": false },
+            "resolverCommand": { "const": "workspai project workspace status --json" },
+            "portableUriScheme": { "const": "workspace:" },
+            "resolvedPathPolicy": { "const": "runtime-private-never-persist" }
           },
           "additionalProperties": false
         }
@@ -283,6 +294,7 @@
       "required": [
         "enforcement",
         "mandatoryPreflight",
+        "workspaceLocator",
         "workspaceEvidenceRequiredFor",
         "requiredReadOrder",
         "degradedMode"
@@ -293,8 +305,30 @@
           "type": "object",
           "required": ["command", "successCondition"],
           "properties": {
-            "command": { "const": "npx workspai project workspace status --json" },
-            "successCondition": { "const": "resolved" }
+            "command": {
+              "const": "workspai agent bootstrap --for-agent generic --strict --json"
+            },
+            "successCondition": { "const": "ready" }
+          },
+          "additionalProperties": false
+        },
+        "workspaceLocator": {
+          "type": "object",
+          "required": [
+            "command",
+            "successCondition",
+            "outputClassification",
+            "persistence",
+            "disclosure",
+            "portableUriScheme"
+          ],
+          "properties": {
+            "command": { "const": "workspai project workspace status --json" },
+            "successCondition": { "const": "resolved" },
+            "outputClassification": { "const": "machine-local" },
+            "persistence": { "const": "forbidden" },
+            "disclosure": { "const": "forbidden" },
+            "portableUriScheme": { "const": "workspace:" }
           },
           "additionalProperties": false
         },
@@ -408,16 +442,7 @@
     },
     "relation": {
       "type": "object",
-      "required": [
-        "id",
-        "from",
-        "to",
-        "kind",
-        "derivation",
-        "trust",
-        "confidence",
-        "proofIds"
-      ],
+      "required": ["id", "from", "to", "kind", "derivation", "trust", "confidence", "proofIds"],
       "properties": {
         "id": { "type": "string" },
         "from": { "type": "string" },
@@ -432,15 +457,7 @@
     },
     "proof": {
       "type": "object",
-      "required": [
-        "id",
-        "provider",
-        "artifact",
-        "derivation",
-        "trust",
-        "confidence",
-        "freshness"
-      ],
+      "required": ["id", "provider", "artifact", "derivation", "trust", "confidence", "freshness"],
       "properties": {
         "id": { "type": "string" },
         "provider": { "type": "string" },

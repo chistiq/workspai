@@ -19,6 +19,10 @@ import {
   buildProjectContextAgent,
   syncProjectIntelligenceLens,
 } from '../project-intelligence-lens.js';
+import {
+  buildAgentBootstrapReceipt,
+  PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+} from '../project-agent-entry.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
 import type { WorkspaceModel } from '../workspace-model.js';
 import { normalizeRegistryPath } from '../utils/registry-path.js';
@@ -92,6 +96,13 @@ describe('project workspace binding', () => {
       recovered: false,
       linkPath: '/machine/project/.workspai/workspace-link.local.json',
       nextCommand: 'npx workspai workspace intelligence run --for-agent generic --strict --json',
+      pathPolicy: {
+        classification: 'machine-local',
+        portable: false,
+        persistence: 'forbidden',
+        disclosure: 'forbidden',
+        purpose: 'runtime-workspace-resolution',
+      },
     };
 
     expect(() => assertProjectWorkspaceResolutionContract(payload)).not.toThrow();
@@ -481,6 +492,15 @@ describe('project workspace binding', () => {
       now: new Date('2026-07-27T00:00:00.000Z'),
     });
     expect(result.writtenFiles).toContain('.workspai/reports/project-context-agent.json');
+    expect(result.writtenFiles).toEqual(
+      expect.arrayContaining([
+        PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+        'CLAUDE.md',
+        'GEMINI.md',
+        'QWEN.md',
+        '.amazonq/rules/workspai-agent-entry.md',
+      ])
+    );
     expect(context.integrity).toMatchObject({
       portable: true,
       absolutePathsEmitted: false,
@@ -505,12 +525,29 @@ describe('project workspace binding', () => {
     expect(context.workspace.access).toMatchObject({
       localBinding: '.workspai/workspace-link.local.json',
       canonicalEvidenceAvailableAtGeneration: true,
+      identityIsFilesystemPath: false,
+      resolverCommand: 'workspai project workspace status --json',
+      portableUriScheme: 'workspace:',
+      resolvedPathPolicy: 'runtime-private-never-persist',
+    });
+    expect(context.workspace).toMatchObject({
+      contract: 'workspace:.workspai/workspace.contract.json',
+      model: 'workspace:.workspai/reports/workspace-model.json',
+      knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
     });
     expect(context.agentRouting).toMatchObject({
       enforcement: 'required',
       mandatoryPreflight: {
-        command: 'npx workspai project workspace status --json',
+        command: 'workspai agent bootstrap --for-agent generic --strict --json',
+        successCondition: 'ready',
+      },
+      workspaceLocator: {
+        command: 'workspai project workspace status --json',
         successCondition: 'resolved',
+        outputClassification: 'machine-local',
+        persistence: 'forbidden',
+        disclosure: 'forbidden',
+        portableUriScheme: 'workspace:',
       },
       degradedMode: {
         allowCompleteArchitectureClaims: false,
@@ -546,12 +583,111 @@ describe('project workspace binding', () => {
     ]);
     const agents = await fsp.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
     expect(agents).toContain('Keep this text.');
-    expect(agents).toContain('Workspai project boundary');
-    expect(agents).toContain('Repository analysis, architecture analysis');
-    expect(agents).toContain('do not claim complete architecture');
-    expect(agents).toContain('<!-- WORKSPAI:PROJECT-GROUNDING:START -->');
+    expect(agents).toContain('Workspai agent entry gate (mandatory)');
+    expect(agents).toContain('Workspace identity: `workspace` (logical name');
+    expect(agents).toContain('execute `nextActions`, and rerun bootstrap');
+    expect(agents).toContain('`workspace:` paths belong to the canonical workspace');
+    expect(agents.startsWith('<!-- WORKSPAI:PROJECT-GROUNDING:START -->')).toBe(true);
+    expect(agents.indexOf('Workspai agent entry gate')).toBeLessThan(
+      agents.indexOf('Keep this text.')
+    );
     expect(agents).not.toContain('<!-- RAPIDKIT:AGENT-GROUNDING:START -->');
     expect(fs.existsSync(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))).toBe(true);
+    const entry = JSON.parse(
+      await fsp.readFile(path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH), 'utf8')
+    ) as {
+      schemaVersion: string;
+      workspace: {
+        identityIsFilesystemPath: boolean;
+        resolverCommand: string;
+        portableUriScheme: string;
+        resolvedPathPolicy: string;
+      };
+      canonical: {
+        projectContext: string;
+        goalIndex: string;
+        workspaceIndex: string;
+      };
+      hosts: Array<{ id: string; status: string; entryFiles: string[] }>;
+      integrity: { absolutePathsEmitted: boolean };
+    };
+    expect(entry).toMatchObject({
+      schemaVersion: 'workspai.agent-entry.v1',
+      workspace: {
+        identityIsFilesystemPath: false,
+        resolverCommand: 'workspai project workspace status --json',
+        portableUriScheme: 'workspace:',
+        resolvedPathPolicy: 'runtime-private-never-persist',
+      },
+      canonical: {
+        projectContext: '.workspai/reports/project-context-agent.json',
+        goalIndex: 'workspace:.workspai/goals/index.json',
+        workspaceIndex: 'workspace:.workspai/reports/INDEX.json',
+      },
+      integrity: { absolutePathsEmitted: false },
+    });
+    expect(entry.hosts).toHaveLength(11);
+    expect(entry.hosts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'codex', status: 'ready', entryFiles: ['AGENTS.md'] }),
+        expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
+        expect.objectContaining({ id: 'gemini', status: 'ready', entryFiles: ['GEMINI.md'] }),
+        expect.objectContaining({ id: 'qwen', status: 'ready', entryFiles: ['QWEN.md'] }),
+      ])
+    );
+    expect(JSON.stringify(entry)).not.toContain(workspacePath);
+    expect(JSON.stringify(entry)).not.toContain(projectPath);
+    for (const [fileName, host, imported] of [
+      ['CLAUDE.md', 'claude', '@AGENTS.md'],
+      ['GEMINI.md', 'gemini', '@./AGENTS.md'],
+      ['QWEN.md', 'qwen', '@AGENTS.md'],
+    ] as const) {
+      const adapter = await fsp.readFile(path.join(projectPath, fileName), 'utf8');
+      expect(adapter).toContain(imported);
+      expect(adapter).toContain(`workspai agent bootstrap --for-agent ${host} --strict --json`);
+      expect(adapter).toContain(`Workspai host binding · ${host}`);
+      expect(adapter).toContain('workspace locator privacy policy');
+      expect(adapter).toContain('the imported instructions or replace repository-authored');
+    }
+    const amazonQ = await fsp.readFile(
+      path.join(projectPath, '.amazonq/rules/workspai-agent-entry.md'),
+      'utf8'
+    );
+    expect(amazonQ).toContain('workspai agent bootstrap --for-agent amazon-q --strict --json');
+
+    await Promise.all([
+      fsp.writeFile(path.join(workspacePath, '.workspai', 'reports', 'INDEX.json'), '{}\n'),
+      fsp.writeFile(
+        path.join(workspacePath, '.workspai', 'reports', 'workspace-context-agent.json'),
+        '{}\n'
+      ),
+    ]);
+    const receipt = await buildAgentBootstrapReceipt({
+      startPath: projectPath,
+      forAgent: 'claude',
+      validateLiveInputs: false,
+      now: new Date('2026-07-27T01:00:00.000Z'),
+    });
+    expect(receipt).toMatchObject({
+      schemaVersion: 'workspai.agent-bootstrap-receipt.v1',
+      status: 'blocked',
+      resolvedHost: 'claude',
+      entry: { hostStatus: 'ready', entryFiles: ['CLAUDE.md'] },
+      claims: { architecture: 'prohibited' },
+      integrity: { absolutePathsEmitted: false },
+    });
+    expect(receipt.checks).toContainEqual(
+      expect.objectContaining({ id: 'canonical-contracts', status: 'failed' })
+    );
+    expect(JSON.stringify(receipt)).not.toContain(workspacePath);
+    expect(JSON.stringify(receipt)).not.toContain(projectPath);
+    await expect(
+      buildAgentBootstrapReceipt({
+        startPath: projectPath,
+        forAgent: 'unknown-agent',
+        validateLiveInputs: false,
+      })
+    ).rejects.toThrow(/Unsupported agent host/);
 
     const graphPath = path.join(
       workspacePath,
@@ -599,6 +735,7 @@ describe('project workspace binding', () => {
     expect(gitignore).toContain('.workspai/workspace-link.local.json');
     expect(gitignore).toContain('.workspai/PROJECT-GROUNDING.md');
     expect(gitignore).toContain('.workspai/reports/project-context-agent.json');
+    expect(gitignore).toContain(PROJECT_AGENT_ENTRY_RELATIVE_PATH);
 
     const offFixture = await fixture({ workspaceName: 'off-workspace' });
     const off = await syncProjectIntelligenceLens({
@@ -705,5 +842,44 @@ describe('project workspace binding', () => {
     expect(fs.existsSync(path.join(projectPath, 'AGENTS.md'))).toBe(false);
     expect(result.writtenFiles).not.toContain('AGENTS.md');
     expect(fs.existsSync(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))).toBe(true);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'codex', status: 'blocked' })])
+    );
+    expect(await fsp.readFile(path.join(projectPath, 'CLAUDE.md'), 'utf8')).toContain(
+      '@.workspai/PROJECT-GROUNDING.md'
+    );
+  });
+
+  it('blocks a nested provider adapter when its repository parent is a symbolic link', async (context) => {
+    const { root, workspacePath, projectPath } = await fixture({
+      workspaceName: 'adapter-safety-workspace',
+    });
+    const outsidePath = path.join(root, 'outside-amazonq');
+    await fsp.mkdir(outsidePath, { recursive: true });
+    try {
+      await fsp.symlink(outsidePath, path.join(projectPath, '.amazonq'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(fs.existsSync(path.join(outsidePath, 'rules', 'workspai-agent-entry.md'))).toBe(false);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'amazon-q',
+          status: 'blocked',
+          reason: expect.stringContaining('unsafe repository-authored parent'),
+        }),
+      ])
+    );
   });
 });

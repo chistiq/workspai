@@ -88,6 +88,21 @@ Every install and pre-push validation runs
 `npm run check:cross-platform-lockfile`. A missing platform binding is a hard
 failure; do not bypass the guard or hide it with a platform-specific fallback.
 
+### English-only repository text
+
+All authored repository text must use ASCII English, including source strings,
+tests, fixtures, documentation, release notes, and filenames. Language-neutral
+Unicode symbols and emoji are allowed; non-ASCII letters, combining accents,
+and non-ASCII decimal digits are not.
+
+```bash
+corepack npm run check:english-text
+```
+
+The complete repository is checked by lint and CI. Pre-commit validates the
+exact staged content, so an unstaged correction cannot hide a violation already
+present in the index. Do not add file, test, or historical-document exceptions.
+
 ### Build and test
 
 From the monorepo root:

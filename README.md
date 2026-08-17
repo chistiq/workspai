@@ -19,6 +19,10 @@ npx workspai adopt .
 npx workspai workspace intelligence run --for-agent generic
 ```
 
+`generic` is the portable default: one canonical context, plus lightweight
+entry adapters for every supported agent host—without rebuilding the Model or
+Graph per provider.
+
 A single run gives developers and tools the same operational picture:
 
 ```text
@@ -92,18 +96,23 @@ Describe the outcome in plain language from the adopted project:
 
 ```bash
 npx workspai goal "Raise test coverage to 85%" --for-agent generic
+# Or pursue feature, defect, refactor, performance, documentation, or
+# system-understanding outcomes in the same governed flow.
+npx workspai goal "Add retry with exponential backoff" --for-agent generic
 ```
 
 Workspai turns it into a bounded, evidence-backed handoff:
 
 ```text
-Intent → project scope → proof-backed context → governed plan → CLI verification
+Intent → project scope → proof-backed context → governed plan → safe execution
 ```
 
 The agent gets a focused objective, not permission to scan or change
 everything. Workspai keeps approval, verification, and rollback under CLI
 control. The command prepares governed work; it does not edit source or claim
-that the outcome is complete.
+that the outcome is complete. Exact coverage, dependency-security, and release
+Goals have deterministic CLI verifiers; other outcomes retain CLI safety and
+rollback while the consumer performs an evidence-backed outcome review.
 
 ![Workspai turns a plain-language objective into a governed Goal Pack](packages/cli/docs/workspai-goal-readme-cli.gif)
 
@@ -111,17 +120,26 @@ that the outcome is complete.
 
 ## What Workspai gives you
 
-| Question | Answer from Workspai |
-| --- | --- |
-| What is in this system? | A canonical model of projects, runtimes, frameworks, rules, and current evidence |
-| How is it connected? | A searchable graph whose relationships link back to proof |
-| What changed? | Saved snapshots, differences, and affected projects |
-| Is it healthy or ready? | Doctor, analysis, policy, readiness, and verification results |
-| What should an AI tool read? | Bounded context, instructions, skills, and MCP-accessible evidence |
-| Why is something blocked? | A diagnosis, supporting evidence, and the next verification target |
+| Question                     | Answer from Workspai                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------- |
+| What is in this system?      | A canonical model of projects, runtimes, frameworks, rules, and current evidence |
+| How is it connected?         | A searchable graph whose relationships link back to proof                        |
+| What changed?                | Saved snapshots, differences, and affected projects                              |
+| Is it healthy or ready?      | Doctor, analysis, policy, readiness, and verification results                    |
+| What should an AI tool read? | Bounded context, instructions, skills, and MCP-accessible evidence               |
+| Why is something blocked?    | A diagnosis, supporting evidence, and the next verification target               |
 
-The evidence index at `.workspai/reports/INDEX.json` is the simplest entry point
-for developers, IDEs, CI, and agents.
+The evidence index at `.workspai/reports/INDEX.json` is the workspace-wide
+inventory. Inside an adopted project, agents first discover
+`.workspai/agent-entry.v1.json` through their native instruction file and run:
+
+```bash
+npx workspai agent bootstrap --for-agent codex --strict --json
+```
+
+The receipt validates project membership, artifact integrity, Model/Graph
+freshness, live inputs, and the active Goal handoff before broad source
+discovery. [Read the canonical-first entry protocol](packages/cli/docs/agent-entry.md).
 
 ## How it works
 
@@ -170,17 +188,18 @@ API key. AI providers are optional consumers of the same governed context.
 
 ## Go deeper
 
-| Goal | Guide |
-| --- | --- |
-| Learn the main concepts | [Plain-language glossary](packages/cli/docs/GLOSSARY.md) |
-| Create, adopt, or import software | [Creating workspaces and projects](packages/cli/docs/creating-workspaces-and-projects.md) |
-| Query the graph and inspect proof | [Workspace Knowledge Graph](packages/cli/docs/workspace-knowledge-graph.md) |
-| Understand the full decision loop | [Workspace Intelligence runner](packages/cli/docs/workspace-intelligence-runner.md) |
-| Repair a governed blocker safely | [Workspace Repair Engine](packages/cli/docs/workspace-repair-engine.md) |
-| Compile intent into a scope-bound agent handoff | [Goal Packs](packages/cli/docs/goal-packs.md) |
-| Integrate CI | [CI workflows](packages/cli/docs/ci-workflows.md) |
-| Find a command or flag | [Command reference](packages/cli/docs/commands-reference.md) |
-| Inspect schemas and artifact ownership | [Artifact Catalog](packages/cli/docs/contracts/ARTIFACT_CATALOG.md) |
+| Goal                                              | Guide                                                                                     |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Learn the main concepts                           | [Plain-language glossary](packages/cli/docs/GLOSSARY.md)                                  |
+| Create, adopt, or import software                 | [Creating workspaces and projects](packages/cli/docs/creating-workspaces-and-projects.md) |
+| Query the graph and inspect proof                 | [Workspace Knowledge Graph](packages/cli/docs/workspace-knowledge-graph.md)               |
+| Understand the full decision loop                 | [Workspace Intelligence runner](packages/cli/docs/workspace-intelligence-runner.md)       |
+| Repair a governed blocker safely                  | [Workspace Repair Engine](packages/cli/docs/workspace-repair-engine.md)                   |
+| Compile intent into a scope-bound agent handoff   | [Goal Packs](packages/cli/docs/goal-packs.md)                                             |
+| Give every coding agent a canonical project entry | [Canonical-first agent entry](packages/cli/docs/agent-entry.md)                           |
+| Integrate CI                                      | [CI workflows](packages/cli/docs/ci-workflows.md)                                         |
+| Find a command or flag                            | [Command reference](packages/cli/docs/commands-reference.md)                              |
+| Inspect schemas and artifact ownership            | [Artifact Catalog](packages/cli/docs/contracts/ARTIFACT_CATALOG.md)                       |
 
 ## Packages
 

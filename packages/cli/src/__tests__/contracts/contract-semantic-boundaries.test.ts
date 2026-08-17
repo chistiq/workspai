@@ -46,6 +46,12 @@ describe('contract semantic boundaries', () => {
     );
     const success = cliOperationSuccess('workspace model', { projects: 2 });
     const persisted = cliOperationSuccess('workspace model', { projects: 2 }, 'model.json');
+    const gated = cliOperationSuccess(
+      'workspace verify',
+      { gate: { passed: false } },
+      undefined,
+      1
+    );
     const error = cliOperationError({
       operation: 'workspace model',
       code: 'MODEL_FAILED',
@@ -60,6 +66,8 @@ describe('contract semantic boundaries', () => {
     expect(success).not.toHaveProperty('outputPath');
     expect(validate(persisted)).toBe(true);
     expect(persisted.outputPath).toBe('model.json');
+    expect(validate(gated)).toBe(true);
+    expect(gated).toMatchObject({ status: 'success', exitCode: 1 });
     expect(validate(error)).toBe(true);
     expect(error.exitCode).toBe(4);
     expect(

@@ -54,8 +54,10 @@ npx workspai workspace import team.workspai-archive.zip --output ./team --json
 - Writes `.workspai/project.json`, `.workspai/adopt.json`, and `.workspai/adopt-readiness.json`.
 - Registry and contract sync include adopted projects for `workspace model`, `workspace context`, Dashboard, and agents.
 - Managed grounding writes a portable project lens, project grounding, and a
-  bounded managed section in `AGENTS.md`. User-authored `AGENTS.md` content is
-  preserved, and an authored tracked deletion of that file is never resurrected.
+  bounded managed section in `AGENTS.md`. It also publishes the portable agent
+  entry manifest and host adapters. User-authored instruction content and
+  symbolic links are preserved, and an authored tracked deletion is never
+  resurrected.
 - `--dry-run --json` previews detection without writing metadata. Its versioned
   `adoptedProject.effects` record also declares project metadata files,
   conditional `.gitignore`/`AGENTS.md` reconciliation, and the registration,
@@ -107,6 +109,7 @@ entry point into its canonical workspace:
 ```bash
 cd /absolute/path/to/project
 npx workspai project workspace status --json
+npx workspai agent bootstrap --for-agent codex --json
 npx workspai doctor workspace --json=summary
 npx workspai doctor project --json
 npx workspai workspace graph search "authentication endpoint" --limit 12 --json
@@ -121,12 +124,13 @@ one workspace silently when ownership is ambiguous.
 
 The project receives four distinct surfaces:
 
-| File                                           | Purpose                                                                       | Portable              |
-| ---------------------------------------------- | ----------------------------------------------------------------------------- | --------------------- |
-| `.workspai/workspace-link.local.json`          | Machine-local canonical workspace binding                                     | No; always gitignored |
-| `.workspai/reports/project-context-agent.json` | Bounded project view of model, graph, proofs, diagnostics, and safe commands  | Yes                   |
-| `.workspai/PROJECT-GROUNDING.md`               | Human- and agent-readable project entry guide                                 | Yes                   |
-| `AGENTS.md` managed section                    | Tells compatible agents where to start and when to cross the project boundary | Yes                   |
+| File                                           | Purpose                                                                        | Portable              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
+| `.workspai/workspace-link.local.json`          | Machine-local canonical workspace binding                                      | No; always gitignored |
+| `.workspai/agent-entry.v1.json`                | Versioned host coverage, read order, authority boundaries, and integrity proof | Yes                   |
+| `.workspai/reports/project-context-agent.json` | Bounded project view of model, graph, proofs, diagnostics, and safe commands   | Yes                   |
+| `.workspai/PROJECT-GROUNDING.md`               | Human- and agent-readable project entry guide                                  | Yes                   |
+| `AGENTS.md` and host adapters                  | Route supported hosts to the same canonical-first bootstrap                    | Yes                   |
 
 The bounded context includes project identity and commands, dependencies and
 dependents, related API/deployment/test surfaces, current project findings,
@@ -141,6 +145,10 @@ resolution; it is private to the current machine and never belongs in a commit.
 Mode reconciliation is convergent: changing modes removes stale managed
 sections, portable files, or ignore rules that the new mode no longer owns,
 while preserving user-authored `AGENTS.md` and `.gitignore` content.
+
+Run `project agent-entry verify --for-agent all --strict --json` to audit every
+host projection. See [Canonical-first agent entry](./agent-entry.md) for status,
+freshness, privacy, and consumer rules.
 
 If a workspace moved, or a cloned project has no valid local link, reconcile
 it explicitly:

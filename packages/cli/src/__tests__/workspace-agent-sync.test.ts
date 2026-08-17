@@ -177,6 +177,9 @@ describe('workspace agent sync', () => {
         WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
         LEGACY_CURSOR_GROUNDING_RULE_PATH,
         'CLAUDE.md',
+        'GEMINI.md',
+        'QWEN.md',
+        '.amazonq/rules/workspai-agent-entry.md',
         WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
         LEGACY_COPILOT_GROUNDING_SKILL_PATH,
         AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
@@ -189,6 +192,18 @@ describe('workspace agent sync', () => {
 
     const claude = await fsExtra.readFile(path.join(workspacePath, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('@AGENTS.md');
+    expect(await fsExtra.readFile(path.join(workspacePath, 'GEMINI.md'), 'utf8')).toContain(
+      '@./AGENTS.md'
+    );
+    expect(await fsExtra.readFile(path.join(workspacePath, 'QWEN.md'), 'utf8')).toContain(
+      '@AGENTS.md'
+    );
+    expect(
+      await fsExtra.readFile(
+        path.join(workspacePath, '.amazonq/rules/workspai-agent-entry.md'),
+        'utf8'
+      )
+    ).toContain('Amazon Q Developer');
 
     const cursorRule = await fsExtra.readFile(
       path.join(workspacePath, WORKSPAI_CURSOR_GROUNDING_RULE_PATH),
@@ -334,6 +349,92 @@ describe('workspace agent sync', () => {
     expect(result.strictViolations.join('\n')).toContain('Missing required reports');
   });
 
+  it('enforces project entry coverage only for the selected agent host', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'apps', 'api');
+    const outsideAmazonQ = path.join(workspacePath, 'outside-amazonq');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'api',
+      runtime: 'node',
+      framework: 'express',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: new Date().toISOString(),
+      workspace: { name: 'sync-lab', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'api',
+          relativePath: 'apps/api',
+          relationship: 'managed',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+    await fsExtra.ensureDir(outsideAmazonQ);
+    try {
+      await fsExtra.symlink(outsideAmazonQ, path.join(projectPath, '.amazonq'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const codex = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      strict: true,
+      targets: ['codex'],
+    });
+    expect(codex.strictViolations.join('\n')).not.toContain('Project agent entry coverage blocked');
+
+    const amazonQ = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      strict: true,
+      targets: ['amazon-q'],
+    });
+    expect(amazonQ.strictViolations.join('\n')).toContain(
+      'Project agent entry coverage blocked: api:amazon-q'
+    );
+    expect(
+      await fsExtra.pathExists(path.join(outsideAmazonQ, 'rules', 'workspai-agent-entry.md'))
+    ).toBe(false);
+  });
+
+  it('refuses to write a workspace host adapter through an authored parent symlink', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const outsidePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-agent-sync-outside-'));
+    tempDirs.push(outsidePath);
+    try {
+      await fsExtra.symlink(outsidePath, path.join(workspacePath, '.amazonq'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    await expect(
+      syncWorkspaceAgentGrounding({
+        workspacePath,
+        write: true,
+        targets: ['amazon-q'],
+      })
+    ).rejects.toThrow(/blocked by authored repository state/);
+    expect(
+      await fsExtra.pathExists(path.join(outsidePath, 'rules', 'workspai-agent-entry.md'))
+    ).toBe(false);
+  });
+
   it('does not treat the accepted model snapshot baseline as TTL-stale', async () => {
     const workspacePath = await makeWorkspace();
     await fsExtra.outputJson(
@@ -392,6 +493,15 @@ describe('workspace agent sync', () => {
 
   it('rolls back every generated surface when agent-sync fails before its pack commit', async () => {
     const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'app');
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'app',
+      version: '1.0.0',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      workspace: { name: 'sync-lab', profile: 'minimal' },
+      projects: [{ slug: 'app', relativePath: 'app', relationship: 'managed' }],
+    });
     const agentsPath = path.join(workspacePath, 'AGENTS.md');
     await fsExtra.writeFile(agentsPath, '# operator-owned preimage\n');
 
@@ -418,5 +528,14 @@ describe('workspace agent sync', () => {
         path.join(workspacePath, '.github', 'agents', 'workspai-repair.agent.md')
       )
     ).toBe(false);
+    for (const relativePath of [
+      '.workspai/agent-entry.v1.json',
+      'CLAUDE.md',
+      'GEMINI.md',
+      'QWEN.md',
+      '.amazonq/rules/workspai-agent-entry.md',
+    ]) {
+      expect(await fsExtra.pathExists(path.join(projectPath, relativePath))).toBe(false);
+    }
   });
 });

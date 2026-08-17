@@ -1,7 +1,7 @@
 {
   "schemaVersion": "rapidkit-extension-cli-compatibility.v1",
   "cli": "workspai",
-  "minimumVerifiedCliVersion": "0.56.0",
+  "minimumVerifiedCliVersion": "0.58.0",
   "publishedContractSchemas": {
     "workspaceContract": 1,
     "runtimeCommandSurface": "rapidkit-runtime-command-surface-v1",
@@ -18,6 +18,8 @@
     "projectWorkspaceLink": "project-workspace-link.v1",
     "projectWorkspaceResolution": "project-workspace-resolution.v1",
     "projectContextAgent": "project-context-agent.v1",
+    "projectAgentEntry": "workspai.agent-entry.v1",
+    "agentBootstrapReceipt": "workspai.agent-bootstrap-receipt.v1",
     "doctorProjectEvidence": "doctor-project-evidence-v1",
     "doctorWorkspaceEvidence": "doctor-workspace-evidence-v1",
     "doctorGraphDiagnosis": "doctor-graph-diagnosis.v1",
