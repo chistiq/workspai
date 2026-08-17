@@ -33,10 +33,15 @@ echo "🧹 Checking staged TypeScript..."
 corepack npm --workspace workspai exec lint-staged || exit 1
 
 if [ "$CHECK_CONTRACTS" = true ]; then
-	echo "📋 Checking changed contracts without modifying the index..."
+	echo "📋 Regenerating and synchronizing changed contracts..."
+	run_without_git_hook_env corepack npm --workspace workspai run sync:shared-contracts -- --stage-git || {
+		echo "❌ Contract synchronization failed."
+		exit 1
+	}
+	echo "📋 Verifying canonical and consumer contract parity..."
 	run_without_git_hook_env corepack npm --workspace workspai run contracts:check:local || {
 		echo "❌ Contract drift detected."
-		echo "   Run: corepack npm --workspace workspai run contracts:sync"
+		echo "   Synced files were staged where possible; review both repositories."
 		exit 1
 	}
 fi

@@ -1,6 +1,6 @@
 {
   "name": "workspai",
-  "version": "0.59.0",
+  "version": "0.59.1",
   "type": "module",
   "description": "Open-source workspace intelligence CLI for software systems: create, adopt, govern, verify, and align polyglot workspaces for humans, CI, IDEs, and AI agents.",
   "keywords": [
@@ -162,6 +162,7 @@
     "contracts:sync": "corepack npm run sync:contracts && corepack npm run sync:shared-contracts",
     "contracts:check": "corepack npm run check:contracts && corepack npm run check:shared-contracts && corepack npm run check:parity-snapshot && corepack npm run check:generated-contracts && corepack npm run check:agent-customization-drift",
     "contracts:check:local": "corepack npm run check:contracts && corepack npm run check:shared-contracts && corepack npm run check:generated-contracts && corepack npm run check:agent-customization-drift",
+    "contracts:prepush": "corepack npm run sync:shared-contracts && corepack npm run check:shared-contracts -- --require-clean",
     "contracts:validate": "corepack npm run contracts:check && corepack npm run validate:contracts && corepack npm run build && corepack npm run check:workspace-intelligence-runtime && corepack npm run check:workspace-intelligence-adversarial && corepack npm run check:doctor-capabilities",
     "docs:validate": "corepack npm run validate:docs",
     "smoke": "corepack npm run smoke:enterprise-package && corepack npm run smoke:readme && corepack npm run check:generator-smoke-coverage && corepack npm run smoke:official-generators",

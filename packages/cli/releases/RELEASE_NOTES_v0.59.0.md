@@ -30,7 +30,7 @@
 
 # Workspai CLI v0.59.0
 
-Publication status: Released August 17, 2026.
+Released August 17, 2026.
 
 ## Canonical-First Agent Entry and Governed Workflow Hardening
 

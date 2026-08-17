@@ -28,15 +28,28 @@ Canonical JSON lives in **`../../contracts/`** (CLI package root, published in t
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `npm run generate:contracts`                | Regenerate runtime surface, create planner, agent customization pack, import-stack parity, module-layout, infra-stack |
 | `npm run check:generated-contracts`         | Verify committed JSON matches generators                                                                              |
-| `npm run sync:parity-snapshot`              | Copy canonical → vscode `contracts/` mirror                                                                           |
+| `npm run sync:shared-contracts`             | Generate canonical JSON and sync root plus locally available consumer mirrors                                          |
+| `npm run sync:parity-snapshot`              | Compatibility alias for canonical and consumer mirror synchronization                                                  |
 | `npm run check:parity-snapshot`             | Verify mirrors match canonical                                                                                        |
+| `npm run contracts:prepush`                 | Sync local consumers and require generated canonical CLI mirrors to be committed                                      |
 | `npm run validate:contracts`                | Shared-contract checks and focused contract tests                                                                     |
 | `npm run contracts:validate`                | Comprehensive generated/shared contract, parity, runtime-conformance, and adversarial gate                            |
 | `npm run check:agent-customization-drift`   | Verify generated agent customization files are committed in a consumer workspace                                      |
 | `npm run test:real-world -- ...`            | Qualify explicitly selected linked repositories in isolated or cumulative workspaces                                  |
 | `npm run test:real-world:enterprise -- ...` | Exercise the read-mostly, export, archive, agent dry-run, snapshot, and destructive dry-run command surface           |
 
-Workflow: change code → `npm run generate:contracts` → `npm run sync:parity-snapshot` → commit npm + vscode `contracts/`.
+Workflow: change code → `npm run sync:shared-contracts` → review and commit
+the CLI mirrors plus every locally available consumer mirror → push. When the
+VS Code repository is available, pre-commit synchronizes and stages its mirrored
+contracts. Pre-push refuses uncommitted canonical CLI outputs while consumer
+drift remains visible without coupling release cadence.
+
+The CLI does not require a cross-repository consumer workflow before npm
+publication. Workspai VS Code enforces hard parity in its own release CI against
+the CLI version it selects. Consumer-specific version floors remain owned by
+the consumer; schema synchronization never forces a redundant CLI release.
+Breaking schema changes are still blocked by versioned contract compatibility
+gates in the CLI.
 
 ## Documents in this folder
 

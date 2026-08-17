@@ -1,7 +1,7 @@
 {
   "name": "workspai",
   "private": true,
-  "version": "0.59.0",
+  "version": "0.59.1",
   "description": "Workspai monorepo for Workspace Intelligence packages.",
   "author": "Chistiq",
   "license": "MIT",
@@ -56,7 +56,7 @@
     "release:major": "corepack npm --workspace workspai run release:major",
     "postinstall": "node scripts/check-cross-platform-lockfile.mjs",
     "prepare": "husky",
-    "prepush:check": "corepack npm run check:cross-platform-lockfile && corepack npm run check:brand && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
+    "prepush:check": "corepack npm run check:cross-platform-lockfile && corepack npm --workspace workspai run contracts:prepush && corepack npm run check:brand && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
   },
   "devDependencies": {
     "chokidar": "^3.6.0",

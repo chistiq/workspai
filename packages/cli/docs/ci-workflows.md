@@ -22,6 +22,16 @@ The release workflow requires the cost-bounded
 normal push that touches the contracted generator surface produces this gate;
 maintainers do not need to run the full cross-platform matrix before publishing.
 
+Consumer mirror synchronization does not add another required CLI workflow.
+Local pre-commit synchronizes mirrors when contract sources are staged;
+pre-push requires canonical CLI outputs to be committed but does not require a
+consumer release. The extension's own CI remains responsible for hard parity
+against the CLI version selected for that extension release. Consumer-owned
+version floors remain separate from CLI-owned schema inventories, preventing
+parity checks from coupling product versions. Breaking contract removal or
+incompatible schema changes remain CLI release blockers through the canonical
+compatibility and schema-version gates.
+
 Pushes and pull requests run every contracted generator on the primary Linux
 lane. The weekly schedule and manual dispatch can run the complete Linux,
 macOS, and Windows matrix as a non-blocking compatibility and upstream-drift
@@ -46,7 +56,7 @@ Validate or preview the current CLI announcement locally:
 npm --workspace workspai run check:release-announcement
 npm --workspace workspai run release:announcement -- \
   --product workspai-cli \
-  --tag v0.59.0 \
+  --tag v0.59.1 \
   --markdown-output /tmp/workspai-discord-announcement.md
 ```
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.59.1] - 2026-08-17
+
+### Changed
+
+- Made contract delivery consumer-aware before publication: contract-affecting
+  commits regenerate and synchronize local mirrors, pre-push requires generated
+  CLI outputs to be committed, and consumer mirror drift cannot delay a
+  backward-compatible npm delivery.
+- Kept consumer release policy independent from CLI schema ownership, so an
+  extension can require capabilities from an already published CLI without
+  forcing a redundant CLI release.
+
 ## [0.59.0] - 2026-08-17
 
 ### Added

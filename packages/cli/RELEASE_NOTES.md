@@ -5,6 +5,39 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Latest Release: v0.59.1 (August 17, 2026)
+
+### Consumer-Aware Contract Delivery
+
+This patch release closes the contract-delivery gap between the Workspai CLI
+and locally available consumers without coupling their release schedules.
+
+**What's Improved:**
+
+- Contract-affecting commits regenerate and synchronize canonical and local
+  consumer mirrors before they leave a developer machine.
+- Pre-push requires generated CLI contract outputs to be committed, preventing
+  npm publication from silently omitting canonical contract changes.
+- Consumer-specific version floors remain consumer-owned, so an extension can
+  adopt a published CLI capability without forcing a redundant CLI release.
+- Breaking schema changes remain protected by the existing compatibility and
+  schema-version gates.
+
+**Breaking changes:** None.
+
+**Publication status:** Pending.
+
+**Install after publication:**
+
+```bash
+npm install -g workspai@0.59.1
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.59.1.md)
+
+---
+
 ## Latest Release: v0.59.0 (August 17, 2026)
 
 ### Canonical-First Agent Entry and Governed Workflow Hardening
