@@ -9,7 +9,7 @@ export const EXTENSION_CLI_COMPATIBILITY_SCHEMA_VERSION = 'rapidkit-extension-cl
  * unusable. Raise this floor only when the extension starts consuming a CLI
  * command or contract that is unavailable in the previous floor.
  */
-export const EXTENSION_MINIMUM_VERIFIED_CLI_VERSION = '0.58.0';
+export const EXTENSION_MINIMUM_VERIFIED_CLI_VERSION = '0.60.1';
 
 export type ExtensionCliCompatibilityContract = {
   schemaVersion: typeof EXTENSION_CLI_COMPATIBILITY_SCHEMA_VERSION;
