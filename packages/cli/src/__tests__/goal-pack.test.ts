@@ -493,9 +493,41 @@ describe('goal pack workspace adapter', () => {
       run: false,
     });
     expect(verification.goal.lifecycle).toBe('verification-ready');
+    expect(verification.goal.verificationReceipt).toMatchObject({
+      verifiedGoalId: prepared.verifiedGoalId,
+      attempt: 1,
+      graphFingerprintSemantics: 'workspace-knowledge-graph-inputs-v1',
+    });
+    expect(verification.goal.verificationReceipt?.statusHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(verification.goal.verificationReceipt?.modelHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(verification.goal.verificationReceipt?.graphFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(
+      buildGoalLifecycleResult({
+        operation: 'verify',
+        activeGoalId: planned.goalPack.id,
+        goal: verification.goal,
+        goals: [verification.goal],
+        goalPack: planned.goalPack,
+        verifiedGoalId: verification.verifiedGoalId,
+        verification: verification.verification,
+      }).goal?.verificationReceipt
+    ).toEqual(verification.goal.verificationReceipt);
     expect((await inspectGoalLifecycle({ workspacePath })).index.activeGoalId).toBe(
       planned.goalPack.id
     );
+
+    const repeated = await verifyGoalLifecycle({
+      workspacePath,
+      goalId: planned.goalPack.id,
+      run: false,
+    });
+    expect(repeated.goal.verificationReceipt?.attempt).toBe(2);
+
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'receipt-invalidating-change.ts'),
+      'export const changedOutsideVerification = true;\n'
+    );
+    await expect(inspectGoalLifecycle({ workspacePath })).rejects.toThrow('stale');
   });
 
   it('enforces the immutable Goal Pack verification-attempt budget', async () => {

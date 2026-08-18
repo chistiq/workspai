@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.60.1] - 2026-08-18
+
+### Fixed
+
+- Added an auditable Goal verification binding receipt so canonical Model and
+  Graph evidence refreshed by one CLI-owned verification attempt remains valid
+  for the next bounded attempt, while tampered status, unrelated source drift,
+  and unmatched fingerprints continue to fail closed.
+
 ## [0.60.0] - 2026-08-18
 
 ### Changed

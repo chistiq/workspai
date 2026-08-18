@@ -248,6 +248,15 @@ export type GoalIndexEntry = {
   verifiedGoalId?: string;
   repairTransactionId?: string;
   repairTransactionIds?: string[];
+  verificationReceipt?: {
+    verifiedGoalId: string;
+    attempt: number;
+    statusHash: string;
+    modelHash: string;
+    graphFingerprint: string;
+    graphFingerprintSemantics: 'workspace-knowledge-graph-inputs-v1' | 'canonical-json-v1';
+    recordedAt: string;
+  };
 };
 
 export type GoalIndex = {
@@ -322,6 +331,15 @@ export function assertGoalIndexSemantics(index: GoalIndex): void {
       ) {
         throw new Error(`Goal index repair transaction history is inconsistent: ${entry.id}`);
       }
+    }
+    if (
+      entry.verificationReceipt &&
+      (!entry.verifiedGoalId ||
+        entry.verificationReceipt.verifiedGoalId !== entry.verifiedGoalId ||
+        entry.verificationReceipt.attempt < 1 ||
+        Date.parse(entry.verificationReceipt.recordedAt) > generatedAt)
+    ) {
+      throw new Error(`Goal index verification receipt is inconsistent: ${entry.id}`);
     }
   }
   if (index.activeGoalId === null) {

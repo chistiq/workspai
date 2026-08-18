@@ -110,6 +110,30 @@
             "maxItems": 25,
             "uniqueItems": true,
             "items": { "type": "string", "minLength": 1 }
+          },
+          "verificationReceipt": {
+            "type": "object",
+            "required": [
+              "verifiedGoalId",
+              "attempt",
+              "statusHash",
+              "modelHash",
+              "graphFingerprint",
+              "graphFingerprintSemantics",
+              "recordedAt"
+            ],
+            "properties": {
+              "verifiedGoalId": { "type": "string", "minLength": 1 },
+              "attempt": { "type": "integer", "minimum": 1 },
+              "statusHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "modelHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "graphFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "graphFingerprintSemantics": {
+                "enum": ["workspace-knowledge-graph-inputs-v1", "canonical-json-v1"]
+              },
+              "recordedAt": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

@@ -5,6 +5,42 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Latest Release: v0.60.1 (August 18, 2026)
+
+### Stable Goal Verification Across Evidence Refreshes
+
+This patch keeps governed Goal sessions usable when CLI-owned verification
+refreshes the canonical Workspace Model and Knowledge Graph.
+
+**What's Improved:**
+
+- Every verification attempt records an auditable receipt bound to the exact
+  verified-goal status, Model hash, and Graph input fingerprint.
+- A later bounded attempt accepts only the evidence refresh produced by that
+  recorded CLI verification; unrelated source drift and tampering still fail
+  closed.
+- Goal lifecycle and index schemas expose the additive receipt consistently to
+  CLI, IDE, and agent consumers.
+- Lifecycle output validation now covers receipt-bearing Goal entries, closing
+  a contract drift found during qualification on a real multi-project
+  workspace.
+
+**Breaking changes:** None. The verification receipt is additive and optional
+for previously persisted Goal indexes.
+
+**Publication status:** Released August 18, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.60.1
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.60.1/packages/cli/releases/RELEASE_NOTES_v0.60.1.md)
+
+---
+
 ## Latest Release: v0.60.0 (August 18, 2026)
 
 ### Governed Goals for Real Multi-Project Workspaces

@@ -145,9 +145,27 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
         break;
       }
     }
+    if (!sanctioned && entry.verificationReceipt && entry.verifiedGoalId) {
+      const receipt = entry.verificationReceipt;
+      const { readVerifiedGoal } = await import('./verified-goal.js');
+      const verified = await readVerifiedGoal(workspacePath, entry.verifiedGoalId).catch(
+        () => undefined
+      );
+      const graphFingerprint = currentGraphInputHash ?? currentGraphHash;
+      sanctioned = Boolean(
+        verified &&
+        receipt.verifiedGoalId === entry.verifiedGoalId &&
+        receipt.attempt === verified.status.attempt &&
+        receipt.statusHash === hashCanonicalJson(verified.status) &&
+        receipt.modelHash === currentModelHash &&
+        receipt.graphFingerprint === graphFingerprint &&
+        receipt.graphFingerprintSemantics ===
+          (currentGraphInputHash ? 'workspace-knowledge-graph-inputs-v1' : 'canonical-json-v1')
+      );
+    }
     if (!sanctioned) {
       throw new Error(
-        `Goal ${entry.id} is stale because its canonical model or graph binding changed outside a closed Goal repair transaction. Regenerate it with --refresh.`
+        `Goal ${entry.id} is stale because its canonical model or graph binding changed outside a closed Goal repair transaction or recorded CLI verification attempt. Regenerate it with --refresh.`
       );
     }
   }
@@ -269,6 +287,7 @@ async function updateLifecycleLink(input: {
   goalId: string;
   lifecycle: GoalIndexEntry['lifecycle'];
   verifiedGoalId?: string;
+  verificationReceipt?: GoalIndexEntry['verificationReceipt'];
 }): Promise<GoalIndexEntry> {
   return withWorkspaceArtifactLock(
     input.workspacePath,
@@ -282,6 +301,7 @@ async function updateLifecycleLink(input: {
         lifecycle: input.lifecycle,
         updatedAt: new Date().toISOString(),
         ...(input.verifiedGoalId ? { verifiedGoalId: input.verifiedGoalId } : {}),
+        ...(input.verificationReceipt ? { verificationReceipt: input.verificationReceipt } : {}),
       };
       const index: GoalIndex = {
         ...current,
@@ -404,6 +424,25 @@ async function verifyGoalLifecycleLocked(input: {
     goalId: inspected.active.verifiedGoalId,
     run: input.run !== false,
   });
+  const snapshot = await readWorkspaceKnowledgeGraphSnapshot(input.workspacePath);
+  if (snapshot.status === 'miss') {
+    throw new Error(
+      `Goal ${inspected.active.id} verification completed without a current Model and Graph receipt (${snapshot.reason}).`
+    );
+  }
+  const verificationModelHash = hashWorkspaceModel(snapshot.model);
+  const verificationGraphInputHash = snapshot.graph.source.inputs?.hash;
+  const verificationReceipt: NonNullable<GoalIndexEntry['verificationReceipt']> = {
+    verifiedGoalId: inspected.active.verifiedGoalId,
+    attempt: verification.attempt,
+    statusHash: hashCanonicalJson(verification),
+    modelHash: verificationModelHash,
+    graphFingerprint: verificationGraphInputHash ?? hashCanonicalJson(snapshot.graph),
+    graphFingerprintSemantics: verificationGraphInputHash
+      ? 'workspace-knowledge-graph-inputs-v1'
+      : 'canonical-json-v1',
+    recordedAt: new Date().toISOString(),
+  };
   const state = (verification as { state?: string }).state;
   const goal = await updateLifecycleLink({
     workspacePath: input.workspacePath,
@@ -411,6 +450,7 @@ async function verifyGoalLifecycleLocked(input: {
     lifecycle:
       state === 'verified' ? 'verified' : state === 'failed' ? 'failed' : 'verification-ready',
     verifiedGoalId: inspected.active.verifiedGoalId,
+    verificationReceipt,
   });
   return { goal, verifiedGoalId: inspected.active.verifiedGoalId, verification };
 }

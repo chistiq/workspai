@@ -97,11 +97,14 @@ artifact timestamp changed. A Goal fingerprint is an identity key and is never
 presented as a file digest.
 
 The original source binding remains immutable. A later source state is accepted
-only when it is sealed by a Goal-bound, approved, closed CLI Repair transaction
-whose plan, proposal, checkpoint output, exact-target verification, canonical
-Model, Graph, and closure receipt all still validate. Any unlinked edit,
-post-closure edit, or unrelated workspace drift makes the Goal stale and
-requires a new Goal Pack.
+only when it is sealed either by a Goal-bound, approved, closed CLI Repair
+transaction or by the CLI verifier's own canonical evidence-refresh receipt.
+The verification receipt binds the verified-goal id and attempt to the exact
+status digest, structural Model hash, and Graph input fingerprint. This lets a
+second bounded verification attempt consume evidence refreshed by the first
+without treating the verifier's own output as unrelated drift. Any unlinked
+edit, post-closure edit, tampered status, or later workspace drift still makes
+the Goal stale and requires a new Goal Pack.
 
 ## Honest preflight states
 
@@ -183,7 +186,8 @@ remain available when an old Goal is stale, so operators can recover safely;
 
 The immutable Goal Pack also owns the execution-cycle budget. Every repair
 proposal is linked in the Goal index and every verification attempt is recorded
-in the verified-goal status artifact. Proposal planning and verification are
+in the verified-goal status artifact. Each completed attempt also publishes the
+verification binding receipt in the Goal index. Proposal planning and verification are
 serialized independently, refuse to exceed `executionPolicy.maxAttempts`, and
 remain bounded even when concurrent IDE or agent requests race. Consumers must
 restore both durable counters and use the greater value as the current cycle;

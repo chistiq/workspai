@@ -633,6 +633,7 @@ function upsertGoalIndex(index: GoalIndex, goal: GoalPack, updatedAt: string): G
     ...(existing?.repairTransactionIds
       ? { repairTransactionIds: existing.repairTransactionIds }
       : {}),
+    ...(existing?.verificationReceipt ? { verificationReceipt: existing.verificationReceipt } : {}),
   };
   return {
     schemaVersion: GOAL_INDEX_SCHEMA_VERSION,
