@@ -106,6 +106,8 @@ Describe the outcome in plain language from the adopted project:
 
 ```bash
 npx workspai goal "Raise test coverage to 85%" --for-agent generic
+# In a polyglot scope, choose interactively or bind a canonical runtime:
+npx workspai goal "Raise test coverage to 85%" --runtime cpp --for-agent generic
 # Or pursue feature, defect, refactor, performance, documentation, or
 # system-understanding outcomes in the same governed flow.
 npx workspai goal "Add retry with exponential backoff" --for-agent generic
@@ -123,6 +125,9 @@ control. The command prepares governed work; it does not edit source or claim
 that the outcome is complete. Exact coverage, dependency-security, and release
 Goals have deterministic CLI verifiers; other outcomes retain CLI safety and
 rollback while the consumer performs an evidence-backed outcome review.
+Multi-project scope and polyglot runtime choices are explicit. Interactive
+users get bounded choices from the canonical Workspace Model; automation gets
+a machine-readable decision and can use `--scope` and `--runtime`.
 
 ![Workspai turns a plain-language objective into a governed Goal Pack](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-goal-readme-cli.gif)
 

@@ -27,6 +27,9 @@ describe('goal command selection contract', () => {
     expect(() => validateGoalCommandSelection({ status: true, refresh: true })).toThrow(
       'planning-only'
     );
+    expect(() => validateGoalCommandSelection({ status: true, runtime: 'node' })).toThrow(
+      'planning-only'
+    );
     expect(() => validateGoalCommandSelection({ list: true, run: false })).toThrow(
       'only with --verify'
     );

@@ -13,6 +13,7 @@ import {
   type GoalLifecycleResult,
   type GoalPack,
   assertGoalIndexSemantics,
+  reconcileLegacyNonActionableGoalSelection,
 } from './goals/goal-pack-contract.js';
 import { buildGoalPack } from './goals/goal-pack-kernel.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
@@ -48,8 +49,22 @@ async function readIndex(workspacePath: string): Promise<GoalIndex> {
   }
   const index = (await fsExtra.readJson(indexPath)) as GoalIndex;
   assertJsonSchemaContract(index, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
-  assertGoalIndexSemantics(index);
-  return index;
+  try {
+    assertGoalIndexSemantics(index);
+    return index;
+  } catch (error) {
+    const reconciled = reconcileLegacyNonActionableGoalSelection(index);
+    if (
+      !reconciled ||
+      !(error instanceof Error) ||
+      error.message !==
+        'Goal index is inconsistent: activeGoalId must identify the only selected actionable lifecycle entry.'
+    ) {
+      throw error;
+    }
+    assertGoalIndexSemantics(reconciled);
+    return reconciled;
+  }
 }
 
 async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry): Promise<GoalPack> {
@@ -192,7 +207,31 @@ export async function transitionGoalLifecycle(input: {
     const current = await readIndex(workspacePath);
     const existing = current.goals.find((entry) => entry.id === input.goalId);
     if (!existing) throw new Error(`Goal is not registered in this workspace: ${input.goalId}`);
-    if (input.action === 'activate') await assertGoalBindings(workspacePath, existing);
+    if (input.action === 'activate') {
+      const goal = await assertGoalBindings(workspacePath, existing);
+      if (goal.state !== 'ready-to-plan') {
+        const decision = goal.decision;
+        throw new Error(
+          [
+            `Goal ${existing.id} cannot be activated while its planning state is ${goal.state}.`,
+            decision?.reason,
+            decision?.question,
+            `Re-run the Goal with the requested clarification or evidence before activation.`,
+          ]
+            .filter((entry): entry is string => Boolean(entry))
+            .join(' ')
+        );
+      }
+      if (
+        existing.lifecycle === 'cancelled' ||
+        existing.lifecycle === 'verified' ||
+        existing.lifecycle === 'verification-ready'
+      ) {
+        throw new Error(
+          `Goal ${existing.id} cannot be activated from lifecycle ${existing.lifecycle}. Create or plan a new Goal instead.`
+        );
+      }
+    }
     const now = new Date().toISOString();
     const updated: GoalIndexEntry = {
       ...existing,
@@ -285,7 +324,9 @@ export async function prepareGoalVerification(input: {
   const scope =
     pack.scope.kind === 'project' && pack.scope.projects[0]
       ? `project:${pack.scope.projects[0]}`
-      : undefined;
+      : pack.scope.kind === 'project-set' && pack.scope.projects.length > 1
+        ? `projects:${pack.scope.projects.join(',')}`
+        : undefined;
   const kind = pack.intent.category;
   if (kind !== 'release-readiness' && kind !== 'dependency-security' && kind !== 'test-coverage') {
     throw new Error(`Goal category ${kind} does not have a deterministic verification adapter.`);
@@ -295,6 +336,7 @@ export async function prepareGoalVerification(input: {
     kind,
     scope,
     target: pack.intent.requestedTarget?.value,
+    runtime: pack.intent.requestedTarget?.runtime,
   });
   const goal = await updateLifecycleLink({
     workspacePath: input.workspacePath,

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-08-18
+
+### Changed
+
+- Made test-coverage Goals runtime-bound across intent compilation, preflight,
+  verified-goal identity, baseline, and verification. Polyglot scopes now use
+  canonical Workspace Model choices and a reproducible `--runtime` binding
+  instead of silently selecting or re-detecting a primary runtime.
+- Added context-aware Goal scoping: adopted-project and single-project
+  invocations bind automatically; multi-project terminals can choose one
+  project, a project set, or the workspace; non-interactive consumers receive
+  a machine-readable decision and explicit `--scope` choices.
+
+### Fixed
+
+- Reconciled the exact legacy Goal-index drift where `activeGoalId` selected a
+  non-actionable planned or active entry, while continuing to reject malformed
+  or tampered indexes.
+- Prevented activation of Goal Packs that still require clarification,
+  measurement evidence, or blocker resolution.
+- Prevented managed `.workspai` grounding and report updates from invalidating
+  their own Git-backed Model/Graph fingerprint during Goal `--refresh`.
+- Prevented mixed-runtime project-set coverage Goals from silently verifying
+  only the projects matching one selected runtime. Coverage runtime choices
+  must now be canonical for every selected project, otherwise Workspai asks
+  the user or agent to split the scope.
+
 ## [0.59.1] - 2026-08-17
 
 ### Changed
@@ -24,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stabilized the Windows coverage lane by bounding filesystem-heavy test
   concurrency, using platform-aware transaction budgets, making temporary
   workspace cleanup retry-safe, and allowing registry-lock acquisition to
-  outlive its stale-lock recovery threshold.  
+  outlive its stale-lock recovery threshold.
 
 ## [0.59.0] - 2026-08-17
 

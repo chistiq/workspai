@@ -5,6 +5,53 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Latest Release: v0.60.0 (August 18, 2026)
+
+### Governed Goals for Real Multi-Project Workspaces
+
+This release turns plain-language Goals into a stable, canonical-first workflow
+across adopted projects, project sets, and complete workspaces.
+
+**What's New:**
+
+- Goal scope follows invocation context: an adopted project binds
+  automatically, while a multi-project workspace asks for one project,
+  multiple projects, or the entire workspace.
+- Non-interactive and JSON consumers receive deterministic
+  `needs-confirmation` decisions instead of prompts or guessed scope.
+- Coverage Goals reuse canonical Workspace Model runtimes. A polyglot project
+  can bind an explicit `--runtime`, and a multi-project Goal exposes only
+  runtimes shared by every selected project.
+- Mixed-runtime coverage scopes with no common runtime fail closed and request
+  runtime-compatible Goal scopes; no project is silently omitted from
+  verification.
+- The VS Code consumer receives synchronized Goal, lifecycle, handoff, and
+  verified-goal contracts for native project/runtime selection.
+
+**Reliability improvements:**
+
+- Git-backed Graph freshness now excludes managed `.workspai` outputs from the
+  source inventory, preventing Workspace Intelligence and Goal `--refresh`
+  from invalidating their own freshly generated evidence.
+- Goal renewal, verification, Repair Engine boundaries, and project entry
+  recovery preserve project-set scope and canonical runtime bindings.
+
+**Breaking changes:** None. New scope values and measurement runtime choices
+are additive; existing Goal artifacts remain readable.
+
+**Publication status:** Released August 18, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.60.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.60.0/packages/cli/releases/RELEASE_NOTES_v0.60.0.md)
+
+---
+
 ## Latest Release: v0.59.1 (August 17, 2026)
 
 ### Consumer-Aware Contract Delivery

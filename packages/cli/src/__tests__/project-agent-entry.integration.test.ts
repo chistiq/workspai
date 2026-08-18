@@ -182,11 +182,12 @@ describe('canonical-first project agent entry', () => {
 
     const plannedGoal = await planGoalPack({
       startPath: projectPath,
-      intent: 'Document the health endpoint contract',
+      intent: 'Map the health endpoint architecture',
       scope: 'project:api',
       consumer: 'generic',
     });
     expect(plannedGoal.goalPack.scope.projects).toEqual(['api']);
+    expect(plannedGoal.goalPack.state).toBe('ready-to-plan');
     await transitionGoalLifecycle({
       workspacePath,
       goalId: plannedGoal.goalPack.id,
@@ -245,7 +246,7 @@ describe('canonical-first project agent entry', () => {
       expect.objectContaining({ id: 'active-goal', status: 'failed' })
     );
     expect(staleGoalReceipt.nextActions[0]).toBe(
-      'workspai goal "Document the health endpoint contract" --scope project:api --for-agent generic --refresh --json'
+      'workspai goal "Map the health endpoint architecture" --scope project:api --for-agent generic --refresh --json'
     );
     expect(JSON.stringify(staleGoalReceipt)).not.toContain(root);
 

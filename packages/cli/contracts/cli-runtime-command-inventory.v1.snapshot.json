@@ -505,6 +505,10 @@
           "attributeName": "scope"
         },
         {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
           "flags": "--for-agent <consumer>",
           "attributeName": "forAgent"
         },

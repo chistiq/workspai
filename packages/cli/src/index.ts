@@ -7451,7 +7451,33 @@ program
     'Compile a plain-language engineering intent into a governed, evidence-bound Goal Pack'
   )
   .option('--workspace <path>', 'Explicit canonical workspace path')
-  .option('--scope <scope>', 'Bound the goal to workspace or project:<name>')
+  .option(
+    '--scope <scope>',
+    'Bound the Goal to workspace, project:<name>, or projects:<name>,<name>'
+  )
+  .addOption(
+    new Option(
+      '--runtime <runtime>',
+      'Bind a coverage Goal to a canonical runtime in its scope'
+    ).choices([
+      'node',
+      'bun',
+      'deno',
+      'python',
+      'go',
+      'java',
+      'dotnet',
+      'rust',
+      'php',
+      'ruby',
+      'elixir',
+      'clojure',
+      'scala',
+      'kotlin',
+      'c',
+      'cpp',
+    ])
+  )
   .addOption(
     new Option('--for-agent <consumer>', 'Portable handoff consumer')
       .choices(['generic', 'claude', 'codex'])
@@ -7474,6 +7500,7 @@ program
       options: {
         workspace?: string;
         scope?: string;
+        runtime?: Exclude<import('./project-test-coverage.js').ProjectCoverageRuntime, 'unknown'>;
         forAgent?: 'generic' | 'claude' | 'codex';
         maxAttempts?: string;
         refresh?: boolean;
@@ -7569,15 +7596,27 @@ program
         }
         const maxAttempts = Number(options.maxAttempts ?? 5);
         const { planGoalPack } = await import('./goal-pack.js');
+        const interactive =
+          options.json !== true && process.stdin.isTTY === true && process.stdout.isTTY === true;
+        const interactiveSelectors = interactive
+          ? await import('./goals/goal-interactive-selection.js')
+          : null;
         const result = await planGoalPack({
           startPath: process.cwd(),
           intent: selection.intent,
           workspacePath: options.workspace,
           scope: options.scope,
+          runtime: options.runtime,
           consumer: options.forAgent,
           maxAttempts,
           refresh: options.refresh === true,
           dryRun: options.dryRun === true || process.argv.includes('--dry-run'),
+          ...(interactiveSelectors
+            ? {
+                selectScope: interactiveSelectors.selectGoalScopeInteractively,
+                selectCoverageRuntime: interactiveSelectors.selectGoalCoverageRuntimeInteractively,
+              }
+            : {}),
         });
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
@@ -7642,6 +7681,7 @@ program
                 message,
                 context: {
                   scope: options.scope ?? null,
+                  runtime: options.runtime ?? null,
                   refresh: options.refresh === true,
                   goalId:
                     options.prepare ??
@@ -8726,7 +8766,10 @@ program
   .option('--blast-radius', 'Include downstream dependents from workspace dependency graph')
   .option('--since <ref>', 'Git ref for affected calculation (default: HEAD~1)')
   .option('--parallel', 'Run project stages in parallel')
-  .option('--runtime <runtime>', 'Limit workspace run to one detected runtime family')
+  .option(
+    '--runtime <runtime>',
+    'Limit workspace run or a test-coverage Goal to one detected runtime family'
+  )
   .option('--max-workers <count>', 'Maximum parallel workers (default: min(4, selected))')
   .option('--continue-on-error', 'Continue running remaining projects after a failure')
   .option(
@@ -11753,11 +11796,41 @@ See the command reference for action-specific required inputs and output artifac
         if (!Number.isFinite(parsedTarget) || parsedTarget < 0 || parsedTarget > 100) {
           throw new Error('--target must be a number from 0 to 100.');
         }
+        const coverageRuntimes = [
+          'node',
+          'bun',
+          'deno',
+          'python',
+          'go',
+          'java',
+          'dotnet',
+          'rust',
+          'php',
+          'ruby',
+          'elixir',
+          'clojure',
+          'scala',
+          'kotlin',
+          'c',
+          'cpp',
+        ] as const;
+        const coverageRuntime = actionOptions.runtime;
+        if (
+          goalArgument === 'test-coverage' &&
+          coverageRuntime !== undefined &&
+          !coverageRuntimes.includes(coverageRuntime as (typeof coverageRuntimes)[number])
+        ) {
+          throw new Error(`--runtime must be one of: ${coverageRuntimes.join(', ')}.`);
+        }
         const result = await planVerifiedGoal({
           workspacePath,
           kind: goalArgument as (typeof allowedKinds)[number],
           scope: actionOptions.scope,
           target: parsedTarget,
+          runtime:
+            goalArgument === 'test-coverage'
+              ? (coverageRuntime as (typeof coverageRuntimes)[number] | undefined)
+              : undefined,
           allowBreakingChanges: actionOptions.allowBreaking === true,
           allowForce: actionOptions.allowForce === true,
           requireBuild: actionOptions.build !== false,
@@ -11983,8 +12056,12 @@ export function printHelp() {
   printHelpSectionDivider('Golden Path · Understand → Impact → Act → Verify');
   console.log('');
   line(
-    'npx workspai goal "<outcome>" --scope project:<name> --for-agent generic',
-    'Turn any engineering outcome into bounded, governed work'
+    'npx workspai goal "<outcome>" --for-agent generic',
+    'Auto-bind a project or choose a bounded multi-project scope'
+  );
+  line(
+    'npx workspai goal "<coverage outcome>" --scope projects:a,b --runtime node',
+    'Bind automation explicitly to canonical projects and runtime'
   );
   line(
     'npx workspai workspace graph search "<question>" --scope project:<name> --json',

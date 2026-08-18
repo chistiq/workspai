@@ -8,6 +8,10 @@ current Workspace Model and proof-backed Knowledge Graph.
 # Run inside an adopted project; scope defaults to that project.
 npx workspai goal "Raise test coverage to at least 85%"
 
+# Polyglot coverage stays explicit. Choose interactively, name it in the
+# objective, or bind a canonical runtime for automation.
+npx workspai goal "Raise test coverage to at least 85%" --runtime cpp
+
 # Goals are not limited to coverage or another built-in metric.
 npx workspai goal "Add retry with exponential backoff for transient requests"
 npx workspai goal "Refactor the authentication boundary"
@@ -29,7 +33,8 @@ retrieval and verification hint, not an allowlist. An objective that does not
 match the local deterministic classifier is retained as a low-confidence
 general Goal instead of being discarded; the original text remains the
 authority. Genuine compound ambiguity, missing numeric coverage targets,
-missing evidence, unsafe scope, or stale bindings still stop before mutation.
+an unresolved coverage runtime in a polyglot scope, missing evidence, unsafe
+scope, or stale bindings still stop before mutation.
 
 ## What it produces
 
@@ -59,8 +64,13 @@ credentials, raw model responses, or unrestricted command output.
 ## Scope resolution
 
 - From an adopted or linked project, the default scope is that exact project.
-- From a workspace root, the default scope is all registered projects.
+- From a workspace root containing one project, that project is selected.
+- From a multi-project workspace root, an interactive terminal asks for one
+  project, multiple projects, or the entire workspace. JSON, CI, redirected,
+  and agent runs never prompt; they return `needs-confirmation` with canonical
+  project choices.
 - `--scope project:<name>` selects one project explicitly.
+- `--scope projects:<name>,<name>` selects a stable project set explicitly.
 - `--scope workspace` selects the complete canonical workspace explicitly.
 - `--workspace <path>` is available for automation that cannot rely on the
   current directory.
@@ -102,6 +112,20 @@ machine-readable producer or baseline still needs setup. A native C/C++
 project without instrumented LCOV, Cobertura, or LLVM output is therefore
 reported as `needs-evidence`, never as ready.
 
+For a polyglot project, a broad request such as `Raise test coverage to 85%`
+asks an interactive user to choose one canonical runtime. Non-interactive
+consumers receive `needs-confirmation` and may rerun with
+`--runtime <runtime>` or name the runtime in the intent. Workspai does not run a
+second detector.
+
+For a multi-project scope, the offered `runtimeChoices` are the intersection of
+the canonical runtime candidates of every selected project. If no common
+coverage runtime exists, Workspai requires runtime-compatible Goal scopes
+instead of silently dropping projects from measurement. A valid runtime is
+bound into the Goal Pack, measurement preflight, generated
+`workspace goal plan` command, verified-goal identity, baseline, and every
+later verification run.
+
 `blocked` means the CLI cannot provide bounded proof-backed retrieval for the
 selected intent and scope. Workspai refuses to hand broad source inspection to
 an agent until Workspace Intelligence is refreshed or the intent is clarified.
@@ -109,6 +133,13 @@ an agent until Workspace Intelligence is refreshed or the intent is clarified.
 Only a `ready-to-plan` Goal may become the active objective automatically.
 Planning a Goal that needs confirmation or evidence records it for review but
 does not replace the current active Goal.
+
+Lifecycle activation is independently fail-closed. `needs-confirmation`,
+`needs-evidence`, and `blocked` Goal Packs cannot be activated through the CLI
+or an IDE. Replanning is also a reconciliation boundary for the legacy case in
+which an older CLI left `activeGoalId` selecting a non-actionable planned or
+active entry; only that exact safe drift is cleared, while malformed or
+tampered indexes remain rejected.
 
 Preflight also carries the current Workspace Intelligence status, blocked
 stages, objective-first retrieval queries, deterministic category recall, and
@@ -129,7 +160,11 @@ The two goal surfaces have different jobs:
 When a plain-language intent maps exactly to one of those three measurable
 contracts, the Goal Pack includes the correct `workspace goal plan` command.
 For example, a coverage intent without a percentage becomes
-`needs-confirmation`; Workspai does not invent a target.
+`needs-confirmation`; Workspai does not invent a target. A coverage intent over
+a polyglot project also requires one named runtime. A multi-project coverage
+scope must share that runtime across every selected project. The generated
+verifier uses `workspace goal plan test-coverage --runtime <runtime>` and
+preserves that runtime through baseline and verification.
 
 For a supported deterministic contract, the lifecycle bridge is explicit:
 
@@ -202,7 +237,8 @@ without crippling legitimate goals such as removing a deprecated module.
 
 ```text
 --workspace <path>      Explicit canonical workspace
---scope <scope>         workspace or project:<name>
+--scope <scope>         workspace, project:<name>, or projects:<name>,<name>
+--runtime <runtime>     Canonical runtime for a test-coverage Goal
 --for-agent <consumer>  generic, claude, or codex (default: generic)
 --max-attempts <count>  Bounded execution-cycle budget, 1–25 (default: 5)
 --refresh               Refresh Workspace Intelligence before planning
@@ -218,7 +254,7 @@ without crippling legitimate goals such as removing a deprecated module.
 ```
 
 Choose exactly one lifecycle option. Lifecycle options cannot be combined with
-an intent, `--scope`, `--refresh`, or `--dry-run`; `--no-run` applies only to
+an intent, `--scope`, `--runtime`, `--refresh`, or `--dry-run`; `--no-run` applies only to
 `--verify`. Invalid combinations fail before workspace resolution or writes.
 
 Schemas:

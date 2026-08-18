@@ -45,6 +45,7 @@ function input(intent: string) {
       measurement: {
         status: 'available' as const,
         runtime: 'node',
+        runtimeChoices: ['node'],
         runner: 'vitest',
         existingEvidence: [
           { project: 'api', path: 'coverage/coverage-summary.json', sha256: hash('d') },
@@ -119,6 +120,52 @@ describe('goal pack pure kernel', () => {
     expect(goalPack.state).toBe('needs-confirmation');
     expect(goalPack.decision?.required).toBe(true);
     expect(goalPack.commands.planVerifiedGoal).toBeUndefined();
+  });
+
+  it('requires a runtime for polyglot coverage and carries an explicit runtime into verification', () => {
+    const ambiguous = compileGoalIntent('Raise test coverage to 85%', {
+      availableCoverageRuntimes: ['cpp', 'python', 'ruby'],
+    });
+    expect(ambiguous.ambiguities).toContainEqual(
+      expect.stringContaining('Coverage scope is ambiguous')
+    );
+
+    const explicit = compileGoalIntent('Raise C++ test coverage to 85%', {
+      availableCoverageRuntimes: ['cpp', 'python', 'ruby'],
+    });
+    expect(explicit).toMatchObject({
+      ambiguities: [],
+      requestedTarget: { value: 85, runtime: 'cpp' },
+    });
+    const { goalPack } = buildGoalPack({ ...input(explicit.original), intent: explicit }, ports);
+    expect(goalPack.commands.planVerifiedGoal).toContain('--runtime cpp');
+    expect(goalPack.successCriteria[0]?.producerCommand).toContain('--runtime cpp');
+  });
+
+  it('uses structured common runtime choices in the user decision', () => {
+    const candidate = input('Raise test coverage to 85%');
+    candidate.intent = compileGoalIntent(candidate.intent.original, {
+      availableCoverageRuntimes: ['cpp', 'node'],
+    });
+    candidate.baseline.runtimes = ['cpp', 'dotnet', 'node', 'python'];
+    candidate.preflight.measurement.runtimeChoices = ['cpp', 'node'];
+    candidate.preflight.measurement.status = 'requires-setup';
+
+    const { goalPack } = buildGoalPack(candidate, ports);
+
+    expect(goalPack.decision?.question).toContain('cpp, node');
+    expect(goalPack.decision?.question).not.toContain('dotnet');
+    expect(goalPack.decision?.question).not.toContain('python');
+  });
+
+  it('rejects a coverage runtime that is absent from the selected scope', () => {
+    const intent = compileGoalIntent('Raise Rust test coverage to 85%', {
+      availableCoverageRuntimes: ['cpp', 'python'],
+    });
+
+    expect(intent.ambiguities).toContainEqual(
+      expect.stringContaining('rust coverage runtime is not present')
+    );
   });
 
   it('does not claim readiness when a measurable goal still requires evidence setup', () => {

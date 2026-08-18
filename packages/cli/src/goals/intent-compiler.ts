@@ -1,4 +1,8 @@
-import type { CompiledGoalIntent, GoalIntentCategory } from './goal-pack-contract.js';
+import type {
+  CompiledGoalIntent,
+  GoalCoverageRuntime,
+  GoalIntentCategory,
+} from './goal-pack-contract.js';
 
 const MAX_INTENT_LENGTH = 2_000;
 const CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
@@ -85,13 +89,62 @@ function coverageTarget(intent: string): number | null {
   return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
 }
 
-export function compileGoalIntent(raw: string): CompiledGoalIntent {
+const COVERAGE_RUNTIME_PATTERNS: ReadonlyArray<{
+  runtime: GoalCoverageRuntime;
+  patterns: RegExp[];
+}> = [
+  { runtime: 'cpp', patterns: [/\bc\+\+/i, /\bcpp\b/i] },
+  { runtime: 'dotnet', patterns: [/\.net\b/i, /\bdotnet\b/i, /\bc#/i, /\bcsharp\b/i] },
+  {
+    runtime: 'node',
+    patterns: [/\bnode(?:\.js)?\b/i, /\btypescript\b/i, /\bjavascript\b/i, /\b(?:js|ts)\b/i],
+  },
+  { runtime: 'python', patterns: [/\bpython\b/i, /\bpytest\b/i] },
+  { runtime: 'go', patterns: [/\bgolang\b/i, /\bgo(?:\s+(?:test|coverage|tests))\b/i] },
+  { runtime: 'java', patterns: [/\bjava\b/i, /\bjunit\b/i, /\bjacoco\b/i] },
+  { runtime: 'rust', patterns: [/\brust\b/i, /\bcargo\b/i] },
+  { runtime: 'php', patterns: [/\bphp\b/i, /\bphpunit\b/i] },
+  { runtime: 'ruby', patterns: [/\bruby\b/i, /\brspec\b/i] },
+  { runtime: 'kotlin', patterns: [/\bkotlin\b/i] },
+  { runtime: 'scala', patterns: [/\bscala\b/i] },
+  { runtime: 'clojure', patterns: [/\bclojure\b/i] },
+  { runtime: 'elixir', patterns: [/\belixir\b/i] },
+  { runtime: 'deno', patterns: [/\bdeno\b/i] },
+  { runtime: 'bun', patterns: [/\bbun\b/i] },
+  { runtime: 'c', patterns: [/\bc(?:\s+(?:test|coverage|tests|code))\b/i] },
+];
+
+function coverageRuntime(intent: string): GoalCoverageRuntime[] {
+  return COVERAGE_RUNTIME_PATTERNS.filter((candidate) =>
+    candidate.patterns.some((pattern) => pattern.test(intent))
+  ).map((candidate) => candidate.runtime);
+}
+
+export function compileGoalIntent(
+  raw: string,
+  context: {
+    availableCoverageRuntimes?: readonly string[];
+    selectedCoverageRuntime?: GoalCoverageRuntime;
+  } = {}
+): CompiledGoalIntent {
   const original = normalizedIntent(raw);
   const matches = CATEGORY_RULES.filter((rule) =>
     rule.patterns.some((pattern) => pattern.test(original))
   ).map((rule) => rule.category);
   const category = matches[0] ?? 'feature-change';
   const target = coverageTarget(original);
+  const requestedRuntimes = coverageRuntime(original);
+  const resolvedRuntimes =
+    requestedRuntimes.length === 0 && context.selectedCoverageRuntime
+      ? [context.selectedCoverageRuntime]
+      : requestedRuntimes;
+  const availableRuntimes = [
+    ...new Set(
+      (context.availableCoverageRuntimes ?? []).filter((runtime): runtime is GoalCoverageRuntime =>
+        COVERAGE_RUNTIME_PATTERNS.some((candidate) => candidate.runtime === runtime)
+      )
+    ),
+  ].sort();
   const ambiguities: string[] = [];
 
   // Classification tunes retrieval and built-in verification; it is not an
@@ -105,6 +158,30 @@ export function compileGoalIntent(raw: string): CompiledGoalIntent {
   }
   if (category === 'test-coverage' && target === null) {
     ambiguities.push('A numeric test coverage target is required for machine verification.');
+  }
+  if (category === 'test-coverage' && resolvedRuntimes.length > 1) {
+    ambiguities.push(
+      `The Goal names multiple coverage runtimes: ${resolvedRuntimes.join(', ')}. Select one runtime per Goal.`
+    );
+  }
+  if (
+    category === 'test-coverage' &&
+    resolvedRuntimes.length === 0 &&
+    availableRuntimes.length > 1
+  ) {
+    ambiguities.push(
+      `Coverage scope is ambiguous across detected runtimes: ${availableRuntimes.join(', ')}. Name one runtime or language in the Goal.`
+    );
+  }
+  if (
+    category === 'test-coverage' &&
+    resolvedRuntimes.length === 1 &&
+    availableRuntimes.length > 0 &&
+    !availableRuntimes.includes(resolvedRuntimes[0])
+  ) {
+    ambiguities.push(
+      `The requested ${resolvedRuntimes[0]} coverage runtime is not present in the selected scope. Detected runtimes: ${availableRuntimes.join(', ')}.`
+    );
   }
 
   return {
@@ -121,6 +198,7 @@ export function compileGoalIntent(raw: string): CompiledGoalIntent {
             metric: 'test-coverage-percent' as const,
             operator: 'at-least' as const,
             value: target,
+            ...(resolvedRuntimes.length === 1 ? { runtime: resolvedRuntimes[0] } : {}),
           },
         }),
   };

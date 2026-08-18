@@ -38,9 +38,23 @@
       "type": "object",
       "required": ["kind"],
       "properties": {
-        "kind": { "enum": ["workspace", "project"] },
+        "kind": { "enum": ["workspace", "project", "project-set"] },
         "projectName": { "type": "string", "minLength": 1 },
-        "projectPath": { "type": "string", "minLength": 1 }
+        "projectPath": { "type": "string", "minLength": 1 },
+        "projects": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "required": ["projectName", "projectPath"],
+            "properties": {
+              "projectName": { "type": "string", "minLength": 1 },
+              "projectPath": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "allOf": [
         {
@@ -51,6 +65,13 @@
               "projectPath": { "type": "string", "minLength": 1 }
             },
             "required": ["projectName", "projectPath"]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "project-set" } } },
+          "then": {
+            "properties": { "projects": { "type": "array", "minItems": 2 } },
+            "required": ["projects"]
           }
         }
       ],
@@ -97,7 +118,27 @@
           "properties": {
             "kind": { "const": "test-coverage" },
             "metric": { "const": "auto" },
-            "minimumPercent": { "type": "number", "minimum": 0, "maximum": 100 }
+            "minimumPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+            "runtime": {
+              "enum": [
+                "node",
+                "bun",
+                "deno",
+                "python",
+                "go",
+                "java",
+                "dotnet",
+                "rust",
+                "php",
+                "ruby",
+                "elixir",
+                "clojure",
+                "scala",
+                "kotlin",
+                "c",
+                "cpp"
+              ]
+            }
           },
           "additionalProperties": false
         }

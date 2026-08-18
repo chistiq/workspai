@@ -3,7 +3,22 @@
   "$id": "https://workspai.dev/schemas/workspace-intelligence/goal-agent-handoff.v1.json",
   "title": "Workspai Goal Agent Handoff",
   "type": "object",
-  "required": ["schemaVersion", "goalId", "goalFingerprint", "generatedAt", "consumer", "state", "objective", "scope", "discovery", "retrieval", "evidence", "guardrails", "workflow", "renewal"],
+  "required": [
+    "schemaVersion",
+    "goalId",
+    "goalFingerprint",
+    "generatedAt",
+    "consumer",
+    "state",
+    "objective",
+    "scope",
+    "discovery",
+    "retrieval",
+    "evidence",
+    "guardrails",
+    "workflow",
+    "renewal"
+  ],
   "properties": {
     "schemaVersion": { "const": "workspai.goal-agent-handoff.v1" },
     "goalId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,95}$" },
@@ -16,10 +31,46 @@
       "type": "object",
       "required": ["kind", "projects", "selectionSource"],
       "properties": {
-        "kind": { "enum": ["workspace", "project"] },
-        "projects": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "selectionSource": { "enum": ["workspace", "invocation-project", "explicit"] }
+        "kind": { "enum": ["workspace", "project", "project-set"] },
+        "projects": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "selectionSource": {
+          "enum": [
+            "workspace",
+            "single-project-workspace",
+            "invocation-project",
+            "explicit",
+            "interactive"
+          ]
+        },
+        "resolution": { "enum": ["selected", "selection-required"] }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "project" } } },
+          "then": { "properties": { "projects": { "type": "array", "maxItems": 1 } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "project-set" } } },
+          "then": { "properties": { "projects": { "type": "array", "minItems": 2 } } }
+        },
+        {
+          "if": {
+            "properties": { "resolution": { "const": "selection-required" } },
+            "required": ["resolution"]
+          },
+          "then": {
+            "properties": {
+              "kind": { "const": "workspace" },
+              "selectionSource": { "const": "workspace" }
+            }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "evidence": {
@@ -51,7 +102,12 @@
       "properties": {
         "index": { "const": ".workspai/goals/index.json" },
         "statusCommand": { "type": "string", "pattern": "^workspai goal --status " },
-        "requiredReads": { "type": "array", "minItems": 3, "items": { "type": "string", "pattern": "^\\.workspai/" }, "uniqueItems": true }
+        "requiredReads": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "type": "string", "pattern": "^\\.workspai/" },
+          "uniqueItems": true
+        }
       },
       "additionalProperties": false
     },
@@ -61,12 +117,37 @@
       "properties": {
         "status": { "enum": ["grounded", "partial", "empty"] },
         "strategy": { "const": "deterministic-category-v1" },
-        "queries": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "anchors": { "type": "array", "maxItems": 20, "items": { "type": "object", "required": ["entityId", "kind", "label", "proofIds"], "properties": { "entityId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "proofIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true } }, "additionalProperties": false } }
+        "queries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "anchors": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["entityId", "kind", "label", "proofIds"],
+            "properties": {
+              "entityId": { "type": "string" },
+              "kind": { "type": "string" },
+              "label": { "type": "string" },
+              "proofIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },
-    "guardrails": { "type": "array", "minItems": 5, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "guardrails": {
+      "type": "array",
+      "minItems": 5,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
     "workflow": {
       "type": "array",
       "minItems": 5,

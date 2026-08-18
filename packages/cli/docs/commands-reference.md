@@ -33,7 +33,7 @@ npx workspai pipeline [--json] [--strict] [--skip-verify] [--skip-analyze] [--sk
 npx workspai analyze [--workspace <path>] [--json] [--strict] [--output <file>]
 npx workspai readiness [--workspace <path>] [--json] [--strict] [--skip-verify]
 npx workspai autopilot release [--mode <audit|safe-fix|enforce>] [--json] [--output <file>] [--since <ref>] [--parallel] [--max-workers <n>]
-npx workspai goal <intent> [--workspace <path>] [--scope <workspace|project:name>] [--for-agent <generic|claude|codex>] [--max-attempts <1-25>] [--refresh] [--dry-run] [--json]
+npx workspai goal <intent> [--workspace <path>] [--scope <workspace|project:name|projects:a,b>] [--runtime <runtime>] [--for-agent <generic|claude|codex>] [--max-attempts <1-25>] [--refresh] [--dry-run] [--json]
 npx workspai goal <--status [goal-id]|--list|--activate <goal-id>|--cancel <goal-id>|--prepare <goal-id>|--verify <goal-id>> [--workspace <path>] [--no-run] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
 ```
@@ -83,7 +83,7 @@ npx workspai workspace contract inspect [--json]
 npx workspai workspace contract verify [--strict] [--json]
 npx workspai workspace contract graph [--output <graph.json>] [--json]
 npx workspai workspace intelligence run [--workspace <path>] [--for-agent <agent>] [--strict] [--json]
-npx workspai workspace goal plan <release-readiness|dependency-security|test-coverage> [--scope project:<name>] [--target <0-100>] [--allow-breaking] [--allow-force] [--no-build] [--no-tests] [--json]
+npx workspai workspace goal plan <release-readiness|dependency-security|test-coverage> [--scope <workspace|project:name|projects:a,b>] [--runtime <runtime>] [--target <0-100>] [--allow-breaking] [--allow-force] [--no-build] [--no-tests] [--json]
 npx workspai workspace goal status <goal-id> [--json]
 npx workspai workspace goal verify <goal-id> [--no-run] [--reuse-intelligence] [--json]
 npx workspai workspace model [--workspace <path>] [--json] [--write] [--strict] [--cache] [--incremental] [--include-paths] [--include-evidence] [--scan-depth <count>]
@@ -180,6 +180,16 @@ portable agent handoff, and active-goal index. Use `goal --status`, `--list`,
 claim verification. Lifecycle operations are mutually exclusive, cannot be
 combined with an intent or planning-only flags, and `--no-run` is valid only
 with `--verify`. See [Goal Packs](./goal-packs.md).
+
+Coverage Goals are runtime-bound. Interactive terminals select from the
+canonical Workspace Model when the chosen scope has multiple runtimes;
+non-interactive consumers receive `needs-confirmation` and rerun with
+`--runtime <runtime>` or a runtime named in the intent. From a multi-project
+workspace root, scope follows the same rule: interactive selection, or an
+explicit `--scope` for JSON/CI/agent runs. No second runtime detector is used.
+The emitted deterministic command uses
+`workspace goal plan test-coverage --runtime <runtime> --target <percent>`;
+the same runtime remains part of baseline and verification identity.
 
 `agent bootstrap` is the project-local canonical-first preflight. It validates
 the host discovery route, project/workspace binding, public artifact schemas,

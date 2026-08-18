@@ -18,6 +18,7 @@ export function validateGoalCommandSelection(input: {
   prepare?: string;
   verify?: string;
   scope?: string;
+  runtime?: string;
   refresh?: boolean;
   dryRun?: boolean;
   run?: boolean;
@@ -48,9 +49,9 @@ export function validateGoalCommandSelection(input: {
   if (input.intent?.trim()) {
     throw new Error(`Do not combine an intent with --${operation}.`);
   }
-  if (input.scope || input.refresh || input.dryRun) {
+  if (input.scope || input.runtime || input.refresh || input.dryRun) {
     throw new Error(
-      `--${operation} does not accept planning-only --scope, --refresh, or --dry-run options.`
+      `--${operation} does not accept planning-only --scope, --runtime, --refresh, or --dry-run options.`
     );
   }
   if (input.run === false && operation !== 'verify') {

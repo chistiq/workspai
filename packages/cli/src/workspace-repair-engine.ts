@@ -2813,11 +2813,16 @@ async function planWorkspaceRepairProposalLocked(
         `Goal ${proposal.goalId} exhausted its repair proposal budget (${governedGoal.goalPack.policy.maxAttempts}). Review the latest evidence before creating another Goal Pack.`
       );
     }
-    if (governedGoal.goalPack.scope.kind === 'project') {
-      const permittedProject = governedGoal.goalPack.scope.projects[0];
-      if (!proposal.projectName || proposal.projectName !== permittedProject) {
+    if (
+      governedGoal.goalPack.scope.kind === 'project' ||
+      governedGoal.goalPack.scope.kind === 'project-set'
+    ) {
+      const permittedProjects = governedGoal.goalPack.scope.projects;
+      if (!proposal.projectName || !permittedProjects.includes(proposal.projectName)) {
         throw new Error(
-          `Goal-bound repair must declare the exact permitted projectName (${permittedProject}).`
+          governedGoal.goalPack.scope.kind === 'project'
+            ? `Goal-bound repair must declare the exact permitted projectName (${permittedProjects[0]}).`
+            : `Goal-bound repair must declare a projectName inside the permitted Goal scope (${permittedProjects.join(', ')}).`
         );
       }
     }

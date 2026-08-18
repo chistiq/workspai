@@ -734,6 +734,15 @@ async function gitOutput(cwd: string, args: string[]): Promise<Buffer> {
   return Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.from(result.stdout);
 }
 
+function gitInventoryPathspecs(): string[] {
+  return [
+    '.',
+    ...[...IGNORED_DIRECTORIES]
+      .sort((left, right) => left.localeCompare(right))
+      .map((directory) => `:(exclude,glob)**/${directory}/**`),
+  ];
+}
+
 async function gitFingerprintScope(input: {
   kind: 'workspace' | 'project';
   id: string;
@@ -759,10 +768,14 @@ async function gitFingerprintScope(input: {
       scopePrefix.includes('/../')
     )
       return null;
-    const treeScope = scopePrefix.replace(/\/$/u, '');
-    const treeSpec = treeScope ? `HEAD:${treeScope}` : 'HEAD^{tree}';
+    // The Git worktree fingerprint must cover the same bounded inventory as
+    // graph providers. Managed `.workspai` outputs and other ignored trees can
+    // be tracked by a repository, but refreshing those outputs must not make
+    // the graph invalidate itself. Apply the inventory exclusions to every
+    // Git probe instead of hashing the complete repository diff.
+    const pathspecs = gitInventoryPathspecs();
     const [tree, diff, untracked, ignored, flags, gitLinks] = await Promise.all([
-      gitOutput(input.root, ['rev-parse', treeSpec]),
+      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', ...pathspecs]),
       gitOutput(input.root, [
         'diff',
         '--no-ext-diff',
@@ -770,7 +783,7 @@ async function gitFingerprintScope(input: {
         '--binary',
         'HEAD',
         '--',
-        '.',
+        ...pathspecs,
       ]),
       gitOutput(input.root, [
         'ls-files',
@@ -779,7 +792,7 @@ async function gitFingerprintScope(input: {
         '--exclude-standard',
         '-z',
         '--',
-        '.',
+        ...pathspecs,
       ]),
       gitOutput(input.root, [
         'ls-files',
@@ -789,10 +802,10 @@ async function gitFingerprintScope(input: {
         '--exclude-standard',
         '-z',
         '--',
-        '.',
+        ...pathspecs,
       ]),
-      gitOutput(input.root, ['ls-files', '-v', '--', '.']),
-      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', '.']),
+      gitOutput(input.root, ['ls-files', '-v', '--', ...pathspecs]),
+      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', ...pathspecs]),
     ]);
     // Lowercase status marks assume-unchanged/skip-worktree files whose content
     // Git may intentionally hide from diff. Fall back to content hashing.

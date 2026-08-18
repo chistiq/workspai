@@ -196,4 +196,50 @@ describe('verified engineering goals', () => {
     });
     expect(planned.goal.baseline.message).toContain('does not contain a registered project');
   });
+
+  it('binds a verified goal to an explicit canonical project set', async () => {
+    const workspacePath = await workspaceFixture();
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-07-30T00:00:00.000Z',
+      workspace: { name: path.basename(workspacePath), profile: 'polyglot' },
+      projects: ['api', 'worker'].map((name) => ({
+        slug: name,
+        relativePath: name,
+        runtime: name === 'api' ? 'node' : 'python',
+        framework: name === 'api' ? 'nestjs' : 'fastapi',
+        modules: [],
+        ports: [],
+        contracts: {
+          owns: [],
+          apis: [],
+          publishes: [],
+          consumes: [],
+          dependsOn: [],
+          env: [],
+        },
+      })),
+    });
+    await Promise.all(
+      ['api', 'worker'].map((name) => fsExtra.ensureDir(path.join(workspacePath, name)))
+    );
+
+    const planned = await planVerifiedGoal({
+      workspacePath,
+      kind: 'test-coverage',
+      scope: 'projects:api,worker',
+      runtime: 'python',
+      target: 75,
+    });
+
+    expect(planned.goal.scope).toEqual({
+      kind: 'project-set',
+      projects: [
+        { projectName: 'api', projectPath: path.join(workspacePath, 'api') },
+        { projectName: 'worker', projectPath: path.join(workspacePath, 'worker') },
+      ],
+    });
+    expect(planned.goal.summary).toContain('api, worker');
+  });
 });

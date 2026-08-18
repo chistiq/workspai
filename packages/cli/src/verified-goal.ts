@@ -3,7 +3,10 @@ import path from 'node:path';
 
 import fsExtra from 'fs-extra';
 
-import { collectProjectTestCoverage } from './project-test-coverage.js';
+import {
+  collectProjectTestCoverage,
+  type ProjectCoverageRuntime,
+} from './project-test-coverage.js';
 import { evaluateReleaseReadiness } from './readiness.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
@@ -34,11 +37,29 @@ export type VerifiedGoalState =
   'planned' | 'active' | 'blocked' | 'verified' | 'failed' | 'cancelled';
 export type VerifiedGoalCheckStatus = 'passed' | 'failed' | 'blocked' | 'missing' | 'skipped';
 
-export type VerifiedGoalScope = {
-  kind: 'workspace' | 'project';
-  projectName?: string;
-  projectPath?: string;
-};
+export type VerifiedGoalScope =
+  | { kind: 'workspace' }
+  | { kind: 'project'; projectName: string; projectPath: string }
+  | {
+      kind: 'project-set';
+      projects: Array<{ projectName: string; projectPath: string }>;
+    };
+
+function scopeMatchesProject(
+  workspacePath: string,
+  scope: VerifiedGoalScope,
+  project: { name: string; path: string }
+): boolean {
+  if (scope.kind === 'workspace') return true;
+  const absolutePath = path.resolve(workspacePath, project.path);
+  if (scope.kind === 'project') {
+    return project.name === scope.projectName || absolutePath === path.resolve(scope.projectPath);
+  }
+  return scope.projects.some(
+    (selected) =>
+      selected.projectName === project.name || path.resolve(selected.projectPath) === absolutePath
+  );
+}
 
 export type VerifiedGoalContract = {
   schemaVersion: typeof VERIFIED_GOAL_SCHEMA_VERSION;
@@ -74,6 +95,7 @@ export type VerifiedGoalContract = {
         kind: 'test-coverage';
         metric: 'auto';
         minimumPercent: number;
+        runtime?: Exclude<ProjectCoverageRuntime, 'unknown'>;
       };
   baseline: VerifiedGoalMeasurement;
   dependencySafetyBaseline?: {
@@ -132,6 +154,7 @@ export type PlanVerifiedGoalOptions = {
   kind: VerifiedGoalKind;
   scope?: string;
   target?: number;
+  runtime?: Exclude<ProjectCoverageRuntime, 'unknown'>;
   allowBreakingChanges?: boolean;
   allowForce?: boolean;
   requireBuild?: boolean;
@@ -328,11 +351,8 @@ async function dependencySafetyBaseline(
   scope: VerifiedGoalScope
 ): Promise<NonNullable<VerifiedGoalContract['dependencySafetyBaseline']>> {
   const model = await buildWorkspaceModel({ workspacePath, includeAbsolutePaths: true });
-  const projects = model.projects.filter(
-    (project) =>
-      scope.kind === 'workspace' ||
-      project.name === scope.projectName ||
-      path.resolve(workspacePath, project.path) === path.resolve(scope.projectPath ?? '')
+  const projects = model.projects.filter((project) =>
+    scopeMatchesProject(workspacePath, scope, project)
   );
   const manifests = new Map<
     string,
@@ -489,6 +509,9 @@ function goalIdentity(goal: VerifiedGoalContract): Record<string, unknown> {
     kind: goal.kind,
     scope: goal.scope,
     target: goal.criteria.kind === 'test-coverage' ? goal.criteria.minimumPercent : null,
+    ...(goal.criteria.kind === 'test-coverage' && goal.criteria.runtime
+      ? { runtime: goal.criteria.runtime }
+      : {}),
     constraints: goal.constraints,
   };
 }
@@ -508,11 +531,51 @@ async function resolveScope(
   if (!normalized || normalized === 'workspace') {
     return { scope: { kind: 'workspace' } };
   }
+  const projectSetPrefix = normalized.startsWith('projects:')
+    ? 'projects:'
+    : normalized.startsWith('project:') && normalized.slice('project:'.length).includes(',')
+      ? 'project:'
+      : null;
   const requested = normalized.startsWith('project:')
     ? normalized.slice('project:'.length).trim()
-    : normalized;
+    : projectSetPrefix
+      ? normalized.slice(projectSetPrefix.length).trim()
+      : normalized;
   if (!requested) throw new Error('Project goal scope must name a project.');
   const model = await buildWorkspaceModel({ workspacePath, includeAbsolutePaths: true });
+  if (projectSetPrefix) {
+    const names = requested
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (names.length < 2 || new Set(names).size !== names.length) {
+      throw new Error('A project-set goal scope must name at least two unique projects.');
+    }
+    const selected = names.map((name) => {
+      const matches = model.projects.filter(
+        (project) => project.name === name || project.path === name
+      );
+      if (matches.length !== 1) {
+        throw new Error(
+          matches.length === 0
+            ? `Project goal scope was not found: ${name}`
+            : `Project goal scope is ambiguous: ${name}`
+        );
+      }
+      return matches[0];
+    });
+    return {
+      scope: {
+        kind: 'project-set',
+        projects: selected
+          .map((project) => ({
+            projectName: project.name,
+            projectPath: path.resolve(workspacePath, project.path),
+          }))
+          .sort((left, right) => left.projectName.localeCompare(right.projectName)),
+      },
+    };
+  }
   const matches = model.projects.filter((project) => {
     const absolutePath = path.resolve(workspacePath, project.path);
     return (
@@ -617,9 +680,13 @@ async function dependencyMeasurement(
         : typeof project.projectPath === 'string'
           ? path.resolve(project.projectPath)
           : '';
-    return (
-      projectName === scope.projectName ||
-      (scope.projectPath !== undefined && projectPath === path.resolve(scope.projectPath))
+    if (scope.kind === 'project') {
+      return projectName === scope.projectName || projectPath === path.resolve(scope.projectPath);
+    }
+    return scope.projects.some(
+      (selectedProject) =>
+        selectedProject.projectName === projectName ||
+        path.resolve(selectedProject.projectPath) === projectPath
     );
   });
   const audits = selected
@@ -683,6 +750,7 @@ async function coverageMeasurement(input: {
   projectPath: string;
   target: number;
   run: boolean;
+  runtime?: ProjectCoverageRuntime;
 }): Promise<{
   measurement: VerifiedGoalMeasurement;
   executionStatus: 'passed' | 'below-target' | 'unavailable' | 'failed';
@@ -691,6 +759,7 @@ async function coverageMeasurement(input: {
     projectPath: input.projectPath,
     target: input.target,
     run: input.run,
+    runtime: input.runtime,
   });
   const selected = coverage.metrics[coverage.target.metric];
   const value = selected?.percent ?? null;
@@ -718,6 +787,7 @@ async function coverageMeasurementForScope(input: {
   scope: VerifiedGoalScope;
   target: number;
   run: boolean;
+  runtime?: Exclude<ProjectCoverageRuntime, 'unknown'>;
 }): Promise<{
   measurement: VerifiedGoalMeasurement;
   executionStatus: 'passed' | 'below-target' | 'unavailable' | 'failed';
@@ -730,6 +800,7 @@ async function coverageMeasurementForScope(input: {
       projectPath: input.scope.projectPath,
       target: input.target,
       run: input.run,
+      runtime: input.runtime,
     });
   }
 
@@ -752,14 +823,36 @@ async function coverageMeasurementForScope(input: {
     };
   }
 
+  const scopedProjects = model.projects.filter((project) =>
+    scopeMatchesProject(input.workspacePath, input.scope, project)
+  );
+  const runtime = input.runtime;
+  const selectedProjects = runtime
+    ? scopedProjects.filter((project) => project.runtimeCandidates.includes(runtime))
+    : scopedProjects;
+  if (selectedProjects.length === 0) {
+    return {
+      executionStatus: 'unavailable',
+      measurement: {
+        measuredAt: new Date().toISOString(),
+        value: null,
+        target: input.target,
+        unit: 'percent',
+        status: 'unavailable',
+        evidencePaths: [],
+        message: `The selected scope does not contain the ${input.runtime} coverage runtime.`,
+      },
+    };
+  }
   const results = [];
-  for (const project of model.projects) {
+  for (const project of selectedProjects) {
     results.push({
       projectName: project.name,
       result: await coverageMeasurement({
         projectPath: path.resolve(input.workspacePath, project.path),
         target: input.target,
         run: input.run,
+        runtime: input.runtime,
       }),
     });
   }
@@ -814,26 +907,33 @@ function summaryFor(input: {
   kind: VerifiedGoalKind;
   scope: VerifiedGoalScope;
   target?: number;
+  runtime?: Exclude<ProjectCoverageRuntime, 'unknown'>;
 }): string {
   const subject =
     input.scope.kind === 'project'
       ? `project ${input.scope.projectName ?? 'selected project'}`
-      : 'workspace';
+      : input.scope.kind === 'project-set'
+        ? `projects ${input.scope.projects.map((project) => project.projectName).join(', ')}`
+        : 'workspace';
   if (input.kind === 'release-readiness') return `Prepare the ${subject} for release.`;
   if (input.kind === 'dependency-security') {
     return `Resolve blocking dependency vulnerabilities in the ${subject} without unsafe changes.`;
   }
-  return `Raise ${subject} test coverage to ${input.target ?? 80}% without breaking its build.`;
+  return `Raise ${input.runtime ? `${input.runtime} ` : ''}${subject} test coverage to ${input.target ?? 80}% without breaking its build.`;
 }
 
-function criteriaFor(kind: VerifiedGoalKind, target: number): VerifiedGoalContract['criteria'] {
+function criteriaFor(
+  kind: VerifiedGoalKind,
+  target: number,
+  runtime?: Exclude<ProjectCoverageRuntime, 'unknown'>
+): VerifiedGoalContract['criteria'] {
   if (kind === 'release-readiness') {
     return { kind, readiness: 'pass', workspaceVerify: 'ready' };
   }
   if (kind === 'dependency-security') {
     return { kind, maximumBlockingVulnerabilities: 0, requireFreshAudit: true };
   }
-  return { kind, metric: 'auto', minimumPercent: target };
+  return { kind, metric: 'auto', minimumPercent: target, ...(runtime ? { runtime } : {}) };
 }
 
 async function measureBaseline(input: {
@@ -841,6 +941,7 @@ async function measureBaseline(input: {
   kind: VerifiedGoalKind;
   scope: VerifiedGoalScope;
   target: number;
+  runtime?: Exclude<ProjectCoverageRuntime, 'unknown'>;
 }): Promise<VerifiedGoalMeasurement> {
   if (input.kind === 'release-readiness') return releaseMeasurement(input.workspacePath);
   if (input.kind === 'dependency-security') {
@@ -852,6 +953,7 @@ async function measureBaseline(input: {
       scope: input.scope,
       target: input.target,
       run: false,
+      runtime: input.runtime,
     })
   ).measurement;
 }
@@ -867,6 +969,7 @@ export async function planVerifiedGoal(
     kind: options.kind,
     scope,
     target: options.kind === 'test-coverage' ? target : null,
+    ...(options.kind === 'test-coverage' && options.runtime ? { runtime: options.runtime } : {}),
     constraints: {
       allowBreakingChanges: options.allowBreakingChanges === true,
       allowForce: options.allowForce === true,
@@ -890,6 +993,7 @@ export async function planVerifiedGoal(
     kind: options.kind,
     scope,
     target,
+    runtime: options.runtime,
   });
   const goal: VerifiedGoalContract = {
     schemaVersion: VERIFIED_GOAL_SCHEMA_VERSION,
@@ -900,9 +1004,9 @@ export async function planVerifiedGoal(
     workspace: { name: path.basename(workspacePath), path: workspacePath },
     scope,
     kind: options.kind,
-    summary: summaryFor({ kind: options.kind, scope, target }),
+    summary: summaryFor({ kind: options.kind, scope, target, runtime: options.runtime }),
     constraints: identity.constraints,
-    criteria: criteriaFor(options.kind, target),
+    criteria: criteriaFor(options.kind, target, options.runtime),
     baseline,
     ...(options.kind === 'dependency-security'
       ? { dependencySafetyBaseline: await dependencySafetyBaseline(workspacePath, scope) }
@@ -992,10 +1096,12 @@ async function runBuildAndTestChecks(input: {
   includeTests?: boolean;
 }): Promise<VerifiedGoalCheck[]> {
   const checks: VerifiedGoalCheck[] = [];
-  const scope =
-    input.goal.scope.kind === 'project' && input.goal.scope.projectName
-      ? `project:${input.goal.scope.projectName}`
-      : undefined;
+  const scopes =
+    input.goal.scope.kind === 'project'
+      ? [`project:${input.goal.scope.projectName}`]
+      : input.goal.scope.kind === 'project-set'
+        ? input.goal.scope.projects.map((project) => `project:${project.projectName}`)
+        : [undefined];
   for (const stage of ['test', 'build'] as const) {
     if (stage === 'test' && input.includeTests === false) continue;
     const required =
@@ -1024,32 +1130,40 @@ async function runBuildAndTestChecks(input: {
       );
       continue;
     }
-    const report = await runWorkspaceStage({
-      workspacePath: input.goal.workspace.path,
-      stage,
-      scope,
-      parallel: false,
-      continueOnError: false,
-      strict: true,
-      json: true,
-      enforceGates: false,
-    });
-    checks.push(
-      check({
-        id: stage,
-        label: `${stage} validation`,
-        status: report.summary.exitCode === 0 ? 'passed' : 'failed',
-        expected: 'exit 0',
-        actual: `exit ${report.summary.exitCode}`,
-        evidencePath: path.join(
-          input.goal.workspace.path,
-          '.workspai',
-          'reports',
-          'workspace-run-last.json'
-        ),
-      })
-    );
-    if (report.summary.exitCode !== 0) break;
+    let stageFailed = false;
+    for (const scope of scopes) {
+      const report = await runWorkspaceStage({
+        workspacePath: input.goal.workspace.path,
+        stage,
+        scope,
+        parallel: false,
+        continueOnError: false,
+        strict: true,
+        json: true,
+        enforceGates: false,
+      });
+      const projectName = scope?.replace(/^project:/, '');
+      checks.push(
+        check({
+          id: projectName ? `${stage}:${projectName}` : stage,
+          label: projectName ? `${stage} validation · ${projectName}` : `${stage} validation`,
+          status: report.summary.exitCode === 0 ? 'passed' : 'failed',
+          expected: 'exit 0',
+          actual: `exit ${report.summary.exitCode}`,
+          evidencePath: path.join(
+            input.goal.workspace.path,
+            '.workspai',
+            'reports',
+            'workspace-run-last.json'
+          ),
+        })
+      );
+      if (report.summary.exitCode !== 0) {
+        stageFailed = true;
+        break;
+      }
+    }
+    if (stageFailed) break;
   }
   return checks;
 }
@@ -1166,6 +1280,7 @@ export async function verifyVerifiedGoal(
       scope: goal.scope,
       target,
       run,
+      runtime: goal.criteria.kind === 'test-coverage' ? goal.criteria.runtime : undefined,
     });
     progress = coverageResult.measurement;
     checks.push(

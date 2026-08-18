@@ -28,8 +28,27 @@ export const GOAL_INTENT_CATEGORIES = [
 
 export type GoalIntentCategory = (typeof GOAL_INTENT_CATEGORIES)[number];
 export type GoalPackState = 'ready-to-plan' | 'needs-confirmation' | 'needs-evidence' | 'blocked';
-export type GoalScopeKind = 'workspace' | 'project';
+export type GoalScopeKind = 'workspace' | 'project' | 'project-set';
+export type GoalScopeSelectionSource =
+  'workspace' | 'single-project-workspace' | 'invocation-project' | 'explicit' | 'interactive';
 export type GoalMutationMode = 'proposal-only';
+export type GoalCoverageRuntime =
+  | 'node'
+  | 'bun'
+  | 'deno'
+  | 'python'
+  | 'go'
+  | 'java'
+  | 'dotnet'
+  | 'rust'
+  | 'php'
+  | 'ruby'
+  | 'elixir'
+  | 'clojure'
+  | 'scala'
+  | 'kotlin'
+  | 'c'
+  | 'cpp';
 
 export type CompiledGoalIntent = {
   original: string;
@@ -42,6 +61,7 @@ export type CompiledGoalIntent = {
     metric: 'test-coverage-percent';
     operator: 'at-least';
     value: number;
+    runtime?: GoalCoverageRuntime;
   };
 };
 
@@ -66,7 +86,9 @@ export type GoalPack = {
   scope: {
     kind: GoalScopeKind;
     projects: string[];
-    selectionSource: 'workspace' | 'invocation-project' | 'explicit';
+    selectionSource: GoalScopeSelectionSource;
+    /** Omitted by older v1 producers; omission has the same meaning as selected. */
+    resolution?: 'selected' | 'selection-required';
   };
   sourceBinding: {
     model: {
@@ -109,6 +131,8 @@ export type GoalPack = {
     measurement: {
       status: 'available' | 'requires-setup' | 'unsupported' | 'not-applicable';
       runtime: string | null;
+      /** Canonical runtimes valid for every project in the selected scope. */
+      runtimeChoices?: string[];
       runner: string | null;
       existingEvidence: Array<{ project: string; path: string; sha256: string }>;
       prerequisites: string[];
@@ -233,6 +257,36 @@ export type GoalIndex = {
   goals: GoalIndexEntry[];
 };
 
+/**
+ * Reconcile the one legacy index shape emitted before non-actionable Goal
+ * Packs were prevented from becoming active. This migration is intentionally
+ * narrow: it only clears the selected Goal and, when necessary, demotes that
+ * same entry. Every unrelated semantic failure remains fail-closed.
+ */
+export function reconcileLegacyNonActionableGoalSelection(index: GoalIndex): GoalIndex | null {
+  if (!index.activeGoalId) return null;
+  const selected = index.goals.find((entry) => entry.id === index.activeGoalId);
+  const activeEntries = index.goals.filter((entry) => entry.lifecycle === 'active');
+  if (!selected || selected.state === 'ready-to-plan') return null;
+  if (!(
+    (selected.lifecycle === 'planned' && activeEntries.length === 0) ||
+    (selected.lifecycle === 'active' &&
+      activeEntries.length === 1 &&
+      activeEntries[0]?.id === selected.id)
+  )) {
+    return null;
+  }
+  return {
+    ...index,
+    activeGoalId: null,
+    goals: index.goals.map((entry) =>
+      entry.id === selected.id && entry.lifecycle === 'active'
+        ? { ...entry, lifecycle: 'planned' as const }
+        : entry
+    ),
+  };
+}
+
 export function assertGoalIndexSemantics(index: GoalIndex): void {
   const ids = new Set<string>();
   const fingerprints = new Set<string>();
@@ -279,6 +333,7 @@ export function assertGoalIndexSemantics(index: GoalIndex): void {
   const selected = index.goals.find((entry) => entry.id === index.activeGoalId);
   if (
     !selected ||
+    selected.state !== 'ready-to-plan' ||
     !['active', 'verification-ready', 'failed'].includes(selected.lifecycle) ||
     activeEntries.some((entry) => entry.id !== index.activeGoalId)
   ) {

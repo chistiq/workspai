@@ -3,7 +3,24 @@
   "$id": "https://workspai.dev/schemas/workspace-intelligence/goal-pack.v1.json",
   "title": "Workspai Goal Pack",
   "type": "object",
-  "required": ["schemaVersion", "id", "fingerprint", "generatedAt", "state", "intent", "workspace", "scope", "sourceBinding", "baseline", "preflight", "successCriteria", "policy", "orchestration", "artifacts", "commands"],
+  "required": [
+    "schemaVersion",
+    "id",
+    "fingerprint",
+    "generatedAt",
+    "state",
+    "intent",
+    "workspace",
+    "scope",
+    "sourceBinding",
+    "baseline",
+    "preflight",
+    "successCriteria",
+    "policy",
+    "orchestration",
+    "artifacts",
+    "commands"
+  ],
   "properties": {
     "schemaVersion": { "const": "workspai.goal-pack.v1" },
     "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,95}$" },
@@ -17,16 +34,52 @@
         "original": { "type": "string", "minLength": 1, "maxLength": 2000 },
         "normalized": { "type": "string", "minLength": 1, "maxLength": 2000 },
         "statement": { "type": "string", "minLength": 1, "maxLength": 2000 },
-        "category": { "enum": ["release-readiness", "dependency-security", "test-coverage", "defect-repair", "feature-change", "refactor", "performance", "documentation", "system-understanding"] },
+        "category": {
+          "enum": [
+            "release-readiness",
+            "dependency-security",
+            "test-coverage",
+            "defect-repair",
+            "feature-change",
+            "refactor",
+            "performance",
+            "documentation",
+            "system-understanding"
+          ]
+        },
         "confidence": { "enum": ["high", "medium", "low"] },
-        "ambiguities": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "ambiguities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "requestedTarget": {
           "type": "object",
           "required": ["metric", "operator", "value"],
           "properties": {
             "metric": { "const": "test-coverage-percent" },
             "operator": { "const": "at-least" },
-            "value": { "type": "number", "minimum": 0, "maximum": 100 }
+            "value": { "type": "number", "minimum": 0, "maximum": 100 },
+            "runtime": {
+              "enum": [
+                "node",
+                "bun",
+                "deno",
+                "python",
+                "go",
+                "java",
+                "dotnet",
+                "rust",
+                "php",
+                "ruby",
+                "elixir",
+                "clojure",
+                "scala",
+                "kotlin",
+                "c",
+                "cpp"
+              ]
+            }
           },
           "additionalProperties": false
         }
@@ -81,7 +134,11 @@
           "properties": {
             "status": { "enum": ["passed", "blocked", "unknown"] },
             "artifact": { "const": ".workspai/reports/workspace-intelligence-run-last-run.json" },
-            "blockedStages": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+            "blockedStages": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            }
           },
           "additionalProperties": false
         },
@@ -91,9 +148,30 @@
           "properties": {
             "status": { "enum": ["available", "requires-setup", "unsupported", "not-applicable"] },
             "runtime": { "type": ["string", "null"] },
+            "runtimeChoices": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            },
             "runner": { "type": ["string", "null"] },
-            "existingEvidence": { "type": "array", "items": { "type": "object", "required": ["project", "path", "sha256"], "properties": { "project": { "type": "string", "minLength": 1 }, "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/hash" } }, "additionalProperties": false } },
-            "prerequisites": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+            "existingEvidence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["project", "path", "sha256"],
+                "properties": {
+                  "project": { "type": "string", "minLength": 1 },
+                  "path": { "type": "string", "minLength": 1 },
+                  "sha256": { "$ref": "#/$defs/hash" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "prerequisites": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            }
           },
           "additionalProperties": false
         },
@@ -109,7 +187,14 @@
         "required": ["id", "kind", "expected", "producerCommand", "machineVerifiable"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "kind": { "enum": ["workspace-verify", "release-readiness", "dependency-security", "test-coverage"] },
+          "kind": {
+            "enum": [
+              "workspace-verify",
+              "release-readiness",
+              "dependency-security",
+              "test-coverage"
+            ]
+          },
           "expected": { "type": "string", "minLength": 1 },
           "producerCommand": { "type": "string", "minLength": 1 },
           "machineVerifiable": { "type": "boolean" }
@@ -119,7 +204,17 @@
     },
     "policy": {
       "type": "object",
-      "required": ["mutationMode", "approval", "verificationOwner", "rollbackOwner", "maxAttempts", "allowBreakingChanges", "allowForce", "networkAccess", "scopeExpansion"],
+      "required": [
+        "mutationMode",
+        "approval",
+        "verificationOwner",
+        "rollbackOwner",
+        "maxAttempts",
+        "allowBreakingChanges",
+        "allowForce",
+        "networkAccess",
+        "scopeExpansion"
+      ],
       "properties": {
         "mutationMode": { "const": "proposal-only" },
         "approval": { "const": "required-before-mutation" },
@@ -164,7 +259,10 @@
       "required": ["goalPack", "agentHandoff", "latestReport"],
       "properties": {
         "goalPack": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/goal-pack\\.json$" },
-        "agentHandoff": { "type": "string", "pattern": "^\\.workspai/goals/[^/]+/agent-handoff\\.json$" },
+        "agentHandoff": {
+          "type": "string",
+          "pattern": "^\\.workspai/goals/[^/]+/agent-handoff\\.json$"
+        },
         "latestReport": { "const": ".workspai/reports/goal-pack-last-run.json" }
       },
       "additionalProperties": false
@@ -173,10 +271,14 @@
       "type": "object",
       "required": ["refreshEvidence", "inspectGraph", "proposeRepair"],
       "properties": {
-        "refreshEvidence": { "const": "workspai workspace intelligence run --for-agent generic --strict --json" },
+        "refreshEvidence": {
+          "const": "workspai workspace intelligence run --for-agent generic --strict --json"
+        },
         "inspectGraph": { "type": "string", "pattern": "^workspai workspace graph search " },
         "planVerifiedGoal": { "type": "string", "pattern": "^workspai workspace goal plan " },
-        "proposeRepair": { "const": "workspai workspace repair propose --file <proposal.json> --json" }
+        "proposeRepair": {
+          "const": "workspai workspace repair propose --file <proposal.json> --json"
+        }
       },
       "additionalProperties": false
     }
@@ -187,15 +289,58 @@
       "type": "object",
       "required": ["kind", "projects", "selectionSource"],
       "properties": {
-        "kind": { "enum": ["workspace", "project"] },
-        "projects": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-        "selectionSource": { "enum": ["workspace", "invocation-project", "explicit"] }
+        "kind": { "enum": ["workspace", "project", "project-set"] },
+        "projects": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "selectionSource": {
+          "enum": [
+            "workspace",
+            "single-project-workspace",
+            "invocation-project",
+            "explicit",
+            "interactive"
+          ]
+        },
+        "resolution": { "enum": ["selected", "selection-required"] }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "project" } } },
+          "then": { "properties": { "projects": { "type": "array", "maxItems": 1 } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "project-set" } } },
+          "then": { "properties": { "projects": { "type": "array", "minItems": 2 } } }
+        },
+        {
+          "if": {
+            "properties": { "resolution": { "const": "selection-required" } },
+            "required": ["resolution"]
+          },
+          "then": {
+            "properties": {
+              "kind": { "const": "workspace" },
+              "selectionSource": { "const": "workspace" }
+            }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "modelBinding": {
       "type": "object",
-      "required": ["artifact", "schemaVersion", "hashAlgorithm", "hashSemantics", "hash", "generatedAt"],
+      "required": [
+        "artifact",
+        "schemaVersion",
+        "hashAlgorithm",
+        "hashSemantics",
+        "hash",
+        "generatedAt"
+      ],
       "properties": {
         "artifact": { "const": ".workspai/reports/workspace-model.json" },
         "schemaVersion": { "const": "workspace-model.v1" },
@@ -208,7 +353,15 @@
     },
     "graphBinding": {
       "type": "object",
-      "required": ["artifact", "schemaVersion", "hashAlgorithm", "hashSemantics", "hash", "generatedAt", "modelHash"],
+      "required": [
+        "artifact",
+        "schemaVersion",
+        "hashAlgorithm",
+        "hashSemantics",
+        "hash",
+        "generatedAt",
+        "modelHash"
+      ],
       "properties": {
         "artifact": { "const": ".workspai/reports/workspace-knowledge-graph.json" },
         "schemaVersion": { "const": "workspace-knowledge-graph.v1" },
@@ -227,7 +380,13 @@
       "properties": {
         "status": { "enum": ["grounded", "partial", "empty"] },
         "strategy": { "const": "deterministic-category-v1" },
-        "queries": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "queries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "anchors": {
           "type": "array",
           "maxItems": 20,
@@ -238,7 +397,11 @@
               "entityId": { "type": "string", "minLength": 1 },
               "kind": { "type": "string", "minLength": 1 },
               "label": { "type": "string", "minLength": 1 },
-              "proofIds": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+              "proofIds": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              }
             },
             "additionalProperties": false
           }

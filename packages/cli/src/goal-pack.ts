@@ -14,6 +14,7 @@ import {
   type GoalIndex,
   type GoalPack,
   assertGoalIndexSemantics,
+  reconcileLegacyNonActionableGoalSelection,
 } from './goals/goal-pack-contract.js';
 import { buildGoalPack } from './goals/goal-pack-kernel.js';
 import { compileGoalIntent, retrievalQueriesForGoal } from './goals/intent-compiler.js';
@@ -43,15 +44,57 @@ const GOAL_AGENT_HANDOFF_CONTRACT_PATH =
 const GOAL_PLAN_RESULT_CONTRACT_PATH =
   'contracts/workspace-intelligence/goal-plan-result.v1.json' as const;
 const GOAL_INDEX_CONTRACT_PATH = 'contracts/workspace-intelligence/goal-index.v1.json' as const;
+const GOAL_COVERAGE_RUNTIMES = new Set<Exclude<ProjectCoverageRuntime, 'unknown'>>([
+  'node',
+  'bun',
+  'deno',
+  'python',
+  'go',
+  'java',
+  'dotnet',
+  'rust',
+  'php',
+  'ruby',
+  'elixir',
+  'clojure',
+  'scala',
+  'kotlin',
+  'c',
+  'cpp',
+]);
 export type PlanGoalPackOptions = {
   startPath: string;
   intent: string;
   workspacePath?: string;
   scope?: string;
+  runtime?: Exclude<ProjectCoverageRuntime, 'unknown'>;
   consumer?: 'generic' | 'claude' | 'codex';
   maxAttempts?: number;
   refresh?: boolean;
   dryRun?: boolean;
+  selectScope?: (input: GoalScopeSelectionRequest) => Promise<GoalScopeSelection>;
+  selectCoverageRuntime?: (
+    input: GoalCoverageRuntimeSelectionRequest
+  ) => Promise<Exclude<ProjectCoverageRuntime, 'unknown'>>;
+};
+
+export type GoalScopeSelectionRequest = {
+  workspaceName: string;
+  projects: Array<{
+    name: string;
+    runtime: string;
+    runtimeCandidates: string[];
+    framework: string;
+  }>;
+};
+
+export type GoalScopeSelection = { kind: 'workspace' } | { kind: 'projects'; projects: string[] };
+
+export type GoalCoverageRuntimeSelectionRequest = {
+  workspaceName: string;
+  scope: GoalPack['scope'];
+  projects: Array<{ name: string; runtime: string; runtimeCandidates: string[] }>;
+  runtimes: Array<Exclude<ProjectCoverageRuntime, 'unknown'>>;
 };
 
 export type PlanGoalPackResult = {
@@ -127,26 +170,82 @@ async function readCanonicalEvidence(workspacePath: string): Promise<{
   return { model, graph };
 }
 
-function resolveScope(input: {
+function parseExplicitScope(input: {
+  workspacePath: string;
+  model: WorkspaceModel;
+  scope: string;
+  selectionSource: 'explicit' | 'interactive';
+}): GoalPack['scope'] {
+  const normalized = input.scope.trim();
+  if (normalized === 'workspace') {
+    return {
+      kind: 'workspace',
+      projects: input.model.projects.map((project) => project.name).sort(),
+      selectionSource: input.selectionSource,
+      resolution: 'selected',
+    };
+  }
+  const projectSetPrefix = normalized.startsWith('projects:')
+    ? 'projects:'
+    : normalized.startsWith('project:') && normalized.slice('project:'.length).includes(',')
+      ? 'project:'
+      : null;
+  if (projectSetPrefix) {
+    const requestedProjects = normalized
+      .slice(projectSetPrefix.length)
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (requestedProjects.length < 2) {
+      throw new Error('A project-set Goal scope must name at least two projects.');
+    }
+    const selected = requestedProjects.map((requested) =>
+      selectProject({ workspacePath: input.workspacePath, model: input.model, requested })
+    );
+    const names = [...new Set(selected.map((project) => project.name))].sort();
+    if (names.length !== requestedProjects.length) {
+      throw new Error('A project-set Goal scope must not contain duplicate projects.');
+    }
+    return {
+      kind: 'project-set',
+      projects: names,
+      selectionSource: input.selectionSource,
+      resolution: 'selected',
+    };
+  }
+  if (normalized) {
+    const project = selectProject({
+      workspacePath: input.workspacePath,
+      model: input.model,
+      requested: normalized,
+    });
+    return {
+      kind: 'project',
+      projects: [project.name],
+      selectionSource: input.selectionSource,
+      resolution: 'selected',
+    };
+  }
+  throw new Error('Goal scope cannot be empty.');
+}
+
+async function resolveScope(input: {
   workspacePath: string;
   invocationProjectPath: string | null;
   model: WorkspaceModel;
   explicitScope?: string;
-}): GoalPack['scope'] {
-  if (input.explicitScope?.trim() === 'workspace') {
-    return {
-      kind: 'workspace',
-      projects: input.model.projects.map((project) => project.name).sort(),
-      selectionSource: 'explicit',
-    };
-  }
+  selectScope?: PlanGoalPackOptions['selectScope'];
+}): Promise<{ scope: GoalPack['scope']; selectionRequired: boolean }> {
   if (input.explicitScope?.trim()) {
-    const project = selectProject({
-      workspacePath: input.workspacePath,
-      model: input.model,
-      requested: input.explicitScope,
-    });
-    return { kind: 'project', projects: [project.name], selectionSource: 'explicit' };
+    return {
+      scope: parseExplicitScope({
+        workspacePath: input.workspacePath,
+        model: input.model,
+        scope: input.explicitScope,
+        selectionSource: 'explicit',
+      }),
+      selectionRequired: false,
+    };
   }
   if (input.invocationProjectPath) {
     const normalizedInvocationPath = path.resolve(input.invocationProjectPath);
@@ -159,15 +258,62 @@ function resolveScope(input: {
       );
     }
     return {
-      kind: 'project',
-      projects: [matches[0].name],
-      selectionSource: 'invocation-project',
+      scope: {
+        kind: 'project',
+        projects: [matches[0].name],
+        selectionSource: 'invocation-project',
+        resolution: 'selected',
+      },
+      selectionRequired: false,
+    };
+  }
+  if (input.model.projects.length === 1) {
+    return {
+      scope: {
+        kind: 'project',
+        projects: [input.model.projects[0].name],
+        selectionSource: 'single-project-workspace',
+        resolution: 'selected',
+      },
+      selectionRequired: false,
+    };
+  }
+  if (input.selectScope) {
+    const selection = await input.selectScope({
+      workspaceName: input.model.workspace.name,
+      projects: input.model.projects
+        .map((project) => ({
+          name: project.name,
+          runtime: project.runtime,
+          runtimeCandidates: [...project.runtimeCandidates].sort(),
+          framework: project.framework,
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    });
+    const scope =
+      selection.kind === 'workspace'
+        ? 'workspace'
+        : selection.projects.length === 1
+          ? `project:${selection.projects[0]}`
+          : `projects:${selection.projects.join(',')}`;
+    return {
+      scope: parseExplicitScope({
+        workspacePath: input.workspacePath,
+        model: input.model,
+        scope,
+        selectionSource: 'interactive',
+      }),
+      selectionRequired: false,
     };
   }
   return {
-    kind: 'workspace',
-    projects: input.model.projects.map((project) => project.name).sort(),
-    selectionSource: 'workspace',
+    scope: {
+      kind: 'workspace',
+      projects: input.model.projects.map((project) => project.name).sort(),
+      selectionSource: 'workspace',
+      resolution: 'selection-required',
+    },
+    selectionRequired: true,
   };
 }
 
@@ -215,26 +361,8 @@ async function buildGoalPreflight(input: {
   projects: WorkspaceModelProject[];
   graph: WorkspaceKnowledgeGraph;
   intent: ReturnType<typeof compileGoalIntent>;
+  coverageRuntimeChoices: Array<Exclude<ProjectCoverageRuntime, 'unknown'>>;
 }): Promise<GoalPack['preflight']> {
-  const coverageRuntimes = new Set<ProjectCoverageRuntime>([
-    'node',
-    'bun',
-    'deno',
-    'python',
-    'go',
-    'java',
-    'dotnet',
-    'rust',
-    'php',
-    'ruby',
-    'elixir',
-    'clojure',
-    'scala',
-    'kotlin',
-    'c',
-    'cpp',
-    'unknown',
-  ]);
   const runPath = path.join(input.workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.intelligenceRun);
   const run = (await fsExtra.readJson(runPath).catch(() => null)) as Record<string, unknown> | null;
   const stages = Array.isArray(run?.stages) ? (run.stages as Array<Record<string, unknown>>) : [];
@@ -257,67 +385,96 @@ async function buildGoalPreflight(input: {
   let measurement: GoalPack['preflight']['measurement'] = {
     status: 'not-applicable',
     runtime: null,
+    runtimeChoices: [],
     runner: null,
     existingEvidence: [],
     prerequisites: [],
   };
   if (input.intent.category === 'test-coverage') {
-    const capabilities = await Promise.all(
-      input.projects.map(async (project) => ({
-        project,
-        capability: await inspectProjectTestCoverageCapability(
-          projectAbsolutePath(input.workspacePath, project),
-          coverageRuntimes.has(project.runtime as ProjectCoverageRuntime)
-            ? (project.runtime as ProjectCoverageRuntime)
-            : 'unknown'
-        ),
-      }))
+    const requestedRuntime = input.intent.requestedTarget?.runtime;
+    const runtimeAmbiguity = input.intent.ambiguities.some(
+      (entry) =>
+        entry.startsWith('Coverage scope is ambiguous') ||
+        entry.startsWith('The Goal names multiple coverage runtimes') ||
+        entry.startsWith(
+          'The selected projects do not share a common canonical coverage runtime'
+        ) ||
+        entry.startsWith('The requested ')
     );
-    const statuses = capabilities.map((item) => item.capability.status);
-    measurement = {
-      status: statuses.includes('unsupported')
-        ? 'unsupported'
-        : statuses.includes('requires-setup')
-          ? 'requires-setup'
-          : 'available',
-      runtime:
-        capabilities.length === 1
-          ? capabilities[0].capability.runtime
-          : [...new Set(capabilities.map((item) => item.capability.runtime))].join(','),
-      runner:
-        capabilities.length === 1
-          ? capabilities[0].capability.runner
-          : [
-              ...new Set(
-                capabilities.flatMap((item) =>
-                  item.capability.runner ? [item.capability.runner] : []
-                )
-              ),
-            ].join(',') || null,
-      existingEvidence: capabilities
-        .flatMap((item) =>
-          item.capability.existingEvidence.map((evidence) => ({
-            project: item.project.name,
-            ...evidence,
-          }))
-        )
-        .filter(
-          (item, index, all) =>
-            all.findIndex(
-              (candidate) =>
-                candidate.project === item.project &&
-                candidate.path === item.path &&
-                candidate.sha256 === item.sha256
-            ) === index
-        )
-        .sort(
-          (left, right) =>
-            left.project.localeCompare(right.project) || left.path.localeCompare(right.path)
-        ),
-      prerequisites: [
-        ...new Set(capabilities.flatMap((item) => item.capability.prerequisites)),
-      ].sort(),
-    };
+    if (runtimeAmbiguity) {
+      measurement = {
+        status: 'requires-setup',
+        runtime: requestedRuntime ?? null,
+        runtimeChoices: input.coverageRuntimeChoices,
+        runner: null,
+        existingEvidence: [],
+        prerequisites: ['Select exactly one detected runtime or language for this coverage Goal.'],
+      };
+    } else {
+      const projects = requestedRuntime
+        ? input.projects.filter((project) => project.runtimeCandidates.includes(requestedRuntime))
+        : input.projects;
+      const capabilities = await Promise.all(
+        projects.map(async (project) => ({
+          project,
+          capability: await inspectProjectTestCoverageCapability(
+            projectAbsolutePath(input.workspacePath, project),
+            requestedRuntime ??
+              (GOAL_COVERAGE_RUNTIMES.has(
+                project.runtime as Exclude<ProjectCoverageRuntime, 'unknown'>
+              )
+                ? (project.runtime as ProjectCoverageRuntime)
+                : 'unknown')
+          ),
+        }))
+      );
+      const statuses = capabilities.map((item) => item.capability.status);
+      measurement = {
+        status: statuses.includes('unsupported')
+          ? 'unsupported'
+          : statuses.includes('requires-setup')
+            ? 'requires-setup'
+            : 'available',
+        runtime:
+          capabilities.length === 1
+            ? capabilities[0].capability.runtime
+            : [...new Set(capabilities.map((item) => item.capability.runtime))].join(','),
+        runtimeChoices: input.coverageRuntimeChoices,
+        runner:
+          capabilities.length === 1
+            ? capabilities[0].capability.runner
+            : [
+                ...new Set(
+                  capabilities.flatMap((item) =>
+                    item.capability.runner ? [item.capability.runner] : []
+                  )
+                ),
+              ].join(',') || null,
+        existingEvidence: capabilities
+          .flatMap((item) =>
+            item.capability.existingEvidence.map((evidence) => ({
+              project: item.project.name,
+              ...evidence,
+            }))
+          )
+          .filter(
+            (item, index, all) =>
+              all.findIndex(
+                (candidate) =>
+                  candidate.project === item.project &&
+                  candidate.path === item.path &&
+                  candidate.sha256 === item.sha256
+              ) === index
+          )
+          .sort(
+            (left, right) =>
+              left.project.localeCompare(right.project) || left.path.localeCompare(right.path)
+          ),
+        prerequisites: [
+          ...new Set(capabilities.flatMap((item) => item.capability.prerequisites)),
+        ].sort(),
+      };
+    }
   }
 
   const queries = retrievalQueriesForGoal(input.intent);
@@ -432,7 +589,20 @@ async function readGoalIndex(workspacePath: string): Promise<GoalIndex> {
   }
   const existing = (await fsExtra.readJson(indexPath)) as GoalIndex;
   assertJsonSchemaContract(existing, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
-  assertGoalIndexSemantics(existing);
+  try {
+    assertGoalIndexSemantics(existing);
+  } catch (error) {
+    const reconciled = reconcileLegacyNonActionableGoalSelection(existing);
+    const isKnownLegacyPlanningDrift =
+      reconciled !== null &&
+      error instanceof Error &&
+      error.message ===
+        'Goal index is inconsistent: activeGoalId must identify the only selected actionable lifecycle entry.';
+    if (!isKnownLegacyPlanningDrift || !reconciled) {
+      throw error;
+    }
+    return reconciled;
+  }
   // Planning is the explicit reconciliation boundary: upsertGoalIndex retains
   // history while demoting any formerly active entry before publication.
   return existing;
@@ -467,7 +637,12 @@ function upsertGoalIndex(index: GoalIndex, goal: GoalPack, updatedAt: string): G
   return {
     schemaVersion: GOAL_INDEX_SCHEMA_VERSION,
     generatedAt: updatedAt,
-    activeGoalId: entry.lifecycle === 'active' ? goal.id : index.activeGoalId,
+    activeGoalId:
+      entry.lifecycle === 'active'
+        ? goal.id
+        : index.activeGoalId === goal.id
+          ? null
+          : index.activeGoalId,
     goals: [
       ...index.goals
         .filter((item) => item.id !== goal.id)
@@ -494,12 +669,14 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
     await runWorkspaceIntelligenceChain({ workspacePath, strict: false, agent: 'generic' });
   }
   const { model, graph } = await readCanonicalEvidence(workspacePath);
-  const scope = resolveScope({
+  const resolvedScope = await resolveScope({
     workspacePath,
     invocationProjectPath: resolution.projectPath,
     model,
     explicitScope: options.scope,
+    selectScope: options.selectScope,
   });
+  const scope = resolvedScope.scope;
   const selectedProjects = model.projects.filter((project) =>
     scope.projects.includes(project.name)
   );
@@ -512,12 +689,113 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
   }
   const generatedAt = new Date().toISOString();
   const modelHash = hashWorkspaceModel(model);
-  const intent = compileGoalIntent(options.intent);
+  const coverageRuntimesByProject = selectedProjects.map((project) => ({
+    name: project.name,
+    runtimes: [
+      ...new Set(
+        project.runtimeCandidates.filter(
+          (runtime): runtime is Exclude<ProjectCoverageRuntime, 'unknown'> =>
+            GOAL_COVERAGE_RUNTIMES.has(runtime as Exclude<ProjectCoverageRuntime, 'unknown'>)
+        )
+      ),
+    ].sort(),
+  }));
+  const detectedCoverageRuntimes = [
+    ...new Set(coverageRuntimesByProject.flatMap((project) => project.runtimes)),
+  ].sort();
+  const canonicalCoverageRuntimes =
+    coverageRuntimesByProject.length <= 1
+      ? detectedCoverageRuntimes
+      : coverageRuntimesByProject[0].runtimes.filter((runtime) =>
+          coverageRuntimesByProject.every((project) => project.runtimes.includes(runtime))
+        );
+  let intent = compileGoalIntent(options.intent, {
+    availableCoverageRuntimes: canonicalCoverageRuntimes,
+    ...(options.runtime
+      ? { selectedCoverageRuntime: options.runtime }
+      : canonicalCoverageRuntimes.length === 1
+        ? { selectedCoverageRuntime: canonicalCoverageRuntimes[0] }
+        : {}),
+  });
+  if (options.runtime && !canonicalCoverageRuntimes.includes(options.runtime)) {
+    const requestedRuntime = options.runtime;
+    const missingProjects = coverageRuntimesByProject
+      .filter((project) => !project.runtimes.includes(requestedRuntime))
+      .map((project) => project.name);
+    throw new Error(
+      selectedProjects.length > 1 && missingProjects.length > 0
+        ? `--runtime ${options.runtime} is not canonical for every project in the selected Goal scope. Missing from: ${missingProjects.join(', ')}. Split the projects into runtime-compatible Goal scopes.`
+        : `--runtime ${options.runtime} is not present in the canonical Workspace Model for the selected Goal scope. Available runtimes: ${canonicalCoverageRuntimes.join(', ') || 'none'}.`
+    );
+  }
+  if (options.runtime && intent.category !== 'test-coverage') {
+    throw new Error('--runtime is valid only for a test-coverage Goal.');
+  }
+  if (
+    options.runtime &&
+    intent.requestedTarget?.runtime &&
+    intent.requestedTarget.runtime !== options.runtime
+  ) {
+    throw new Error(
+      `--runtime ${options.runtime} conflicts with the ${intent.requestedTarget.runtime} runtime named in the Goal intent.`
+    );
+  }
+  if (
+    !resolvedScope.selectionRequired &&
+    intent.category === 'test-coverage' &&
+    intent.requestedTarget &&
+    !intent.requestedTarget.runtime &&
+    canonicalCoverageRuntimes.length > 1 &&
+    !options.runtime &&
+    options.selectCoverageRuntime
+  ) {
+    const selectedRuntime = await options.selectCoverageRuntime({
+      workspaceName: model.workspace.name,
+      scope,
+      projects: selectedProjects.map((project) => ({
+        name: project.name,
+        runtime: project.runtime,
+        runtimeCandidates: [...project.runtimeCandidates].sort(),
+      })),
+      runtimes: canonicalCoverageRuntimes,
+    });
+    if (!canonicalCoverageRuntimes.includes(selectedRuntime)) {
+      throw new Error('The selected coverage runtime is outside the canonical Goal scope.');
+    }
+    intent = compileGoalIntent(options.intent, {
+      availableCoverageRuntimes: canonicalCoverageRuntimes,
+      selectedCoverageRuntime: selectedRuntime,
+    });
+  }
+  if (
+    !resolvedScope.selectionRequired &&
+    intent.category === 'test-coverage' &&
+    selectedProjects.length > 1 &&
+    canonicalCoverageRuntimes.length === 0
+  ) {
+    intent = {
+      ...intent,
+      ambiguities: [
+        `The selected projects do not share a common canonical coverage runtime: ${coverageRuntimesByProject.map((project) => `${project.name} (${project.runtimes.join(', ') || 'none'})`).join('; ')}. Split them into runtime-compatible Goal scopes so every selected project is verified.`,
+        ...intent.ambiguities,
+      ],
+    };
+  }
+  if (resolvedScope.selectionRequired) {
+    intent = {
+      ...intent,
+      ambiguities: [
+        `Goal scope is unresolved across ${scope.projects.length} registered projects: ${scope.projects.join(', ')}. Select one project, multiple projects, or the entire workspace.`,
+        ...intent.ambiguities,
+      ],
+    };
+  }
   const preflight = await buildGoalPreflight({
     workspacePath,
     projects: selectedProjects,
     graph,
     intent,
+    coverageRuntimeChoices: canonicalCoverageRuntimes,
   });
   const kernelInput = {
     generatedAt,

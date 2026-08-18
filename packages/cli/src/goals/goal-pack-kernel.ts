@@ -11,6 +11,7 @@ import {
 } from './goal-pack-contract.js';
 
 function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
+  const scope = selectedScopeArgument(input.scope);
   const workspaceVerify: GoalSuccessCriterion = {
     id: 'workspace-verify',
     kind: 'workspace-verify',
@@ -25,7 +26,7 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
         id: 'release-readiness',
         kind: 'release-readiness',
         expected: 'Every release readiness gate passes.',
-        producerCommand: 'workspai workspace goal plan release-readiness --json',
+        producerCommand: `workspai workspace goal plan release-readiness${scope} --json`,
         machineVerifiable: true,
       },
       workspaceVerify,
@@ -37,19 +38,22 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
         id: 'dependency-security',
         kind: 'dependency-security',
         expected: 'No blocking dependency vulnerability remains in the selected scope.',
-        producerCommand: 'workspai workspace goal plan dependency-security --json',
+        producerCommand: `workspai workspace goal plan dependency-security${scope} --json`,
         machineVerifiable: true,
       },
       workspaceVerify,
     ];
   }
   if (input.intent.category === 'test-coverage' && input.intent.requestedTarget) {
+    const runtime = input.intent.requestedTarget.runtime
+      ? ` --runtime ${input.intent.requestedTarget.runtime}`
+      : '';
     return [
       {
         id: 'test-coverage',
         kind: 'test-coverage',
-        expected: `Test coverage is at least ${input.intent.requestedTarget.value}%.`,
-        producerCommand: `workspai workspace goal plan test-coverage --target ${input.intent.requestedTarget.value} --json`,
+        expected: `${input.intent.requestedTarget.runtime ? `${input.intent.requestedTarget.runtime} ` : ''}test coverage is at least ${input.intent.requestedTarget.value}%.`,
+        producerCommand: `workspai workspace goal plan test-coverage${scope} --target ${input.intent.requestedTarget.value}${runtime} --json`,
         machineVerifiable: input.preflight.measurement.status === 'available',
       },
       workspaceVerify,
@@ -59,10 +63,7 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
 }
 
 function verifiedGoalCommand(input: GoalPackKernelInput): string | undefined {
-  const scope =
-    input.scope.kind === 'project' && input.scope.projects[0]
-      ? ` --scope ${portableCommandArgument(`project:${input.scope.projects[0]}`)}`
-      : '';
+  const scope = selectedScopeArgument(input.scope);
   if (input.intent.category === 'release-readiness') {
     return `workspai workspace goal plan release-readiness${scope} --json`;
   }
@@ -70,13 +71,27 @@ function verifiedGoalCommand(input: GoalPackKernelInput): string | undefined {
     return `workspai workspace goal plan dependency-security${scope} --json`;
   }
   if (input.intent.category === 'test-coverage' && input.intent.requestedTarget) {
-    return `workspai workspace goal plan test-coverage${scope} --target ${input.intent.requestedTarget.value} --json`;
+    const runtime = input.intent.requestedTarget.runtime
+      ? ` --runtime ${input.intent.requestedTarget.runtime}`
+      : '';
+    return `workspai workspace goal plan test-coverage${scope} --target ${input.intent.requestedTarget.value}${runtime} --json`;
   }
   return undefined;
 }
 
 function portableCommandArgument(value: string): string {
   return /^[A-Za-z0-9._:@+-]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+function selectedScopeArgument(scope: GoalPack['scope']): string {
+  if (scope.resolution === 'selection-required') return '';
+  if (scope.kind === 'project' && scope.projects[0]) {
+    return ` --scope ${portableCommandArgument(`project:${scope.projects[0]}`)}`;
+  }
+  if (scope.kind === 'project-set' && scope.projects.length > 1) {
+    return ` --scope ${portableCommandArgument(`projects:${scope.projects.join(',')}`)}`;
+  }
+  return scope.kind === 'workspace' ? ' --scope workspace' : '';
 }
 
 export function buildGoalPack(
@@ -96,7 +111,7 @@ export function buildGoalPack(
   const identity = {
     // Any semantic compiler change must advance this revision so an older
     // immutable Goal Pack can never be mistaken for current output.
-    kernelRevision: 'goal-pack-kernel-v7',
+    kernelRevision: 'goal-pack-kernel-v10',
     intent: input.intent.normalized,
     workspace: input.workspaceName,
     scope: input.scope,
@@ -111,16 +126,8 @@ export function buildGoalPack(
   const handoffPath = `.workspai/goals/${id}/agent-handoff.json`;
   const planVerifiedGoal = verifiedGoalCommand(input);
   const hasDeterministicOutcomeVerifier = Boolean(planVerifiedGoal);
-  const projectScopeArgument =
-    input.scope.kind === 'project' && input.scope.projects[0]
-      ? ` --scope ${portableCommandArgument(`project:${input.scope.projects[0]}`)}`
-      : '';
-  const renewalScopeArgument =
-    input.scope.kind === 'project'
-      ? projectScopeArgument
-      : input.scope.kind === 'workspace'
-        ? ' --scope workspace'
-        : '';
+  const projectScopeArgument = selectedScopeArgument(input.scope);
+  const renewalScopeArgument = selectedScopeArgument(input.scope);
   const state = requiresDecision
     ? 'needs-confirmation'
     : retrievalBlocked
@@ -128,6 +135,23 @@ export function buildGoalPack(
       : requiresEvidence
         ? 'needs-evidence'
         : 'ready-to-plan';
+  const coverageRuntimeDecision =
+    requiresDecision &&
+    input.intent.category === 'test-coverage' &&
+    input.intent.ambiguities.some((entry) =>
+      /coverage runtimes|coverage scope|requested .* runtime/i.test(entry)
+    );
+  const coverageScopePartitionDecision =
+    requiresDecision &&
+    input.intent.category === 'test-coverage' &&
+    input.intent.ambiguities.some((entry) =>
+      entry.startsWith('The selected projects do not share a common canonical coverage runtime')
+    );
+  const coverageRuntimeChoices =
+    input.preflight.measurement.runtimeChoices ?? input.baseline.runtimes;
+  const scopeSelectionDecision =
+    input.scope.resolution === 'selection-required' ||
+    input.intent.ambiguities.some((entry) => entry.startsWith('Goal scope is unresolved'));
 
   const goalPack: GoalPack = {
     schemaVersion: GOAL_PACK_SCHEMA_VERSION,
@@ -204,7 +228,13 @@ export function buildGoalPack(
                 : input.preflight.measurement.prerequisites.join(' ') ||
                   'No current machine-readable measurement evidence is available.',
             question: requiresDecision
-              ? 'Clarify the intended outcome or provide a machine-verifiable target.'
+              ? scopeSelectionDecision
+                ? `Choose one project, multiple projects, or the entire workspace from: ${input.scope.projects.join(', ')}.`
+                : coverageScopePartitionDecision
+                  ? 'Split the selected projects into runtime-compatible Goal scopes so every project receives deterministic coverage verification.'
+                  : coverageRuntimeDecision
+                    ? `Choose exactly one coverage runtime from the detected scope${coverageRuntimeChoices.length > 0 ? `: ${coverageRuntimeChoices.join(', ')}` : ''}, then regenerate this Goal Pack.`
+                    : 'Clarify the intended outcome or provide a machine-verifiable target.'
               : retrievalBlocked
                 ? 'Refresh Workspace Intelligence or clarify the intent before asking an agent to inspect source.'
                 : 'Establish the listed measurement prerequisites, then regenerate this Goal Pack.',
@@ -300,7 +330,7 @@ export function buildGoalPack(
           ]),
     ],
     renewal: {
-      command: `workspai goal ${JSON.stringify(input.intent.original)}${renewalScopeArgument} --refresh --for-agent ${input.consumer} --json`,
+      command: `workspai goal ${JSON.stringify(input.intent.original)}${renewalScopeArgument}${input.intent.requestedTarget?.runtime ? ` --runtime ${input.intent.requestedTarget.runtime}` : ''} --refresh --for-agent ${input.consumer} --json`,
       reason: 'Regenerate when the canonical model or graph hash changes.',
     },
   };

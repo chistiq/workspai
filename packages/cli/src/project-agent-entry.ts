@@ -641,7 +641,9 @@ export async function buildAgentBootstrapReceipt(input: {
           const scope =
             activeEntry?.scope.kind === 'project' && activeEntry.scope.projects.length === 1
               ? `project:${activeEntry.scope.projects[0]}`
-              : 'workspace';
+              : activeEntry?.scope.kind === 'project-set' && activeEntry.scope.projects.length > 1
+                ? `projects:${activeEntry.scope.projects.join(',')}`
+                : 'workspace';
           goalRecoveryActions.push(
             `workspai goal ${JSON.stringify(activeGoal.objective)} --scope ${scope} --for-agent generic --refresh --json`
           );

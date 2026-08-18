@@ -939,11 +939,12 @@ export async function collectProjectTestCoverage(
     projectPath?: string;
     target?: number;
     run?: boolean;
+    runtime?: ProjectCoverageRuntime;
   } = {}
 ): Promise<ProjectTestCoverageEvidence> {
   const projectPath = await findProjectRoot(options.projectPath ?? process.cwd());
   const workspacePath = findWorkspaceRootUp(projectPath);
-  const runtime = await detectRuntime(projectPath);
+  const runtime = options.runtime ?? (await detectRuntime(projectPath));
   const targetPercent = Math.max(0, Math.min(100, Math.round(options.target ?? 80)));
   const executionPlan = await coverageInvocations(projectPath, runtime);
   const exitCodes: number[] = [];

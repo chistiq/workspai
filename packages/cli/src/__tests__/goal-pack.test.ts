@@ -20,6 +20,7 @@ import {
   planWorkspaceRepairProposal,
 } from '../workspace-repair-engine.js';
 import { WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION } from '../contracts/workspace-repair-proposal-contract.js';
+import { readVerifiedGoal } from '../verified-goal.js';
 
 const roots: string[] = [];
 
@@ -88,11 +89,153 @@ async function fixture(): Promise<{ workspacePath: string; projectPath: string }
   return { workspacePath, projectPath };
 }
 
+async function addFixtureProject(input: {
+  workspacePath: string;
+  name: string;
+  runtime: 'node' | 'python';
+}): Promise<string> {
+  const projectPath = path.join(input.workspacePath, input.name);
+  const contractPath = path.join(input.workspacePath, '.workspai', 'workspace.contract.json');
+  const contract = await fsExtra.readJson(contractPath);
+  contract.projects.push({
+    slug: input.name,
+    relativePath: input.name,
+    runtime: input.runtime,
+    framework: input.runtime === 'python' ? 'fastapi' : 'nestjs',
+    modules: [],
+    ports: [],
+    contracts: {
+      owns: [],
+      apis: [],
+      publishes: [],
+      consumes: [],
+      dependsOn: [],
+      env: [],
+    },
+  });
+  await fsExtra.writeJson(contractPath, contract, { spaces: 2 });
+  await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+    name: input.name,
+    runtime: input.runtime,
+    framework: input.runtime === 'python' ? 'fastapi' : 'nestjs',
+  });
+  if (input.runtime === 'python') {
+    await fsExtra.outputFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[project]\nname = "worker"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'worker.py'),
+      'def run():\n    return True\n'
+    );
+  } else {
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: `@platform/${input.name}`,
+      scripts: { test: 'vitest run' },
+    });
+  }
+  const model = await buildWorkspaceModel({
+    workspacePath: input.workspacePath,
+    includeAbsolutePaths: true,
+    now: new Date('2026-08-15T00:00:00.000Z'),
+  });
+  await writeWorkspaceModel(model, input.workspacePath);
+  return projectPath;
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
 });
 
 describe('goal pack workspace adapter', () => {
+  it('requires an explicit bounded scope at a multi-project workspace root', async () => {
+    const { workspacePath } = await fixture();
+    await addFixtureProject({ workspacePath, name: 'worker', runtime: 'python' });
+
+    const result = await planGoalPack({
+      startPath: workspacePath,
+      intent: 'Map the system architecture',
+    });
+
+    expect(result.result).toBe('needs-confirmation');
+    expect(result.goalPack.scope).toMatchObject({
+      kind: 'workspace',
+      projects: ['api', 'worker'],
+      selectionSource: 'workspace',
+      resolution: 'selection-required',
+    });
+    expect(result.goalPack.decision?.question).toContain('one project, multiple projects');
+  });
+
+  it('persists an interactive runtime-compatible project-set scope', async () => {
+    const { workspacePath } = await fixture();
+    await addFixtureProject({ workspacePath, name: 'worker', runtime: 'node' });
+
+    const result = await planGoalPack({
+      startPath: workspacePath,
+      intent: 'Raise test coverage to 82%',
+      selectScope: async () => ({ kind: 'projects', projects: ['api', 'worker'] }),
+    });
+
+    expect(result.result).toBe('planned');
+    expect(result.goalPack.scope).toEqual({
+      kind: 'project-set',
+      projects: ['api', 'worker'],
+      selectionSource: 'interactive',
+      resolution: 'selected',
+    });
+    expect(result.goalPack.intent.requestedTarget?.runtime).toBe('node');
+    expect(result.goalPack.preflight.measurement.runtimeChoices).toEqual(['node']);
+    expect(result.agentHandoff.renewal.command).toContain('--scope "projects:api,worker"');
+    expect(result.agentHandoff.renewal.command).toContain('--runtime node');
+    const prepared = await prepareGoalVerification({
+      workspacePath,
+      goalId: result.goalPack.id,
+    });
+    const verified = await readVerifiedGoal(workspacePath, prepared.verifiedGoalId);
+    expect(verified.goal.scope).toMatchObject({ kind: 'project-set' });
+    expect(verified.goal.criteria).toMatchObject({ runtime: 'node' });
+  });
+
+  it('requires runtime-compatible scopes instead of silently dropping mixed-runtime projects', async () => {
+    const { workspacePath } = await fixture();
+    await addFixtureProject({ workspacePath, name: 'worker', runtime: 'python' });
+
+    const result = await planGoalPack({
+      startPath: workspacePath,
+      intent: 'Raise test coverage to 82%',
+      scope: 'projects:api,worker',
+    });
+
+    expect(result.result).toBe('needs-confirmation');
+    expect(result.goalPack.preflight.measurement.runtimeChoices).toEqual([]);
+    expect(result.goalPack.decision?.reason).toContain(
+      'do not share a common canonical coverage runtime'
+    );
+    expect(result.goalPack.decision?.question).toContain('runtime-compatible Goal scopes');
+
+    await expect(
+      planGoalPack({
+        startPath: workspacePath,
+        intent: 'Raise test coverage to 82%',
+        scope: 'projects:api,worker',
+        runtime: 'python',
+      })
+    ).rejects.toThrow('not canonical for every project');
+  });
+
+  it('rejects an explicit runtime outside the canonical selected scope', async () => {
+    const { projectPath } = await fixture();
+
+    await expect(
+      planGoalPack({
+        startPath: projectPath,
+        intent: 'Raise test coverage to 82%',
+        runtime: 'python',
+      })
+    ).rejects.toThrow('not present in the canonical Workspace Model');
+  });
+
   it('resolves project invocation, publishes an atomic portable pack, and preserves CLI ownership', async () => {
     const { workspacePath, projectPath } = await fixture();
     const result = await planGoalPack({
@@ -106,6 +249,7 @@ describe('goal pack workspace adapter', () => {
       kind: 'project',
       projects: ['api'],
       selectionSource: 'invocation-project',
+      resolution: 'selected',
     });
     expect(result.goalPack.policy).toMatchObject({
       mutationMode: 'proposal-only',
@@ -264,6 +408,68 @@ describe('goal pack workspace adapter', () => {
     ).toBe('planned');
   });
 
+  it('reconciles a legacy active non-actionable Goal without corrupting the Goal index', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const pending = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve test coverage',
+    });
+    const indexPath = path.join(workspacePath, '.workspai', 'goals', 'index.json');
+    const legacyIndex = await fsExtra.readJson(indexPath);
+    legacyIndex.activeGoalId = pending.goalPack.id;
+    legacyIndex.goals[0].lifecycle = 'planned';
+    await fsExtra.writeJson(indexPath, legacyIndex, { spaces: 2 });
+
+    const replanned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve test coverage',
+    });
+    const inspected = await inspectGoalLifecycle({ workspacePath, validateBindings: false });
+
+    expect(replanned.result).toBe('needs-confirmation');
+    expect(inspected.index.activeGoalId).toBeNull();
+    expect(inspected.index.goals[0]?.lifecycle).toBe('planned');
+  });
+
+  it('demotes a legacy non-actionable active lifecycle entry during planning', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const pending = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve test coverage',
+    });
+    const indexPath = path.join(workspacePath, '.workspai', 'goals', 'index.json');
+    const legacyIndex = await fsExtra.readJson(indexPath);
+    legacyIndex.activeGoalId = pending.goalPack.id;
+    legacyIndex.goals[0].lifecycle = 'active';
+    await fsExtra.writeJson(indexPath, legacyIndex, { spaces: 2 });
+
+    const replanned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve test coverage',
+    });
+    const inspected = await inspectGoalLifecycle({ workspacePath, validateBindings: false });
+
+    expect(replanned.result).toBe('needs-confirmation');
+    expect(inspected.index.activeGoalId).toBeNull();
+    expect(inspected.index.goals[0]?.lifecycle).toBe('planned');
+  });
+
+  it('refuses to activate a Goal until clarification and evidence are complete', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const pending = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve test coverage',
+    });
+
+    await expect(
+      transitionGoalLifecycle({
+        workspacePath,
+        goalId: pending.goalPack.id,
+        action: 'activate',
+      })
+    ).rejects.toThrow('cannot be activated while its planning state is needs-confirmation');
+  });
+
   it('bridges an active deterministic goal through preparation and blocked verification', async () => {
     const { workspacePath, projectPath } = await fixture();
     const planned = await planGoalPack({
@@ -377,6 +583,43 @@ describe('goal pack workspace adapter', () => {
     });
     const inspected = await inspectGoalLifecycle({ workspacePath });
     expect(inspected.active?.repairTransactionId).toBe(transaction.transactionId);
+  });
+
+  it('limits every project-set repair proposal to a selected project member', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    await addFixtureProject({ workspacePath, name: 'worker', runtime: 'python' });
+    const planned = await planGoalPack({
+      startPath: workspacePath,
+      scope: 'projects:api,worker',
+      intent: 'Map the system architecture',
+    });
+    const sourcePath = path.join(projectPath, 'src', 'health.controller.ts');
+    const before = await fsExtra.readFile(sourcePath, 'utf8');
+
+    await expect(
+      planWorkspaceRepairProposal({
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          goalId: planned.goalPack.id,
+          cardId: 'goal-project-set-widening',
+          projectName: 'outside',
+          projectPath: 'outside',
+          rationale: 'Attempt to widen the selected project set.',
+          changes: [
+            {
+              id: 'outside-source',
+              path: 'api/src/health.controller.ts',
+              operation: 'write',
+              expectedBeforeHash: createHash('sha256').update(before).digest('hex'),
+              content: `${before}// proposed\n`,
+              risk: 'safe',
+              summary: 'This proposal must be rejected before mutation.',
+            },
+          ],
+        },
+      })
+    ).rejects.toThrow('inside the permitted Goal scope (api, worker)');
   });
 
   it('serializes Goal repair proposals so concurrent consumers cannot exceed the budget', async () => {
