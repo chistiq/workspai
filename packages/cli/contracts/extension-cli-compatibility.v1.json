@@ -1,7 +1,7 @@
 {
   "schemaVersion": "rapidkit-extension-cli-compatibility.v1",
   "cli": "workspai",
-  "minimumVerifiedCliVersion": "0.60.1",
+  "minimumVerifiedCliVersion": "0.61.0",
   "publishedContractSchemas": {
     "workspaceContract": 1,
     "runtimeCommandSurface": "rapidkit-runtime-command-surface-v1",

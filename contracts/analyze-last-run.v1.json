@@ -81,7 +81,13 @@
           "title": { "type": "string" },
           "detail": { "type": "string" },
           "target": { "type": "string" },
-          "remediation": { "type": "string" }
+          "remediation": { "type": "string" },
+          "files": {
+            "type": "array",
+            "description": "Expected project-relative source paths that close this finding when created or repaired.",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
         },
         "additionalProperties": true
       }

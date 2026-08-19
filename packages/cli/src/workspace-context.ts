@@ -124,6 +124,80 @@ export type WorkspaceAgentContext = {
   agentInstructions: string[];
   unsafeAssumptions: string[];
   humanSummary: string;
+
+  /**
+   * Optional, evidence-backed workspace intelligence projections
+   * (enriched summaries of artifacts produced by `workspace intelligence run`).
+   */
+  impactSummary?: {
+    changed?: boolean;
+    risk?: string;
+    affectedProjects?: number;
+    blastRadius?: unknown;
+    recommendedCommands?: unknown;
+  };
+  doctorSummary?: {
+    verdict?: string;
+    totalIssues?: number;
+    advisoryFindings?: number;
+    blockingFindings?: number;
+    unknownFindings?: number;
+    hasSystemErrors?: boolean;
+    topSignals?: Array<{
+      label?: string;
+      scope?: string;
+      issueClass?: string;
+      status?: string;
+      severity?: string;
+      recommendation?: string;
+    }>;
+  };
+  analyzeSummary?: {
+    score?: number;
+    verdict?: string;
+    findingCounts?: Record<string, unknown>;
+    topFindings?: Array<{
+      severity?: string;
+      title?: string;
+      target?: string;
+      remediation?: string;
+    }>;
+  };
+  readinessSummary?: {
+    overallStatus?: string;
+    blocking?: boolean;
+    blockingReasons?: string[];
+    gates?: Array<{
+      gate?: string;
+      status?: string;
+      summary?: string;
+    }>;
+    evidencePath?: string;
+  };
+  verifySummary?: {
+    verdict?: string;
+    exitCode?: number;
+    stepsFailed?: number;
+    stepsMissing?: number;
+    blockingReasons?: string[];
+    missingEvidence?: string[];
+  };
+  explainSummary?: {
+    summary?: string;
+    blockingReasons?: string[];
+    releaseVerdict?: string;
+    evidenceFreshness?: string;
+    sections?: Array<{ id?: string; title?: string; body?: string }>;
+  };
+  diffSummary?: {
+    changed?: boolean;
+    addedProjects?: number;
+    removedProjects?: number;
+    changedProjects?: number;
+    workspaceChanges?: number;
+    validationChanges?: number;
+    gitChangedFiles?: number;
+  };
 };
 
 export type BuildWorkspaceAgentContextOptions = {
@@ -166,6 +240,22 @@ function pinnedRapidkitCommand(args: string): string {
 
 function displayRapidkitCommand(args: string): string {
   return `npx workspai ${args}`.trim();
+}
+
+async function safeReadWorkspaceJsonArtifact<T>(
+  workspacePath: string,
+  artifactPath: string,
+  expectedSchemaVersion: string
+): Promise<T | null> {
+  const absolutePath = path.join(workspacePath, artifactPath);
+  if (!(await fsExtra.pathExists(absolutePath))) return null;
+  try {
+    const json = (await fsExtra.readJson(absolutePath)) as any;
+    if (!json || json.schemaVersion !== expectedSchemaVersion) return null;
+    return json as T;
+  } catch {
+    return null;
+  }
 }
 
 function command(
@@ -474,6 +564,162 @@ export async function buildWorkspaceAgentContext(
   }
   const workspaceSummary = summarizeWorkspace(model);
   const safeCommands = buildSafeCommands(model, activeProject, now);
+
+  const impactArtifact = await safeReadWorkspaceJsonArtifact<any>(
+    input.workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.impact,
+    WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.impact
+  );
+  const doctorArtifact = await safeReadWorkspaceJsonArtifact<any>(
+    input.workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor,
+    WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.doctor
+  );
+  const analyzeArtifact = await safeReadWorkspaceJsonArtifact<any>(
+    input.workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.analyze,
+    WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.analyze
+  );
+  const readinessArtifact = await safeReadWorkspaceJsonArtifact<any>(
+    input.workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.readiness,
+    WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.readiness
+  );
+  const verifyArtifact = await safeReadWorkspaceJsonArtifact<any>(
+    input.workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.verify,
+    WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.verify
+  );
+  const explainArtifact = await safeReadWorkspaceJsonArtifact<any>(
+    input.workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.explain,
+    WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.explain
+  );
+  const diffArtifact = await safeReadWorkspaceJsonArtifact<any>(
+    input.workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.diff,
+    WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.diff
+  );
+
+  const impactSummary: WorkspaceAgentContext['impactSummary'] = impactArtifact?.summary
+    ? {
+        changed: impactArtifact.summary.changed,
+        risk: impactArtifact.summary.risk,
+        affectedProjects: impactArtifact.summary.affectedProjects,
+        blastRadius: impactArtifact.summary.blastRadius,
+        recommendedCommands: impactArtifact.summary.recommendedCommands,
+      }
+    : undefined;
+
+  const doctorSummary: WorkspaceAgentContext['doctorSummary'] = doctorArtifact?.summary
+    ? {
+        verdict: doctorArtifact.summary.verdict,
+        totalIssues: doctorArtifact.summary.totalIssues,
+        advisoryFindings: doctorArtifact.summary.advisoryFindings,
+        blockingFindings: doctorArtifact.summary.blockingFindings,
+        unknownFindings: doctorArtifact.summary.unknownFindings,
+        hasSystemErrors: doctorArtifact.summary.hasSystemErrors,
+        topSignals: (() => {
+          const projects: any[] = Array.isArray(doctorArtifact.projects)
+            ? doctorArtifact.projects
+            : [];
+          const signals: any[] = [];
+          for (const project of projects.slice(0, 6)) {
+            const probes: any[] = Array.isArray(project?.probes) ? project.probes : [];
+            for (const probe of probes.slice(0, 10)) {
+              if (probe?.status === 'fail' || probe?.severity === 'error') {
+                signals.push({
+                  label: probe.label,
+                  scope: probe.scope,
+                  issueClass: probe.issueClass,
+                  status: probe.status,
+                  severity: probe.severity,
+                  recommendation: probe.recommendation,
+                });
+              }
+            }
+          }
+          return signals.slice(0, 8);
+        })(),
+      }
+    : undefined;
+
+  const analyzeSummary: WorkspaceAgentContext['analyzeSummary'] = analyzeArtifact?.summary
+    ? {
+        score: analyzeArtifact.summary.score,
+        verdict: analyzeArtifact.summary.verdict,
+        findingCounts: analyzeArtifact.summary.findings,
+        topFindings: (() => {
+          const findings: any[] = Array.isArray(analyzeArtifact.findings)
+            ? analyzeArtifact.findings
+            : [];
+          const prioritized = findings
+            .filter((f) => f?.severity === 'fail' || f?.severity === 'warn')
+            .slice(0, 8);
+          return prioritized.map((f) => ({
+            severity: f.severity,
+            title: f.title,
+            target: f.target,
+            remediation: f.remediation,
+          }));
+        })(),
+      }
+    : undefined;
+
+  const readinessSummary: WorkspaceAgentContext['readinessSummary'] = readinessArtifact
+    ? {
+        overallStatus: readinessArtifact.overallStatus,
+        blocking: readinessArtifact.blocking,
+        blockingReasons: readinessArtifact.blockingReasons,
+        evidencePath: readinessArtifact.evidencePath,
+        gates: Array.isArray(readinessArtifact.gates)
+          ? readinessArtifact.gates.slice(0, 6).map((g: any) => ({
+              gate: g.gate,
+              status: g.status,
+              summary: g.summary,
+            }))
+          : undefined,
+      }
+    : undefined;
+
+  const verifySummary: WorkspaceAgentContext['verifySummary'] = verifyArtifact?.summary
+    ? {
+        verdict: verifyArtifact.summary.verdict,
+        exitCode: verifyArtifact.summary.exitCode,
+        stepsFailed: verifyArtifact.summary.stepsFailed,
+        stepsMissing: verifyArtifact.summary.stepsMissing,
+        blockingReasons: verifyArtifact.blockingReasons,
+        missingEvidence: verifyArtifact.missingEvidence,
+      }
+    : undefined;
+
+  const explainSummary: WorkspaceAgentContext['explainSummary'] = explainArtifact
+    ? {
+        summary: explainArtifact.summary,
+        blockingReasons: explainArtifact.blockingReasons,
+        releaseVerdict: explainArtifact.releaseVerdict,
+        evidenceFreshness: explainArtifact.evidenceFreshness,
+        sections: Array.isArray(explainArtifact.sections)
+          ? explainArtifact.sections.slice(0, 4).map((s: any) => ({
+              id: s.id,
+              title: s.title,
+              body: s.body,
+            }))
+          : undefined,
+      }
+    : undefined;
+
+  const diffSummary: WorkspaceAgentContext['diffSummary'] = diffArtifact?.summary
+    ? {
+        changed: diffArtifact.summary.changed,
+        addedProjects: diffArtifact.summary.addedProjects,
+        removedProjects: diffArtifact.summary.removedProjects,
+        changedProjects: diffArtifact.summary.changedProjects,
+        workspaceChanges: diffArtifact.summary.workspaceChanges,
+        validationChanges: diffArtifact.summary.validationChanges,
+        gitChangedFiles: diffArtifact.summary.gitChangedFiles,
+      }
+    : undefined;
   const commandFacts = safeCommands.map((safeCommand) =>
     buildWorkspaceFact({
       id: `context.command.${safeCommand.id}`,
@@ -588,6 +834,14 @@ export async function buildWorkspaceAgentContext(
         ? `Active project scope: ${activeProject.name} (${activeProject.frameworkDisplayName}).`
         : 'Scope: whole workspace.',
     ].join('\n'),
+
+    impactSummary,
+    doctorSummary,
+    analyzeSummary,
+    readinessSummary,
+    verifySummary,
+    explainSummary,
+    diffSummary,
   };
 }
 

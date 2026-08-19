@@ -55,6 +55,9 @@ function capability(
  * A blocked card must be re-produced and verified by its own producer before the
  * aggregate Workspace Verify gate is allowed to close the repair. Consumers must
  * not substitute Doctor or Workspace Verify for a missing card producer.
+ * `repairPolicy` selects the safest contract-owned first action; it never removes
+ * the consumer's governed source-repair capability when that action leaves the
+ * exact card blocked.
  */
 export const STUDIO_CARD_REPAIR_CAPABILITIES: readonly StudioCardRepairCapability[] = [
   capability('doctor', 'npx workspai doctor workspace --json', A.doctor, {
@@ -182,7 +185,7 @@ export function buildStudioCardRepairCapabilitiesContract() {
   return {
     schemaVersion: STUDIO_CARD_REPAIR_CAPABILITIES_SCHEMA_VERSION,
     invariant:
-      'A card repair closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.',
+      'A card repair starts with its declared repairPolicy but every unresolved policy path transfers to governed causal source repair. It closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.',
     cards: STUDIO_CARD_REPAIR_CAPABILITIES,
   };
 }

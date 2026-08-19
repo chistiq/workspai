@@ -24,6 +24,7 @@ import {
   LEGACY_MCP_DESIGN_REPORT_PATH,
   LEGACY_VSCODE_AGENT_HOOKS_PATH,
   WORKSPAI_CLAUDE_EVIDENCE_RULE_PATH,
+  WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH,
   WORKSPAI_COPILOT_ADOPT_PROJECT_PROMPT_PATH,
   WORKSPAI_COPILOT_DIAGNOSE_PROMPT_PATH,
   WORKSPAI_COPILOT_EVIDENCE_INSTRUCTIONS_PATH,
@@ -33,10 +34,24 @@ import {
   WORKSPAI_COPILOT_REPAIR_PROMPT_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH,
+  WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH,
+  WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
   WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
+  WORKSPAI_CURSOR_RELEASE_RULE_PATH,
+  WORKSPAI_CURSOR_REPAIR_RULE_PATH,
+  WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+  WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH,
+  WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH,
+  WORKSPAI_CURSOR_GROUNDING_SKILL_PATH,
+  WORKSPAI_GROK_EVIDENCE_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_SKILL_PATH,
   WORKSPAI_MCP_DESIGN_REPORT_PATH,
   WORKSPAI_SKILLS_DIR,
   WORKSPAI_VSCODE_AGENT_HOOKS_PATH,
+  WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH,
+  WORKSPAI_WINDSURF_GROUNDING_RULE_PATH,
+  WORKSPAI_WINDSURF_RULES_PATH,
   WORKSPACE_SKILLS_INDEX_PATH,
 } from './contracts/workspace-artifact-paths.js';
 import { buildAgentCustomizationPackContract } from './contracts/agent-customization-pack-contract.js';
@@ -102,9 +117,14 @@ export {
   WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH,
+  WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH,
+  WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
   WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
+  WORKSPAI_CURSOR_RELEASE_RULE_PATH,
+  WORKSPAI_CURSOR_REPAIR_RULE_PATH,
   WORKSPAI_MCP_DESIGN_REPORT_PATH,
   WORKSPAI_VSCODE_AGENT_HOOKS_PATH,
+  WORKSPAI_WINDSURF_RULES_PATH,
 };
 
 export type AgentGroundingTarget =
@@ -594,8 +614,26 @@ function inferOutputTargets(relativePath: string): AgentGroundingTarget[] {
   if (relativePath === 'GEMINI.md') return ['gemini'];
   if (relativePath === 'QWEN.md') return ['qwen'];
   if (relativePath.startsWith('.amazonq/')) return ['amazon-q'];
+  if (relativePath === '.windsurfrules' || relativePath.startsWith('.windsurf/'))
+    return ['windsurf'];
+  if (relativePath.startsWith('.grok/')) return ['grok'];
+  if (relativePath.startsWith('.agents/')) return ['codex', 'kimi', 'grok', 'orca'];
   if (relativePath === 'AGENTS.md' || relativePath.startsWith('.rapidkit/')) {
-    return ['agents', 'codex', 'kimi', 'grok', 'copilot', 'cursor', 'windsurf', 'orca', 'vscode'];
+    return [
+      'agents',
+      'codex',
+      'kimi',
+      'grok',
+      'copilot',
+      'cursor',
+      'claude',
+      'gemini',
+      'qwen',
+      'amazon-q',
+      'windsurf',
+      'orca',
+      'vscode',
+    ];
   }
   if (relativePath.startsWith('.vscode/')) {
     return ['vscode'];
@@ -891,6 +929,9 @@ function buildPortableProviderAdapter(provider: string): string {
     `- Load \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` before diagnosing blockers or architecture.`,
     `- Read only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
     '- Use bounded Workspace Knowledge Graph search before broad source discovery.',
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
     '- Refresh grounding with `workspai workspace agent-sync --write --refresh-context`.',
     '',
   ].join('\n');
@@ -904,13 +945,343 @@ function buildCursorRule(): string {
     'alwaysApply: true',
     '---',
     '',
-    'Before proposing fixes in this workspace:',
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
     '',
     `1. Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
     `2. Read only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
     '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
     '',
-    'Refresh when stale:',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context and evidence.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '- Do not translate unsupported stack requests into unrelated native kits.',
+    '',
+    '## Intelligent loop',
+    '',
+    'When applying changes, follow the full repair loop:',
+    '',
+    '1. Discover — inspect workspace model and dependency graph.',
+    '2. Inspect — read relevant evidence and source files.',
+    '3. Patch — apply changes through the CLI-owned repair transaction.',
+    '4. Verify — run verification to confirm workspace health.',
+    '5. Complete — only after verified evidence confirms success.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildCursorEvidenceRule(): string {
+  return [
+    '---',
+    'description: Workspai evidence artifact discipline',
+    'globs: [".workspai/**", "**/.workspai/**", ".rapidkit/**", "**/.rapidkit/**"]',
+    'alwaysApply: false',
+    '---',
+    '',
+    'When reading or editing `.workspai/` or legacy `.rapidkit/` artifacts:',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. Never include comments, trailing commas, or non-standard syntax.',
+    '',
+    'Regenerate evidence:',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace intelligence run'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildCursorWorkflowRule(input: {
+  description: string;
+  globs: string;
+  objective: string;
+  steps: string[];
+}): string {
+  return [
+    '---',
+    `description: ${input.description}`,
+    `globs: ${input.globs}`,
+    'alwaysApply: false',
+    '---',
+    '',
+    input.objective,
+    '',
+    'Read first:',
+    '',
+    `- \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\``,
+    `- \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\``,
+    '- Any report referenced by the current blocker or task',
+    '',
+    'Steps:',
+    '',
+    ...input.steps.map((step, i) => `${i + 1}. ${step}`),
+    '',
+    'Use the standard Workspai answer contract: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+  ].join('\n');
+}
+
+function buildCursorDiagnoseRule(): string {
+  return buildCursorWorkflowRule({
+    description: 'Diagnose Workspai workspace blockers from evidence reports',
+    globs: '[]',
+    objective: 'Diagnose this workspace using Workspai evidence only.',
+    steps: [
+      'Root cause grounded in report blockers',
+      'Smallest safe fix path (commands + file edits)',
+      'One verification command to prove recovery',
+    ],
+  });
+}
+
+function buildCursorRepairRule(): string {
+  return buildCursorWorkflowRule({
+    description: 'Repair Workspai blockers with evidence and verification',
+    globs: '[]',
+    objective: 'Plan the smallest safe repair for the current Workspai blocker.',
+    steps: [
+      'Blocker and affected workspace/project scope',
+      'Evidence paths and exact failing signals',
+      'Minimal fix plan',
+      'Human-run commands',
+      'Verification command and expected success signal',
+    ],
+  });
+}
+
+function buildCursorReleaseRule(): string {
+  return buildCursorWorkflowRule({
+    description: 'Assess Workspai release readiness from evidence',
+    globs: '[]',
+    objective: 'Assess whether this workspace is release-ready using Workspai gates.',
+    steps: [
+      'Readiness verdict with cited reports',
+      'Blocking gates',
+      'Safe next command',
+      'Verification checklist',
+    ],
+  });
+}
+
+function buildWindsurfGroundingRule(): string {
+  return [
+    '---',
+    'trigger: always_on',
+    'description: Workspai workspace evidence and intelligence grounding',
+    '---',
+    '',
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildWindsurfEvidenceRule(): string {
+  return [
+    '---',
+    'trigger: glob',
+    'description: Workspai evidence artifact discipline',
+    'globs: [".workspai/**", ".rapidkit/**"]',
+    '---',
+    '',
+    'When reading or editing `.workspai/` or legacy `.rapidkit/` artifacts:',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+  ].join('\n');
+}
+
+function buildGrokGroundingRule(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildGrokEvidenceRule(): string {
+  return [
+    '# Workspai evidence artifact discipline',
+    '',
+    'Applies when reading or editing `.workspai/` or legacy `.rapidkit/` artifacts.',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+    'Regenerate evidence:',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace intelligence run'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildAmazonQWorkspaceRule(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+  ].join('\n');
+}
+
+function buildWindsurfRules(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '- Do not translate unsupported stack requests into unrelated native kits.',
+    '',
+    '## Evidence discipline',
+    '',
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildClaudeWorkspaceRule(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context and evidence.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '',
+    '## Intelligent loop',
+    '',
+    'When applying changes, follow the full repair loop:',
+    '',
+    '1. Discover — inspect workspace model and dependency graph.',
+    '2. Inspect — read relevant evidence and source files.',
+    '3. Patch — apply changes through the CLI-owned repair transaction.',
+    '4. Verify — run verification to confirm workspace health.',
+    '5. Complete — only after verified evidence confirms success.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
     '',
     '```bash',
     displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
@@ -963,13 +1334,26 @@ function buildCopilotWorkspaceInstructions(): string {
 
 function buildClaudeEvidenceRule(): string {
   return [
+    '---',
+    'paths:',
+    '  - ".workspai/**"',
+    '  - ".rapidkit/**"',
+    '---',
+    '',
     '# Workspai evidence',
     '',
-    'Applies when reading or editing `.workspai/reports/*`.',
+    'When reading or editing `.workspai/` or legacy `.rapidkit/` artifacts:',
     '',
-    '- Start from `INDEX.json`, then `workspace-context-agent.json`.',
-    '- Use report blockers as the primary fix target.',
-    '- Regenerate with `npx workspai workspace agent-sync --write`.',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+    'Regenerate evidence:',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace intelligence run'),
+    '```',
     '',
   ].join('\n');
 }
@@ -1319,8 +1703,12 @@ function buildWorkspaiAgent(input: {
   ].join('\n');
 }
 
-function buildCopilotSkill(): string {
-  return [
+function buildPortableGroundingSkill(input: {
+  index: WorkspaceAgentReportsIndex;
+  context?: Awaited<ReturnType<typeof buildWorkspaceAgentContext>> | null;
+  model?: WorkspaceModel;
+}): string {
+  const lines = [
     '---',
     'name: workspai-grounding',
     'description: Load Workspai workspace intelligence reports before diagnosing or changing code',
@@ -1337,13 +1725,52 @@ function buildCopilotSkill(): string {
     '3. Read fail/warn evidence artifacts listed in the index',
     '4. Propose the smallest safe fix with explicit verification commands',
     '',
+  ];
+
+  const projectNames = input.model?.projects
+    ?.map((p: { name?: string; slug?: string }) => p.name || p.slug)
+    .filter(Boolean)
+    .slice(0, 10);
+  if (projectNames && projectNames.length > 0) {
+    lines.push('## Projects in this workspace', '');
+    for (const name of projectNames) {
+      lines.push(`- ${name}`);
+    }
+    lines.push('');
+  }
+
+  if (input.index.blockers.length > 0) {
+    lines.push('## Current blockers', '');
+    for (const blocker of input.index.blockers.slice(0, 8)) {
+      lines.push(`- ${blocker}`);
+    }
+    lines.push('');
+  }
+
+  if (input.context?.safeCommands?.length) {
+    lines.push('## Safe commands (prefer these)', '');
+    for (const cmd of input.context.safeCommands.slice(0, 6)) {
+      lines.push(`- \`${cmd.display}\` — ${cmd.description}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(
+    '## Rules',
+    '',
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
     '## Refresh stale evidence',
     '',
     '```bash',
     displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
     '```',
-    '',
-  ].join('\n');
+    ''
+  );
+
+  return lines.join('\n');
 }
 
 async function writeTextFile(
@@ -1622,10 +2049,14 @@ async function syncWorkspaceAgentGroundingUnsafe(
     'vscode',
     'copilot',
     'cursor',
+    'claude',
     'codex',
+    'gemini',
+    'qwen',
     'kimi',
     'grok',
     'windsurf',
+    'amazon-q',
     'orca',
   ];
   if (agentsMdTargets.some((target) => targetEnabled(selectedTargets, target))) {
@@ -1668,11 +2099,27 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
     record(
       await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH),
+        `${buildClaudeWorkspaceRule()}\n`,
+        write
+      ),
+      WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
         path.join(workspacePath, LEGACY_CLAUDE_EVIDENCE_RULE_PATH),
         `${buildLegacyClaudeEvidenceRule()}\n`,
         write
       ),
       LEGACY_CLAUDE_EVIDENCE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH
     );
   }
 
@@ -1704,13 +2151,88 @@ async function syncWorkspaceAgentGroundingUnsafe(
 
   if (targetEnabled(selectedTargets, 'amazon-q')) {
     record(
-      await writeManagedMarkdownFile({
+      await writeImportedAgentAdapter({
         workspacePath,
         absolutePath: path.join(workspacePath, '.amazonq/rules/workspai-agent-entry.md'),
+        importLine: '@../../AGENTS.md',
         generatedBody: buildPortableProviderAdapter('Amazon Q Developer'),
         write,
       }),
       '.amazonq/rules/workspai-agent-entry.md'
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH),
+        buildAmazonQWorkspaceRule(),
+        write
+      ),
+      WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'grok')) {
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_GROK_GROUNDING_RULE_PATH),
+        buildGrokGroundingRule(),
+        write
+      ),
+      WORKSPAI_GROK_GROUNDING_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_GROK_EVIDENCE_RULE_PATH),
+        buildGrokEvidenceRule(),
+        write
+      ),
+      WORKSPAI_GROK_EVIDENCE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_GROK_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_GROK_GROUNDING_SKILL_PATH
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'codex')) {
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_AGENTS_GROUNDING_SKILL_PATH
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'windsurf')) {
+    record(
+      await writeManagedMarkdownFile({
+        workspacePath,
+        absolutePath: path.join(workspacePath, WORKSPAI_WINDSURF_RULES_PATH),
+        generatedBody: buildWindsurfRules(),
+        write,
+      }),
+      WORKSPAI_WINDSURF_RULES_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_WINDSURF_GROUNDING_RULE_PATH),
+        buildWindsurfGroundingRule(),
+        write
+      ),
+      WORKSPAI_WINDSURF_GROUNDING_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH),
+        buildWindsurfEvidenceRule(),
+        write
+      ),
+      WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH
     );
   }
 
@@ -1725,11 +2247,53 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
     record(
       await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CURSOR_EVIDENCE_RULE_PATH),
+        buildCursorEvidenceRule(),
+        write
+      ),
+      WORKSPAI_CURSOR_EVIDENCE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
         path.join(workspacePath, LEGACY_CURSOR_GROUNDING_RULE_PATH),
         buildLegacyCursorRule(),
         write
       ),
       LEGACY_CURSOR_GROUNDING_RULE_PATH
+    );
+    if (preset === 'enterprise') {
+      record(
+        await writeTextFile(
+          path.join(workspacePath, WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH),
+          buildCursorDiagnoseRule(),
+          write
+        ),
+        WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH
+      );
+      record(
+        await writeTextFile(
+          path.join(workspacePath, WORKSPAI_CURSOR_REPAIR_RULE_PATH),
+          buildCursorRepairRule(),
+          write
+        ),
+        WORKSPAI_CURSOR_REPAIR_RULE_PATH
+      );
+      record(
+        await writeTextFile(
+          path.join(workspacePath, WORKSPAI_CURSOR_RELEASE_RULE_PATH),
+          buildCursorReleaseRule(),
+          write
+        ),
+        WORKSPAI_CURSOR_RELEASE_RULE_PATH
+      );
+    }
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CURSOR_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_CURSOR_GROUNDING_SKILL_PATH
     );
   }
 
@@ -1881,7 +2445,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
     record(
       await writeTextFile(
         path.join(workspacePath, WORKSPAI_COPILOT_GROUNDING_SKILL_PATH),
-        buildCopilotSkill(),
+        buildPortableGroundingSkill({ index, context, model }),
         write
       ),
       WORKSPAI_COPILOT_GROUNDING_SKILL_PATH
@@ -1889,7 +2453,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
     record(
       await writeTextFile(
         path.join(workspacePath, LEGACY_COPILOT_GROUNDING_SKILL_PATH),
-        buildCopilotSkill(),
+        buildPortableGroundingSkill({ index, context, model }),
         write
       ),
       LEGACY_COPILOT_GROUNDING_SKILL_PATH

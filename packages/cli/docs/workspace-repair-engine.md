@@ -1,6 +1,37 @@
 # Workspace Repair Engine
 
-The Workspace Repair Engine is the CLI-owned execution boundary for blocker repair. IDEs,
+## What it does
+
+When Doctor or Verify finds a problem—a failing test, a missing dependency, a
+broken build—the Repair Engine fixes it safely. You approve a plan, the CLI
+executes it in a checkpointed transaction, verifies the result, and either
+closes the repair or rolls back without leaving your workspace in a broken state.
+
+**Think of it as `git stash` meets a governed CI pipeline, but for individual
+blocker fixes.**
+
+### Quick example
+
+```bash
+# 1. See what can be repaired
+npx workspai workspace repair capabilities --json
+
+# 2. Plan a fix for a failing test
+npx workspai workspace repair plan --card doctor --project api --json
+
+# 3. Approve and execute
+npx workspai workspace repair approve --transaction <id> --approved-by local-user --json
+npx workspai workspace repair execute --transaction <id> --json
+```
+
+The CLI checkpoints files before any change, runs the fix, verifies the result,
+and reports success or rolls back. No manual cleanup needed.
+
+---
+
+## How it works
+
+The Repair Engine is the CLI-owned execution boundary for blocker repair. IDEs,
 agents, and CI may request work and render progress, but they do not invent commands or decide
 that a repair is complete.
 
@@ -76,6 +107,20 @@ project in `workspace.contract.json`; the authorized boundary is that project's 
 its parent or a sibling repository. Dependency manifest proposals still receive CLI-inferred
 reconcile, audit, test, and build stages before strict verification.
 
+Proposal validation separates model-correctable rejection from an operator decision. A no-op,
+stale hash, protected generated-evidence target, duplicate path, or escaped source scope is
+returned as a failed proposal precondition with only the safe cancel option. An autonomous
+consumer must use that typed receipt to inspect the exact producer finding and submit materially
+different bounded source; it must not ask the operator to decide how to repair the model's own
+invalid proposal. Missing or unlaunchable executables, unsupported runtime adapters, credentials,
+risk elevation, and policy exceptions remain explicit user/toolchain boundaries.
+
+Planning is idempotent while a decision-required transaction is still current. Repeating the same
+target, policy, source hashes, adapter state, executable state, stages, and decision causes returns
+the existing durable transaction instead of creating another transaction id. A fresh transaction
+is created automatically once source, evidence, policy, or toolchain preconditions materially
+change.
+
 Doctor also publishes a distinct `dependency-materialization` transaction when manifests exist
 but the installed runtime tree is missing. Its install or restore invocation is the repair stage
 itself; it does not require a manifest or lockfile diff and is never run twice. Declared tests and
@@ -114,7 +159,8 @@ tool before the environment-creation stage runs.
   close while unrelated governed findings keep the workspace blocked. Those findings remain the
   next repair target and never trigger rollback of a valid bounded repair.
 - Required executables are resolved before approval and again immediately before execution. A
-  missing or changed toolchain expires approval instead of starting a partial transaction.
+  missing, broken-shebang, or changed toolchain expires approval instead of starting a partial
+  transaction. Filesystem presence alone is not launchability proof.
 - The exact card producer is run twice: first as a no-mutation causal precondition, then after
   repair as card-local evidence. An aggregate workspace gate cannot substitute for either run.
 - A Goal-bound proposal is linked to the active Goal before execution. Closure seals the fresh

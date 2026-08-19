@@ -68,6 +68,7 @@ export type WorkspaceRepairDecision =
   | 'approve-invasive'
   | 'allow-breaking'
   | 'allow-force'
+  | 'replan'
   | 'manual-repair'
   | 'rollback'
   | 'cancel';

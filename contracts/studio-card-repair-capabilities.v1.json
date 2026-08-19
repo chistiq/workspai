@@ -1,6 +1,6 @@
 {
   "schemaVersion": "workspai.studio-card-repair-capabilities.v1",
-  "invariant": "A card repair closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.",
+  "invariant": "A card repair starts with its declared repairPolicy but every unresolved policy path transfers to governed causal source repair. It closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.",
   "cards": [
     {
       "cardId": "doctor",

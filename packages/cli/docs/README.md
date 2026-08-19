@@ -8,28 +8,30 @@ Start with the [main README](../README.md) for the product overview, or use the
 quickstart below. `workspai` is the main package and command; `wspai` is only a
 shorter optional name.
 
-## Quickstart: connect an existing project
+## Quickstart: from zero to value in 60 seconds
 
-Connect an existing project without moving it, then create one saved,
-checkable view for developers, CI, IDEs, MCP clients, and AI agents:
+You have an existing project. You want AI agents (and your team) to understand
+it as a system—not just a pile of files. Three commands:
 
 ```bash
-cd /absolute/path/to/project
+# Step 1: Adopt the project (it stays where it is)
+cd /path/to/your/project
 npx workspai adopt .
-```
 
-`adopt` keeps the project in place and creates or reuses the minimal default
-workspace. Continue from the same project terminal:
-
-```bash
-npx workspai project workspace status --json
+# Step 2: Build the full workspace intelligence
 npx workspai workspace intelligence run --for-agent generic --strict --json
-npx workspai agent bootstrap --for-agent generic --json
+
+# Step 3: Check what agents will see
+cat .workspai/reports/workspace-context-agent.json | head -30
 ```
 
-The first command proves which canonical workspace owns the project. Workspai
-uses a gitignored machine-local binding and portable project grounding, so
-workspace commands and compatible agents do not need a manual `cd`.
+That is it. Your project now has:
+- A **Workspace Model** describing every project, runtime, and dependency
+- A **Knowledge Graph** with searchable, proof-backed relationships
+- **Agent grounding** files (`AGENTS.md`, Cursor rules, Claude rules, etc.)
+- **Health checks** that name what is broken and why
+
+Continue from the same project terminal for any Workspai command—no `cd` needed.
 
 Use `generic` for a vendor-neutral context pack, or select a published host
 target such as `codex`, `claude`, `gemini`, `qwen`, `kimi`, `grok`, `copilot`,

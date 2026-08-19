@@ -1106,6 +1106,110 @@ describe('Workspace Repair Engine', () => {
     expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('export const ready = true;\n');
   });
 
+  it('accepts an exit-1 target producer only when canonical evidence was refreshed', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const sourcePath = path.join(projectPath, 'src', 'doctor-service.ts');
+    await fsExtra.outputFile(sourcePath, 'export const ready = false;\n');
+    const planned = await planWorkspaceRepairProposal(
+      {
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: 'doctor',
+          blockerSignature: 'doctor:api:runtime-dependency-materialization:missing',
+          targetActionIds: ['doctor.api.surface-environment-config.file-create'],
+          projectName: 'api',
+          projectPath: 'api',
+          rationale: 'Repair a Doctor finding whose successful producer uses exit one.',
+          changes: [
+            {
+              id: 'doctor-exit-one',
+              path: 'api/src/doctor-service.ts',
+              operation: 'write',
+              expectedBeforeHash: sha256('export const ready = false;\n'),
+              content: 'export const ready = true;\n',
+              risk: 'guarded',
+              summary: 'Repair the source prerequisite.',
+            },
+          ],
+        },
+      },
+      { toolAvailable: async () => true }
+    );
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        runInvocation: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+        runTargetProducer: vi.fn(async () => ({
+          exitCode: 1,
+          stdout: '{"healthScore":{"verdict":"blocked"}}',
+          stderr: '',
+          evidenceProduced: true,
+        })),
+        toolAvailable: async () => true,
+        verify: vi.fn(async () => ({
+          status: 'passed',
+          exitCode: 0,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+      }
+    );
+
+    expect(completed.state).toBe('closed');
+    expect(completed.stages.find((stage) => stage.id === 'target-precondition')).toMatchObject({
+      status: 'passed',
+      exitCode: 1,
+    });
+    expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('export const ready = true;\n');
+  });
+
+  it('bounds an exit-1 producer failure when no canonical evidence was refreshed', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const sourcePath = path.join(projectPath, 'producer-failure.txt');
+    await fsExtra.writeFile(sourcePath, 'blocked\n');
+    const planned = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'doctor',
+        blockerSignature: 'doctor:api:producer-failure',
+        targetActionIds: ['doctor.api.surface-environment-config.file-create'],
+        projectName: 'api',
+        projectPath: 'api',
+        rationale: 'Prove an execution error cannot masquerade as blocked evidence.',
+        changes: [
+          {
+            id: 'producer-failure',
+            path: 'api/producer-failure.txt',
+            operation: 'write',
+            expectedBeforeHash: sha256('blocked\n'),
+            content: 'must-not-run\n',
+            risk: 'guarded',
+            summary: 'This mutation must not run.',
+          },
+        ],
+      },
+    });
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        runTargetProducer: vi.fn(async () => ({
+          exitCode: 1,
+          stdout: `{"payload":"${'x'.repeat(20_000)}"}`,
+          stderr: '',
+          evidenceProduced: false,
+        })),
+      }
+    );
+
+    expect(completed.state).toBe('decision-required');
+    expect(completed.decision?.reason).toContain('Exact card producer failed with exit 1');
+    expect(completed.decision?.reason.length).toBeLessThan(1_000);
+    expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('blocked\n');
+  });
+
   it('routes every published Studio card through exact producer and canonical closure stages', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     for (const [index, capability] of STUDIO_CARD_REPAIR_CAPABILITIES.entries()) {
@@ -1334,6 +1438,200 @@ describe('Workspace Repair Engine', () => {
     expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('before\n');
   });
 
+  it('rejects an executable with a broken interpreter before approval', async () => {
+    if (process.platform === 'win32') return;
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const sourcePath = path.join(projectPath, 'service.ts');
+    const brokenToolPath = path.join(projectPath, 'python');
+    await fsExtra.writeFile(sourcePath, 'before\n');
+    await fsExtra.writeFile(brokenToolPath, '#!/workspai/missing/interpreter\n');
+    await fsExtra.chmod(brokenToolPath, 0o755);
+
+    const planned = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'doctor',
+        projectPath: 'api',
+        rationale: 'Prove that an executable can actually launch before mutation.',
+        changes: [
+          {
+            id: 'source-change',
+            path: 'api/service.ts',
+            operation: 'write',
+            expectedBeforeHash: sha256('before\n'),
+            content: 'after\n',
+            risk: 'guarded',
+            summary: 'Apply the bounded source change.',
+          },
+        ],
+        validation: [
+          {
+            id: 'broken-tool-check',
+            kind: 'test',
+            cwd: 'api',
+            executable: './python',
+            args: ['-m', 'pytest'],
+            required: true,
+            risk: 'safe',
+            summary: 'Run the local validation tool.',
+          },
+        ],
+      },
+    });
+
+    expect(planned).toMatchObject({
+      state: 'decision-required',
+      checkpoint: { status: 'pending' },
+    });
+    expect(planned.preconditions).toContainEqual(
+      expect.objectContaining({ id: 'tool:api:./python', status: 'failed' })
+    );
+    expect(planned.decision?.causes).toContainEqual(
+      expect.objectContaining({ kind: 'missing-executable', executable: './python' })
+    );
+    expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('before\n');
+
+    const repeated = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'doctor',
+        projectPath: 'api',
+        rationale: 'Prove that an unchanged toolchain boundary is idempotent.',
+        changes: [
+          {
+            id: 'source-change',
+            path: 'api/service.ts',
+            operation: 'write',
+            expectedBeforeHash: sha256('before\n'),
+            content: 'after\n',
+            risk: 'guarded',
+            summary: 'Apply the bounded source change.',
+          },
+        ],
+        validation: [
+          {
+            id: 'broken-tool-check',
+            kind: 'test',
+            cwd: 'api',
+            executable: './python',
+            args: ['-m', 'pytest'],
+            required: true,
+            risk: 'safe',
+            summary: 'Run the local validation tool.',
+          },
+        ],
+      },
+    });
+
+    expect(repeated.transactionId).toBe(planned.transactionId);
+  });
+
+  it('continues past a broken PATH shadow to a launchable executable', async () => {
+    if (process.platform === 'win32') return;
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const sourcePath = path.join(projectPath, 'service.ts');
+    const brokenBin = path.join(workspacePath, 'broken-bin');
+    const healthyBin = path.join(workspacePath, 'healthy-bin');
+    await fsExtra.writeFile(sourcePath, 'before\n');
+    await fsExtra.ensureDir(brokenBin);
+    await fsExtra.ensureDir(healthyBin);
+    await fsExtra.writeFile(path.join(brokenBin, 'pytest'), '#!/workspai/missing/interpreter\n');
+    await fsExtra.writeFile(path.join(healthyBin, 'pytest'), '#!/bin/sh\nexit 0\n');
+    await fsExtra.chmod(path.join(brokenBin, 'pytest'), 0o755);
+    await fsExtra.chmod(path.join(healthyBin, 'pytest'), 0o755);
+    const originalPath = process.env.PATH;
+    process.env.PATH = [brokenBin, healthyBin, originalPath].filter(Boolean).join(path.delimiter);
+
+    try {
+      const planned = await planWorkspaceRepairProposal({
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: 'doctor',
+          projectPath: 'api',
+          rationale: 'Use the first launchable executable in PATH.',
+          changes: [
+            {
+              id: 'source-change',
+              path: 'api/service.ts',
+              operation: 'write',
+              expectedBeforeHash: sha256('before\n'),
+              content: 'after\n',
+              risk: 'guarded',
+              summary: 'Apply the bounded source change.',
+            },
+          ],
+          validation: [
+            {
+              id: 'path-shadow-check',
+              kind: 'test',
+              cwd: 'api',
+              executable: 'pytest',
+              args: [],
+              required: true,
+              risk: 'safe',
+              summary: 'Run the first launchable PATH candidate.',
+            },
+          ],
+        },
+      });
+
+      expect(planned.preconditions).toContainEqual(
+        expect.objectContaining({ id: 'tool:api:pytest', status: 'passed' })
+      );
+      expect(planned.state).toBe('awaiting-approval');
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+
+  it('classifies a no-op model proposal as automatic replanning rather than a user decision', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const content = 'export const ready = true;\n';
+    await fsExtra.writeFile(path.join(projectPath, 'service.ts'), content);
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
+      name: 'api',
+      private: true,
+      scripts: { test: 'node --test', build: 'node --check service.ts' },
+    });
+
+    const planned = await planWorkspaceRepairProposal(
+      {
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: 'readiness',
+          projectPath: 'api',
+          blockerSignature: 'readiness:analyze:blocked',
+          rationale: 'A model accidentally returned the inspected file unchanged.',
+          changes: [
+            {
+              id: 'unchanged-source',
+              path: 'api/service.ts',
+              operation: 'write',
+              expectedBeforeHash: sha256(content),
+              content,
+              risk: 'guarded',
+              summary: 'Update the inspected source.',
+            },
+          ],
+        },
+      },
+      { toolAvailable: async () => true }
+    );
+
+    expect(planned).toMatchObject({
+      state: 'decision-required',
+      decision: {
+        options: ['replan', 'cancel'],
+        causes: [expect.objectContaining({ kind: 'failed-precondition' })],
+      },
+    });
+    expect(planned.decision?.reason).toContain('no-op');
+  });
+
   it('rejects stale or protected model changes before approval', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     await fsExtra.writeFile(path.join(projectPath, 'service.ts'), 'current\n');
@@ -1431,6 +1729,52 @@ describe('Workspace Repair Engine', () => {
 
     expect(completed.state).toBe('rolled-back');
     expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('before\n');
+  });
+
+  it('creates a missing nested source file from a hash-null proposal', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const planned = await planWorkspaceRepairProposal(
+      {
+        workspacePath,
+        proposal: {
+          schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+          cardId: 'doctor',
+          projectPath: 'api',
+          rationale: 'Create the missing CI workflow.',
+          changes: [
+            {
+              id: 'create-ci',
+              path: 'api/.github/workflows/ci.yml',
+              operation: 'write',
+              expectedBeforeHash: null,
+              content: 'name: CI\non: [push]\njobs: {}\n',
+              risk: 'guarded',
+              summary: 'Create CI workflow.',
+            },
+          ],
+        },
+      },
+      { toolAvailable: async () => true }
+    );
+    expect(planned.state, planned.decision?.reason).toBe('awaiting-approval');
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        verify: vi.fn(async () => ({
+          status: 'blocked',
+          exitCode: 2,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+        targetVerify: vi.fn(async () => ({ status: 'passed', remainingActionIds: [] })),
+        toolAvailable: async () => true,
+      }
+    );
+
+    expect(completed.state, completed.decision?.reason).toBe('closed');
+    expect(
+      await fsExtra.readFile(path.join(projectPath, '.github/workflows/ci.yml'), 'utf8')
+    ).toContain('name: CI');
   });
 
   it('refuses rollback before changing any file when a checkpoint backup was tampered with', async () => {
@@ -1560,6 +1904,45 @@ describe('Workspace Repair Engine', () => {
       'api/package-lock.json',
       'api/package.json',
     ]);
+  });
+
+  it('rejects JSON manifest proposals that are not parseable before mutation', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const before =
+      JSON.stringify(
+        {
+          name: 'api',
+          scripts: { test: 'vitest run', build: 'tsc --noEmit' },
+        },
+        null,
+        2
+      ) + '\n';
+    await fsExtra.writeFile(path.join(projectPath, 'package.json'), before);
+    const planned = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'doctor',
+        projectName: 'api',
+        projectPath: 'api',
+        rationale: 'Add a JavaScript comment that npm cannot parse.',
+        changes: [
+          {
+            id: 'invalid-json-comment',
+            path: 'api/package.json',
+            operation: 'write',
+            expectedBeforeHash: sha256(before),
+            content: `${before.trim().slice(0, -1)}\n  // invalid comment\n}\n`,
+            risk: 'guarded',
+            summary: 'Inject a JavaScript comment into package.json.',
+          },
+        ],
+      },
+    });
+
+    expect(planned.state).toBe('decision-required');
+    expect(planned.decision?.reason).toMatch(/must contain valid JSON/i);
+    expect(await fsExtra.readFile(path.join(projectPath, 'package.json'), 'utf8')).toBe(before);
   });
 
   it('plans collision-free closure stages for every runtime in one polyglot project', async () => {

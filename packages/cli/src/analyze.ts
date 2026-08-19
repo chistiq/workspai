@@ -33,6 +33,8 @@ export interface AnalyzeFinding {
   detail: string;
   target: string;
   remediation: string;
+  /** Project-relative source paths that close this finding when created or repaired. */
+  files?: string[];
 }
 
 export interface AnalyzeProject {
@@ -326,9 +328,18 @@ function finding(
   target: string,
   title: string,
   detail: string,
-  remediation: string
+  remediation: string,
+  files?: readonly string[]
 ): AnalyzeFinding {
-  return { id, severity, target, title, detail, remediation };
+  return {
+    id,
+    severity,
+    target,
+    title,
+    detail,
+    remediation,
+    ...(files && files.length > 0 ? { files: [...files] } : {}),
+  };
 }
 
 function scoreProject(findings: AnalyzeFinding[]): number {
@@ -410,7 +421,8 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
         target,
         'Environment example is missing',
         'No .env.example or env.example file was found.',
-        'Add an env example for onboarding and CI secret documentation.'
+        'Add an env example for onboarding and CI secret documentation.',
+        ['.env.example']
       )
     );
   }
@@ -422,7 +434,8 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
         target,
         'Continuous integration is missing',
         'No recognized CI/CD configuration file was detected for this project.',
-        'Add CI configuration so tests and checks run automatically for every change.'
+        'Add CI configuration so tests and checks run automatically for every change.',
+        ['.github/workflows/ci.yml']
       )
     );
   }
@@ -446,7 +459,8 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
         target,
         'Container recipe is missing',
         'No Dockerfile was found for this project.',
-        'Add a Dockerfile when the service is intended for containerized deployment.'
+        'Add a Dockerfile when the service is intended for containerized deployment.',
+        ['Dockerfile']
       )
     );
   }

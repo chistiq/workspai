@@ -5,7 +5,42 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.60.1 (August 18, 2026)
+## Latest Release: v0.61.0 (August 19, 2026)
+
+### Enterprise Agent Grounding and Enriched Workspace Context
+
+This release closes the gap between "the CLI knows everything about the
+workspace" and "the agent knows everything the CLI knows."
+
+**What's New:**
+
+- `WorkspaceAgentContext` enriched with impact, doctor, analyze, readiness,
+  verify, explain, and diff summaries—agents read one file instead of many.
+- Enterprise grounding for Cursor (5 rules + skill), Claude, Windsurf, Grok,
+  Amazon Q, Copilot, Codex, Gemini, and Qwen with evidence discipline and
+  answer contract.
+- Dynamic skills generated from real workspace state: actual projects, blockers,
+  and safe commands.
+- Repair engine `replan` decision option for fresh model proposals after failure.
+- README documentation with accurate two-level output tree, before/after
+  comparison, and audience-based guidance.
+
+**Breaking changes:** None. All new context fields are optional and additive.
+
+**Publication status:** Released August 19, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.61.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.61.0/packages/cli/releases/RELEASE_NOTES_v0.61.0.md)
+
+---
+
+## v0.60.1 (August 18, 2026)
 
 ### Stable Goal Verification Across Evidence Refreshes
 
@@ -41,7 +76,7 @@ workspai --version
 
 ---
 
-## Latest Release: v0.60.0 (August 18, 2026)
+## v0.60.0 (August 18, 2026)
 
 ### Governed Goals for Real Multi-Project Workspaces
 

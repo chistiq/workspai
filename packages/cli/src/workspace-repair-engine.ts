@@ -186,7 +186,12 @@ type RepairEngineDependencies = {
   runTargetProducer?: (input: {
     workspacePath: string;
     transaction: WorkspaceRepairTransaction;
-  }) => Promise<{ exitCode: number | null; stdout: string; stderr: string }>;
+  }) => Promise<{
+    exitCode: number | null;
+    stdout: string;
+    stderr: string;
+    evidenceProduced?: boolean;
+  }>;
 };
 
 type DependencyStagePlan = {
@@ -388,6 +393,49 @@ function stableJson(value: unknown): string {
   // integrity hashes for nested optional arrays.
   if (value === undefined) return 'null';
   return JSON.stringify(value);
+}
+
+function repairAttemptFingerprint(transaction: WorkspaceRepairTransaction): string {
+  return sha256(
+    stableJson({
+      target: transaction.target,
+      policy: transaction.policy,
+      preconditions: transaction.preconditions,
+      adapterEvaluations: transaction.adapterEvaluations ?? [],
+      checkpoint: {
+        status: transaction.checkpoint.status,
+        files: transaction.checkpoint.files.map(({ backupRef: _backupRef, ...file }) => file),
+      },
+      stages: transaction.stages.map(
+        ({ startedAt: _startedAt, completedAt: _completedAt, ...stage }) => stage
+      ),
+      decision: transaction.decision,
+    })
+  );
+}
+
+async function unchangedBlockedRepair(
+  workspacePath: string,
+  candidate: WorkspaceRepairTransaction
+): Promise<WorkspaceRepairTransaction | undefined> {
+  if (candidate.state !== 'decision-required' || candidate.checkpoint.status === 'captured') {
+    return undefined;
+  }
+  const fingerprint = repairAttemptFingerprint(candidate);
+  const prior = (await listWorkspaceRepairTransactions(workspacePath)).find(
+    (transaction) =>
+      transaction.state === 'decision-required' &&
+      transaction.checkpoint.status !== 'captured' &&
+      repairAttemptFingerprint(transaction) === fingerprint
+  );
+  if (!prior) return undefined;
+  // A retry is meaningful only after source, policy, evidence, or toolchain
+  // state changes. Reusing the durable receipt prevents identical decision
+  // transactions from accumulating while preserving a fresh plan as soon as
+  // any causal precondition changes. A user-cancelled transaction remains
+  // terminal and is never silently resurrected by this deduplication path.
+  await atomicJson(path.join(workspacePath, WORKSPACE_REPAIR_LAST_RUN_REPORT_PATH), prior);
+  return prior;
 }
 
 const CAUSAL_ACTION_INTEGRITY_PREFIX = 'causal-action-integrity:';
@@ -689,6 +737,25 @@ function isRunnableFile(stat: Stats | undefined): boolean {
   return process.platform === 'win32' || (stat.mode & 0o111) !== 0;
 }
 
+async function executableLaunches(executable: string, cwd: string): Promise<boolean> {
+  try {
+    const result = await execa(executable, ['--version'], {
+      cwd,
+      shell: false,
+      reject: false,
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+      stdin: 'ignore',
+    });
+    // A non-zero version response still proves that the OS could launch the
+    // executable. A missing binary or broken shebang/interpreter has no exit
+    // code and must fail the repair precondition before checkpoint capture.
+    return result.exitCode !== undefined && result.exitCode !== null;
+  } catch {
+    return false;
+  }
+}
+
 async function invocationToolAvailable(input: {
   workspacePath: string;
   invocation: WorkspaceRepairInvocation;
@@ -702,11 +769,11 @@ async function invocationToolAvailable(input: {
   if (path.isAbsolute(executable) || /^\.{1,2}[\\/]/.test(executable)) {
     const candidate = path.isAbsolute(executable) ? executable : path.resolve(cwd, executable);
     const stat = await fsExtra.stat(candidate).catch(() => undefined);
-    return isRunnableFile(stat);
+    return isRunnableFile(stat) && executableLaunches(candidate, cwd);
   }
   for (const candidate of pathExecutableCandidates(executable)) {
     const stat = await fsExtra.stat(candidate).catch(() => undefined);
-    if (isRunnableFile(stat)) return true;
+    if (isRunnableFile(stat) && (await executableLaunches(candidate, cwd))) return true;
   }
   return false;
 }
@@ -2209,6 +2276,19 @@ function isProtectedProposalPath(relativePath: string): string | undefined {
   return undefined;
 }
 
+function invalidJsonProposalContent(
+  relativePath: string,
+  content: string | undefined
+): string | undefined {
+  if (!/\.json$/i.test(relativePath) || content === undefined) return undefined;
+  try {
+    JSON.parse(content);
+    return undefined;
+  } catch {
+    return `${relativePath} must contain valid JSON; comments and trailing syntax are not allowed.`;
+  }
+}
+
 async function workspaceDisplayName(workspacePath: string): Promise<string> {
   const marker = (await fsExtra
     .readJson(path.join(workspacePath, '.workspai-workspace'))
@@ -2551,7 +2631,7 @@ export async function planWorkspaceRepair(
   const decisionReasons: string[] = [];
   const decisionOptions = new Set<
     NonNullable<WorkspaceRepairTransaction['decision']>['options'][number]
-  >(['manual-repair', 'cancel']);
+  >(['replan', 'manual-repair', 'cancel']);
   for (const action of actions) {
     const operation = operationForAction(action);
     const structuredInvocation = actionInvocation(workspacePath, action);
@@ -2748,6 +2828,8 @@ export async function planWorkspaceRepair(
     WORKSPACE_REPAIR_TRANSACTION_CONTRACT_PATH,
     'Workspace repair transaction'
   );
+  const unchanged = await unchangedBlockedRepair(workspacePath, transaction);
+  if (unchanged) return unchanged;
   const directory = transactionDir(workspacePath, id);
   await fsExtra.ensureDir(directory);
   await atomicJson(sourcePlanPath(workspacePath, id), sourcePlan);
@@ -2839,7 +2921,7 @@ async function planWorkspaceRepairProposalLocked(
   const decisionReasons: string[] = [];
   const decisionOptions = new Set<
     NonNullable<WorkspaceRepairTransaction['decision']>['options'][number]
-  >(['manual-repair', 'cancel']);
+  >(['replan', 'manual-repair', 'cancel']);
   const workspaceMarkerExists =
     (await fsExtra.pathExists(path.join(workspacePath, '.workspai-workspace'))) ||
     (await fsExtra.pathExists(path.join(workspacePath, '.workspai')));
@@ -2898,6 +2980,10 @@ async function planWorkspaceRepairProposalLocked(
     }
     const protectedReason = isProtectedProposalPath(change.path);
     if (protectedReason) decisionReasons.push(`${change.path}: ${protectedReason}`);
+    if (change.operation === 'write') {
+      const invalidJson = invalidJsonProposalContent(change.path, change.content);
+      if (invalidJson) decisionReasons.push(invalidJson);
+    }
     if (RISK_ORDER[change.risk] > RISK_ORDER[maxRisk]) {
       decisionReasons.push(`${change.id} exceeds the approved ${maxRisk} risk ceiling.`);
       decisionOptions.add(change.risk === 'invasive' ? 'approve-invasive' : 'approve-guarded');
@@ -3123,6 +3209,15 @@ async function planWorkspaceRepairProposalLocked(
       ...(proposal.projectPath ? { projectPath: proposal.projectPath } : {}),
     });
   }
+  const modelCorrectableProposalFailure =
+    decisionCauses.length > 0 &&
+    decisionCauses.every((cause) => cause.kind === 'failed-precondition') &&
+    preconditions.some(
+      (precondition) => precondition.id === 'proposal-boundary' && precondition.status === 'failed'
+    );
+  const effectiveDecisionOptions = modelCorrectableProposalFailure
+    ? (['replan', 'cancel'] as WorkspaceRepairDecision[])
+    : [...decisionOptions];
   const transaction: WorkspaceRepairTransaction = {
     schemaVersion: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
     transactionId,
@@ -3142,7 +3237,7 @@ async function planWorkspaceRepairProposalLocked(
       ? {
           decision: {
             reason: [...new Set(decisionMessages)].join(' '),
-            options: [...decisionOptions],
+            options: effectiveDecisionOptions,
             causes: decisionCauses,
           },
         }
@@ -3165,7 +3260,9 @@ async function planWorkspaceRepairProposalLocked(
     transaction,
     'planned',
     blocked
-      ? 'Model-proposed repair requires an engineering decision.'
+      ? modelCorrectableProposalFailure
+        ? 'Model-proposed repair was rejected before mutation and requires causal replanning.'
+        : 'Model-proposed repair requires an engineering decision.'
       : 'Model-proposed source repair is bounded and ready for explicit approval.',
     { now: dependencies.now }
   );
@@ -3174,6 +3271,8 @@ async function planWorkspaceRepairProposalLocked(
     WORKSPACE_REPAIR_TRANSACTION_CONTRACT_PATH,
     'Workspace repair transaction'
   );
+  const unchanged = await unchangedBlockedRepair(workspacePath, transaction);
+  if (unchanged) return unchanged;
   const directory = transactionDir(workspacePath, transactionId);
   await fsExtra.ensureDir(directory);
   await atomicJson(sourcePlanPath(workspacePath, transactionId), proposal);
@@ -3512,7 +3611,12 @@ export function exactCardProducerArgs(cardId: string): string[] {
 async function runExactCardProducer(input: {
   workspacePath: string;
   transaction: WorkspaceRepairTransaction;
-}): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+}): Promise<{
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  evidenceProduced: boolean;
+}> {
   const capability = STUDIO_CARD_REPAIR_CAPABILITIES.find(
     (entry) => entry.cardId === input.transaction.target.cardId
   );
@@ -3537,6 +3641,14 @@ async function runExactCardProducer(input: {
   if (!(await insideResolvedBoundary(input.workspacePath, cwd))) {
     throw new Error('The target producer working directory escapes the workspace boundary.');
   }
+  const artifactPath = path.resolve(cwd, capability.producerArtifact);
+  if (
+    !inside(cwd, artifactPath) ||
+    !(await insideResolvedBoundary(cwd, path.dirname(artifactPath)))
+  ) {
+    throw new Error('The target producer artifact escapes its canonical scope.');
+  }
+  const beforeArtifact = await fsExtra.stat(artifactPath).catch(() => undefined);
   const protectedEnvironment = Object.fromEntries(
     Object.entries(process.env).filter(
       ([key]) =>
@@ -3557,10 +3669,18 @@ async function runExactCardProducer(input: {
       env: { ...protectedEnvironment, NO_COLOR: '1', CI: process.env.CI ?? '1' },
     }
   );
+  const afterArtifact = await fsExtra.stat(artifactPath).catch(() => undefined);
   return {
     exitCode: result.exitCode ?? null,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
+    evidenceProduced: Boolean(
+      afterArtifact?.isFile() &&
+      (!beforeArtifact ||
+        afterArtifact.mtimeMs !== beforeArtifact.mtimeMs ||
+        afterArtifact.ctimeMs !== beforeArtifact.ctimeMs ||
+        afterArtifact.size !== beforeArtifact.size)
+    ),
   };
 }
 
@@ -3781,14 +3901,23 @@ async function runStage(input: {
       input.stage.exitCode = result.exitCode;
       input.stage.stdoutTail = tail(result.stdout);
       input.stage.stderrTail = tail(result.stderr);
-      // Evidence producers use exit code 2 for a successfully refreshed but
-      // still-blocked finding. Target closure is evaluated after the complete
-      // canonical loop; only producer execution failure is fatal here.
-      if (result.exitCode !== 0 && result.exitCode !== 2) {
+      // Evidence producers use a non-zero policy exit when they successfully
+      // refresh a still-blocking finding. Exit 2 is the common strict-gate
+      // contract. Doctor and several project producers use exit 1, which is
+      // accepted only when the canonical artifact was actually rewritten.
+      // Target closure is evaluated from the refreshed action set below; a
+      // generic command failure cannot pass by exit code alone.
+      const evidenceBearingPolicyExit =
+        result.exitCode === 2 ||
+        (result.exitCode === 1 && 'evidenceProduced' in result && result.evidenceProduced === true);
+      if (result.exitCode !== 0 && !evidenceBearingPolicyExit) {
+        const detail = tail(result.stderr || result.stdout, 600)
+          .replace(/\s+/g, ' ')
+          .trim();
         throw new Error(
-          result.stderr ||
-            result.stdout ||
-            `Exact card producer exited with ${String(result.exitCode)}.`
+          detail
+            ? `Exact card producer failed with exit ${String(result.exitCode)}: ${detail}`
+            : `Exact card producer failed with exit ${String(result.exitCode)} without refreshing its canonical artifact.`
         );
       }
       if (input.stage.id === 'target-precondition') {

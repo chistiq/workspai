@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-08-19
+
+### Added
+
+- Enriched `WorkspaceAgentContext` with summary fields from every intelligence
+  artifact—impact, doctor, analyze, readiness, verify, explain, and diff—so
+  agents get full situational awareness from a single context read.
+- Added `replan` decision option to the Workspace Repair Engine, letting the
+  model discard a failed plan and generate a fresh proposal for the same target.
+- Added enterprise-level agent grounding for Cursor (5 rules + skill), Claude
+  (workspace + evidence rules + skill), Windsurf (modern `.windsurf/rules/`
+  format), Grok (grounding + evidence), and Amazon Q (workspace rule).
+- Made portable grounding skills dynamic and project-aware: skills now include
+  real workspace projects, blockers, and safe commands from current evidence.
+- Added `safeReadWorkspaceJsonArtifact` helper for schema-validated artifact
+  reading in context construction.
+
+### Changed
+
+- Upgraded README documentation with one-liner value proposition, before/after
+  comparison, accurate two-level output tree (workspace + project), audience
+  table, and MCP server details.
+- Added user-friendly introduction to the Workspace Repair Engine documentation
+  with a quick example and plain-language explanation.
+- Upgraded docs index quickstart to "from zero to value in 60 seconds."
+- Enhanced portable provider adapters (Gemini, Qwen, generic AGENTS.md
+  consumers) with evidence discipline and answer contract sections.
+
 ## [0.60.1] - 2026-08-18
 
 ### Fixed

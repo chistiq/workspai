@@ -18,11 +18,25 @@ import {
   WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH,
+  WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
   WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
   WORKSPAI_MCP_DESIGN_REPORT_PATH,
   WORKSPAI_VSCODE_AGENT_HOOKS_PATH,
+  WORKSPAI_WINDSURF_RULES_PATH,
 } from '../workspace-agent-sync.js';
-import { WORKSPACE_SKILLS_INDEX_PATH } from '../contracts/workspace-artifact-paths.js';
+import {
+  WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+  WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH,
+  WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH,
+  WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH,
+  WORKSPAI_CURSOR_GROUNDING_SKILL_PATH,
+  WORKSPAI_GROK_EVIDENCE_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_SKILL_PATH,
+  WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH,
+  WORKSPAI_WINDSURF_GROUNDING_RULE_PATH,
+  WORKSPACE_SKILLS_INDEX_PATH,
+} from '../contracts/workspace-artifact-paths.js';
 import {
   LEGACY_COPILOT_REPAIR_PROMPT_PATH,
   WORKSPAI_COPILOT_REPAIR_PROMPT_PATH,
@@ -175,11 +189,23 @@ describe('workspace agent sync', () => {
         'AGENTS.md',
         '.github/copilot-instructions.md',
         WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
+        WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
         LEGACY_CURSOR_GROUNDING_RULE_PATH,
         'CLAUDE.md',
         'GEMINI.md',
         'QWEN.md',
         '.amazonq/rules/workspai-agent-entry.md',
+        WORKSPAI_WINDSURF_RULES_PATH,
+        WORKSPAI_WINDSURF_GROUNDING_RULE_PATH,
+        WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH,
+        WORKSPAI_GROK_GROUNDING_RULE_PATH,
+        WORKSPAI_GROK_EVIDENCE_RULE_PATH,
+        WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH,
+        WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH,
+        WORKSPAI_CURSOR_GROUNDING_SKILL_PATH,
+        WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH,
+        WORKSPAI_GROK_GROUNDING_SKILL_PATH,
+        WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
         WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
         LEGACY_COPILOT_GROUNDING_SKILL_PATH,
         AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
@@ -198,18 +224,103 @@ describe('workspace agent sync', () => {
     expect(await fsExtra.readFile(path.join(workspacePath, 'QWEN.md'), 'utf8')).toContain(
       '@AGENTS.md'
     );
-    expect(
-      await fsExtra.readFile(
-        path.join(workspacePath, '.amazonq/rules/workspai-agent-entry.md'),
-        'utf8'
-      )
-    ).toContain('Amazon Q Developer');
+    const amazonQ = await fsExtra.readFile(
+      path.join(workspacePath, '.amazonq/rules/workspai-agent-entry.md'),
+      'utf8'
+    );
+    expect(amazonQ).toContain('Amazon Q Developer');
+    expect(amazonQ).toContain('@../../AGENTS.md');
+
+    const windsurfRules = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_WINDSURF_RULES_PATH),
+      'utf8'
+    );
+    expect(windsurfRules).toContain('## Scope rules');
+    expect(windsurfRules).toContain('## Answer contract');
+
+    const claudeWorkspace = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH),
+      'utf8'
+    );
+    expect(claudeWorkspace).toContain('## Intelligent loop');
+    expect(claudeWorkspace).toContain('## Answer contract');
+
+    const claudeEvidence = await fsExtra.readFile(
+      path.join(workspacePath, '.claude/rules/workspai-evidence.md'),
+      'utf8'
+    );
+    expect(claudeEvidence).toContain('paths:');
+    expect(claudeEvidence).toContain('.workspai/**');
+
+    const windsurfGrounding = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_WINDSURF_GROUNDING_RULE_PATH),
+      'utf8'
+    );
+    expect(windsurfGrounding).toContain('trigger: always_on');
+    expect(windsurfGrounding).toContain('## Answer contract');
+
+    const windsurfEvidence = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH),
+      'utf8'
+    );
+    expect(windsurfEvidence).toContain('trigger: glob');
+
+    const grokGrounding = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_GROK_GROUNDING_RULE_PATH),
+      'utf8'
+    );
+    expect(grokGrounding).toContain('## Answer contract');
+
+    const grokEvidence = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_GROK_EVIDENCE_RULE_PATH),
+      'utf8'
+    );
+    expect(grokEvidence).toContain('canonical gate and health evidence');
+
+    const amazonqWorkspace = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH),
+      'utf8'
+    );
+    expect(amazonqWorkspace).toContain('## Answer contract');
+
+    const cursorSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CURSOR_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(cursorSkill).toContain('name: workspai-grounding');
+
+    const claudeSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(claudeSkill).toContain('name: workspai-grounding');
+
+    const grokSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_GROK_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(grokSkill).toContain('name: workspai-grounding');
+
+    const agentsSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(agentsSkill).toContain('name: workspai-grounding');
 
     const cursorRule = await fsExtra.readFile(
       path.join(workspacePath, WORKSPAI_CURSOR_GROUNDING_RULE_PATH),
       'utf8'
     );
     expect(cursorRule).toContain('alwaysApply: true');
+    expect(cursorRule).toContain('## Intelligent loop');
+    expect(cursorRule).toContain('## Answer contract');
+
+    const cursorEvidence = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CURSOR_EVIDENCE_RULE_PATH),
+      'utf8'
+    );
+    expect(cursorEvidence).toContain('alwaysApply: false');
+    expect(cursorEvidence).toContain('.workspai/**');
 
     const groundingDoc = await fsExtra.readFile(
       path.join(workspacePath, AGENT_GROUNDING_DOC_PATH),

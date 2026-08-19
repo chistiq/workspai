@@ -45,10 +45,10 @@ const requiredSnippets = [
 const errors = [];
 
 const requiredCliReadmeHeadings = [
-  '## Give your AI agent the system—not just the repository',
+  '## Give your AI agent the system, not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start in two minutes',
-  '## Give your agent a goal—not an open-ended prompt',
+  '## Give your agent a goal, not an open-ended prompt',
   '## What happens after the first run',
   '## How Workspace Intelligence works',
   '## Everyday workflows',
@@ -213,10 +213,10 @@ for (const selector of [
 }
 
 const requiredRepositoryReadmeHeadings = [
-  '## Give your AI agent the system—not just the repository',
+  '## Give your AI agent the system, not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start with your software',
-  '## Give your agent a goal—not an open-ended prompt',
+  '## Give your agent a goal, not an open-ended prompt',
   '## What Workspai gives you',
   '## How it works',
   '## One foundation, many consumers',

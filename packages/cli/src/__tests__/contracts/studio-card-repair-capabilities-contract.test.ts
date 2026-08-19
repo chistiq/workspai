@@ -60,6 +60,9 @@ describe('Studio card repair capabilities contract', () => {
         card.verifyCommand.trim().split(/\s+/).slice(2)
       );
     }
+    expect(contract.invariant).toContain(
+      'every unresolved policy path transfers to governed causal source repair'
+    );
     expect(contract.invariant).toContain('Unrelated workspace blockers');
   });
 
