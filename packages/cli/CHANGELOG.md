@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-08-20
+
+### Added
+
+- Added runtime-aware operational Skills derived from the canonical Workspace
+  Model, plus test-evidence and delivery-evidence playbooks when the registered
+  project capabilities and artifacts support those workflows.
+- Added portable `SKILL.md` projections for `.agents`, GitHub Copilot, Claude,
+  Cursor, and Grok skill surfaces while preserving host-native grounding for
+  every supported consumer.
+- Added safe reconciliation for generated operational Skills: stale
+  Workspai-owned projections are removed deterministically, while authored
+  Skills and unrelated host customization remain untouched.
+
+### Changed
+
+- Made the canonical agent entry bounded-first. Project manifests, bootstrap
+  receipts, project lenses, and the workspace report index now route consumers
+  through Goal state, compact context, the Skills index, task-scoped Graph
+  search, and targeted live source reads instead of preloading the complete
+  Workspace Model and Knowledge Graph.
+- Made agent-facing workspace identity portable through `workspace:<name>`;
+  runtime resolution may still use absolute paths locally, but durable reports,
+  receipts, Skills, and host instructions prohibit their persistence or
+  disclosure.
+- Standardized generated operational Skills with portable frontmatter and a
+  Workspai ownership marker suitable for deterministic regeneration across
+  supported hosts.
+- Kept complete Model and Graph artifacts as canonical deep evidence validated
+  by bootstrap, while removing them from the default consumer read path.
+
+### Fixed
+
+- Preserved backward compatibility for legacy project-entry, project-context,
+  and bootstrap-receipt payloads while allowing the new bounded Skills and
+  Graph-search route under the same versioned contracts.
+- Prevented agent customization reports, MCP design artifacts, project entry
+  surfaces, and workspace context from persisting machine-local workspace
+  roots.
+- Corrected strict JSON Schema branch declarations so AJV can compile the
+  backward-compatible bounded-entry contracts during adoption and Agent Sync.
+
 ## [0.61.0] - 2026-08-19
 
 ### Added

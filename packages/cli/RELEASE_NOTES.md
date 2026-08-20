@@ -5,7 +5,44 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.61.0 (August 19, 2026)
+## Latest Release: v0.62.0 (August 20, 2026)
+
+### Bounded Agent Entry and Portable Operational Skills
+
+Workspai 0.62.0 makes the first agent read smaller, safer, and more useful. The
+CLI validates the complete canonical Model and Graph internally, while routing
+agents through compact Goal state, workspace context, relevant operational
+Skills, bounded Graph retrieval, and targeted source inspection.
+
+**What's New:**
+
+- Runtime-, test-, and delivery-aware operational Skills generated from current
+  Workspace Intelligence evidence.
+- Portable `SKILL.md` projections for compatible agent hosts, with safe cleanup
+  that never removes authored Skills.
+- Bounded-first project entry and bootstrap receipts for generic, Codex, Claude,
+  Gemini, Qwen, Kimi, Grok, Copilot, Cursor, Windsurf, and Amazon Q consumers.
+- Portable `workspace:<name>` identity across agent reports, MCP designs,
+  project lenses, and host instructions.
+
+**Compatibility:** Existing version-one entry and context artifacts remain
+valid. Complete Model and Graph artifacts remain canonical and are still
+validated before an agent receives a ready receipt.
+
+**Publication status:** Released August 20, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.62.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.62.0/packages/cli/releases/RELEASE_NOTES_v0.62.0.md)
+
+---
+
+## v0.61.0 (August 19, 2026)
 
 ### Enterprise Agent Grounding and Enriched Workspace Context
 
