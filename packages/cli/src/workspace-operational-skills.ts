@@ -10,6 +10,7 @@ import {
   WORKSPAI_COPILOT_RELEASE_READINESS_PROMPT_PATH,
   OPERATIONAL_SKILL_PROMPT_STEM,
   WORKSPACE_SKILLS_INDEX_PATH,
+  isBuiltinOperationalSkillId,
   type BuiltinOperationalSkillId,
 } from './contracts/workspace-artifact-paths.js';
 import {
@@ -35,12 +36,16 @@ const CORE_REQUIRED_REPORTS = [
   WORKSPACE_VERIFY_REPORT_PATH,
 ] as const;
 
+export const WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER =
+  '<!-- WORKSPAI:GENERATED-OPERATIONAL-SKILL -->' as const;
+
 type SkillTemplate = {
-  skillId: BuiltinOperationalSkillId;
+  skillId: string;
   title: string;
   triggers: string[];
   objective: string;
   steps: string[];
+  scopedProjects?: string[];
 };
 
 const SKILL_TEMPLATES: SkillTemplate[] = [
@@ -121,6 +126,13 @@ function buildSkillMarkdown(input: {
   contractSummary?: string;
 }): string {
   const lines = [
+    '---',
+    `name: ${input.template.skillId}`,
+    `description: ${input.template.objective}`,
+    '---',
+    '',
+    WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER,
+    '',
     `# ${input.template.title}`,
     '',
     `> Workspace: **${input.workspaceName}** · Skill: \`${input.template.skillId}\``,
@@ -175,6 +187,111 @@ function buildSkillMarkdown(input: {
   return lines.join('\n');
 }
 
+function normalizedSkillSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
+  const projectsByRuntime = new Map<string, string[]>();
+  for (const project of model.projects) {
+    const runtime = normalizedSkillSegment(project.runtime);
+    if (!runtime || runtime === 'unknown') continue;
+    const projects = projectsByRuntime.get(runtime) ?? [];
+    projects.push(project.name);
+    projectsByRuntime.set(runtime, projects);
+  }
+
+  const templates: SkillTemplate[] = [];
+  for (const [runtime, projects] of [...projectsByRuntime.entries()].sort(([left], [right]) =>
+    left.localeCompare(right)
+  )) {
+    templates.push({
+      skillId: `workspai-${runtime}-runtime-validation`,
+      title: `${runtime.toUpperCase()} runtime validation`,
+      triggers: [`${runtime} build`, `${runtime} test`, `${runtime} runtime failure`],
+      objective: `Validate ${runtime} changes against the detected project commands and canonical Workspai evidence.`,
+      steps: [
+        'Read the scoped project lens and current fail/warn evidence before changing source.',
+        'Use the registered project commands; do not substitute a different runtime toolchain.',
+        'Run only the affected project validation first, then verify the workspace when the change crosses a contract boundary.',
+      ],
+      scopedProjects: [...projects].sort(),
+    });
+  }
+
+  if (projectsByRuntime.size > 1) {
+    templates.push({
+      skillId: 'workspai-polyglot-change-validation',
+      title: 'Polyglot change validation',
+      triggers: [
+        'cross-language change',
+        'polyglot change',
+        'binding change',
+        'multi-runtime validation',
+      ],
+      objective:
+        'Plan and verify a cross-runtime change without assuming that one runtime command proves the whole system.',
+      steps: [
+        'Use the project topology and bounded Graph query to identify runtime and contract boundaries.',
+        'Validate each affected runtime with its registered project command.',
+        'Run workspace impact and canonical verification before declaring the change complete.',
+      ],
+    });
+  }
+
+  const testProjects = model.projects
+    .filter((project) => project.commands.supported.includes('test'))
+    .map((project) => project.name)
+    .sort();
+  if (testProjects.length > 0) {
+    templates.push({
+      skillId: 'workspai-test-evidence-recovery',
+      title: 'Test evidence recovery',
+      triggers: ['test failure', 'coverage', 'regression', 'test evidence'],
+      objective:
+        'Repair a test or coverage blocker by proving changed behavior, not merely improving a metric.',
+      steps: [
+        'Read the exact Analyze, Doctor, or Goal evidence that owns the test finding.',
+        'Inspect the behavior and relevant test boundary before proposing a source change.',
+        'Run the scoped test command, then the exact producer and canonical verification.',
+      ],
+      scopedProjects: testProjects,
+    });
+  }
+
+  const deliveryProjects = model.projects
+    .filter((project) =>
+      project.importantFiles.some((file) =>
+        /(?:^|\/)(?:Dockerfile|docker-compose|compose\.|Chart\.yaml|\.github\/workflows)/i.test(
+          file
+        )
+      )
+    )
+    .map((project) => project.name)
+    .sort();
+  if (deliveryProjects.length > 0) {
+    templates.push({
+      skillId: 'workspai-delivery-evidence',
+      title: 'Delivery evidence and CI recovery',
+      triggers: ['ci failure', 'workflow failure', 'container build', 'deployment evidence'],
+      objective:
+        'Diagnose delivery evidence with the owning project and CI/container artifacts before changing application source.',
+      steps: [
+        'Identify whether the failing evidence is project-owned or workspace-owned.',
+        'Inspect the referenced workflow or delivery artifact and its bounded proof paths.',
+        'Validate the affected project first, then refresh the exact evidence producer and verify the workspace.',
+      ],
+      scopedProjects: deliveryProjects,
+    });
+  }
+
+  return templates;
+}
+
 function collectVerificationCommands(context: WorkspaceAgentContext | null): string[] {
   if (!context?.safeCommands?.length) {
     return [
@@ -210,11 +327,12 @@ export function buildWorkspaceOperationalSkills(
   input: BuildWorkspaceOperationalSkillsInput
 ): WorkspaceOperationalSkillRecord[] {
   const workspaceName = input.model.workspace.name;
-  const scopedProjects = input.model.projects.map((project) => project.name).sort();
   const verificationCommands = collectVerificationCommands(input.context ?? null);
   const contractSummary = summarizeContract(input.contract ?? null);
 
-  return SKILL_TEMPLATES.map((template) => {
+  return [...SKILL_TEMPLATES, ...dynamicSkillTemplates(input.model)].map((template) => {
+    const scopedProjects =
+      template.scopedProjects ?? input.model.projects.map((project) => project.name);
     const markdown = buildSkillMarkdown({
       template,
       workspaceName,
@@ -229,7 +347,9 @@ export function buildWorkspaceOperationalSkills(
       requiredReports: [...CORE_REQUIRED_REPORTS],
       scopedProjects,
       verificationCommands,
-      promptStem: OPERATIONAL_SKILL_PROMPT_STEM[template.skillId],
+      ...(isBuiltinOperationalSkillId(template.skillId)
+        ? { promptStem: OPERATIONAL_SKILL_PROMPT_STEM[template.skillId] }
+        : {}),
       markdown,
     });
   });
@@ -239,6 +359,7 @@ export type WriteWorkspaceOperationalSkillsResult = {
   skills: WorkspaceOperationalSkillRecord[];
   index: WorkspaceSkillsIndex;
   writtenPaths: string[];
+  removedSkillIds: string[];
 };
 
 export async function writeWorkspaceOperationalSkills(input: {
@@ -261,8 +382,23 @@ export async function writeWorkspaceOperationalSkills(input: {
     skills: input.skills,
     inputsHash,
   });
+  const activeSkillIds = new Set(input.skills.map((skill) => skill.skillId));
+  const removedSkillIds: string[] = [];
 
   if (input.write) {
+    const skillsDirectory = path.join(workspacePath, '.workspai', 'skills');
+    if (await fsExtra.pathExists(skillsDirectory)) {
+      for (const entry of await fsExtra.readdir(skillsDirectory, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+        const skillId = entry.name.slice(0, -'.md'.length);
+        if (activeSkillIds.has(skillId)) continue;
+        const stalePath = path.join(skillsDirectory, entry.name);
+        const markdown = await fsExtra.readFile(stalePath, 'utf8');
+        if (!markdown.includes(WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER)) continue;
+        await fsExtra.remove(stalePath);
+        removedSkillIds.push(skillId);
+      }
+    }
     for (const skill of input.skills) {
       const absolutePath = path.join(workspacePath, skill.canonicalPath);
       await fsExtra.ensureDir(path.dirname(absolutePath));
@@ -275,7 +411,7 @@ export async function writeWorkspaceOperationalSkills(input: {
     writtenPaths.push(WORKSPACE_SKILLS_INDEX_PATH);
   }
 
-  return { skills: input.skills, index, writtenPaths };
+  return { skills: input.skills, index, writtenPaths, removedSkillIds: removedSkillIds.sort() };
 }
 
 export function buildOperationalSkillsCatalogSection(index: WorkspaceSkillsIndex): string {

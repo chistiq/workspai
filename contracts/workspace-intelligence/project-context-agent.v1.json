@@ -21,7 +21,7 @@
     "generatedAt": { "type": "string", "format": "date-time" },
     "workspace": {
       "type": "object",
-      "required": ["name", "relationship", "contract", "model", "knowledgeGraph", "access"],
+      "required": ["name", "relationship", "contract", "access"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "profile": { "type": "string" },
@@ -33,6 +33,14 @@
         "knowledgeGraph": {
           "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
         },
+        "index": { "const": "workspace:.workspai/reports/INDEX.json" },
+        "context": {
+          "const": "workspace:.workspai/reports/workspace-context-agent.json"
+        },
+        "skillsIndex": {
+          "const": "workspace:.workspai/reports/workspace-skills-index.json"
+        },
+        "boundedGraphSearch": { "type": "string", "minLength": 1 },
         "access": {
           "type": "object",
           "required": [
@@ -54,7 +62,31 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "properties": {
+            "model": { "const": "workspace:.workspai/reports/workspace-model.json" },
+            "knowledgeGraph": {
+              "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
+            }
+          },
+          "required": ["model", "knowledgeGraph"]
+        },
+        {
+          "properties": {
+            "index": { "const": "workspace:.workspai/reports/INDEX.json" },
+            "context": {
+              "const": "workspace:.workspai/reports/workspace-context-agent.json"
+            },
+            "skillsIndex": {
+              "const": "workspace:.workspai/reports/workspace-skills-index.json"
+            },
+            "boundedGraphSearch": { "type": "string", "minLength": 1 }
+          },
+          "required": ["index", "context", "skillsIndex", "boundedGraphSearch"]
+        }
+      ]
     },
     "project": {
       "type": "object",

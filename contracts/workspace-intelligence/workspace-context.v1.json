@@ -78,7 +78,10 @@
       "required": ["name", "root", "type"],
       "properties": {
         "name": { "type": "string" },
-        "root": { "type": "string" },
+        "root": {
+          "type": "string",
+          "description": "Portable workspace identity (workspace:<name>), never a machine-local filesystem path."
+        },
         "type": { "type": "string" },
         "profile": { "type": "string" }
       },

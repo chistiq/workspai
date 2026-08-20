@@ -85,8 +85,8 @@ export interface ProjectAgentEntryManifest {
     goalIndex: `workspace:${typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
-    workspaceModel: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`;
-    knowledgeGraph: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`;
+    workspaceSkillsIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`;
+    boundedGraphSearch: 'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
   };
   protocol: {
     mode: 'canonical-first';
@@ -148,8 +148,8 @@ export interface AgentBootstrapReceipt {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
-    workspaceModel: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`;
-    knowledgeGraph: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`;
+    workspaceSkillsIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`;
+    boundedGraphSearch: 'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
     modelFreshness: ProjectContextAgent['intelligence']['freshness']['model'];
     graphFreshness: ProjectContextAgent['intelligence']['freshness']['graph'];
     graphMatchesModel: boolean;
@@ -247,8 +247,9 @@ export function buildProjectAgentEntryManifest(input: {
       goalIndex: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
-      workspaceModel: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}` as const,
-      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}` as const,
+      workspaceSkillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}` as const,
+      boundedGraphSearch:
+        'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json' as const,
     },
     protocol: {
       mode: 'canonical-first',
@@ -262,8 +263,7 @@ export function buildProjectAgentEntryManifest(input: {
         `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
         `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`,
         `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`,
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`,
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`,
+        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`,
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
         'source:targeted-live-files',
       ],
@@ -456,6 +456,7 @@ export async function buildAgentBootstrapReceipt(input: {
   const canonicalFiles = [
     WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
   ];
@@ -707,8 +708,9 @@ export async function buildAgentBootstrapReceipt(input: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
-      workspaceModel: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}` as const,
-      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}` as const,
+      workspaceSkillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}` as const,
+      boundedGraphSearch:
+        'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json' as const,
       modelFreshness: context.intelligence.freshness.model,
       graphFreshness: context.intelligence.freshness.graph,
       graphMatchesModel: context.intelligence.freshness.graphMatchesModel,

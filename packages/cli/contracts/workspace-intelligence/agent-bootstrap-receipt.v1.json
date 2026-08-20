@@ -119,8 +119,6 @@
         "projectContext",
         "workspaceIndex",
         "workspaceContext",
-        "workspaceModel",
-        "knowledgeGraph",
         "modelFreshness",
         "graphFreshness",
         "graphMatchesModel",
@@ -137,12 +135,42 @@
         "knowledgeGraph": {
           "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
         },
+        "workspaceSkillsIndex": {
+          "const": "workspace:.workspai/reports/workspace-skills-index.json"
+        },
+        "boundedGraphSearch": {
+          "const": "command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json"
+        },
         "modelFreshness": { "enum": ["fresh", "stale", "unknown", "missing"] },
         "graphFreshness": { "enum": ["fresh", "stale", "unknown", "missing"] },
         "graphMatchesModel": { "type": "boolean" },
         "liveInputsValidated": { "type": "boolean" },
         "blockerCount": { "type": "integer", "minimum": 0 }
-      }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "workspaceModel": {
+              "const": "workspace:.workspai/reports/workspace-model.json"
+            },
+            "knowledgeGraph": {
+              "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
+            }
+          },
+          "required": ["workspaceModel", "knowledgeGraph"]
+        },
+        {
+          "properties": {
+            "workspaceSkillsIndex": {
+              "const": "workspace:.workspai/reports/workspace-skills-index.json"
+            },
+            "boundedGraphSearch": {
+              "const": "command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json"
+            }
+          },
+          "required": ["workspaceSkillsIndex", "boundedGraphSearch"]
+        }
+      ]
     },
     "activeGoal": {
       "type": "object",

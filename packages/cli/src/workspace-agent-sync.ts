@@ -5,6 +5,7 @@ import {
   buildOperationalSkillsCatalogSection,
   buildWorkspaceOperationalSkills,
   hydrateOperationalPrompts,
+  WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER,
   writeWorkspaceOperationalSkills,
 } from './workspace-operational-skills.js';
 import {
@@ -325,17 +326,41 @@ export const AGENT_REPORT_CATALOG: AgentReportCatalogEntry[] = [
 export function buildCanonicalAgentReportReadOrder(): string[] {
   const catalogPaths = AGENT_REPORT_CATALOG.map((entry) => entry.relativePath);
   const contracted = buildWorkspaceIntelligenceChainContract().consumers.agents.canonicalReadOrder;
-  const prioritized = contracted.filter(
-    (reportPath) => reportPath !== AGENT_REPORTS_INDEX_PATH && catalogPaths.includes(reportPath)
-  );
   return [
-    ...new Set([
-      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex,
-      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun,
-      ...prioritized,
-      ...catalogPaths,
-    ]),
+    ...new Set(
+      contracted.filter(
+        (reportPath) => reportPath !== AGENT_REPORTS_INDEX_PATH && catalogPaths.includes(reportPath)
+      )
+    ),
   ];
+}
+
+async function portableWorkspaceReference(workspacePath: string): Promise<string> {
+  try {
+    const { contract } = await readWorkspaceContract({ workspacePath });
+    if (contract?.workspace?.name) return `workspace:${contract.workspace.name}`;
+  } catch {
+    // Fall through to the workspace marker; a report index must remain portable
+    // even while a partially-created workspace contract is being repaired.
+  }
+  for (const relativePath of ['.workspai/workspace.json', '.rapidkit/workspace.json']) {
+    try {
+      const payload = (await fsExtra.readJson(path.join(workspacePath, relativePath))) as Record<
+        string,
+        unknown
+      >;
+      const name =
+        typeof payload.workspace_name === 'string'
+          ? payload.workspace_name
+          : typeof payload.name === 'string'
+            ? payload.name
+            : null;
+      if (name?.trim()) return `workspace:${name.trim()}`;
+    } catch {
+      // Try the next canonical marker.
+    }
+  }
+  return `workspace:${path.basename(path.resolve(workspacePath))}`;
 }
 
 export type AgentReportIndexEntry = {
@@ -641,6 +666,30 @@ function inferOutputTargets(relativePath: string): AgentGroundingTarget[] {
   return ['agents'];
 }
 
+function portableOperationalSkillPaths(skillId: string): Array<{
+  target: AgentGroundingTarget;
+  path: string;
+}> {
+  return [
+    { target: 'agents', path: `.agents/skills/${skillId}/SKILL.md` },
+    { target: 'copilot', path: `.github/skills/${skillId}/SKILL.md` },
+    { target: 'claude', path: `.claude/skills/${skillId}/SKILL.md` },
+    { target: 'cursor', path: `.cursor/skills/${skillId}/SKILL.md` },
+    { target: 'grok', path: `.grok/skills/${skillId}/SKILL.md` },
+  ];
+}
+
+async function removeManagedPortableOperationalSkill(
+  workspacePath: string,
+  relativePath: string
+): Promise<void> {
+  const absolutePath = path.join(workspacePath, relativePath);
+  if (!(await fsExtra.pathExists(absolutePath))) return;
+  const markdown = await fsExtra.readFile(absolutePath, 'utf8');
+  if (!markdown.includes(WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER)) return;
+  await fsExtra.remove(absolutePath);
+}
+
 function isRequiredPackOutput(relativePath: string, preset: AgentCustomizationPackPreset): boolean {
   const contract = buildAgentCustomizationPackContract();
   return contract.presets[preset].requiredOutputs.includes(relativePath);
@@ -791,7 +840,7 @@ export async function buildWorkspaceAgentReportsIndex(input: {
   return {
     schemaVersion: AGENT_REPORTS_INDEX_SCHEMA,
     generatedAt: now.toISOString(),
-    workspaceRoot: input.workspacePath,
+    workspaceRoot: await portableWorkspaceReference(input.workspacePath),
     intelligenceChain: {
       schemaVersion: intelligenceChain.schemaVersion,
       contractPath: intelligenceChain.contractPath,
@@ -819,8 +868,9 @@ function buildAgentsMarkdown(input: {
     `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` — latest blockers, timestamps, and report paths`,
     `2. \`${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}\` — when present, read the active Goal Pack and its handoff before choosing work.`,
     `3. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\` — read only task-relevant context`,
-    '4. Read only the task-relevant evidence artifacts listed in the index.',
-    '5. Use the Goal Pack retrieval queries, `workspace graph search <query> --limit 12 --json`, or MCP `searchWorkspaceGraph` before loading the full graph.',
+    `4. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}\` — select only the Skill that matches the task.`,
+    '5. Read only the task-relevant evidence artifacts listed in the index.',
+    '6. Use the Goal Pack retrieval queries, `workspace graph search <query> --limit 12 --json`, or MCP `searchWorkspaceGraph` before loading the full graph.',
     '',
     'Do **not** full-repo scan or inject the complete graph when a bounded query can answer the task.',
     '',
@@ -966,7 +1016,7 @@ function buildCursorRule(): string {
     '',
     'When applying changes, follow the full repair loop:',
     '',
-    '1. Discover — inspect workspace model and dependency graph.',
+    '1. Discover — read bounded workspace context, select a matching Skill, and query the graph for the task.',
     '2. Inspect — read relevant evidence and source files.',
     '3. Patch — apply changes through the CLI-owned repair transaction.',
     '4. Verify — run verification to confirm workspace health.',
@@ -1271,7 +1321,7 @@ function buildClaudeWorkspaceRule(): string {
     '',
     'When applying changes, follow the full repair loop:',
     '',
-    '1. Discover — inspect workspace model and dependency graph.',
+    '1. Discover — read bounded workspace context, select a matching Skill, and query the graph for the task.',
     '2. Inspect — read relevant evidence and source files.',
     '3. Patch — apply changes through the CLI-owned repair transaction.',
     '4. Verify — run verification to confirm workspace health.',
@@ -1474,12 +1524,12 @@ function buildMcpToolsResource(): string {
   });
 }
 
-function buildMcpDesignManifest(input: { workspacePath: string; generatedAt: string }): string {
+function buildMcpDesignManifest(input: { workspaceRef: string; generatedAt: string }): string {
   return `${JSON.stringify(
     {
       schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaiMcpDesign.schemaVersion,
       generatedAt: input.generatedAt,
-      workspaceRoot: input.workspacePath,
+      workspaceRoot: input.workspaceRef,
       status: 'design-only',
       mode: 'read-mostly',
       safety: {
@@ -1586,14 +1636,14 @@ function buildMcpDesignManifest(input: { workspacePath: string; generatedAt: str
 }
 
 function buildExperimentalHooksConfig(input: {
-  workspacePath: string;
+  workspaceRef: string;
   generatedAt: string;
 }): string {
   return `${JSON.stringify(
     {
       schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.agentHooks.schemaVersion,
       generatedAt: input.generatedAt,
-      workspaceRoot: input.workspacePath,
+      workspaceRoot: input.workspaceRef,
       enabledByDefault: false,
       mode: 'advisory',
       hooks: [
@@ -1889,7 +1939,7 @@ export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget
 }
 
 function buildAgentCustomizationPackReport(input: {
-  workspacePath: string;
+  workspaceRef: string;
   generatedAt: string;
   preset: AgentCustomizationPackPreset;
   targets: AgentGroundingTarget[];
@@ -1905,7 +1955,7 @@ function buildAgentCustomizationPackReport(input: {
   return {
     schemaVersion: AGENT_CUSTOMIZATION_PACK_SCHEMA,
     generatedAt: input.generatedAt,
-    workspaceRoot: input.workspacePath,
+    workspaceRoot: input.workspaceRef,
     preset: input.preset,
     targets: [...input.targets].sort(),
     sourceReports: input.index.reports
@@ -2012,6 +2062,19 @@ async function syncWorkspaceAgentGroundingUnsafe(
   });
   for (const skill of skillsWrite.skills) {
     record(write ? 'written' : 'skipped', skill.canonicalPath);
+    for (const portable of portableOperationalSkillPaths(skill.skillId)) {
+      if (!targetEnabled(selectedTargets, portable.target)) continue;
+      record(
+        await writeTextFile(path.join(workspacePath, portable.path), skill.markdown, write),
+        portable.path
+      );
+    }
+  }
+  for (const skillId of skillsWrite.removedSkillIds) {
+    for (const portable of portableOperationalSkillPaths(skillId)) {
+      if (!targetEnabled(selectedTargets, portable.target) || !write) continue;
+      await removeManagedPortableOperationalSkill(workspacePath, portable.path);
+    }
   }
   record(write ? 'written' : 'skipped', WORKSPACE_SKILLS_INDEX_PATH);
   operationalSkillsCatalogSection = buildOperationalSkillsCatalogSection(skillsWrite.index);
@@ -2597,7 +2660,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
 
   if (preset === 'enterprise') {
     const mcpDesignManifest = buildMcpDesignManifest({
-      workspacePath,
+      workspaceRef: index.workspaceRoot,
       generatedAt: index.generatedAt,
     });
     assertWorkspaceArtifactContract(WORKSPAI_MCP_DESIGN_REPORT_PATH, JSON.parse(mcpDesignManifest));
@@ -2621,7 +2684,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
 
   if (preset === 'enterprise' && options.experimentalHooks === true) {
     const hooksConfig = buildExperimentalHooksConfig({
-      workspacePath,
+      workspaceRef: index.workspaceRoot,
       generatedAt: index.generatedAt,
     });
     assertWorkspaceArtifactContract(WORKSPAI_VSCODE_AGENT_HOOKS_PATH, JSON.parse(hooksConfig));
@@ -2700,7 +2763,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
   }
 
   const pack = buildAgentCustomizationPackReport({
-    workspacePath,
+    workspaceRef: finalIndex.workspaceRoot,
     generatedAt: now.toISOString(),
     preset,
     targets: selectedTargetList,

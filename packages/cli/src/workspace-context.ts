@@ -784,7 +784,7 @@ export async function buildWorkspaceAgentContext(
     },
     workspace: {
       name: model.workspace.name,
-      root: model.workspace.root,
+      root: `workspace:${model.workspace.name}`,
       type: model.identity.workspaceType,
       ...(model.workspace.profile ? { profile: model.workspace.profile } : {}),
     },

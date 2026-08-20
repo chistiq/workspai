@@ -20,6 +20,10 @@ import {
 } from '../workspace-agent-sync.js';
 import { buildWorkspaceAgentContext, writeWorkspaceAgentContext } from '../workspace-context.js';
 import {
+  buildWorkspaceOperationalSkills,
+  writeWorkspaceOperationalSkills,
+} from '../workspace-operational-skills.js';
+import {
   buildWorkspaceModel,
   writeWorkspaceModel,
   type WorkspaceModel,
@@ -126,6 +130,17 @@ describe('canonical-first project agent entry', () => {
       now: new Date('2026-08-16T00:02:00.000Z'),
     });
     await writeWorkspaceAgentContext(workspaceContext, workspacePath);
+    const skills = buildWorkspaceOperationalSkills({
+      workspacePath,
+      model: persistedModel,
+      context: workspaceContext,
+    });
+    await writeWorkspaceOperationalSkills({
+      workspacePath,
+      skills,
+      generatedAt: new Date('2026-08-16T00:02:00.000Z').toISOString(),
+      write: true,
+    });
     const index = await buildWorkspaceAgentReportsIndex({
       workspacePath,
       now: new Date('2026-08-16T00:02:00.000Z'),
@@ -164,8 +179,9 @@ describe('canonical-first project agent entry', () => {
         projectContext: '.workspai/reports/project-context-agent.json',
         workspaceIndex: 'workspace:.workspai/reports/INDEX.json',
         workspaceContext: 'workspace:.workspai/reports/workspace-context-agent.json',
-        workspaceModel: 'workspace:.workspai/reports/workspace-model.json',
-        knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+        workspaceSkillsIndex: 'workspace:.workspai/reports/workspace-skills-index.json',
+        boundedGraphSearch:
+          'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
         graphMatchesModel: true,
         liveInputsValidated: true,
       },
@@ -178,6 +194,15 @@ describe('canonical-first project agent entry', () => {
       'command:workspai project workspace status --json',
       '.workspai/reports/project-context-agent.json',
     ]);
+    expect(receipt.requiredReadOrder).not.toContain(
+      'workspace:.workspai/reports/workspace-knowledge-graph.json'
+    );
+    expect(receipt.requiredReadOrder).toContain(
+      'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json'
+    );
+    expect(receipt.requiredReadOrder).toContain(
+      'workspace:.workspai/reports/workspace-skills-index.json'
+    );
     expect(JSON.stringify(receipt)).not.toContain(root);
 
     const plannedGoal = await planGoalPack({

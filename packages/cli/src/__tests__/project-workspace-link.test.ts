@@ -532,8 +532,9 @@ describe('project workspace binding', () => {
     });
     expect(context.workspace).toMatchObject({
       contract: 'workspace:.workspai/workspace.contract.json',
-      model: 'workspace:.workspai/reports/workspace-model.json',
-      knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+      index: 'workspace:.workspai/reports/INDEX.json',
+      context: 'workspace:.workspai/reports/workspace-context-agent.json',
+      skillsIndex: 'workspace:.workspai/reports/workspace-skills-index.json',
     });
     expect(context.agentRouting).toMatchObject({
       enforcement: 'required',

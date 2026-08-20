@@ -48,6 +48,11 @@ Workspai writes a portable entry contract at
 `.workspai/reports/project-context-agent.json`, and host adapters when project
 grounding is managed.
 
+The shared context is intentionally compact. A complete Model or Graph export
+is validated as canonical evidence but is not injected into first-contact
+instructions. Agents retrieve task-specific, proof-backed slices through graph
+search and only open the returned proof paths.
+
 At the start of an agent session, issue a receipt from the project directory:
 
 ```bash
@@ -70,8 +75,8 @@ The `workspai.agent-bootstrap-receipt.v1` payload checks:
 - canonical project-to-workspace membership;
 - entry manifest and project-context integrity hashes;
 - host discovery files without overwriting authored repository state;
-- presence and schema validity of the report index, agent context, Workspace
-  Model, and Knowledge Graph;
+- presence and schema validity of the report index, agent context, compact
+  Skills index, Workspace Model, and Knowledge Graph;
 - persisted Model/Graph compatibility;
 - live project input compatibility, unless explicitly skipped;
 - active Goal Pack and agent-handoff bindings;
@@ -83,6 +88,15 @@ consumer what it may claim next. The portable manifest keeps `generic` as its
 provider-neutral bootstrap command; each runtime receipt replaces that step in
 `requiredReadOrder` with the resolved host (or `all` for a complete host audit),
 so a consumer is never routed back through the wrong adapter.
+
+The Workspace Model and complete Knowledge Graph are validated by the receipt,
+but are deliberately **not** part of `requiredReadOrder`. They are on-demand
+deep-evidence artifacts: load them only for an explicit full export, offline
+audit, or a task that cannot be answered from the project lens, bounded context,
+and task-scoped Graph query. This keeps first contact bounded on large workspaces.
+The compact Workspace Skills index *is* part of the route: use it to select one
+relevant playbook, rather than loading every Skill or asking the model to infer
+an operational procedure from raw source alone.
 
 The generated workspace name is a logical identity, never a filesystem path.
 Project-local artifacts use `.workspai/...`; canonical workspace artifacts use
@@ -97,6 +111,9 @@ That resolver intentionally returns absolute paths to the local process. Its
 contract classifies them as machine-local, non-portable, forbidden to persist,
 and forbidden to disclose. Entry manifests, project lenses, bootstrap receipts,
 answers, shared logs, commits, prompts, and telemetry must not copy those paths.
+Workspace-level agent reports use `workspace:<name>` as their `workspaceRoot`
+identity for the same reason. A local filesystem root is runtime-only data, not
+consumer-facing evidence.
 
 | Status     | Meaning                                                               | Consumer rule                                                               |
 | ---------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -167,6 +184,19 @@ name from undocumented behavior.
 If an authored instruction file or symbolic link prevents safe management,
 Workspai preserves repository ownership and reports degraded or blocked host
 coverage. It does not replace the file to make a check pass.
+
+## Skills
+
+Agent-sync derives operational playbooks from the detected workspace: runtime
+validation is generated per detected runtime, and polyglot, test-evidence, and
+delivery playbooks appear only when their supporting signals exist. The
+canonical inventory remains under `.workspai/skills/`; standard portable
+projections use `skills/<skill-name>/SKILL.md` with YAML frontmatter for hosts
+that implement Agent Skills. A host without a documented Skills surface still
+receives its native adapter and the portable canonical-first entry contract.
+Agent-sync reconciles only Skill files marked as Workspai-generated, so a
+runtime that disappears cannot leave a stale generated playbook behind and
+authored Skill files remain untouched.
 
 ## Consumer integration
 

@@ -62,8 +62,10 @@ export interface ProjectContextAgent {
     profile?: string;
     relationship: ProjectWorkspaceRelationship;
     contract: `workspace:${(typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['workspaceContract']}`;
-    model: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model']}`;
-    knowledgeGraph: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph']}`;
+    index: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['agentIndex']}`;
+    context: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['agentContext']}`;
+    skillsIndex: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['skillsIndex']}`;
+    boundedGraphSearch: string;
     access: {
       localBinding: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['projectWorkspaceLink'];
       canonicalEvidenceAvailableAtGeneration: boolean;
@@ -961,8 +963,10 @@ export async function buildProjectContextAgent(
         : {}),
       relationship,
       contract: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract}`,
-      model: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`,
-      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`,
+      index: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`,
+      context: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`,
+      skillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`,
+      boundedGraphSearch: `workspai workspace graph search <task-query> --scope project:${projectName} --limit 12 --json`,
       access: {
         localBinding: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectWorkspaceLink,
         canonicalEvidenceAvailableAtGeneration: true,
@@ -1055,8 +1059,8 @@ export async function buildProjectContextAgent(
         `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun}`,
         'workspace:.workspai/reports/INDEX.json',
         'workspace:.workspai/reports/workspace-context-agent.json',
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`,
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`,
+        'workspace:.workspai/reports/workspace-skills-index.json',
+        `command:workspai workspace graph search <task-query> --scope project:${projectName} --limit 12 --json`,
       ],
       projectProofArtifacts: [
         ...new Set(
@@ -1110,7 +1114,8 @@ export async function buildProjectContextAgent(
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
         'workspace:.workspai/reports/INDEX.json',
         'workspace:.workspai/reports/workspace-context-agent.json',
-        `command:npx workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
+        'workspace:.workspai/reports/workspace-skills-index.json',
+        `command:workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
       ],
       degradedMode: {
         allowCompleteArchitectureClaims: false,
@@ -1188,7 +1193,8 @@ until this sequence is complete:
 4. Read \`.workspai/reports/project-context-agent.json\`.
 5. If the receipt reports an active Goal, read its immutable Goal Pack and agent
    handoff before choosing or expanding work.
-6. Query the bounded Workspace Graph with the user's actual task before opening broad
+6. Read the compact workspace Skills index and load only a matching playbook.
+7. Query the bounded Workspace Graph with the user's actual task before opening broad
    source, then inspect only returned proof paths and targeted live files.
 
 Receipt policy:
@@ -1269,7 +1275,8 @@ Before broad repository discovery, architecture claims, planning, or mutation:
 2. Run \`workspai agent bootstrap --for-agent generic --strict --json\`.
 3. Follow the receipt's \`requiredReadOrder\` exactly.
 4. If a Goal is active, read its immutable Goal Pack and handoff before acting.
-5. Query the bounded Workspace Graph with the user's task, then inspect only returned proofs and targeted live source.
+5. Read the compact workspace Skills index and load only a matching playbook.
+6. Query the bounded Workspace Graph with the user's task, then inspect only returned proofs and targeted live source.
 
 Receipt policy: \`ready\` may proceed; \`degraded\` must disclose limitations and may not claim complete architecture or verification; \`blocked\` must stop governed claims, execute \`nextActions\`, and rerun bootstrap.
 

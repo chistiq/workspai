@@ -61,9 +61,7 @@
         "projectGrounding",
         "goalIndex",
         "workspaceIndex",
-        "workspaceContext",
-        "workspaceModel",
-        "knowledgeGraph"
+        "workspaceContext"
       ],
       "properties": {
         "projectContext": { "const": ".workspai/reports/project-context-agent.json" },
@@ -76,8 +74,38 @@
         "workspaceModel": { "const": "workspace:.workspai/reports/workspace-model.json" },
         "knowledgeGraph": {
           "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
+        },
+        "workspaceSkillsIndex": {
+          "const": "workspace:.workspai/reports/workspace-skills-index.json"
+        },
+        "boundedGraphSearch": {
+          "const": "command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json"
         }
-      }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "workspaceModel": {
+              "const": "workspace:.workspai/reports/workspace-model.json"
+            },
+            "knowledgeGraph": {
+              "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
+            }
+          },
+          "required": ["workspaceModel", "knowledgeGraph"]
+        },
+        {
+          "properties": {
+            "workspaceSkillsIndex": {
+              "const": "workspace:.workspai/reports/workspace-skills-index.json"
+            },
+            "boundedGraphSearch": {
+              "const": "command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json"
+            }
+          },
+          "required": ["workspaceSkillsIndex", "boundedGraphSearch"]
+        }
+      ]
     },
     "protocol": {
       "type": "object",

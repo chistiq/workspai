@@ -127,19 +127,18 @@ describe('workspace agent sync', () => {
       contractPath: 'contracts/workspace-intelligence-chain.v1.json',
       currentStep: 'agent-sync',
     });
-    expect(index.readOrder.slice(0, 3)).toEqual([
+    expect(index.workspaceRoot).toBe('workspace:sync-lab');
+    expect(index.readOrder).toEqual([
       '.workspai/goals/index.json',
       '.workspai/reports/goal-pack-last-run.json',
       WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+      WORKSPACE_SKILLS_INDEX_PATH,
+      '.workspai/reports/workspace-verify-last-run.json',
+      '.workspai/reports/workspace-impact-last-run.json',
+      '.workspai/reports/workspace-explain-last-run.json',
     ]);
-    expect(index.readOrder).toEqual(
-      expect.arrayContaining([
-        '.workspai/reports/doctor-project-last-run.json',
-        '.workspai/reports/doctor-remediation-plan-last-run.json',
-        '.workspai/reports/artifact-remediation-plan-last-run.json',
-        '.workspai/reports/doctor-fix-result-last-run.json',
-      ])
-    );
+    expect(index.readOrder).not.toContain('.workspai/reports/workspace-model.json');
+    expect(index.readOrder).not.toContain('.workspai/reports/workspace-knowledge-graph.json');
     expect(index.blockers).toContain('pipeline stage failed');
     expect(
       index.reports.find((report) => report.path === WORKSPACE_CONTEXT_AGENT_REPORT_PATH)?.exists
@@ -206,6 +205,11 @@ describe('workspace agent sync', () => {
         WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH,
         WORKSPAI_GROK_GROUNDING_SKILL_PATH,
         WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+        '.agents/skills/workspai-release-readiness/SKILL.md',
+        '.github/skills/workspai-release-readiness/SKILL.md',
+        '.claude/skills/workspai-release-readiness/SKILL.md',
+        '.cursor/skills/workspai-release-readiness/SKILL.md',
+        '.grok/skills/workspai-release-readiness/SKILL.md',
         WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
         LEGACY_COPILOT_GROUNDING_SKILL_PATH,
         AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
@@ -215,6 +219,20 @@ describe('workspace agent sync', () => {
     const agents = await fsExtra.readFile(path.join(workspacePath, 'AGENTS.md'), 'utf8');
     expect(agents).toContain(RAPIDKIT_AGENT_GROUNDING_START);
     expect(agents).toContain('Read order (mandatory before workspace diagnosis)');
+    expect(agents).toContain('select only the Skill that matches the task');
+
+    const portableReadinessSkill = await fsExtra.readFile(
+      path.join(workspacePath, '.github/skills/workspai-release-readiness/SKILL.md'),
+      'utf8'
+    );
+    expect(portableReadinessSkill).toContain('name: workspai-release-readiness');
+    expect(portableReadinessSkill).toContain('WORKSPAI:GENERATED-OPERATIONAL-SKILL');
+
+    const customizationPack = await fsExtra.readJson(
+      path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH)
+    );
+    expect(customizationPack.workspaceRoot).toBe('workspace:sync-lab');
+    expect(JSON.stringify(customizationPack)).not.toContain(workspacePath);
 
     const claude = await fsExtra.readFile(path.join(workspacePath, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('@AGENTS.md');

@@ -44,7 +44,7 @@ Here is what you get:
 | **Health & Readiness** | Doctor checks, verification gates, and release posture based on evidence, not guesses |
 | **Agent Context** | Bounded, focused instructions so AI tools read what they need, not the entire repo |
 | **Agent Rules** | Ready-to-use grounding for Cursor, Copilot, Claude, Codex, Gemini, and more |
-| **Agent Skills** | Dynamic, project-aware operational skills (diagnose, repair, release) generated from real workspace state |
+| **Agent Skills** | Runtime-, polyglot-, test-, and delivery-aware operational playbooks, with portable `SKILL.md` projections where the host supports Agent Skills |
 | **MCP Server** | 14 read-oriented tools so MCP clients can query evidence, graph, blockers, and context live |
 
 `generic` is the portable default: one canonical context, plus lightweight
@@ -89,6 +89,7 @@ your-workspace/                              # ── Workspace level (system-wi
 │       ├── workspai-release-readiness.md
 │       ├── workspai-safe-schema-migration.md
 │       └── workspai-rename-contract.md
+│       # runtime/test/delivery playbooks appear only when detected
 │
 │  # Workspace-level agent grounding (generated per host by agent-sync):
 ├── AGENTS.md                                # portable (Codex, Gemini, Qwen, etc.)
@@ -102,7 +103,7 @@ your-workspace/                              # ── Workspace level (system-wi
 │   │   ├── workspai-diagnose.mdc            # diagnose workflow
 │   │   ├── workspai-repair.mdc              # repair workflow
 │   │   └── workspai-release.mdc             # release workflow
-│   └── skills/workspai-grounding/SKILL.md   # dynamic project-aware skill
+│   └── skills/workspai-*/SKILL.md           # grounding + generated operational Skills
 ├── .claude/rules/
 │   ├── workspai-workspace.md                # workspace scope & loop
 │   └── workspai-evidence.md                 # evidence discipline

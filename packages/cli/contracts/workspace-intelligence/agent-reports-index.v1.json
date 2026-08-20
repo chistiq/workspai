@@ -18,7 +18,11 @@
   "properties": {
     "schemaVersion": { "const": "rapidkit-agent-reports-index.v1" },
     "generatedAt": { "type": "string", "format": "date-time" },
-    "workspaceRoot": { "type": "string", "minLength": 1 },
+    "workspaceRoot": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Portable workspace identity (workspace:<name>), never a machine-local filesystem path."
+    },
     "intelligenceChain": {
       "type": "object",
       "additionalProperties": false,

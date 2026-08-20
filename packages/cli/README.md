@@ -38,7 +38,7 @@ Here is what you get:
 | **Health & Readiness** | Doctor checks, verification gates, and release posture based on evidence, not guesses |
 | **Agent Context** | Bounded, focused instructions so AI tools read what they need, not the entire repo |
 | **Agent Rules** | Ready-to-use grounding for Cursor, Copilot, Claude, Codex, Gemini, and more |
-| **Agent Skills** | Dynamic, project-aware operational skills (diagnose, repair, release) generated from real workspace state |
+| **Agent Skills** | Runtime-, polyglot-, test-, and delivery-aware operational playbooks, with portable `SKILL.md` projections where the host supports Agent Skills |
 | **MCP Server** | 14 read-oriented tools so MCP clients can query evidence, graph, blockers, and context live |
 
 `generic` is the safe default when you do not yet know which agent will use the
@@ -63,7 +63,9 @@ your-workspace/                              # ── Workspace level ──
 │   │   ├── INDEX.json                       # evidence inventory & read order
 │   │   └── ...                              # impact, doctor, analyze, explain, etc.
 │   └── skills/                              # generated operational skills
-│       └── workspai-*.md                    # diagnose, upgrade, release, etc.
+│       ├── workspai-release-readiness.md     # always available
+│       ├── workspai-node-runtime-validation.md  # only when Node is detected
+│       └── workspai-polyglot-change-validation.md # only for multi-runtime workspaces
 │
 │  # Workspace-level agent grounding (per host):
 ├── AGENTS.md · CLAUDE.md · GEMINI.md · QWEN.md
@@ -87,9 +89,9 @@ your-workspace/                              # ── Workspace level ──
 └── summit-web/                              # (same structure per project)
 ```
 
-Your agent reads `workspace-context-agent.json` at the workspace level for system-wide
-awareness, then `agent-entry.v1.json` at the project level for scoped context. Two reads
-instead of scanning thousands of files.
+Your agent starts with `agent-entry.v1.json`, compact workspace context, and the Skills
+index; it then retrieves only task-scoped Graph evidence and targeted source. No broad
+scan or complete Graph load is needed for ordinary work.
 
 ![Workspai CLI adopting and analyzing the gRPC repository](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
 
