@@ -26,7 +26,7 @@
 
 # Workspai CLI v0.63.0
 
-Publication status: pending.
+Released August 21, 2026.
 
 ## Causal Repair Queues and Real-World Doctor Hardening
 
@@ -155,8 +155,6 @@ tests and four files remain intentionally skipped by their platform or
 environment contracts.
 
 ## Upgrade
-
-After publication:
 
 ```bash
 npm install -g workspai@0.63.0

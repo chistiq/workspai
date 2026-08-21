@@ -430,64 +430,68 @@ describe('Phase 3 commands - CLI process integration', () => {
     }
   });
 
-  it('syncs nested projects inside a workspace registry entry', () => {
-    const dist = ensureDistBuilt();
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-sync-nested-'));
-    const isolatedHome = path.join(tempDir, 'home');
-    const workspaceName = 'ws-sync-nested';
-    const workspaceDir = path.join(isolatedHome, '.workspai', 'workspaces', workspaceName);
-    const nestedProjectDir = path.join(workspaceDir, 'apps', 'orders-api');
+  it(
+    'syncs nested projects inside a workspace registry entry',
+    () => {
+      const dist = ensureDistBuilt();
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-sync-nested-'));
+      const isolatedHome = path.join(tempDir, 'home');
+      const workspaceName = 'ws-sync-nested';
+      const workspaceDir = path.join(isolatedHome, '.workspai', 'workspaces', workspaceName);
+      const nestedProjectDir = path.join(workspaceDir, 'apps', 'orders-api');
 
-    try {
-      fs.mkdirSync(isolatedHome, { recursive: true });
+      try {
+        fs.mkdirSync(isolatedHome, { recursive: true });
 
-      const env = cliEnv({
-        HOME: isolatedHome,
-        USERPROFILE: isolatedHome,
-      });
+        const env = cliEnv({
+          HOME: isolatedHome,
+          USERPROFILE: isolatedHome,
+        });
 
-      const createWorkspace = spawnSync(
-        process.execPath,
-        [dist, 'create', 'workspace', workspaceName, '--yes', '--profile', 'minimal'],
-        {
+        const createWorkspace = spawnSync(
+          process.execPath,
+          [dist, 'create', 'workspace', workspaceName, '--yes', '--profile', 'minimal'],
+          {
+            cwd: tempDir,
+            encoding: 'utf8',
+            env,
+          }
+        );
+        expect(createWorkspace.status).toBe(0);
+
+        fs.mkdirSync(path.join(nestedProjectDir, '.workspai'), { recursive: true });
+        fs.writeFileSync(
+          path.join(nestedProjectDir, '.workspai', 'project.json'),
+          JSON.stringify({ runtime: 'java', kit_name: 'springboot.standard' }, null, 2)
+        );
+        fs.writeFileSync(path.join(nestedProjectDir, 'pom.xml'), '<project />');
+
+        const sync = spawnSync(process.execPath, [dist, 'workspace', 'sync'], {
+          cwd: workspaceDir,
+          encoding: 'utf8',
+          env,
+        });
+        expect(
+          sync.status,
+          `workspace sync failed\nstdout:\n${sync.stdout}\nstderr:\n${sync.stderr}`
+        ).toBe(0);
+
+        const list = spawnSync(process.execPath, [dist, 'workspace', 'list'], {
           cwd: tempDir,
           encoding: 'utf8',
           env,
-        }
-      );
-      expect(createWorkspace.status).toBe(0);
+        });
 
-      fs.mkdirSync(path.join(nestedProjectDir, '.workspai'), { recursive: true });
-      fs.writeFileSync(
-        path.join(nestedProjectDir, '.workspai', 'project.json'),
-        JSON.stringify({ runtime: 'java', kit_name: 'springboot.standard' }, null, 2)
-      );
-      fs.writeFileSync(path.join(nestedProjectDir, 'pom.xml'), '<project />');
-
-      const sync = spawnSync(process.execPath, [dist, 'workspace', 'sync'], {
-        cwd: workspaceDir,
-        encoding: 'utf8',
-        env,
-      });
-      expect(
-        sync.status,
-        `workspace sync failed\nstdout:\n${sync.stdout}\nstderr:\n${sync.stderr}`
-      ).toBe(0);
-
-      const list = spawnSync(process.execPath, [dist, 'workspace', 'list'], {
-        cwd: tempDir,
-        encoding: 'utf8',
-        env,
-      });
-
-      expect(list.status).toBe(0);
-      const output = `${list.stdout || ''}\n${list.stderr || ''}`;
-      expect(output).toContain(workspaceName);
-      expect(output).toContain('Projects: 1');
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    }
-  }, 20000);
+        expect(list.status).toBe(0);
+        const output = `${list.stdout || ''}\n${list.stderr || ''}`;
+        expect(output).toContain(workspaceName);
+        expect(output).toContain('Projects: 1');
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      }
+    },
+    PROCESS_INTEGRATION_TIMEOUT_MS
+  );
 
   it('rejects unknown policy rules and invalid boolean values', () => {
     const dist = ensureDistBuilt();

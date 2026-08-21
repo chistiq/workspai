@@ -5,7 +5,7 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Planned Release: v0.63.0 (publication pending)
+## Latest Release: v0.63.0 (August 21, 2026)
 
 ### Causal Repair Queues and Real-World Doctor Hardening
 
@@ -30,16 +30,16 @@ transaction bounded to one causal finding family and one canonical project.
 version-one schema identifiers. New capability fields are additive; public
 commands and existing persisted workspace artifacts remain supported.
 
-**Publication status:** Pending.
+**Publication status:** Released August 21, 2026.
 
-**Install after publication:**
+**Install:**
 
 ```bash
 npm install -g workspai@0.63.0
 workspai --version
 ```
 
-[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.63.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.63.0/packages/cli/releases/RELEASE_NOTES_v0.63.0.md)
 
 ---
 
