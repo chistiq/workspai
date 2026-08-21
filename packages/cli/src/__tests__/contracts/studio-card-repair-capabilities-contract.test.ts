@@ -55,6 +55,8 @@ describe('Studio card repair capabilities contract', () => {
       expect(card.verifyArtifact).toBe(card.producerArtifact);
       expect(card.aggregateVerifyCommand).toBe('npx workspai workspace verify --json');
       expect(card.targetClosure).toBe('exact-producer-and-causal-action-set');
+      expect(card.aggregateRepair).toBe('sequential-causal-queue');
+      expect(card.transactionScope).toBe('one-causal-finding-family');
       expect(card.workspacePosture).toBe('reported-separately');
       expect(exactCardProducerArgs(card.cardId)).toEqual(
         card.verifyCommand.trim().split(/\s+/).slice(2)
@@ -63,6 +65,8 @@ describe('Studio card repair capabilities contract', () => {
     expect(contract.invariant).toContain(
       'every unresolved policy path transfers to governed causal source repair'
     );
+    expect(contract.invariant).toContain('one causal finding family');
+    expect(contract.invariant).toContain('Advisory and informational findings never widen');
     expect(contract.invariant).toContain('Unrelated workspace blockers');
   });
 

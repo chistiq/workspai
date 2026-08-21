@@ -461,6 +461,8 @@ describe.sequential('in-process workspace Commander coverage', () => {
         {
           schemaVersion: 'workspai.workspace-repair-proposal.v1',
           cardId: 'doctor',
+          blockerSignature: 'doctor:api:surface-environment-config:coverage-fixture',
+          targetActionIds: ['doctor.api.surface-environment-config.file-create'],
           projectName: 'api',
           projectPath: 'api',
           rationale: 'Exercise the CLI-owned model proposal callback.',

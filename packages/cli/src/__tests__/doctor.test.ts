@@ -2988,6 +2988,13 @@ describe('Doctor Command', () => {
       ]);
       expect(payload.project.projectArchetype).toBe('platform');
       expect(payload.project.diagnosis.project.runtimeFamilies).toHaveLength(6);
+      expect(payload.project.issues).not.toContain('.NET restore/build artifacts not found');
+      expect(payload.project.probes).toContainEqual(
+        expect.objectContaining({
+          id: 'composite-project-boundary',
+          status: 'warn',
+        })
+      );
       expect(
         payload.project.diagnosis.unknowns.filter((item: { id?: string }) =>
           item.id?.startsWith('unknown:runtime:')
@@ -3000,7 +3007,7 @@ describe('Doctor Command', () => {
     }
   });
 
-  it('should accept RapidKit FastAPI src/main.py as Python boot entrypoint', async () => {
+  it('should accept PEP 621 project scripts as Python command entrypoints', async () => {
     const tempRoot = await fsExtra.mkdtemp(
       path.join(os.tmpdir(), 'rapidkit-doctor-fastapi-entrypoint-')
     );
@@ -3022,20 +3029,15 @@ describe('Doctor Command', () => {
     await fsExtra.writeFile(
       path.join(projectPath, 'pyproject.toml'),
       [
-        '[tool.poetry]',
+        '[project]',
         'name = "orbit-api"',
         'version = "0.1.0"',
+        'dependencies = ["fastapi"]',
         '',
-        '[tool.poetry.dependencies]',
-        'python = "^3.10"',
-        'fastapi = "^0.139.0"',
+        '[project.scripts]',
+        'orbit-api = "orbit_api.cli:main"',
         '',
       ].join('\n')
-    );
-    await fsExtra.ensureDir(path.join(projectPath, 'src'));
-    await fsExtra.writeFile(
-      path.join(projectPath, 'src', 'main.py'),
-      ['from fastapi import FastAPI', '', 'app = FastAPI(title="orbit-api")', ''].join('\n')
     );
 
     mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
@@ -3076,7 +3078,7 @@ describe('Doctor Command', () => {
       );
       expect(bootProbe).toBeDefined();
       expect(bootProbe.status).toBe('pass');
-      expect(bootProbe.reason).toBe('Python application entrypoint markers detected.');
+      expect(bootProbe.reason).toBe('Python application or command entrypoint markers detected.');
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();
@@ -4739,6 +4741,61 @@ describe('Doctor Command', () => {
             observableState: 'runtime-dependency-tree',
             requiredStages: ['reconcile', 'test', 'build'],
           }),
+        })
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('does not turn a Java dependency-baseline advisory into a materialization blocker', async () => {
+    const tempRoot = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-java-baseline-'))
+    );
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'project.json'), {
+      name: 'harbor-service',
+      runtime: 'java',
+      framework: 'springboot',
+    });
+    await fsExtra.writeFile(
+      path.join(tempRoot, 'pom.xml'),
+      '<project><modelVersion>4.0.0</modelVersion></project>\n'
+    );
+    await fsExtra.writeFile(path.join(tempRoot, 'mvnw'), '#!/bin/sh\n');
+    await fsExtra.outputFile(path.join(tempRoot, 'target', 'classes', '.keep'), '');
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const project = JSON.parse(jsonLine).project;
+
+      expect(project.depsInstalled).toBe(true);
+      expect(project.probes).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization',
+          status: 'pass',
+        })
+      );
+      expect(project.repairCapabilities).not.toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization.dependency-materialization',
+        })
+      );
+      expect(project.diagnosis.findings).not.toContainEqual(
+        expect.objectContaining({
+          status: 'blocking',
+          issueClass: 'dependency',
         })
       );
     } finally {

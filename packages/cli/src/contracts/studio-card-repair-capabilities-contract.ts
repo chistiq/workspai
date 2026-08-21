@@ -15,6 +15,8 @@ export type StudioCardRepairCapability = {
   verifyArtifact: string;
   aggregateVerifyCommand: 'npx workspai workspace verify --json';
   targetClosure: 'exact-producer-and-causal-action-set';
+  aggregateRepair: 'sequential-causal-queue';
+  transactionScope: 'one-causal-finding-family';
   workspacePosture: 'reported-separately';
   repairPolicy: 'diagnose-and-repair' | 'source-repair-then-produce' | 'refresh-producer';
   remediationArtifacts: string[];
@@ -43,6 +45,8 @@ function capability(
     verifyArtifact: producerArtifact,
     aggregateVerifyCommand: AGGREGATE_VERIFY_COMMAND,
     targetClosure: 'exact-producer-and-causal-action-set',
+    aggregateRepair: 'sequential-causal-queue',
+    transactionScope: 'one-causal-finding-family',
     workspacePosture: 'reported-separately',
     repairPolicy: options.repairPolicy ?? 'refresh-producer',
     remediationArtifacts: options.remediationArtifacts ?? [],
@@ -185,7 +189,7 @@ export function buildStudioCardRepairCapabilitiesContract() {
   return {
     schemaVersion: STUDIO_CARD_REPAIR_CAPABILITIES_SCHEMA_VERSION,
     invariant:
-      'A card repair starts with its declared repairPolicy but every unresolved policy path transfers to governed causal source repair. It closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.',
+      'An aggregate card is a presentation boundary, never a mutation boundary. Blocking findings form a deterministic sequential causal queue; each CLI transaction owns exactly one causal finding family and one canonical project unless declared dependencies require a bounded cross-project closure. Advisory and informational findings never widen that queue. A card repair starts with its declared repairPolicy but every unresolved policy path transfers to governed causal source repair. After each exact target closes, fresh evidence selects the next target. The card closes only after its exact producer refreshes, no selected causal action remains, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.',
     cards: STUDIO_CARD_REPAIR_CAPABILITIES,
   };
 }

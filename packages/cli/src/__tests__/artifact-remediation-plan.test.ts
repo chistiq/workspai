@@ -20,6 +20,56 @@ async function makeWorkspace(): Promise<string> {
 }
 
 describe('artifact remediation plan', () => {
+  it('uses canonical portable references for an adopted project outside the workspace', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = await fsExtra.mkdtemp(path.join(tmpdir(), 'workspai-external-grpc-'));
+    await fsExtra.writeFile(path.join(projectPath, 'CMakeLists.txt'), 'project(grpc)\n');
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-remediation-plan-last-run.json'),
+      {
+        schemaVersion: 'doctor-remediation-plan-v2',
+        steps: [
+          {
+            id: 'grpc.coverage.command',
+            diagnosisFindingId: 'grpc.coverage',
+            causalKey: 'grpc:test:coverage',
+            findingStatus: 'advisory',
+            projectName: 'grpc',
+            projectPath,
+            originalCommand: 'npx workspai project coverage --run --json',
+            executableInCurrentEnvironment: true,
+            risk: 'safe',
+            files: [path.join(projectPath, 'CMakeLists.txt')],
+            invocation: {
+              cwd: projectPath,
+              executable: 'npx',
+              // Legacy evidence may predate the no-network execution contract.
+              args: ['workspai', 'project', 'coverage', '--run', '--json'],
+            },
+            studioStatus: { state: 'ready' },
+          },
+        ],
+      }
+    );
+
+    const plan = await buildArtifactRemediationPlan({ workspacePath });
+    const action = plan.actions[0];
+    const serialized = JSON.stringify(plan);
+
+    expect(action).toMatchObject({
+      projectName: 'grpc',
+      projectPath: 'external/grpc',
+      files: ['external/grpc/CMakeLists.txt'],
+      invocation: {
+        cwd: '.',
+        executable: 'npx',
+        args: ['--no-install', 'workspai', 'project', 'coverage', '--run', '--json'],
+      },
+    });
+    expect(serialized).not.toContain(projectPath);
+    expect(serialized).not.toContain('../');
+  });
+
   it('builds deterministic Bootstrap compliance remediation actions for Studio', async () => {
     const workspacePath = await makeWorkspace();
     await fsExtra.writeJSON(

@@ -259,6 +259,30 @@ const ENV_REFERENCE_PATTERNS = [
   /@Value\(\s*['"]\$\{([A-Z][A-Z0-9_]*)(?::[^}]*)?\}['"]\s*\)/g,
 ];
 
+// These variables describe the host, shell, CI runner, or process lifecycle.
+// Referencing them is not proof that the application adopts a dotenv-style
+// configuration contract, and publishing them in a generated .env.example is
+// actively misleading for desktop applications and developer tooling.
+const HOST_ENVIRONMENT_KEYS = new Set([
+  'BROWSER',
+  'CI',
+  'GITHUB_WORKSPACE',
+  'HOME',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'LOCALAPPDATA',
+  'PAGER',
+  'PATH',
+  'PROCESSOR_ARCHITEW6432',
+  'SSH_CLIENT',
+  'SSH_TTY',
+  'SYSTEMROOT',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'XDG_CACHE_HOME',
+]);
+
 async function collectEnvironmentContractKeys(projectPath: string): Promise<string[]> {
   const keys = new Set<string>();
   const ignored = new Set([
@@ -315,7 +339,7 @@ async function collectEnvironmentContractKeys(projectPath: string): Promise<stri
         pattern.lastIndex = 0;
         for (const match of source.matchAll(pattern)) {
           const key = match.slice(1).find((value) => typeof value === 'string' && value.length > 0);
-          if (key) keys.add(key);
+          if (key && !HOST_ENVIRONMENT_KEYS.has(key)) keys.add(key);
         }
       }
     }
@@ -1069,18 +1093,29 @@ async function buildDependencyContractProbe(input: {
 
 async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurfaceProbe> {
   const envExampleExists = await fsExtra.pathExists(path.join(input.projectPath, '.env.example'));
+  const envContractVariantExists = await anyPathExists(input.projectPath, [
+    '.env.sample',
+    '.env.template',
+    '.env.public',
+  ]);
   const envExists = await fsExtra.pathExists(path.join(input.projectPath, '.env'));
   const envDocsExist =
     (await fsExtra.pathExists(path.join(input.projectPath, 'docs', 'env.md'))) ||
     (await fsExtra.pathExists(path.join(input.projectPath, 'ENVIRONMENT.md')));
   const configDirExists = await fsExtra.pathExists(path.join(input.projectPath, 'config'));
-  const hasContract = envExampleExists || envDocsExist || configDirExists;
+  const hasContract =
+    envExampleExists || envContractVariantExists || envDocsExist || configDirExists;
   const frontend = input.projectKind === 'frontend';
   const environmentKeys = hasContract
     ? []
     : await collectEnvironmentContractKeys(input.projectPath);
   const environmentContractRequired = envExists || environmentKeys.length > 0;
   const contractNotApplicable = !hasContract && !environmentContractRequired;
+  const envFileConventionSupported =
+    envExists ||
+    input.projectKind === 'backend' ||
+    input.projectKind === 'frontend' ||
+    input.projectKind === 'fullstack';
   const generatedExample = environmentKeys.map((key) => `${key}=`).join('\n');
 
   return {
@@ -1100,7 +1135,9 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
     recommendation:
       hasContract || contractNotApplicable
         ? undefined
-        : 'Add .env.example, config schema, or environment documentation for deterministic setup.',
+        : envFileConventionSupported
+          ? 'Add .env.example, config schema, or environment documentation for deterministic setup.'
+          : 'Document the governed build/runtime variables or declare an explicit configuration schema; do not infer a dotenv contract from host-tooling references alone.',
     repairCapability: hasContract
       ? envExampleExists && !envExists
         ? buildFileCopyRepairCapability({
@@ -1115,7 +1152,7 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
         : undefined
       : contractNotApplicable
         ? undefined
-        : environmentKeys.length > 0
+        : environmentKeys.length > 0 && envFileConventionSupported
           ? buildFileCreateRepairCapability({
               issueId: 'surface-env-contract',
               title: 'Create environment contract skeleton',
@@ -1131,11 +1168,14 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
             })
           : buildManualRepair({
               issueId: 'surface-env-contract',
-              title: 'Define environment contract',
+              title: envExists
+                ? 'Define environment contract'
+                : 'Review environment/config contract',
               projectPath: input.projectPath,
-              files: ['.env.example'],
-              reason:
-                'A local .env exists, but no safe variable names could be inferred. Review the required keys before publishing an example.',
+              files: envExists ? ['.env.example'] : ['ENVIRONMENT.md'],
+              reason: envExists
+                ? 'A local .env exists, but no safe variable names could be inferred. Review the required keys before publishing an example.'
+                : 'Environment-variable references were observed, but this project kind does not prove a dotenv contract. Document the governed build/runtime variables or declare an explicit configuration schema before generating files.',
             }),
   };
 }
@@ -1720,7 +1760,21 @@ async function buildRuntimeTestDepthProbe(input: SurfaceInput): Promise<DoctorSu
       '*.test.js',
     ],
     deno: ['deno.json', 'deno.jsonc'],
-    bun: ['bunfig.toml', 'test', 'tests', '*.test.ts', '*.spec.ts'],
+    bun: [
+      'bunfig.toml',
+      'test',
+      'tests',
+      'vitest.config.ts',
+      'vitest.config.js',
+      'vitest.config.mts',
+      'vitest.config.mjs',
+      'jest.config.ts',
+      'jest.config.js',
+      'playwright.config.ts',
+      'playwright.config.js',
+      '*.test.ts',
+      '*.spec.ts',
+    ],
     python: ['pytest.ini', 'tox.ini', 'noxfile.py', 'tests', 'test', 'conftest.py', '*_test.py'],
     go: ['*_test.go'],
     java: ['src/test', '*Test.java', '*Tests.java', '*IT.java'],
@@ -1758,7 +1812,7 @@ async function buildRuntimeTestDepthProbe(input: SurfaceInput): Promise<DoctorSu
   ]);
   const commandSignalByRuntime: Partial<Record<DoctorSurfaceRuntimeFamily, RegExp>> = {
     node: /\b(jest|vitest|mocha|ava|tap|playwright|cypress|node\s+--test|bun\s+test)\b/i,
-    bun: /\bbun\s+test\b/i,
+    bun: /\b(bun\s+test|jest|vitest|mocha|ava|tap|playwright|cypress)\b/i,
     deno: /\bdeno\s+test\b/i,
     python: /\b(pytest|unittest|tox|nox)\b/i,
     java: /\b(junit|testng|surefire|failsafe|gradle[^]*\btest\b)\b/i,
@@ -1775,7 +1829,7 @@ async function buildRuntimeTestDepthProbe(input: SurfaceInput): Promise<DoctorSu
   };
   const commandSignal =
     commandSignalByRuntime[runtime]?.test(`${scriptText}\n${manifestText}`) ?? false;
-  const pass = input.hasTests === true && (hasRuntimeMarker || commandSignal);
+  const pass = hasRuntimeMarker || commandSignal;
   return {
     id: 'runtime-test-depth',
     label: 'Runtime-native test depth',

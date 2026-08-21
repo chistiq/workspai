@@ -2749,6 +2749,9 @@ async function performCommonChecks(
   if ((health.runtimeFamily === 'node' || health.runtimeFamily === 'bun') && !health.hasTests) {
     health.hasTests = await detectNodeTestSurface(projectPath, packageJsonData);
   }
+  if (health.runtimeFamily === 'python' && !health.hasTests) {
+    health.hasTests = await detectPythonTestSurface(projectPath);
+  }
 
   // Code Quality checks
   if (health.runtimeFamily === 'node' || health.runtimeFamily === 'bun') {
@@ -3005,6 +3008,49 @@ async function anyRelativePathExists(rootPath: string, relativePaths: string[]):
   ).some(Boolean);
 }
 
+async function readProjectIntentText(projectPath: string): Promise<string> {
+  const candidates = [
+    'pyproject.toml',
+    'requirements.txt',
+    'package.json',
+    'go.mod',
+    'Cargo.toml',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'composer.json',
+    'Gemfile',
+  ];
+  const contents: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      const content = await fsExtra.readFile(path.join(projectPath, candidate), 'utf8');
+      contents.push(content.slice(0, 256_000));
+    } catch {
+      // Missing and unreadable manifests are expected across polyglot projects.
+    }
+  }
+  return contents.join('\n');
+}
+
+async function detectPythonTestSurface(projectPath: string): Promise<boolean> {
+  if (
+    await anyRelativePathExists(projectPath, [
+      'pytest.ini',
+      'tox.ini',
+      'noxfile.py',
+      'conftest.py',
+      'tests',
+      'test',
+    ])
+  ) {
+    return true;
+  }
+
+  const manifestText = await readProjectIntentText(projectPath);
+  return /\[tool\.pytest(?:\.|\])|\bpytest\b|\bunittest\b|\btox\b|\bnox\b/i.test(manifestText);
+}
+
 async function findFileByName(
   rootPath: string,
   options: { name?: string; suffix?: string; under?: string[]; ignoreDirs?: string[] }
@@ -3141,7 +3187,15 @@ async function appendRuntimeAdapterProbes(
       'asgi.py',
       'wsgi.py',
     ];
-    const bootEntryExists = await anyRelativePathExists(projectPath, pythonBootEntrypointMarkers);
+    const pyprojectText = await fsExtra
+      .readFile(path.join(projectPath, 'pyproject.toml'), 'utf8')
+      .catch(() => '');
+    const manifestEntrypointExists = /\[(?:project\.scripts|tool\.poetry\.scripts)\]/i.test(
+      pyprojectText
+    );
+    const bootEntryExists =
+      manifestEntrypointExists ||
+      (await anyRelativePathExists(projectPath, pythonBootEntrypointMarkers));
     pushProjectProbe(health, {
       id: 'adapter-python-boot-entrypoint',
       label: 'Python adapter boot entrypoint',
@@ -3149,11 +3203,11 @@ async function appendRuntimeAdapterProbes(
       severity: 'warn',
       scope: 'project-scoped',
       reason: bootEntryExists
-        ? 'Python application entrypoint markers detected.'
-        : 'No Python application entrypoint markers detected.',
+        ? 'Python application or command entrypoint markers detected.'
+        : 'No Python application or command entrypoint markers detected.',
       recommendation: bootEntryExists
         ? undefined
-        : 'Expose explicit app/main entrypoint for deterministic boot probes.',
+        : 'Expose an explicit app/main module or package script for deterministic launch probes.',
     });
     return;
   }
@@ -3512,12 +3566,16 @@ async function appendBuiltInBackendProbes(
     return;
   }
 
-  const envPath = path.join(projectPath, '.env');
-  const envExamplePath = path.join(projectPath, '.env.example');
-  const hasConfigSurface =
-    (await fsExtra.pathExists(envPath)) ||
-    (await fsExtra.pathExists(envExamplePath)) ||
-    (await fsExtra.pathExists(path.join(projectPath, 'config')));
+  const hasConfigSurface = await anyRelativePathExists(projectPath, [
+    '.env',
+    '.env.example',
+    '.env.sample',
+    '.env.template',
+    '.env.public',
+    'config',
+    'docs/env.md',
+    'ENVIRONMENT.md',
+  ]);
   pushProjectProbe(health, {
     id: 'config-surface',
     label: 'Configuration contract surface',
@@ -3525,11 +3583,11 @@ async function appendBuiltInBackendProbes(
     severity: 'warn',
     scope: 'project-scoped',
     reason: hasConfigSurface
-      ? 'Configuration artifacts detected (.env/.env.example/config).'
+      ? 'Configuration contract artifacts or documentation detected.'
       : 'No explicit configuration contract artifacts detected.',
     recommendation: hasConfigSurface
       ? undefined
-      : 'Add .env.example or explicit config contract documentation for deterministic setup.',
+      : 'Add a secret-free environment example or explicit config contract documentation for deterministic setup.',
   });
 
   const migrationMarkersByRuntime: Record<ProjectRuntimeFamily, string[]> = {
@@ -3562,18 +3620,29 @@ async function appendBuiltInBackendProbes(
     }
   }
 
+  const projectIntentText = await readProjectIntentText(projectPath);
+  const migrationIntent =
+    hasMigrationSurface ||
+    /\b(alembic|sqlalchemy|prisma|typeorm|sequelize|django|drizzle|flyway|liquibase|gorm|diesel|sqlx|entity\s*framework|postgres(?:ql)?|mysql|mariadb|sqlite)\b/i.test(
+      projectIntentText
+    );
+
   pushProjectProbe(health, {
     id: 'migration-surface',
     label: 'Migration/readiness surface',
-    status: hasMigrationSurface ? 'pass' : 'warn',
+    status: hasMigrationSurface || !migrationIntent ? 'pass' : 'warn',
     severity: 'warn',
     scope: 'project-scoped',
+    applicability: migrationIntent ? 'applicable' : 'not-applicable',
     reason: hasMigrationSurface
       ? 'Migration or schema evolution markers detected.'
-      : 'No migration markers detected for this backend runtime.',
-    recommendation: hasMigrationSurface
-      ? undefined
-      : 'Add migration tooling baseline (migrations dir or runtime-native migration config).',
+      : !migrationIntent
+        ? 'No relational persistence or schema-migration intent was detected; a migration surface is not currently applicable.'
+        : 'No migration markers detected for this backend runtime.',
+    recommendation:
+      hasMigrationSurface || !migrationIntent
+        ? undefined
+        : 'Add migration tooling baseline (migrations dir or runtime-native migration config).',
   });
 
   const healthMarkers = [
@@ -3593,18 +3662,28 @@ async function appendBuiltInBackendProbes(
     }
   }
 
+  const healthIntent =
+    hasHealthSurface ||
+    /\b(fastapi|flask|django|express|nestjs|spring[ -]?boot|axum|actix(?:-web)?|gin-gonic|gofiber|asp\.net|laravel|rails)\b/i.test(
+      `${health.framework ?? ''}\n${projectIntentText}`
+    );
+
   pushProjectProbe(health, {
     id: 'runtime-health-surface',
     label: 'Runtime health probe surface',
-    status: hasHealthSurface ? 'pass' : 'warn',
+    status: hasHealthSurface || !healthIntent ? 'pass' : 'warn',
     severity: 'warn',
     scope: 'project-scoped',
+    applicability: healthIntent ? 'applicable' : 'not-applicable',
     reason: hasHealthSurface
       ? 'Health endpoint/config markers detected.'
-      : 'No explicit runtime health endpoint markers detected.',
-    recommendation: hasHealthSurface
-      ? undefined
-      : 'Expose a deterministic health endpoint and keep it covered in verify pack.',
+      : !healthIntent
+        ? 'No HTTP service runtime intent was detected; an endpoint health surface is not currently applicable.'
+        : 'No explicit runtime health endpoint markers detected.',
+    recommendation:
+      hasHealthSurface || !healthIntent
+        ? undefined
+        : 'Expose a deterministic health endpoint and keep it covered in verify pack.',
   });
 
   await appendRuntimeAdapterProbes(projectPath, health);
@@ -3897,6 +3976,33 @@ async function checkProjectUnnormalized(
       (typeof (projectJsonData?.packageManager as string | undefined) === 'string' &&
         (projectJsonData?.packageManager as string).toLowerCase().startsWith('bun@')));
 
+  const rootEntries = await fsExtra.readdir(projectPath).catch(() => [] as string[]);
+  const hasRootDotnetManifest = rootEntries.some(
+    (entry) => entry.endsWith('.csproj') || entry.endsWith('.sln')
+  );
+  const hasRootRuntimeManifest =
+    isNodeProject ||
+    isPythonProject ||
+    isPhpProject ||
+    isRubyProject ||
+    isRustProject ||
+    isElixirProject ||
+    isClojureProject ||
+    isScalaProject ||
+    isDenoProject ||
+    (await fsExtra.pathExists(goModPath)) ||
+    (await fsExtra.pathExists(pomXmlPath)) ||
+    (await fsExtra.pathExists(path.join(projectPath, 'build.gradle'))) ||
+    (await fsExtra.pathExists(path.join(projectPath, 'build.gradle.kts'))) ||
+    hasRootDotnetManifest ||
+    (await fsExtra.pathExists(path.join(projectPath, 'CMakeLists.txt'))) ||
+    (await fsExtra.pathExists(path.join(projectPath, 'meson.build')));
+  const nestedRuntimeCandidates = hasRootRuntimeManifest
+    ? []
+    : detectNestedRuntimeCandidatesFromProject(projectPath);
+  const isCompositeContainerBoundary =
+    !hasRootRuntimeManifest && nestedRuntimeCandidates.length >= 2;
+
   const kotlinBuildPath = path.join(projectPath, 'build.gradle.kts');
   const isKotlinProject =
     projectJsonData?.runtime === 'kotlin' ||
@@ -3909,6 +4015,28 @@ async function checkProjectUnnormalized(
     projectPath,
     projectJsonData ?? null
   );
+
+  if (isCompositeContainerBoundary) {
+    applyBackendFrameworkDetection(health, primaryBackendDetection);
+    health.venvActive = true;
+    health.depsInstalled = true;
+    health.coreInstalled = false;
+    pushProjectProbe(health, {
+      id: 'composite-project-boundary',
+      label: 'Composite project boundary',
+      status: 'warn',
+      severity: 'warn',
+      scope: 'project-scoped',
+      reason: `This adopted root contains ${nestedRuntimeCandidates.length} nested runtime families but no root-owned runtime manifest. Doctor did not apply one nested runtime's dependency lifecycle to the aggregate boundary.`,
+      recommendation:
+        'Register independently operated nested projects as explicit workspace project boundaries, or add doctor.adapters.json checks for the aggregate contract.',
+      issueClass: 'runtime',
+      operationalImpact: 'ci-risk',
+    });
+    await appendCustomConfiguredProbes(projectPath, health);
+    return health;
+  }
+
   const isNativeProject =
     primaryBackendDetection.runtime === 'c' || primaryBackendDetection.runtime === 'cpp';
 
@@ -6757,6 +6885,12 @@ function attachDependencyMaterializationCapabilities(health: ProjectHealth): voi
   for (const command of health.fixCommands ?? []) {
     const parsed = parseDependencySyncFix(command);
     if (!parsed) continue;
+    // Dependency-baseline probes can legitimately recommend a package-manager
+    // command even when the installed dependency tree is already present. Do
+    // not reinterpret that advisory command as a blocking materialization
+    // failure. The ProjectHealth state and the typed diagnosis must describe
+    // the same observable runtime state.
+    if (health.depsInstalled && !materializationIssue) continue;
     const metadata = dependencyMaterializationMetadata(parsed.command);
     const capability = buildDependencyMaterializationRepairCapability({
       issueId: 'runtime-dependency-materialization',

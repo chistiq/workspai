@@ -14,6 +14,7 @@ import type {
   DoctorRepairStrategyStage,
 } from './utils/doctor-repair-capabilities.js';
 import { buildDoctorInternalRepairCommand } from './utils/doctor-repair-capabilities.js';
+import { resolveWorkspaceProjectPaths } from './utils/workspace-project-paths.js';
 import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
@@ -205,6 +206,44 @@ function relativeOrAbsolute(
     : path.relative(workspacePath, filePath).split(path.sep).join('/');
 }
 
+function portableProjectPath(input: {
+  workspacePath: string;
+  projectPath: string;
+  projectName: string;
+  includeAbsolutePaths: boolean;
+}): string {
+  if (input.includeAbsolutePaths) return input.projectPath;
+  return resolveWorkspaceProjectPaths({
+    workspacePath: input.workspacePath,
+    projectPath: input.projectPath,
+    projectName: input.projectName,
+  }).contractRelativePath;
+}
+
+function portableProjectFile(input: {
+  workspacePath: string;
+  projectPath: string;
+  projectName: string;
+  filePath: string;
+  includeAbsolutePaths: boolean;
+}): string | undefined {
+  const absoluteFile = path.isAbsolute(input.filePath)
+    ? path.resolve(input.filePath)
+    : path.resolve(input.projectPath, input.filePath);
+  if (input.includeAbsolutePaths) return absoluteFile;
+  const relativeFile = path.relative(input.projectPath, absoluteFile);
+  if (
+    !relativeFile ||
+    relativeFile === '..' ||
+    relativeFile.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeFile)
+  ) {
+    return undefined;
+  }
+  const projectRef = portableProjectPath(input);
+  return `${projectRef}/${relativeFile.split(path.sep).join('/')}`;
+}
+
 function normalizeBootstrapCommand(command?: string): string {
   const base = command?.trim() || 'npx workspai bootstrap';
   if (!/(?:^|\s)--ci(?:\s|$)/.test(base) && /(?:^|\s)--json(?:\s|$)/.test(base)) {
@@ -218,6 +257,20 @@ function normalizeBootstrapCommand(command?: string): string {
   }
   const withCi = /(?:^|\s)--ci(?:\s|$)/.test(base) ? base : `${base} --ci`;
   return /(?:^|\s)--json(?:\s|$)/.test(withCi) ? withCi : `${withCi} --json`;
+}
+
+function governedInvocationArgs(executable: string, args: string[]): string[] {
+  if (
+    path
+      .basename(executable)
+      .toLowerCase()
+      .replace(/\.cmd$/, '') === 'npx' &&
+    args[0] === 'workspai' &&
+    !args.includes('--no-install')
+  ) {
+    return ['--no-install', ...args];
+  }
+  return args;
 }
 
 function buildCompatibilityMatrixContent(generatedAt: string): string {
@@ -406,11 +459,12 @@ function doctorPlanActions(input: {
         ? step.risk
         : 'guarded';
     const preview = asRecord(step.preview);
-    const projectPath = relativeOrAbsolute(
-      input.workspacePath,
-      absoluteProjectPath,
-      input.includeAbsolutePaths
-    );
+    const projectPath = portableProjectPath({
+      workspacePath: input.workspacePath,
+      projectPath: absoluteProjectPath,
+      projectName,
+      includeAbsolutePaths: input.includeAbsolutePaths,
+    });
     const command = portableCommandFromCapability({
       capability: { ...step, command: originalCommand },
       absoluteProjectPath,
@@ -483,16 +537,17 @@ function doctorPlanActions(input: {
           typeof step.verifyCommand === 'string' && step.verifyCommand.trim()
             ? step.verifyCommand.trim()
             : 'npx workspai doctor project --json',
-        files: asStringArray(step.files).map((filePath) => {
-          const absoluteFilePath = path.isAbsolute(filePath)
-            ? filePath
-            : path.resolve(absoluteProjectPath, filePath);
-          return relativeOrAbsolute(
-            input.workspacePath,
-            absoluteFilePath,
-            input.includeAbsolutePaths
-          );
-        }),
+        files: asStringArray(step.files)
+          .map((filePath) =>
+            portableProjectFile({
+              workspacePath: input.workspacePath,
+              projectPath: absoluteProjectPath,
+              projectName,
+              filePath,
+              includeAbsolutePaths: input.includeAbsolutePaths,
+            })
+          )
+          .filter((filePath): filePath is string => Boolean(filePath)),
         notes: [
           `Source Doctor step: ${id}`,
           `Doctor finding id: ${findingId}`,
@@ -537,7 +592,7 @@ function portableCommandFromCapability(input: {
 
   const invocation = asRecord(input.capability.invocation);
   const executable = typeof invocation?.executable === 'string' ? invocation.executable.trim() : '';
-  const args = asStringArray(invocation?.args);
+  const args = governedInvocationArgs(executable, asStringArray(invocation?.args));
   if (executable) {
     return [executable, ...args]
       .map((part) => (/^[a-zA-Z0-9_./:@=+-]+$/.test(part) ? part : JSON.stringify(part)))
@@ -559,17 +614,17 @@ function portableInvocationFromCapability(input: {
 }): ArtifactRemediationAction['invocation'] | undefined {
   const invocation = asRecord(input.capability.invocation);
   const executable = typeof invocation?.executable === 'string' ? invocation.executable.trim() : '';
-  const args = asStringArray(invocation?.args);
+  const rawArgs = asStringArray(invocation?.args);
   if (
     !executable ||
-    args.length !== (Array.isArray(invocation?.args) ? invocation.args.length : 0)
+    rawArgs.length !== (Array.isArray(invocation?.args) ? invocation.args.length : 0)
   ) {
     return undefined;
   }
   return {
     cwd: input.includeAbsolutePaths ? input.absoluteProjectPath : '.',
     executable,
-    args,
+    args: governedInvocationArgs(executable, rawArgs),
   };
 }
 
@@ -718,19 +773,28 @@ function doctorEvidenceActions(input: {
         probeFindingStatus.get(capabilityId) ??
         (transaction ? 'blocking' : 'advisory');
       if (transaction) {
-        transaction.projectPath = relativeOrAbsolute(
-          input.workspacePath,
-          absoluteProjectPath,
-          input.includeAbsolutePaths
-        );
+        transaction.projectPath = portableProjectPath({
+          workspacePath: input.workspacePath,
+          projectPath: absoluteProjectPath,
+          projectName,
+          includeAbsolutePaths: input.includeAbsolutePaths,
+        });
       }
       const strategy = portableDoctorStrategy({
         strategy: capability.strategy,
         includeAbsolutePaths: input.includeAbsolutePaths,
       });
-      const files = asStringArray(capability.files).map((filePath) =>
-        relativeOrAbsolute(input.workspacePath, filePath, input.includeAbsolutePaths)
-      );
+      const files = asStringArray(capability.files)
+        .map((filePath) =>
+          portableProjectFile({
+            workspacePath: input.workspacePath,
+            projectPath: absoluteProjectPath,
+            projectName,
+            filePath,
+            includeAbsolutePaths: input.includeAbsolutePaths,
+          })
+        )
+        .filter((filePath): filePath is string => Boolean(filePath));
       const incomingAction = actionBase({
         id: `doctor.${projectName}.${capabilityId}`,
         artifactKind: input.report.artifactKind,
@@ -770,11 +834,12 @@ function doctorEvidenceActions(input: {
         ],
         scope: 'project',
         projectName,
-        projectPath: relativeOrAbsolute(
-          input.workspacePath,
-          absoluteProjectPath,
-          input.includeAbsolutePaths
-        ),
+        projectPath: portableProjectPath({
+          workspacePath: input.workspacePath,
+          projectPath: absoluteProjectPath,
+          projectName,
+          includeAbsolutePaths: input.includeAbsolutePaths,
+        }),
         sourceStepId: capabilityId,
         findingId:
           diagnosisIdentity?.findingId ??

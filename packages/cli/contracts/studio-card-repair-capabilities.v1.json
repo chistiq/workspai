@@ -1,6 +1,6 @@
 {
   "schemaVersion": "workspai.studio-card-repair-capabilities.v1",
-  "invariant": "A card repair starts with its declared repairPolicy but every unresolved policy path transfers to governed causal source repair. It closes only after its exact producer refreshes, its selected causal action set is absent, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.",
+  "invariant": "An aggregate card is a presentation boundary, never a mutation boundary. Blocking findings form a deterministic sequential causal queue; each CLI transaction owns exactly one causal finding family and one canonical project unless declared dependencies require a bounded cross-project closure. Advisory and informational findings never widen that queue. A card repair starts with its declared repairPolicy but every unresolved policy path transfers to governed causal source repair. After each exact target closes, fresh evidence selects the next target. The card closes only after its exact producer refreshes, no selected causal action remains, and aggregate Workspace Verify completes without an execution failure. Unrelated workspace blockers are reported separately and do not reopen the selected card.",
   "cards": [
     {
       "cardId": "doctor",
@@ -11,6 +11,8 @@
       "verifyArtifact": ".workspai/reports/doctor-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "diagnose-and-repair",
       "remediationArtifacts": [
@@ -27,6 +29,8 @@
       "verifyArtifact": ".workspai/reports/doctor-project-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "diagnose-and-repair",
       "remediationArtifacts": [
@@ -43,6 +47,8 @@
       "verifyArtifact": ".workspai/reports/pipeline-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
@@ -58,6 +64,8 @@
       "verifyArtifact": ".workspai/reports/analyze-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
@@ -73,6 +81,8 @@
       "verifyArtifact": ".workspai/reports/release-readiness-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
@@ -88,6 +98,8 @@
       "verifyArtifact": ".workspai/reports/bootstrap-compliance.latest.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
@@ -103,6 +115,8 @@
       "verifyArtifact": ".workspai/workspace-registry.v1.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -116,6 +130,8 @@
       "verifyArtifact": ".workspai/workspace.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -129,6 +145,8 @@
       "verifyArtifact": ".workspai/reports/workspace-contract-verify-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
@@ -142,6 +160,8 @@
       "verifyArtifact": ".workspai/reports/autopilot-release-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
@@ -155,6 +175,8 @@
       "verifyArtifact": ".workspai/reports/workspace-run-last.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
@@ -170,6 +192,8 @@
       "verifyArtifact": ".workspai/toolchain.lock",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
@@ -183,6 +207,8 @@
       "verifyArtifact": ".workspai/reports/doctor-project-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "diagnose-and-repair",
       "remediationArtifacts": [
@@ -198,6 +224,8 @@
       "verifyArtifact": ".workspai/reports/snapshot-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -211,6 +239,8 @@
       "verifyArtifact": ".workspai/reports/workspace-model.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -224,6 +254,8 @@
       "verifyArtifact": ".workspai/reports/workspace-model-snapshot.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -237,6 +269,8 @@
       "verifyArtifact": ".workspai/reports/workspace-model-diff-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -250,6 +284,8 @@
       "verifyArtifact": ".workspai/reports/workspace-impact-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -263,6 +299,8 @@
       "verifyArtifact": ".workspai/reports/workspace-intelligence-run-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
@@ -276,6 +314,8 @@
       "verifyArtifact": ".workspai/reports/workspace-verify-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": [
@@ -291,6 +331,8 @@
       "verifyArtifact": ".workspai/reports/workspace-explain-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -304,6 +346,8 @@
       "verifyArtifact": ".workspai/reports/workspace-why-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -317,6 +361,8 @@
       "verifyArtifact": ".workspai/reports/workspace-trace-last-run.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -330,6 +376,8 @@
       "verifyArtifact": ".workspai/reports/workspace-model.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -343,6 +391,8 @@
       "verifyArtifact": ".workspai/reports/workspace-context-agent.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -356,6 +406,8 @@
       "verifyArtifact": ".workspai/reports/agent-customization-pack.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -369,6 +421,8 @@
       "verifyArtifact": ".workspai/reports/share-bundle.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -382,6 +436,8 @@
       "verifyArtifact": ".workspai/archive-manifest.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -395,6 +451,8 @@
       "verifyArtifact": ".workspai/reports/mirror-ops.latest.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -408,6 +466,8 @@
       "verifyArtifact": ".workspai/cache-config.yml",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "refresh-producer",
       "remediationArtifacts": []
@@ -421,6 +481,8 @@
       "verifyArtifact": ".workspai/policies.yml",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []
@@ -434,6 +496,8 @@
       "verifyArtifact": ".workspai/reports/infra-plan.json",
       "aggregateVerifyCommand": "npx workspai workspace verify --json",
       "targetClosure": "exact-producer-and-causal-action-set",
+      "aggregateRepair": "sequential-causal-queue",
+      "transactionScope": "one-causal-finding-family",
       "workspacePosture": "reported-separately",
       "repairPolicy": "source-repair-then-produce",
       "remediationArtifacts": []

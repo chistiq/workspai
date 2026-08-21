@@ -89,6 +89,140 @@ afterEach(async () => {
 });
 
 describe('Workspace Repair Engine', () => {
+  it('plans and executes one portable causal target for a registered external project', async () => {
+    const { workspacePath } = await workspaceFixture();
+    const externalProject = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-external-canonical-')
+    );
+    roots.push(externalProject);
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      projects: [
+        {
+          slug: 'external-api',
+          relativePath: 'external/external-api',
+          externalPath: externalProject,
+          source: 'adopted-local',
+          relationship: 'adopted',
+        },
+      ],
+    });
+    const operation = {
+      type: 'file-create' as const,
+      path: path.join(externalProject, '.env.example'),
+      content: 'APP_ENV=test\n',
+      overwrite: false as const,
+    };
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        projects: [
+          {
+            name: 'external-api',
+            path: externalProject,
+            probes: [
+              {
+                id: 'surface-environment-config',
+                status: 'fail',
+                repairCapability: {
+                  id: 'surface-environment-config.file-create',
+                  title: 'Create environment contract',
+                  status: 'available',
+                  risk: 'safe',
+                  canAutoFix: true,
+                  canEditFiles: true,
+                  files: [operation.path],
+                  command: buildDoctorInternalRepairCommand(operation),
+                  operation,
+                  verifyCommand: 'npx workspai doctor project --json',
+                  reason: 'Environment contract is missing.',
+                },
+              },
+            ],
+          },
+        ],
+      }
+    );
+
+    const planned = await planWorkspaceRepair({ workspacePath, cardId: 'doctor' });
+
+    expect(planned.state, planned.decision?.reason).toBe('awaiting-approval');
+    expect(planned.target).toMatchObject({
+      scope: 'project',
+      projectName: 'external-api',
+      projectPath: 'external/external-api',
+    });
+    expect(planned.checkpoint.files.map((entry) => entry.path)).toEqual([
+      'external/external-api/.env.example',
+    ]);
+    expect(JSON.stringify(planned)).not.toContain(externalProject);
+
+    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
+    const completed = await executeWorkspaceRepair(
+      { workspacePath, transactionId: planned.transactionId },
+      {
+        verify: vi.fn(async () => ({
+          status: 'passed',
+          exitCode: 0,
+          artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        })),
+      }
+    );
+    expect(completed.state, JSON.stringify(completed, null, 2)).toBe('closed');
+    expect(await fsExtra.readFile(path.join(externalProject, '.env.example'), 'utf8')).toBe(
+      'APP_ENV=test\n'
+    );
+  });
+
+  it('selects a safe actionable advisory before manual guidance when no blocker exists', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const operation = {
+      type: 'file-create' as const,
+      path: '.env.example',
+      content: 'APP_ENV=test\n',
+      overwrite: false as const,
+    };
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-remediation-plan-last-run.json'),
+      {
+        schemaVersion: 'doctor-remediation-plan-v2',
+        steps: [
+          {
+            id: 'manual-scanner',
+            diagnosisFindingId: 'scanner',
+            causalKey: 'api:security:scanner',
+            findingStatus: 'advisory',
+            projectName: 'api',
+            projectPath,
+            originalCommand: '',
+            executableInCurrentEnvironment: false,
+            risk: 'guarded',
+            files: ['package.json'],
+            studioStatus: { state: 'guidance-only' },
+          },
+          {
+            id: 'environment-contract',
+            diagnosisFindingId: 'environment',
+            causalKey: 'api:environment:contract',
+            findingStatus: 'advisory',
+            projectName: 'api',
+            projectPath,
+            originalCommand: buildDoctorInternalRepairCommand(operation),
+            executableInCurrentEnvironment: true,
+            risk: 'safe',
+            files: ['.env.example'],
+            operation,
+            studioStatus: { state: 'ready' },
+          },
+        ],
+      }
+    );
+
+    const planned = await planWorkspaceRepair({ workspacePath, cardId: 'doctor' });
+
+    expect(planned.target.actionIds).toEqual(['doctor.environment-contract']);
+    expect(planned.state, planned.decision?.reason).toBe('awaiting-approval');
+  });
+
   it('binds explicit approval to the immutable source plan and closes only after canonical verify', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     await writeFileRepairEvidence({ workspacePath, projectPath });
@@ -154,7 +288,7 @@ describe('Workspace Repair Engine', () => {
     ).not.toThrow();
   });
 
-  it('publishes a workspace target when one Doctor transaction spans multiple projects', async () => {
+  it('selects one project-scoped causal target when a Doctor card spans multiple projects', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     const secondProjectPath = path.join(workspacePath, 'web');
     await fsExtra.ensureDir(secondProjectPath);
@@ -207,14 +341,14 @@ describe('Workspace Repair Engine', () => {
 
     expect(planned.target).toMatchObject({
       cardId: 'doctor',
-      scope: 'workspace',
-      actionIds: [
-        'doctor.api.surface-environment-config.file-create',
-        'doctor.web.surface-environment-config.file-create',
-      ],
+      scope: 'project',
+      projectName: 'api',
+      projectPath: 'api',
+      actionIds: ['doctor.api.surface-environment-config.file-create'],
     });
-    expect(planned.target).not.toHaveProperty('projectName');
-    expect(planned.target).not.toHaveProperty('projectPath');
+    expect(planned.target.actionIds).not.toContain(
+      'doctor.web.surface-environment-config.file-create'
+    );
   });
 
   it('isolates one blocking finding family from unrelated Doctor guidance and advisory actions', async () => {
@@ -638,6 +772,7 @@ describe('Workspace Repair Engine', () => {
 
   it('materializes a missing dependency tree without requiring a source mutation', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
+    await fsExtra.ensureDir(path.join(projectPath, 'node_modules'));
     await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
       name: 'catalog-api',
       scripts: { test: 'vitest run', build: 'tsc --noEmit' },
@@ -668,6 +803,7 @@ describe('Workspace Repair Engine', () => {
                 files: [
                   path.join(projectPath, 'package.json'),
                   path.join(projectPath, 'package-lock.json'),
+                  path.join(projectPath, 'node_modules'),
                 ],
                 command,
                 verifyCommand: 'npx workspai doctor project --json',
@@ -708,6 +844,7 @@ describe('Workspace Repair Engine', () => {
                 files: [
                   path.join(projectPath, 'package.json'),
                   path.join(projectPath, 'package-lock.json'),
+                  path.join(projectPath, 'node_modules'),
                 ],
                 command,
                 invocation: { cwd: projectPath, executable: 'npm', args: ['install'] },
@@ -1010,6 +1147,7 @@ describe('Workspace Repair Engine', () => {
 
   it('compiles a model proposal into the same approval, checkpoint, validation, and verify boundary', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
+    await writeFileRepairEvidence({ workspacePath, projectPath });
     const sourcePath = path.join(projectPath, 'src', 'service.ts');
     await fsExtra.outputFile(sourcePath, 'export const ready = false;\n');
     const proposal = {
@@ -1106,8 +1244,85 @@ describe('Workspace Repair Engine', () => {
     expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('export const ready = true;\n');
   });
 
+  it('fails closed instead of widening an ambiguous card proposal across projects', async () => {
+    const { workspacePath, projectPath } = await workspaceFixture();
+    const webPath = path.join(workspacePath, 'web');
+    await fsExtra.ensureDir(webPath);
+    const operationFor = (targetPath: string) => ({
+      type: 'file-create' as const,
+      path: path.join(targetPath, '.env.example'),
+      content: 'APP_ENV=development\n',
+      overwrite: false as const,
+    });
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        projects: [
+          { name: 'api', path: projectPath },
+          { name: 'web', path: webPath },
+        ].map((project) => {
+          const operation = operationFor(project.path);
+          return {
+            ...project,
+            probes: [
+              {
+                id: 'surface-environment-config',
+                status: 'fail',
+                repairCapability: {
+                  id: 'surface-environment-config.file-create',
+                  title: 'Create environment contract',
+                  status: 'available',
+                  risk: 'safe',
+                  canAutoFix: true,
+                  canEditFiles: true,
+                  requiresApproval: true,
+                  requiresReview: false,
+                  files: [operation.path],
+                  command: buildDoctorInternalRepairCommand(operation),
+                  operation,
+                  verifyCommand: 'npx workspai doctor project --json',
+                  refreshCommands: [],
+                  reason: 'Environment contract is missing.',
+                },
+              },
+            ],
+          };
+        }),
+      },
+      { spaces: 2 }
+    );
+    const sourcePath = path.join(projectPath, 'service.ts');
+    await fsExtra.writeFile(sourcePath, 'before\n');
+
+    const planned = await planWorkspaceRepairProposal({
+      workspacePath,
+      proposal: {
+        schemaVersion: WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION,
+        cardId: 'doctor',
+        blockerSignature: 'doctor-workspace-generation',
+        rationale: 'This proposal intentionally omits a causal action target.',
+        changes: [
+          {
+            id: 'ambiguous-source-change',
+            path: 'api/service.ts',
+            operation: 'write',
+            expectedBeforeHash: sha256('before\n'),
+            content: 'after\n',
+            risk: 'guarded',
+            summary: 'Attempt an ambiguous repair.',
+          },
+        ],
+      },
+    });
+
+    expect(planned.state).toBe('decision-required');
+    expect(planned.decision?.reason).toContain('target is ambiguous');
+    expect(planned.checkpoint.status).toBe('pending');
+  });
+
   it('accepts an exit-1 target producer only when canonical evidence was refreshed', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
+    await writeFileRepairEvidence({ workspacePath, projectPath });
     const sourcePath = path.join(projectPath, 'src', 'doctor-service.ts');
     await fsExtra.outputFile(sourcePath, 'export const ready = false;\n');
     const planned = await planWorkspaceRepairProposal(
@@ -1166,6 +1381,7 @@ describe('Workspace Repair Engine', () => {
 
   it('bounds an exit-1 producer failure when no canonical evidence was refreshed', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
+    await writeFileRepairEvidence({ workspacePath, projectPath });
     const sourcePath = path.join(projectPath, 'producer-failure.txt');
     await fsExtra.writeFile(sourcePath, 'blocked\n');
     const planned = await planWorkspaceRepairProposal({
@@ -1267,7 +1483,7 @@ describe('Workspace Repair Engine', () => {
     }
   });
 
-  it('expires approval before checkpoint when the selected causal action drifted', async () => {
+  it('rejects a stale causal action before approval or checkpoint', async () => {
     const { workspacePath, projectPath } = await workspaceFixture();
     const sourcePath = path.join(projectPath, 'stale-target.txt');
     await fsExtra.writeFile(sourcePath, 'blocked\n');
@@ -1294,26 +1510,13 @@ describe('Workspace Repair Engine', () => {
         ],
       },
     });
-    expect(planned.state).toBe('awaiting-approval');
-    await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
-    const completed = await executeWorkspaceRepair(
-      { workspacePath, transactionId: planned.transactionId },
-      {
-        runTargetProducer: vi.fn(async () => ({
-          exitCode: 2,
-          stdout: '{"status":"blocked"}',
-          stderr: '',
-        })),
-      }
-    );
-
-    expect(completed).toMatchObject({
+    expect(planned).toMatchObject({
       state: 'decision-required',
-      approval: { status: 'expired' },
+      approval: { status: 'pending' },
       checkpoint: { status: 'pending' },
-      decision: { options: ['cancel'] },
+      decision: { options: expect.arrayContaining(['replan', 'cancel']) },
     });
-    expect(completed.decision?.reason).toContain('Target precondition failed before checkpoint');
+    expect(planned.decision?.reason).toContain('stale or unknown causal action ids');
     expect(await fsExtra.readFile(sourcePath, 'utf8')).toBe('blocked\n');
   });
 
@@ -2243,6 +2446,8 @@ describe('Workspace Repair Engine', () => {
     });
     const projectPath = path.relative(workspacePath, externalProject).replace(/\\/g, '/');
     const sourcePath = `${projectPath}/src.js`;
+    const portableProjectPath = 'external/external-api';
+    const portableSourcePath = `${portableProjectPath}/src.js`;
 
     const planned = await planWorkspaceRepairProposal(
       {
@@ -2272,9 +2477,10 @@ describe('Workspace Repair Engine', () => {
     expect(planned.target).toMatchObject({
       scope: 'project',
       projectName: 'external-api',
-      projectPath,
+      projectPath: portableProjectPath,
     });
-    expect(planned.checkpoint.files.map((entry) => entry.path)).toContain(sourcePath);
+    expect(planned.checkpoint.files.map((entry) => entry.path)).toContain(portableSourcePath);
+    expect(JSON.stringify(planned)).not.toContain(externalProject);
 
     await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
     const completed = await executeWorkspaceRepair(

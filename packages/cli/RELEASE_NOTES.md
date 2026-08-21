@@ -5,6 +5,44 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Planned Release: v0.63.0 (publication pending)
+
+### Causal Repair Queues and Real-World Doctor Hardening
+
+Workspai 0.63.0 makes aggregate workspace incidents safer to repair and makes
+Doctor more accurate on real polyglot repositories. Studio can present one
+workspace card containing several findings, while the CLI keeps each mutation
+transaction bounded to one causal finding family and one canonical project.
+
+**What's New:**
+
+- Sequential causal repair queues for aggregate workspace and project cards.
+- Portable governed repair for registered linked projects through
+  `external/<project>` references.
+- Intent-aware Doctor checks for environment, test, entrypoint, migration, and
+  health surfaces.
+- Explicit composite-boundary diagnosis for repositories containing several
+  nested runtimes without a root-owned lifecycle manifest.
+- Runtime-native audit failures that distinguish unavailable tooling from clean
+  security evidence.
+
+**Compatibility:** Existing Studio handoff and repair contracts remain on their
+version-one schema identifiers. New capability fields are additive; public
+commands and existing persisted workspace artifacts remain supported.
+
+**Publication status:** Pending.
+
+**Install after publication:**
+
+```bash
+npm install -g workspai@0.63.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.63.0.md)
+
+---
+
 ## Latest Release: v0.62.0 (August 20, 2026)
 
 ### Bounded Agent Entry and Portable Operational Skills

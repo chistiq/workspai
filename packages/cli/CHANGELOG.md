@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.63.0] - Unreleased
+
+### Added
+
+- Added deterministic sequential causal queues for aggregate Studio cards. A
+  workspace card can retain multiple blocking findings without widening one
+  mutation transaction across unrelated projects or causes.
+- Added explicit aggregate-repair and transaction-scope capabilities so IDEs
+  and agents can distinguish a presentation boundary from the exact causal
+  finding family owned by one repair transaction.
+- Added canonical resolution for portable `external/<project>` references,
+  allowing registered linked projects to participate in governed checkpoint,
+  mutation, reconciliation, verification, and rollback without persisting a
+  machine-local project root.
+
+### Changed
+
+- Made Workspace Repair select one blocking finding, one causal action family,
+  and one canonical project at a time. After exact verification, fresh evidence
+  determines the next queued target instead of reusing a stale aggregate plan.
+- Made remediation plans portable for linked projects. Project paths, file
+  proofs, transaction targets, and command working directories now use
+  canonical external project references, while runtime execution resolves those
+  references only inside the registered boundary.
+- Made Workspai-owned `npx` repair invocations use `--no-install`, preventing a
+  governed repair from fetching an unverified CLI when the required local
+  executable is unavailable.
+- Made Doctor intent-aware for environment contracts, Python command
+  entrypoints, Python and Bun test surfaces, migration applicability, and HTTP
+  health applicability.
+- Made aggregate repository roots with multiple nested runtimes but no
+  root-owned runtime manifest explicit composite boundaries instead of applying
+  one nested runtime lifecycle to the complete repository.
+
+### Fixed
+
+- Prevented advisory dependency-baseline commands from becoming false blocking
+  dependency-materialization findings when the runtime dependency tree is
+  already present.
+- Classified non-throwing `ENOENT` audit executions as `tool-unavailable` and
+  never as a clean or malformed security result.
+- Prevented host and shell variables from producing misleading `.env.example`
+  repairs for desktop applications, developer tools, and aggregate platforms.
+- Preserved canonical external-project casing across remediation actions,
+  transaction stages, checkpoints, and adapters.
+- Removed an unnecessary nested-runtime scan for projects that already own a
+  root runtime manifest, reducing real Deno Doctor qualification from minutes
+  to seconds while retaining cross-runtime evidence.
+
 ## [0.62.0] - 2026-08-20
 
 ### Added
