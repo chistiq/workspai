@@ -564,6 +564,71 @@ describe('workspace agent sync', () => {
     ).toBe(false);
   });
 
+  it('preserves an authored project provider adapter symlink during transactional sync', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'apps', 'web');
+    const authoredRulesPath = path.join(projectPath, '.claude-rules.md');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'web',
+      runtime: 'node',
+      framework: 'astro',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: new Date().toISOString(),
+      workspace: { name: 'sync-lab', profile: 'node-only' },
+      projects: [
+        {
+          slug: 'web',
+          relativePath: 'apps/web',
+          relationship: 'managed',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+    await fsExtra.writeFile(authoredRulesPath, '# Repository Claude rules\n');
+    try {
+      await fsExtra.symlink('.claude-rules.md', path.join(projectPath, 'CLAUDE.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      targets: ['claude'],
+    });
+
+    expect((await fsExtra.lstat(path.join(projectPath, 'CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    expect(await fsExtra.readFile(authoredRulesPath, 'utf8')).toBe('# Repository Claude rules\n');
+    expect(result.projectLenses?.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          projectPath,
+          hostCoverage: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'claude',
+              status: 'blocked',
+              reason: expect.stringContaining('repository-authored symbolic link'),
+            }),
+          ]),
+        }),
+      ])
+    );
+  });
+
   it('does not treat the accepted model snapshot baseline as TTL-stale', async () => {
     const workspacePath = await makeWorkspace();
     await fsExtra.outputJson(

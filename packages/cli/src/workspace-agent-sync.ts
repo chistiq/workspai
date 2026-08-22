@@ -2867,7 +2867,20 @@ export async function syncWorkspaceAgentGrounding(
         'AGENTS.md',
         '.gitignore',
       ]) {
-        await transaction.captureFile(path.join(project.projectPath, relativePath));
+        const absolutePath = path.join(project.projectPath, relativePath);
+        const preservesAuthoredSymlink =
+          relativePath === 'AGENTS.md' ||
+          PROJECT_AGENT_ADAPTER_ENTRY_FILES.some((entryPath) => entryPath === relativePath);
+        if (preservesAuthoredSymlink) {
+          const stat = await fsExtra.lstat(absolutePath).catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw error;
+          });
+          // Project grounding treats provider entry symlinks as authored
+          // repository state. Do not follow, replace, or snapshot their target.
+          if (stat?.isSymbolicLink()) continue;
+        }
+        await transaction.captureFile(absolutePath);
       }
     }
     const result = await syncWorkspaceAgentGroundingUnsafe(options);
