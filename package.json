@@ -1,7 +1,7 @@
 {
   "name": "workspai",
   "private": true,
-  "version": "0.63.0",
+  "version": "0.64.0",
   "description": "Workspai monorepo for Workspace Intelligence packages.",
   "author": "Chistiq",
   "license": "MIT",

@@ -5,6 +5,47 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Latest Release: v0.64.0 (August 22, 2026)
+
+### Platform-Aware Creation and Polyglot Intelligence Fidelity
+
+Workspai 0.64.0 makes first-run workspace creation more deterministic across
+operating systems and strengthens the evidence produced from large polyglot
+repositories. Create consumers can plan from one published capability contract,
+while Graph and Doctor preserve runtime boundaries and avoid overstating
+dependency or source evidence.
+
+**What's New:**
+
+- A versioned Create Planner contract for profiles, executable kits, runtimes,
+  optional Python-engine requirements, and canonical post-create lifecycle.
+- Platform-aware Python, venv, pip, pipx, and Poetry preflight with concise,
+  method-specific recovery guidance and cleanup of partial environments.
+- Language-aware source imports across major application and systems-language
+  ecosystems, including proof-backed C/C++ project-root includes.
+- Distinct identities for same-name packages at monorepo manifest boundaries.
+- More precise Doctor dependency evidence for native, aggregate, Deno, Cargo,
+  Go, Bundler, Mix, and Clojure projects.
+- Hermetic, publication-safe real-world qualification that cannot consume or
+  modify the user's canonical workspace registry.
+
+**Compatibility:** Existing command forms, workspace contracts, Graph schemas,
+agent entry artifacts, and Studio integrations remain supported. The Create
+Planner contract is additive and designed for CLI, IDE, and agent consumers.
+
+**Publication status:** Released August 22, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.64.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.64.0/packages/cli/releases/RELEASE_NOTES_v0.64.0.md)
+
+---
+
 ## Latest Release: v0.63.0 (August 21, 2026)
 
 ### Causal Repair Queues and Real-World Doctor Hardening
