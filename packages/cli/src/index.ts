@@ -61,7 +61,7 @@ import {
   isWrapperLifecycleCommand,
 } from './utils/cli-lifecycle-contract.js';
 import { findRapidkitProjectRoot } from './utils/project-command-capabilities.js';
-import { canonicalizeProjectMetadata, readProjectMetadata } from './utils/project-metadata.js';
+import { canonicalizeProjectMetadata } from './utils/project-metadata.js';
 import {
   ProjectWorkspaceResolutionError,
   repairProjectWorkspaceLink,
@@ -156,6 +156,8 @@ import {
 import {
   collectWorkspaceProfileRuntimes,
   formatWorkspaceProfileCompatibilityHint,
+  isPythonFreeWorkspaceProfile,
+  PYTHON_CAPABLE_WORKSPACE_PROFILES,
   readWorkspaceManifestProfile,
   readWorkspaceProfilePolicyMode,
   resolveWorkspaceProfileCompatibility,
@@ -510,12 +512,46 @@ export async function createWorkspaceVenv(
   dependencies: PythonProjectOrchestrationDependencies = {}
 ): Promise<number> {
   const runCommand = dependencies.runCommand ?? runCommandInCwd;
+  const venvPath = path.join(workspacePath, '.venv');
+  const venvExistedBeforeAttempt = await fsExtra.pathExists(venvPath);
   for (const candidate of dependencies.pythonCandidates ?? hostPythonCandidates()) {
     const args = candidate === 'py' ? ['-3', '-m', 'venv', '.venv'] : ['-m', 'venv', '.venv'];
     const code = await runCommand(candidate, args, workspacePath);
     if (code === 0) return 0;
+    if (!venvExistedBeforeAttempt) {
+      await fsExtra.remove(venvPath);
+    }
   }
   return 1;
+}
+
+export async function ensureWorkspaceVenvHasPip(
+  workspacePath: string,
+  dependencies: PythonProjectOrchestrationDependencies = {}
+): Promise<number> {
+  const runCommand = dependencies.runCommand ?? runCommandInCwd;
+  const venvPath = path.join(workspacePath, '.venv');
+  let venvPython = getVenvPythonPath(venvPath);
+
+  if (await fsExtra.pathExists(venvPython)) {
+    const pipStatus = await runCommand(venvPython, ['-m', 'pip', '--version'], workspacePath);
+    if (pipStatus === 0) return 0;
+
+    // A failed venv creation from an older Workspai release can leave an
+    // interpreter without pip. The workspace-level venv is Workspai-owned, so
+    // replace that invalid environment before retrying dependency bootstrap.
+    await fsExtra.remove(venvPath);
+  }
+
+  const venvStatus = await createWorkspaceVenv(workspacePath, dependencies);
+  if (venvStatus !== 0) return venvStatus;
+
+  venvPython = getVenvPythonPath(venvPath);
+  const pipStatus = await runCommand(venvPython, ['-m', 'pip', '--version'], workspacePath);
+  if (pipStatus !== 0) {
+    await fsExtra.remove(venvPath);
+  }
+  return pipStatus;
 }
 
 export async function createProjectVenv(
@@ -951,8 +987,8 @@ async function finalizeCreatedProjectWorkspace(
       relationship: relationship === 'adopted' ? 'adopted' : 'managed',
       mode: 'managed',
     });
+    await syncWorkspaceContractAfterProjectChange(workspacePath, { strict: true });
     await transaction.commit();
-    await syncWorkspaceContractAfterProjectChange(workspacePath);
   } catch (error) {
     await rollbackProjectLifecycleTransaction(transaction, error);
   }
@@ -1603,9 +1639,18 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
 
       return 0;
     } catch (e) {
-      process.stderr.write(
-        `Workspai CLI failed to create workspace: ${(e as Error)?.message ?? e}\n`
-      );
+      if (e instanceof RapidKitError) {
+        process.stderr.write(`\n❌ ${e.message}\n`);
+        if (e.details) {
+          process.stderr.write(`\n${e.details}\n`);
+        }
+        logger.debug('Create workspace error', { code: e.code, stack: e.stack });
+      } else {
+        process.stderr.write(
+          `Workspai CLI failed to create workspace: ${(e as Error)?.message ?? e}\n`
+        );
+        logger.debug('Unexpected create workspace error', e);
+      }
       return 1;
     }
   }
@@ -2234,12 +2279,15 @@ function resolveWorkspaceForIngestion(startPath: string): {
 
 async function syncWorkspaceContractAfterProjectChange(
   workspacePath: string,
-  options?: { silent?: boolean }
+  options?: { silent?: boolean; strict?: boolean }
 ): Promise<void> {
   try {
     const { syncWorkspaceConsumerArtifacts } = await import('./utils/workspace-onboarding.js');
     await syncWorkspaceConsumerArtifacts(workspacePath, { silent: options?.silent });
   } catch (error) {
+    if (options?.strict) {
+      throw error;
+    }
     if (!options?.silent) {
       console.log(chalk.yellow(`⚠️  Workspace consumer sync skipped: ${(error as Error).message}`));
       console.log(
@@ -3346,7 +3394,7 @@ export async function handleAdoptCommand(
 }
 
 export async function installWorkspaceDependencies(workspacePath: string): Promise<number> {
-  const PYTHON_REQUIRED_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
+  const PYTHON_DEFAULT_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
   const dependencyTimeoutMs = resolveWorkspaceDependencyTimeoutMs();
 
   let workspaceProfile = 'minimal';
@@ -3374,7 +3422,11 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
   }
 
   const workspaceRequiresPython = async (): Promise<boolean> => {
-    if (!pythonEngineSkipped && PYTHON_REQUIRED_PROFILES.has(workspaceProfile)) {
+    if (isPythonFreeWorkspaceProfile(workspaceProfile) && workspaceProfile !== 'minimal') {
+      return false;
+    }
+
+    if (!pythonEngineSkipped && PYTHON_DEFAULT_PROFILES.has(workspaceProfile)) {
       return true;
     }
 
@@ -3386,12 +3438,16 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
     for (const projectPath of projectPaths) {
       const projectJson = readRapidkitProjectJson(projectPath);
       const moduleSupport = projectJson?.module_support;
-      const metadata = readProjectMetadata(projectPath);
+      const kitName =
+        typeof projectJson?.kit_name === 'string'
+          ? projectJson.kit_name
+          : typeof projectJson?.kit === 'string'
+            ? projectJson.kit
+            : undefined;
+      const kit = kitName ? resolveKitDefinition(kitName) : null;
 
-      if (pythonEngineSkipped) {
-        if (metadata?.moduleSupport === true) {
-          return true;
-        }
+      if (pythonEngineSkipped || workspaceProfile === 'minimal') {
+        if (kit?.workspacePythonEngine === 'required') return true;
         continue;
       }
 
@@ -3437,10 +3493,8 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
 
   const installRapidKitCoreWithVenv = async (): Promise<number> => {
     const venvBin = workspaceVenvPythonBin(workspacePath);
-    if (!(await fsExtra.pathExists(venvBin))) {
-      const venvCode = await createWorkspaceVenv(workspacePath);
-      if (venvCode !== 0) return venvCode;
-    }
+    const venvCode = await ensureWorkspaceVenvHasPip(workspacePath);
+    if (venvCode !== 0) return venvCode;
 
     const testLocalPath = readWorkspaiEnv('DEV_PATH');
     const hasLocalRapidKitPath = testLocalPath ? await fsExtra.pathExists(testLocalPath) : false;
@@ -4055,17 +4109,22 @@ export async function handleBootstrapCommand(
     // Persist profile back to workspace.json if an explicit/profile-selected value was given
     // and differs from what's currently stored. This keeps workspace.json as the
     // single source of truth so future bare `workspai bootstrap` calls inherit it.
-    if (
-      workspacePath &&
-      !complianceOnly &&
-      selectedProfile &&
-      selectedProfile !== workspaceProfile
-    ) {
+    if (workspacePath && !complianceOnly && selectedProfile) {
       try {
         const workspaceManifestPath = workspaceMetadataPath(workspacePath, 'workspace.json');
         const raw = await fs.promises.readFile(workspaceManifestPath, 'utf-8');
         const manifest = JSON.parse(raw) as Record<string, unknown>;
         manifest.profile = selectedProfile;
+        if (PYTHON_CAPABLE_WORKSPACE_PROFILES.has(selectedProfile)) {
+          delete manifest.bootstrap_note;
+          const engine =
+            manifest.engine && typeof manifest.engine === 'object'
+              ? (manifest.engine as Record<string, unknown>)
+              : undefined;
+          if (engine) {
+            delete engine.python_core;
+          }
+        }
         await fsExtra.ensureDir(path.dirname(workspaceManifestPath));
         await fs.promises.writeFile(
           workspaceManifestPath,

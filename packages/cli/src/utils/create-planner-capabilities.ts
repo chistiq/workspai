@@ -9,6 +9,10 @@ export interface OfficialCreateCandidate {
   id: string;
   aliases: string[];
   ecosystem: string;
+  plannerFramework: string;
+  runtime: string;
+  runtimeCandidates: string[];
+  workspacePythonEngine: 'none';
   status: CreatePlannerStatus;
   canExecuteCreate: boolean;
   versionPolicy: 'latest-stable' | 'planned';
@@ -35,6 +39,10 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     id: definition.kitId,
     aliases: [...definition.aliases],
     ecosystem: definition.framework,
+    plannerFramework: definition.id,
+    runtime: 'node',
+    runtimeCandidates: ['node'],
+    workspacePythonEngine: 'none' as const,
     status: 'available' as const,
     canExecuteCreate: true,
     versionPolicy: definition.versionPolicy,
@@ -50,6 +58,10 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     id: definition.kitId,
     aliases: [...definition.aliases],
     ecosystem: definition.framework,
+    plannerFramework: definition.framework,
+    runtime: definition.runtime,
+    runtimeCandidates: [...definition.runtimeCandidates],
+    workspacePythonEngine: 'none' as const,
     status: 'available' as const,
     canExecuteCreate: true,
     versionPolicy: definition.versionPolicy,
@@ -63,6 +75,10 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     id: 'wordpress-site',
     aliases: ['wordpress', 'wordpress-site', 'wp', 'wp-site'],
     ecosystem: 'wordpress',
+    plannerFramework: 'wordpress',
+    runtime: 'php',
+    runtimeCandidates: ['php'],
+    workspacePythonEngine: 'none',
     status: 'planned',
     canExecuteCreate: false,
     versionPolicy: 'planned',
@@ -73,6 +89,10 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     id: 'wordpress-block',
     aliases: ['wordpress-block', 'wp-block', 'gutenberg-block'],
     ecosystem: 'wordpress',
+    plannerFramework: 'wordpress',
+    runtime: 'node',
+    runtimeCandidates: ['node', 'php'],
+    workspacePythonEngine: 'none',
     status: 'planned',
     canExecuteCreate: false,
     versionPolicy: 'planned',
@@ -83,6 +103,10 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     id: 'symfony',
     aliases: ['symfony', 'php-symfony'],
     ecosystem: 'php',
+    plannerFramework: 'symfony',
+    runtime: 'php',
+    runtimeCandidates: ['php'],
+    workspacePythonEngine: 'none',
     status: 'planned',
     canExecuteCreate: false,
     versionPolicy: 'planned',
@@ -93,6 +117,10 @@ export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
     id: 'rails',
     aliases: ['rails', 'ruby-on-rails', 'ruby-rails'],
     ecosystem: 'ruby',
+    plannerFramework: 'rails',
+    runtime: 'ruby',
+    runtimeCandidates: ['ruby'],
+    workspacePythonEngine: 'none',
     status: 'planned',
     canExecuteCreate: false,
     versionPolicy: 'planned',

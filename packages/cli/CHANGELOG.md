@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Published workspace-profile, executable-kit, runtime, Python-engine, and
+  creation-lifecycle semantics through the versioned Create Planner capability
+  contract for IDE and agent consumers.
+
+### Changed
+
+- Made workspace and project creation complete their canonical registry,
+  contract, model, graph, agent-context, grounding, and evidence-index sync
+  before reporting success. Dependency initialization and strict release
+  verification remain explicit operations.
+- Made workspace dependency initialization use canonical profile and kit
+  metadata. Node, Go, Java, and .NET profiles no longer install the optional
+  Python engine because a project exposes generic module support.
+
+### Fixed
+
+- Removed newly-created partial virtual environments after failed Python setup
+  and rebuilt stale Workspai-owned workspace environments whose interpreter
+  cannot launch pip.
+- Distinguished Git repository initialization, staging, and initial-commit
+  failures. Cancelling a configured commit signature now leaves the generated
+  files staged and reports that exact state instead of claiming Git init failed.
+- Made interactive Python selection explicitly describe the minimum supported
+  version. Installer choices now reflect usable Poetry, venv, pip, and pipx
+  capabilities; selected methods are honored without blind fallback; and missing
+  system modules produce concise preflight guidance without bundled stack traces
+  or machine-local paths. Failure receipts include platform-specific installation
+  commands and official documentation for Python, venv, pip, pipx, and Poetry.
+- Kept installer failures bound to the user's selected method: unavailable
+  Poetry now reports Poetry installation paths, while pipx prerequisite guidance
+  remains scoped to an explicitly selected pipx flow.
+
 ## [0.63.0] - 2026-08-21
 
 ### Added

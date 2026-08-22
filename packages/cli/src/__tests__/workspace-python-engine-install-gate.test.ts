@@ -118,6 +118,31 @@ describe('workspace Python engine install gate', () => {
     }
   });
 
+  it('never installs the workspace Python engine for a node-only NestJS workspace', async () => {
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'workspace.json'),
+      {
+        schema_version: '1.0',
+        workspace_name: 'node-demo',
+        profile: 'node-only',
+        bootstrap_note: 'python-engine-skipped',
+        engine: { python_core: { status: 'skipped' } },
+      },
+      { spaces: 2 }
+    );
+    const projectPath = path.join(workspacePath, 'api');
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      runtime: 'node',
+      framework: 'nestjs',
+      kit_name: 'nestjs.standard',
+      module_support: true,
+    });
+
+    await expect(installWorkspaceDependencies(workspacePath)).resolves.toBe(0);
+    await expect(fsExtra.pathExists(path.join(workspacePath, '.venv'))).resolves.toBe(false);
+  });
+
   itOnPosix(
     'installs skipped venv workspaces with pip even when no pyproject stub exists',
     async () => {

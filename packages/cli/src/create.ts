@@ -21,6 +21,8 @@ import {
   PoetryNotFoundError,
   PipxNotFoundError,
   InstallationError,
+  PythonPipUnavailableError,
+  PythonVenvUnavailableError,
   RapidKitNotAvailableError,
 } from './errors.js';
 import { getPythonCommand } from './utils.js';
@@ -52,6 +54,7 @@ import {
   WORKSPAI_METADATA_DIR,
   WORKSPAI_WORKSPACE_MARKER,
 } from './utils/workspace-paths.js';
+import { isPythonFreeWorkspaceProfile } from './workspace-profile-compatibility.js';
 
 const WORKSPACE_LIFECYCLE_JOURNAL_DIRECTORY = 'transactions';
 
@@ -195,7 +198,19 @@ async function findContainingGitRoot(targetPath: string): Promise<string | null>
   }
 }
 
-async function initializeStandaloneGitRepository(
+function gitFailureText(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error ?? '');
+  const candidate = error as { message?: unknown; stderr?: unknown; shortMessage?: unknown };
+  return [candidate.message, candidate.shortMessage, candidate.stderr]
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n');
+}
+
+function isGitSigningFailure(error: unknown): boolean {
+  return /(?:gpg|sign(?:ed|ing|ature)?|pinentry|cancel(?:led|ed))/i.test(gitFailureText(error));
+}
+
+export async function initializeStandaloneGitRepository(
   targetPath: string,
   spinner: GitInitSpinner,
   commitMessage: string
@@ -209,10 +224,22 @@ async function initializeStandaloneGitRepository(
   spinner.start('Initializing git repository');
   try {
     await execa('git', ['init'], { cwd: targetPath, env: buildCleanGitEnv() });
+  } catch {
+    spinner.warn('Could not initialize git repository');
+    return;
+  }
+
+  try {
     await execa('git', ['add', '.'], { cwd: targetPath, env: buildCleanGitEnv() });
+  } catch {
+    spinner.warn('Git repository initialized, but generated files could not be staged');
+    return;
+  }
+
+  try {
     // A generated workspace must get a usable baseline even on fresh machines where
     // the user has not configured a global Git identity yet. Keep this identity local
-    // to the one bootstrap commit; subsequent commits use the user's normal config.
+    // to the one bootstrap commit while preserving the user's signing policy.
     await execa(
       'git',
       [
@@ -230,8 +257,12 @@ async function initializeStandaloneGitRepository(
       }
     );
     spinner.succeed('Git repository initialized');
-  } catch {
-    spinner.warn('Could not initialize git repository');
+  } catch (error) {
+    spinner.warn(
+      isGitSigningFailure(error)
+        ? 'Git repository initialized; signed initial commit was not created. Files remain staged.'
+        : 'Git repository initialized; initial commit was not created. Files remain staged.'
+    );
   }
 }
 
@@ -573,14 +604,6 @@ type WorkspaceBootstrapMeta = {
   pythonEngineReason?: string;
 };
 
-export const PYTHON_FREE_WORKSPACE_PROFILES = new Set([
-  'go-only',
-  'java-only',
-  'dotnet-only',
-  'node-only',
-  'minimal',
-]);
-
 const PYTHON_PROFILE_FALLBACK_CHAIN: Record<string, string> = {
   'python-only': 'minimal',
   polyglot: 'node-only',
@@ -592,7 +615,7 @@ export function resolvePythonFreeFallbackProfile(profile: string): string {
   let current = profile;
   const visited = new Set<string>();
 
-  while (!PYTHON_FREE_WORKSPACE_PROFILES.has(current)) {
+  while (!isPythonFreeWorkspaceProfile(current)) {
     if (visited.has(current)) {
       return 'minimal';
     }
@@ -613,6 +636,8 @@ const BASELINE_SUPPORTED_PYTHON_VERSIONS = ['3.10', '3.11', '3.12'] as const;
 type InstallMethodAvailability = {
   poetry: boolean;
   pipx: boolean;
+  pip: boolean;
+  venv: boolean;
 };
 
 type PipxInvoker = { kind: 'binary' } | { kind: 'python-module'; pythonCmd: string };
@@ -682,6 +707,12 @@ async function ensurePipxAvailable(spinner: CliSpinnerHandle, yes: boolean): Pro
 
   if (yes) {
     throw new PipxNotFoundError();
+  }
+
+  try {
+    await execa(pythonCmd, ['-m', 'pip', '--version'], { timeout: 2500 });
+  } catch {
+    throw new PythonPipUnavailableError();
   }
 
   // Prevent spinner redraw from interfering with interactive prompt rendering.
@@ -843,6 +874,8 @@ async function detectInstallMethodAvailability(): Promise<InstallMethodAvailabil
 
   let poetry = false;
   let pipx = false;
+  let pip = false;
+  let venv = false;
 
   try {
     await execa('poetry', ['--version'], { timeout: 2500 });
@@ -864,17 +897,22 @@ async function detectInstallMethodAvailability(): Promise<InstallMethodAvailabil
     }
   }
 
-  return { poetry, pipx };
-}
-
-async function isPoetryAvailable(): Promise<boolean> {
-  ensureUserLocalBinOnPath();
+  const pythonCmd = getDefaultPythonCommand();
   try {
-    await execa('poetry', ['--version'], { timeout: 2500 });
-    return true;
+    await execa(pythonCmd, ['-m', 'pip', '--version'], { timeout: 2500 });
+    pip = true;
   } catch {
-    return false;
+    pip = false;
   }
+
+  try {
+    await execa(pythonCmd, ['-c', 'import venv, ensurepip'], { timeout: 2500 });
+    venv = true;
+  } catch {
+    venv = false;
+  }
+
+  return { poetry, pipx, pip, venv };
 }
 
 function resolveInteractiveInstallMethodDefault(
@@ -883,10 +921,11 @@ function resolveInteractiveInstallMethodDefault(
 ): InstallMethod {
   if (preferred === 'poetry' && availability.poetry) return 'poetry';
   if (preferred === 'pipx' && availability.pipx) return 'pipx';
-  if (preferred === 'venv') return 'venv';
+  if (preferred === 'venv' && availability.venv) return 'venv';
 
   if (availability.poetry) return 'poetry';
-  return 'venv';
+  if (availability.venv) return 'venv';
+  return 'pipx';
 }
 
 async function ensurePoetryAvailable(spinner: CliSpinnerHandle, yes: boolean): Promise<void> {
@@ -1256,9 +1295,10 @@ export async function createProject(
     userConfig.defaultInstallMethod ||
     'poetry') as InstallMethod;
 
-  const installMethodAvailability = needsPythonInstallPrompts
-    ? await detectInstallMethodAvailability()
-    : { poetry: true, pipx: true };
+  const installMethodAvailability =
+    pythonEngineMode === 'install'
+      ? await detectInstallMethodAvailability()
+      : { poetry: true, pipx: true, pip: true, venv: true };
   const pythonVersionPromptModel = needsPythonInstallPrompts
     ? await detectPythonVersionPromptModel(promptDefaultPythonVersion)
     : {
@@ -1274,17 +1314,23 @@ export async function createProject(
     {
       name: installMethodAvailability.poetry
         ? '🎯 Poetry (Recommended - includes virtual env + dependency mgmt)'
-        : '🎯 Poetry (Recommended) — not detected (we can install it)',
+        : installMethodAvailability.pipx || installMethodAvailability.pip
+          ? '🎯 Poetry (Recommended) — not detected (can be installed)'
+          : '🎯 Poetry (Recommended) — unavailable (system pipx package required)',
       value: 'poetry',
     },
     {
-      name: '📦 pip with venv (Standard, zero extra tools)',
+      name: installMethodAvailability.venv
+        ? '📦 pip with venv (Standard, zero extra tools)'
+        : '📦 pip with venv — unavailable (system venv package required)',
       value: 'venv',
     },
     {
       name: installMethodAvailability.pipx
         ? '🔧 pipx (Global isolated - RapidKit Core only, no local venv)'
-        : '🔧 pipx (Global isolated) — not detected (we can install it)',
+        : installMethodAvailability.pip
+          ? '🔧 pipx (Global isolated) — not detected (can be installed)'
+          : '🔧 pipx (Global isolated) — unavailable (system pipx package required)',
       value: 'pipx',
     },
   ] as const;
@@ -1296,7 +1342,7 @@ export async function createProject(
           {
             type: 'rawlist',
             name: 'pythonVersion',
-            message: 'Select Python version for RapidKit:',
+            message: 'Select minimum Python version for RapidKit:',
             choices: pythonVersionPromptModel.choices,
             default: pythonVersionPromptModel.defaultValue,
           },
@@ -1336,17 +1382,11 @@ export async function createProject(
         })();
 
   // ── Lite workspace fast path ─────────────────────────────────────────────────
-  // Profiles that don't involve a Python engine skip Poetry/venv/pipx entirely.
-  // Go kits are 100% npm-level. Node-only workspaces can scaffold Go projects or
-  // await a lazy Python install on first `create project nestjs.standard`.
-  // Minimal workspaces are bootstrapped on-demand as well.
-  // Go and Java kits are truly Python-free: they run entirely through npm.
-  // node-only / minimal use
-  // nestjs.standard which depends on rapidkit-core (Python), so they follow
-  // the full Python install path.
-  const PYTHON_FREE_PROFILES = PYTHON_FREE_WORKSPACE_PROFILES;
-
-  if (PYTHON_FREE_PROFILES.has(resolvedProfile)) {
+  // Profiles that do not install the optional workspace Python engine at Create
+  // time skip Poetry/venv/pipx entirely. Project generators still own their
+  // runtime dependencies. A later explicit bootstrap may install the engine for
+  // a Python-required kit in a minimal workspace or after a profile transition.
+  if (isPythonFreeWorkspaceProfile(resolvedProfile)) {
     const spinner2 = createCliSpinner('Creating workspace', {
       component: 'create',
       phase: 'workspace.python-free',
@@ -1360,7 +1400,11 @@ export async function createProject(
       // not create Python engine artifacts; bootstrap/profile changes can add
       // them later if the user explicitly opts into the Python engine.
       await writeWorkspaceMarker(projectPath, name, 'venv', undefined);
-      await writeWorkspaceFoundationFiles(projectPath, name, 'venv', undefined, resolvedProfile);
+      await writeWorkspaceFoundationFiles(projectPath, name, 'venv', undefined, resolvedProfile, {
+        bootstrapNote: 'python-engine-skipped',
+        pythonEngine: 'skipped',
+        pythonEngineReason: 'workspace-profile-does-not-install-python-at-create',
+      });
       await writeWorkspaceGitignore(projectPath);
 
       const onboarding = await finalizeWorkspaceOnboarding(projectPath, {
@@ -1385,7 +1429,6 @@ export async function createProject(
       });
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
-      console.error(chalk.red('\n❌ Error:'), _err);
       return rollbackLifecycleTransaction(transaction, _err);
     }
     return; // ← skip Python env setup entirely
@@ -1443,7 +1486,6 @@ export async function createProject(
       return;
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
-      console.error(chalk.red('\n❌ Error:'), _err);
       return rollbackLifecycleTransaction(transaction, _err);
     }
   }
@@ -1530,7 +1572,7 @@ export async function createProject(
             chalk.green(`\n✅ Switching to "${fallback}" profile (no Python required).\n`)
           );
           resolvedProfile = fallback;
-          if (PYTHON_FREE_PROFILES.has(fallback)) {
+          if (isPythonFreeWorkspaceProfile(fallback)) {
             const spinner2 = createCliSpinner('Creating workspace', {
               component: 'create',
               phase: 'workspace.python-free',
@@ -1544,6 +1586,8 @@ export async function createProject(
               await writeWorkspaceFoundationFiles(projectPath, name, 'venv', undefined, fallback, {
                 profileRequested: originalProfile,
                 bootstrapNote: 'python-free-fallback',
+                pythonEngine: 'skipped',
+                pythonEngineReason: 'python-runtime-unavailable',
               });
               await writeWorkspaceGitignore(projectPath);
 
@@ -1571,7 +1615,6 @@ export async function createProject(
               return; // Exit successfully with fallback profile
             } catch (_err) {
               spinner2.fail('Failed to create workspace');
-              console.error(chalk.red('\n❌ Error:'), _err);
               return rollbackLifecycleTransaction(transaction, _err);
             }
           }
@@ -1585,7 +1628,7 @@ export async function createProject(
         );
         resolvedProfile = fallback;
 
-        if (PYTHON_FREE_PROFILES.has(fallback)) {
+        if (isPythonFreeWorkspaceProfile(fallback)) {
           const spinner2 = createCliSpinner('Creating workspace', {
             component: 'create',
             phase: 'workspace.python-free',
@@ -1599,6 +1642,8 @@ export async function createProject(
             await writeWorkspaceFoundationFiles(projectPath, name, 'venv', undefined, fallback, {
               profileRequested: originalProfile,
               bootstrapNote: 'python-free-fallback',
+              pythonEngine: 'skipped',
+              pythonEngineReason: 'python-runtime-unavailable',
             });
             await writeWorkspaceGitignore(projectPath);
 
@@ -1626,7 +1671,6 @@ export async function createProject(
             return; // Exit successfully
           } catch (_err) {
             spinner2.fail('Failed to create workspace');
-            console.error(chalk.red('\n❌ Error:'), _err);
             return rollbackLifecycleTransaction(transaction, _err);
           }
         }
@@ -1635,6 +1679,36 @@ export async function createProject(
   }
 
   // ── Python-required profiles (python-only / polyglot / enterprise) ──────────
+  // Validate the selected installer before creating any workspace files. This
+  // keeps a missing host toolchain in preflight rather than the mutation phase.
+  if (pythonAnswers.installMethod === 'venv' && !installMethodAvailability.venv) {
+    const detectedPythonVersion = await detectActualPythonVersion(getDefaultPythonCommand());
+    const venvPackageVersion = detectedPythonVersion
+      ? normalizePythonMajorMinor(detectedPythonVersion)
+      : null;
+    throw new PythonVenvUnavailableError(
+      `python${venvPackageVersion || pythonAnswers.pythonVersion}-venv`,
+      path.basename(projectPath)
+    );
+  }
+
+  if (
+    pythonAnswers.installMethod === 'pipx' &&
+    !installMethodAvailability.pipx &&
+    !installMethodAvailability.pip
+  ) {
+    throw new PythonPipUnavailableError();
+  }
+
+  if (
+    pythonAnswers.installMethod === 'poetry' &&
+    !installMethodAvailability.poetry &&
+    !installMethodAvailability.pipx &&
+    !installMethodAvailability.pip
+  ) {
+    throw new PoetryNotFoundError();
+  }
+
   const spinner = createCliSpinner('Creating directory', {
     component: 'create',
     phase: 'workspace.directory',
@@ -1669,13 +1743,6 @@ export async function createProject(
       }
     }
 
-    // Auto-fallback: if user selected Poetry but Poetry is not installed,
-    // continue with pip + venv instead of blocking.
-    if (pythonAnswers.installMethod === 'poetry' && !(await isPoetryAvailable())) {
-      spinner.warn('Poetry not found — auto-fallback to pip + venv');
-      pythonAnswers.installMethod = 'venv';
-    }
-
     // Create workspace marker with actual Python version
     await writeWorkspaceMarker(
       projectPath,
@@ -1683,11 +1750,6 @@ export async function createProject(
       pythonAnswers.installMethod,
       actualPythonVersion || undefined
     );
-
-    // Write .python-version file for pyenv compatibility
-    if (actualPythonVersion) {
-      await writePythonVersion(projectPath, actualPythonVersion);
-    }
 
     await writeWorkspaceFoundationFiles(
       projectPath,
@@ -1760,6 +1822,12 @@ export async function createProject(
       await installWithPipx(projectPath, spinner, testMode, userConfig, yes);
     }
 
+    // Write the pyenv hint only after the selected installer completes. Writing
+    // it earlier can retarget a pyenv-backed Poetry shim while creation runs.
+    if (actualPythonVersion) {
+      await writePythonVersion(projectPath, actualPythonVersion);
+    }
+
     // Create a local launcher so users can run RapidKit without activating the env.
     await writeWorkspaceLauncher(projectPath, pythonAnswers.installMethod);
 
@@ -1790,8 +1858,6 @@ export async function createProject(
     });
   } catch (_error) {
     spinner.fail('Failed to create Workspai environment');
-    console.error(chalk.red('\n❌ Error:'), _error);
-
     return rollbackLifecycleTransaction(transaction, _error);
   }
 }
@@ -2224,16 +2290,7 @@ async function installWithVenv(
       const match = venvError.stdout.match(/apt install (python[\d.]+-venv)/);
       const packageName = match ? match[1] : 'python3-venv';
 
-      throw new InstallationError(
-        'Python venv module not available',
-        new Error(
-          `Virtual environment creation failed.\n\n` +
-            `On Debian/Ubuntu systems, install the venv package:\n` +
-            `  sudo apt install ${packageName}\n\n` +
-            `Or use Poetry instead (recommended):\n` +
-            `  npx workspai create workspace ${path.basename(projectPath)} --yes --install-method poetry`
-        )
-      );
+      throw new PythonVenvUnavailableError(packageName, path.basename(projectPath));
     }
 
     // Other venv errors
@@ -2384,11 +2441,11 @@ async function installWithPipx(
       }
 
       if (compatibility.reason === 'constraint-missing') {
-        spinner.warn(
+        logger.debug(
           'Version-aware global reuse skipped: no explicit rapidkit-core version constraint found. Set RAPIDKIT_CORE_PYTHON_PACKAGE (example: RAPIDKIT_CORE_PYTHON_PACKAGE="rapidkit-core>=0.4.0,<0.9.0") to enable version-aware reuse. Proceeding with pipx install/upgrade.'
         );
       } else if (compatibility.reason === 'constraint-unsupported') {
-        spinner.warn(
+        logger.debug(
           'Version-aware global reuse skipped: RAPIDKIT_CORE_PYTHON_PACKAGE uses an unsupported spec (path/url/git). Use a version range instead (example: RAPIDKIT_CORE_PYTHON_PACKAGE="rapidkit-core==0.4.0" or "rapidkit-core>=0.4.0,<0.9.0"). Proceeding with pipx install/upgrade.'
         );
       }
@@ -2512,7 +2569,7 @@ export async function registerWorkspaceAtPath(
         }
       })());
 
-    resolvedMethod = method === 'poetry' && !(await isPoetryAvailable()) ? 'venv' : method;
+    resolvedMethod = method;
   }
 
   const spinner = createCliSpinner('Registering workspace', {

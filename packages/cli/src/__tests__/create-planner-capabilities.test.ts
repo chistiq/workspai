@@ -7,6 +7,8 @@ import {
 import { listFrontendGenerators } from '../frontend-project';
 import { listOfficialProjectGenerators } from '../official-project';
 import { listInteractiveKits, resolveKitDefinition } from '../utils/kit-registry';
+import { buildCreatePlannerCapabilitiesContract } from '../contracts/create-planner-capabilities-contract';
+import { WORKSPACE_PROFILES } from '../workspace-profile-compatibility';
 
 describe('create planner capabilities', () => {
   it('keeps Workspai-owned backend kits in the native lane', () => {
@@ -83,5 +85,25 @@ describe('create planner capabilities', () => {
       status: 'available',
       canExecuteCreate: false,
     });
+  });
+
+  it('publishes every profile, executable kit, runtime, and lifecycle boundary', () => {
+    const contract = buildCreatePlannerCapabilitiesContract();
+
+    expect(contract.workspaceProfiles.map((profile) => profile.id)).toEqual(WORKSPACE_PROFILES);
+    expect(contract.nativeCreate).toHaveLength(listInteractiveKits().length);
+    expect(contract.nativeCreate.find((kit) => kit.id === 'fastapi.standard')).toMatchObject({
+      plannerFramework: 'fastapi',
+      workspacePythonEngine: 'required',
+    });
+    expect(contract.nativeCreate.find((kit) => kit.id === 'nestjs.standard')).toMatchObject({
+      plannerFramework: 'nestjs',
+      workspacePythonEngine: 'optional',
+    });
+    expect(contract.officialCreate.every((kit) => kit.runtimeCandidates.length > 0)).toBe(true);
+    expect(contract.lifecycle.automatic.some((step) => step.includes('Register every'))).toBe(true);
+    expect(
+      contract.lifecycle.explicit.some((step) => step.includes('workspace intelligence'))
+    ).toBe(true);
   });
 });

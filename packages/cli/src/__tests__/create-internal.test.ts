@@ -3,7 +3,7 @@ import * as fsExtra from 'fs-extra';
 import { execa } from 'execa';
 import inquirer from 'inquirer';
 import { promises as fsPromises } from 'fs';
-import { createProject } from '../create';
+import { createProject, initializeStandaloneGitRepository } from '../create';
 import { getPythonCommand } from '../utils';
 import { DirectoryExistsError } from '../errors';
 import { checkRapidkitCoreVersionCompatible } from '../core-bridge/pythonRapidkitExec.js';
@@ -213,6 +213,15 @@ describe('Create Module - Internal Functions', () => {
         true
       );
       expect(writtenFiles.some((target) => target.endsWith('/.workspai-workspace'))).toBe(true);
+      const workspaceManifestCall = vi
+        .mocked(fsExtra.outputFile)
+        .mock.calls.find((call) => normalizeTestPath(call[0]).endsWith('.workspai/workspace.json'));
+      const manifest = JSON.parse(String(workspaceManifestCall?.[1]));
+      expect(manifest.bootstrap_note).toBe('python-engine-skipped');
+      expect(manifest.engine.python_core).toEqual({
+        status: 'skipped',
+        reason: 'workspace-profile-does-not-install-python-at-create',
+      });
     });
   });
 
@@ -342,7 +351,7 @@ describe('Create Module - Internal Functions', () => {
       );
     });
 
-    it('should auto-fallback to venv when Poetry is missing', async () => {
+    it('should honor Poetry selection and install it instead of falling back to venv', async () => {
       // Route prompt responses by question name to avoid leaking mockResolvedValueOnce
       // into subsequent tests if something changes.
       vi.mocked(inquirer.prompt).mockImplementation(async (questions: any) => {
@@ -360,10 +369,21 @@ describe('Create Module - Internal Functions', () => {
       });
 
       let poetryVersionChecks = 0;
+      let poetryInstalled = false;
       vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
         if (command === 'poetry' && args?.[0] === '--version') {
           poetryVersionChecks += 1;
-          return Promise.reject(new Error('Command not found: poetry'));
+          return poetryInstalled
+            ? Promise.resolve({ stdout: 'Poetry 2.0.0', stderr: '', exitCode: 0 } as any)
+            : Promise.reject(new Error('Command not found: poetry'));
+        }
+        if (
+          (command === 'pipx' || command === 'python' || command === 'python3') &&
+          args?.includes('install') &&
+          args?.includes('poetry')
+        ) {
+          poetryInstalled = true;
+          return Promise.resolve({ stdout: 'installed', stderr: '', exitCode: 0 } as any);
         }
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
       });
@@ -372,19 +392,14 @@ describe('Create Module - Internal Functions', () => {
 
       await createProject('test-project', { profile: 'python-only' });
 
-      // Prompt should be for optional Python engine + python/install method selection;
-      // no installPoetry/installPipx prompts.
-      expect(inquirer.prompt).toHaveBeenCalledTimes(2);
       expect(poetryVersionChecks).toBeGreaterThan(0);
-      expect(execa).not.toHaveBeenCalledWith('pipx', ['install', 'poetry']);
-      expect(execa).toHaveBeenCalledWith(
-        expect.stringMatching(/^python(3)?$/),
-        ['-m', 'venv', '.venv'],
-        expect.any(Object)
+      expect(poetryInstalled).toBe(true);
+      expect(inquirer.prompt).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: 'installPoetry' })])
       );
     });
 
-    it('should not prompt to install pipx when Poetry is missing (fallback to venv)', async () => {
+    it('should stop instead of silently changing methods when Poetry installation is declined', async () => {
       vi.mocked(checkRapidkitCoreVersionCompatible).mockResolvedValue({
         isCompatible: true,
         installedVersion: '0.27.4',
@@ -394,97 +409,37 @@ describe('Create Module - Internal Functions', () => {
 
       vi.mocked(inquirer.prompt).mockImplementation(async (questions: any) => {
         const names = Array.isArray(questions) ? questions.map((q) => q?.name) : [];
-        if (names.includes('installPoetry')) return { installPoetry: true } as any;
+        if (names.includes('installPoetry')) return { installPoetry: false } as any;
         if (names.includes('installPipx')) return { installPipx: true } as any;
         return { pythonVersion: '3.10', installMethod: 'poetry' } as any;
       });
 
       let poetryVersionChecks = 0;
-      let pipxBinaryChecks = 0;
-      let pipxModuleAvailable = false;
       vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
-        // Accept both python and python3
-        const isPython = command === 'python' || command === 'python3';
-
-        // Poetry is missing, so flow should fallback before any installation prompts.
         if (command === 'poetry' && args?.[0] === '--version') {
           poetryVersionChecks += 1;
           return Promise.reject(new Error('Command not found: poetry'));
         }
-
-        // These branches should not be reached in fallback path; keep counters to assert no usage.
-        if (command === 'pipx' && args?.[0] === '--version') {
-          pipxBinaryChecks += 1;
-          return Promise.reject(new Error('Command not found: pipx'));
-        }
-
-        // python -m pipx becomes available after we "install" it.
-        if (isPython && args?.[0] === '-m' && args?.[1] === 'pipx') {
-          if (args?.[2] === '--version') {
-            if (!pipxModuleAvailable) {
-              return Promise.reject(new Error('No module named pipx'));
-            }
-            return Promise.resolve({ stdout: '1.4.0', stderr: '', exitCode: 0 } as any);
-          }
-          if (args?.[2] === 'install' && args?.[3] === 'poetry') {
-            return Promise.resolve({ stdout: 'installed', stderr: '', exitCode: 0 } as any);
-          }
-          if (args?.[2] === 'upgrade' && args?.[3] === 'poetry') {
-            return Promise.resolve({ stdout: 'upgraded', stderr: '', exitCode: 0 } as any);
-          }
-        }
-
-        // pip install --user pipx
-        if (isPython && args?.[0] === '-m' && args?.[1] === 'pip') {
-          pipxModuleAvailable = true;
-          return Promise.resolve({ stdout: 'ok', stderr: '', exitCode: 0 } as any);
-        }
-
-        if (command === 'poetry' && args?.[0] === 'init') {
-          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
-        }
-        if (command === 'poetry' && args?.[0] === 'add') {
-          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
-        }
-
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
       });
 
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]\nname = "test"');
 
-      await createProject('test-project', { profile: 'python-only' });
+      await expect(createProject('test-project', { profile: 'python-only' })).rejects.toMatchObject(
+        {
+          code: 'POETRY_NOT_FOUND',
+        }
+      );
 
       expect(poetryVersionChecks).toBeGreaterThan(0);
-      // Availability probing may check pipx once, but fallback must avoid pipx install flow.
-      expect(pipxBinaryChecks).toBeLessThanOrEqual(1);
-      // No installPoetry/installPipx prompts should be shown in fallback path.
       const promptCalls = vi.mocked(inquirer.prompt).mock.calls;
       const askedNames = promptCalls
         .flatMap(([questions]) => (Array.isArray(questions) ? questions : [questions]))
         .map((q: any) => q?.name)
         .filter(Boolean);
 
+      expect(askedNames).toContain('installPoetry');
       expect(askedNames).not.toContain('installPipx');
-      expect(askedNames).not.toContain('installPoetry');
-      expect(execa).not.toHaveBeenCalledWith(expect.stringMatching(/^python(3)?$/), [
-        '-m',
-        'pip',
-        'install',
-        '--user',
-        '--upgrade',
-        'pipx',
-      ]);
-      expect(execa).not.toHaveBeenCalledWith(expect.stringMatching(/^python(3)?$/), [
-        '-m',
-        'pipx',
-        'install',
-        'poetry',
-      ]);
-      expect(execa).toHaveBeenCalledWith(
-        expect.stringMatching(/^python(3)?$/),
-        ['-m', 'venv', '.venv'],
-        expect.any(Object)
-      );
     });
   });
 
@@ -789,7 +744,7 @@ describe('Create Module - Internal Functions', () => {
         }
 
         // pip install --user pipx flips availability
-        if (isPython && args?.[0] === '-m' && args?.[1] === 'pip') {
+        if (isPython && args?.[0] === '-m' && args?.[1] === 'pip' && args?.includes('install')) {
           pipxModuleAvailable = true;
           return Promise.resolve({ stdout: 'ok', stderr: '', exitCode: 0 } as any);
         }
@@ -899,6 +854,73 @@ describe('Create Module - Internal Functions', () => {
 
       const gitCalls = vi.mocked(execa).mock.calls.filter((call) => call[0] === 'git');
       expect(gitCalls.length).toBe(0);
+    });
+
+    it('keeps a signed-commit cancellation distinct from repository initialization', async () => {
+      const spinner = {
+        start: vi.fn(),
+        succeed: vi.fn(),
+        warn: vi.fn(),
+      };
+      vi.mocked(execa).mockImplementation(async (_command: string, args?: readonly string[]) => {
+        if (args?.[0] === 'rev-parse') throw new Error('not a repository');
+        if (args?.includes('commit')) {
+          const error = new Error('failed to write commit object') as Error & { stderr: string };
+          error.stderr = 'error: gpg failed to sign the data';
+          throw error;
+        }
+        return { stdout: '', stderr: '', exitCode: 0 } as any;
+      });
+
+      await expect(
+        initializeStandaloneGitRepository('/tmp/generated-workspace', spinner, 'Initial commit')
+      ).resolves.toBeUndefined();
+
+      expect(spinner.warn).toHaveBeenCalledWith(
+        'Git repository initialized; signed initial commit was not created. Files remain staged.'
+      );
+      expect(spinner.succeed).not.toHaveBeenCalled();
+    });
+
+    it('reports a real git initialization failure separately', async () => {
+      const spinner = {
+        start: vi.fn(),
+        succeed: vi.fn(),
+        warn: vi.fn(),
+      };
+      vi.mocked(execa).mockRejectedValue(new Error('git executable unavailable'));
+
+      await initializeStandaloneGitRepository(
+        '/tmp/generated-workspace',
+        spinner,
+        'Initial commit'
+      );
+
+      expect(spinner.warn).toHaveBeenCalledWith('Could not initialize git repository');
+    });
+
+    it('reports staging failure after a successful repository initialization', async () => {
+      const spinner = {
+        start: vi.fn(),
+        succeed: vi.fn(),
+        warn: vi.fn(),
+      };
+      vi.mocked(execa).mockImplementation(async (_command: string, args?: readonly string[]) => {
+        if (args?.[0] === 'rev-parse') throw new Error('not a repository');
+        if (args?.[0] === 'add') throw new Error('staging failed');
+        return { stdout: '', stderr: '', exitCode: 0 } as any;
+      });
+
+      await initializeStandaloneGitRepository(
+        '/tmp/generated-workspace',
+        spinner,
+        'Initial commit'
+      );
+
+      expect(spinner.warn).toHaveBeenCalledWith(
+        'Git repository initialized, but generated files could not be staged'
+      );
+      expect(spinner.succeed).not.toHaveBeenCalled();
     });
 
     it('should create .gitignore file', async () => {

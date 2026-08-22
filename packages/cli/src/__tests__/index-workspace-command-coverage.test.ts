@@ -35,6 +35,7 @@ import {
   isNpmOnlyParseDirectCommand,
   isNpmOnlyParseDirectInvocation,
   ensurePythonProjectUsesLocalVenv,
+  ensureWorkspaceVenvHasPip,
   findContextFileUp,
   findLegacyWorkspaceUp,
   findWorkspaceMarkerUp,
@@ -1002,6 +1003,54 @@ describe.sequential('in-process workspace Commander coverage', () => {
       project
     );
   }, 30_000);
+
+  it('removes a newly-created partial workspace venv after every failed candidate', async () => {
+    const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-partial-venv-'));
+    temporaryDirectories.push(fixture);
+    const runCommand = vi.fn(async (_command: string, _args: string[], cwd: string) => {
+      await fs.mkdir(path.join(cwd, '.venv', 'bin'), { recursive: true });
+      await fs.writeFile(path.join(cwd, '.venv', 'bin', 'python'), 'partial');
+      return 1;
+    });
+
+    await expect(
+      createWorkspaceVenv(fixture, { runCommand, pythonCandidates: ['python-a', 'python-b'] })
+    ).resolves.toBe(1);
+    await expect(fs.access(path.join(fixture, '.venv'))).rejects.toThrow();
+    expect(runCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it('replaces a stale workspace venv whose interpreter cannot launch pip', async () => {
+    const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-stale-venv-'));
+    temporaryDirectories.push(fixture);
+    const stalePython = getVenvPythonPath(path.join(fixture, '.venv'));
+    await fs.mkdir(path.dirname(stalePython), { recursive: true });
+    await fs.writeFile(stalePython, 'stale interpreter');
+
+    let pipChecks = 0;
+    const runCommand = vi.fn(async (command: string, args: string[], cwd: string) => {
+      if (args.includes('venv')) {
+        const interpreter = getVenvPythonPath(path.join(cwd, '.venv'));
+        await fs.mkdir(path.dirname(interpreter), { recursive: true });
+        await fs.writeFile(interpreter, 'recreated interpreter');
+        return 0;
+      }
+      if (command === stalePython && args.join(' ') === '-m pip --version') {
+        pipChecks += 1;
+        return pipChecks === 1 ? 1 : 0;
+      }
+      return 1;
+    });
+
+    await expect(
+      ensureWorkspaceVenvHasPip(fixture, {
+        runCommand,
+        pythonCandidates: ['fixture-python'],
+      })
+    ).resolves.toBe(0);
+    await expect(fs.readFile(stalePython, 'utf-8')).resolves.toBe('recreated interpreter');
+    expect(pipChecks).toBe(2);
+  });
 
   it('covers npm ownership and upward workspace discovery routing', async () => {
     for (const command of ['workspace', 'doctor', 'snapshot', 'commands']) {

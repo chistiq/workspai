@@ -7,6 +7,8 @@ import {
   DirectoryExistsError,
   InvalidProjectNameError,
   InstallationError,
+  PythonPipUnavailableError,
+  PythonVenvUnavailableError,
   RapidKitNotAvailableError,
   NetworkError,
   FileSystemError,
@@ -68,6 +70,15 @@ describe('Error classes', () => {
       const error = new PoetryNotFoundError();
       expect(error.details).toContain('https://');
     });
+
+    it('provides Poetry-first platform installation paths', () => {
+      expect(new PoetryNotFoundError('linux').details).toContain('pipx install poetry');
+      expect(new PoetryNotFoundError('linux').details).toContain(
+        'https://install.python-poetry.org'
+      );
+      expect(new PoetryNotFoundError('darwin').details).toContain('brew install poetry');
+      expect(new PoetryNotFoundError('win32').details).toContain('py -m pipx install poetry');
+    });
   });
 
   describe('PipxNotFoundError', () => {
@@ -79,7 +90,13 @@ describe('Error classes', () => {
 
     it('should have installation URL', () => {
       const error = new PipxNotFoundError();
-      expect(error.details).toContain('pypa.github.io/pipx');
+      expect(error.details).toContain('pipx.pypa.io/stable/installation');
+    });
+
+    it('provides platform-specific installation commands', () => {
+      expect(new PipxNotFoundError('linux').details).toContain('sudo apt install pipx');
+      expect(new PipxNotFoundError('darwin').details).toContain('brew install pipx');
+      expect(new PipxNotFoundError('win32').details).toContain('py -m pip install --user pipx');
     });
   });
 
@@ -124,6 +141,38 @@ describe('Error classes', () => {
       const error = new InstallationError('Test', new Error('Failed'));
       expect(error.details).toContain('internet connection');
       expect(error.details).toContain('--debug');
+    });
+  });
+
+  describe('PythonVenvUnavailableError', () => {
+    it('provides deterministic recovery without generic network advice', () => {
+      const error = new PythonVenvUnavailableError('python3.13-venv', 'my-workspace');
+
+      expect(error.code).toBe('PYTHON_VENV_UNAVAILABLE');
+      expect(error.message).toContain('virtual environment support');
+      expect(error.details).toContain('sudo apt install python3.13-venv');
+      expect(error.details).toContain('--skip-python-engine');
+      expect(error.details).not.toContain('internet connection');
+    });
+
+    it('provides platform-specific recovery commands', () => {
+      expect(
+        new PythonVenvUnavailableError('python3.13-venv', 'workspace', 'darwin').details
+      ).toContain('brew reinstall python');
+      expect(
+        new PythonVenvUnavailableError('python3.13-venv', 'workspace', 'win32').details
+      ).toContain('winget install');
+    });
+  });
+
+  describe('PythonPipUnavailableError', () => {
+    it('explains how to make pipx installation possible', () => {
+      const error = new PythonPipUnavailableError();
+
+      expect(error.code).toBe('PYTHON_PIP_UNAVAILABLE');
+      expect(error.details).toContain('sudo apt install pipx');
+      expect(error.details).toContain('sudo apt install python3-pip');
+      expect(error.details).not.toContain('internet connection');
     });
   });
 
@@ -195,6 +244,8 @@ describe('Error classes', () => {
         new DirectoryExistsError('test'),
         new InvalidProjectNameError('test', 'reason'),
         new InstallationError('step', new Error('error')),
+        new PythonPipUnavailableError(),
+        new PythonVenvUnavailableError('python3-venv', 'workspace'),
         new RapidKitNotAvailableError(),
         new NetworkError('op'),
         new FileSystemError('op', '/path'),
