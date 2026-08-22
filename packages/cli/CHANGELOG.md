@@ -12,9 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Published workspace-profile, executable-kit, runtime, Python-engine, and
   creation-lifecycle semantics through the versioned Create Planner capability
   contract for IDE and agent consumers.
+- Added hermetic state isolation for qualification runners and automation so
+  test runs cannot read or modify the user's canonical workspace registry.
 
 ### Changed
 
+- Made source-structure imports language-aware across JavaScript/TypeScript,
+  Python, Rust, C/C++, JVM, .NET, Go, Ruby, PHP, Elixir, Dart, Lua, and R.
+  C/C++ project-root includes now resolve to proof-backed header entities.
+- Gave same-name monorepo packages distinct identities at their portable
+  manifest boundaries while retaining ecosystem/name deduplication for
+  external dependencies.
+- Made Doctor dependency evidence explicit for aggregate, native, Deno, Cargo,
+  Go, Bundler, Mix, and Clojure boundaries instead of overstating what a
+  lockfile proves about an environment-specific dependency cache.
+- Made Cargo workspaces with explicit default members outrank private Node
+  tooling manifests when selecting the primary adopted runtime.
 - Made workspace and project creation complete their canonical registry,
   contract, model, graph, agent-context, grounding, and evidence-index sync
   before reporting success. Dependency initialization and strict release
@@ -25,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevented Rust macros such as `register_extension!` from activating the Deno
+  runtime-bridge provider, ignored `unknown` candidates when deciding whether a
+  project is polyglot, and required generated-source markers to occur in source
+  comments rather than arbitrary string literals.
+- Made real-world qualification accept a completed child-process status over a
+  non-fatal restricted-runner spawn warning and recognize explicit runtime
+  selection as a valid polyglot Goal measurement preflight.
 - Removed newly-created partial virtual environments after failed Python setup
   and rebuilt stale Workspai-owned workspace environments whose interpreter
   cannot launch pip.

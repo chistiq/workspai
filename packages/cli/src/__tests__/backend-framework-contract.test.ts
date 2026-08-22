@@ -183,6 +183,31 @@ describe('backend-framework-contract', () => {
     expect(detectRuntimeCandidatesFromProject(nativePolyglotProject)).toEqual(['python', 'cpp']);
   });
 
+  it('keeps an explicit Cargo default workspace primary over Node binding tooling', async () => {
+    const rustWorkspace = await createTempProject('rust-workspace-bindings');
+    await fs.outputFile(
+      path.join(rustWorkspace, 'Cargo.toml'),
+      '[workspace]\nmembers = ["crates/core"]\ndefault-members = ["crates/core"]\n'
+    );
+    await fs.outputFile(
+      path.join(rustWorkspace, 'crates', 'core', 'Cargo.toml'),
+      '[package]\nname = "core"\nversion = "1.0.0"\n'
+    );
+    await fs.outputJson(path.join(rustWorkspace, 'package.json'), {
+      name: 'binding-tooling',
+      private: true,
+      scripts: { typecheck: 'tsc --noEmit' },
+    });
+
+    expect(detectBackendFrameworkFromProject(rustWorkspace)).toMatchObject({
+      key: 'rust',
+      runtime: 'rust',
+      confidence: 'high',
+      source: 'manifest',
+    });
+    expect(detectRuntimeCandidatesFromProject(rustWorkspace)).toEqual(['rust', 'node']);
+  });
+
   it('keeps runtime candidate detection broad for polyglot backends', async () => {
     const polyglotProject = await createTempProject('polyglot');
     await fs.writeFile(

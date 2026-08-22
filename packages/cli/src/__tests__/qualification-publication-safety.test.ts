@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertQualificationReportIsPublicationSafe,
   createQualificationCommandRecord,
+  isQualificationCommandAccepted,
 } from '../../scripts/qualification-publication-safety.mjs';
 
 describe('qualification report publication safety', () => {
@@ -47,5 +48,42 @@ describe('qualification report publication safety', () => {
         ['/mnt/company-secret/repository']
       )
     ).toThrow('forbidden local path');
+  });
+
+  it('accepts a completed child status when a restricted runner also reports non-fatal EPERM', () => {
+    expect(
+      isQualificationCommandAccepted({
+        result: {
+          status: 0,
+          error: Object.assign(new Error('restricted runner'), { code: 'EPERM' }),
+        },
+        acceptedExitCodes: [0],
+        parsed: null,
+        expectJson: false,
+      })
+    ).toBe(true);
+  });
+
+  it('rejects spawn and timeout failures without a completed child status', () => {
+    expect(
+      isQualificationCommandAccepted({
+        result: { status: null, error: Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }) },
+        acceptedExitCodes: [0],
+        parsed: {},
+      })
+    ).toBe(false);
+  });
+
+  it('rejects unexpected process errors even when a child status is present', () => {
+    expect(
+      isQualificationCommandAccepted({
+        result: {
+          status: 0,
+          error: Object.assign(new Error('buffer failure'), { code: 'ENOBUFS' }),
+        },
+        acceptedExitCodes: [0],
+        parsed: {},
+      })
+    ).toBe(false);
   });
 });

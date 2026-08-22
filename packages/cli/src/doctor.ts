@@ -6942,16 +6942,48 @@ function attachDependencyMaterializationCapabilities(health: ProjectHealth): voi
     health.depsInstalled &&
     !(health.probes ?? []).some((probe) => probe.id === 'runtime-dependency-materialization')
   ) {
+    const aggregateBoundary = (health.probes ?? []).some(
+      (probe) => probe.id === 'composite-project-boundary'
+    );
+    const nativeBoundary = health.runtimeFamily === 'c' || health.runtimeFamily === 'cpp';
+    const runtimeManagedWithoutLocalInstall = health.runtimeFamily === 'deno';
+    const materializationNotApplicable =
+      aggregateBoundary || nativeBoundary || runtimeManagedWithoutLocalInstall;
+    const reason = aggregateBoundary
+      ? 'Dependency materialization is evaluated at each registered runtime project boundary, not at this aggregate polyglot container.'
+      : nativeBoundary
+        ? 'Native dependency materialization is build-system and organization specific; Doctor verified the build contract without claiming a universal local dependency tree.'
+        : runtimeManagedWithoutLocalInstall
+          ? 'The detected runtime resolves dependencies without a project-local installation tree.'
+          : dependencyMaterializationEvidenceReason(health.runtimeFamily);
     pushProjectProbe(health, {
       id: 'runtime-dependency-materialization',
       label: 'Runtime dependency materialization',
       status: 'pass',
       severity: 'info',
       scope: 'project-scoped',
-      reason: 'The runtime dependency tree is materialized for the detected project ecosystem.',
+      ...(materializationNotApplicable ? { applicability: 'not-applicable' as const } : {}),
+      reason,
       issueClass: 'dependency',
       operationalImpact: 'none',
     });
+  }
+}
+
+function dependencyMaterializationEvidenceReason(runtimeFamily?: string): string {
+  switch (runtimeFamily) {
+    case 'rust':
+      return 'Cargo dependency resolution evidence is present. Doctor does not infer the state of a shared crate cache from Cargo.lock alone.';
+    case 'go':
+      return 'Go module resolution evidence is present. Doctor does not infer the state of the shared module cache from go.sum alone.';
+    case 'ruby':
+      return 'Bundler dependency evidence is present. Doctor does not infer a global gem installation from Gemfile.lock alone.';
+    case 'elixir':
+      return 'Mix dependency evidence is present. Doctor distinguishes authored lock state from the environment-specific dependency cache.';
+    case 'clojure':
+      return 'Clojure dependency evidence is present. Doctor does not infer the environment-specific artifact cache from the project manifest alone.';
+    default:
+      return 'The runtime dependency tree is materialized for the detected project ecosystem.';
   }
 }
 

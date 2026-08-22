@@ -259,11 +259,14 @@ const SOURCE_EXTENSIONS = new Set([
   '.h',
   '.hpp',
   '.java',
+  '.cjs',
+  '.cts',
   '.js',
   '.jsx',
   '.kt',
   '.kts',
   '.mjs',
+  '.mts',
   '.php',
   '.py',
   '.r',
@@ -300,11 +303,14 @@ function sourceLanguage(filePath: string, primaryRuntime?: string): string {
     '.h': 'c',
     '.hpp': 'cpp',
     '.java': 'java',
+    '.cjs': 'javascript',
+    '.cts': 'typescript',
     '.js': 'javascript',
     '.jsx': 'javascript',
     '.kt': 'kotlin',
     '.kts': 'kotlin',
     '.mjs': 'javascript',
+    '.mts': 'typescript',
     '.php': 'php',
     '.py': 'python',
     '.r': 'r',
@@ -408,51 +414,135 @@ const SYMBOL_PATTERNS = [
   { pattern: /^\s*(?:class|module|struct|protocol|mixin)\s+([A-Za-z_]\w*)/, detail: 'type' },
 ] as const;
 
-const IMPORT_PATTERNS = [
+const JAVASCRIPT_IMPORT_PATTERNS = [
   { pattern: /^\s*import(?:.+?from\s*)?["']([^"']+)["']/, detail: 'import' },
   { pattern: /require\(["']([^"']+)["']\)/, detail: 'require' },
+] as const;
+
+const PYTHON_IMPORT_PATTERNS = [
   { pattern: /^\s*from\s+([A-Za-z0-9_.]+)\s+import\s+/, detail: 'import' },
   { pattern: /^\s*import\s+([A-Za-z0-9_.]+)(?:\s|$)/, detail: 'import' },
-  { pattern: /^\s*(?:import|using|use)\s+([A-Za-z0-9_:.*\\/.-]+)/, detail: 'import' },
+] as const;
+
+const C_FAMILY_INCLUDE_PATTERNS = [
+  { pattern: /^\s*#\s*include\s*["<]([^">]+)[">]/, detail: 'include' },
+] as const;
+
+const RUST_IMPORT_PATTERNS = [{ pattern: /^\s*use\s+([A-Za-z0-9_:*.-]+)/, detail: 'use' }] as const;
+
+const JVM_IMPORT_PATTERNS = [
+  { pattern: /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.*]+)\s*;?/, detail: 'import' },
+] as const;
+
+const DOTNET_IMPORT_PATTERNS = [
+  { pattern: /^\s*(?:global\s+)?using\s+([A-Za-z0-9_.]+)/, detail: 'using' },
+] as const;
+
+const GO_IMPORT_PATTERNS = [
+  { pattern: /^\s*import\s+(?:[A-Za-z0-9_.]+\s+)?["']([^"']+)["']/, detail: 'import' },
+] as const;
+
+const RUBY_IMPORT_PATTERNS = [
   { pattern: /^\s*require(?:_relative)?\s+["']([^"']+)["']/, detail: 'require' },
 ] as const;
+
+const PHP_IMPORT_PATTERNS = [{ pattern: /^\s*use\s+([A-Za-z0-9_\\]+)/, detail: 'use' }] as const;
+
+const ELIXIR_IMPORT_PATTERNS = [
+  { pattern: /^\s*(?:alias|import|require|use)\s+([A-Za-z0-9_.]+)/, detail: 'import' },
+] as const;
+
+const DART_IMPORT_PATTERNS = [
+  { pattern: /^\s*import\s+["']([^"']+)["']/, detail: 'import' },
+] as const;
+
+const LUA_IMPORT_PATTERNS = [
+  { pattern: /\brequire\s*\(?\s*["']([^"']+)["']/, detail: 'require' },
+] as const;
+
+const R_IMPORT_PATTERNS = [
+  { pattern: /^\s*(?:library|require)\s*\(\s*["']?([^"')\s]+)["']?/, detail: 'import' },
+] as const;
+
+const GENERIC_IMPORT_PATTERNS = [
+  ...JAVASCRIPT_IMPORT_PATTERNS,
+  ...PYTHON_IMPORT_PATTERNS,
+  { pattern: /^\s*(?:import|using|use)\s+([A-Za-z0-9_:.*\\/.-]+)/, detail: 'import' },
+  ...RUBY_IMPORT_PATTERNS,
+] as const;
+
+function importPatternsForFile(filePath: string) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (
+    ['.cjs', '.cts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx', '.vue', '.svelte'].includes(
+      extension
+    )
+  ) {
+    return JAVASCRIPT_IMPORT_PATTERNS;
+  }
+  if (extension === '.py') return PYTHON_IMPORT_PATTERNS;
+  if (['.c', '.cc', '.cpp', '.h', '.hpp'].includes(extension)) {
+    return C_FAMILY_INCLUDE_PATTERNS;
+  }
+  if (extension === '.rs') return RUST_IMPORT_PATTERNS;
+  if (['.java', '.kt', '.kts', '.scala'].includes(extension)) return JVM_IMPORT_PATTERNS;
+  if (['.cs', '.fs', '.fsx', '.vb'].includes(extension)) return DOTNET_IMPORT_PATTERNS;
+  if (extension === '.go') return GO_IMPORT_PATTERNS;
+  if (extension === '.rb') return RUBY_IMPORT_PATTERNS;
+  if (extension === '.php') return PHP_IMPORT_PATTERNS;
+  if (['.ex', '.exs'].includes(extension)) return ELIXIR_IMPORT_PATTERNS;
+  if (extension === '.dart') return DART_IMPORT_PATTERNS;
+  if (extension === '.lua') return LUA_IMPORT_PATTERNS;
+  if (extension === '.r') return R_IMPORT_PATTERNS;
+  return GENERIC_IMPORT_PATTERNS;
+}
 
 function resolveLocalImportTarget(
   importerPath: string,
   specifier: string,
   candidateFiles: ReadonlySet<string>,
-  projectRoot?: string
+  projectRoot?: string,
+  importKind?: string
 ): string | null {
   const pythonImporter = path.extname(importerPath).toLowerCase() === '.py';
-  let base: string;
+  const bases: string[] = [];
   if (pythonImporter) {
     const leadingDots = specifier.match(/^\.+/)?.[0].length ?? 0;
     let directory = leadingDots > 0 ? path.dirname(importerPath) : path.resolve(projectRoot ?? '');
     for (let level = 1; level < leadingDots; level += 1) directory = path.dirname(directory);
     const moduleName = specifier.slice(leadingDots).replace(/\./g, path.sep);
-    base = moduleName ? path.join(directory, moduleName) : directory;
+    bases.push(moduleName ? path.join(directory, moduleName) : directory);
   } else {
-    if (!specifier.startsWith('.')) return null;
-    base = path.resolve(path.dirname(importerPath), specifier);
-  }
-  const extension = path.extname(base).toLowerCase();
-  const hasSourceExtension = SOURCE_EXTENSIONS.has(extension);
-  const candidates = new Set<string>([base]);
-  if (pythonImporter) {
-    candidates.add(`${base}.py`);
-    candidates.add(path.join(base, '__init__.py'));
-  }
-  if (hasSourceExtension) {
-    const withoutExtension = base.slice(0, -extension.length);
-    if (['.js', '.jsx', '.mjs'].includes(extension)) {
-      for (const replacement of ['.ts', '.tsx', '.js', '.jsx', '.mjs']) {
-        candidates.add(`${withoutExtension}${replacement}`);
-      }
+    if (specifier.startsWith('.')) {
+      bases.push(path.resolve(path.dirname(importerPath), specifier));
+    } else if (importKind === 'include') {
+      bases.push(path.resolve(path.dirname(importerPath), specifier));
+      if (projectRoot) bases.push(path.resolve(projectRoot, specifier));
+    } else {
+      return null;
     }
-  } else {
-    for (const sourceExtension of SOURCE_EXTENSIONS) {
-      candidates.add(`${base}${sourceExtension}`);
-      candidates.add(path.join(base, `index${sourceExtension}`));
+  }
+  const candidates = new Set<string>();
+  for (const base of bases) {
+    candidates.add(base);
+    const extension = path.extname(base).toLowerCase();
+    const hasSourceExtension = SOURCE_EXTENSIONS.has(extension);
+    if (pythonImporter) {
+      candidates.add(`${base}.py`);
+      candidates.add(path.join(base, '__init__.py'));
+    }
+    if (hasSourceExtension) {
+      const withoutExtension = base.slice(0, -extension.length);
+      if (['.js', '.jsx', '.mjs'].includes(extension)) {
+        for (const replacement of ['.ts', '.tsx', '.js', '.jsx', '.mjs']) {
+          candidates.add(`${withoutExtension}${replacement}`);
+        }
+      }
+    } else {
+      for (const sourceExtension of SOURCE_EXTENSIONS) {
+        candidates.add(`${base}${sourceExtension}`);
+        candidates.add(path.join(base, `index${sourceExtension}`));
+      }
     }
   }
   return [...candidates].find((candidate) => candidateFiles.has(path.resolve(candidate))) ?? null;
@@ -1757,9 +1847,10 @@ const foundationProvider: Provider = {
         try {
           const contents = await fsExtra.readFile(file, 'utf8');
           const manifest = parseManifestMetadata(file, contents);
+          const manifestArtifact = state.artifactPath(file, project);
           const proof = await state.addProof({
             provider: this.id,
-            artifact: state.artifactPath(file, project),
+            artifact: manifestArtifact,
             absolutePath: file,
             pointer: '/',
             confidence: manifest.name ? 'high' : 'medium',
@@ -1767,14 +1858,19 @@ const foundationProvider: Provider = {
           });
           const packageEntity = state.addEntity({
             kind: 'package',
-            key: `package:${project.id}:${manifest.ecosystem}:${manifest.name ?? state.artifactPath(file, project)}`,
+            // A package name is not unique inside a monorepo. Root tooling,
+            // editor extensions, bindings, and the published runtime package
+            // can intentionally share it. The portable manifest boundary keeps
+            // those authored units distinct while external dependencies remain
+            // deduplicated by ecosystem and canonical dependency name.
+            key: `package:${project.id}:${manifest.ecosystem}:${manifest.name ?? 'anonymous'}:${manifestArtifact}`,
             label: manifest.name ?? `${project.id}/${toPosix(path.relative(project.root, file))}`,
             projectId: project.id,
             aliases: [base, ...(manifest.name ? [manifest.name] : [])],
             attributes: {
               ecosystem: manifest.ecosystem,
               version: manifest.version,
-              manifest: state.artifactPath(file, project),
+              manifest: manifestArtifact,
               dependencies: manifest.dependencies,
               ...(manifest.metadata ?? {}),
             },
@@ -2541,7 +2637,7 @@ const sourceStructureProvider: Provider = {
           proofIds: [fileProof],
         });
 
-        const imports = captureSourceFindings(sourceContents, IMPORT_PATTERNS, 250);
+        const imports = captureSourceFindings(sourceContents, importPatternsForFile(file), 250);
         for (const imported of imports) {
           const proof = await context.state.addProof({
             provider: this.id,
@@ -2557,7 +2653,8 @@ const sourceStructureProvider: Provider = {
             file,
             imported.name,
             usableFiles,
-            project.root
+            project.root,
+            imported.detail
           );
           if (localTarget) {
             const targetArtifact = context.state.artifactPath(localTarget, project);
@@ -2732,10 +2829,11 @@ const sourceStructureProvider: Provider = {
 function generatedReference(contents: string): string | null {
   const header = contents.slice(0, 12_000);
   const reference = header.match(
-    /(?:code generated by|generated from:|@generated by)\s*(?:(?:\/\/|#|\*)\s*)?[`"']?([^`"'\s;*]+)/i
+    /^[\t ]*(?:\/\/|#|\/\*+|\*|<!--|--)[\t ]*(?:code generated by|generated from:|this file is autogenerated from:|@generated by)\s*(?:(?:\/\/|#|\*|--)[\t ]*)?[`"']?([^`"'\s;*,]+)/im
   )?.[1];
-  if (!reference || !path.posix.basename(reference.replace(/\\/g, '/'))) return null;
-  return reference;
+  const normalized = reference?.replace(/^\.\//, '').replace(/[.,:]+$/, '') ?? '';
+  if (!normalized || !path.posix.basename(normalized.replace(/\\/g, '/'))) return null;
+  return normalized;
 }
 
 type RustExtensionDeclaration = {
@@ -2772,7 +2870,10 @@ function balancedMacroBody(contents: string, openIndex: number): string | null {
 
 function rustExtensionDeclarations(contents: string): RustExtensionDeclaration[] {
   const declarations: RustExtensionDeclaration[] = [];
-  const pattern = /(?:deno_core::)?extension!\s*\(/g;
+  // `extension!` is a specific Deno Core macro. A suffix match inside macros
+  // such as `register_extension!` would make unrelated Rust repositories look
+  // like runtime bridges and leave this provider spuriously partial.
+  const pattern = /(?<![A-Za-z0-9_:])(?:deno_core::)?extension!\s*\(/g;
   for (const match of contents.matchAll(pattern)) {
     const openIndex = (match.index ?? 0) + match[0].lastIndexOf('(');
     const body = balancedMacroBody(contents, openIndex);
@@ -2829,7 +2930,7 @@ const runtimeBridgeSemanticProvider: Provider = {
         }
         try {
           const contents = await fsExtra.readFile(file, 'utf8');
-          if (/(?:deno_core::)?extension!\s*\(/.test(contents)) return true;
+          if (/(?<![A-Za-z0-9_:])(?:deno_core::)?extension!\s*\(/.test(contents)) return true;
         } catch {
           // Unreadable candidates do not make the provider applicable.
         }
@@ -3069,11 +3170,16 @@ const polyglotSemanticProvider: Provider = {
   id: 'polyglot-semantics',
   version: '1.0.0',
   applicable(context) {
-    return context.projects.some(
-      (project) =>
-        (project.runtimeCandidates?.length ?? 0) > 1 ||
-        buildPolyglotLifecyclePlan(project.root).polyglot
-    );
+    return context.projects.some((project) => {
+      const concreteRuntimeCandidates = new Set(
+        (project.runtimeCandidates ?? []).filter(
+          (runtime) => runtime && runtime !== 'unknown' && runtime !== 'generic'
+        )
+      );
+      return (
+        concreteRuntimeCandidates.size > 1 || buildPolyglotLifecyclePlan(project.root).polyglot
+      );
+    });
   },
   async run(context) {
     for (const project of context.projects) {

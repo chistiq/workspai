@@ -145,8 +145,8 @@ describe('Error classes', () => {
   });
 
   describe('PythonVenvUnavailableError', () => {
-    it('provides deterministic recovery without generic network advice', () => {
-      const error = new PythonVenvUnavailableError('python3.13-venv', 'my-workspace');
+    it('provides deterministic Linux recovery without generic network advice', () => {
+      const error = new PythonVenvUnavailableError('python3.13-venv', 'my-workspace', 'linux');
 
       expect(error.code).toBe('PYTHON_VENV_UNAVAILABLE');
       expect(error.message).toContain('virtual environment support');
@@ -155,25 +155,40 @@ describe('Error classes', () => {
       expect(error.details).not.toContain('internet connection');
     });
 
-    it('provides platform-specific recovery commands', () => {
-      expect(
-        new PythonVenvUnavailableError('python3.13-venv', 'workspace', 'darwin').details
-      ).toContain('brew reinstall python');
-      expect(
-        new PythonVenvUnavailableError('python3.13-venv', 'workspace', 'win32').details
-      ).toContain('winget install');
-    });
+    it.each([
+      ['linux', 'sudo apt install python3.13-venv', 'python3 -m venv --help'],
+      ['darwin', 'brew reinstall python', 'python3 -m venv --help'],
+      ['win32', 'winget install --exact --id Python.Python.3.13', 'py -m venv --help'],
+    ] satisfies Array<[NodeJS.Platform, string, string]>)(
+      'provides %s-specific recovery commands',
+      (platform, installCommand, verifyCommand) => {
+        const error = new PythonVenvUnavailableError('python3.13-venv', 'workspace', platform);
+
+        expect(error.details).toContain(installCommand);
+        expect(error.details).toContain(verifyCommand);
+        expect(error.details).toContain('--skip-python-engine');
+        expect(error.details).not.toContain('internet connection');
+      }
+    );
   });
 
   describe('PythonPipUnavailableError', () => {
-    it('explains how to make pipx installation possible', () => {
-      const error = new PythonPipUnavailableError();
+    it.each([
+      ['linux', 'sudo apt install pipx', 'sudo apt install python3-pip'],
+      ['darwin', 'brew install pipx', 'brew reinstall python'],
+      ['win32', 'py -m pip install --user pipx', 'py -m ensurepip --upgrade'],
+    ] satisfies Array<[NodeJS.Platform, string, string]>)(
+      'explains how to restore pip and install pipx on %s',
+      (platform, pipxCommand, pipRecoveryCommand) => {
+        const error = new PythonPipUnavailableError(platform);
 
-      expect(error.code).toBe('PYTHON_PIP_UNAVAILABLE');
-      expect(error.details).toContain('sudo apt install pipx');
-      expect(error.details).toContain('sudo apt install python3-pip');
-      expect(error.details).not.toContain('internet connection');
-    });
+        expect(error.code).toBe('PYTHON_PIP_UNAVAILABLE');
+        expect(error.details).toContain(pipxCommand);
+        expect(error.details).toContain(pipRecoveryCommand);
+        expect(error.details).toContain('https://pipx.pypa.io/stable/installation/');
+        expect(error.details).not.toContain('internet connection');
+      }
+    );
   });
 
   describe('RapidKitNotAvailableError', () => {

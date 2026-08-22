@@ -5,6 +5,9 @@ remain the release gates. Real-world qualification complements them by running
 the installed CLI against explicitly selected reference repositories through
 local, network-free Git snapshots
 without installing dependencies or executing project lifecycle commands.
+Every isolated workspace also receives a private `WORKSPAI_STATE_DIR` beneath
+`--run-root`; qualification cannot read or update the user's canonical registry,
+journals, or legacy registry mirror.
 
 ## Isolated and cumulative layouts
 
@@ -26,6 +29,10 @@ Snapshot mode is the default and never changes adoption metadata, grounding, or
 workspace links in the source repository. `--source-mode linked` remains an
 explicit diagnostic escape hatch when uncommitted worktree content must be
 qualified; it may update governed Workspai metadata in that linked checkout.
+Each `--projects` entry must identify an actual Git repository root. When the
+reference directory is a collection, select its nested repositories explicitly
+(for example, `scanners/agent-audit`) so each receives its own isolated state,
+workspace, model, graph, Doctor evidence, and Goal lifecycle.
 
 Use `--shared-workspace` to adopt the repositories cumulatively into one fresh
 workspace. Every addition reruns the canonical chain, so transition and scale

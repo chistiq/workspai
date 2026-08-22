@@ -38,6 +38,22 @@ export function createQualificationCommandRecord({ id, result, parsed, startedAt
   };
 }
 
+export function isQualificationCommandAccepted({
+  result,
+  acceptedExitCodes,
+  parsed,
+  expectJson = true,
+}) {
+  const exitCode = result.status ?? (result.error ? 1 : 0);
+  const hasTerminalStatus = Number.isInteger(result.status);
+  const processErrorCode =
+    result.error && typeof result.error.code === 'string' ? result.error.code : null;
+  const processStateAccepted = !result.error || (hasTerminalStatus && processErrorCode === 'EPERM');
+  return (
+    acceptedExitCodes.includes(exitCode) && (!expectJson || parsed !== null) && processStateAccepted
+  );
+}
+
 export function assertQualificationReportIsPublicationSafe(report, forbiddenPaths = []) {
   const forbiddenVariants = forbiddenPaths.flatMap((candidate) =>
     candidate ? [...pathVariants(candidate)] : []

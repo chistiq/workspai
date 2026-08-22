@@ -2914,6 +2914,7 @@ describe('Doctor Command', () => {
         'migration-surface',
         'runtime-health-surface',
         'adapter-cpp-boot-entrypoint',
+        'runtime-dependency-materialization',
       ]) {
         const probe = payload.project.probes.find(
           (candidate: { id?: string }) => candidate.id === probeId
@@ -2993,6 +2994,14 @@ describe('Doctor Command', () => {
         expect.objectContaining({
           id: 'composite-project-boundary',
           status: 'warn',
+        })
+      );
+      expect(payload.project.probes).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization',
+          status: 'pass',
+          applicability: 'not-applicable',
+          reason: expect.stringMatching(/each registered runtime project boundary/),
         })
       );
       expect(
@@ -4796,6 +4805,49 @@ describe('Doctor Command', () => {
         expect.objectContaining({
           status: 'blocking',
           issueClass: 'dependency',
+        })
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('does not claim that Cargo.lock proves the shared crate cache is materialized', async () => {
+    const tempRoot = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-cargo-evidence-'))
+    );
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'project.json'), {
+      name: 'rust-library',
+      runtime: 'rust',
+      framework: 'rust',
+    });
+    await fsExtra.writeFile(
+      path.join(tempRoot, 'Cargo.toml'),
+      '[package]\nname = "rust-library"\nversion = "1.0.0"\n'
+    );
+    await fsExtra.writeFile(path.join(tempRoot, 'Cargo.lock'), 'version = 3\n');
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const project = JSON.parse(jsonLine).project;
+
+      expect(project.probes).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization',
+          status: 'pass',
+          reason: expect.stringMatching(/does not infer the state of a shared crate cache/),
         })
       );
     } finally {

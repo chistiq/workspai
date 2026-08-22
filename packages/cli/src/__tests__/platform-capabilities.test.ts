@@ -193,6 +193,44 @@ describe('platform-capabilities', () => {
       );
     });
 
+    it('supports an absolute task-scoped state directory without replacing HOME', () => {
+      expect(
+        getWorkspaceRegistryDirectory(
+          { HOME: '/srv/user', WORKSPAI_STATE_DIR: '/tmp/workspai-task-state' },
+          'linux'
+        )
+      ).toBe(path.normalize('/tmp/workspai-task-state'));
+    });
+
+    it('keeps canonical and legacy registry candidates inside an isolated state boundary', () => {
+      const candidates = getWorkspaceRegistryFileCandidates(
+        {
+          HOME: '/srv/user',
+          XDG_CONFIG_HOME: '/srv/user/.config',
+          APPDATA: 'C:\\Users\\user\\AppData\\Roaming',
+          WORKSPAI_STATE_DIR: '/tmp/workspai-task-state',
+        },
+        'win32'
+      );
+
+      expect(candidates).toEqual([
+        path.join('/tmp/workspai-task-state', 'workspaces.json'),
+        path.join('/tmp/workspai-task-state', 'legacy', 'workspaces.json'),
+      ]);
+      expect(
+        candidates.every((candidate) => candidate.startsWith('/tmp/workspai-task-state'))
+      ).toBe(true);
+    });
+
+    it('ignores a relative task-scoped state directory', () => {
+      expect(
+        getWorkspaceRegistryDirectory(
+          { HOME: '/srv/user', WORKSPAI_STATE_DIR: 'relative-state' },
+          'linux'
+        )
+      ).toBe(path.join('/srv/user', '.workspai'));
+    });
+
     it('uses XDG_CONFIG_HOME ahead of APPDATA for Windows compatibility candidates', () => {
       const candidates = getWorkspaceRegistryFileCandidates(
         {

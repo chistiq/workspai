@@ -292,6 +292,10 @@ export function getWorkspaceRegistryDirectory(
   platform: NodeJS.Platform = process.platform
 ): string {
   void platform;
+  const isolatedStateDirectory = getIsolatedWorkspaceStateDirectory(env);
+  if (isolatedStateDirectory) {
+    return isolatedStateDirectory;
+  }
   const homeDir = env.HOME || env.USERPROFILE || os.homedir();
   return path.join(homeDir, '.workspai');
 }
@@ -301,6 +305,10 @@ export function getLegacyWorkspaceRegistryDirectory(
   platform: NodeJS.Platform = process.platform
 ): string {
   void platform;
+  const isolatedStateDirectory = getIsolatedWorkspaceStateDirectory(env);
+  if (isolatedStateDirectory) {
+    return path.join(isolatedStateDirectory, 'legacy');
+  }
   const homeDir = env.HOME || env.USERPROFILE || os.homedir();
   return path.join(homeDir, '.rapidkit');
 }
@@ -314,6 +322,12 @@ export function getWorkspaceRegistryFileCandidates(
     path.join(getLegacyWorkspaceRegistryDirectory(env, platform), 'workspaces.json'),
   ];
 
+  // A task-scoped state root is a hermetic boundary. Do not merge registry
+  // candidates from the user's home or platform configuration directories.
+  if (getIsolatedWorkspaceStateDirectory(env)) {
+    return [...new Set(candidates)];
+  }
+
   if (isWindowsPlatform(platform)) {
     const configHome = env.XDG_CONFIG_HOME || env.APPDATA;
     if (configHome) {
@@ -323,6 +337,13 @@ export function getWorkspaceRegistryFileCandidates(
   }
 
   return [...new Set(candidates)];
+}
+
+function getIsolatedWorkspaceStateDirectory(env: NodeJS.ProcessEnv): string | null {
+  const configuredDirectory = env.WORKSPAI_STATE_DIR?.trim();
+  return configuredDirectory && path.isAbsolute(configuredDirectory)
+    ? path.normalize(configuredDirectory)
+    : null;
 }
 
 export function getUserLocalBinCandidates(

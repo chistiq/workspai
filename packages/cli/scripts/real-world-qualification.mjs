@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   assertQualificationReportIsPublicationSafe,
   createQualificationCommandRecord,
+  isQualificationCommandAccepted,
 } from './qualification-publication-safety.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -24,6 +25,7 @@ const projectNames = (args.projects ?? '')
   .filter(Boolean);
 const sharedWorkspaceName = args.sharedWorkspace ? slug(args.sharedWorkspace) : null;
 const sourceMode = args.sourceMode ?? 'snapshot';
+const isolatedStateRoot = path.join(runRoot, 'state');
 
 if (!['snapshot', 'linked'].includes(sourceMode)) {
   fail('--source-mode must be snapshot or linked.');
@@ -36,6 +38,7 @@ if (projectNames.length === 0) {
 }
 
 fs.mkdirSync(runRoot, { recursive: true });
+fs.mkdirSync(isolatedStateRoot, { recursive: true });
 const startedAt = new Date();
 const report = {
   schemaVersion: 'workspai.real-world-qualification.v1',
@@ -226,6 +229,25 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
       'The canonical chain must retain model and agent-context stages on blocked repositories.'
     )
   );
+  const graphArtifact = readJsonFile(
+    path.join(workspacePath, '.workspai', 'reports', 'workspace-knowledge-graph.json')
+  );
+  const serializedGraphArtifact = JSON.stringify(graphArtifact ?? {});
+  project.assertions.push(
+    assertion(
+      'graph.proof-and-portability-contract',
+      graphArtifact?.schemaVersion === 'workspace-knowledge-graph.v1' &&
+        graphArtifact?.quality?.entityProofCoverageRatio === 1 &&
+        graphArtifact?.quality?.relationProofCoverageRatio === 1 &&
+        graphArtifact?.quality?.portable === true &&
+        graphArtifact?.quality?.secretValuesEmitted === false &&
+        graphArtifact?.providers?.every((provider) => provider?.status !== 'failed') &&
+        ![referenceRoot, runRoot, projectPath, workspacePath].some((candidate) =>
+          serializedGraphArtifact.includes(candidate)
+        ),
+      'The canonical graph must remain proof-carrying, portable, secret-free, and free of failed providers or machine-local paths.'
+    )
+  );
 
   if (sharedWorkspaceName) {
     const workspaceGoal = run(project, {
@@ -316,12 +338,11 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
       'goal.coverage-preflight',
       coverageGoal.json?.schemaVersion === 'workspai.goal-plan-result.v1' &&
         coverageGoal.json?.dryRun === true &&
-        ['ready-to-plan', 'needs-evidence', 'blocked'].includes(
+        ['ready-to-plan', 'needs-evidence', 'needs-confirmation', 'blocked'].includes(
           coverageGoal.json?.goalPack?.state
         ) &&
-        typeof coverageGoal.json?.goalPack?.preflight?.measurement?.runtime === 'string' &&
-        coverageGoal.json.goalPack.preflight.measurement.runtime.length > 0,
-      'Coverage goals must report a runtime-specific measurement capability without writing artifacts.'
+        hasValidCoverageMeasurementPreflight(coverageGoal.json?.goalPack),
+      'Coverage goals must report either one runtime-specific measurement capability or an explicit bounded runtime decision without writing artifacts.'
     )
   );
 
@@ -357,7 +378,7 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     acceptedExitCodes: [0, 1, 2],
     timeoutMs: 600_000,
   });
-  run(project, {
+  const graphSearch = run(project, {
     id: 'workspace.graph-search',
     cwd: workspacePath,
     argv: [
@@ -372,7 +393,15 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     acceptedExitCodes: [0, 1, 2],
     timeoutMs: 600_000,
   });
-  run(project, {
+  project.assertions.push(
+    assertion(
+      'graph.search-contract',
+      graphSearch.json?.schemaVersion === 'workspace-knowledge-search.v1' &&
+        Array.isArray(graphSearch.json?.entities),
+      'Bounded graph search must return its stable machine-readable retrieval contract.'
+    )
+  );
+  const graphBenchmark = run(project, {
     id: 'workspace.graph-benchmark',
     cwd: workspacePath,
     argv: [
@@ -387,6 +416,13 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     acceptedExitCodes: [0, 1, 2],
     timeoutMs: 600_000,
   });
+  project.assertions.push(
+    assertion(
+      'graph.benchmark-contract',
+      graphBenchmark.json?.schemaVersion === 'workspace-graph-token-efficiency.v1',
+      'Graph benchmarking must return its stable token-efficiency measurement contract.'
+    )
+  );
   run(project, {
     id: 'workspace.context',
     cwd: workspacePath,
@@ -470,23 +506,31 @@ process.stdout.write(
 process.exit(report.summary.failed > 0 || report.summary.invalidSource > 0 ? 1 : 0);
 
 function run(project, spec) {
+  const stateScope = sharedWorkspaceName ?? project.id;
+  const isolatedStateDirectory = path.join(isolatedStateRoot, stateScope);
   const started = Date.now();
   const result = spawnSync(args.cli ?? 'workspai', spec.argv, {
     cwd: spec.cwd,
     encoding: 'utf8',
-    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    env: {
+      ...process.env,
+      WORKSPAI_STATE_DIR: isolatedStateDirectory,
+      NO_COLOR: '1',
+      FORCE_COLOR: '0',
+    },
     timeout: spec.timeoutMs,
     maxBuffer: 32 * 1024 * 1024,
     shell: false,
   });
-  const exitCode = result.status ?? (result.error ? 1 : 0);
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? '';
   const parsed = parseJson(stdout);
-  const accepted =
-    spec.acceptedExitCodes.includes(exitCode) &&
-    (spec.expectJson === false || parsed !== null) &&
-    !result.error;
+  const accepted = isQualificationCommandAccepted({
+    result,
+    acceptedExitCodes: spec.acceptedExitCodes,
+    parsed,
+    expectJson: spec.expectJson !== false,
+  });
   const record = {
     ...createQualificationCommandRecord({ id: spec.id, result, parsed, startedAt: started }),
     accepted,
@@ -506,8 +550,31 @@ function parseJson(stdout) {
   }
 }
 
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function assertion(id, passed, message) {
   return { id, passed: Boolean(passed), message };
+}
+
+function hasValidCoverageMeasurementPreflight(goalPack) {
+  const measurement = goalPack?.preflight?.measurement;
+  if (typeof measurement?.runtime === 'string' && measurement.runtime.length > 0) {
+    return true;
+  }
+  return (
+    goalPack?.state === 'needs-confirmation' &&
+    goalPack?.decision?.required === true &&
+    measurement?.status === 'requires-setup' &&
+    measurement?.runtime === null &&
+    Array.isArray(measurement?.runtimeChoices) &&
+    measurement.runtimeChoices.length > 1
+  );
 }
 
 function isDirectory(target) {

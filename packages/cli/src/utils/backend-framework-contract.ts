@@ -1126,6 +1126,7 @@ export function detectBackendFrameworkFromProject(
   const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
   const rootCmake = readTextIfExists(path.join(projectPath, 'CMakeLists.txt'));
   const rootMeson = readTextIfExists(path.join(projectPath, 'meson.build'));
+  const rootCargo = readTextIfExists(path.join(projectPath, 'Cargo.toml'));
   const hasRootNativeBuild = rootCmake.trim().length > 0 || rootMeson.trim().length > 0;
   const hasCppSource =
     hasFileWithSuffix(projectPath, '.cpp', 3) ||
@@ -1148,6 +1149,17 @@ export function detectBackendFrameworkFromProject(
     !declaresCpp
   ) {
     return buildDetection('c', 'high', 'manifest');
+  }
+  // A Cargo workspace with explicit default members owns its root execution
+  // surface. Private package.json files in these repositories commonly drive
+  // bindings, documentation, or release tooling and must not silently replace
+  // the Rust core as the primary runtime.
+  if (
+    runtimeCandidates.includes('rust') &&
+    /\[workspace\]/u.test(rootCargo) &&
+    /^default-members\s*=/mu.test(rootCargo)
+  ) {
+    return buildDetection('rust', 'high', 'manifest');
   }
   // Prefer runtime-specific control surfaces over their compatible host
   // runtimes. Bun projects also carry package.json and Kotlin projects often

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   assertQualificationReportIsPublicationSafe,
   createQualificationCommandRecord,
+  isQualificationCommandAccepted,
 } from './qualification-publication-safety.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -131,7 +132,6 @@ for (const [commandIndex, argv] of commands.entries()) {
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? '';
   const parsed = parseJson(stdout);
-  const exitCode = result.status ?? (result.error ? 1 : 0);
   report.commands.push({
     ...createQualificationCommandRecord({
       id: `command-${String(commandIndex + 1).padStart(3, '0')}`,
@@ -139,7 +139,11 @@ for (const [commandIndex, argv] of commands.entries()) {
       parsed,
       startedAt: started,
     }),
-    accepted: [0, 1, 2].includes(exitCode) && parsed !== null && !result.error,
+    accepted: isQualificationCommandAccepted({
+      result,
+      acceptedExitCodes: [0, 1, 2],
+      parsed,
+    }),
   });
   writeReport();
 }
