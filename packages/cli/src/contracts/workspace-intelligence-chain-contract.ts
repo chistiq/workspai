@@ -842,14 +842,13 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
       agents: {
         canonicalReadOrder: [
           artifacts.agentIndex,
+          WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex,
+          WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun,
           artifacts.agentContext,
+          artifacts.skillsIndex,
           artifacts.verify,
           artifacts.impact,
           artifacts.explain,
-          artifacts.model,
-          artifacts.knowledgeGraph,
-          artifacts.agentCustomizationPack,
-          artifacts.skillsIndex,
         ],
         entrypoints: [artifacts.agents, '.workspai/AGENT-GROUNDING.md'],
         rule: 'Agents must cite current artifacts, preserve verified versus inferred status, and re-run the producing step when evidence is missing or stale.',

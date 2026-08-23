@@ -14,10 +14,12 @@ function readMonorepo(relativePath: string): string {
 }
 
 describe('shared contracts workflow (Wave A + B)', () => {
-  it('keeps explicit sync available while pre-commit validation remains read-only', () => {
+  it('synchronizes consumers while keeping CLI publication independently gated', () => {
     const npmPackage = JSON.parse(read('package.json'));
+    const rootPackage = JSON.parse(readMonorepo('package.json'));
     const syncScript = read('scripts/sync-shared-contracts.mjs');
     const preCommit = readMonorepo('.husky/pre-commit');
+    const releaseWorkflow = readMonorepo('.github/workflows/release-npm-manual.yml');
 
     expect(npmPackage.scripts['sync:shared-contracts']).toContain('sync-shared-contracts');
     expect(npmPackage.scripts['check:shared-contracts']).toContain('sync-shared-contracts');
@@ -38,10 +40,18 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(syncScript).toContain('infra-stack.v1.json');
     expect(syncScript).toContain('--stage-git');
     expect(syncScript).toContain('stageSyncedContracts');
+    expect(syncScript).toContain('--require-consumer');
+    expect(syncScript).toContain('--require-clean');
+    expect(syncScript).toContain('--require-consumer-clean');
+    expect(syncScript).toContain('assertCanonicalContractsCommitted');
+    expect(syncScript).toContain('assertConsumerContractsCommitted');
+    expect(npmPackage.scripts['contracts:prepush']).toContain('sync:shared-contracts');
+    expect(npmPackage.scripts['contracts:prepush']).toContain('--require-clean');
+    expect(rootPackage.scripts['prepush:check']).toContain('contracts:prepush');
+    expect(preCommit).toContain('sync:shared-contracts -- --stage-git');
     expect(preCommit).toContain('run contracts:check:local');
-    expect(preCommit).toContain('without modifying the index');
-    expect(preCommit).not.toContain('sync:shared-contracts -- --stage-git');
     expect(preCommit).not.toContain('run validate:contracts');
+    expect(releaseWorkflow).not.toContain("'Consumer Contract Parity'");
   });
 
   it('keeps official generator drift coverage release-safe and cost bounded', () => {

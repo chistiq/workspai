@@ -584,6 +584,9 @@ describe('import-project', () => {
 
     const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
     execaMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] !== 'clone') {
+        return { exitCode: 1, stdout: '', stderr: '' } as never;
+      }
       const destinationPath = args[args.length - 1];
       await fsExtra.ensureDir(destinationPath);
       await fsExtra.writeFile(

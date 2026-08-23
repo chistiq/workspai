@@ -45,8 +45,10 @@ const requiredSnippets = [
 const errors = [];
 
 const requiredCliReadmeHeadings = [
+  '## Give your AI agent the system, not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start in two minutes',
+  '## Give your agent a goal, not an open-ended prompt',
   '## What happens after the first run',
   '## How Workspace Intelligence works',
   '## Everyday workflows',
@@ -78,6 +80,9 @@ for (const semantic of [
   'not "these projects are independent."',
   'npx workspai create',
   'npx workspai adopt .',
+  'npx workspai goal "Raise test coverage to 85%" --for-agent generic',
+  'The agent gets a focused objective, not permission to scan or change everything.',
+  'does not edit source or claim that the outcome is complete.',
   'A blocked result is useful evidence, not a crashed command.',
   'do not require an AI API key',
 ]) {
@@ -208,8 +213,10 @@ for (const selector of [
 }
 
 const requiredRepositoryReadmeHeadings = [
+  '## Give your AI agent the system, not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start with your software',
+  '## Give your agent a goal, not an open-ended prompt',
   '## What Workspai gives you',
   '## How it works',
   '## One foundation, many consumers',
@@ -240,6 +247,9 @@ for (const semantic of [
   'not “these projects are independent.”',
   'not a list of missing',
   'README_CONTENT_CONTRACT.md',
+  'npx workspai goal "Raise test coverage to 85%" --for-agent generic',
+  'The agent gets a focused objective, not permission to scan or change everything.',
+  'does not edit source or claim that the outcome is complete.',
 ]) {
   if (!normalizedRepositoryReadme.includes(semantic)) {
     errors.push(`Repository README is missing required product truth: ${semantic}`);
@@ -258,6 +268,7 @@ if (!fs.existsSync(readmeContentContractPath)) {
     'published-contract-catalog.v1.json',
     'workspace-intelligence-architecture.v1.json',
     'Results vary by workspace and query',
+    'Keep videos outside the npm package tarball',
   ]) {
     if (!readmeContentContract.includes(semantic)) {
       errors.push(`README content contract is missing required policy: ${semantic}`);
@@ -405,6 +416,7 @@ const graphBenchmarkGuide = fs.readFileSync(
   'utf8'
 );
 const workspaceRunGuide = fs.readFileSync(path.join(root, 'docs', 'workspace-run.md'), 'utf8');
+const agentEntryGuide = fs.readFileSync(path.join(root, 'docs', 'agent-entry.md'), 'utf8');
 const glossary = fs.readFileSync(path.join(root, 'docs', 'GLOSSARY.md'), 'utf8');
 const aiQuickstart = fs.readFileSync(path.join(root, 'docs', 'AI_QUICKSTART.md'), 'utf8');
 
@@ -412,6 +424,7 @@ const requiredDocumentationLinks = [
   'README_CONTENT_CONTRACT.md',
   'workspace-intelligence-runner.md',
   'workspace-knowledge-graph.md',
+  'agent-entry.md',
   'graph-benchmark-methodology.md',
   'GLOSSARY.md',
   'contracts/ARTIFACT_CATALOG.md',
@@ -444,6 +457,24 @@ for (const schemaName of graphSchemaNames) {
 for (const schemaName of evaluationSchemaNames) {
   if (!contractDocs.includes(schemaName)) {
     errors.push(`Contract documentation is missing the evaluation schema: ${schemaName}`);
+  }
+}
+
+for (const schemaName of ['project-agent-entry.v1.json', 'agent-bootstrap-receipt.v1.json']) {
+  if (!contractDocs.includes(schemaName)) {
+    errors.push(`Contract documentation is missing the agent entry schema: ${schemaName}`);
+  }
+}
+
+for (const semantic of [
+  'host-first, not model-first',
+  'workspai agent bootstrap --for-agent codex --strict --json',
+  'workspai project agent-entry verify --for-agent all --strict --json',
+  'live source owns exact implementation behavior',
+  'does not claim that a model followed the instructions',
+]) {
+  if (!agentEntryGuide.includes(semantic)) {
+    errors.push(`Agent entry documentation is missing required semantics: ${semantic}`);
   }
 }
 

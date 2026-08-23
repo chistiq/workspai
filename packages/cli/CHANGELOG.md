@@ -7,6 +7,420 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-08-22
+
+### Added
+
+- Published workspace-profile, executable-kit, runtime, Python-engine, and
+  creation-lifecycle semantics through the versioned Create Planner capability
+  contract for IDE and agent consumers.
+- Added hermetic state isolation for qualification runners and automation so
+  test runs cannot read or modify the user's canonical workspace registry.
+
+### Changed
+
+- Made source-structure imports language-aware across JavaScript/TypeScript,
+  Python, Rust, C/C++, JVM, .NET, Go, Ruby, PHP, Elixir, Dart, Lua, and R.
+  C/C++ project-root includes now resolve to proof-backed header entities.
+- Gave same-name monorepo packages distinct identities at their portable
+  manifest boundaries while retaining ecosystem/name deduplication for
+  external dependencies.
+- Made Doctor dependency evidence explicit for aggregate, native, Deno, Cargo,
+  Go, Bundler, Mix, and Clojure boundaries instead of overstating what a
+  lockfile proves about an environment-specific dependency cache.
+- Made Cargo workspaces with explicit default members outrank private Node
+  tooling manifests when selecting the primary adopted runtime.
+- Made workspace and project creation complete their canonical registry,
+  contract, model, graph, agent-context, grounding, and evidence-index sync
+  before reporting success. Dependency initialization and strict release
+  verification remain explicit operations.
+- Made workspace dependency initialization use canonical profile and kit
+  metadata. Node, Go, Java, and .NET profiles no longer install the optional
+  Python engine because a project exposes generic module support.
+
+### Fixed
+
+- Prevented Rust macros such as `register_extension!` from activating the Deno
+  runtime-bridge provider, ignored `unknown` candidates when deciding whether a
+  project is polyglot, and required generated-source markers to occur in source
+  comments rather than arbitrary string literals.
+- Made real-world qualification accept a completed child-process status over a
+  non-fatal restricted-runner spawn warning and recognize explicit runtime
+  selection as a valid polyglot Goal measurement preflight.
+- Removed newly-created partial virtual environments after failed Python setup
+  and rebuilt stale Workspai-owned workspace environments whose interpreter
+  cannot launch pip.
+- Distinguished Git repository initialization, staging, and initial-commit
+  failures. Cancelling a configured commit signature now leaves the generated
+  files staged and reports that exact state instead of claiming Git init failed.
+- Made interactive Python selection explicitly describe the minimum supported
+  version. Installer choices now reflect usable Poetry, venv, pip, and pipx
+  capabilities; selected methods are honored without blind fallback; and missing
+  system modules produce concise preflight guidance without bundled stack traces
+  or machine-local paths. Failure receipts include platform-specific installation
+  commands and official documentation for Python, venv, pip, pipx, and Poetry.
+- Kept installer failures bound to the user's selected method: unavailable
+  Poetry now reports Poetry installation paths, while pipx prerequisite guidance
+  remains scoped to an explicitly selected pipx flow.
+
+## [0.63.0] - 2026-08-21
+
+### Added
+
+- Added deterministic sequential causal queues for aggregate Studio cards. A
+  workspace card can retain multiple blocking findings without widening one
+  mutation transaction across unrelated projects or causes.
+- Added explicit aggregate-repair and transaction-scope capabilities so IDEs
+  and agents can distinguish a presentation boundary from the exact causal
+  finding family owned by one repair transaction.
+- Added canonical resolution for portable `external/<project>` references,
+  allowing registered linked projects to participate in governed checkpoint,
+  mutation, reconciliation, verification, and rollback without persisting a
+  machine-local project root.
+
+### Changed
+
+- Made Workspace Repair select one blocking finding, one causal action family,
+  and one canonical project at a time. After exact verification, fresh evidence
+  determines the next queued target instead of reusing a stale aggregate plan.
+- Made remediation plans portable for linked projects. Project paths, file
+  proofs, transaction targets, and command working directories now use
+  canonical external project references, while runtime execution resolves those
+  references only inside the registered boundary.
+- Made Workspai-owned `npx` repair invocations use `--no-install`, preventing a
+  governed repair from fetching an unverified CLI when the required local
+  executable is unavailable.
+- Made Doctor intent-aware for environment contracts, Python command
+  entrypoints, Python and Bun test surfaces, migration applicability, and HTTP
+  health applicability.
+- Made aggregate repository roots with multiple nested runtimes but no
+  root-owned runtime manifest explicit composite boundaries instead of applying
+  one nested runtime lifecycle to the complete repository.
+
+### Fixed
+
+- Prevented advisory dependency-baseline commands from becoming false blocking
+  dependency-materialization findings when the runtime dependency tree is
+  already present.
+- Classified non-throwing `ENOENT` audit executions as `tool-unavailable` and
+  never as a clean or malformed security result.
+- Prevented host and shell variables from producing misleading `.env.example`
+  repairs for desktop applications, developer tools, and aggregate platforms.
+- Preserved canonical external-project casing across remediation actions,
+  transaction stages, checkpoints, and adapters.
+- Removed an unnecessary nested-runtime scan for projects that already own a
+  root runtime manifest, reducing real Deno Doctor qualification from minutes
+  to seconds while retaining cross-runtime evidence.
+
+## [0.62.0] - 2026-08-20
+
+### Added
+
+- Added runtime-aware operational Skills derived from the canonical Workspace
+  Model, plus test-evidence and delivery-evidence playbooks when the registered
+  project capabilities and artifacts support those workflows.
+- Added portable `SKILL.md` projections for `.agents`, GitHub Copilot, Claude,
+  Cursor, and Grok skill surfaces while preserving host-native grounding for
+  every supported consumer.
+- Added safe reconciliation for generated operational Skills: stale
+  Workspai-owned projections are removed deterministically, while authored
+  Skills and unrelated host customization remain untouched.
+
+### Changed
+
+- Made the canonical agent entry bounded-first. Project manifests, bootstrap
+  receipts, project lenses, and the workspace report index now route consumers
+  through Goal state, compact context, the Skills index, task-scoped Graph
+  search, and targeted live source reads instead of preloading the complete
+  Workspace Model and Knowledge Graph.
+- Made agent-facing workspace identity portable through `workspace:<name>`;
+  runtime resolution may still use absolute paths locally, but durable reports,
+  receipts, Skills, and host instructions prohibit their persistence or
+  disclosure.
+- Standardized generated operational Skills with portable frontmatter and a
+  Workspai ownership marker suitable for deterministic regeneration across
+  supported hosts.
+- Kept complete Model and Graph artifacts as canonical deep evidence validated
+  by bootstrap, while removing them from the default consumer read path.
+
+### Fixed
+
+- Preserved backward compatibility for legacy project-entry, project-context,
+  and bootstrap-receipt payloads while allowing the new bounded Skills and
+  Graph-search route under the same versioned contracts.
+- Prevented agent customization reports, MCP design artifacts, project entry
+  surfaces, and workspace context from persisting machine-local workspace
+  roots.
+- Corrected strict JSON Schema branch declarations so AJV can compile the
+  backward-compatible bounded-entry contracts during adoption and Agent Sync.
+
+## [0.61.0] - 2026-08-19
+
+### Added
+
+- Enriched `WorkspaceAgentContext` with summary fields from every intelligence
+  artifact—impact, doctor, analyze, readiness, verify, explain, and diff—so
+  agents get full situational awareness from a single context read.
+- Added `replan` decision option to the Workspace Repair Engine, letting the
+  model discard a failed plan and generate a fresh proposal for the same target.
+- Added enterprise-level agent grounding for Cursor (5 rules + skill), Claude
+  (workspace + evidence rules + skill), Windsurf (modern `.windsurf/rules/`
+  format), Grok (grounding + evidence), and Amazon Q (workspace rule).
+- Made portable grounding skills dynamic and project-aware: skills now include
+  real workspace projects, blockers, and safe commands from current evidence.
+- Added `safeReadWorkspaceJsonArtifact` helper for schema-validated artifact
+  reading in context construction.
+
+### Changed
+
+- Upgraded README documentation with one-liner value proposition, before/after
+  comparison, accurate two-level output tree (workspace + project), audience
+  table, and MCP server details.
+- Added user-friendly introduction to the Workspace Repair Engine documentation
+  with a quick example and plain-language explanation.
+- Upgraded docs index quickstart to "from zero to value in 60 seconds."
+- Enhanced portable provider adapters (Gemini, Qwen, generic AGENTS.md
+  consumers) with evidence discipline and answer contract sections.
+
+## [0.60.1] - 2026-08-18
+
+### Fixed
+
+- Added an auditable Goal verification binding receipt so canonical Model and
+  Graph evidence refreshed by one CLI-owned verification attempt remains valid
+  for the next bounded attempt, while tampered status, unrelated source drift,
+  and unmatched fingerprints continue to fail closed.
+
+## [0.60.0] - 2026-08-18
+
+### Changed
+
+- Made test-coverage Goals runtime-bound across intent compilation, preflight,
+  verified-goal identity, baseline, and verification. Polyglot scopes now use
+  canonical Workspace Model choices and a reproducible `--runtime` binding
+  instead of silently selecting or re-detecting a primary runtime.
+- Added context-aware Goal scoping: adopted-project and single-project
+  invocations bind automatically; multi-project terminals can choose one
+  project, a project set, or the workspace; non-interactive consumers receive
+  a machine-readable decision and explicit `--scope` choices.
+
+### Fixed
+
+- Reconciled the exact legacy Goal-index drift where `activeGoalId` selected a
+  non-actionable planned or active entry, while continuing to reject malformed
+  or tampered indexes.
+- Prevented activation of Goal Packs that still require clarification,
+  measurement evidence, or blocker resolution.
+- Prevented managed `.workspai` grounding and report updates from invalidating
+  their own Git-backed Model/Graph fingerprint during Goal `--refresh`.
+- Prevented mixed-runtime project-set coverage Goals from silently verifying
+  only the projects matching one selected runtime. Coverage runtime choices
+  must now be canonical for every selected project, otherwise Workspai asks
+  the user or agent to split the scope.
+
+## [0.59.1] - 2026-08-17
+
+### Changed
+
+- Made contract delivery consumer-aware before publication: contract-affecting
+  commits regenerate and synchronize local mirrors, pre-push requires generated
+  CLI outputs to be committed, and consumer mirror drift cannot delay a
+  backward-compatible npm delivery.
+- Kept consumer release policy independent from CLI schema ownership, so an
+  extension can require capabilities from an already published CLI without
+  forcing a redundant CLI release.
+
+### Fixed
+
+- Stabilized the Windows coverage lane by bounding filesystem-heavy test
+  concurrency, using platform-aware transaction budgets, making temporary
+  workspace cleanup retry-safe, and allowing registry-lock acquisition to
+  outlive its stale-lock recovery threshold.
+
+## [0.59.0] - 2026-08-17
+
+### Added
+
+- Added a portable canonical-first project entry manifest, adapters for major
+  coding-agent hosts, and machine-readable bootstrap/verification receipts that
+  fail closed on broken workspace binding, schema, integrity, Model/Graph
+  freshness, live input, or active Goal evidence.
+
+### Changed
+
+- Reworked root help around the complete `Understand → Impact → Act → Verify`
+  path, outcome-first commands for new users, readable wrapping for long
+  examples, and an ownership-grouped command map generated from the same
+  runtime inventory consumed by `commands --json`.
+- Made managed project grounding route agents through canonical Workspai
+  evidence before broad source discovery while preserving authored instruction
+  files, symbolic links, and explicit degraded-mode semantics.
+- Made `generic` Workspace Intelligence publish one provider-neutral context
+  plus every supported host entry surface, and promoted the mandatory Workspai
+  gate ahead of authored repository guidance without replacing authored text.
+- Distinguished logical workspace identity, project-local `.workspai` paths,
+  portable `workspace:` URIs, and runtime-private absolute path resolution in
+  every project entry contract and host adapter.
+
+- Enforced ASCII English across authored source, tests, fixtures,
+  documentation, release material, and filenames with full-repository and
+  staged-content guards; language-neutral Unicode symbols remain supported.
+- Kept valid user-defined engineering objectives executable even when the local
+  deterministic classifier does not recognize their language or domain. Goal
+  categories now tune retrieval and exact verification instead of acting as an
+  allowlist; custom outcomes retain the original objective, governed scope,
+  evidence bindings, approval, repair, rollback, and attempt policy.
+- Extended model-proposal repair to source files in exactly one canonically
+  registered linked project while retaining CLI-owned checkpoint, validation,
+  verification, and rollback semantics.
+- Enforced each Goal Pack's immutable `maxAttempts` policy in CLI verification
+  using the durable verified-goal attempt record, so a restarted IDE or agent
+  cannot reset the governed execution budget.
+- Serialized Goal-bound proposal creation and verification, retained the
+  bounded transaction history, and sealed every successful source transition
+  with post-repair Model, Graph, stable Graph-input, checkpoint, and closure
+  hashes so concurrent retries and unrelated source drift fail closed.
+- Published explicit Goal source-transition and durable-attempt capability
+  invariants so IDEs can reject older runtimes before a mutation begins instead
+  of relying on package-version inference.
+
+### Fixed
+
+- Aligned `workspace verify --json` envelope exit codes with the evaluated gate
+  and process exit code, so strict-mode consumers never receive `exitCode: 0`
+  for a blocked verification artifact.
+- Made Goal retrieval objective-first and relevance-ranked through the canonical
+  Graph query engine, with bounded category fallback that cannot fill the agent
+  evidence budget before the user's actual request is evaluated.
+- Corrected general Goal completion language so Workspace Verify proves safety
+  and evidence freshness without being presented as machine proof of an
+  arbitrary semantic outcome, and recognized named-project phrasing such as
+  `Prepare gRPC for release` as release readiness.
+- Prevented Goal plans that still need evidence or confirmation from replacing
+  an existing active objective; only `ready-to-plan` entries may become active.
+- Deduplicated protected-path decision reasons so consumers receive one stable,
+  actionable explanation instead of repeated canonical-evidence errors.
+- Kept unchanged live source bindings valid across evidence-only Graph reruns by
+  comparing the stable Graph input fingerprint rather than volatile artifact
+  timestamps.
+- Preserved stale or invalid selected Goals as present in agent bootstrap
+  receipts and emitted an exact evidence-refresh command instead of reporting
+  the Goal as absent or leaving the agent without a recovery path.
+- Made each bootstrap receipt bind its `requiredReadOrder` to the resolved host
+  (or `all` during a complete host audit) instead of routing every consumer
+  back through the provider-neutral `generic` bootstrap step.
+
+### Security
+
+- Kept linked-project repair fail-closed for absolute, unregistered, sibling,
+  parent, and symbolic-link boundaries; portable execution paths remain durable
+  CLI identity and must be projected project-relative by consumers.
+- Prevented agent entry manifests and bootstrap receipts from emitting
+  machine-local absolute paths; contract and integrity validation now happens
+  before an agent may claim complete architecture or verification.
+- Classified the explicit workspace resolver's absolute paths as runtime-only,
+  non-portable data that agents must not persist, disclose, or copy into shared
+  output.
+
+## [0.58.0] - 2026-08-16
+
+### Added
+
+- Added the governed `goal <intent>` front door with immutable Goal Packs,
+  consumer handoffs, deterministic retrieval anchors, measurement-capability
+  preflight, and an agent-discoverable active-goal lifecycle index.
+- Added explicit Goal lifecycle controls for status, list, activate, cancel,
+  deterministic verification preparation, and CLI-owned verification; repair
+  proposals may bind to an active Goal without widening its project scope.
+- Unified all successful Goal lifecycle JSON responses behind the published
+  `workspai.goal-lifecycle-result.v1` contract and made lifecycle failures use
+  operation-specific machine-readable error codes.
+
+### Changed
+
+- Made Goal integrity semantics explicit: structural Model hashes and canonical
+  JSON Graph/Goal hashes are distinct from the stable Goal identity fingerprint.
+- Hardened Goal lifecycle recovery and state invariants: successful
+  prepare/verify flows retain one selected objective, verified completion clears
+  it, stale goals remain listable/cancellable, and malformed or duplicate index
+  entries fail closed.
+- Added strict option exclusivity, empty-scope and empty-retrieval blocking,
+  broader local-path/secret rejection, shell-safe generated commands, and
+  permanent real-repository Goal qualification scenarios.
+- Sealed canonical Model/Graph freshness after CLI-managed agent grounding so
+  a completed Intelligence chain cannot invalidate itself before Goal, Graph,
+  IDE, or agent consumers read it.
+- Made real-world qualification snapshot-first and added cumulative
+  workspace-scoped Goal assertions without retaining raw output or local paths.
+
+## [0.57.0] - 2026-08-15
+
+### Changed
+
+- Reworked Doctor's human output around an authoritative verdict and separate
+  blocking, advisory, unknown, contradiction, and not-applicable accounting;
+  the legacy percentage is now explicitly a diagnostic pass rate rather than a
+  workspace health claim.
+- Added independent project archetype classification so libraries, SDKs,
+  plugins, monorepos, and cross-language platforms do not receive service-only
+  migration, health-endpoint, environment, or boot-entrypoint warnings.
+- Made Doctor's default terminal output summary-first, portable-path safe, and
+  remediation-plan first; `--verbose` retains full probe and lifecycle detail.
+- Made source-structure extraction resolve local imports against the complete
+  bounded fingerprint inventory while retaining a smaller extraction sample,
+  reducing false unresolved edges in large repositories without unbounded
+  graph growth.
+- Made multi-term graph retrieval require meaningful term coverage before a
+  generic service/API intent boost can qualify a result.
+- Added versioned `workspai.adopt-effects.v1` preview data so adoption consumers
+  can show project metadata, repository-control reconciliation, and downstream
+  workspace intelligence operations before writing.
+- Added reproducible isolated and cumulative real-world qualification harnesses
+  for polyglot repositories and the read-mostly enterprise command surface.
+- Made qualification reports publication-safe by default: machine-specific
+  roots are mandatory runtime inputs, project identifiers are anonymized, raw
+  command output and invocation paths are omitted, and a fail-closed guard
+  rejects local paths before a report can be written.
+- Made nested runtime composition first-class across adoption, Doctor, project
+  metadata, and command capabilities; composite repositories now state when
+  lifecycle coverage belongs only to the primary runtime adapter.
+- Added bounded JSON receipts for full `workspace graph emit` and
+  `workspace contract graph` exports when `--output` is supplied, preventing
+  large graph artifacts from flooding agent, IDE, or CI stdout buffers.
+
+### Fixed
+
+- Fixed `doctor workspace` and `doctor --workspace` failing to resolve the
+  canonical workspace when invoked from an adopted or linked project.
+- Fixed managed project grounding recreating an intentionally deleted tracked
+  `AGENTS.md` file.
+- Fixed re-adopt dry runs reporting that workspace commands could not resolve
+  even when the existing project binding was valid.
+- Fixed strict Workspace Intelligence summaries reporting zero blocking reasons
+  without identifying that strict policy had gated advisory or incomplete
+  evidence.
+- Fixed local import relations targeting source files outside the extraction
+  sample producing missing target entities.
+- Fixed adoption following or replacing authored `AGENTS.md` symbolic links;
+  repository symlinks are preserved while portable project grounding remains
+  available under `.workspai`.
+- Fixed empty manifest identifiers producing schema-invalid Knowledge Graph
+  entity labels; providers now reject empty identifiers and the graph state
+  enforces non-empty labels and aliases as a final invariant.
+- Fixed snapshot create, list, inspect, and restore failures emitting human
+  prose under `--json`; failures now use the shared versioned operation-error
+  envelope for CI, IDE, and agent consumers.
+- Updated the transitive development-toolchain `nanoid` dependency to the
+  patched release so both production and full npm audits report zero known
+  vulnerabilities.
+- Fixed canonical Git containment checks across macOS physical-path aliases and
+  Windows cross-drive workspace paths so managed grounding preserves authored
+  tracked deletion without misclassifying unrelated repositories.
+- Restored the complete cross-platform native dependency lock and added
+  install/pre-push validation derived from Rolldown, Rollup, and esbuild
+  metadata, preventing platform-pruned locks from reaching build or test
+  startup.
+
 ## [0.56.0] - 2026-08-11
 
 ### Added
@@ -144,7 +558,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed missing Python launchers leaking a raw `--version exited with code
-  undefined` failure instead of the actionable `PYTHON_NOT_FOUND` diagnostic.
+undefined` failure instead of the actionable `PYTHON_NOT_FOUND` diagnostic.
 - Fixed `workspace repair capabilities --project <name>` inspecting the
   workspace root instead of the selected managed or externally linked project.
 - Fixed the final agent report index being published before Explain and the

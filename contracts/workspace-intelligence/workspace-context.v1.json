@@ -26,7 +26,20 @@
       "format": "date-time"
     },
     "agent": {
-      "enum": ["generic", "codex", "claude", "cursor", "orca"]
+      "enum": [
+        "generic",
+        "codex",
+        "claude",
+        "cursor",
+        "gemini",
+        "qwen",
+        "kimi",
+        "grok",
+        "copilot",
+        "windsurf",
+        "amazon-q",
+        "orca"
+      ]
     },
     "workspaceSummary": { "type": "string" },
     "modelRef": { "type": "string" },
@@ -65,7 +78,10 @@
       "required": ["name", "root", "type"],
       "properties": {
         "name": { "type": "string" },
-        "root": { "type": "string" },
+        "root": {
+          "type": "string",
+          "description": "Portable workspace identity (workspace:<name>), never a machine-local filesystem path."
+        },
         "type": { "type": "string" },
         "profile": { "type": "string" }
       },

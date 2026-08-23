@@ -39,8 +39,6 @@
       "include": [
         "src",
         "test",
-        "schemas",
-        "fixtures",
         "conformance",
         "README.md",
         "CHANGELOG.md",

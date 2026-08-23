@@ -1,7 +1,9 @@
 export const INGESTION_PLAN_SCHEMA_VERSION = 'workspai.ingestion-plan.v1' as const;
 export const INGESTION_RESULT_SCHEMA_VERSION = 'workspai.ingestion-result.v1' as const;
+export const ADOPT_EFFECTS_SCHEMA_VERSION = 'workspai.adopt-effects.v1' as const;
 export const INGESTION_PLAN_CONTRACT_PATH = 'contracts/ingestion-plan.v1.json' as const;
 export const INGESTION_RESULT_CONTRACT_PATH = 'contracts/ingestion-result.v1.json' as const;
+export const ADOPT_EFFECTS_CONTRACT_PATH = 'contracts/adopt-effects.v1.json' as const;
 
 export type IngestionAction =
   | 'adopt-project'
@@ -39,6 +41,25 @@ export interface IngestionResult {
   registered: boolean;
   verified: boolean;
   warnings: string[];
+}
+
+export interface AdoptProjectEffects {
+  schemaVersion: typeof ADOPT_EFFECTS_SCHEMA_VERSION;
+  sourceMode: 'linked';
+  sourceCodeModified: false;
+  projectMetadataFiles: string[];
+  repositoryControlFiles: Array<{
+    path: string;
+    action: 'reconcile';
+    condition: string;
+  }>;
+  workspaceOperations: Array<
+    | 'register-project'
+    | 'sync-contract'
+    | 'rebuild-model'
+    | 'rebuild-graph'
+    | 'sync-agent-grounding'
+  >;
 }
 
 export function buildIngestionPlan(input: Omit<IngestionPlan, 'schemaVersion'>): IngestionPlan {
@@ -116,6 +137,60 @@ export function buildIngestionResultSchema() {
       registered: { type: 'boolean' },
       verified: { type: 'boolean' },
       warnings: { type: 'array', items: { type: 'string' } },
+    },
+  };
+}
+
+export function buildAdoptEffectsSchema() {
+  return {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://workspai.dev/contracts/adopt-effects.v1.json',
+    title: 'Workspai Adopt Effects v1',
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'schemaVersion',
+      'sourceMode',
+      'sourceCodeModified',
+      'projectMetadataFiles',
+      'repositoryControlFiles',
+      'workspaceOperations',
+    ],
+    properties: {
+      schemaVersion: { const: ADOPT_EFFECTS_SCHEMA_VERSION },
+      sourceMode: { const: 'linked' },
+      sourceCodeModified: { const: false },
+      projectMetadataFiles: {
+        type: 'array',
+        items: { type: 'string', minLength: 1 },
+        uniqueItems: true,
+      },
+      repositoryControlFiles: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['path', 'action', 'condition'],
+          properties: {
+            path: { type: 'string', minLength: 1 },
+            action: { const: 'reconcile' },
+            condition: { type: 'string', minLength: 1 },
+          },
+        },
+      },
+      workspaceOperations: {
+        type: 'array',
+        items: {
+          enum: [
+            'register-project',
+            'sync-contract',
+            'rebuild-model',
+            'rebuild-graph',
+            'sync-agent-grounding',
+          ],
+        },
+        uniqueItems: true,
+      },
     },
   };
 }

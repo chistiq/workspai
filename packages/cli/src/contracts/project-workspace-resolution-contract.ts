@@ -13,6 +13,13 @@ export interface ProjectWorkspaceResolutionContract {
   recovered: boolean;
   linkPath: string;
   nextCommand: string;
+  pathPolicy: {
+    classification: 'machine-local';
+    portable: false;
+    persistence: 'forbidden';
+    disclosure: 'forbidden';
+    purpose: 'runtime-workspace-resolution';
+  };
 }
 
 export function assertProjectWorkspaceResolutionContract(

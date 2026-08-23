@@ -21,29 +21,72 @@
     "generatedAt": { "type": "string", "format": "date-time" },
     "workspace": {
       "type": "object",
-      "required": ["name", "relationship", "contract", "model", "knowledgeGraph", "access"],
+      "required": ["name", "relationship", "contract", "access"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "profile": { "type": "string" },
         "relationship": {
           "enum": ["managed", "adopted", "imported", "linked", "restored"]
         },
-        "contract": { "const": ".workspai/workspace.contract.json" },
-        "model": { "const": ".workspai/reports/workspace-model.json" },
+        "contract": { "const": "workspace:.workspai/workspace.contract.json" },
+        "model": { "const": "workspace:.workspai/reports/workspace-model.json" },
         "knowledgeGraph": {
-          "const": ".workspai/reports/workspace-knowledge-graph.json"
+          "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
         },
+        "index": { "const": "workspace:.workspai/reports/INDEX.json" },
+        "context": {
+          "const": "workspace:.workspai/reports/workspace-context-agent.json"
+        },
+        "skillsIndex": {
+          "const": "workspace:.workspai/reports/workspace-skills-index.json"
+        },
+        "boundedGraphSearch": { "type": "string", "minLength": 1 },
         "access": {
           "type": "object",
-          "required": ["localBinding", "canonicalEvidenceAvailableAtGeneration"],
+          "required": [
+            "localBinding",
+            "canonicalEvidenceAvailableAtGeneration",
+            "identityIsFilesystemPath",
+            "resolverCommand",
+            "portableUriScheme",
+            "resolvedPathPolicy"
+          ],
           "properties": {
             "localBinding": { "const": ".workspai/workspace-link.local.json" },
-            "canonicalEvidenceAvailableAtGeneration": { "type": "boolean" }
+            "canonicalEvidenceAvailableAtGeneration": { "type": "boolean" },
+            "identityIsFilesystemPath": { "const": false },
+            "resolverCommand": { "const": "workspai project workspace status --json" },
+            "portableUriScheme": { "const": "workspace:" },
+            "resolvedPathPolicy": { "const": "runtime-private-never-persist" }
           },
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "properties": {
+            "model": { "const": "workspace:.workspai/reports/workspace-model.json" },
+            "knowledgeGraph": {
+              "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
+            }
+          },
+          "required": ["model", "knowledgeGraph"]
+        },
+        {
+          "properties": {
+            "index": { "const": "workspace:.workspai/reports/INDEX.json" },
+            "context": {
+              "const": "workspace:.workspai/reports/workspace-context-agent.json"
+            },
+            "skillsIndex": {
+              "const": "workspace:.workspai/reports/workspace-skills-index.json"
+            },
+            "boundedGraphSearch": { "type": "string", "minLength": 1 }
+          },
+          "required": ["index", "context", "skillsIndex", "boundedGraphSearch"]
+        }
+      ]
     },
     "project": {
       "type": "object",
@@ -283,6 +326,7 @@
       "required": [
         "enforcement",
         "mandatoryPreflight",
+        "workspaceLocator",
         "workspaceEvidenceRequiredFor",
         "requiredReadOrder",
         "degradedMode"
@@ -293,8 +337,30 @@
           "type": "object",
           "required": ["command", "successCondition"],
           "properties": {
-            "command": { "const": "npx workspai project workspace status --json" },
-            "successCondition": { "const": "resolved" }
+            "command": {
+              "const": "workspai agent bootstrap --for-agent generic --strict --json"
+            },
+            "successCondition": { "const": "ready" }
+          },
+          "additionalProperties": false
+        },
+        "workspaceLocator": {
+          "type": "object",
+          "required": [
+            "command",
+            "successCondition",
+            "outputClassification",
+            "persistence",
+            "disclosure",
+            "portableUriScheme"
+          ],
+          "properties": {
+            "command": { "const": "workspai project workspace status --json" },
+            "successCondition": { "const": "resolved" },
+            "outputClassification": { "const": "machine-local" },
+            "persistence": { "const": "forbidden" },
+            "disclosure": { "const": "forbidden" },
+            "portableUriScheme": { "const": "workspace:" }
           },
           "additionalProperties": false
         },
@@ -408,16 +474,7 @@
     },
     "relation": {
       "type": "object",
-      "required": [
-        "id",
-        "from",
-        "to",
-        "kind",
-        "derivation",
-        "trust",
-        "confidence",
-        "proofIds"
-      ],
+      "required": ["id", "from", "to", "kind", "derivation", "trust", "confidence", "proofIds"],
       "properties": {
         "id": { "type": "string" },
         "from": { "type": "string" },
@@ -432,15 +489,7 @@
     },
     "proof": {
       "type": "object",
-      "required": [
-        "id",
-        "provider",
-        "artifact",
-        "derivation",
-        "trust",
-        "confidence",
-        "freshness"
-      ],
+      "required": ["id", "provider", "artifact", "derivation", "trust", "confidence", "freshness"],
       "properties": {
         "id": { "type": "string" },
         "provider": { "type": "string" },

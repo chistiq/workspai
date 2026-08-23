@@ -142,6 +142,22 @@ describe('workspace knowledge graph snapshot', () => {
     });
   });
 
+  it('does not invalidate Git-backed graph evidence when managed outputs change', async () => {
+    const { root } = await fixture({ git: true });
+    const managedReport = path.join(root, '.workspai', 'reports', 'generated.json');
+    await fsExtra.outputJson(managedReport, { generatedAt: '2026-01-01T00:00:00.000Z' });
+    await execFileAsync('git', ['add', '.workspai/reports/generated.json'], { cwd: root });
+    await execFileAsync('git', ['commit', '--quiet', '-m', 'track managed output'], { cwd: root });
+    await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
+      status: 'hit',
+    });
+
+    await fsExtra.outputJson(managedReport, { generatedAt: '2026-01-02T00:00:00.000Z' });
+    await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
+      status: 'hit',
+    });
+  });
+
   it.runIf(process.platform !== 'win32')(
     'keeps the Git strategy when the workspace path is a logical alias of the physical worktree',
     async () => {

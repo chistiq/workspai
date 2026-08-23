@@ -201,6 +201,30 @@ describe('adopt-project', () => {
     });
 
     expect(adopted.wroteFiles).toBe(false);
+    expect(adopted.effects).toMatchObject({
+      schemaVersion: 'workspai.adopt-effects.v1',
+      sourceMode: 'linked',
+      sourceCodeModified: false,
+      workspaceOperations: [
+        'register-project',
+        'sync-contract',
+        'rebuild-model',
+        'rebuild-graph',
+        'sync-agent-grounding',
+      ],
+    });
+    expect(adopted.effects.projectMetadataFiles).toContain('.workspai/workspace-link.local.json');
+    expect(adopted.effects.projectMetadataFiles).toContain('.workspai/agent-entry.v1.json');
+    expect(adopted.effects.repositoryControlFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: '.gitignore' }),
+        expect.objectContaining({ path: 'AGENTS.md' }),
+        expect.objectContaining({ path: 'CLAUDE.md' }),
+        expect.objectContaining({ path: 'GEMINI.md' }),
+        expect.objectContaining({ path: 'QWEN.md' }),
+        expect.objectContaining({ path: '.amazonq/rules/workspai-agent-entry.md' }),
+      ])
+    );
     expect(await fsExtra.pathExists(adopted.projectJsonPath)).toBe(false);
     expect(await fsExtra.pathExists(adopted.adoptJsonPath)).toBe(false);
     expect(await readImportedProjectsRegistry(workspacePath)).toEqual([]);
@@ -284,6 +308,52 @@ describe('adopt-project', () => {
       recommendedProfile: 'polyglot',
       message: 'minimal profile mismatch: multiple runtimes detected [node, python].',
     });
+  });
+
+  it('persists the complete nested runtime composition for an adopted polyglot SDK', async () => {
+    const workspacePath = await makeWorkspace();
+    await fsExtra.writeJson(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+      workspace_name: 'demo-workspace',
+      profile: 'polyglot',
+    });
+    const projectPath = await makeTempDir('rapidkit-adopt-polyglot-sdk-');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'dotnet', 'src', 'Sdk.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk" />\n'
+    );
+    await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'nodejs', 'package.json'),
+      '{"name":"example-sdk","version":"1.0.0"}'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'python', 'pyproject.toml'),
+      '[project]\nname="example-sdk"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'rust', 'Cargo.toml'),
+      '[package]\nname="example-sdk"\nversion="1.0.0"\n'
+    );
+
+    const adopted = await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      name: 'polyglot-sdk',
+    });
+
+    expect(adopted.runtimeCandidates).toEqual(['dotnet', 'go', 'rust', 'node', 'python']);
+    expect(adopted.profileCompatibility).toMatchObject({
+      ok: true,
+      profile: 'polyglot',
+    });
+    expect(adopted.profileCompatibility.runtimes).toEqual(
+      expect.arrayContaining(['dotnet', 'go', 'node', 'python', 'rust'])
+    );
+    const projectJson = await fsExtra.readJson(adopted.projectJsonPath);
+    const adoptJson = await fsExtra.readJson(adopted.adoptJsonPath);
+    expect(projectJson.runtime_candidates).toEqual(adopted.runtimeCandidates);
+    expect(projectJson.adoption.detection.runtime_candidates).toEqual(adopted.runtimeCandidates);
+    expect(adoptJson.detection.runtime_candidates).toEqual(adopted.runtimeCandidates);
   });
 
   it('makes adopted projects visible to workspace model and contract sync', async () => {
@@ -466,6 +536,50 @@ describe('adopt-project', () => {
     });
   }
 
+  it('preserves an authored AGENTS.md symlink while publishing portable grounding', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = await makeTempDir('rapidkit-adopt-agents-symlink-');
+    const authoredRules = '# Repository rules\n\nKeep this target untouched.\n';
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
+      name: 'symlinked-agents-project',
+      version: '1.0.0',
+    });
+    await fsExtra.writeFile(path.join(projectPath, '.rules'), authoredRules);
+    try {
+      await fsExtra.symlink('.rules', path.join(projectPath, 'AGENTS.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const adopted = await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      projectGrounding: 'managed',
+    });
+
+    expect((await fsExtra.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+    expect(await fsExtra.readlink(path.join(projectPath, 'AGENTS.md'))).toBe('.rules');
+    expect(await fsExtra.readFile(path.join(projectPath, '.rules'), 'utf8')).toBe(authoredRules);
+    expect(
+      await fsExtra.pathExists(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))
+    ).toBe(true);
+    const snapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath);
+    expect(snapshot.files.find((file) => file.path.endsWith('AGENTS.md'))).toMatchObject({
+      preserve: 'symbolic-link',
+    });
+    await cleanupAdoptedProjectImport(workspacePath, projectPath, snapshot);
+    expect((await fsExtra.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+    expect(adopted.effects.repositoryControlFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'AGENTS.md',
+          condition: expect.stringContaining('symbolic'),
+        }),
+      ])
+    );
+  });
+
   it('refuses adoption cleanup through a metadata symlink without changing its target', async (context) => {
     const workspacePath = await makeWorkspace();
     const projectPath = await makeTempDir('rapidkit-adopt-cleanup-symlink-source-');
@@ -510,6 +624,13 @@ describe('adopt-project', () => {
     const snapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath);
     await fsExtra.writeFile(path.join(projectPath, '.workspai', 'project.json'), 'changed');
     await fsExtra.writeFile(path.join(projectPath, '.workspai', 'adopt.json'), 'created');
+    await fsExtra.writeFile(path.join(projectPath, '.workspai', 'agent-entry.v1.json'), 'created');
+    await fsExtra.writeFile(path.join(projectPath, 'CLAUDE.md'), 'created');
+    await fsExtra.ensureDir(path.join(projectPath, '.amazonq', 'rules'));
+    await fsExtra.writeFile(
+      path.join(projectPath, '.amazonq', 'rules', 'workspai-agent-entry.md'),
+      'created'
+    );
 
     await cleanupAdoptedProjectImport(workspacePath, projectPath, snapshot);
 
@@ -517,6 +638,11 @@ describe('adopt-project', () => {
       canonicalProjectBytes
     );
     expect(await fsExtra.pathExists(path.join(projectPath, '.workspai', 'adopt.json'))).toBe(false);
+    expect(
+      await fsExtra.pathExists(path.join(projectPath, '.workspai', 'agent-entry.v1.json'))
+    ).toBe(false);
+    expect(await fsExtra.pathExists(path.join(projectPath, 'CLAUDE.md'))).toBe(false);
+    expect(await fsExtra.pathExists(path.join(projectPath, '.amazonq'))).toBe(false);
     expect(await fsExtra.readFile(path.join(projectPath, '.rapidkit', 'project.json'))).toEqual(
       legacyProjectBytes
     );

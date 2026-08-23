@@ -3,6 +3,7 @@ import path from 'path';
 
 import {
   detectBackendFrameworkFromProject,
+  detectNestedRuntimeCandidatesFromProject,
   detectRuntimeCandidatesFromProject,
   type BackendFrameworkDetection,
 } from './backend-framework-contract.js';
@@ -43,6 +44,9 @@ export interface ProjectCommandCapabilities {
   projectRoot: string | null;
   engine: 'npm' | 'pip' | 'python' | 'unknown';
   runtime: string;
+  runtimeCandidates: string[];
+  compositeRuntime: boolean;
+  lifecycleCoverage: 'complete' | 'primary-runtime-only';
   framework: string;
   frameworkDisplayName: string;
   frameworkConfidence: string;
@@ -213,6 +217,15 @@ export function resolveProjectCommandCapabilities(
   const engine = metadata?.engine ?? 'unknown';
   const runtimeAdapter = getRuntimeAdapter(detection.runtime);
   const runtimeSupport = getRuntimeSupport(detection.runtime);
+  const detectedRuntimeCandidates = projectRoot
+    ? detectNestedRuntimeCandidatesFromProject(projectRoot)
+    : [];
+  const runtimeCandidates = [
+    detection.runtime,
+    ...detectedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
+  ].filter((runtime, index, values) => runtime !== 'unknown' && values.indexOf(runtime) === index);
+  if (runtimeCandidates.length === 0) runtimeCandidates.push('unknown');
+  const compositeRuntime = runtimeCandidates.filter((runtime) => runtime !== 'unknown').length > 1;
   const runtimeCommandSupport = buildProjectAwareRuntimeCommandSupport({
     runtime: detection.runtime,
     moduleSupport,
@@ -268,6 +281,15 @@ export function resolveProjectCommandCapabilities(
     });
   }
 
+  if (compositeRuntime) {
+    for (const command of RUNTIME_COMMANDS) {
+      const entry = commandMap[command];
+      if (!entry) continue;
+      entry.reason =
+        `Composite runtime boundary detected (${runtimeCandidates.join(', ')}). This capability describes only the primary ${detection.runtime} adapter; nested runtime lifecycle coverage requires explicit project boundaries or command contracts. ${entry.reason ?? ''}`.trim();
+    }
+  }
+
   commandMap.docs = resolveDocsCapability(projectRoot, detection);
 
   for (const command of CORE_MODULE_COMMANDS) {
@@ -313,6 +335,9 @@ export function resolveProjectCommandCapabilities(
     projectRoot,
     engine,
     runtime: detection.runtime,
+    runtimeCandidates,
+    compositeRuntime,
+    lifecycleCoverage: compositeRuntime ? 'primary-runtime-only' : 'complete',
     framework: detection.key,
     frameworkDisplayName: detection.displayName,
     frameworkConfidence: detection.confidence,

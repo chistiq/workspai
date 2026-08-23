@@ -5,6 +5,7 @@ import {
   buildOperationalSkillsCatalogSection,
   buildWorkspaceOperationalSkills,
   hydrateOperationalPrompts,
+  WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER,
   writeWorkspaceOperationalSkills,
 } from './workspace-operational-skills.js';
 import {
@@ -24,6 +25,7 @@ import {
   LEGACY_MCP_DESIGN_REPORT_PATH,
   LEGACY_VSCODE_AGENT_HOOKS_PATH,
   WORKSPAI_CLAUDE_EVIDENCE_RULE_PATH,
+  WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH,
   WORKSPAI_COPILOT_ADOPT_PROJECT_PROMPT_PATH,
   WORKSPAI_COPILOT_DIAGNOSE_PROMPT_PATH,
   WORKSPAI_COPILOT_EVIDENCE_INSTRUCTIONS_PATH,
@@ -33,10 +35,24 @@ import {
   WORKSPAI_COPILOT_REPAIR_PROMPT_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH,
+  WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH,
+  WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
   WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
+  WORKSPAI_CURSOR_RELEASE_RULE_PATH,
+  WORKSPAI_CURSOR_REPAIR_RULE_PATH,
+  WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+  WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH,
+  WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH,
+  WORKSPAI_CURSOR_GROUNDING_SKILL_PATH,
+  WORKSPAI_GROK_EVIDENCE_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_SKILL_PATH,
   WORKSPAI_MCP_DESIGN_REPORT_PATH,
   WORKSPAI_SKILLS_DIR,
   WORKSPAI_VSCODE_AGENT_HOOKS_PATH,
+  WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH,
+  WORKSPAI_WINDSURF_GROUNDING_RULE_PATH,
+  WORKSPAI_WINDSURF_RULES_PATH,
   WORKSPACE_SKILLS_INDEX_PATH,
 } from './contracts/workspace-artifact-paths.js';
 import { buildAgentCustomizationPackContract } from './contracts/agent-customization-pack-contract.js';
@@ -74,6 +90,11 @@ import {
   type SyncWorkspaceProjectLensesResult,
 } from './project-intelligence-lens.js';
 import {
+  PROJECT_AGENT_ADAPTER_ENTRY_FILES,
+  PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  type AgentEntryHostId,
+} from './project-agent-entry.js';
+import {
   PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
   PROJECT_GROUNDING_RELATIVE_PATH,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
@@ -97,13 +118,31 @@ export {
   WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH,
+  WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH,
+  WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
   WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
+  WORKSPAI_CURSOR_RELEASE_RULE_PATH,
+  WORKSPAI_CURSOR_REPAIR_RULE_PATH,
   WORKSPAI_MCP_DESIGN_REPORT_PATH,
   WORKSPAI_VSCODE_AGENT_HOOKS_PATH,
+  WORKSPAI_WINDSURF_RULES_PATH,
 };
 
 export type AgentGroundingTarget =
-  'all' | 'vscode' | 'agents' | 'copilot' | 'cursor' | 'claude' | 'codex' | 'orca';
+  | 'all'
+  | 'vscode'
+  | 'agents'
+  | 'copilot'
+  | 'cursor'
+  | 'claude'
+  | 'codex'
+  | 'gemini'
+  | 'qwen'
+  | 'kimi'
+  | 'grok'
+  | 'windsurf'
+  | 'amazon-q'
+  | 'orca';
 
 export type AgentCustomizationPackPreset = 'minimal' | 'enterprise';
 
@@ -172,6 +211,16 @@ export type AgentReportCatalogEntry = {
 };
 
 export const AGENT_REPORT_CATALOG: AgentReportCatalogEntry[] = [
+  {
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex,
+    label: 'Active Goal Pack index',
+    required: false,
+  },
+  {
+    relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun,
+    label: 'Latest governed Goal Pack',
+    required: false,
+  },
   {
     relativePath: WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
     label: 'Agent context pack',
@@ -277,10 +326,41 @@ export const AGENT_REPORT_CATALOG: AgentReportCatalogEntry[] = [
 export function buildCanonicalAgentReportReadOrder(): string[] {
   const catalogPaths = AGENT_REPORT_CATALOG.map((entry) => entry.relativePath);
   const contracted = buildWorkspaceIntelligenceChainContract().consumers.agents.canonicalReadOrder;
-  const prioritized = contracted.filter(
-    (reportPath) => reportPath !== AGENT_REPORTS_INDEX_PATH && catalogPaths.includes(reportPath)
-  );
-  return [...new Set([...prioritized, ...catalogPaths])];
+  return [
+    ...new Set(
+      contracted.filter(
+        (reportPath) => reportPath !== AGENT_REPORTS_INDEX_PATH && catalogPaths.includes(reportPath)
+      )
+    ),
+  ];
+}
+
+async function portableWorkspaceReference(workspacePath: string): Promise<string> {
+  try {
+    const { contract } = await readWorkspaceContract({ workspacePath });
+    if (contract?.workspace?.name) return `workspace:${contract.workspace.name}`;
+  } catch {
+    // Fall through to the workspace marker; a report index must remain portable
+    // even while a partially-created workspace contract is being repaired.
+  }
+  for (const relativePath of ['.workspai/workspace.json', '.rapidkit/workspace.json']) {
+    try {
+      const payload = (await fsExtra.readJson(path.join(workspacePath, relativePath))) as Record<
+        string,
+        unknown
+      >;
+      const name =
+        typeof payload.workspace_name === 'string'
+          ? payload.workspace_name
+          : typeof payload.name === 'string'
+            ? payload.name
+            : null;
+      if (name?.trim()) return `workspace:${name.trim()}`;
+    } catch {
+      // Try the next canonical marker.
+    }
+  }
+  return `workspace:${path.basename(path.resolve(workspacePath))}`;
 }
 
 export type AgentReportIndexEntry = {
@@ -459,6 +539,12 @@ function normalizeTargets(targets: AgentGroundingTarget[] | undefined): Set<Agen
       'cursor',
       'claude',
       'codex',
+      'gemini',
+      'qwen',
+      'kimi',
+      'grok',
+      'windsurf',
+      'amazon-q',
       'orca',
     ]);
   }
@@ -471,6 +557,15 @@ function targetEnabled(selected: Set<AgentGroundingTarget>, target: AgentGroundi
 
 function targetEnabledForCopilot(selected: Set<AgentGroundingTarget>): boolean {
   return targetEnabled(selected, 'copilot') || targetEnabled(selected, 'vscode');
+}
+
+function projectHostSelected(selected: Set<AgentGroundingTarget>, host: AgentEntryHostId): boolean {
+  if (host === 'generic') return targetEnabled(selected, 'agents');
+  if (host === 'copilot') return targetEnabledForCopilot(selected);
+  if (host === 'grok') {
+    return targetEnabled(selected, 'grok') || targetEnabled(selected, 'orca');
+  }
+  return targetEnabled(selected, host);
 }
 
 function normalizePreset(
@@ -541,13 +636,58 @@ function inferOutputTargets(relativePath: string): AgentGroundingTarget[] {
   if (relativePath.startsWith('.claude/') || relativePath === 'CLAUDE.md') {
     return ['claude'];
   }
+  if (relativePath === 'GEMINI.md') return ['gemini'];
+  if (relativePath === 'QWEN.md') return ['qwen'];
+  if (relativePath.startsWith('.amazonq/')) return ['amazon-q'];
+  if (relativePath === '.windsurfrules' || relativePath.startsWith('.windsurf/'))
+    return ['windsurf'];
+  if (relativePath.startsWith('.grok/')) return ['grok'];
+  if (relativePath.startsWith('.agents/')) return ['codex', 'kimi', 'grok', 'orca'];
   if (relativePath === 'AGENTS.md' || relativePath.startsWith('.rapidkit/')) {
-    return ['agents', 'codex', 'orca', 'vscode'];
+    return [
+      'agents',
+      'codex',
+      'kimi',
+      'grok',
+      'copilot',
+      'cursor',
+      'claude',
+      'gemini',
+      'qwen',
+      'amazon-q',
+      'windsurf',
+      'orca',
+      'vscode',
+    ];
   }
   if (relativePath.startsWith('.vscode/')) {
     return ['vscode'];
   }
   return ['agents'];
+}
+
+function portableOperationalSkillPaths(skillId: string): Array<{
+  target: AgentGroundingTarget;
+  path: string;
+}> {
+  return [
+    { target: 'agents', path: `.agents/skills/${skillId}/SKILL.md` },
+    { target: 'copilot', path: `.github/skills/${skillId}/SKILL.md` },
+    { target: 'claude', path: `.claude/skills/${skillId}/SKILL.md` },
+    { target: 'cursor', path: `.cursor/skills/${skillId}/SKILL.md` },
+    { target: 'grok', path: `.grok/skills/${skillId}/SKILL.md` },
+  ];
+}
+
+async function removeManagedPortableOperationalSkill(
+  workspacePath: string,
+  relativePath: string
+): Promise<void> {
+  const absolutePath = path.join(workspacePath, relativePath);
+  if (!(await fsExtra.pathExists(absolutePath))) return;
+  const markdown = await fsExtra.readFile(absolutePath, 'utf8');
+  if (!markdown.includes(WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER)) return;
+  await fsExtra.remove(absolutePath);
 }
 
 function isRequiredPackOutput(relativePath: string, preset: AgentCustomizationPackPreset): boolean {
@@ -600,6 +740,12 @@ function buildCapabilityMatrix(input: {
     'cursor',
     'claude',
     'codex',
+    'gemini',
+    'qwen',
+    'kimi',
+    'grok',
+    'windsurf',
+    'amazon-q',
     'orca',
   ];
   return Object.fromEntries(
@@ -694,7 +840,7 @@ export async function buildWorkspaceAgentReportsIndex(input: {
   return {
     schemaVersion: AGENT_REPORTS_INDEX_SCHEMA,
     generatedAt: now.toISOString(),
-    workspaceRoot: input.workspacePath,
+    workspaceRoot: await portableWorkspaceReference(input.workspacePath),
     intelligenceChain: {
       schemaVersion: intelligenceChain.schemaVersion,
       contractPath: intelligenceChain.contractPath,
@@ -720,9 +866,11 @@ function buildAgentsMarkdown(input: {
     '## Read order (mandatory before workspace diagnosis)',
     '',
     `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` — latest blockers, timestamps, and report paths`,
-    `2. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\` — read only task-relevant context`,
-    '3. Read only the task-relevant evidence artifacts listed in the index.',
-    '4. Use `workspace graph search <query> --limit 12 --json` or MCP `searchWorkspaceGraph` before loading the full graph.',
+    `2. \`${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}\` — when present, read the active Goal Pack and its handoff before choosing work.`,
+    `3. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\` — read only task-relevant context`,
+    `4. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}\` — select only the Skill that matches the task.`,
+    '5. Read only the task-relevant evidence artifacts listed in the index.',
+    '6. Use the Goal Pack retrieval queries, `workspace graph search <query> --limit 12 --json`, or MCP `searchWorkspaceGraph` before loading the full graph.',
     '',
     'Do **not** full-repo scan or inject the complete graph when a bounded query can answer the task.',
     '',
@@ -759,6 +907,7 @@ function buildAgentsMarkdown(input: {
     '- Prefer deterministic Workspai CLI commands over heuristic framework guesses.',
     '- If evidence is missing or stale, run the refresh commands above before proposing fixes.',
     '- Keep project-scoped advice aligned with the active project named in the context pack.',
+    '- Never claim that an active goal is satisfied until its CLI-owned verification lifecycle is `verified`.',
     ''
   );
 
@@ -822,6 +971,22 @@ function buildClaudeMarkdown(): string {
   ].join('\n');
 }
 
+function buildPortableProviderAdapter(provider: string): string {
+  return [
+    `## ${provider}`,
+    '',
+    '- Treat `AGENTS.md` as the portable workspace instruction authority.',
+    `- Load \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` before diagnosing blockers or architecture.`,
+    `- Read only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '- Use bounded Workspace Knowledge Graph search before broad source discovery.',
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '- Refresh grounding with `workspai workspace agent-sync --write --refresh-context`.',
+    '',
+  ].join('\n');
+}
+
 function buildCursorRule(): string {
   return [
     '---',
@@ -830,13 +995,343 @@ function buildCursorRule(): string {
     'alwaysApply: true',
     '---',
     '',
-    'Before proposing fixes in this workspace:',
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
     '',
     `1. Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
     `2. Read only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
     '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
     '',
-    'Refresh when stale:',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context and evidence.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '- Do not translate unsupported stack requests into unrelated native kits.',
+    '',
+    '## Intelligent loop',
+    '',
+    'When applying changes, follow the full repair loop:',
+    '',
+    '1. Discover — read bounded workspace context, select a matching Skill, and query the graph for the task.',
+    '2. Inspect — read relevant evidence and source files.',
+    '3. Patch — apply changes through the CLI-owned repair transaction.',
+    '4. Verify — run verification to confirm workspace health.',
+    '5. Complete — only after verified evidence confirms success.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildCursorEvidenceRule(): string {
+  return [
+    '---',
+    'description: Workspai evidence artifact discipline',
+    'globs: [".workspai/**", "**/.workspai/**", ".rapidkit/**", "**/.rapidkit/**"]',
+    'alwaysApply: false',
+    '---',
+    '',
+    'When reading or editing `.workspai/` or legacy `.rapidkit/` artifacts:',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. Never include comments, trailing commas, or non-standard syntax.',
+    '',
+    'Regenerate evidence:',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace intelligence run'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildCursorWorkflowRule(input: {
+  description: string;
+  globs: string;
+  objective: string;
+  steps: string[];
+}): string {
+  return [
+    '---',
+    `description: ${input.description}`,
+    `globs: ${input.globs}`,
+    'alwaysApply: false',
+    '---',
+    '',
+    input.objective,
+    '',
+    'Read first:',
+    '',
+    `- \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\``,
+    `- \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\``,
+    '- Any report referenced by the current blocker or task',
+    '',
+    'Steps:',
+    '',
+    ...input.steps.map((step, i) => `${i + 1}. ${step}`),
+    '',
+    'Use the standard Workspai answer contract: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+  ].join('\n');
+}
+
+function buildCursorDiagnoseRule(): string {
+  return buildCursorWorkflowRule({
+    description: 'Diagnose Workspai workspace blockers from evidence reports',
+    globs: '[]',
+    objective: 'Diagnose this workspace using Workspai evidence only.',
+    steps: [
+      'Root cause grounded in report blockers',
+      'Smallest safe fix path (commands + file edits)',
+      'One verification command to prove recovery',
+    ],
+  });
+}
+
+function buildCursorRepairRule(): string {
+  return buildCursorWorkflowRule({
+    description: 'Repair Workspai blockers with evidence and verification',
+    globs: '[]',
+    objective: 'Plan the smallest safe repair for the current Workspai blocker.',
+    steps: [
+      'Blocker and affected workspace/project scope',
+      'Evidence paths and exact failing signals',
+      'Minimal fix plan',
+      'Human-run commands',
+      'Verification command and expected success signal',
+    ],
+  });
+}
+
+function buildCursorReleaseRule(): string {
+  return buildCursorWorkflowRule({
+    description: 'Assess Workspai release readiness from evidence',
+    globs: '[]',
+    objective: 'Assess whether this workspace is release-ready using Workspai gates.',
+    steps: [
+      'Readiness verdict with cited reports',
+      'Blocking gates',
+      'Safe next command',
+      'Verification checklist',
+    ],
+  });
+}
+
+function buildWindsurfGroundingRule(): string {
+  return [
+    '---',
+    'trigger: always_on',
+    'description: Workspai workspace evidence and intelligence grounding',
+    '---',
+    '',
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildWindsurfEvidenceRule(): string {
+  return [
+    '---',
+    'trigger: glob',
+    'description: Workspai evidence artifact discipline',
+    'globs: [".workspai/**", ".rapidkit/**"]',
+    '---',
+    '',
+    'When reading or editing `.workspai/` or legacy `.rapidkit/` artifacts:',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+  ].join('\n');
+}
+
+function buildGrokGroundingRule(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildGrokEvidenceRule(): string {
+  return [
+    '# Workspai evidence artifact discipline',
+    '',
+    'Applies when reading or editing `.workspai/` or legacy `.rapidkit/` artifacts.',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+    'Regenerate evidence:',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace intelligence run'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildAmazonQWorkspaceRule(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+  ].join('\n');
+}
+
+function buildWindsurfRules(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '- Do not translate unsupported stack requests into unrelated native kits.',
+    '',
+    '## Evidence discipline',
+    '',
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function buildClaudeWorkspaceRule(): string {
+  return [
+    '# Workspai Workspace Intelligence',
+    '',
+    'Use Workspai reports as the workspace source of truth before giving architectural, repair, release, or project lifecycle advice.',
+    '',
+    '## Read order',
+    '',
+    `1. \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agents}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`.`,
+    `2. Only task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    '3. Prefer bounded graph search and evidence reports over full-repo exploration.',
+    '',
+    '## Scope rules',
+    '',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\`; read only task-relevant context and evidence.`,
+    '- Distinguish workspace-level blockers from project-level blockers.',
+    '- When a project is active, cite its name, path, framework, and evidence source.',
+    '',
+    '## Intelligent loop',
+    '',
+    'When applying changes, follow the full repair loop:',
+    '',
+    '1. Discover — read bounded workspace context, select a matching Skill, and query the graph for the task.',
+    '2. Inspect — read relevant evidence and source files.',
+    '3. Patch — apply changes through the CLI-owned repair transaction.',
+    '4. Verify — run verification to confirm workspace health.',
+    '5. Complete — only after verified evidence confirms success.',
+    '',
+    '## Answer contract',
+    '',
+    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
+    '## Refresh when stale',
     '',
     '```bash',
     displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
@@ -889,13 +1384,26 @@ function buildCopilotWorkspaceInstructions(): string {
 
 function buildClaudeEvidenceRule(): string {
   return [
+    '---',
+    'paths:',
+    '  - ".workspai/**"',
+    '  - ".rapidkit/**"',
+    '---',
+    '',
     '# Workspai evidence',
     '',
-    'Applies when reading or editing `.workspai/reports/*`.',
+    'When reading or editing `.workspai/` or legacy `.rapidkit/` artifacts:',
     '',
-    '- Start from `INDEX.json`, then `workspace-context-agent.json`.',
-    '- Use report blockers as the primary fix target.',
-    '- Regenerate with `npx workspai workspace agent-sync --write`.',
+    `- Start from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` for read order and active blockers.`,
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- JSON files (.json) require strictly valid JSON. No comments, no trailing commas.',
+    '',
+    'Regenerate evidence:',
+    '',
+    '```bash',
+    displayRapidkitCommand('workspace intelligence run'),
+    '```',
     '',
   ].join('\n');
 }
@@ -1016,12 +1524,12 @@ function buildMcpToolsResource(): string {
   });
 }
 
-function buildMcpDesignManifest(input: { workspacePath: string; generatedAt: string }): string {
+function buildMcpDesignManifest(input: { workspaceRef: string; generatedAt: string }): string {
   return `${JSON.stringify(
     {
       schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaiMcpDesign.schemaVersion,
       generatedAt: input.generatedAt,
-      workspaceRoot: input.workspacePath,
+      workspaceRoot: input.workspaceRef,
       status: 'design-only',
       mode: 'read-mostly',
       safety: {
@@ -1128,14 +1636,14 @@ function buildMcpDesignManifest(input: { workspacePath: string; generatedAt: str
 }
 
 function buildExperimentalHooksConfig(input: {
-  workspacePath: string;
+  workspaceRef: string;
   generatedAt: string;
 }): string {
   return `${JSON.stringify(
     {
       schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.agentHooks.schemaVersion,
       generatedAt: input.generatedAt,
-      workspaceRoot: input.workspacePath,
+      workspaceRoot: input.workspaceRef,
       enabledByDefault: false,
       mode: 'advisory',
       hooks: [
@@ -1245,8 +1753,12 @@ function buildWorkspaiAgent(input: {
   ].join('\n');
 }
 
-function buildCopilotSkill(): string {
-  return [
+function buildPortableGroundingSkill(input: {
+  index: WorkspaceAgentReportsIndex;
+  context?: Awaited<ReturnType<typeof buildWorkspaceAgentContext>> | null;
+  model?: WorkspaceModel;
+}): string {
+  const lines = [
     '---',
     'name: workspai-grounding',
     'description: Load Workspai workspace intelligence reports before diagnosing or changing code',
@@ -1263,13 +1775,52 @@ function buildCopilotSkill(): string {
     '3. Read fail/warn evidence artifacts listed in the index',
     '4. Propose the smallest safe fix with explicit verification commands',
     '',
+  ];
+
+  const projectNames = input.model?.projects
+    ?.map((p: { name?: string; slug?: string }) => p.name || p.slug)
+    .filter(Boolean)
+    .slice(0, 10);
+  if (projectNames && projectNames.length > 0) {
+    lines.push('## Projects in this workspace', '');
+    for (const name of projectNames) {
+      lines.push(`- ${name}`);
+    }
+    lines.push('');
+  }
+
+  if (input.index.blockers.length > 0) {
+    lines.push('## Current blockers', '');
+    for (const blocker of input.index.blockers.slice(0, 8)) {
+      lines.push(`- ${blocker}`);
+    }
+    lines.push('');
+  }
+
+  if (input.context?.safeCommands?.length) {
+    lines.push('## Safe commands (prefer these)', '');
+    for (const cmd of input.context.safeCommands.slice(0, 6)) {
+      lines.push(`- \`${cmd.display}\` — ${cmd.description}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(
+    '## Rules',
+    '',
+    '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
+    '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
+    '- Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    '',
     '## Refresh stale evidence',
     '',
     '```bash',
     displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
     '```',
-    '',
-  ].join('\n');
+    ''
+  );
+
+  return lines.join('\n');
 }
 
 async function writeTextFile(
@@ -1286,6 +1837,7 @@ async function writeTextFile(
 }
 
 async function writeManagedMarkdownFile(input: {
+  workspacePath: string;
   absolutePath: string;
   generatedBody: string;
   preamble?: string;
@@ -1294,6 +1846,7 @@ async function writeManagedMarkdownFile(input: {
   if (!input.write) {
     return 'skipped';
   }
+  await assertSafeAgentOutputPath(input.workspacePath, input.absolutePath);
   const existing = (await fsExtra.pathExists(input.absolutePath))
     ? await fsExtra.readFile(input.absolutePath, 'utf8')
     : null;
@@ -1303,6 +1856,59 @@ async function writeManagedMarkdownFile(input: {
   await fsExtra.ensureDir(path.dirname(input.absolutePath));
   await fsExtra.writeFile(input.absolutePath, content, 'utf8');
   return 'written';
+}
+
+async function writeImportedAgentAdapter(input: {
+  workspacePath: string;
+  absolutePath: string;
+  importLine: string;
+  generatedBody: string;
+  write: boolean;
+}): Promise<'written' | 'skipped'> {
+  if (!input.write) return 'skipped';
+  await assertSafeAgentOutputPath(input.workspacePath, input.absolutePath);
+  const existing = (await fsExtra.pathExists(input.absolutePath))
+    ? await fsExtra.readFile(input.absolutePath, 'utf8')
+    : '';
+  const { upsertManagedAgentSection } = await import('./utils/managed-agent-markers.js');
+  const managed = upsertManagedAgentSection(existing, input.generatedBody);
+  const content = managed.includes(input.importLine)
+    ? managed
+    : `${input.importLine}\n\n${managed}`;
+  await fsExtra.ensureDir(path.dirname(input.absolutePath));
+  await fsExtra.writeFile(input.absolutePath, content, 'utf8');
+  return 'written';
+}
+
+async function assertSafeAgentOutputPath(
+  workspacePathInput: string,
+  absolutePathInput: string
+): Promise<void> {
+  const workspacePath = path.resolve(workspacePathInput);
+  const absolutePath = path.resolve(absolutePathInput);
+  const relativePath = path.relative(workspacePath, absolutePath);
+  if (
+    !relativePath ||
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error('Agent output path must remain inside the canonical workspace.');
+  }
+  const segments = relativePath.split(path.sep);
+  let current = workspacePath;
+  for (const [index, segment] of segments.entries()) {
+    current = path.join(current, segment);
+    const stat = await fsExtra.lstat(current).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat) return;
+    const isTarget = index === segments.length - 1;
+    if (stat.isSymbolicLink() || (isTarget ? !stat.isFile() : !stat.isDirectory())) {
+      throw new Error(`Agent output path is blocked by authored repository state: ${relativePath}`);
+    }
+  }
 }
 
 export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget[] | undefined {
@@ -1317,6 +1923,12 @@ export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget
     'cursor',
     'claude',
     'codex',
+    'gemini',
+    'qwen',
+    'kimi',
+    'grok',
+    'windsurf',
+    'amazon-q',
     'orca',
   ]);
   const parsed = input
@@ -1327,7 +1939,7 @@ export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget
 }
 
 function buildAgentCustomizationPackReport(input: {
-  workspacePath: string;
+  workspaceRef: string;
   generatedAt: string;
   preset: AgentCustomizationPackPreset;
   targets: AgentGroundingTarget[];
@@ -1343,7 +1955,7 @@ function buildAgentCustomizationPackReport(input: {
   return {
     schemaVersion: AGENT_CUSTOMIZATION_PACK_SCHEMA,
     generatedAt: input.generatedAt,
-    workspaceRoot: input.workspacePath,
+    workspaceRoot: input.workspaceRef,
     preset: input.preset,
     targets: [...input.targets].sort(),
     sourceReports: input.index.reports
@@ -1450,6 +2062,19 @@ async function syncWorkspaceAgentGroundingUnsafe(
   });
   for (const skill of skillsWrite.skills) {
     record(write ? 'written' : 'skipped', skill.canonicalPath);
+    for (const portable of portableOperationalSkillPaths(skill.skillId)) {
+      if (!targetEnabled(selectedTargets, portable.target)) continue;
+      record(
+        await writeTextFile(path.join(workspacePath, portable.path), skill.markdown, write),
+        portable.path
+      );
+    }
+  }
+  for (const skillId of skillsWrite.removedSkillIds) {
+    for (const portable of portableOperationalSkillPaths(skillId)) {
+      if (!targetEnabled(selectedTargets, portable.target) || !write) continue;
+      await removeManagedPortableOperationalSkill(workspacePath, portable.path);
+    }
   }
   record(write ? 'written' : 'skipped', WORKSPACE_SKILLS_INDEX_PATH);
   operationalSkillsCatalogSection = buildOperationalSkillsCatalogSection(skillsWrite.index);
@@ -1482,9 +2107,25 @@ async function syncWorkspaceAgentGroundingUnsafe(
     AGENT_GROUNDING_DOC_PATH
   );
 
-  if (targetEnabled(selectedTargets, 'agents') || targetEnabled(selectedTargets, 'vscode')) {
+  const agentsMdTargets: AgentGroundingTarget[] = [
+    'agents',
+    'vscode',
+    'copilot',
+    'cursor',
+    'claude',
+    'codex',
+    'gemini',
+    'qwen',
+    'kimi',
+    'grok',
+    'windsurf',
+    'amazon-q',
+    'orca',
+  ];
+  if (agentsMdTargets.some((target) => targetEnabled(selectedTargets, target))) {
     record(
       await writeManagedMarkdownFile({
+        workspacePath,
         absolutePath: path.join(workspacePath, 'AGENTS.md'),
         generatedBody: buildAgentsMarkdown({ index, context }),
         write,
@@ -1496,6 +2137,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
   if (targetEnabled(selectedTargets, 'claude')) {
     const claudePath = path.join(workspacePath, 'CLAUDE.md');
     if (write) {
+      await assertSafeAgentOutputPath(workspacePath, claudePath);
       const { upsertManagedAgentSection } = await import('./utils/managed-agent-markers.js');
       const existing = (await fsExtra.pathExists(claudePath))
         ? await fsExtra.readFile(claudePath, 'utf8')
@@ -1520,11 +2162,140 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
     record(
       await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH),
+        `${buildClaudeWorkspaceRule()}\n`,
+        write
+      ),
+      WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
         path.join(workspacePath, LEGACY_CLAUDE_EVIDENCE_RULE_PATH),
         `${buildLegacyClaudeEvidenceRule()}\n`,
         write
       ),
       LEGACY_CLAUDE_EVIDENCE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'gemini')) {
+    record(
+      await writeImportedAgentAdapter({
+        workspacePath,
+        absolutePath: path.join(workspacePath, 'GEMINI.md'),
+        importLine: '@./AGENTS.md',
+        generatedBody: buildPortableProviderAdapter('Gemini CLI'),
+        write,
+      }),
+      'GEMINI.md'
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'qwen')) {
+    record(
+      await writeImportedAgentAdapter({
+        workspacePath,
+        absolutePath: path.join(workspacePath, 'QWEN.md'),
+        importLine: '@AGENTS.md',
+        generatedBody: buildPortableProviderAdapter('Qwen Code'),
+        write,
+      }),
+      'QWEN.md'
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'amazon-q')) {
+    record(
+      await writeImportedAgentAdapter({
+        workspacePath,
+        absolutePath: path.join(workspacePath, '.amazonq/rules/workspai-agent-entry.md'),
+        importLine: '@../../AGENTS.md',
+        generatedBody: buildPortableProviderAdapter('Amazon Q Developer'),
+        write,
+      }),
+      '.amazonq/rules/workspai-agent-entry.md'
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH),
+        buildAmazonQWorkspaceRule(),
+        write
+      ),
+      WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'grok')) {
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_GROK_GROUNDING_RULE_PATH),
+        buildGrokGroundingRule(),
+        write
+      ),
+      WORKSPAI_GROK_GROUNDING_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_GROK_EVIDENCE_RULE_PATH),
+        buildGrokEvidenceRule(),
+        write
+      ),
+      WORKSPAI_GROK_EVIDENCE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_GROK_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_GROK_GROUNDING_SKILL_PATH
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'codex')) {
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_AGENTS_GROUNDING_SKILL_PATH
+    );
+  }
+
+  if (targetEnabled(selectedTargets, 'windsurf')) {
+    record(
+      await writeManagedMarkdownFile({
+        workspacePath,
+        absolutePath: path.join(workspacePath, WORKSPAI_WINDSURF_RULES_PATH),
+        generatedBody: buildWindsurfRules(),
+        write,
+      }),
+      WORKSPAI_WINDSURF_RULES_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_WINDSURF_GROUNDING_RULE_PATH),
+        buildWindsurfGroundingRule(),
+        write
+      ),
+      WORKSPAI_WINDSURF_GROUNDING_RULE_PATH
+    );
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH),
+        buildWindsurfEvidenceRule(),
+        write
+      ),
+      WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH
     );
   }
 
@@ -1539,17 +2310,60 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
     record(
       await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CURSOR_EVIDENCE_RULE_PATH),
+        buildCursorEvidenceRule(),
+        write
+      ),
+      WORKSPAI_CURSOR_EVIDENCE_RULE_PATH
+    );
+    record(
+      await writeTextFile(
         path.join(workspacePath, LEGACY_CURSOR_GROUNDING_RULE_PATH),
         buildLegacyCursorRule(),
         write
       ),
       LEGACY_CURSOR_GROUNDING_RULE_PATH
     );
+    if (preset === 'enterprise') {
+      record(
+        await writeTextFile(
+          path.join(workspacePath, WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH),
+          buildCursorDiagnoseRule(),
+          write
+        ),
+        WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH
+      );
+      record(
+        await writeTextFile(
+          path.join(workspacePath, WORKSPAI_CURSOR_REPAIR_RULE_PATH),
+          buildCursorRepairRule(),
+          write
+        ),
+        WORKSPAI_CURSOR_REPAIR_RULE_PATH
+      );
+      record(
+        await writeTextFile(
+          path.join(workspacePath, WORKSPAI_CURSOR_RELEASE_RULE_PATH),
+          buildCursorReleaseRule(),
+          write
+        ),
+        WORKSPAI_CURSOR_RELEASE_RULE_PATH
+      );
+    }
+    record(
+      await writeTextFile(
+        path.join(workspacePath, WORKSPAI_CURSOR_GROUNDING_SKILL_PATH),
+        buildPortableGroundingSkill({ index, context, model }),
+        write
+      ),
+      WORKSPAI_CURSOR_GROUNDING_SKILL_PATH
+    );
   }
 
   if (targetEnabledForCopilot(selectedTargets)) {
     record(
       await writeManagedMarkdownFile({
+        workspacePath,
         absolutePath: path.join(workspacePath, '.github/copilot-instructions.md'),
         generatedBody: buildCopilotInstructions(),
         write,
@@ -1694,7 +2508,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
     record(
       await writeTextFile(
         path.join(workspacePath, WORKSPAI_COPILOT_GROUNDING_SKILL_PATH),
-        buildCopilotSkill(),
+        buildPortableGroundingSkill({ index, context, model }),
         write
       ),
       WORKSPAI_COPILOT_GROUNDING_SKILL_PATH
@@ -1702,7 +2516,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
     record(
       await writeTextFile(
         path.join(workspacePath, LEGACY_COPILOT_GROUNDING_SKILL_PATH),
-        buildCopilotSkill(),
+        buildPortableGroundingSkill({ index, context, model }),
         write
       ),
       LEGACY_COPILOT_GROUNDING_SKILL_PATH
@@ -1846,7 +2660,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
 
   if (preset === 'enterprise') {
     const mcpDesignManifest = buildMcpDesignManifest({
-      workspacePath,
+      workspaceRef: index.workspaceRoot,
       generatedAt: index.generatedAt,
     });
     assertWorkspaceArtifactContract(WORKSPAI_MCP_DESIGN_REPORT_PATH, JSON.parse(mcpDesignManifest));
@@ -1870,7 +2684,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
 
   if (preset === 'enterprise' && options.experimentalHooks === true) {
     const hooksConfig = buildExperimentalHooksConfig({
-      workspacePath,
+      workspaceRef: index.workspaceRoot,
       generatedAt: index.generatedAt,
     });
     assertWorkspaceArtifactContract(WORKSPAI_VSCODE_AGENT_HOOKS_PATH, JSON.parse(hooksConfig));
@@ -1890,20 +2704,6 @@ async function syncWorkspaceAgentGroundingUnsafe(
       ),
       LEGACY_VSCODE_AGENT_HOOKS_PATH
     );
-  }
-
-  if (targetEnabled(selectedTargets, 'codex') || targetEnabled(selectedTargets, 'orca')) {
-    // Codex/Grok/Orca: rely on AGENTS.md + INDEX; no separate proprietary format yet.
-    if (!targetEnabled(selectedTargets, 'agents')) {
-      record(
-        await writeManagedMarkdownFile({
-          absolutePath: path.join(workspacePath, 'AGENTS.md'),
-          generatedBody: buildAgentsMarkdown({ index, context }),
-          write,
-        }),
-        'AGENTS.md'
-      );
-    }
   }
 
   const finalIndex = write
@@ -1949,9 +2749,21 @@ async function syncWorkspaceAgentGroundingUnsafe(
         .join(', ')}`
     );
   }
+  if (strict && projectLenses) {
+    const blockedEntries = projectLenses.projects.flatMap((project) =>
+      (project.hostCoverage ?? [])
+        .filter(
+          (host) => host.status === 'blocked' && projectHostSelected(selectedTargets, host.id)
+        )
+        .map((host) => `${path.basename(project.projectPath)}:${host.id}`)
+    );
+    if (blockedEntries.length > 0) {
+      strictViolations.push(`Project agent entry coverage blocked: ${blockedEntries.join(', ')}`);
+    }
+  }
 
   const pack = buildAgentCustomizationPackReport({
-    workspacePath,
+    workspaceRef: finalIndex.workspaceRoot,
     generatedAt: now.toISOString(),
     preset,
     targets: selectedTargetList,
@@ -1961,7 +2773,21 @@ async function syncWorkspaceAgentGroundingUnsafe(
       {
         path: AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
         kind: 'report',
-        targets: ['agents', 'vscode', 'copilot', 'codex', 'orca'],
+        targets: [
+          'agents',
+          'vscode',
+          'copilot',
+          'cursor',
+          'claude',
+          'codex',
+          'gemini',
+          'qwen',
+          'kimi',
+          'grok',
+          'windsurf',
+          'amazon-q',
+          'orca',
+        ],
         required: true,
         status: write ? 'written' : options.dryRun ? 'planned' : 'skipped',
       },
@@ -2036,10 +2862,25 @@ export async function syncWorkspaceAgentGrounding(
         PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
         PROJECT_GROUNDING_RELATIVE_PATH,
         PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
+        PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+        ...PROJECT_AGENT_ADAPTER_ENTRY_FILES,
         'AGENTS.md',
         '.gitignore',
       ]) {
-        await transaction.captureFile(path.join(project.projectPath, relativePath));
+        const absolutePath = path.join(project.projectPath, relativePath);
+        const preservesAuthoredSymlink =
+          relativePath === 'AGENTS.md' ||
+          PROJECT_AGENT_ADAPTER_ENTRY_FILES.some((entryPath) => entryPath === relativePath);
+        if (preservesAuthoredSymlink) {
+          const stat = await fsExtra.lstat(absolutePath).catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw error;
+          });
+          // Project grounding treats provider entry symlinks as authored
+          // repository state. Do not follow, replace, or snapshot their target.
+          if (stat?.isSymbolicLink()) continue;
+        }
+        await transaction.captureFile(absolutePath);
       }
     }
     const result = await syncWorkspaceAgentGroundingUnsafe(options);

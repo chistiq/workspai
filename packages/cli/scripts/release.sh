@@ -106,6 +106,8 @@ node packages/cli/scripts/github-release-notes.mjs --tag "$TAG" --check
 
 echo "🔄 Regenerating version-derived contracts..."
 "${NPM_CMD[@]}" --workspace workspai run generate:contracts
+"${NPM_CMD[@]}" --workspace workspai run sync:shared-contracts
+"${NPM_CMD[@]}" --workspace workspai run check:shared-contracts
 "${NPM_CMD[@]}" --workspace workspai run check:generated-contracts
 
 echo "🧪 Running quality checks..."

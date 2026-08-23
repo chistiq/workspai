@@ -48,6 +48,8 @@
     "pipeline",
     "import",
     "adopt",
+    "goal",
+    "agent",
     "snapshot",
     "bootstrap",
     "setup",
@@ -78,6 +80,10 @@
     [
       "ai",
       "update-embeddings"
+    ],
+    [
+      "agent",
+      "bootstrap"
     ],
     [
       "config",
@@ -127,6 +133,10 @@
     [
       "project",
       "commands"
+    ],
+    [
+      "project",
+      "agent-entry"
     ],
     [
       "project",
@@ -182,6 +192,21 @@
       "summary": "Register an existing local repository as a governed Workspai project without recreating its source.",
       "canonicalArgv": [
         "adopt"
+      ]
+    },
+    {
+      "invocation": "agent",
+      "summary": "Resolve portable project entry contracts and issue canonical-first grounding receipts for coding agents.",
+      "canonicalArgv": [
+        "agent"
+      ]
+    },
+    {
+      "invocation": "agent bootstrap",
+      "summary": "Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery.",
+      "canonicalArgv": [
+        "agent",
+        "bootstrap"
       ]
     },
     {
@@ -421,6 +446,30 @@
       ]
     },
     {
+      "invocation": "goal",
+      "summary": "Compile a plain-language engineering intent into a scope-bound, evidence-pinned Goal Pack and portable agent handoff without mutating source.",
+      "canonicalArgv": [
+        "goal",
+        "<intent>",
+        "--json"
+      ],
+      "output": {
+        "defaultFormat": "human-or-json",
+        "modes": [
+          {
+            "selector": "--json",
+            "format": "json",
+            "mediaType": "application/json"
+          }
+        ]
+      },
+      "exitSemantics": {
+        "default": "A contract-valid Goal Pack returns exit code 0, including explicit needs-confirmation, needs-evidence, or blocked planning states.",
+        "strict": "Not applicable; Goal planning does not execute or verify source changes.",
+        "failure": "Resolution, freshness, contract, integrity, or publication failure returns exit code 1."
+      }
+    },
+    {
       "invocation": "help",
       "summary": "Display contextual CLI usage, arguments, options, and command discovery guidance.",
       "canonicalArgv": [
@@ -612,6 +661,14 @@
       "summary": "Expose project-scoped command discovery, archive, restore, and deletion operations.",
       "canonicalArgv": [
         "project"
+      ]
+    },
+    {
+      "invocation": "project agent-entry",
+      "summary": "Verify portable entry adapters and canonical evidence bindings for one or every supported agent host.",
+      "canonicalArgv": [
+        "project",
+        "agent-entry"
       ]
     },
     {
@@ -1791,6 +1848,16 @@
       ]
     },
     {
+      "artifactPath": ".workspai/goals/index.json",
+      "schemaVersion": "workspai.goal-index.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-index.v1.json",
+      "producerCommands": [
+        [
+          "goal"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/workspace-link.local.json",
       "schemaVersion": "project-workspace-link.v1",
       "contractPath": "contracts/project-workspace-link.v1.json",
@@ -1816,6 +1883,28 @@
       "artifactPath": ".workspai/reports/project-context-agent.json",
       "schemaVersion": "project-context-agent.v1",
       "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
+      "producerCommands": [
+        [
+          "adopt"
+        ],
+        [
+          "import"
+        ],
+        [
+          "workspace",
+          "sync"
+        ],
+        [
+          "workspace",
+          "agent-sync",
+          "--write"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/agent-entry.v1.json",
+      "schemaVersion": "workspai.agent-entry.v1",
+      "contractPath": "contracts/workspace-intelligence/project-agent-entry.v1.json",
       "producerCommands": [
         [
           "adopt"
@@ -1995,6 +2084,16 @@
         [
           "project",
           "coverage"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/reports/goal-pack-last-run.json",
+      "schemaVersion": "workspai.goal-pack.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-pack.v1.json",
+      "producerCommands": [
+        [
+          "goal"
         ]
       ]
     },

@@ -47,12 +47,17 @@ import {
   parseInternalRepairCommand,
 } from './doctor.js';
 import { runWorkspaceIntelligenceChain } from './workspace-intelligence-runner.js';
+import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
+import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 import { resolveWorkspaceProjectLensTargets } from './project-intelligence-lens.js';
 import {
   parseDoctorRepairOperation,
   type DoctorRepairOperation,
 } from './utils/doctor-repair-capabilities.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
+import { inspectGoalLifecycle, linkGoalRepairTransaction } from './goal-lifecycle.js';
+import { withWorkspaceArtifactLock } from './utils/artifact-path-compat.js';
+import { readWorkspaceContract } from './utils/workspace-contract.js';
 
 const REPAIR_ROOT = '.workspai/repair';
 const TRANSACTION_FILE = 'transaction.json';
@@ -181,7 +186,12 @@ type RepairEngineDependencies = {
   runTargetProducer?: (input: {
     workspacePath: string;
     transaction: WorkspaceRepairTransaction;
-  }) => Promise<{ exitCode: number | null; stdout: string; stderr: string }>;
+  }) => Promise<{
+    exitCode: number | null;
+    stdout: string;
+    stderr: string;
+    evidenceProduced?: boolean;
+  }>;
 };
 
 type DependencyStagePlan = {
@@ -385,6 +395,49 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function repairAttemptFingerprint(transaction: WorkspaceRepairTransaction): string {
+  return sha256(
+    stableJson({
+      target: transaction.target,
+      policy: transaction.policy,
+      preconditions: transaction.preconditions,
+      adapterEvaluations: transaction.adapterEvaluations ?? [],
+      checkpoint: {
+        status: transaction.checkpoint.status,
+        files: transaction.checkpoint.files.map(({ backupRef: _backupRef, ...file }) => file),
+      },
+      stages: transaction.stages.map(
+        ({ startedAt: _startedAt, completedAt: _completedAt, ...stage }) => stage
+      ),
+      decision: transaction.decision,
+    })
+  );
+}
+
+async function unchangedBlockedRepair(
+  workspacePath: string,
+  candidate: WorkspaceRepairTransaction
+): Promise<WorkspaceRepairTransaction | undefined> {
+  if (candidate.state !== 'decision-required' || candidate.checkpoint.status === 'captured') {
+    return undefined;
+  }
+  const fingerprint = repairAttemptFingerprint(candidate);
+  const prior = (await listWorkspaceRepairTransactions(workspacePath)).find(
+    (transaction) =>
+      transaction.state === 'decision-required' &&
+      transaction.checkpoint.status !== 'captured' &&
+      repairAttemptFingerprint(transaction) === fingerprint
+  );
+  if (!prior) return undefined;
+  // A retry is meaningful only after source, policy, evidence, or toolchain
+  // state changes. Reusing the durable receipt prevents identical decision
+  // transactions from accumulating while preserving a fresh plan as soon as
+  // any causal precondition changes. A user-cancelled transaction remains
+  // terminal and is never silently resurrected by this deduplication path.
+  await atomicJson(path.join(workspacePath, WORKSPACE_REPAIR_LAST_RUN_REPORT_PATH), prior);
+  return prior;
+}
+
 const CAUSAL_ACTION_INTEGRITY_PREFIX = 'causal-action-integrity:';
 
 function causalActionFingerprint(actions: ArtifactRemediationAction[]): string {
@@ -439,6 +492,20 @@ function causalActionIntegrityPrecondition(
   };
 }
 
+function causalActionFamilyKey(action: ArtifactRemediationAction): string {
+  return stableJson({
+    cardId: action.cardId,
+    projectName: action.projectName ?? null,
+    projectPath: action.projectPath ?? null,
+    findingId: action.findingId,
+    causalKey: action.causalKey,
+  });
+}
+
+function selectedCausalActionFamilies(actions: ArtifactRemediationAction[]): Set<string> {
+  return new Set(actions.map(causalActionFamilyKey));
+}
+
 function inside(root: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
@@ -456,14 +523,113 @@ async function insideResolvedBoundary(root: string, candidate: string): Promise<
   return inside(resolvedRoot, resolvedCandidate);
 }
 
-function portable(workspacePath: string, candidate: string): string {
+function portable(workspacePath: string, candidate: string, projectBoundary?: string): string {
   const absolute = path.isAbsolute(candidate)
     ? path.resolve(candidate)
     : path.resolve(workspacePath, candidate);
-  if (!inside(workspacePath, absolute)) {
+  if (
+    !inside(workspacePath, absolute) &&
+    !(projectBoundary && inside(path.resolve(projectBoundary), absolute))
+  ) {
     throw new Error(`Repair path escapes workspace boundary: ${candidate}`);
   }
+  if (!inside(workspacePath, absolute) && projectBoundary) {
+    const boundary = path.resolve(projectBoundary);
+    const relative = path.relative(boundary, absolute).split(path.sep).join('/');
+    const projectRef = `external/${path.basename(boundary)}`;
+    return relative && relative !== '.' ? `${projectRef}/${relative}` : projectRef;
+  }
   return path.relative(workspacePath, absolute).split(path.sep).join('/') || '.';
+}
+
+function externalProjectReference(value: string): { root: string; suffix: string } | undefined {
+  const normalized = value.replaceAll('\\', '/').replace(/^\.\//, '');
+  const match = /^external\/([^/]+)(?:\/(.*))?$/.exec(normalized);
+  if (!match) return undefined;
+  const suffix = match[2] ?? '';
+  if (suffix.split('/').some((segment) => segment === '..')) return undefined;
+  return { root: `external/${match[1]}`, suffix };
+}
+
+async function resolvePortableWorkspacePath(input: {
+  workspacePath: string;
+  value: string;
+  projectBoundary?: string;
+  projectName?: string;
+}): Promise<string> {
+  if (path.isAbsolute(input.value)) return path.resolve(input.value);
+  const external = externalProjectReference(input.value);
+  if (!external) return path.resolve(input.workspacePath, input.value);
+  if (input.projectBoundary) {
+    return path.resolve(input.projectBoundary, external.suffix || '.');
+  }
+  const { contract } = await readWorkspaceContract({ workspacePath: input.workspacePath });
+  const project = contract.projects.find(
+    (entry) =>
+      entry.relativePath.replaceAll('\\', '/') === external.root ||
+      (entry.externalPath !== undefined &&
+        path.basename(path.resolve(entry.externalPath)) ===
+          external.root.slice('external/'.length)) ||
+      (input.projectName !== undefined && entry.slug === input.projectName)
+  );
+  if (!project?.externalPath) {
+    throw new Error(
+      `Portable external project reference is not canonically registered: ${external.root}`
+    );
+  }
+  return path.resolve(project.externalPath, external.suffix || '.');
+}
+
+function portableRepairPath(
+  workspacePath: string,
+  candidate: string,
+  projectBoundary?: string,
+  projectReference?: string
+): string {
+  const value = portable(workspacePath, candidate, projectBoundary);
+  const external = externalProjectReference(value);
+  if (!external || !projectReference) return value;
+  return external.suffix ? `${projectReference}/${external.suffix}` : projectReference;
+}
+
+async function resolveRegisteredProposalProjectRoot(input: {
+  workspacePath: string;
+  proposal: WorkspaceRepairProposal;
+}): Promise<string | undefined> {
+  if (!input.proposal.projectName && !input.proposal.projectPath) return undefined;
+  const requestedPath = input.proposal.projectPath
+    ? path.resolve(input.workspacePath, input.proposal.projectPath)
+    : undefined;
+  const requestedPortablePath = input.proposal.projectPath
+    ?.replaceAll('\\', '/')
+    .replace(/^\.\//, '');
+  // Managed in-workspace projects retain the v1 compatibility path. Only an
+  // external filesystem boundary requires immutable registry proof.
+  if (
+    requestedPath &&
+    inside(input.workspacePath, requestedPath) &&
+    !externalProjectReference(input.proposal.projectPath ?? '')
+  ) {
+    return requestedPath;
+  }
+  const { contract } = await readWorkspaceContract({ workspacePath: input.workspacePath });
+  const project = contract.projects.find((entry) => {
+    const root = entry.externalPath
+      ? path.resolve(entry.externalPath)
+      : path.resolve(input.workspacePath, entry.relativePath);
+    const nameMatches = !input.proposal.projectName || entry.slug === input.proposal.projectName;
+    const pathMatches =
+      !requestedPath ||
+      root === requestedPath ||
+      entry.relativePath.replaceAll('\\', '/') === requestedPortablePath;
+    return nameMatches && pathMatches;
+  });
+  if (!project) {
+    throw new Error('Repair proposal project must match one canonical registered project.');
+  }
+  return project.externalPath
+    ? path.resolve(project.externalPath)
+    : path.resolve(input.workspacePath, project.relativePath);
 }
 
 function transactionDir(workspacePath: string, transactionId: string): string {
@@ -471,6 +637,19 @@ function transactionDir(workspacePath: string, transactionId: string): string {
     throw new Error('Invalid repair transaction id.');
   }
   return path.join(workspacePath, REPAIR_ROOT, 'transactions', transactionId);
+}
+
+async function transactionProjectBoundary(
+  workspacePath: string,
+  transaction: WorkspaceRepairTransaction
+): Promise<string | undefined> {
+  return transaction.target.projectPath
+    ? resolvePortableWorkspacePath({
+        workspacePath,
+        value: transaction.target.projectPath,
+        projectName: transaction.target.projectName,
+      })
+    : undefined;
 }
 
 function transactionPath(workspacePath: string, transactionId: string): string {
@@ -553,12 +732,23 @@ function isWorkspaceRepairProposal(
   return source.schemaVersion === WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION;
 }
 
-function actionProjectRoot(workspacePath: string, action: ArtifactRemediationAction): string {
+async function actionProjectRoot(
+  workspacePath: string,
+  action: ArtifactRemediationAction,
+  authorizedProjectRoot?: string
+): Promise<string> {
   const candidate = action.scope === 'project' && action.projectPath ? action.projectPath : '.';
-  const absolute = path.isAbsolute(candidate)
-    ? path.resolve(candidate)
-    : path.resolve(workspacePath, candidate);
-  if (!inside(workspacePath, absolute)) {
+  const absolute = await resolvePortableWorkspacePath({
+    workspacePath,
+    value: candidate,
+    projectBoundary: authorizedProjectRoot,
+    projectName: action.projectName,
+  });
+  if (
+    !inside(workspacePath, absolute) &&
+    !externalProjectReference(candidate) &&
+    !(authorizedProjectRoot && path.resolve(authorizedProjectRoot) === absolute)
+  ) {
     throw new Error(`Repair project scope escapes workspace: ${candidate}`);
   }
   return absolute;
@@ -573,7 +763,7 @@ function invocation(input: {
   timeoutMs?: number;
 }): WorkspaceRepairInvocation {
   return {
-    cwd: portable(input.workspacePath, input.projectPath),
+    cwd: portable(input.workspacePath, input.projectPath, input.projectPath),
     executable: input.executable,
     args: [...input.args],
     purpose: input.purpose,
@@ -627,12 +817,36 @@ function isRunnableFile(stat: Stats | undefined): boolean {
   return process.platform === 'win32' || (stat.mode & 0o111) !== 0;
 }
 
+async function executableLaunches(executable: string, cwd: string): Promise<boolean> {
+  try {
+    const result = await execa(executable, ['--version'], {
+      cwd,
+      shell: false,
+      reject: false,
+      timeout: 5_000,
+      maxBuffer: 64 * 1024,
+      stdin: 'ignore',
+    });
+    // A non-zero version response still proves that the OS could launch the
+    // executable. A missing binary or broken shebang/interpreter has no exit
+    // code and must fail the repair precondition before checkpoint capture.
+    return result.exitCode !== undefined && result.exitCode !== null;
+  } catch {
+    return false;
+  }
+}
+
 async function invocationToolAvailable(input: {
   workspacePath: string;
   invocation: WorkspaceRepairInvocation;
+  projectBoundary?: string;
   toolAvailable?: RepairEngineDependencies['toolAvailable'];
 }): Promise<boolean> {
-  const cwd = path.resolve(input.workspacePath, input.invocation.cwd);
+  const cwd = await resolvePortableWorkspacePath({
+    workspacePath: input.workspacePath,
+    value: input.invocation.cwd,
+    projectBoundary: input.projectBoundary,
+  });
   if (input.toolAvailable) {
     return input.toolAvailable(input.invocation.executable, cwd);
   }
@@ -640,11 +854,11 @@ async function invocationToolAvailable(input: {
   if (path.isAbsolute(executable) || /^\.{1,2}[\\/]/.test(executable)) {
     const candidate = path.isAbsolute(executable) ? executable : path.resolve(cwd, executable);
     const stat = await fsExtra.stat(candidate).catch(() => undefined);
-    return isRunnableFile(stat);
+    return isRunnableFile(stat) && executableLaunches(candidate, cwd);
   }
   for (const candidate of pathExecutableCandidates(executable)) {
     const stat = await fsExtra.stat(candidate).catch(() => undefined);
-    if (isRunnableFile(stat)) return true;
+    if (isRunnableFile(stat) && (await executableLaunches(candidate, cwd))) return true;
   }
   return false;
 }
@@ -665,10 +879,14 @@ async function toolPreconditions(input: {
     ) {
       continue;
     }
+    const stageCwd = await resolvePortableWorkspacePath({
+      workspacePath: input.workspacePath,
+      value: stage.invocation.cwd,
+    });
     deferredExecutables.add(
       path.normalize(
         path.join(
-          path.resolve(input.workspacePath, stage.invocation.cwd),
+          stageCwd,
           '.venv',
           process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
         )
@@ -684,9 +902,13 @@ async function toolPreconditions(input: {
   }
   const result: WorkspaceRepairTransaction['preconditions'] = [];
   for (const invocation of unique.values()) {
+    const invocationCwd = await resolvePortableWorkspacePath({
+      workspacePath: input.workspacePath,
+      value: invocation.cwd,
+    });
     const executablePath = path.isAbsolute(invocation.executable)
       ? path.normalize(invocation.executable)
-      : path.normalize(path.resolve(input.workspacePath, invocation.cwd, invocation.executable));
+      : path.normalize(path.resolve(invocationCwd, invocation.executable));
     if (deferredExecutables.has(executablePath)) {
       result.push({
         id: `tool:${invocation.cwd}:${invocation.executable}`,
@@ -760,9 +982,16 @@ async function dependencyStagePlanForAdapter(input: {
   workspacePath: string;
   action: ArtifactRemediationAction;
   adapterId: WorkspaceRepairAdapterId;
+  authorizedProjectRoot?: string;
 }): Promise<DependencyStagePlan> {
-  const projectPath = actionProjectRoot(input.workspacePath, input.action);
-  const relativeProject = portable(input.workspacePath, projectPath);
+  const projectPath = await actionProjectRoot(
+    input.workspacePath,
+    input.action,
+    input.authorizedProjectRoot
+  );
+  const relativeProject =
+    externalProjectReference(input.action.projectPath ?? '')?.root ??
+    portable(input.workspacePath, projectPath, projectPath);
   const exists = async (name: string) => fsExtra.pathExists(path.join(projectPath, name));
   const checkpointFiles = new Set<string>();
   const stages: WorkspaceRepairStage[] = [];
@@ -770,7 +999,7 @@ async function dependencyStagePlanForAdapter(input: {
   const stageId = (kind: string) => `${relativeProject}:${input.adapterId}:${kind}`;
   const addFiles = (names: string[]) =>
     names.forEach((name) =>
-      checkpointFiles.add(portable(input.workspacePath, path.join(projectPath, name)))
+      checkpointFiles.add(portable(input.workspacePath, path.join(projectPath, name), projectPath))
     );
   const add = (stage: WorkspaceRepairStage) => {
     stages.push(stage);
@@ -1634,11 +1863,18 @@ async function dependencyStagePlan(
   input: {
     workspacePath: string;
     action: ArtifactRemediationAction;
+    authorizedProjectRoot?: string;
   },
   dependencies: RepairEngineDependencies = {}
 ): Promise<DependencyStagePlan> {
-  const projectPath = actionProjectRoot(input.workspacePath, input.action);
-  const relativeProject = portable(input.workspacePath, projectPath);
+  const projectPath = await actionProjectRoot(
+    input.workspacePath,
+    input.action,
+    input.authorizedProjectRoot
+  );
+  const relativeProject =
+    externalProjectReference(input.action.projectPath ?? '')?.root ??
+    portable(input.workspacePath, projectPath, projectPath);
   const detectedAdapterIds = await detectWorkspaceRepairAdapterIds(projectPath);
   const declaredAdapterId = adapterIdForEcosystem(input.action.transaction?.ecosystem);
   const adapterIds = declaredAdapterId ? [declaredAdapterId] : detectedAdapterIds;
@@ -1766,16 +2002,20 @@ async function dependencyStagePlan(
     ];
     for (const stage of adapterStages) {
       if (!stage.required || !stage.invocation) continue;
+      const stageCwd = await resolvePortableWorkspacePath({
+        workspacePath: input.workspacePath,
+        value: stage.invocation.cwd,
+        projectBoundary: projectPath,
+      });
       const executablePath = path.isAbsolute(stage.invocation.executable)
         ? path.normalize(stage.invocation.executable)
-        : path.normalize(
-            path.resolve(input.workspacePath, stage.invocation.cwd, stage.invocation.executable)
-          );
+        : path.normalize(path.resolve(stageCwd, stage.invocation.executable));
       if (deferredStageExecutables.has(executablePath)) continue;
       if (
         !(await invocationToolAvailable({
           workspacePath: input.workspacePath,
           invocation: stage.invocation,
+          projectBoundary: projectPath,
           toolAvailable: dependencies.toolAvailable,
         }))
       ) {
@@ -1877,47 +2117,96 @@ async function checkpointPaths(input: {
   actions: ArtifactRemediationAction[];
   dependencyFiles: string[];
 }): Promise<string[]> {
-  const results = new Set<string>(input.dependencyFiles);
+  const results = new Set<string>();
+  const transactionProjectRoot = input.actions[0]
+    ? await actionProjectRoot(input.workspacePath, input.actions[0])
+    : undefined;
+  const transactionProjectReference = externalProjectReference(input.actions[0]?.projectPath ?? '')
+    ? input.actions[0]?.projectPath
+    : undefined;
+  for (const file of input.dependencyFiles) {
+    const absoluteFile = await resolvePortableWorkspacePath({
+      workspacePath: input.workspacePath,
+      value: file,
+      projectBoundary: transactionProjectRoot,
+      projectName: input.actions[0]?.projectName,
+    });
+    results.add(
+      portableRepairPath(
+        input.workspacePath,
+        absoluteFile,
+        transactionProjectRoot,
+        transactionProjectReference
+      )
+    );
+  }
   for (const action of input.actions) {
-    const projectRoot = actionProjectRoot(input.workspacePath, action);
-    if (!(await insideResolvedBoundary(input.workspacePath, projectRoot))) {
+    const projectRoot = await actionProjectRoot(input.workspacePath, action);
+    const projectBoundary = externalProjectReference(action.projectPath ?? '')
+      ? projectRoot
+      : input.workspacePath;
+    if (!(await insideResolvedBoundary(projectBoundary, projectRoot))) {
       throw new Error(
         `Repair project scope escapes workspace through a symbolic link: ${projectRoot}`
       );
     }
-    for (const file of action.files) {
-      const absoluteFile = path.isAbsolute(file)
-        ? path.resolve(file)
-        : path.resolve(input.workspacePath, file);
-      if (!(await insideResolvedBoundary(input.workspacePath, absoluteFile))) {
+    const commandOwnedRuntimeState =
+      action.transaction?.kind === 'dependency-materialization' &&
+      action.transaction.sourceMutationRequired === false;
+    // Dependency trees and runtime caches are observable execution state, not
+    // source files. The adapter already contributes the bounded manifest and
+    // lockfile set through `dependencyFiles`; checkpointing an installed tree
+    // would either reject a directory or make rollback destructively broad.
+    for (const file of commandOwnedRuntimeState ? [] : action.files) {
+      const absoluteFile = await resolvePortableWorkspacePath({
+        workspacePath: input.workspacePath,
+        value: file,
+        projectBoundary: externalProjectReference(file) ? projectRoot : undefined,
+        projectName: action.projectName,
+      });
+      if (!(await insideResolvedBoundary(projectBoundary, absoluteFile))) {
         throw new Error(
-          `Repair checkpoint path escapes workspace through a symbolic link: ${file}`
+          `Repair checkpoint path escapes its canonical project boundary through a symbolic link: ${file}`
         );
       }
-      results.add(portable(input.workspacePath, file));
+      results.add(
+        portableRepairPath(
+          input.workspacePath,
+          absoluteFile,
+          projectRoot,
+          externalProjectReference(action.projectPath ?? '') ? action.projectPath : undefined
+        )
+      );
     }
     const operation = operationForAction(action);
     if (!operation) continue;
     const target = 'path' in operation ? operation.path : undefined;
     if (target) {
       const absoluteTarget = path.resolve(projectRoot, target);
-      if (!(await insideResolvedBoundary(input.workspacePath, absoluteTarget))) {
+      if (!(await insideResolvedBoundary(projectBoundary, absoluteTarget))) {
         throw new Error(
-          `Repair operation target escapes workspace through a symbolic link: ${target}`
+          `Repair operation target escapes its canonical project boundary through a symbolic link: ${target}`
         );
       }
-      results.add(portable(input.workspacePath, absoluteTarget));
+      results.add(
+        portableRepairPath(
+          input.workspacePath,
+          absoluteTarget,
+          projectRoot,
+          externalProjectReference(action.projectPath ?? '') ? action.projectPath : undefined
+        )
+      );
     }
   }
   return [...results].filter((value) => value !== '.').sort();
 }
 
-function actionInvocation(
+async function actionInvocation(
   workspacePath: string,
   action: ArtifactRemediationAction
-): WorkspaceRepairInvocation | undefined {
+): Promise<WorkspaceRepairInvocation | undefined> {
   if (!action.invocation) return undefined;
-  const projectPath = actionProjectRoot(workspacePath, action);
+  const projectPath = await actionProjectRoot(workspacePath, action);
   return invocation({
     workspacePath,
     projectPath,
@@ -1974,9 +2263,100 @@ function transactionPlanHash(transaction: WorkspaceRepairTransaction): string {
   });
 }
 
+function transactionClosureHash(transaction: WorkspaceRepairTransaction): string {
+  return sha256(
+    stableJson({
+      transactionId: transaction.transactionId,
+      state: transaction.state,
+      planHash: transaction.integrity.planHash,
+      sourceEvidenceHash: transaction.integrity.sourceEvidenceHash,
+      approvedPlanHash: transaction.approval.approvedPlanHash,
+      checkpoint: {
+        status: transaction.checkpoint.status,
+        files: transaction.checkpoint.files.map((entry) => ({
+          path: entry.path,
+          existed: entry.existed,
+          beforeHash: entry.beforeHash,
+          afterHash: entry.afterHash ?? null,
+          ...(entry.mode !== undefined ? { mode: entry.mode } : {}),
+        })),
+      },
+      verification: transaction.verification,
+    })
+  );
+}
+
+export async function assertClosedGoalRepairTransactionCurrent(input: {
+  workspacePath: string;
+  transactionId: string;
+  goalId: string;
+}): Promise<NonNullable<NonNullable<WorkspaceRepairTransaction['verification']>['sourceBinding']>> {
+  const workspacePath = path.resolve(input.workspacePath);
+  const transaction = await readWorkspaceRepairTransaction({
+    workspacePath,
+    transactionId: input.transactionId,
+  });
+  const sourcePlan = await readSourcePlan(workspacePath, input.transactionId);
+  if (
+    transaction.state !== 'closed' ||
+    transaction.approval.status !== 'approved' ||
+    transaction.approval.approvedPlanHash !== transaction.integrity.planHash ||
+    transactionPlanHash(transaction) !== transaction.integrity.planHash ||
+    !transaction.integrity.closureHash ||
+    transactionClosureHash(transaction) !== transaction.integrity.closureHash ||
+    sha256(stableJson(sourcePlan)) !== transaction.integrity.sourceEvidenceHash ||
+    !isWorkspaceRepairProposal(sourcePlan) ||
+    sourcePlan.goalId !== input.goalId ||
+    transaction.verification?.status !== 'passed' ||
+    transaction.verification.targetStatus !== 'passed' ||
+    !transaction.verification.sourceBinding ||
+    transaction.checkpoint.status !== 'captured'
+  ) {
+    throw new Error(
+      `Goal repair transaction is not a current, closed, integrity-bound source transition: ${input.transactionId}`
+    );
+  }
+  const projectBoundary = await transactionProjectBoundary(workspacePath, transaction);
+  for (const entry of transaction.checkpoint.files) {
+    const absolutePath = await resolvePortableWorkspacePath({
+      workspacePath,
+      value: entry.path,
+      projectBoundary,
+      projectName: transaction.target.projectName,
+    });
+    if (
+      !inside(workspacePath, absolutePath) &&
+      !(projectBoundary && inside(projectBoundary, absolutePath))
+    ) {
+      throw new Error(
+        `Goal repair checkpoint escaped its canonical source boundary: ${entry.path}`
+      );
+    }
+    const stat = await fsExtra.lstat(absolutePath).catch(() => undefined);
+    if (!stat) {
+      if (entry.afterHash !== null) {
+        throw new Error(`Goal repair output is no longer current: ${entry.path}`);
+      }
+      continue;
+    }
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`Goal repair output is no longer a regular source file: ${entry.path}`);
+    }
+    const content = await fsExtra.readFile(absolutePath);
+    if (entry.afterHash !== sha256(content)) {
+      throw new Error(`Goal repair output changed after transaction closure: ${entry.path}`);
+    }
+    if (entry.mode !== undefined && stat.mode !== entry.mode) {
+      throw new Error(`Goal repair output mode changed after transaction closure: ${entry.path}`);
+    }
+  }
+  return transaction.verification.sourceBinding;
+}
+
 async function inspectCheckpointFiles(
   workspacePath: string,
-  files: string[]
+  files: string[],
+  projectBoundary?: string
 ): Promise<{
   entries: WorkspaceRepairTransaction['checkpoint']['files'];
   errors: string[];
@@ -1985,13 +2365,23 @@ async function inspectCheckpointFiles(
   const errors: string[] = [];
   let total = 0;
   for (const file of files) {
-    const absolute = path.resolve(workspacePath, file);
-    if (!inside(workspacePath, absolute)) {
-      errors.push(`Checkpoint path escapes workspace: ${file}`);
+    const absolute = await resolvePortableWorkspacePath({
+      workspacePath,
+      value: file,
+      projectBoundary,
+    });
+    const boundary =
+      projectBoundary && inside(path.resolve(projectBoundary), absolute)
+        ? path.resolve(projectBoundary)
+        : workspacePath;
+    if (!inside(boundary, absolute)) {
+      errors.push(`Checkpoint path escapes authorized workspace/project boundaries: ${file}`);
       continue;
     }
-    if (!(await insideResolvedBoundary(workspacePath, absolute))) {
-      errors.push(`Checkpoint path resolves through a link outside the workspace: ${file}`);
+    if (!(await insideResolvedBoundary(boundary, absolute))) {
+      errors.push(
+        `Checkpoint path resolves through a link outside its authorized boundary: ${file}`
+      );
       continue;
     }
     const stat = await fsExtra.lstat(absolute).catch(() => undefined);
@@ -2045,6 +2435,19 @@ function isProtectedProposalPath(relativePath: string): string | undefined {
   return undefined;
 }
 
+function invalidJsonProposalContent(
+  relativePath: string,
+  content: string | undefined
+): string | undefined {
+  if (!/\.json$/i.test(relativePath) || content === undefined) return undefined;
+  try {
+    JSON.parse(content);
+    return undefined;
+  } catch {
+    return `${relativePath} must contain valid JSON; comments and trailing syntax are not allowed.`;
+  }
+}
+
 async function workspaceDisplayName(workspacePath: string): Promise<string> {
   const marker = (await fsExtra
     .readJson(path.join(workspacePath, '.workspai-workspace'))
@@ -2088,7 +2491,10 @@ function syntheticProposalAction(input: {
   projectPath: string;
   proposal: WorkspaceRepairProposal;
 }): ArtifactRemediationAction {
-  const projectPath = portable(input.workspacePath, input.projectPath);
+  const projectPath =
+    !inside(input.workspacePath, input.projectPath) && input.proposal.projectName
+      ? `external/${input.proposal.projectName}`
+      : portable(input.workspacePath, input.projectPath, input.projectPath);
   return {
     id: `proposal:${input.proposal.cardId}:${projectPath}`,
     artifactKind: 'workspace-repair-proposal',
@@ -2191,12 +2597,12 @@ async function proposalValidationPlan(input: {
 
   for (const validation of input.proposal.validation ?? []) {
     const cwd = path.resolve(input.workspacePath, validation.cwd);
-    const relativeCwd = portable(input.workspacePath, cwd);
+    const relativeCwd = portable(input.workspacePath, cwd, declaredProjectRoot);
     const cwdStat = await fsExtra.lstat(cwd).catch(() => undefined);
     if (
       !cwdStat?.isDirectory() ||
       cwdStat.isSymbolicLink() ||
-      !(await insideResolvedBoundary(input.workspacePath, cwd))
+      !(await insideResolvedBoundary(declaredProjectRoot ?? input.workspacePath, cwd))
     ) {
       blockers.push(`Validation ${validation.id} requires a real directory inside the workspace.`);
       continue;
@@ -2220,7 +2626,7 @@ async function proposalValidationPlan(input: {
       timeoutMs: validation.timeoutMs,
     });
     try {
-      validateInvocation(input.workspacePath, command, input.policy);
+      validateInvocation(input.workspacePath, command, input.policy, input.projectRoots);
       validateProposalValidationInvocation(validation, command);
     } catch (error) {
       blockers.push(error instanceof Error ? error.message : String(error));
@@ -2246,7 +2652,7 @@ async function proposalValidationPlan(input: {
       proposal: input.proposal,
     });
     const inferred = await dependencyStagePlan(
-      { workspacePath: input.workspacePath, action },
+      { workspacePath: input.workspacePath, action, authorizedProjectRoot: projectRoot },
       input.dependencies
     );
     adapters.push(...inferred.adapters);
@@ -2259,7 +2665,7 @@ async function proposalValidationPlan(input: {
       for (const file of inferred.checkpointFiles) checkpointFiles.add(file);
       blockers.push(...inferred.blockers);
     }
-    const relativeRoot = portable(input.workspacePath, projectRoot);
+    const relativeRoot = portable(input.workspacePath, projectRoot, projectRoot);
     for (const stage of inferred.stages) {
       if (!dependencyChange && !['test', 'build'].includes(stage.kind)) continue;
       if (customKeys.has(`${relativeRoot}:${stage.kind}`)) continue;
@@ -2333,19 +2739,27 @@ export async function planWorkspaceRepair(
   const eligibleCandidates =
     blockingCandidates.length > 0
       ? blockingCandidates
-      : candidates.filter(
-          (action) =>
-            action.findingStatus !== 'advisory' && action.findingStatus !== 'informational'
-        );
+      : candidates.filter((action) => action.findingStatus !== 'informational');
   const explicitlySelected = input.actionId
     ? candidates.filter((action) => action.id === input.actionId)
     : [];
-  const firstCausalCandidate = eligibleCandidates[0];
+  const firstCausalCandidate = [...eligibleCandidates].sort((left, right) => {
+    const leftActionable = left.status === 'ready' || left.status === 'review-required' ? 0 : 1;
+    const rightActionable = right.status === 'ready' || right.status === 'review-required' ? 0 : 1;
+    return (
+      leftActionable - rightActionable ||
+      left.order - right.order ||
+      left.id.localeCompare(right.id)
+    );
+  })[0];
   const causalSelection = firstCausalCandidate
     ? eligibleCandidates.filter(
         (action) =>
           action.cardId === firstCausalCandidate.cardId &&
-          action.findingId === firstCausalCandidate.findingId
+          action.findingId === firstCausalCandidate.findingId &&
+          action.causalKey === firstCausalCandidate.causalKey &&
+          action.projectName === firstCausalCandidate.projectName &&
+          action.projectPath === firstCausalCandidate.projectPath
       )
     : [];
   // One immutable transaction owns one causal finding family. Independent
@@ -2387,10 +2801,10 @@ export async function planWorkspaceRepair(
   const decisionReasons: string[] = [];
   const decisionOptions = new Set<
     NonNullable<WorkspaceRepairTransaction['decision']>['options'][number]
-  >(['manual-repair', 'cancel']);
+  >(['replan', 'manual-repair', 'cancel']);
   for (const action of actions) {
     const operation = operationForAction(action);
-    const structuredInvocation = actionInvocation(workspacePath, action);
+    const structuredInvocation = await actionInvocation(workspacePath, action);
     const permittedRisk = RISK_ORDER[action.risk] <= RISK_ORDER[maxRisk];
     if (!permittedRisk) {
       decisionReasons.push(`${action.id} exceeds the approved ${maxRisk} risk ceiling.`);
@@ -2464,7 +2878,14 @@ export async function planWorkspaceRepair(
     }))
   );
   const files = await checkpointPaths({ workspacePath, actions, dependencyFiles });
-  const checkpointInspection = await inspectCheckpointFiles(workspacePath, files);
+  const checkpointProjectBoundary = actions[0]
+    ? await actionProjectRoot(workspacePath, actions[0])
+    : undefined;
+  const checkpointInspection = await inspectCheckpointFiles(
+    workspacePath,
+    files,
+    checkpointProjectBoundary
+  );
   preconditions.push({
     id: 'rollback-coverage',
     status:
@@ -2496,6 +2917,11 @@ export async function planWorkspaceRepair(
   const actionProjectPaths = [
     ...new Set(actions.map((action) => action.projectPath).filter(Boolean)),
   ];
+  const actionProjectNames = [
+    ...new Set(actions.map((action) => action.projectName).filter(Boolean)),
+  ];
+  const targetProjectName = actionProjectNames.length === 1 ? actionProjectNames[0] : undefined;
+  const singleProjectClosure = actionProjectPaths.length === 1 && actionProjectNames.length <= 1;
   const target: WorkspaceRepairTransaction['target'] = {
     cardId: input.cardId,
     // A card spanning multiple project roots is a workspace transaction even
@@ -2503,8 +2929,8 @@ export async function planWorkspaceRepair(
     // project transaction without an exact projectName/projectPath gives
     // consumers a false scope and can cause them to route follow-up repair to
     // an arbitrary project.
-    scope: input.projectName || actionProjectPaths.length === 1 ? 'project' : 'workspace',
-    ...(input.projectName ? { projectName: input.projectName } : {}),
+    scope: singleProjectClosure ? 'project' : 'workspace',
+    ...(targetProjectName ? { projectName: targetProjectName } : {}),
     ...(actionProjectPaths.length === 1 ? { projectPath: actionProjectPaths[0] } : {}),
     actionIds: actions.map((action) => action.id),
   };
@@ -2584,6 +3010,8 @@ export async function planWorkspaceRepair(
     WORKSPACE_REPAIR_TRANSACTION_CONTRACT_PATH,
     'Workspace repair transaction'
   );
+  const unchanged = await unchangedBlockedRepair(workspacePath, transaction);
+  if (unchanged) return unchanged;
   const directory = transactionDir(workspacePath, id);
   await fsExtra.ensureDir(directory);
   await atomicJson(sourcePlanPath(workspacePath, id), sourcePlan);
@@ -2603,6 +3031,27 @@ export async function planWorkspaceRepairProposal(
   },
   dependencies: RepairEngineDependencies = {}
 ): Promise<WorkspaceRepairTransaction> {
+  const goalId = input.proposal.goalId;
+  if (!goalId) {
+    return planWorkspaceRepairProposalLocked(input, dependencies);
+  }
+  const workspacePath = path.resolve(input.workspacePath);
+  return withWorkspaceArtifactLock(workspacePath, `.workspai/goals/${goalId}/repair-proposal`, () =>
+    planWorkspaceRepairProposalLocked({ ...input, workspacePath }, dependencies)
+  );
+}
+
+async function planWorkspaceRepairProposalLocked(
+  input: {
+    workspacePath: string;
+    proposal: WorkspaceRepairProposal;
+    maxRisk?: WorkspaceRepairRisk;
+    allowForce?: boolean;
+    allowBreaking?: boolean;
+    autoRollback?: boolean;
+  },
+  dependencies: RepairEngineDependencies = {}
+): Promise<WorkspaceRepairTransaction> {
   assertJsonSchemaContract(
     input.proposal,
     WORKSPACE_REPAIR_PROPOSAL_CONTRACT_PATH,
@@ -2610,6 +3059,38 @@ export async function planWorkspaceRepairProposal(
   );
   const workspacePath = path.resolve(input.workspacePath);
   const proposal = JSON.parse(JSON.stringify(input.proposal)) as WorkspaceRepairProposal;
+  if (proposal.goalId) {
+    const governedGoal = await inspectGoalLifecycle({ workspacePath, goalId: proposal.goalId });
+    if (!governedGoal.active || governedGoal.index.activeGoalId !== proposal.goalId) {
+      throw new Error(`Repair proposal Goal Pack is not active: ${proposal.goalId}`);
+    }
+    if (governedGoal.goalPack?.state !== 'ready-to-plan') {
+      throw new Error(
+        `Repair proposal Goal Pack is not ready for proposal execution: ${governedGoal.goalPack?.state ?? 'missing'}`
+      );
+    }
+    const repairTransactionIds =
+      governedGoal.active.repairTransactionIds ??
+      (governedGoal.active.repairTransactionId ? [governedGoal.active.repairTransactionId] : []);
+    if (repairTransactionIds.length >= governedGoal.goalPack.policy.maxAttempts) {
+      throw new Error(
+        `Goal ${proposal.goalId} exhausted its repair proposal budget (${governedGoal.goalPack.policy.maxAttempts}). Review the latest evidence before creating another Goal Pack.`
+      );
+    }
+    if (
+      governedGoal.goalPack.scope.kind === 'project' ||
+      governedGoal.goalPack.scope.kind === 'project-set'
+    ) {
+      const permittedProjects = governedGoal.goalPack.scope.projects;
+      if (!proposal.projectName || !permittedProjects.includes(proposal.projectName)) {
+        throw new Error(
+          governedGoal.goalPack.scope.kind === 'project'
+            ? `Goal-bound repair must declare the exact permitted projectName (${permittedProjects[0]}).`
+            : `Goal-bound repair must declare a projectName inside the permitted Goal scope (${permittedProjects.join(', ')}).`
+        );
+      }
+    }
+  }
   const maxRisk = input.maxRisk ?? 'guarded';
   const policy: WorkspaceRepairTransaction['policy'] = {
     maxRisk,
@@ -2622,7 +3103,7 @@ export async function planWorkspaceRepairProposal(
   const decisionReasons: string[] = [];
   const decisionOptions = new Set<
     NonNullable<WorkspaceRepairTransaction['decision']>['options'][number]
-  >(['manual-repair', 'cancel']);
+  >(['replan', 'manual-repair', 'cancel']);
   const workspaceMarkerExists =
     (await fsExtra.pathExists(path.join(workspacePath, '.workspai-workspace'))) ||
     (await fsExtra.pathExists(path.join(workspacePath, '.workspai')));
@@ -2634,26 +3115,53 @@ export async function planWorkspaceRepairProposal(
       : 'Workspace root markers must exist.',
   });
 
+  let registeredProjectRoot: string | undefined;
+  try {
+    registeredProjectRoot = await resolveRegisteredProposalProjectRoot({
+      workspacePath,
+      proposal,
+    });
+  } catch (error) {
+    decisionReasons.push(error instanceof Error ? error.message : String(error));
+  }
+  const registeredProjectReference =
+    registeredProjectRoot && !inside(workspacePath, registeredProjectRoot) && proposal.projectName
+      ? `external/${proposal.projectName}`
+      : undefined;
+  if (registeredProjectRoot && (proposal.projectName || proposal.projectPath)) {
+    proposal.projectPath =
+      registeredProjectReference ??
+      path.relative(workspacePath, registeredProjectRoot).split(path.sep).join('/');
+  }
   if (proposal.projectPath) {
-    proposal.projectPath = portable(workspacePath, proposal.projectPath);
-    const projectRoot = path.resolve(workspacePath, proposal.projectPath);
+    const projectRoot = registeredProjectRoot ?? path.resolve(workspacePath, proposal.projectPath);
     const stat = await fsExtra.lstat(projectRoot).catch(() => undefined);
     if (!stat?.isDirectory() || stat.isSymbolicLink()) {
       decisionReasons.push(
-        'The declared project path must be a real directory inside the workspace.'
+        'The declared project path must be a real canonical registered project directory.'
       );
     }
   }
   proposal.validation = proposal.validation?.map((validation) => ({
     ...validation,
-    cwd: portable(workspacePath, validation.cwd),
+    cwd: portableRepairPath(
+      workspacePath,
+      validation.cwd,
+      registeredProjectRoot,
+      registeredProjectReference
+    ),
   }));
 
   const ids = new Set<string>();
   const paths = new Set<string>();
   let proposalBytes = 0;
   for (const change of proposal.changes) {
-    change.path = portable(workspacePath, change.path);
+    change.path = portableRepairPath(
+      workspacePath,
+      change.path,
+      registeredProjectRoot,
+      registeredProjectReference
+    );
     if (change.path === '.')
       decisionReasons.push(`${change.id} cannot replace the workspace root.`);
     if (ids.has(change.id)) decisionReasons.push(`Duplicate proposal change id: ${change.id}.`);
@@ -2667,13 +3175,28 @@ export async function planWorkspaceRepairProposal(
     }
     const protectedReason = isProtectedProposalPath(change.path);
     if (protectedReason) decisionReasons.push(`${change.path}: ${protectedReason}`);
+    if (change.operation === 'write') {
+      const invalidJson = invalidJsonProposalContent(change.path, change.content);
+      if (invalidJson) decisionReasons.push(invalidJson);
+    }
     if (RISK_ORDER[change.risk] > RISK_ORDER[maxRisk]) {
       decisionReasons.push(`${change.id} exceeds the approved ${maxRisk} risk ceiling.`);
       decisionOptions.add(change.risk === 'invasive' ? 'approve-invasive' : 'approve-guarded');
     }
     if (proposal.projectPath) {
-      const projectRoot = path.resolve(workspacePath, proposal.projectPath);
-      const target = path.resolve(workspacePath, change.path);
+      const projectRoot =
+        registeredProjectRoot ??
+        (await resolvePortableWorkspacePath({
+          workspacePath,
+          value: proposal.projectPath,
+          projectName: proposal.projectName,
+        }));
+      const target = await resolvePortableWorkspacePath({
+        workspacePath,
+        value: change.path,
+        projectBoundary: projectRoot,
+        projectName: proposal.projectName,
+      });
       if (!inside(projectRoot, target)) {
         decisionReasons.push(`${change.path} escapes the declared project scope.`);
       }
@@ -2681,7 +3204,11 @@ export async function planWorkspaceRepairProposal(
   }
 
   const changedPaths = [...paths].sort();
-  const initialInspection = await inspectCheckpointFiles(workspacePath, changedPaths);
+  const initialInspection = await inspectCheckpointFiles(
+    workspacePath,
+    changedPaths,
+    registeredProjectRoot
+  );
   decisionReasons.push(...initialInspection.errors);
   const inspectedByPath = new Map(initialInspection.entries.map((entry) => [entry.path, entry]));
   for (const change of proposal.changes) {
@@ -2714,7 +3241,7 @@ export async function planWorkspaceRepairProposal(
 
   const projectRoots = new Set<string>();
   if (proposal.projectPath) {
-    projectRoots.add(path.resolve(workspacePath, proposal.projectPath));
+    projectRoots.add(registeredProjectRoot ?? path.resolve(workspacePath, proposal.projectPath));
   } else {
     for (const change of proposal.changes) {
       projectRoots.add(await inferProjectRoot(workspacePath, change.path));
@@ -2744,7 +3271,11 @@ export async function planWorkspaceRepairProposal(
   const allCheckpointPaths = [
     ...new Set([...changedPaths, ...validationPlan.checkpointFiles]),
   ].sort();
-  const checkpointInspection = await inspectCheckpointFiles(workspacePath, allCheckpointPaths);
+  const checkpointInspection = await inspectCheckpointFiles(
+    workspacePath,
+    allCheckpointPaths,
+    registeredProjectRoot
+  );
   decisionReasons.push(...checkpointInspection.errors);
   preconditions.push({
     id: 'checkpoint-boundary',
@@ -2811,33 +3342,110 @@ export async function planWorkspaceRepairProposal(
         : 'Repair proposal stage ids collide.',
   });
 
-  // The CLI, not the IDE, owns causal target selection. An IDE may bind the
-  // proposal to action ids it inspected, but older consumers only provide a
-  // card/project scope. Resolve that scope against the current canonical
-  // remediation plan before hashing and persisting the proposal so closure is
-  // proven against the finding generation that actually caused the repair.
+  // The CLI, not the IDE, is the final causal-target authority. A presentation
+  // card may aggregate independent blockers across projects, but one source
+  // transaction may own only one immutable causal finding family. Never widen
+  // an ambiguous card-scoped proposal into every action on the card.
   try {
+    let causalTargetInvalid = false;
     const currentPlan = await buildArtifactRemediationPlan({
       workspacePath,
       includeAbsolutePaths: false,
       ciMode: true,
     });
+    const matchingActions = currentPlan.actions.filter(
+      (action) =>
+        action.cardId === proposal.cardId &&
+        (!proposal.projectName || action.projectName === proposal.projectName) &&
+        (!proposal.projectPath || action.projectPath === proposal.projectPath)
+    );
     if (!proposal.targetActionIds?.length) {
-      const causalActionIds = currentPlan.actions
-        .filter(
-          (action) =>
-            action.cardId === proposal.cardId &&
-            (!proposal.projectName || action.projectName === proposal.projectName) &&
-            (!proposal.projectPath || action.projectPath === proposal.projectPath)
-        )
-        .map((action) => action.id)
-        .sort();
-      if (causalActionIds.length > 0) proposal.targetActionIds = causalActionIds;
+      const families = selectedCausalActionFamilies(matchingActions);
+      if (families.size === 1) {
+        proposal.targetActionIds = matchingActions.map((action) => action.id).sort();
+      } else if (families.size > 1) {
+        causalTargetInvalid = true;
+        decisionReasons.push(
+          `Repair proposal target is ambiguous: ${families.size} independent causal finding families match card ${proposal.cardId}. Select one canonical action set before proposing source changes.`
+        );
+      }
     }
-    const selectedActionIds = new Set(proposal.targetActionIds ?? []);
+    const requestedActionIds = [...new Set(proposal.targetActionIds ?? [])];
+    const selectedActionIds = new Set(requestedActionIds);
     const selectedActions = currentPlan.actions.filter((action) =>
       selectedActionIds.has(action.id)
     );
+    const selectedIds = new Set(selectedActions.map((action) => action.id));
+    const missingActionIds = requestedActionIds.filter((actionId) => !selectedIds.has(actionId));
+    if (missingActionIds.length > 0) {
+      causalTargetInvalid = true;
+      decisionReasons.push(
+        `Repair proposal references stale or unknown causal action ids: ${missingActionIds.join(', ')}.`
+      );
+    }
+    const mismatchedActions = selectedActions.filter(
+      (action) =>
+        action.cardId !== proposal.cardId ||
+        (proposal.projectName !== undefined && action.projectName !== proposal.projectName) ||
+        (proposal.projectPath !== undefined && action.projectPath !== proposal.projectPath)
+    );
+    if (mismatchedActions.length > 0) {
+      causalTargetInvalid = true;
+      decisionReasons.push(
+        'Repair proposal causal actions do not belong to the declared card and project scope.'
+      );
+    }
+    const selectedFamilies = selectedCausalActionFamilies(selectedActions);
+    if (selectedFamilies.size > 1) {
+      causalTargetInvalid = true;
+      decisionReasons.push(
+        `Repair proposal combines ${selectedFamilies.size} independent causal finding families. Create one transaction per finding family.`
+      );
+    }
+    if (selectedActions.length > 0 && !proposal.blockerSignature) {
+      causalTargetInvalid = true;
+      decisionReasons.push(
+        'Repair proposal must include the blockerSignature generation inspected by the model.'
+      );
+    }
+    const selectedProjects = new Set(
+      selectedActions
+        .map((action) => action.projectName ?? action.projectPath)
+        .filter((value): value is string => Boolean(value))
+    );
+    if (selectedProjects.size > 0 && !proposal.projectName && !proposal.projectPath) {
+      causalTargetInvalid = true;
+      decisionReasons.push(
+        'Project-scoped causal actions require an explicit canonical projectName or projectPath.'
+      );
+    }
+    const sourceMutationForbidden =
+      selectedActions.length > 0 &&
+      selectedActions.every(
+        (action) =>
+          action.mode === 'run-command' &&
+          action.transaction?.kind === 'dependency-materialization' &&
+          action.transaction.sourceMutationRequired === false
+      );
+    if (sourceMutationForbidden) {
+      causalTargetInvalid = true;
+      decisionReasons.push(
+        'The selected causal action is command-owned and declares that source mutation is not required. Execute the canonical action instead of submitting a model source proposal.'
+      );
+    }
+    preconditions.push({
+      id: 'causal-target-binding',
+      status:
+        !causalTargetInvalid && (selectedActions.length > 0 || matchingActions.length === 0)
+          ? 'passed'
+          : 'failed',
+      message:
+        selectedActions.length > 0
+          ? `${selectedActions.length} action(s) bind this proposal to one canonical causal target.`
+          : matchingActions.length === 0
+            ? 'No canonical remediation action exists; the bounded source proposal remains the explicit target.'
+            : 'A single canonical causal target is required before source mutation.',
+    });
     const causalIntegrity = causalActionIntegrityPrecondition(selectedActions);
     if (causalIntegrity) preconditions.push(causalIntegrity);
   } catch {
@@ -2863,7 +3471,9 @@ export async function planWorkspaceRepairProposal(
   const blocked = failedPrecondition || decisionReasons.length > 0;
   const decisionMessages = [
     ...decisionReasons,
-    ...preconditions.filter((entry) => entry.status === 'failed').map((entry) => entry.message),
+    ...preconditions
+      .filter((entry) => entry.status === 'failed' && entry.id !== 'proposal-boundary')
+      .map((entry) => entry.message),
   ];
   const decisionCauses = repairDecisionCauses({
     adapters: validationPlan.adapters,
@@ -2882,6 +3492,15 @@ export async function planWorkspaceRepairProposal(
       ...(proposal.projectPath ? { projectPath: proposal.projectPath } : {}),
     });
   }
+  const modelCorrectableProposalFailure =
+    decisionCauses.length > 0 &&
+    decisionCauses.every((cause) => cause.kind === 'failed-precondition') &&
+    preconditions.some(
+      (precondition) => precondition.id === 'proposal-boundary' && precondition.status === 'failed'
+    );
+  const effectiveDecisionOptions = modelCorrectableProposalFailure
+    ? (['replan', 'cancel'] as WorkspaceRepairDecision[])
+    : [...decisionOptions];
   const transaction: WorkspaceRepairTransaction = {
     schemaVersion: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
     transactionId,
@@ -2901,7 +3520,7 @@ export async function planWorkspaceRepairProposal(
       ? {
           decision: {
             reason: [...new Set(decisionMessages)].join(' '),
-            options: [...decisionOptions],
+            options: effectiveDecisionOptions,
             causes: decisionCauses,
           },
         }
@@ -2924,7 +3543,9 @@ export async function planWorkspaceRepairProposal(
     transaction,
     'planned',
     blocked
-      ? 'Model-proposed repair requires an engineering decision.'
+      ? modelCorrectableProposalFailure
+        ? 'Model-proposed repair was rejected before mutation and requires causal replanning.'
+        : 'Model-proposed repair requires an engineering decision.'
       : 'Model-proposed source repair is bounded and ready for explicit approval.',
     { now: dependencies.now }
   );
@@ -2933,11 +3554,20 @@ export async function planWorkspaceRepairProposal(
     WORKSPACE_REPAIR_TRANSACTION_CONTRACT_PATH,
     'Workspace repair transaction'
   );
+  const unchanged = await unchangedBlockedRepair(workspacePath, transaction);
+  if (unchanged) return unchanged;
   const directory = transactionDir(workspacePath, transactionId);
   await fsExtra.ensureDir(directory);
   await atomicJson(sourcePlanPath(workspacePath, transactionId), proposal);
   await atomicJson(transactionPath(workspacePath, transactionId), transaction);
   await atomicJson(path.join(workspacePath, WORKSPACE_REPAIR_LAST_RUN_REPORT_PATH), transaction);
+  if (proposal.goalId) {
+    await linkGoalRepairTransaction({
+      workspacePath,
+      goalId: proposal.goalId,
+      transactionId,
+    });
+  }
   return transaction;
 }
 
@@ -3053,9 +3683,11 @@ async function assertCheckpointBaselineIsCurrent(input: {
   workspacePath: string;
   transaction: WorkspaceRepairTransaction;
 }): Promise<void> {
+  const projectBoundary = await transactionProjectBoundary(input.workspacePath, input.transaction);
   const current = await inspectCheckpointFiles(
     input.workspacePath,
-    input.transaction.checkpoint.files.map((entry) => entry.path)
+    input.transaction.checkpoint.files.map((entry) => entry.path),
+    projectBoundary
   );
   if (current.errors.length > 0) throw new Error(current.errors.join(' '));
   const currentByPath = new Map(current.entries.map((entry) => [entry.path, entry]));
@@ -3088,7 +3720,16 @@ async function captureCheckpoint(input: {
   await fsExtra.ensureDir(directory);
   for (let index = 0; index < input.transaction.checkpoint.files.length; index += 1) {
     const entry = input.transaction.checkpoint.files[index];
-    const absolute = path.resolve(input.workspacePath, entry.path);
+    const projectBoundary = await transactionProjectBoundary(
+      input.workspacePath,
+      input.transaction
+    );
+    const absolute = await resolvePortableWorkspacePath({
+      workspacePath: input.workspacePath,
+      value: entry.path,
+      projectBoundary,
+      projectName: input.transaction.target.projectName,
+    });
     const content = entry.existed ? await fsExtra.readFile(absolute) : undefined;
     if (content && sha256(content) !== entry.beforeHash) {
       throw new Error(
@@ -3127,8 +3768,14 @@ async function refreshAfterHashes(
   workspacePath: string,
   transaction: WorkspaceRepairTransaction
 ): Promise<void> {
+  const projectBoundary = await transactionProjectBoundary(workspacePath, transaction);
   for (const entry of transaction.checkpoint.files) {
-    const absolute = path.resolve(workspacePath, entry.path);
+    const absolute = await resolvePortableWorkspacePath({
+      workspacePath,
+      value: entry.path,
+      projectBoundary,
+      projectName: transaction.target.projectName,
+    });
     const content = await fsExtra.readFile(absolute).catch(() => undefined);
     entry.afterHash = content ? sha256(content) : null;
   }
@@ -3144,19 +3791,28 @@ function executableName(executable: string): string {
 function validateInvocation(
   workspacePath: string,
   invocation: WorkspaceRepairInvocation,
-  policy: WorkspaceRepairTransaction['policy']
+  policy: WorkspaceRepairTransaction['policy'],
+  projectBoundaries: string[] = []
 ): { cwd: string; executable: string } {
   const cwd = path.resolve(workspacePath, invocation.cwd);
-  if (!inside(workspacePath, cwd))
-    throw new Error(`Invocation cwd escapes workspace: ${invocation.cwd}`);
+  const cwdAllowed =
+    inside(workspacePath, cwd) || projectBoundaries.some((boundary) => inside(boundary, cwd));
+  if (!cwdAllowed)
+    throw new Error(`Invocation cwd escapes authorized repair boundaries: ${invocation.cwd}`);
   if (invocation.args.length > 100 || invocation.args.some((arg) => !arg || /[\0\r\n]/.test(arg))) {
     throw new Error('Invocation contains invalid arguments.');
   }
   const name = executableName(invocation.executable);
   const absolute = path.isAbsolute(invocation.executable);
   const local = /^\.{1,2}[\\/]/.test(invocation.executable);
-  if (absolute && !inside(workspacePath, invocation.executable)) {
-    throw new Error(`Invocation executable escapes workspace: ${invocation.executable}`);
+  if (
+    absolute &&
+    !inside(workspacePath, invocation.executable) &&
+    !projectBoundaries.some((boundary) => inside(boundary, invocation.executable))
+  ) {
+    throw new Error(
+      `Invocation executable escapes authorized repair boundaries: ${invocation.executable}`
+    );
   }
   if (!absolute && !local && !ALLOWED_EXECUTABLES.has(name)) {
     throw new Error(`Invocation executable is not governed: ${invocation.executable}`);
@@ -3184,13 +3840,25 @@ async function runInvocation(input: {
   workspacePath: string;
   invocation: WorkspaceRepairInvocation;
   policy: WorkspaceRepairTransaction['policy'];
+  projectBoundary?: string;
 }): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
-  const validated = validateInvocation(input.workspacePath, input.invocation, input.policy);
+  const projectBoundaries = input.projectBoundary ? [path.resolve(input.projectBoundary)] : [];
+  const runtimeCwd = await resolvePortableWorkspacePath({
+    workspacePath: input.workspacePath,
+    value: input.invocation.cwd,
+    projectBoundary: input.projectBoundary,
+  });
+  const validated = validateInvocation(
+    input.workspacePath,
+    { ...input.invocation, cwd: runtimeCwd },
+    input.policy,
+    projectBoundaries
+  );
   const cwdStat = await fsExtra.lstat(validated.cwd).catch(() => undefined);
   if (
     !cwdStat?.isDirectory() ||
     cwdStat.isSymbolicLink() ||
-    !(await insideResolvedBoundary(input.workspacePath, validated.cwd))
+    !(await insideResolvedBoundary(input.projectBoundary ?? input.workspacePath, validated.cwd))
   ) {
     throw new Error(`Invocation cwd is not a real workspace directory: ${input.invocation.cwd}`);
   }
@@ -3198,7 +3866,9 @@ async function runInvocation(input: {
     const executablePath = path.isAbsolute(validated.executable)
       ? validated.executable
       : path.resolve(validated.cwd, validated.executable);
-    if (!(await insideResolvedBoundary(input.workspacePath, executablePath))) {
+    if (
+      !(await insideResolvedBoundary(input.projectBoundary ?? input.workspacePath, executablePath))
+    ) {
       throw new Error(
         `Invocation executable resolves outside the workspace: ${input.invocation.executable}`
       );
@@ -3242,7 +3912,12 @@ export function exactCardProducerArgs(cardId: string): string[] {
 async function runExactCardProducer(input: {
   workspacePath: string;
   transaction: WorkspaceRepairTransaction;
-}): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+}): Promise<{
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  evidenceProduced: boolean;
+}> {
   const capability = STUDIO_CARD_REPAIR_CAPABILITIES.find(
     (entry) => entry.cardId === input.transaction.target.cardId
   );
@@ -3257,16 +3932,29 @@ async function runExactCardProducer(input: {
   }
   const cwd =
     capability.scope === 'project' && input.transaction.target.projectPath
-      ? path.resolve(input.workspacePath, input.transaction.target.projectPath)
+      ? await resolvePortableWorkspacePath({
+          workspacePath: input.workspacePath,
+          value: input.transaction.target.projectPath,
+          projectName: input.transaction.target.projectName,
+        })
       : path.resolve(input.workspacePath);
   if (capability.scope === 'project' && !input.transaction.target.projectPath) {
     throw new Error(
       `Repair card ${capability.cardId} requires an explicit project path for exact producer verification.`
     );
   }
-  if (!(await insideResolvedBoundary(input.workspacePath, cwd))) {
+  const producerBoundary = capability.scope === 'project' ? cwd : input.workspacePath;
+  if (!(await insideResolvedBoundary(producerBoundary, cwd))) {
     throw new Error('The target producer working directory escapes the workspace boundary.');
   }
+  const artifactPath = path.resolve(cwd, capability.producerArtifact);
+  if (
+    !inside(cwd, artifactPath) ||
+    !(await insideResolvedBoundary(cwd, path.dirname(artifactPath)))
+  ) {
+    throw new Error('The target producer artifact escapes its canonical scope.');
+  }
+  const beforeArtifact = await fsExtra.stat(artifactPath).catch(() => undefined);
   const protectedEnvironment = Object.fromEntries(
     Object.entries(process.env).filter(
       ([key]) =>
@@ -3287,10 +3975,18 @@ async function runExactCardProducer(input: {
       env: { ...protectedEnvironment, NO_COLOR: '1', CI: process.env.CI ?? '1' },
     }
   );
+  const afterArtifact = await fsExtra.stat(artifactPath).catch(() => undefined);
   return {
     exitCode: result.exitCode ?? null,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
+    evidenceProduced: Boolean(
+      afterArtifact?.isFile() &&
+      (!beforeArtifact ||
+        afterArtifact.mtimeMs !== beforeArtifact.mtimeMs ||
+        afterArtifact.ctimeMs !== beforeArtifact.ctimeMs ||
+        afterArtifact.size !== beforeArtifact.size)
+    ),
   };
 }
 
@@ -3428,14 +4124,17 @@ async function applyProposalChange(input: {
   transaction: WorkspaceRepairTransaction;
   change: WorkspaceRepairProposalChange;
 }): Promise<void> {
-  const target = path.resolve(input.workspacePath, input.change.path);
-  if (
-    !inside(input.workspacePath, target) ||
-    !(await insideResolvedBoundary(input.workspacePath, target))
-  ) {
-    throw new Error(
-      `Proposal target escaped the canonical workspace boundary: ${input.change.path}`
-    );
+  const sourceBoundary =
+    (await transactionProjectBoundary(input.workspacePath, input.transaction)) ??
+    input.workspacePath;
+  const target = await resolvePortableWorkspacePath({
+    workspacePath: input.workspacePath,
+    value: input.change.path,
+    projectBoundary: sourceBoundary,
+    projectName: input.transaction.target.projectName,
+  });
+  if (!inside(sourceBoundary, target) || !(await insideResolvedBoundary(sourceBoundary, target))) {
+    throw new Error(`Proposal target escaped the canonical repair boundary: ${input.change.path}`);
   }
   const protectedReason = isProtectedProposalPath(input.change.path);
   if (protectedReason) throw new Error(`${input.change.path}: ${protectedReason}`);
@@ -3513,14 +4212,23 @@ async function runStage(input: {
       input.stage.exitCode = result.exitCode;
       input.stage.stdoutTail = tail(result.stdout);
       input.stage.stderrTail = tail(result.stderr);
-      // Evidence producers use exit code 2 for a successfully refreshed but
-      // still-blocked finding. Target closure is evaluated after the complete
-      // canonical loop; only producer execution failure is fatal here.
-      if (result.exitCode !== 0 && result.exitCode !== 2) {
+      // Evidence producers use a non-zero policy exit when they successfully
+      // refresh a still-blocking finding. Exit 2 is the common strict-gate
+      // contract. Doctor and several project producers use exit 1, which is
+      // accepted only when the canonical artifact was actually rewritten.
+      // Target closure is evaluated from the refreshed action set below; a
+      // generic command failure cannot pass by exit code alone.
+      const evidenceBearingPolicyExit =
+        result.exitCode === 2 ||
+        (result.exitCode === 1 && 'evidenceProduced' in result && result.evidenceProduced === true);
+      if (result.exitCode !== 0 && !evidenceBearingPolicyExit) {
+        const detail = tail(result.stderr || result.stdout, 600)
+          .replace(/\s+/g, ' ')
+          .trim();
         throw new Error(
-          result.stderr ||
-            result.stdout ||
-            `Exact card producer exited with ${String(result.exitCode)}.`
+          detail
+            ? `Exact card producer failed with exit ${String(result.exitCode)}: ${detail}`
+            : `Exact card producer failed with exit ${String(result.exitCode)} without refreshing its canonical artifact.`
         );
       }
       if (input.stage.id === 'target-precondition') {
@@ -3550,10 +4258,13 @@ async function runStage(input: {
       } else {
         const operation = operationForAction(runtimeAction.action);
         if (operation) {
-          const projectRoot = actionProjectRoot(input.workspacePath, runtimeAction.action);
-          if (!(await insideResolvedBoundary(input.workspacePath, projectRoot))) {
+          const projectRoot = await actionProjectRoot(input.workspacePath, runtimeAction.action);
+          const authorizedBoundary =
+            (await transactionProjectBoundary(input.workspacePath, input.transaction)) ??
+            input.workspacePath;
+          if (!(await insideResolvedBoundary(authorizedBoundary, projectRoot))) {
             throw new Error(
-              `Repair project scope escapes workspace through a symbolic link: ${projectRoot}`
+              `Repair project scope escapes its approved canonical boundary through a symbolic link: ${runtimeAction.action.projectPath ?? '.'}`
             );
           }
           await applyOperation(projectRoot, operation);
@@ -3562,6 +4273,10 @@ async function runStage(input: {
             workspacePath: input.workspacePath,
             invocation: input.stage.invocation,
             policy: input.transaction.policy,
+            projectBoundary: await transactionProjectBoundary(
+              input.workspacePath,
+              input.transaction
+            ),
           });
           input.stage.exitCode = result.exitCode;
           input.stage.stdoutTail = tail(result.stdout);
@@ -3579,6 +4294,7 @@ async function runStage(input: {
         workspacePath: input.workspacePath,
         invocation: input.stage.invocation,
         policy: input.transaction.policy,
+        projectBoundary: await transactionProjectBoundary(input.workspacePath, input.transaction),
       });
       input.stage.exitCode = result.exitCode;
       input.stage.stdoutTail = tail(result.stdout);
@@ -3654,14 +4370,22 @@ async function rollbackInternal(input: {
 
   // Validate every target and backup before restoring the first byte. A late
   // conflict must never leave the workspace in a partially restored state.
+  const sourceBoundary =
+    (await transactionProjectBoundary(input.workspacePath, input.transaction)) ??
+    input.workspacePath;
   for (const entry of input.transaction.checkpoint.files) {
-    const absolute = path.resolve(input.workspacePath, entry.path);
+    const absolute = await resolvePortableWorkspacePath({
+      workspacePath: input.workspacePath,
+      value: entry.path,
+      projectBoundary: sourceBoundary,
+      projectName: input.transaction.target.projectName,
+    });
     if (
-      !inside(input.workspacePath, absolute) ||
-      !(await insideResolvedBoundary(input.workspacePath, absolute))
+      !inside(sourceBoundary, absolute) ||
+      !(await insideResolvedBoundary(sourceBoundary, absolute))
     ) {
       return refuseRollback(
-        `Rollback refused because ${entry.path} escaped the workspace boundary.`
+        `Rollback refused because ${entry.path} escaped the canonical repair boundary.`
       );
     }
     const stat = await fsExtra.lstat(absolute).catch(() => undefined);
@@ -3764,6 +4488,7 @@ async function rollbackInternal(input: {
         workspacePath: input.workspacePath,
         invocation: reconciliationInvocation,
         policy: input.transaction.policy,
+        projectBoundary: await transactionProjectBoundary(input.workspacePath, input.transaction),
       });
     } catch (error) {
       result = {
@@ -3875,6 +4600,27 @@ export async function executeWorkspaceRepair(
       });
       await saveTransaction(workspacePath, transaction, dependencies.now);
       return transaction;
+    }
+    if (
+      transaction.state === 'approved' &&
+      isWorkspaceRepairProposal(sourcePlan) &&
+      sourcePlan.goalId
+    ) {
+      const governedGoal = await inspectGoalLifecycle({
+        workspacePath,
+        goalId: sourcePlan.goalId,
+      });
+      const linkedTransactions =
+        governedGoal.active?.repairTransactionIds ??
+        (governedGoal.active?.repairTransactionId ? [governedGoal.active.repairTransactionId] : []);
+      if (
+        governedGoal.index.activeGoalId !== sourcePlan.goalId ||
+        !linkedTransactions.includes(transaction.transactionId)
+      ) {
+        throw new Error(
+          `Goal-bound repair transaction is not linked to the active Goal Pack: ${transaction.transactionId}`
+        );
+      }
     }
     const executionPreflight = await toolPreconditions({
       workspacePath,
@@ -4068,7 +4814,31 @@ export async function executeWorkspaceRepair(
       dependencies,
       workspaceStatus,
     });
-    const passed = targetVerification.status === 'passed' && workspaceStatus !== 'failed';
+    let passed = targetVerification.status === 'passed' && workspaceStatus !== 'failed';
+    let goalSourceBinding: NonNullable<WorkspaceRepairTransaction['verification']>['sourceBinding'];
+    let goalSourceBindingFailure: string | undefined;
+    if (passed && isWorkspaceRepairProposal(sourcePlan) && sourcePlan.goalId) {
+      const snapshot = await readWorkspaceKnowledgeGraphSnapshot(workspacePath);
+      if (snapshot.status === 'miss') {
+        passed = false;
+        goalSourceBindingFailure = `Goal-bound repair could not seal its post-repair Model/Graph source state (${snapshot.reason}).`;
+      } else {
+        const graphInputHash = snapshot.graph.source.inputs?.hash;
+        if (!graphInputHash) {
+          passed = false;
+          goalSourceBindingFailure =
+            'Goal-bound repair could not seal its post-repair Graph input fingerprint.';
+        } else {
+          goalSourceBinding = {
+            modelHash: hashWorkspaceModel(snapshot.model),
+            modelHashSemantics: 'workspace-model-structural-v1',
+            graphHash: hashCanonicalJson(snapshot.graph),
+            graphHashSemantics: 'canonical-json-v1',
+            graphInputHash,
+          };
+        }
+      }
+    }
     verifyStage.status = passed ? 'passed' : 'failed';
     verifyStage.completedAt = iso(dependencies.now);
     verifyStage.exitCode = verification.exitCode;
@@ -4077,9 +4847,11 @@ export async function executeWorkspaceRepair(
         ? 'Selected repair target and canonical workspace verification passed.'
         : passed
           ? 'Selected repair target passed; canonical workspace verification remains blocked by other governed findings.'
-          : targetVerification.status === 'unknown'
-            ? 'Canonical verification could not establish the selected repair target outcome.'
-            : `Selected repair target remains unresolved; canonical workspace verification is ${workspaceStatus}.`;
+          : goalSourceBindingFailure
+            ? goalSourceBindingFailure
+            : targetVerification.status === 'unknown'
+              ? 'Canonical verification could not establish the selected repair target outcome.'
+              : `Selected repair target remains unresolved; canonical workspace verification is ${workspaceStatus}.`;
     transaction.verification = {
       status: passed ? 'passed' : 'failed',
       targetStatus: targetVerification.status,
@@ -4088,6 +4860,7 @@ export async function executeWorkspaceRepair(
       artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.intelligenceRun,
       exitCode: verification.exitCode,
       summary: verifyStage.summary,
+      ...(goalSourceBinding ? { sourceBinding: goalSourceBinding } : {}),
     };
     event(transaction, 'verification', verifyStage.summary, {
       stageId: verifyStage.id,
@@ -4101,6 +4874,7 @@ export async function executeWorkspaceRepair(
         status: 'passed',
         now: dependencies.now,
       });
+      transaction.integrity.closureHash = transactionClosureHash(transaction);
       await saveTransaction(workspacePath, transaction, dependencies.now);
       return transaction;
     }

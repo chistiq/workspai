@@ -5,6 +5,8 @@ import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  ADOPT_EFFECTS_SCHEMA_VERSION,
+  buildAdoptEffectsSchema,
   buildIngestionPlan,
   buildIngestionPlanSchema,
   buildIngestionResultSchema,
@@ -25,7 +27,16 @@ async function temporaryDirectory(prefix: string): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(cleanup.splice(0).map((item) => fsExtra.remove(item)));
+  await Promise.all(
+    cleanup.splice(0).map((item) =>
+      fsExtra.rm(item, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      })
+    )
+  );
 });
 
 describe('canonical ingestion contract', () => {
@@ -52,6 +63,9 @@ describe('canonical ingestion contract', () => {
     ]);
     expect(buildIngestionResultSchema().properties.schemaVersion.const).toBe(
       INGESTION_RESULT_SCHEMA_VERSION
+    );
+    expect(buildAdoptEffectsSchema().properties.schemaVersion.const).toBe(
+      ADOPT_EFFECTS_SCHEMA_VERSION
     );
   });
 

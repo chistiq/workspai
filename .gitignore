@@ -52,3 +52,6 @@ rapidkit-full-workspace/
 # Local package artifacts
 rapidkit-*.tgz
 workspai-*.tgz
+
+# Locally rendered documentation and social-video masters
+packages/cli/docs/*.mp4

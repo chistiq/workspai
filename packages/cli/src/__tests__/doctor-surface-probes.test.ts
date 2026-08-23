@@ -449,6 +449,38 @@ describe('doctor enterprise surface probes', () => {
     });
   });
 
+  it('does not invent a dotenv file for desktop tooling that reads host and build variables', async () => {
+    const projectPath = await makeProject({
+      'package.json': { name: 'desktop-tool', version: '1.0.0' },
+      'package-lock.json': '{}',
+      'src/config.ts':
+        'export const path = process.env.PATH; export const channel = process.env.DESKTOP_BUILD_CHANNEL;\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'node',
+      projectKind: 'desktop',
+      packageJsonData: (await fsExtra.readJSON(path.join(projectPath, 'package.json'))) as Record<
+        string,
+        unknown
+      >,
+      hasTests: true,
+      vulnerabilities: 0,
+    });
+
+    expect(probes.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
+      status: 'warn',
+      applicability: 'applicable',
+      repairCapability: {
+        status: 'manual',
+        canAutoFix: false,
+        files: [path.join(projectPath, 'ENVIRONMENT.md')],
+        reason: expect.stringContaining('does not prove a dotenv contract'),
+      },
+    });
+  });
+
   it('copies only environment key names from a local .env into a proposed contract', async () => {
     const projectPath = await makeProject({
       'package.json': { name: 'web', version: '1.0.0' },
@@ -726,6 +758,67 @@ describe('doctor enterprise surface probes', () => {
     expect(probes.find((probe) => probe.id === 'runtime-test-depth')?.status).toBe('pass');
     expect(probes.find((probe) => probe.id === 'runtime-quality-tooling')?.status).toBe('pass');
     expect(probes.find((probe) => probe.id === 'surface-security-hygiene')?.status).toBe('pass');
+  });
+
+  it('recognizes Python manifest tests and portable environment contract variants', async () => {
+    const projectPath = await makeProject({
+      'pyproject.toml': [
+        '[project]',
+        'name = "agent-benchmark"',
+        'dependencies = ["fastmcp", "couchdb3"]',
+        '',
+        '[dependency-groups]',
+        'dev = ["pytest>=8"]',
+        '',
+        '[tool.pytest.ini_options]',
+        'testpaths = ["checks"]',
+        '',
+      ].join('\n'),
+      'uv.lock': '',
+      '.env.public': 'COUCHDB_URL=http://localhost:5984\n',
+      '.gitignore': '.env\n.env.*\n!.env.public\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'python',
+      projectKind: 'backend',
+      hasTests: false,
+    });
+
+    expect(probes.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
+      status: 'pass',
+    });
+    expect(probes.find((probe) => probe.id === 'runtime-test-depth')).toMatchObject({
+      status: 'pass',
+      reason: 'Runtime-native test markers detected.',
+    });
+  });
+
+  it('recognizes Vitest as a Bun runtime-native test surface', async () => {
+    const packageJsonData = {
+      name: 'bun-extension',
+      scripts: { test: 'vitest run' },
+    };
+    const projectPath = await makeProject({
+      'package.json': packageJsonData,
+      'bun.lock': '',
+      'vitest.config.ts': 'export default {};\n',
+      '.gitignore': '.env\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'bun',
+      projectKind: 'extension',
+      packageJsonData,
+      hasTests: true,
+    });
+
+    expect(probes.find((probe) => probe.id === 'runtime-test-depth')).toMatchObject({
+      status: 'pass',
+      reason: 'Runtime-native test markers detected.',
+    });
   });
 
   it.each([

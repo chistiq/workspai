@@ -522,6 +522,26 @@
       "publication": "one locked rollback-capable artifact transaction",
       "mutationRule": "knowledge graph enrichment never mutates the authorizing model during a run",
       "staleConsumerRule": "reject a graph whose source binding does not match the current model"
+    },
+    "goalPlanning": {
+      "command": "goal",
+      "role": "pre-transaction-planning",
+      "canonicalArtifact": ".workspai/goals/<goal-id>/goal-pack.json",
+      "latestArtifact": ".workspai/reports/goal-pack-last-run.json",
+      "consumerProjection": ".workspai/goals/<goal-id>/agent-handoff.json",
+      "discoveryIndex": ".workspai/goals/index.json",
+      "mutationMode": "proposal-only",
+      "sourceAuthority": "workspace-model-and-derived-knowledge-graph",
+      "rules": [
+        "Goal planning binds plain-language intent to exact model and graph hashes before agent reasoning.",
+        "The portable Goal index is the only active-goal discovery authority for agents and IDE consumers.",
+        "Hash bindings declare canonicalization semantics; a Goal identity fingerprint is never mislabeled as an artifact digest.",
+        "Capability and retrieval preflight expose missing evidence instead of claiming readiness.",
+        "A Goal Pack and its agent handoff are planning/projection artifacts, never mutation or verification authority.",
+        "Agents propose bounded source changes; human approval and CLI Repair Engine own mutation admission.",
+        "Only fresh CLI evidence can verify completion, and scope expansion requires an explicit decision.",
+        "Portable Goal artifacts exclude absolute machine paths, secrets, raw model responses, and unrestricted command output."
+      ]
     }
   },
   "consumers": [

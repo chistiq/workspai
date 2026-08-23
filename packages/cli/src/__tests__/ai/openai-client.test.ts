@@ -99,8 +99,8 @@ describe('OpenAI Client', () => {
       expect(embedding.length).toBe(1536);
     });
 
-    it('should handle unicode text', async () => {
-      const embedding = await generateEmbedding('مصادقة 认证 認証');
+    it('should handle symbolic input', async () => {
+      const embedding = await generateEmbedding(`authentication ${String.fromCodePoint(0x1f510)}`);
 
       expect(Array.isArray(embedding)).toBe(true);
       expect(embedding.length).toBe(1536);

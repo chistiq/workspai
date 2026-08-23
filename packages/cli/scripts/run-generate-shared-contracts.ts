@@ -24,6 +24,7 @@ import {
 import { buildPublishedContractCatalog } from '../src/contracts/published-contract-versions.js';
 import { buildOperationalJsonSchemas } from '../src/contracts/operational-json-schemas.js';
 import {
+  buildAdoptEffectsSchema,
   buildIngestionPlanSchema,
   buildIngestionResultSchema,
 } from '../src/contracts/ingestion-contract.js';
@@ -61,6 +62,7 @@ writeJson(
 );
 writeJson('ingestion-plan.v1.json', buildIngestionPlanSchema());
 writeJson('ingestion-result.v1.json', buildIngestionResultSchema());
+writeJson('adopt-effects.v1.json', buildAdoptEffectsSchema());
 writeJson('create-planner-capabilities.v1.json', buildCreatePlannerCapabilitiesContract());
 writeJson('agent-customization-pack.v1.json', buildAgentCustomizationPackContract());
 writeJson('backend-import-stack-parity.snapshot.json', buildImportStackParitySnapshot());

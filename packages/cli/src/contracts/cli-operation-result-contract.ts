@@ -19,13 +19,14 @@ export type CliOperationResult = {
 export function cliOperationSuccess(
   operation: string,
   artifact: unknown,
-  outputPath?: string
+  outputPath?: string,
+  exitCode = 0
 ): CliOperationResult {
   return {
     schemaVersion: CLI_OPERATION_RESULT_SCHEMA_VERSION,
     operation,
     status: 'success',
-    exitCode: 0,
+    exitCode,
     artifact,
     ...(outputPath ? { outputPath } : {}),
   };

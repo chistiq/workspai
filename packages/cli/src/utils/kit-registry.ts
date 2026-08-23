@@ -14,6 +14,13 @@ export interface KitDefinition {
   framework: BackendPlatformKey;
   category: WorkspaceProjectCategory;
   moduleSupport: boolean;
+  /**
+   * Whether the workspace-level RapidKit Python engine is needed by this kit.
+   * This is independent from the generated project's runtime. For example,
+   * NestJS is a Node project and its base scaffold is Python-free, while its
+   * optional RapidKit module operations can use the Python control plane.
+   */
+  workspacePythonEngine: 'required' | 'optional' | 'none';
   stability: KitStability;
   versionPolicy: 'tested-baseline';
   generator?: 'gofiber' | 'gogin' | 'springboot' | 'dotnet-webapi-clean' | 'rust-axum';
@@ -39,6 +46,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'fastapi',
     category: 'backend',
     moduleSupport: true,
+    workspacePythonEngine: 'required',
     stability: 'stable',
     versionPolicy: 'tested-baseline',
   },
@@ -52,6 +60,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'fastapi',
     category: 'backend',
     moduleSupport: true,
+    workspacePythonEngine: 'required',
     stability: 'stable',
     versionPolicy: 'tested-baseline',
   },
@@ -65,6 +74,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'nestjs',
     category: 'backend',
     moduleSupport: true,
+    workspacePythonEngine: 'optional',
     stability: 'stable',
     versionPolicy: 'tested-baseline',
   },
@@ -78,6 +88,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'springboot',
     category: 'backend',
     moduleSupport: false,
+    workspacePythonEngine: 'none',
     stability: 'stable',
     versionPolicy: 'tested-baseline',
     generator: 'springboot',
@@ -94,6 +105,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'gofiber',
     category: 'backend',
     moduleSupport: false,
+    workspacePythonEngine: 'none',
     stability: 'stable',
     versionPolicy: 'tested-baseline',
     generator: 'gofiber',
@@ -109,6 +121,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'gogin',
     category: 'backend',
     moduleSupport: false,
+    workspacePythonEngine: 'none',
     stability: 'stable',
     versionPolicy: 'tested-baseline',
     generator: 'gogin',
@@ -134,6 +147,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'dotnet',
     category: 'backend',
     moduleSupport: false,
+    workspacePythonEngine: 'none',
     stability: 'preview',
     versionPolicy: 'tested-baseline',
     generator: 'dotnet-webapi-clean',
@@ -150,6 +164,7 @@ export const KIT_REGISTRY: KitDefinition[] = [
     framework: 'axum',
     category: 'backend',
     moduleSupport: false,
+    workspacePythonEngine: 'none',
     stability: 'preview',
     versionPolicy: 'tested-baseline',
     generator: 'rust-axum',

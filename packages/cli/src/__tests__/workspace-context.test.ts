@@ -61,12 +61,14 @@ describe('workspace agent context', () => {
       },
       workspace: {
         name: 'agent-platform',
+        root: 'workspace:agent-platform',
         type: 'polyglot-product-workspace',
       },
       scope: {
         requested: 'workspace',
       },
     });
+    expect(JSON.stringify(context)).not.toContain(workspacePath);
     expect(context.projects.map((project) => project.name).sort()).toEqual(['api', 'web']);
     expect(
       context.projects.find((project) => project.name === 'api')?.createCapability

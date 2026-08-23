@@ -159,6 +159,10 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Evaluate workspace evidence and produce governance findings for downstream readiness and release decisions.',
   'analyze --json':
     'Emit the workspace analysis result as structured JSON for CI and contract-aware consumers.',
+  agent:
+    'Resolve portable project entry contracts and issue canonical-first grounding receipts for coding agents.',
+  'agent bootstrap':
+    'Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery.',
   autopilot:
     'Coordinate supported automated governance actions while preserving explicit evidence and release gates.',
   'autopilot release':
@@ -232,6 +236,8 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   'project archives': 'List governed project archives and their available restoration metadata.',
   'project commands':
     'Discover commands supported by the selected project runtime and its current capability tier.',
+  'project agent-entry':
+    'Verify portable entry adapters and canonical evidence bindings for one or every supported agent host.',
   'project coverage':
     'Run or inspect runtime-native test coverage and publish normalized, project-scoped evidence against an explicit target.',
   'project workspace':
@@ -327,6 +333,7 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Read the durable progress, checks, blockers, and next actions for an existing goal.',
   'workspace goal verify':
     'Run the goal-specific checks and publish an evidence-derived verified, blocked, or failed state.',
+  goal: 'Compile a plain-language engineering intent into a scope-bound, evidence-pinned Goal Pack and portable agent handoff without mutating source.',
   'workspace graph':
     'Query or export the evidence-backed workspace graph derived from the canonical model.',
   'workspace watch': 'Observe relevant workspace changes and publish versioned watch events.',
@@ -494,6 +501,20 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
       default: 'Warning-only pipeline reports are advisory and return exit code 0.',
       strict: 'With --strict, warning-only pipeline reports return a non-zero exit code.',
       failure: 'Execution failures and failed stages return a non-zero exit code in every mode.',
+    },
+  },
+  goal: {
+    canonicalArgv: ['goal', '<intent>', '--json'],
+    output: {
+      defaultFormat: 'human-or-json',
+      modes: [{ selector: '--json', format: 'json', mediaType: 'application/json' }],
+    },
+    exitSemantics: {
+      default:
+        'A contract-valid Goal Pack returns exit code 0, including explicit needs-confirmation, needs-evidence, or blocked planning states.',
+      strict: 'Not applicable; Goal planning does not execute or verify source changes.',
+      failure:
+        'Resolution, freshness, contract, integrity, or publication failure returns exit code 1.',
     },
   },
 };

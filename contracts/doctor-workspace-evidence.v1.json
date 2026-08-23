@@ -68,6 +68,8 @@
         "verdict": { "enum": ["passed", "attention", "blocked"] },
         "blockingFindings": { "type": "integer", "minimum": 0 },
         "advisoryFindings": { "type": "integer", "minimum": 0 },
+        "unknownFindings": { "type": "integer", "minimum": 0 },
+        "contradictionFindings": { "type": "integer", "minimum": 0 },
         "hasSystemErrors": { "type": "boolean" },
         "scopeProvenance": { "type": "object", "additionalProperties": true }
       },
@@ -280,6 +282,7 @@
         "warnings": { "type": "integer", "minimum": 0 },
         "errors": { "type": "integer", "minimum": 0 },
         "verdict": { "enum": ["passed", "attention", "blocked"] },
+        "presentation": { "$ref": "#/$defs/healthScorePresentation" },
         "components": {
           "type": "object",
           "required": ["host", "projects"],
@@ -289,6 +292,30 @@
           },
           "additionalProperties": false
         }
+      },
+      "additionalProperties": false
+    },
+    "healthScorePresentation": {
+      "type": "object",
+      "required": [
+        "policy",
+        "diagnosticPassRatePercent",
+        "blockingFindings",
+        "advisoryFindings",
+        "unknownFindings",
+        "contradictionFindings",
+        "notApplicableChecks",
+        "label"
+      ],
+      "properties": {
+        "policy": { "const": "doctor-multi-axis-v1" },
+        "diagnosticPassRatePercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "blockingFindings": { "type": "integer", "minimum": 0 },
+        "advisoryFindings": { "type": "integer", "minimum": 0 },
+        "unknownFindings": { "type": "integer", "minimum": 0 },
+        "contradictionFindings": { "type": "integer", "minimum": 0 },
+        "notApplicableChecks": { "type": "integer", "minimum": 0 },
+        "label": { "const": "diagnostic-pass-rate" }
       },
       "additionalProperties": false
     },
@@ -310,6 +337,8 @@
         "failed": { "type": "integer", "minimum": 0 },
         "blockingFindings": { "type": "integer", "minimum": 0 },
         "advisoryFindings": { "type": "integer", "minimum": 0 },
+        "unknownFindings": { "type": "integer", "minimum": 0 },
+        "contradictionFindings": { "type": "integer", "minimum": 0 },
         "verdict": { "enum": ["passed", "attention", "blocked"] }
       },
       "additionalProperties": false

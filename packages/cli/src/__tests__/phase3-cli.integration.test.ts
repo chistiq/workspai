@@ -6,6 +6,8 @@ import os from 'os';
 import path from 'path';
 import { ensureDistBuilt } from './helpers/dist';
 
+const PROCESS_INTEGRATION_TIMEOUT_MS = process.platform === 'win32' ? 120_000 : 20_000;
+
 function cliEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.NODE_ENV;
@@ -108,6 +110,74 @@ describe('Phase 3 commands - CLI process integration', () => {
       });
       expect(fs.existsSync(path.join(projectDir, '.workspai'))).toBe(false);
       expect(fs.existsSync(path.join(isolatedHome, '.workspai', 'workspaces.json'))).toBe(false);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  }, 60_000);
+
+  it('resolves Doctor workspace scope from an adopted project link', () => {
+    const dist = ensureDistBuilt();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-doctor-adopt-link-'));
+    const isolatedHome = path.join(tempDir, 'home');
+    const workspaceDir = path.join(tempDir, 'workspace');
+    const projectDir = path.join(tempDir, 'api');
+
+    try {
+      fs.mkdirSync(path.join(workspaceDir, '.workspai'), { recursive: true });
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.mkdirSync(isolatedHome, { recursive: true });
+      fs.writeFileSync(path.join(workspaceDir, '.workspai-workspace'), 'workspace\n');
+      fs.writeFileSync(
+        path.join(workspaceDir, '.workspai', 'workspace.json'),
+        JSON.stringify({ workspace_name: 'workspace', profile: 'minimal' })
+      );
+      fs.writeFileSync(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'api', scripts: { test: 'node --test' } })
+      );
+
+      const adopt = spawnSync(
+        process.execPath,
+        [dist, 'adopt', projectDir, '--workspace', workspaceDir, '--json'],
+        {
+          cwd: projectDir,
+          encoding: 'utf8',
+          env: cliEnv({ HOME: isolatedHome, USERPROFILE: isolatedHome }),
+        }
+      );
+      expect(adopt.status).toBe(0);
+
+      const doctor = spawnSync(
+        process.execPath,
+        [dist, 'doctor', 'workspace', '--json', 'summary'],
+        {
+          cwd: projectDir,
+          encoding: 'utf8',
+          env: cliEnv({ HOME: isolatedHome, USERPROFILE: isolatedHome }),
+        }
+      );
+
+      expect(doctor.stdout).not.toContain('No Workspai workspace found');
+      expect(() => JSON.parse(doctor.stdout)).not.toThrow();
+      expect(JSON.parse(doctor.stdout)).toMatchObject({
+        scope: 'workspace',
+        workspace: { name: 'workspace', path: workspaceDir },
+      });
+
+      const preview = spawnSync(
+        process.execPath,
+        [dist, 'adopt', projectDir, '--workspace', workspaceDir, '--dry-run', '--json'],
+        {
+          cwd: projectDir,
+          encoding: 'utf8',
+          env: cliEnv({ HOME: isolatedHome, USERPROFILE: isolatedHome }),
+        }
+      );
+      expect(preview.status).toBe(0);
+      expect(JSON.parse(preview.stdout)).toMatchObject({
+        dryRun: true,
+        commandsResolveWorkspaceFromProject: true,
+      });
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
@@ -257,84 +327,88 @@ describe('Phase 3 commands - CLI process integration', () => {
     }
   }, 60000);
 
-  it('supports workspace policy set/show for mode, dependency mode, and rules', () => {
-    const dist = ensureDistBuilt();
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-policy-'));
-    const workspaceDir = path.join(tempDir, 'my-workspace');
+  it(
+    'supports workspace policy set/show for mode, dependency mode, and rules',
+    () => {
+      const dist = ensureDistBuilt();
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-policy-'));
+      const workspaceDir = path.join(tempDir, 'my-workspace');
 
-    try {
-      fs.mkdirSync(path.join(workspaceDir, '.workspai'), { recursive: true });
-      fs.writeFileSync(
-        path.join(workspaceDir, '.workspai-workspace'),
-        JSON.stringify({ signature: 'RAPIDKIT_WORKSPACE' }, null, 2)
-      );
-      fs.writeFileSync(
-        path.join(workspaceDir, '.workspai', 'policies.yml'),
-        [
-          'version: "1.0"',
-          'mode: warn # "warn" or "strict"',
-          'dependency_sharing_mode: isolated # "isolated" or "shared-runtime-caches" or "shared-node-deps"',
-          'rules:',
-          '  enforce_workspace_marker: true',
-          '  enforce_toolchain_lock: false',
-          '  disallow_untrusted_tool_sources: false',
-          '',
-        ].join('\n')
-      );
+      try {
+        fs.mkdirSync(path.join(workspaceDir, '.workspai'), { recursive: true });
+        fs.writeFileSync(
+          path.join(workspaceDir, '.workspai-workspace'),
+          JSON.stringify({ signature: 'RAPIDKIT_WORKSPACE' }, null, 2)
+        );
+        fs.writeFileSync(
+          path.join(workspaceDir, '.workspai', 'policies.yml'),
+          [
+            'version: "1.0"',
+            'mode: warn # "warn" or "strict"',
+            'dependency_sharing_mode: isolated # "isolated" or "shared-runtime-caches" or "shared-node-deps"',
+            'rules:',
+            '  enforce_workspace_marker: true',
+            '  enforce_toolchain_lock: false',
+            '  disallow_untrusted_tool_sources: false',
+            '',
+          ].join('\n')
+        );
 
-      const setMode = spawnSync(
-        process.execPath,
-        [dist, 'workspace', 'policy', 'set', 'mode', 'strict'],
-        {
+        const setMode = spawnSync(
+          process.execPath,
+          [dist, 'workspace', 'policy', 'set', 'mode', 'strict'],
+          {
+            cwd: workspaceDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(setMode.status).toBe(0);
+
+        const setDep = spawnSync(
+          process.execPath,
+          [dist, 'workspace', 'policy', 'set', 'dependency_sharing_mode', 'shared-runtime-caches'],
+          {
+            cwd: workspaceDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(setDep.status).toBe(0);
+
+        const setRule = spawnSync(
+          process.execPath,
+          [dist, 'workspace', 'policy', 'set', 'rules.enforce_toolchain_lock', 'true'],
+          {
+            cwd: workspaceDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(setRule.status).toBe(0);
+
+        const show = spawnSync(process.execPath, [dist, 'workspace', 'policy', 'show'], {
           cwd: workspaceDir,
           encoding: 'utf8',
-        }
-      );
-      expect(setMode.status).toBe(0);
+        });
+        expect(show.status).toBe(0);
+        const output = `${show.stdout || ''}\n${show.stderr || ''}`;
+        expect(output).toContain('mode: strict');
+        expect(output).toContain('dependency_sharing_mode: shared-runtime-caches');
+        expect(output).toContain('enforce_toolchain_lock: true');
 
-      const setDep = spawnSync(
-        process.execPath,
-        [dist, 'workspace', 'policy', 'set', 'dependency_sharing_mode', 'shared-runtime-caches'],
-        {
-          cwd: workspaceDir,
-          encoding: 'utf8',
-        }
-      );
-      expect(setDep.status).toBe(0);
-
-      const setRule = spawnSync(
-        process.execPath,
-        [dist, 'workspace', 'policy', 'set', 'rules.enforce_toolchain_lock', 'true'],
-        {
-          cwd: workspaceDir,
-          encoding: 'utf8',
-        }
-      );
-      expect(setRule.status).toBe(0);
-
-      const show = spawnSync(process.execPath, [dist, 'workspace', 'policy', 'show'], {
-        cwd: workspaceDir,
-        encoding: 'utf8',
-      });
-      expect(show.status).toBe(0);
-      const output = `${show.stdout || ''}\n${show.stderr || ''}`;
-      expect(output).toContain('mode: strict');
-      expect(output).toContain('dependency_sharing_mode: shared-runtime-caches');
-      expect(output).toContain('enforce_toolchain_lock: true');
-
-      const policyContent = fs.readFileSync(
-        path.join(workspaceDir, '.workspai', 'policies.yml'),
-        'utf-8'
-      );
-      expect(policyContent).toContain('mode: strict # "warn" or "strict"');
-      expect(policyContent).toContain(
-        'dependency_sharing_mode: shared-runtime-caches # "isolated" or "shared-runtime-caches" or "shared-node-deps"'
-      );
-      expect(policyContent).toContain('  enforce_toolchain_lock: true');
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    }
-  }, 20000);
+        const policyContent = fs.readFileSync(
+          path.join(workspaceDir, '.workspai', 'policies.yml'),
+          'utf-8'
+        );
+        expect(policyContent).toContain('mode: strict # "warn" or "strict"');
+        expect(policyContent).toContain(
+          'dependency_sharing_mode: shared-runtime-caches # "isolated" or "shared-runtime-caches" or "shared-node-deps"'
+        );
+        expect(policyContent).toContain('  enforce_toolchain_lock: true');
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      }
+    },
+    PROCESS_INTEGRATION_TIMEOUT_MS
+  );
 
   it('rejects workspace policy operations outside a workspace', () => {
     const dist = ensureDistBuilt();
@@ -356,64 +430,68 @@ describe('Phase 3 commands - CLI process integration', () => {
     }
   });
 
-  it('syncs nested projects inside a workspace registry entry', () => {
-    const dist = ensureDistBuilt();
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-sync-nested-'));
-    const isolatedHome = path.join(tempDir, 'home');
-    const workspaceName = 'ws-sync-nested';
-    const workspaceDir = path.join(isolatedHome, '.workspai', 'workspaces', workspaceName);
-    const nestedProjectDir = path.join(workspaceDir, 'apps', 'orders-api');
+  it(
+    'syncs nested projects inside a workspace registry entry',
+    () => {
+      const dist = ensureDistBuilt();
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-ws-sync-nested-'));
+      const isolatedHome = path.join(tempDir, 'home');
+      const workspaceName = 'ws-sync-nested';
+      const workspaceDir = path.join(isolatedHome, '.workspai', 'workspaces', workspaceName);
+      const nestedProjectDir = path.join(workspaceDir, 'apps', 'orders-api');
 
-    try {
-      fs.mkdirSync(isolatedHome, { recursive: true });
+      try {
+        fs.mkdirSync(isolatedHome, { recursive: true });
 
-      const env = cliEnv({
-        HOME: isolatedHome,
-        USERPROFILE: isolatedHome,
-      });
+        const env = cliEnv({
+          HOME: isolatedHome,
+          USERPROFILE: isolatedHome,
+        });
 
-      const createWorkspace = spawnSync(
-        process.execPath,
-        [dist, 'create', 'workspace', workspaceName, '--yes', '--profile', 'minimal'],
-        {
+        const createWorkspace = spawnSync(
+          process.execPath,
+          [dist, 'create', 'workspace', workspaceName, '--yes', '--profile', 'minimal'],
+          {
+            cwd: tempDir,
+            encoding: 'utf8',
+            env,
+          }
+        );
+        expect(createWorkspace.status).toBe(0);
+
+        fs.mkdirSync(path.join(nestedProjectDir, '.workspai'), { recursive: true });
+        fs.writeFileSync(
+          path.join(nestedProjectDir, '.workspai', 'project.json'),
+          JSON.stringify({ runtime: 'java', kit_name: 'springboot.standard' }, null, 2)
+        );
+        fs.writeFileSync(path.join(nestedProjectDir, 'pom.xml'), '<project />');
+
+        const sync = spawnSync(process.execPath, [dist, 'workspace', 'sync'], {
+          cwd: workspaceDir,
+          encoding: 'utf8',
+          env,
+        });
+        expect(
+          sync.status,
+          `workspace sync failed\nstdout:\n${sync.stdout}\nstderr:\n${sync.stderr}`
+        ).toBe(0);
+
+        const list = spawnSync(process.execPath, [dist, 'workspace', 'list'], {
           cwd: tempDir,
           encoding: 'utf8',
           env,
-        }
-      );
-      expect(createWorkspace.status).toBe(0);
+        });
 
-      fs.mkdirSync(path.join(nestedProjectDir, '.workspai'), { recursive: true });
-      fs.writeFileSync(
-        path.join(nestedProjectDir, '.workspai', 'project.json'),
-        JSON.stringify({ runtime: 'java', kit_name: 'springboot.standard' }, null, 2)
-      );
-      fs.writeFileSync(path.join(nestedProjectDir, 'pom.xml'), '<project />');
-
-      const sync = spawnSync(process.execPath, [dist, 'workspace', 'sync'], {
-        cwd: workspaceDir,
-        encoding: 'utf8',
-        env,
-      });
-      expect(
-        sync.status,
-        `workspace sync failed\nstdout:\n${sync.stdout}\nstderr:\n${sync.stderr}`
-      ).toBe(0);
-
-      const list = spawnSync(process.execPath, [dist, 'workspace', 'list'], {
-        cwd: tempDir,
-        encoding: 'utf8',
-        env,
-      });
-
-      expect(list.status).toBe(0);
-      const output = `${list.stdout || ''}\n${list.stderr || ''}`;
-      expect(output).toContain(workspaceName);
-      expect(output).toContain('Projects: 1');
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    }
-  }, 20000);
+        expect(list.status).toBe(0);
+        const output = `${list.stdout || ''}\n${list.stderr || ''}`;
+        expect(output).toContain(workspaceName);
+        expect(output).toContain('Projects: 1');
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      }
+    },
+    PROCESS_INTEGRATION_TIMEOUT_MS
+  );
 
   it('rejects unknown policy rules and invalid boolean values', () => {
     const dist = ensureDistBuilt();

@@ -156,6 +156,38 @@ context, and verify remain available.
 Use `--skip-python-engine` for workspace creation. For project creation, use
 `--skip-install` instead.
 
+## What Create runs automatically
+
+Workspace and project creation finish with a canonical foundation sync. Workspai
+registers created projects and refreshes the workspace contract, model,
+proof-backed graph, diff, impact, agent context, grounding files, and evidence
+index. A successful Create receipt therefore means that the new source and its
+basic Workspace Intelligence artifacts agree.
+
+Create does not silently run dependency initialization, Doctor, Analyze,
+Readiness, release gates, or the strict verification chain. Those operations can
+change host state or produce environment-specific verdicts and remain explicit:
+
+```bash
+# Install profile-owned and project dependencies when you want them.
+workspai bootstrap --profile node-only
+
+# Produce the complete evidence and verification chain.
+workspai workspace intelligence run --for-agent generic --strict --json
+```
+
+`node-only`, `go-only`, `java-only`, and `dotnet-only` bootstrap never install
+the optional workspace Python engine. A `minimal` workspace installs it on
+demand only when a registered Workspai kit requires that engine. Explicitly
+selecting `python-only`, `polyglot`, or `enterprise` enables the Python-capable
+bootstrap path.
+
+The machine-readable source for profiles, every executable kit, runtime
+ownership, Python-engine requirements, and automatic versus explicit lifecycle
+steps is `contracts/create-planner-capabilities.v1.json`. The same contract is
+published through `workspai commands --json` and consumed by Workspai for VS
+Code.
+
 ## If Python is not installed
 
 Python-free profiles do not require Python.
@@ -170,8 +202,17 @@ profile when Python is unavailable:
 | `polyglot`        | `node-only`      |
 | `enterprise`      | `node-only`      |
 
-If Poetry is selected but unavailable, Workspai can use a local virtual
-environment instead.
+Before writing workspace files, Workspai probes the selected Python installer.
+Poetry, local venv, and pipx choices show whether their executable and Python
+module prerequisites are usable. Workspai honors the selected method rather
+than silently changing it; missing `venv`, `pip`, Poetry, or pipx support returns
+the exact setup command, and the workspace remains uncreated.
+
+Failure receipts include platform-specific installation commands and the
+official documentation URL. On Linux they distinguish Debian/Ubuntu, Fedora,
+Arch, and Alpine package managers; macOS uses Homebrew guidance; and Windows
+uses `winget` or `py -m pip` as appropriate. Advanced diagnostics remain behind
+`--debug` and are not mixed into normal onboarding output.
 
 ## Git behavior for a new workspace
 
@@ -345,13 +386,13 @@ project metadata and performs the selected workspace registration.
 
 ## Desktop, extension, and additional backend generators
 
-| Category  | Project           | Kit                | Creation owner                         |
-| --------- | ----------------- | ------------------ | -------------------------------------- |
+| Category  | Project           | Kit                | Creation owner                        |
+| --------- | ----------------- | ------------------ | ------------------------------------- |
 | Backend   | Axum              | `rust.axum`        | Workspai deterministic Cargo baseline |
-| Backend   | Laravel           | `php.laravel`      | Composer / Laravel                     |
-| Desktop   | Tauri             | `desktop.tauri`    | create-tauri-app                       |
-| Desktop   | Electron Forge    | `desktop.electron` | create-electron-app                    |
-| Extension | VS Code Extension | `extension.vscode` | generator-code                         |
+| Backend   | Laravel           | `php.laravel`      | Composer / Laravel                    |
+| Desktop   | Tauri             | `desktop.tauri`    | create-tauri-app                      |
+| Desktop   | Electron Forge    | `desktop.electron` | create-electron-app                   |
+| Extension | VS Code Extension | `extension.vscode` | generator-code                        |
 
 Every generated project receives a canonical `kind` and `category`. The four
 user-facing categories are `backend`, `frontend`, `desktop`, and `extension`;

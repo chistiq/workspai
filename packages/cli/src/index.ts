@@ -61,7 +61,7 @@ import {
   isWrapperLifecycleCommand,
 } from './utils/cli-lifecycle-contract.js';
 import { findRapidkitProjectRoot } from './utils/project-command-capabilities.js';
-import { canonicalizeProjectMetadata, readProjectMetadata } from './utils/project-metadata.js';
+import { canonicalizeProjectMetadata } from './utils/project-metadata.js';
 import {
   ProjectWorkspaceResolutionError,
   repairProjectWorkspaceLink,
@@ -156,6 +156,8 @@ import {
 import {
   collectWorkspaceProfileRuntimes,
   formatWorkspaceProfileCompatibilityHint,
+  isPythonFreeWorkspaceProfile,
+  PYTHON_CAPABLE_WORKSPACE_PROFILES,
   readWorkspaceManifestProfile,
   readWorkspaceProfilePolicyMode,
   resolveWorkspaceProfileCompatibility,
@@ -510,12 +512,46 @@ export async function createWorkspaceVenv(
   dependencies: PythonProjectOrchestrationDependencies = {}
 ): Promise<number> {
   const runCommand = dependencies.runCommand ?? runCommandInCwd;
+  const venvPath = path.join(workspacePath, '.venv');
+  const venvExistedBeforeAttempt = await fsExtra.pathExists(venvPath);
   for (const candidate of dependencies.pythonCandidates ?? hostPythonCandidates()) {
     const args = candidate === 'py' ? ['-3', '-m', 'venv', '.venv'] : ['-m', 'venv', '.venv'];
     const code = await runCommand(candidate, args, workspacePath);
     if (code === 0) return 0;
+    if (!venvExistedBeforeAttempt) {
+      await fsExtra.remove(venvPath);
+    }
   }
   return 1;
+}
+
+export async function ensureWorkspaceVenvHasPip(
+  workspacePath: string,
+  dependencies: PythonProjectOrchestrationDependencies = {}
+): Promise<number> {
+  const runCommand = dependencies.runCommand ?? runCommandInCwd;
+  const venvPath = path.join(workspacePath, '.venv');
+  let venvPython = getVenvPythonPath(venvPath);
+
+  if (await fsExtra.pathExists(venvPython)) {
+    const pipStatus = await runCommand(venvPython, ['-m', 'pip', '--version'], workspacePath);
+    if (pipStatus === 0) return 0;
+
+    // A failed venv creation from an older Workspai release can leave an
+    // interpreter without pip. The workspace-level venv is Workspai-owned, so
+    // replace that invalid environment before retrying dependency bootstrap.
+    await fsExtra.remove(venvPath);
+  }
+
+  const venvStatus = await createWorkspaceVenv(workspacePath, dependencies);
+  if (venvStatus !== 0) return venvStatus;
+
+  venvPython = getVenvPythonPath(venvPath);
+  const pipStatus = await runCommand(venvPython, ['-m', 'pip', '--version'], workspacePath);
+  if (pipStatus !== 0) {
+    await fsExtra.remove(venvPath);
+  }
+  return pipStatus;
 }
 
 export async function createProjectVenv(
@@ -830,7 +866,18 @@ async function beginProjectLifecycleTransaction(
   }
 
   try {
-    for (const filePath of files) await transaction.captureFile(filePath);
+    for (const filePath of files) {
+      const isProjectAgentsPath =
+        options.projectPath && filePath === path.join(options.projectPath, 'AGENTS.md');
+      const stat = isProjectAgentsPath
+        ? await fsExtra.lstat(filePath).catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw error;
+          })
+        : null;
+      if (stat?.isSymbolicLink()) continue;
+      await transaction.captureFile(filePath);
+    }
     if (options.ownedDestination) {
       await transaction.captureOwnedTree(options.ownedDestination);
     }
@@ -940,8 +987,8 @@ async function finalizeCreatedProjectWorkspace(
       relationship: relationship === 'adopted' ? 'adopted' : 'managed',
       mode: 'managed',
     });
+    await syncWorkspaceContractAfterProjectChange(workspacePath, { strict: true });
     await transaction.commit();
-    await syncWorkspaceContractAfterProjectChange(workspacePath);
   } catch (error) {
     await rollbackProjectLifecycleTransaction(transaction, error);
   }
@@ -1592,9 +1639,18 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
 
       return 0;
     } catch (e) {
-      process.stderr.write(
-        `Workspai CLI failed to create workspace: ${(e as Error)?.message ?? e}\n`
-      );
+      if (e instanceof RapidKitError) {
+        process.stderr.write(`\n❌ ${e.message}\n`);
+        if (e.details) {
+          process.stderr.write(`\n${e.details}\n`);
+        }
+        logger.debug('Create workspace error', { code: e.code, stack: e.stack });
+      } else {
+        process.stderr.write(
+          `Workspai CLI failed to create workspace: ${(e as Error)?.message ?? e}\n`
+        );
+        logger.debug('Unexpected create workspace error', e);
+      }
       return 1;
     }
   }
@@ -2223,12 +2279,15 @@ function resolveWorkspaceForIngestion(startPath: string): {
 
 async function syncWorkspaceContractAfterProjectChange(
   workspacePath: string,
-  options?: { silent?: boolean }
+  options?: { silent?: boolean; strict?: boolean }
 ): Promise<void> {
   try {
     const { syncWorkspaceConsumerArtifacts } = await import('./utils/workspace-onboarding.js');
     await syncWorkspaceConsumerArtifacts(workspacePath, { silent: options?.silent });
   } catch (error) {
+    if (options?.strict) {
+      throw error;
+    }
     if (!options?.silent) {
       console.log(chalk.yellow(`⚠️  Workspace consumer sync skipped: ${(error as Error).message}`));
       console.log(
@@ -3174,6 +3233,14 @@ export async function handleAdoptCommand(
       rollbackSnapshot,
     });
     const projectWorkspaceCommand = 'npx workspai project workspace status --json';
+    const existingProjectResolution =
+      options.dryRun === true ? resolveProjectWorkspaceSync({ startPath: sourcePath }) : null;
+    const commandsResolveWorkspaceFromProject =
+      options.dryRun !== true ||
+      (existingProjectResolution !== null &&
+        path.resolve(existingProjectResolution.workspacePath) === path.resolve(workspacePath) &&
+        (!existingProjectResolution.projectPath ||
+          path.resolve(existingProjectResolution.projectPath) === sourcePath));
 
     if (options.dryRun !== true) {
       try {
@@ -3240,7 +3307,7 @@ export async function handleAdoptCommand(
                 ? !hasWorkspaceRootMarkers(workspacePath)
                 : false,
             projectWorkspaceCommand,
-            commandsResolveWorkspaceFromProject: options.dryRun !== true,
+            commandsResolveWorkspaceFromProject,
             dryRun: options.dryRun === true,
             plan: adoptedProject.ingestionPlan,
             adoptedProject,
@@ -3261,6 +3328,18 @@ export async function handleAdoptCommand(
     }
     if (options.dryRun === true) {
       console.log(chalk.yellow(`ℹ Dry run: no adoption files were written.`));
+      console.log(
+        chalk.gray(
+          `   Planned effects: project metadata + workspace registration + model, graph, and agent-grounding sync.`
+        )
+      );
+      if (adoptedProject.effects.repositoryControlFiles.length > 0) {
+        console.log(
+          chalk.gray(
+            `   Repository controls may be reconciled: ${adoptedProject.effects.repositoryControlFiles.map((file) => file.path).join(', ')}.`
+          )
+        );
+      }
     }
 
     console.log(chalk.green(`✔ Adopted project: ${adoptedProject.name}`));
@@ -3315,7 +3394,7 @@ export async function handleAdoptCommand(
 }
 
 export async function installWorkspaceDependencies(workspacePath: string): Promise<number> {
-  const PYTHON_REQUIRED_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
+  const PYTHON_DEFAULT_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
   const dependencyTimeoutMs = resolveWorkspaceDependencyTimeoutMs();
 
   let workspaceProfile = 'minimal';
@@ -3343,7 +3422,11 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
   }
 
   const workspaceRequiresPython = async (): Promise<boolean> => {
-    if (!pythonEngineSkipped && PYTHON_REQUIRED_PROFILES.has(workspaceProfile)) {
+    if (isPythonFreeWorkspaceProfile(workspaceProfile) && workspaceProfile !== 'minimal') {
+      return false;
+    }
+
+    if (!pythonEngineSkipped && PYTHON_DEFAULT_PROFILES.has(workspaceProfile)) {
       return true;
     }
 
@@ -3355,12 +3438,16 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
     for (const projectPath of projectPaths) {
       const projectJson = readRapidkitProjectJson(projectPath);
       const moduleSupport = projectJson?.module_support;
-      const metadata = readProjectMetadata(projectPath);
+      const kitName =
+        typeof projectJson?.kit_name === 'string'
+          ? projectJson.kit_name
+          : typeof projectJson?.kit === 'string'
+            ? projectJson.kit
+            : undefined;
+      const kit = kitName ? resolveKitDefinition(kitName) : null;
 
-      if (pythonEngineSkipped) {
-        if (metadata?.moduleSupport === true) {
-          return true;
-        }
+      if (pythonEngineSkipped || workspaceProfile === 'minimal') {
+        if (kit?.workspacePythonEngine === 'required') return true;
         continue;
       }
 
@@ -3406,10 +3493,8 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
 
   const installRapidKitCoreWithVenv = async (): Promise<number> => {
     const venvBin = workspaceVenvPythonBin(workspacePath);
-    if (!(await fsExtra.pathExists(venvBin))) {
-      const venvCode = await createWorkspaceVenv(workspacePath);
-      if (venvCode !== 0) return venvCode;
-    }
+    const venvCode = await ensureWorkspaceVenvHasPip(workspacePath);
+    if (venvCode !== 0) return venvCode;
 
     const testLocalPath = readWorkspaiEnv('DEV_PATH');
     const hasLocalRapidKitPath = testLocalPath ? await fsExtra.pathExists(testLocalPath) : false;
@@ -4024,17 +4109,22 @@ export async function handleBootstrapCommand(
     // Persist profile back to workspace.json if an explicit/profile-selected value was given
     // and differs from what's currently stored. This keeps workspace.json as the
     // single source of truth so future bare `workspai bootstrap` calls inherit it.
-    if (
-      workspacePath &&
-      !complianceOnly &&
-      selectedProfile &&
-      selectedProfile !== workspaceProfile
-    ) {
+    if (workspacePath && !complianceOnly && selectedProfile) {
       try {
         const workspaceManifestPath = workspaceMetadataPath(workspacePath, 'workspace.json');
         const raw = await fs.promises.readFile(workspaceManifestPath, 'utf-8');
         const manifest = JSON.parse(raw) as Record<string, unknown>;
         manifest.profile = selectedProfile;
+        if (PYTHON_CAPABLE_WORKSPACE_PROFILES.has(selectedProfile)) {
+          delete manifest.bootstrap_note;
+          const engine =
+            manifest.engine && typeof manifest.engine === 'object'
+              ? (manifest.engine as Record<string, unknown>)
+              : undefined;
+          if (engine) {
+            delete engine.python_core;
+          }
+        }
         await fsExtra.ensureDir(path.dirname(workspaceManifestPath));
         await fs.promises.writeFile(
           workspaceManifestPath,
@@ -7414,6 +7504,268 @@ program
     }
   );
 
+program
+  .command('goal [intent]')
+  .description(
+    'Compile a plain-language engineering intent into a governed, evidence-bound Goal Pack'
+  )
+  .option('--workspace <path>', 'Explicit canonical workspace path')
+  .option(
+    '--scope <scope>',
+    'Bound the Goal to workspace, project:<name>, or projects:<name>,<name>'
+  )
+  .addOption(
+    new Option(
+      '--runtime <runtime>',
+      'Bind a coverage Goal to a canonical runtime in its scope'
+    ).choices([
+      'node',
+      'bun',
+      'deno',
+      'python',
+      'go',
+      'java',
+      'dotnet',
+      'rust',
+      'php',
+      'ruby',
+      'elixir',
+      'clojure',
+      'scala',
+      'kotlin',
+      'c',
+      'cpp',
+    ])
+  )
+  .addOption(
+    new Option('--for-agent <consumer>', 'Portable handoff consumer')
+      .choices(['generic', 'claude', 'codex'])
+      .default('generic')
+  )
+  .option('--max-attempts <count>', 'Maximum bounded proposal attempts', '5')
+  .option('--refresh', 'Refresh the canonical Workspace Intelligence chain before planning')
+  .option('--dry-run', 'Validate and preview the Goal Pack without writing artifacts')
+  .option('--status [goal-id]', 'Inspect the active or named Goal Pack and validate its bindings')
+  .option('--list', 'List registered Goal Packs in the resolved workspace')
+  .option('--activate <goal-id>', 'Make a registered Goal Pack the active agent objective')
+  .option('--cancel <goal-id>', 'Cancel a registered Goal Pack without deleting evidence')
+  .option('--prepare <goal-id>', 'Create and link the deterministic CLI verification contract')
+  .option('--verify <goal-id>', 'Run CLI-owned verification for a prepared Goal Pack')
+  .option('--no-run', 'Read verification evidence without executing producer commands')
+  .option('--json', 'Emit machine-readable JSON output')
+  .action(
+    async (
+      intent: string | undefined,
+      options: {
+        workspace?: string;
+        scope?: string;
+        runtime?: Exclude<import('./project-test-coverage.js').ProjectCoverageRuntime, 'unknown'>;
+        forAgent?: 'generic' | 'claude' | 'codex';
+        maxAttempts?: string;
+        refresh?: boolean;
+        dryRun?: boolean;
+        status?: boolean | string;
+        list?: boolean;
+        activate?: string;
+        cancel?: string;
+        prepare?: string;
+        verify?: string;
+        run?: boolean;
+        json?: boolean;
+      }
+    ) => {
+      try {
+        const { validateGoalCommandSelection } = await import('./goals/goal-command-contract.js');
+        const selection = validateGoalCommandSelection({ intent, ...options });
+        if (selection.operation !== 'plan') {
+          const resolution = resolveProjectWorkspaceSync({
+            startPath: process.cwd(),
+            explicitWorkspacePath: options.workspace,
+            strict: true,
+            requireProjectMembership: true,
+          });
+          if (!resolution) throw new Error('No canonical Workspai workspace could be resolved.');
+          const {
+            buildGoalLifecycleResult,
+            inspectGoalLifecycle,
+            prepareGoalVerification,
+            transitionGoalLifecycle,
+            verifyGoalLifecycle,
+          } = await import('./goal-lifecycle.js');
+          const prepared = options.prepare
+            ? await prepareGoalVerification({
+                workspacePath: resolution.workspacePath,
+                goalId: options.prepare,
+              })
+            : null;
+          const verified = options.verify
+            ? await verifyGoalLifecycle({
+                workspacePath: resolution.workspacePath,
+                goalId: options.verify,
+                run: options.run !== false,
+              })
+            : null;
+          const transition = options.activate
+            ? await transitionGoalLifecycle({
+                workspacePath: resolution.workspacePath,
+                goalId: options.activate,
+                action: 'activate',
+              })
+            : options.cancel
+              ? await transitionGoalLifecycle({
+                  workspacePath: resolution.workspacePath,
+                  goalId: options.cancel,
+                  action: 'cancel',
+                })
+              : null;
+          const inspected = await inspectGoalLifecycle({
+            workspacePath: resolution.workspacePath,
+            goalId:
+              typeof options.status === 'string'
+                ? options.status
+                : (transition?.goal.id ?? prepared?.goal.id ?? verified?.goal.id),
+            validateBindings: !(options.list || options.cancel),
+          });
+          const payload = buildGoalLifecycleResult({
+            operation: selection.operation,
+            activeGoalId: inspected.index.activeGoalId,
+            goal: inspected.active,
+            goals: inspected.index.goals,
+            goalPack: inspected.goalPack,
+            verifiedGoalId: verified?.verifiedGoalId ?? prepared?.verifiedGoalId ?? null,
+            verification: verified?.verification ?? null,
+          });
+          if (options.json) console.log(JSON.stringify(payload, null, 2));
+          else if (options.list) {
+            console.log(chalk.bold(`Goals · ${inspected.index.goals.length}`));
+            for (const goal of inspected.index.goals) {
+              console.log(
+                `${goal.id === inspected.index.activeGoalId ? chalk.green('●') : chalk.gray('○')} ${goal.objective} · ${goal.lifecycle} · ${goal.state}`
+              );
+            }
+          } else if (inspected.active) {
+            console.log(chalk.bold(inspected.active.objective));
+            console.log(chalk.gray(`   Goal: ${inspected.active.id}`));
+            console.log(chalk.gray(`   Lifecycle: ${inspected.active.lifecycle}`));
+            console.log(chalk.gray(`   Planning state: ${inspected.active.state}`));
+          } else {
+            console.log(chalk.yellow('No active Goal Pack is registered.'));
+          }
+          return;
+        }
+        const maxAttempts = Number(options.maxAttempts ?? 5);
+        const { planGoalPack } = await import('./goal-pack.js');
+        const interactive =
+          options.json !== true && process.stdin.isTTY === true && process.stdout.isTTY === true;
+        const interactiveSelectors = interactive
+          ? await import('./goals/goal-interactive-selection.js')
+          : null;
+        const result = await planGoalPack({
+          startPath: process.cwd(),
+          intent: selection.intent,
+          workspacePath: options.workspace,
+          scope: options.scope,
+          runtime: options.runtime,
+          consumer: options.forAgent,
+          maxAttempts,
+          refresh: options.refresh === true,
+          dryRun: options.dryRun === true || process.argv.includes('--dry-run'),
+          ...(interactiveSelectors
+            ? {
+                selectScope: interactiveSelectors.selectGoalScopeInteractively,
+                selectCoverageRuntime: interactiveSelectors.selectGoalCoverageRuntimeInteractively,
+              }
+            : {}),
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+        const pack = result.goalPack;
+        const goalVerdict =
+          pack.state === 'ready-to-plan'
+            ? chalk.green('✔ Governed Goal Pack ready to plan')
+            : pack.state === 'blocked'
+              ? chalk.red('■ Goal Pack blocked by missing bounded evidence')
+              : pack.state === 'needs-evidence'
+                ? chalk.yellow('◆ Goal Pack needs measurement evidence')
+                : chalk.yellow('◆ Goal Pack needs clarification');
+        console.log(goalVerdict);
+        console.log(chalk.bold(`   ${pack.intent.statement}`));
+        console.log(chalk.gray(`   Goal: ${pack.id}`));
+        console.log(
+          chalk.gray(
+            `   Scope: ${pack.scope.kind} · ${pack.scope.projects.length} project(s) · ${pack.baseline.runtimes.length} runtime(s)`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Evidence: ${pack.baseline.graph.entities} entities · ${pack.baseline.graph.relationships} relationships · ${pack.baseline.graph.proofCoveragePercent}% relation proof coverage`
+          )
+        );
+        console.log(
+          chalk.gray('   Mutation: proposal only · explicit approval · CLI-owned verify/rollback')
+        );
+        if (pack.decision) console.log(chalk.yellow(`   Decision: ${pack.decision.question}`));
+        if (result.dryRun) {
+          console.log(chalk.cyan('   Preview only; no artifacts were written.'));
+        } else {
+          console.log(chalk.gray(`   Goal Pack: ${pack.artifacts.goalPack}`));
+          console.log(chalk.gray(`   Agent handoff: ${pack.artifacts.agentHandoff}`));
+        }
+        console.log(
+          chalk.gray(`   Next: ${pack.commands.planVerifiedGoal ?? pack.commands.inspectGraph}`)
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const lifecycleOperation = options.verify
+          ? 'verify'
+          : options.prepare
+            ? 'prepare'
+            : options.activate
+              ? 'activate'
+              : options.cancel
+                ? 'cancel'
+                : options.list
+                  ? 'list'
+                  : options.status !== undefined
+                    ? 'status'
+                    : null;
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: lifecycleOperation ? `goal.${lifecycleOperation}` : 'goal.plan',
+                code: lifecycleOperation ? `goal.${lifecycleOperation}.failed` : 'goal.plan.failed',
+                message,
+                context: {
+                  scope: options.scope ?? null,
+                  runtime: options.runtime ?? null,
+                  refresh: options.refresh === true,
+                  goalId:
+                    options.prepare ??
+                    options.verify ??
+                    options.activate ??
+                    options.cancel ??
+                    (typeof options.status === 'string' ? options.status : null),
+                },
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(
+            chalk.red(
+              `❌ Goal ${lifecycleOperation ? `${lifecycleOperation} operation` : 'planning'} failed: ${message}`
+            )
+          );
+        }
+        process.exit(1);
+      }
+    }
+  );
+
 const snapshotCommand = program
   .command('snapshot')
   .description('Create, list, and restore Workspai workspace snapshots');
@@ -7447,6 +7799,21 @@ snapshotCommand
         console.log(chalk.gray(`   Mode: ${result.manifest.mode}`));
         console.log(chalk.gray(`   Path: ${result.snapshotPath}`));
       } catch (error) {
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'snapshot create',
+                code: 'snapshot.create.failed',
+                message: (error as Error).message,
+                context: { workspacePath: options.workspace ?? null, name: name ?? null },
+              }),
+              null,
+              2
+            )
+          );
+          process.exit(1);
+        }
         console.log(chalk.red(`❌ Snapshot create failed: ${(error as Error).message}`));
         process.exit(1);
       }
@@ -7482,6 +7849,21 @@ snapshotCommand
         console.log(chalk.gray(`   ${snapshot.snapshotPath}`));
       }
     } catch (error) {
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'snapshot list',
+              code: 'snapshot.list.failed',
+              message: (error as Error).message,
+              context: { workspacePath: options.workspace ?? null },
+            }),
+            null,
+            2
+          )
+        );
+        process.exit(1);
+      }
       console.log(chalk.red(`❌ Snapshot list failed: ${(error as Error).message}`));
       process.exit(1);
     }
@@ -7512,6 +7894,21 @@ snapshotCommand
       console.log(chalk.gray(`   Bytes: ${result.estimatedBytes}`));
       console.log(chalk.gray(`   Path: ${result.snapshotPath}`));
     } catch (error) {
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'snapshot inspect',
+              code: 'snapshot.inspect.failed',
+              message: (error as Error).message,
+              context: { workspacePath: options.workspace ?? null, name },
+            }),
+            null,
+            2
+          )
+        );
+        process.exit(1);
+      }
       console.log(chalk.red(`❌ Snapshot inspect failed: ${(error as Error).message}`));
       process.exit(1);
     }
@@ -7564,15 +7961,176 @@ snapshotCommand
           console.log(chalk.gray(`   Safety snapshot: ${result.safetySnapshotPath}`));
         }
       } catch (error) {
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'snapshot restore',
+                code: 'snapshot.restore.failed',
+                message: (error as Error).message,
+                context: { workspacePath: options.workspace ?? null, name },
+              }),
+              null,
+              2
+            )
+          );
+          process.exit(1);
+        }
         console.log(chalk.red(`❌ Snapshot restore failed: ${(error as Error).message}`));
         process.exit(1);
       }
     }
   );
 
+function portableAgentEntryError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/file:\/\/\/[^\s"']+/g, '<local-path>')
+    .replace(/\\\\[^\\\s"']+[\\][^\s"']+/g, '<local-path>')
+    .replace(/[A-Za-z]:[\\/][^\s"']+/g, '<local-path>')
+    .replace(/\/(?:Users|home|private|var|opt|srv|mnt|Volumes|tmp)\/[^\s"']+/g, '<local-path>');
+}
+
+async function runAgentEntryReceipt(input: {
+  project?: string;
+  forAgent?: string;
+  liveInputs?: boolean;
+  strict?: boolean;
+  json?: boolean;
+  operation: 'agent bootstrap' | 'project agent-entry verify';
+}): Promise<void> {
+  try {
+    const { buildAgentBootstrapReceipt } = await import('./project-agent-entry.js');
+    const receipt = await buildAgentBootstrapReceipt({
+      startPath: input.project,
+      forAgent: input.forAgent,
+      validateLiveInputs: input.liveInputs !== false,
+    });
+    if (input.json) {
+      console.log(JSON.stringify(receipt, null, 2));
+    } else {
+      const color =
+        receipt.status === 'ready'
+          ? chalk.green
+          : receipt.status === 'degraded'
+            ? chalk.yellow
+            : chalk.red;
+      console.log(color(`Agent entry: ${receipt.status}`));
+      console.log(chalk.gray(`   Project: ${receipt.project.name}`));
+      console.log(chalk.gray(`   Workspace: ${receipt.workspace.name}`));
+      console.log(chalk.gray(`   Consumer: ${receipt.resolvedHost}`));
+      console.log(chalk.gray(`   Receipt: ${receipt.receiptId.slice(0, 16)}`));
+      for (const check of receipt.checks.filter((item) => item.status !== 'passed')) {
+        console.log(
+          (check.status === 'failed' ? chalk.red : chalk.yellow)(`   ${check.id}: ${check.message}`)
+        );
+      }
+      console.log(chalk.gray(`   Next: ${receipt.nextActions[0]}`));
+    }
+    if (receipt.status === 'blocked' || (input.strict && receipt.status !== 'ready')) {
+      process.exit(2);
+    }
+  } catch (error) {
+    const message = portableAgentEntryError(error);
+    if (input.json) {
+      console.log(
+        JSON.stringify(
+          cliOperationError({
+            operation: input.operation,
+            code: 'agent.entry.bootstrap.failed',
+            message,
+          }),
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(chalk.red(`Agent entry failed: ${message}`));
+    }
+    process.exit(1);
+  }
+}
+
+const agentCommand = program
+  .command('agent')
+  .description('Bootstrap coding agents from canonical Workspai project evidence');
+
+agentCommand
+  .command('bootstrap')
+  .description('Issue a portable canonical-first grounding receipt for the current project')
+  .option('--project <path>', 'Project path (defaults to the current or nearest parent project)')
+  .option('--for-agent <agent>', 'Agent host identifier', 'generic')
+  .option('--no-live-inputs', 'Skip live project input validation and return degraded evidence')
+  .option('--strict', 'Return exit 2 unless the complete entry receipt is ready')
+  .option('--json', 'Emit the versioned machine-readable receipt')
+  .action(
+    async (options: {
+      project?: string;
+      forAgent?: string;
+      liveInputs?: boolean;
+      strict?: boolean;
+      json?: boolean;
+    }) =>
+      runAgentEntryReceipt({
+        ...options,
+        operation: 'agent bootstrap',
+      })
+  );
+
 const projectCommand = program
   .command('project')
   .description('Safe workspace project lifecycle operations');
+
+projectCommand
+  .command('agent-entry [action]')
+  .description('Verify canonical-first project entry coverage for supported agent hosts')
+  .option('--project <path>', 'Project path (defaults to the current or nearest parent project)')
+  .option('--for-agent <agent>', 'Agent host identifier or all', 'all')
+  .option('--no-live-inputs', 'Skip live project input validation and return degraded evidence')
+  .option('--strict', 'Return exit 2 unless all selected entry checks are ready')
+  .option('--json', 'Emit the versioned machine-readable receipt')
+  .action(
+    async (
+      action: string | undefined,
+      options: {
+        project?: string;
+        forAgent?: string;
+        liveInputs?: boolean;
+        strict?: boolean;
+        json?: boolean;
+      }
+    ) => {
+      const normalizedAction = action ?? 'verify';
+      if (normalizedAction !== 'verify') {
+        const message = `Unknown project agent-entry action: ${normalizedAction}`;
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'project agent-entry',
+                code: 'project.agent-entry.action.invalid',
+                message,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(message));
+          console.log(
+            chalk.gray(
+              '   workspai project agent-entry verify [--for-agent <agent|all>] [--strict] [--json]'
+            )
+          );
+        }
+        process.exit(1);
+      }
+      await runAgentEntryReceipt({
+        ...options,
+        operation: 'project agent-entry verify',
+      });
+    }
+  );
 
 projectCommand
   .command('commands')
@@ -7649,6 +8207,13 @@ projectCommand
             path.join(resolution.projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
           nextCommand:
             'npx workspai workspace intelligence run --for-agent generic --strict --json',
+          pathPolicy: {
+            classification: 'machine-local',
+            portable: false,
+            persistence: 'forbidden',
+            disclosure: 'forbidden',
+            purpose: 'runtime-workspace-resolution',
+          },
         };
         assertProjectWorkspaceResolutionContract(payload);
         if (options.json) {
@@ -8029,6 +8594,7 @@ program
   .option('--project', 'Check only the current project (or nearest parent project)')
   .option('--json [mode]', 'Output JSON: full (default) or summary')
   .option('--fresh', 'Bypass Doctor project scan cache and refresh live evidence')
+  .option('--verbose', 'Show every probe, lifecycle capability, and detailed project signal')
   .option('--strict', 'Exit 1 on health errors or warnings (workspace/project scope)')
   .option('--ci', 'CI gate: exit 1 on errors, exit 2 on warnings only')
   .option('--profile <profile>', 'Doctor policy profile: local | ci | release | enterprise-strict')
@@ -8047,6 +8613,7 @@ program
         project?: boolean;
         json?: boolean | string;
         fresh?: boolean;
+        verbose?: boolean;
         strict?: boolean;
         ci?: boolean;
         profile?: string;
@@ -8204,7 +8771,7 @@ program
   .option('--no-agent-sync', 'Skip automatic agent grounding sync after context --write')
   .option(
     '--target <targets>',
-    'Agent customization targets for agent-sync (all|vscode|agents,copilot,cursor,claude,codex,orca)'
+    'Agent customization targets for agent-sync (all|vscode|agents,copilot,cursor,claude,codex,gemini,qwen,kimi,grok,windsurf,amazon-q,orca)'
   )
   .option(
     '--preset <preset>',
@@ -8258,7 +8825,10 @@ program
   .option('--blast-radius', 'Include downstream dependents from workspace dependency graph')
   .option('--since <ref>', 'Git ref for affected calculation (default: HEAD~1)')
   .option('--parallel', 'Run project stages in parallel')
-  .option('--runtime <runtime>', 'Limit workspace run to one detected runtime family')
+  .option(
+    '--runtime <runtime>',
+    'Limit workspace run or a test-coverage Goal to one detected runtime family'
+  )
   .option('--max-workers <count>', 'Maximum parallel workers (default: min(4, selected))')
   .option('--continue-on-error', 'Continue running remaining projects after a failure')
   .option(
@@ -9334,7 +9904,7 @@ See the command reference for action-specific required inputs and output artifac
       if (actionOptions.json) {
         console.log(
           JSON.stringify(
-            cliOperationSuccess('workspace verify', { ...verify, gate }, outputPath),
+            cliOperationSuccess('workspace verify', { ...verify, gate }, outputPath, exitCode),
             null,
             2
           )
@@ -9872,8 +10442,38 @@ See the command reference for action-specific required inputs and output artifac
 
       const emit = buildGraphEmit(graph);
       const knowledgeGraph = await buildKnowledgeGraph();
+      const payload = { ...emit, knowledgeGraph };
+      const output = workspaceOutputPath();
+      if (output) {
+        const outputPath = path.resolve(workspacePath, output);
+        await fsExtra.outputFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationSuccess(
+                'workspace graph emit',
+                {
+                  format: 'json',
+                  nodeCount: graph.stats.nodeCount,
+                  edgeCount: graph.stats.edgeCount,
+                  entityCount: knowledgeGraph.entities.length,
+                  relationCount: knowledgeGraph.relations.length,
+                  proofCount: knowledgeGraph.proofs.length,
+                },
+                outputPath
+              ),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.green('✔ Workspace graph artifact exported as JSON'));
+          console.log(chalk.gray(`   Written: ${outputPath}`));
+        }
+        return;
+      }
       if (actionOptions.json) {
-        console.log(JSON.stringify({ ...emit, knowledgeGraph }, null, 2));
+        console.log(JSON.stringify(payload, null, 2));
         return;
       }
       console.log(chalk.green('✔ Workspace dependency graph'));
@@ -10139,7 +10739,8 @@ See the command reference for action-specific required inputs and output artifac
         WORKSPACE_CONTRACT_PATH,
       } = await import('./utils/workspace-contract.js');
       const contractAction = subaction || 'inspect';
-      const contractPath = workspaceOutputPath();
+      const requestedOutput = workspaceOutputPath();
+      const contractPath = contractAction === 'graph' ? undefined : requestedOutput;
 
       try {
         if (contractAction === 'init') {
@@ -10206,6 +10807,33 @@ See the command reference for action-specific required inputs and output artifac
 
         if (contractAction === 'graph') {
           const result = await buildWorkspaceContractGraph({ workspacePath, contractPath });
+          if (requestedOutput) {
+            const outputPath = path.resolve(workspacePath, requestedOutput);
+            await fsExtra.outputFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+            if (actionOptions.json) {
+              console.log(
+                JSON.stringify(
+                  cliOperationSuccess(
+                    'workspace contract graph',
+                    {
+                      projectCount: result.graph.summary.projectCount,
+                      relationshipEdges: result.graph.summary.relationshipEdges,
+                      entityCount: result.graph.summary.entityCount,
+                      knowledgeRelations: result.graph.summary.knowledgeRelations,
+                      proofCount: result.graph.summary.proofCount,
+                    },
+                    outputPath
+                  ),
+                  null,
+                  2
+                )
+              );
+            } else {
+              console.log(chalk.green('✔ Workspace contract graph exported as JSON'));
+              console.log(chalk.gray(`   Written: ${outputPath}`));
+            }
+            return;
+          }
           if (actionOptions.json) {
             console.log(JSON.stringify(result, null, 2));
             return;
@@ -11227,11 +11855,41 @@ See the command reference for action-specific required inputs and output artifac
         if (!Number.isFinite(parsedTarget) || parsedTarget < 0 || parsedTarget > 100) {
           throw new Error('--target must be a number from 0 to 100.');
         }
+        const coverageRuntimes = [
+          'node',
+          'bun',
+          'deno',
+          'python',
+          'go',
+          'java',
+          'dotnet',
+          'rust',
+          'php',
+          'ruby',
+          'elixir',
+          'clojure',
+          'scala',
+          'kotlin',
+          'c',
+          'cpp',
+        ] as const;
+        const coverageRuntime = actionOptions.runtime;
+        if (
+          goalArgument === 'test-coverage' &&
+          coverageRuntime !== undefined &&
+          !coverageRuntimes.includes(coverageRuntime as (typeof coverageRuntimes)[number])
+        ) {
+          throw new Error(`--runtime must be one of: ${coverageRuntimes.join(', ')}.`);
+        }
         const result = await planVerifiedGoal({
           workspacePath,
           kind: goalArgument as (typeof allowedKinds)[number],
           scope: actionOptions.scope,
           target: parsedTarget,
+          runtime:
+            goalArgument === 'test-coverage'
+              ? (coverageRuntime as (typeof coverageRuntimes)[number] | undefined)
+              : undefined,
           allowBreakingChanges: actionOptions.allowBreaking === true,
           allowForce: actionOptions.allowForce === true,
           requireBuild: actionOptions.build !== false,
@@ -11401,7 +12059,19 @@ export function printHelp() {
   const cmd = (text: string): string =>
     text.replace(/\bnpx (?:rapidkit|workspai)\b/g, primaryNpxCommand);
   const line = (command: string, description: string): void => {
-    console.log(chalk.cyan(`  ${cmd(command).padEnd(67)}  `) + chalk.gray(description));
+    const renderedCommand = cmd(command);
+    if (renderedCommand.length > 65) {
+      console.log(chalk.cyan(`  ${renderedCommand}`));
+      console.log(chalk.gray(`      ${description}`));
+      return;
+    }
+    console.log(chalk.cyan(`  ${renderedCommand.padEnd(67)}  `) + chalk.gray(description));
+  };
+  const commandFamily = (label: string, commands: readonly string[]): void => {
+    console.log(chalk.white(`  ${label}`));
+    for (let index = 0; index < commands.length; index += 8) {
+      console.log(chalk.gray(`    ${commands.slice(index, index + 8).join(' · ')}`));
+    }
   };
 
   console.log(chalk.white('Usage:\n'));
@@ -11422,28 +12092,73 @@ export function printHelp() {
 
   printHelpSectionDivider('Workspace Lifecycle');
   console.log('');
-  line('npx workspai create', 'Create a workspace/project or bring in existing software');
+  line(
+    'npx workspai create workspace my-workspace --profile minimal --yes',
+    'Start a new canonical workspace'
+  );
+  line('npx workspai create project', 'Choose an official frontend or backend kit interactively');
+  line(
+    'npx workspai create project nextjs web --yes',
+    'Scaffold an official kit and register the project'
+  );
   line('npx workspai adopt .', 'Link the current project without moving its source');
   line('npx workspai import <path|git-url>', 'Copy or clone software into a workspace');
   line(
     'npx workspai workspace intelligence run --for-agent generic --strict --json',
-    'Refresh the canonical evidence chain'
+    'Build or refresh the complete canonical evidence chain'
+  );
+  line(
+    'npx workspai agent bootstrap --for-agent <host> --strict --json',
+    'Prove agent entry before broad source discovery'
   );
 
-  printHelpSectionDivider('Workspace Intelligence');
+  printHelpSectionDivider('Golden Path · Understand → Impact → Act → Verify');
+  console.log('');
+  line(
+    'npx workspai goal "<outcome>" --for-agent generic',
+    'Auto-bind a project or choose a bounded multi-project scope'
+  );
+  line(
+    'npx workspai goal "<coverage outcome>" --scope projects:a,b --runtime node',
+    'Bind automation explicitly to canonical projects and runtime'
+  );
+  line(
+    'npx workspai workspace graph search "<question>" --scope project:<name> --json',
+    'Retrieve focused, proof-backed evidence'
+  );
+  line('npx workspai workspace diff --from git:HEAD~1 --json', 'Model what changed');
+  line(
+    'npx workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json',
+    'Bound the affected system before action'
+  );
+  line('npx workspai workspace repair --help', 'Plan, approve, execute, verify, or roll back');
+  line('npx workspai workspace verify --strict --json', 'Prove canonical workspace evidence');
+
+  printHelpSectionDivider('Workspace Intelligence · What the loop builds');
   console.log(chalk.gray('\n  Code · APIs · infrastructure · docs · policies · runtime evidence'));
   console.log(chalk.gray('                              ↓'));
   console.log(chalk.gray('                   Canonical Workspace Model'));
   console.log(chalk.gray('                              ↓'));
   console.log(chalk.gray('                Evidence-backed Knowledge Graph'));
   console.log(chalk.gray('                              ↓'));
-  console.log(chalk.gray('             Doctor · impact · verify · context · explain\n'));
+  console.log(chalk.gray('       diff · impact · Doctor · context · repair · verify · explain\n'));
 
   line('npx workspai workspace model --write --json', 'Build the canonical system model');
   line('npx workspai workspace graph search <query> --json', 'Ask a bounded, proven question');
   line('npx workspai doctor workspace --json', 'Diagnose projects and workspace health');
   line('npx workspai project coverage --run --target 80 --json', 'Measure one project');
   line('npx workspai workspace explain <target> --write --json', 'Explain a blocker or project');
+  line('npx workspai readiness --strict --json', 'Evaluate release readiness');
+  line('npx workspai pipeline --strict --json', 'Run the broader governance and release loop');
+
+  printHelpSectionDivider('Complete Command Map');
+  console.log(
+    chalk.gray('\n  Commands are grouped by execution owner; use any command with --help.\n')
+  );
+  const commandCapabilities = getGlobalCommandCapabilities().commands;
+  commandFamily('Native Workspai orchestration', commandCapabilities.npmOwned);
+  commandFamily('Core-backed operations', commandCapabilities.coreBacked);
+  commandFamily('Project runtime shortcuts', commandCapabilities.projectScoped);
 
   printHelpSectionDivider('Find the right command');
   console.log('');

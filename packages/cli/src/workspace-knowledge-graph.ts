@@ -259,11 +259,14 @@ const SOURCE_EXTENSIONS = new Set([
   '.h',
   '.hpp',
   '.java',
+  '.cjs',
+  '.cts',
   '.js',
   '.jsx',
   '.kt',
   '.kts',
   '.mjs',
+  '.mts',
   '.php',
   '.py',
   '.r',
@@ -300,11 +303,14 @@ function sourceLanguage(filePath: string, primaryRuntime?: string): string {
     '.h': 'c',
     '.hpp': 'cpp',
     '.java': 'java',
+    '.cjs': 'javascript',
+    '.cts': 'typescript',
     '.js': 'javascript',
     '.jsx': 'javascript',
     '.kt': 'kotlin',
     '.kts': 'kotlin',
     '.mjs': 'javascript',
+    '.mts': 'typescript',
     '.php': 'php',
     '.py': 'python',
     '.r': 'r',
@@ -408,51 +414,135 @@ const SYMBOL_PATTERNS = [
   { pattern: /^\s*(?:class|module|struct|protocol|mixin)\s+([A-Za-z_]\w*)/, detail: 'type' },
 ] as const;
 
-const IMPORT_PATTERNS = [
+const JAVASCRIPT_IMPORT_PATTERNS = [
   { pattern: /^\s*import(?:.+?from\s*)?["']([^"']+)["']/, detail: 'import' },
   { pattern: /require\(["']([^"']+)["']\)/, detail: 'require' },
+] as const;
+
+const PYTHON_IMPORT_PATTERNS = [
   { pattern: /^\s*from\s+([A-Za-z0-9_.]+)\s+import\s+/, detail: 'import' },
   { pattern: /^\s*import\s+([A-Za-z0-9_.]+)(?:\s|$)/, detail: 'import' },
-  { pattern: /^\s*(?:import|using|use)\s+([A-Za-z0-9_:.*\\/.-]+)/, detail: 'import' },
+] as const;
+
+const C_FAMILY_INCLUDE_PATTERNS = [
+  { pattern: /^\s*#\s*include\s*["<]([^">]+)[">]/, detail: 'include' },
+] as const;
+
+const RUST_IMPORT_PATTERNS = [{ pattern: /^\s*use\s+([A-Za-z0-9_:*.-]+)/, detail: 'use' }] as const;
+
+const JVM_IMPORT_PATTERNS = [
+  { pattern: /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.*]+)\s*;?/, detail: 'import' },
+] as const;
+
+const DOTNET_IMPORT_PATTERNS = [
+  { pattern: /^\s*(?:global\s+)?using\s+([A-Za-z0-9_.]+)/, detail: 'using' },
+] as const;
+
+const GO_IMPORT_PATTERNS = [
+  { pattern: /^\s*import\s+(?:[A-Za-z0-9_.]+\s+)?["']([^"']+)["']/, detail: 'import' },
+] as const;
+
+const RUBY_IMPORT_PATTERNS = [
   { pattern: /^\s*require(?:_relative)?\s+["']([^"']+)["']/, detail: 'require' },
 ] as const;
+
+const PHP_IMPORT_PATTERNS = [{ pattern: /^\s*use\s+([A-Za-z0-9_\\]+)/, detail: 'use' }] as const;
+
+const ELIXIR_IMPORT_PATTERNS = [
+  { pattern: /^\s*(?:alias|import|require|use)\s+([A-Za-z0-9_.]+)/, detail: 'import' },
+] as const;
+
+const DART_IMPORT_PATTERNS = [
+  { pattern: /^\s*import\s+["']([^"']+)["']/, detail: 'import' },
+] as const;
+
+const LUA_IMPORT_PATTERNS = [
+  { pattern: /\brequire\s*\(?\s*["']([^"']+)["']/, detail: 'require' },
+] as const;
+
+const R_IMPORT_PATTERNS = [
+  { pattern: /^\s*(?:library|require)\s*\(\s*["']?([^"')\s]+)["']?/, detail: 'import' },
+] as const;
+
+const GENERIC_IMPORT_PATTERNS = [
+  ...JAVASCRIPT_IMPORT_PATTERNS,
+  ...PYTHON_IMPORT_PATTERNS,
+  { pattern: /^\s*(?:import|using|use)\s+([A-Za-z0-9_:.*\\/.-]+)/, detail: 'import' },
+  ...RUBY_IMPORT_PATTERNS,
+] as const;
+
+function importPatternsForFile(filePath: string) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (
+    ['.cjs', '.cts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx', '.vue', '.svelte'].includes(
+      extension
+    )
+  ) {
+    return JAVASCRIPT_IMPORT_PATTERNS;
+  }
+  if (extension === '.py') return PYTHON_IMPORT_PATTERNS;
+  if (['.c', '.cc', '.cpp', '.h', '.hpp'].includes(extension)) {
+    return C_FAMILY_INCLUDE_PATTERNS;
+  }
+  if (extension === '.rs') return RUST_IMPORT_PATTERNS;
+  if (['.java', '.kt', '.kts', '.scala'].includes(extension)) return JVM_IMPORT_PATTERNS;
+  if (['.cs', '.fs', '.fsx', '.vb'].includes(extension)) return DOTNET_IMPORT_PATTERNS;
+  if (extension === '.go') return GO_IMPORT_PATTERNS;
+  if (extension === '.rb') return RUBY_IMPORT_PATTERNS;
+  if (extension === '.php') return PHP_IMPORT_PATTERNS;
+  if (['.ex', '.exs'].includes(extension)) return ELIXIR_IMPORT_PATTERNS;
+  if (extension === '.dart') return DART_IMPORT_PATTERNS;
+  if (extension === '.lua') return LUA_IMPORT_PATTERNS;
+  if (extension === '.r') return R_IMPORT_PATTERNS;
+  return GENERIC_IMPORT_PATTERNS;
+}
 
 function resolveLocalImportTarget(
   importerPath: string,
   specifier: string,
   candidateFiles: ReadonlySet<string>,
-  projectRoot?: string
+  projectRoot?: string,
+  importKind?: string
 ): string | null {
   const pythonImporter = path.extname(importerPath).toLowerCase() === '.py';
-  let base: string;
+  const bases: string[] = [];
   if (pythonImporter) {
     const leadingDots = specifier.match(/^\.+/)?.[0].length ?? 0;
     let directory = leadingDots > 0 ? path.dirname(importerPath) : path.resolve(projectRoot ?? '');
     for (let level = 1; level < leadingDots; level += 1) directory = path.dirname(directory);
     const moduleName = specifier.slice(leadingDots).replace(/\./g, path.sep);
-    base = moduleName ? path.join(directory, moduleName) : directory;
+    bases.push(moduleName ? path.join(directory, moduleName) : directory);
   } else {
-    if (!specifier.startsWith('.')) return null;
-    base = path.resolve(path.dirname(importerPath), specifier);
-  }
-  const extension = path.extname(base).toLowerCase();
-  const hasSourceExtension = SOURCE_EXTENSIONS.has(extension);
-  const candidates = new Set<string>([base]);
-  if (pythonImporter) {
-    candidates.add(`${base}.py`);
-    candidates.add(path.join(base, '__init__.py'));
-  }
-  if (hasSourceExtension) {
-    const withoutExtension = base.slice(0, -extension.length);
-    if (['.js', '.jsx', '.mjs'].includes(extension)) {
-      for (const replacement of ['.ts', '.tsx', '.js', '.jsx', '.mjs']) {
-        candidates.add(`${withoutExtension}${replacement}`);
-      }
+    if (specifier.startsWith('.')) {
+      bases.push(path.resolve(path.dirname(importerPath), specifier));
+    } else if (importKind === 'include') {
+      bases.push(path.resolve(path.dirname(importerPath), specifier));
+      if (projectRoot) bases.push(path.resolve(projectRoot, specifier));
+    } else {
+      return null;
     }
-  } else {
-    for (const sourceExtension of SOURCE_EXTENSIONS) {
-      candidates.add(`${base}${sourceExtension}`);
-      candidates.add(path.join(base, `index${sourceExtension}`));
+  }
+  const candidates = new Set<string>();
+  for (const base of bases) {
+    candidates.add(base);
+    const extension = path.extname(base).toLowerCase();
+    const hasSourceExtension = SOURCE_EXTENSIONS.has(extension);
+    if (pythonImporter) {
+      candidates.add(`${base}.py`);
+      candidates.add(path.join(base, '__init__.py'));
+    }
+    if (hasSourceExtension) {
+      const withoutExtension = base.slice(0, -extension.length);
+      if (['.js', '.jsx', '.mjs'].includes(extension)) {
+        for (const replacement of ['.ts', '.tsx', '.js', '.jsx', '.mjs']) {
+          candidates.add(`${withoutExtension}${replacement}`);
+        }
+      }
+    } else {
+      for (const sourceExtension of SOURCE_EXTENSIONS) {
+        candidates.add(`${base}${sourceExtension}`);
+        candidates.add(path.join(base, `index${sourceExtension}`));
+      }
     }
   }
   return [...candidates].find((candidate) => candidateFiles.has(path.resolve(candidate))) ?? null;
@@ -631,10 +721,19 @@ function stringValue(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === 'string').sort();
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .sort();
   }
   const record = asRecord(value);
-  return record ? Object.keys(record).sort() : [];
+  return record
+    ? Object.keys(record)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .sort()
+    : [];
 }
 
 function environmentKeys(value: unknown): string[] {
@@ -725,6 +824,15 @@ async function gitOutput(cwd: string, args: string[]): Promise<Buffer> {
   return Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.from(result.stdout);
 }
 
+function gitInventoryPathspecs(): string[] {
+  return [
+    '.',
+    ...[...IGNORED_DIRECTORIES]
+      .sort((left, right) => left.localeCompare(right))
+      .map((directory) => `:(exclude,glob)**/${directory}/**`),
+  ];
+}
+
 async function gitFingerprintScope(input: {
   kind: 'workspace' | 'project';
   id: string;
@@ -750,10 +858,14 @@ async function gitFingerprintScope(input: {
       scopePrefix.includes('/../')
     )
       return null;
-    const treeScope = scopePrefix.replace(/\/$/u, '');
-    const treeSpec = treeScope ? `HEAD:${treeScope}` : 'HEAD^{tree}';
+    // The Git worktree fingerprint must cover the same bounded inventory as
+    // graph providers. Managed `.workspai` outputs and other ignored trees can
+    // be tracked by a repository, but refreshing those outputs must not make
+    // the graph invalidate itself. Apply the inventory exclusions to every
+    // Git probe instead of hashing the complete repository diff.
+    const pathspecs = gitInventoryPathspecs();
     const [tree, diff, untracked, ignored, flags, gitLinks] = await Promise.all([
-      gitOutput(input.root, ['rev-parse', treeSpec]),
+      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', ...pathspecs]),
       gitOutput(input.root, [
         'diff',
         '--no-ext-diff',
@@ -761,7 +873,7 @@ async function gitFingerprintScope(input: {
         '--binary',
         'HEAD',
         '--',
-        '.',
+        ...pathspecs,
       ]),
       gitOutput(input.root, [
         'ls-files',
@@ -770,7 +882,7 @@ async function gitFingerprintScope(input: {
         '--exclude-standard',
         '-z',
         '--',
-        '.',
+        ...pathspecs,
       ]),
       gitOutput(input.root, [
         'ls-files',
@@ -780,10 +892,10 @@ async function gitFingerprintScope(input: {
         '--exclude-standard',
         '-z',
         '--',
-        '.',
+        ...pathspecs,
       ]),
-      gitOutput(input.root, ['ls-files', '-v', '--', '.']),
-      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', '.']),
+      gitOutput(input.root, ['ls-files', '-v', '--', ...pathspecs]),
+      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', ...pathspecs]),
     ]);
     // Lowercase status marks assume-unchanged/skip-worktree files whose content
     // Git may intentionally hide from diff. Fall back to content hashing.
@@ -1111,6 +1223,7 @@ class KnowledgeGraphState {
   readonly diagnostics: WorkspaceKnowledgeDiagnostic[] = [];
   private readonly contentHashes = new Map<string, string | null>();
   private readonly attributeConflicts = new Set<string>();
+  private readonly emptyLabelDiagnostics = new Set<string>();
 
   constructor(
     readonly workspacePath: string,
@@ -1191,6 +1304,19 @@ class KnowledgeGraphState {
     const id = stableId(input.kind, input.key);
     const attributes = portableAttributes(input.attributes ?? {});
     const existing = this.entities.get(id);
+    const requestedLabel = input.label.trim();
+    const label = requestedLabel || existing?.label || input.key.trim() || input.kind;
+    if (!requestedLabel && !this.emptyLabelDiagnostics.has(id)) {
+      this.emptyLabelDiagnostics.add(id);
+      this.diagnostics.push({
+        code: 'graph.knowledge.empty_label_normalized',
+        severity: 'warning',
+        message: `An empty ${input.kind} label was normalized to ${label}.`,
+        entityIds: [id],
+        recommendation:
+          'Inspect the provider proof and preserve a non-empty source identifier before publishing the entity.',
+      });
+    }
     const mergedAttributes = { ...(existing?.attributes ?? {}) };
     for (const [attribute, value] of Object.entries(attributes)) {
       if (
@@ -1203,7 +1329,7 @@ class KnowledgeGraphState {
           this.diagnostics.push({
             code: 'graph.knowledge.attribute_conflict',
             severity: 'warning',
-            message: `Conflicting ${attribute} values were observed for ${input.kind} ${input.label}.`,
+            message: `Conflicting ${attribute} values were observed for ${input.kind} ${label}.`,
             entityIds: [id],
             recommendation:
               'Inspect the entity proof paths and make the authoritative source explicit.',
@@ -1214,7 +1340,11 @@ class KnowledgeGraphState {
       mergedAttributes[attribute] = value;
     }
     const aliases = [
-      ...new Set([...(existing?.identity.aliases ?? []), ...(input.aliases ?? [])]),
+      ...new Set(
+        [...(existing?.identity.aliases ?? []), ...(input.aliases ?? [])]
+          .map((alias) => alias.trim())
+          .filter(Boolean)
+      ),
     ].sort();
     const proofIds = [
       ...new Set([...(existing?.proofIds ?? []), ...(input.proofIds ?? [])]),
@@ -1222,7 +1352,7 @@ class KnowledgeGraphState {
     this.entities.set(id, {
       id,
       kind: input.kind,
-      label: input.label,
+      label,
       ...(input.projectId ? { projectId: input.projectId } : {}),
       identity: {
         key: input.key,
@@ -1717,9 +1847,10 @@ const foundationProvider: Provider = {
         try {
           const contents = await fsExtra.readFile(file, 'utf8');
           const manifest = parseManifestMetadata(file, contents);
+          const manifestArtifact = state.artifactPath(file, project);
           const proof = await state.addProof({
             provider: this.id,
-            artifact: state.artifactPath(file, project),
+            artifact: manifestArtifact,
             absolutePath: file,
             pointer: '/',
             confidence: manifest.name ? 'high' : 'medium',
@@ -1727,14 +1858,19 @@ const foundationProvider: Provider = {
           });
           const packageEntity = state.addEntity({
             kind: 'package',
-            key: `package:${project.id}:${manifest.ecosystem}:${manifest.name ?? state.artifactPath(file, project)}`,
+            // A package name is not unique inside a monorepo. Root tooling,
+            // editor extensions, bindings, and the published runtime package
+            // can intentionally share it. The portable manifest boundary keeps
+            // those authored units distinct while external dependencies remain
+            // deduplicated by ecosystem and canonical dependency name.
+            key: `package:${project.id}:${manifest.ecosystem}:${manifest.name ?? 'anonymous'}:${manifestArtifact}`,
             label: manifest.name ?? `${project.id}/${toPosix(path.relative(project.root, file))}`,
             projectId: project.id,
             aliases: [base, ...(manifest.name ? [manifest.name] : [])],
             attributes: {
               ecosystem: manifest.ecosystem,
               version: manifest.version,
-              manifest: state.artifactPath(file, project),
+              manifest: manifestArtifact,
               dependencies: manifest.dependencies,
               ...(manifest.metadata ?? {}),
             },
@@ -2424,6 +2560,8 @@ const sourceStructureProvider: Provider = {
       const projectInventory = (context.filesByProject.get(project.id) ?? []).filter(
         (file) => !isNonProductionArtifact(project.root, file)
       );
+      const resolutionInventory =
+        context.semanticFilesByProject.get(project.id) ?? projectInventory;
       const files = balancedSourceSelection(
         (context.filesByProject.get(project.id) ?? []).filter(
           (file) =>
@@ -2432,7 +2570,15 @@ const sourceStructureProvider: Provider = {
         ),
         1_000
       );
-      const usableFiles = new Set<string>();
+      // Extraction stays deliberately bounded, but local import resolution
+      // must see the complete fingerprint inventory. Otherwise imports from a
+      // sampled file to a valid file outside the extraction window become
+      // false unresolved modules in large repositories.
+      const usableFiles = new Set<string>(
+        resolutionInventory
+          .filter((file) => !isNonProductionArtifact(project.root, file))
+          .map((file) => path.resolve(file))
+      );
       const usableFileSizes = new Map<string, number>();
       await Promise.all(
         projectInventory.map(async (file) => {
@@ -2491,7 +2637,7 @@ const sourceStructureProvider: Provider = {
           proofIds: [fileProof],
         });
 
-        const imports = captureSourceFindings(sourceContents, IMPORT_PATTERNS, 250);
+        const imports = captureSourceFindings(sourceContents, importPatternsForFile(file), 250);
         for (const imported of imports) {
           const proof = await context.state.addProof({
             provider: this.id,
@@ -2507,19 +2653,24 @@ const sourceStructureProvider: Provider = {
             file,
             imported.name,
             usableFiles,
-            project.root
+            project.root,
+            imported.detail
           );
           if (localTarget) {
             const targetArtifact = context.state.artifactPath(localTarget, project);
-            if (!SOURCE_EXTENSIONS.has(path.extname(localTarget).toLowerCase())) {
+            const targetEntityId = stableId('file', `file:${project.id}:${targetArtifact}`);
+            if (!context.state.entities.has(targetEntityId)) {
+              const targetStats = await fsExtra.stat(localTarget).catch(() => null);
               const targetProof = await context.state.addProof({
                 provider: this.id,
                 artifact: targetArtifact,
-                absolutePath: localTarget,
+                ...(targetStats?.isFile() && targetStats.size <= 2 * 1024 * 1024
+                  ? { absolutePath: localTarget }
+                  : {}),
                 derivation: 'extracted',
                 trust: 'observed',
                 confidence: 'high',
-                detail: 'Locally imported non-source artifact',
+                detail: 'Locally imported artifact resolved from the project inventory',
               });
               const targetFileEntity = context.state.addEntity({
                 kind: 'file',
@@ -2530,7 +2681,9 @@ const sourceStructureProvider: Provider = {
                 attributes: {
                   artifact: targetArtifact,
                   language: sourceLanguage(localTarget, project.runtime),
-                  bytes: usableFileSizes.get(path.resolve(localTarget)),
+                  bytes:
+                    usableFileSizes.get(path.resolve(localTarget)) ??
+                    (targetStats?.isFile() ? targetStats.size : undefined),
                 },
                 proofIds: [targetProof],
               });
@@ -2543,7 +2696,7 @@ const sourceStructureProvider: Provider = {
             }
             context.state.addRelation({
               from: fileEntity,
-              to: stableId('file', `file:${project.id}:${targetArtifact}`),
+              to: targetEntityId,
               kind: 'imports',
               confidence: 'high',
               proofIds: [proof],
@@ -2655,9 +2808,9 @@ const sourceStructureProvider: Provider = {
         context.state.diagnostics.push({
           code: 'graph.provider.source_structure.limit_reached',
           severity: 'info',
-          message: `Source extraction for ${project.id} reached its bounded inventory limit.`,
+          message: `Source extraction for ${project.id} sampled ${files.length} file(s) from ${projectInventory.length} indexed candidate(s).`,
           recommendation:
-            'Use the standalone graph package provider configuration for deeper symbol indexing.',
+            'Use bounded graph search, evidence, and path queries for proof-backed retrieval; do not treat the sampled symbol inventory as exhaustive.',
         });
       }
       if (unresolvedLocalImports > 0) {
@@ -2676,10 +2829,11 @@ const sourceStructureProvider: Provider = {
 function generatedReference(contents: string): string | null {
   const header = contents.slice(0, 12_000);
   const reference = header.match(
-    /(?:code generated by|generated from:|@generated by)\s*(?:(?:\/\/|#|\*)\s*)?[`"']?([^`"'\s;*]+)/i
+    /^[\t ]*(?:\/\/|#|\/\*+|\*|<!--|--)[\t ]*(?:code generated by|generated from:|this file is autogenerated from:|@generated by)\s*(?:(?:\/\/|#|\*|--)[\t ]*)?[`"']?([^`"'\s;*,]+)/im
   )?.[1];
-  if (!reference || !path.posix.basename(reference.replace(/\\/g, '/'))) return null;
-  return reference;
+  const normalized = reference?.replace(/^\.\//, '').replace(/[.,:]+$/, '') ?? '';
+  if (!normalized || !path.posix.basename(normalized.replace(/\\/g, '/'))) return null;
+  return normalized;
 }
 
 type RustExtensionDeclaration = {
@@ -2716,7 +2870,10 @@ function balancedMacroBody(contents: string, openIndex: number): string | null {
 
 function rustExtensionDeclarations(contents: string): RustExtensionDeclaration[] {
   const declarations: RustExtensionDeclaration[] = [];
-  const pattern = /(?:deno_core::)?extension!\s*\(/g;
+  // `extension!` is a specific Deno Core macro. A suffix match inside macros
+  // such as `register_extension!` would make unrelated Rust repositories look
+  // like runtime bridges and leave this provider spuriously partial.
+  const pattern = /(?<![A-Za-z0-9_:])(?:deno_core::)?extension!\s*\(/g;
   for (const match of contents.matchAll(pattern)) {
     const openIndex = (match.index ?? 0) + match[0].lastIndexOf('(');
     const body = balancedMacroBody(contents, openIndex);
@@ -2773,7 +2930,7 @@ const runtimeBridgeSemanticProvider: Provider = {
         }
         try {
           const contents = await fsExtra.readFile(file, 'utf8');
-          if (/(?:deno_core::)?extension!\s*\(/.test(contents)) return true;
+          if (/(?<![A-Za-z0-9_:])(?:deno_core::)?extension!\s*\(/.test(contents)) return true;
         } catch {
           // Unreadable candidates do not make the provider applicable.
         }
@@ -3013,11 +3170,16 @@ const polyglotSemanticProvider: Provider = {
   id: 'polyglot-semantics',
   version: '1.0.0',
   applicable(context) {
-    return context.projects.some(
-      (project) =>
-        (project.runtimeCandidates?.length ?? 0) > 1 ||
-        buildPolyglotLifecyclePlan(project.root).polyglot
-    );
+    return context.projects.some((project) => {
+      const concreteRuntimeCandidates = new Set(
+        (project.runtimeCandidates ?? []).filter(
+          (runtime) => runtime && runtime !== 'unknown' && runtime !== 'generic'
+        )
+      );
+      return (
+        concreteRuntimeCandidates.size > 1 || buildPolyglotLifecyclePlan(project.root).polyglot
+      );
+    });
   },
   async run(context) {
     for (const project of context.projects) {

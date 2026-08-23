@@ -19,81 +19,97 @@
       "id": "fastapi.standard",
       "runtime": "python",
       "framework": "fastapi",
+      "plannerFramework": "fastapi",
       "category": "backend",
       "owner": "core",
       "stability": "stable",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": true
+      "moduleSupport": true,
+      "workspacePythonEngine": "required"
     },
     {
       "id": "fastapi.ddd",
       "runtime": "python",
       "framework": "fastapi",
+      "plannerFramework": "fastapi",
       "category": "backend",
       "owner": "core",
       "stability": "stable",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": true
+      "moduleSupport": true,
+      "workspacePythonEngine": "required"
     },
     {
       "id": "nestjs.standard",
       "runtime": "node",
       "framework": "nestjs",
+      "plannerFramework": "nestjs",
       "category": "backend",
       "owner": "core",
       "stability": "stable",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": true
+      "moduleSupport": true,
+      "workspacePythonEngine": "optional"
     },
     {
       "id": "springboot.standard",
       "runtime": "java",
       "framework": "springboot",
+      "plannerFramework": "springboot",
       "category": "backend",
       "owner": "npm",
       "stability": "stable",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": false
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
     },
     {
       "id": "gofiber.standard",
       "runtime": "go",
       "framework": "gofiber",
+      "plannerFramework": "go",
       "category": "backend",
       "owner": "npm",
       "stability": "stable",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": false
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
     },
     {
       "id": "gogin.standard",
       "runtime": "go",
       "framework": "gogin",
+      "plannerFramework": "go",
       "category": "backend",
       "owner": "npm",
       "stability": "stable",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": false
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
     },
     {
       "id": "dotnet.webapi.clean",
       "runtime": "dotnet",
       "framework": "dotnet",
+      "plannerFramework": "dotnet",
       "category": "backend",
       "owner": "npm",
       "stability": "preview",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": false
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
     },
     {
       "id": "rust.axum",
       "runtime": "rust",
       "framework": "axum",
+      "plannerFramework": "rust",
       "category": "backend",
       "owner": "npm",
       "stability": "preview",
       "versionPolicy": "tested-baseline",
-      "moduleSupport": false
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
     }
   ],
   "officialCreate": [
@@ -106,6 +122,12 @@
         "next.js"
       ],
       "ecosystem": "nextjs",
+      "plannerFramework": "nextjs",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -124,6 +146,12 @@
         "react-router"
       ],
       "ecosystem": "remix",
+      "plannerFramework": "remix",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -145,6 +173,12 @@
         "vite.react"
       ],
       "ecosystem": "react",
+      "plannerFramework": "vite-react",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -163,6 +197,12 @@
         "vite.vue"
       ],
       "ecosystem": "vue",
+      "plannerFramework": "vite-vue",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -181,6 +221,12 @@
         "vite.svelte"
       ],
       "ecosystem": "svelte",
+      "plannerFramework": "vite-svelte",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -200,6 +246,12 @@
         "vite.solid"
       ],
       "ecosystem": "solid",
+      "plannerFramework": "vite-solid",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -218,6 +270,12 @@
         "vite-vanilla"
       ],
       "ecosystem": "vite",
+      "plannerFramework": "vite-vanilla",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -236,6 +294,12 @@
         "nuxt.js"
       ],
       "ecosystem": "nuxt",
+      "plannerFramework": "nuxt",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -253,6 +317,12 @@
         "ng"
       ],
       "ecosystem": "angular",
+      "plannerFramework": "angular",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -272,6 +342,12 @@
         "astro"
       ],
       "ecosystem": "astro",
+      "plannerFramework": "astro",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -289,6 +365,12 @@
         "svelte-kit"
       ],
       "ecosystem": "sveltekit",
+      "plannerFramework": "sveltekit",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -306,6 +388,13 @@
         "tauri-app"
       ],
       "ecosystem": "tauri",
+      "plannerFramework": "tauri",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node",
+        "rust"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -323,6 +412,12 @@
         "electron-forge"
       ],
       "ecosystem": "electron",
+      "plannerFramework": "electron",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -341,6 +436,12 @@
         "visual-studio-code-extension"
       ],
       "ecosystem": "vscode-extension",
+      "plannerFramework": "vscode-extension",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -361,6 +462,13 @@
         "php-laravel"
       ],
       "ecosystem": "laravel",
+      "plannerFramework": "laravel",
+      "runtime": "php",
+      "runtimeCandidates": [
+        "php",
+        "node"
+      ],
+      "workspacePythonEngine": "none",
       "status": "available",
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
@@ -379,6 +487,12 @@
         "wp-site"
       ],
       "ecosystem": "wordpress",
+      "plannerFramework": "wordpress",
+      "runtime": "php",
+      "runtimeCandidates": [
+        "php"
+      ],
+      "workspacePythonEngine": "none",
       "status": "planned",
       "canExecuteCreate": false,
       "versionPolicy": "planned",
@@ -399,6 +513,13 @@
         "gutenberg-block"
       ],
       "ecosystem": "wordpress",
+      "plannerFramework": "wordpress",
+      "runtime": "node",
+      "runtimeCandidates": [
+        "node",
+        "php"
+      ],
+      "workspacePythonEngine": "none",
       "status": "planned",
       "canExecuteCreate": false,
       "versionPolicy": "planned",
@@ -415,6 +536,12 @@
         "php-symfony"
       ],
       "ecosystem": "php",
+      "plannerFramework": "symfony",
+      "runtime": "php",
+      "runtimeCandidates": [
+        "php"
+      ],
+      "workspacePythonEngine": "none",
       "status": "planned",
       "canExecuteCreate": false,
       "versionPolicy": "planned",
@@ -432,6 +559,12 @@
         "ruby-rails"
       ],
       "ecosystem": "ruby",
+      "plannerFramework": "rails",
+      "runtime": "ruby",
+      "runtimeCandidates": [
+        "ruby"
+      ],
+      "workspacePythonEngine": "none",
       "status": "planned",
       "canExecuteCreate": false,
       "versionPolicy": "planned",
@@ -451,6 +584,116 @@
     "scala",
     "kotlin"
   ],
+  "workspaceProfiles": [
+    {
+      "id": "minimal",
+      "runtimePolicy": "single-detected",
+      "runtimeFamilies": [],
+      "setupRuntimeFamilies": [],
+      "pythonEngineAtCreate": "skipped",
+      "pythonEngineAtBootstrap": "on-demand"
+    },
+    {
+      "id": "python-only",
+      "runtimePolicy": "bounded",
+      "runtimeFamilies": [
+        "python"
+      ],
+      "setupRuntimeFamilies": [
+        "python"
+      ],
+      "pythonEngineAtCreate": "optional-default-install",
+      "pythonEngineAtBootstrap": "on-demand"
+    },
+    {
+      "id": "node-only",
+      "runtimePolicy": "bounded",
+      "runtimeFamilies": [
+        "node"
+      ],
+      "setupRuntimeFamilies": [
+        "node"
+      ],
+      "pythonEngineAtCreate": "skipped",
+      "pythonEngineAtBootstrap": "disabled"
+    },
+    {
+      "id": "go-only",
+      "runtimePolicy": "bounded",
+      "runtimeFamilies": [
+        "go"
+      ],
+      "setupRuntimeFamilies": [
+        "go"
+      ],
+      "pythonEngineAtCreate": "skipped",
+      "pythonEngineAtBootstrap": "disabled"
+    },
+    {
+      "id": "java-only",
+      "runtimePolicy": "bounded",
+      "runtimeFamilies": [
+        "java"
+      ],
+      "setupRuntimeFamilies": [
+        "java"
+      ],
+      "pythonEngineAtCreate": "skipped",
+      "pythonEngineAtBootstrap": "disabled"
+    },
+    {
+      "id": "dotnet-only",
+      "runtimePolicy": "bounded",
+      "runtimeFamilies": [
+        "dotnet"
+      ],
+      "setupRuntimeFamilies": [
+        "dotnet"
+      ],
+      "pythonEngineAtCreate": "skipped",
+      "pythonEngineAtBootstrap": "disabled"
+    },
+    {
+      "id": "polyglot",
+      "runtimePolicy": "multi-runtime",
+      "runtimeFamilies": [],
+      "setupRuntimeFamilies": [
+        "python",
+        "node",
+        "go",
+        "java",
+        "dotnet"
+      ],
+      "pythonEngineAtCreate": "optional-default-install",
+      "pythonEngineAtBootstrap": "on-demand"
+    },
+    {
+      "id": "enterprise",
+      "runtimePolicy": "multi-runtime",
+      "runtimeFamilies": [],
+      "setupRuntimeFamilies": [
+        "python",
+        "node",
+        "go",
+        "java",
+        "dotnet"
+      ],
+      "pythonEngineAtCreate": "optional-default-install",
+      "pythonEngineAtBootstrap": "on-demand"
+    }
+  ],
+  "lifecycle": {
+    "automatic": [
+      "Create the workspace foundation without installing an optional workspace Python engine unless the user explicitly selected that engine in CLI workspace creation.",
+      "Run the selected native or official project generator and let that generator own project dependency installation unless --skip-install is set.",
+      "Register every created project and refresh the canonical contract, model, proof-backed graph, diff, impact, agent context, grounding, and evidence index."
+    ],
+    "explicit": [
+      "Run workspai bootstrap only when the user requests profile and project dependency initialization or a required kit reports a missing workspace engine.",
+      "Run workspai workspace intelligence run --for-agent <agent> --strict for a complete evidence and verification loop.",
+      "Run doctor, analyze, readiness, verify, run, Goal, and repair operations when requested by the user or the governed workflow; Create does not silently claim those gates passed."
+    ]
+  },
   "productRules": [
     "Do not translate unsupported stack requests into unrelated native kits.",
     "If native create is unavailable, explain the lane and guide to adopt/import.",

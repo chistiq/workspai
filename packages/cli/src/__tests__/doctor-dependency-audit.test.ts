@@ -514,6 +514,29 @@ describe('Doctor dependency audit evidence', () => {
     expect(evidence.reason).toContain('not installed');
   });
 
+  it('classifies a non-throwing ENOENT execution result as tool unavailable', async () => {
+    await fsExtra.writeFile(
+      path.join(projectPath, 'Cargo.toml'),
+      '[package]\nname = "rust-app"\nversion = "0.1.0"\n'
+    );
+    execaMock.mockResolvedValue({
+      stdout: '',
+      stderr: '',
+      exitCode: undefined,
+      failed: true,
+      code: 'ENOENT',
+      shortMessage: 'Command failed with ENOENT: cargo audit --json',
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'rust' });
+
+    expect(evidence).toMatchObject({
+      status: 'tool-unavailable',
+      findingCount: null,
+      tool: 'cargo-audit',
+    });
+  });
+
   it('parses pip-audit dependency findings without inventing severity', async () => {
     execaMock.mockResolvedValue({
       stdout: JSON.stringify({

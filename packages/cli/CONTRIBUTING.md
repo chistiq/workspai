@@ -67,6 +67,42 @@ cd workspai
 corepack npm ci
 ```
 
+### Lockfile safety
+
+Treat `package-lock.json` as a cross-platform build artifact. Do not delete only
+the lockfile and then run `npm install` against an existing `node_modules`
+directory: npm can reconstruct the lock from the current platform and omit
+optional native bindings required by Linux, macOS, or Windows CI.
+
+- For a reproducible install, keep the committed lockfile and run
+  `corepack npm ci`.
+- For a dependency change, keep the lockfile and use an explicit
+  `corepack npm install <package>@<version>` command.
+- If the lockfile was deleted accidentally, restore it from Git before running
+  `corepack npm ci`.
+- Only perform an intentional full lockfile regeneration in a clean branch or
+  container where both `package-lock.json` and `node_modules` are absent, using
+  the repository-pinned npm version.
+
+Every install and pre-push validation runs
+`npm run check:cross-platform-lockfile`. A missing platform binding is a hard
+failure; do not bypass the guard or hide it with a platform-specific fallback.
+
+### English-only repository text
+
+All authored repository text must use ASCII English, including source strings,
+tests, fixtures, documentation, release notes, and filenames. Language-neutral
+Unicode symbols and emoji are allowed; non-ASCII letters, combining accents,
+and non-ASCII decimal digits are not.
+
+```bash
+corepack npm run check:english-text
+```
+
+The complete repository is checked by lint and CI. Pre-commit validates the
+exact staged content, so an unstaged correction cannot hide a violation already
+present in the index. Do not add file, test, or historical-document exceptions.
+
 ### Build and test
 
 From the monorepo root:

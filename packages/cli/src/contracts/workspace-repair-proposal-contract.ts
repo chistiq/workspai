@@ -31,6 +31,8 @@ export type WorkspaceRepairProposalValidation = {
 export type WorkspaceRepairProposal = {
   schemaVersion: typeof WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION;
   cardId: string;
+  /** Optional immutable Goal Pack whose bounded objective authorizes this proposal. */
+  goalId?: string;
   /** Signature of the exact blocker generation inspected by the model. */
   blockerSignature?: string;
   /** Canonical remediation action ids whose absence proves target closure. */

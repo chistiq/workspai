@@ -47,6 +47,54 @@
     },
     {
       "path": [
+        "agent"
+      ],
+      "command": "agent",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Bootstrap coding agents from canonical Workspai project evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "agent",
+        "bootstrap"
+      ],
+      "command": "bootstrap",
+      "parent": "agent",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Issue a portable canonical-first grounding receipt for the current project",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--for-agent <agent>",
+          "attributeName": "forAgent"
+        },
+        {
+          "flags": "--no-live-inputs",
+          "attributeName": "liveInputs"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
         "ai"
       ],
       "command": "ai",
@@ -385,6 +433,10 @@
           "attributeName": "fresh"
         },
         {
+          "flags": "--verbose",
+          "attributeName": "verbose"
+        },
+        {
           "flags": "--strict",
           "attributeName": "strict"
         },
@@ -423,6 +475,86 @@
         {
           "flags": "--write",
           "attributeName": "write"
+        }
+      ]
+    },
+    {
+      "path": [
+        "goal"
+      ],
+      "command": "goal",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Compile a plain-language engineering intent into a governed, evidence-bound Goal Pack",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "intent",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--scope <scope>",
+          "attributeName": "scope"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--for-agent <consumer>",
+          "attributeName": "forAgent"
+        },
+        {
+          "flags": "--max-attempts <count>",
+          "attributeName": "maxAttempts"
+        },
+        {
+          "flags": "--refresh",
+          "attributeName": "refresh"
+        },
+        {
+          "flags": "--dry-run",
+          "attributeName": "dryRun"
+        },
+        {
+          "flags": "--status [goal-id]",
+          "attributeName": "status"
+        },
+        {
+          "flags": "--list",
+          "attributeName": "list"
+        },
+        {
+          "flags": "--activate <goal-id>",
+          "attributeName": "activate"
+        },
+        {
+          "flags": "--cancel <goal-id>",
+          "attributeName": "cancel"
+        },
+        {
+          "flags": "--prepare <goal-id>",
+          "attributeName": "prepare"
+        },
+        {
+          "flags": "--verify <goal-id>",
+          "attributeName": "verify"
+        },
+        {
+          "flags": "--no-run",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
         }
       ]
     },
@@ -784,6 +916,47 @@
       "hidden": false,
       "arguments": [],
       "options": []
+    },
+    {
+      "path": [
+        "project",
+        "agent-entry"
+      ],
+      "command": "agent-entry",
+      "parent": "project",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Verify canonical-first project entry coverage for supported agent hosts",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "action",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--for-agent <agent>",
+          "attributeName": "forAgent"
+        },
+        {
+          "flags": "--no-live-inputs",
+          "attributeName": "liveInputs"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
     },
     {
       "path": [
@@ -1517,6 +1690,7 @@
   ],
   "topLevelCommands": [
     "adopt",
+    "agent",
     "ai",
     "analyze",
     "autopilot",
@@ -1526,6 +1700,7 @@
     "config",
     "create",
     "doctor",
+    "goal",
     "import",
     "infra",
     "mirror",

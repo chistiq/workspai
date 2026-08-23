@@ -102,19 +102,32 @@ describe('CLI Entry Point', () => {
       expect(stdout).toContain('Usage:');
       expect(stdout).toContain('Open-Source Workspace Intelligence for Software Systems');
       expect(stdout).toContain('Workspace Lifecycle');
-      expect(stdout).toContain('Workspace Intelligence');
+      expect(stdout).toContain('Golden Path · Understand → Impact → Act → Verify');
+      expect(stdout).toContain('Workspace Intelligence · What the loop builds');
       expect(stdout).toContain('One workspace. One truth. Humans and AI aligned.');
 
       // Core sections
       expect(stdout).toContain('Find the right command');
+      expect(stdout).toContain('Complete Command Map');
       expect(stdout).toContain('Canonical Workspace Model');
       expect(stdout).toContain('Evidence-backed Knowledge Graph');
 
       // Known commands
-      expect(stdout).toContain('workspai create');
+      expect(stdout).toContain('workspai create workspace my-workspace');
+      expect(stdout).toContain('workspai create project');
+      expect(stdout).toContain('Choose an official frontend or backend kit interactively');
+      expect(stdout).toContain('workspai create project nextjs web --yes');
+      expect(stdout).toContain('Scaffold an official kit and register the project');
       expect(stdout).toContain('workspai import <path|git-url>');
       expect(stdout).toContain('workspai adopt .');
+      expect(stdout).toContain('workspai agent bootstrap --for-agent <host> --strict --json');
       expect(stdout).toContain('workspai workspace intelligence run');
+      expect(stdout).toContain('workspai goal "<outcome>"');
+      expect(stdout).toContain('workspai workspace graph search "<question>"');
+      expect(stdout).toContain('workspai workspace repair --help');
+      expect(stdout).toContain('workspai workspace verify --strict --json');
+      expect(stdout).toContain('workspai readiness --strict --json');
+      expect(stdout).toContain('workspai pipeline --strict --json');
       expect(stdout).toContain('workspai project coverage');
       expect(stdout).toContain('workspai commands --json');
       expect(stdout).toContain('mirror [status|sync|verify|rotate]');
@@ -161,6 +174,26 @@ describe('CLI Entry Point', () => {
 
       expect(stdout).toContain('npx workspai mirror [status|sync|verify|rotate]');
       expect(stdout).toContain('npx workspai cache [status|clear|prune|repair]');
+    });
+
+    it('should expose every command ownership group in the root command map', async () => {
+      const help = await execa('node', [CLI_PATH, '--help']);
+      const discovery = await execa('node', [CLI_PATH, 'commands', '--json']);
+      const capabilities = JSON.parse(discovery.stdout) as {
+        commands: { npmOwned: string[]; coreBacked: string[]; projectScoped: string[] };
+      };
+      const commandMap = help.stdout.match(/Complete Command Map[\s\S]*?Find the right command/);
+
+      expect(commandMap?.[0]).toContain('Native Workspai orchestration');
+      expect(commandMap?.[0]).toContain('Core-backed operations');
+      expect(commandMap?.[0]).toContain('Project runtime shortcuts');
+      for (const command of [
+        ...capabilities.commands.npmOwned,
+        ...capabilities.commands.coreBacked,
+        ...capabilities.commands.projectScoped,
+      ]) {
+        expect(commandMap?.[0]).toMatch(new RegExp(`(^|[ ·\\n])${command}([ ·\\n]|$)`));
+      }
     });
 
     it('should render contract-backed help for individual workspace actions', async () => {
@@ -1245,6 +1278,10 @@ describe('CLI Entry Point', () => {
       );
       expect(verify.exitCode).not.toBe(2);
       expect(verify.stdout).not.toContain('workspace.option.unsupported');
+      expect(JSON.parse(verify.stdout)).toMatchObject({
+        operation: 'workspace verify',
+        exitCode: verify.exitCode,
+      });
     });
 
     it('allows documented graph query and overlay flags', async () => {
@@ -1289,6 +1326,111 @@ describe('CLI Entry Point', () => {
         const rendered = await fs.readFile(outputPath, 'utf8');
         expect(rendered).toContain(mode === 'dot' ? 'digraph workspace' : 'flowchart LR');
       }
+    });
+
+    it('writes the full graph emit artifact to --output without flooding JSON stdout', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-graph-emit-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      const outputPath = path.join(workspaceRoot, 'workspace-graph.json');
+
+      const result = await execa(
+        'node',
+        [CLI_PATH, 'workspace', 'graph', 'emit', '--output', outputPath, '--json'],
+        { cwd: workspaceRoot, reject: false }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const receipt = JSON.parse(result.stdout);
+      expect(receipt).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'workspace graph emit',
+        status: 'success',
+        outputPath,
+        artifact: {
+          format: 'json',
+          nodeCount: 0,
+          edgeCount: 0,
+          entityCount: expect.any(Number),
+          relationCount: expect.any(Number),
+          proofCount: expect.any(Number),
+        },
+      });
+      expect(result.stdout).not.toContain('"knowledgeGraph"');
+      const artifact = await fs.readJson(outputPath);
+      expect(artifact).toMatchObject({
+        graph: { schemaVersion: 'workspace-dependency-graph.v1' },
+        knowledgeGraph: { schemaVersion: 'workspace-knowledge-graph.v1' },
+      });
+    });
+
+    it('writes the rich contract graph to --output with a bounded JSON receipt', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-contract-graph-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      await fs.outputJson(path.join(workspaceRoot, '.workspai', 'workspace.contract.json'), {
+        schemaVersion: 1,
+        kind: 'rapidkit.workspace.contract',
+        workspace: { name: 'contract-graph-test' },
+        projects: [],
+      });
+      const outputPath = path.join(workspaceRoot, 'contract-graph.json');
+
+      const result = await execa(
+        'node',
+        [CLI_PATH, 'workspace', 'contract', 'graph', '--output', outputPath, '--json'],
+        { cwd: workspaceRoot, reject: false }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'workspace contract graph',
+        status: 'success',
+        outputPath,
+        artifact: {
+          projectCount: 0,
+          relationshipEdges: 0,
+          entityCount: expect.any(Number),
+          knowledgeRelations: expect.any(Number),
+          proofCount: expect.any(Number),
+        },
+      });
+      expect(result.stdout).not.toContain('"knowledgeGraph"');
+      expect(await fs.readJson(outputPath)).toMatchObject({
+        graph: {
+          kind: 'rapidkit.workspace.contract.graph',
+          knowledgeGraph: { schemaVersion: 'workspace-knowledge-graph.v1' },
+        },
+      });
+    });
+
+    it('keeps snapshot failures machine-readable under --json', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'snapshot-json-errors-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      const invocation = [
+        CLI_PATH,
+        'snapshot',
+        'create',
+        'duplicate',
+        '--workspace',
+        workspaceRoot,
+        '--json',
+      ];
+
+      const first = await execa('node', invocation, { cwd: workspaceRoot, reject: false });
+      expect(first.exitCode).toBe(0);
+      const duplicate = await execa('node', invocation, { cwd: workspaceRoot, reject: false });
+
+      expect(duplicate.exitCode).toBe(1);
+      expect(JSON.parse(duplicate.stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'snapshot create',
+        status: 'error',
+        error: {
+          code: 'snapshot.create.failed',
+          message: expect.stringContaining('Snapshot already exists'),
+        },
+      });
+      expect(duplicate.stdout).not.toContain('❌');
     });
 
     it('honors pipeline --no-agent-sync at the CLI boundary', async () => {

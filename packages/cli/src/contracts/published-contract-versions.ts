@@ -56,6 +56,7 @@ import {
 } from '../utils/doctor-evidence-contract.js';
 import { PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION } from './project-workspace-resolution-contract.js';
 import {
+  ADOPT_EFFECTS_SCHEMA_VERSION,
   INGESTION_PLAN_SCHEMA_VERSION,
   INGESTION_RESULT_SCHEMA_VERSION,
 } from './ingestion-contract.js';
@@ -63,6 +64,17 @@ import { STUDIO_CARD_REPAIR_CAPABILITIES_SCHEMA_VERSION } from './studio-card-re
 import { WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION } from './workspace-repair-transaction-contract.js';
 import { WORKSPACE_REPAIR_PROPOSAL_SCHEMA_VERSION } from './workspace-repair-proposal-contract.js';
 import { WORKSPACE_REPAIR_CAPABILITIES_SCHEMA_VERSION } from './workspace-repair-capabilities-contract.js';
+import {
+  GOAL_AGENT_HANDOFF_SCHEMA_VERSION,
+  GOAL_INDEX_SCHEMA_VERSION,
+  GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
+  GOAL_PACK_SCHEMA_VERSION,
+  GOAL_PLAN_RESULT_SCHEMA_VERSION,
+} from '../goals/goal-pack-contract.js';
+import {
+  AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
+  PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
+} from '../project-agent-entry.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -81,12 +93,15 @@ export function getPublishedContractVersions() {
     workspaceArchiveOperationResult: WORKSPACE_ARCHIVE_OPERATION_RESULT_SCHEMA_VERSION,
     ingestionPlan: INGESTION_PLAN_SCHEMA_VERSION,
     ingestionResult: INGESTION_RESULT_SCHEMA_VERSION,
+    adoptEffects: ADOPT_EFFECTS_SCHEMA_VERSION,
     projectEntryCapability: PROJECT_ENTRY_CAPABILITY_SCHEMA_VERSION,
     projectWorkspaceLink:
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectWorkspaceLink.schemaVersion,
     projectWorkspaceResolution: PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION,
     projectContextAgent:
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectContextAgent.schemaVersion,
+    projectAgentEntry: PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
+    agentBootstrapReceipt: AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
     doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
     doctorWorkspaceEvidence: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
     doctorGraphDiagnosis: DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION,
@@ -99,6 +114,11 @@ export function getPublishedContractVersions() {
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectTestCoverage.schemaVersion,
     verifiedGoal: 'workspai.verified-goal.v1',
     verifiedGoalStatus: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.verifiedGoalStatus,
+    goalPack: GOAL_PACK_SCHEMA_VERSION,
+    goalAgentHandoff: GOAL_AGENT_HANDOFF_SCHEMA_VERSION,
+    goalPlanResult: GOAL_PLAN_RESULT_SCHEMA_VERSION,
+    goalIndex: GOAL_INDEX_SCHEMA_VERSION,
+    goalLifecycleResult: GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
     workspaceIntelligenceArchitecture: WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION,
     workspaceIntelligenceChain: WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION,
     workspaceIntelligenceArtifacts: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
@@ -184,10 +204,13 @@ export function getPublishedContractCatalog() {
     workspaceArchiveOperationResult: 'contracts/workspace-archive-operation-result.v1.json',
     ingestionPlan: 'contracts/ingestion-plan.v1.json',
     ingestionResult: 'contracts/ingestion-result.v1.json',
+    adoptEffects: 'contracts/adopt-effects.v1.json',
     projectEntryCapability: 'contracts/project-entry-capability.v1.json',
     projectWorkspaceLink: 'contracts/project-workspace-link.v1.json',
     projectWorkspaceResolution: 'contracts/project-workspace-resolution.v1.json',
     projectContextAgent: 'contracts/workspace-intelligence/project-context-agent.v1.json',
+    projectAgentEntry: 'contracts/workspace-intelligence/project-agent-entry.v1.json',
+    agentBootstrapReceipt: 'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
     doctorProjectEvidence: 'contracts/doctor-project-evidence.v1.json',
     doctorWorkspaceEvidence: 'contracts/doctor-workspace-evidence.v1.json',
     doctorGraphDiagnosis: 'contracts/workspace-intelligence/doctor-graph-diagnosis.v1.json',
@@ -199,6 +222,11 @@ export function getPublishedContractCatalog() {
     projectTestCoverage: 'contracts/project-test-coverage.v1.json',
     verifiedGoal: 'contracts/workspace-intelligence/verified-goal.v1.json',
     verifiedGoalStatus: 'contracts/workspace-intelligence/verified-goal-status.v1.json',
+    goalPack: 'contracts/workspace-intelligence/goal-pack.v1.json',
+    goalAgentHandoff: 'contracts/workspace-intelligence/goal-agent-handoff.v1.json',
+    goalPlanResult: 'contracts/workspace-intelligence/goal-plan-result.v1.json',
+    goalIndex: 'contracts/workspace-intelligence/goal-index.v1.json',
+    goalLifecycleResult: 'contracts/workspace-intelligence/goal-lifecycle-result.v1.json',
     workspaceIntelligenceArchitecture: 'contracts/workspace-intelligence-architecture.v1.json',
     workspaceIntelligenceChain: 'contracts/workspace-intelligence-chain.v1.json',
     workspaceIntelligenceArtifacts: null,

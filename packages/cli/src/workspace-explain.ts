@@ -253,7 +253,11 @@ export async function buildWorkspaceExplain(
       summary: verify
         ? emptyWorkspaceShell
           ? summarizeEmptyWorkspaceExplain(blockingReasons.length, verify.summary.verdict)
-          : `${blockingReasons.length > 0 || verify.summary.verdict === 'blocked' ? 'Release blocked' : 'Release posture'}: ${verify.summary.verdict} with ${blockingReasons.length} blocking reason(s).`
+          : blockingReasons.length > 0 || verify.summary.verdict === 'blocked'
+            ? `Release blocked: ${verify.summary.verdict} with ${blockingReasons.length} blocking reason(s).`
+            : verify.summary.verdict === 'needs-attention'
+              ? 'Release needs attention: advisory or incomplete verification evidence remains; no blocking reason was reported.'
+              : `Release posture: ${verify.summary.verdict}; no blocking reason was reported.`
         : 'Release posture unknown — verify report missing.',
       sections,
       releaseVerdict: verify?.summary.verdict,

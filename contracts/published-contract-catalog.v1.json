@@ -51,6 +51,11 @@
       "contractPath": "contracts/ingestion-result.v1.json",
       "publication": "json-schema"
     },
+    "adoptEffects": {
+      "schemaVersion": "workspai.adopt-effects.v1",
+      "contractPath": "contracts/adopt-effects.v1.json",
+      "publication": "json-schema"
+    },
     "projectEntryCapability": {
       "schemaVersion": "workspai-project-entry-capability-v1",
       "contractPath": "contracts/project-entry-capability.v1.json",
@@ -69,6 +74,16 @@
     "projectContextAgent": {
       "schemaVersion": "project-context-agent.v1",
       "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
+      "publication": "json-schema"
+    },
+    "projectAgentEntry": {
+      "schemaVersion": "workspai.agent-entry.v1",
+      "contractPath": "contracts/workspace-intelligence/project-agent-entry.v1.json",
+      "publication": "json-schema"
+    },
+    "agentBootstrapReceipt": {
+      "schemaVersion": "workspai.agent-bootstrap-receipt.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json",
       "publication": "json-schema"
     },
     "doctorProjectEvidence": {
@@ -124,6 +139,31 @@
     "verifiedGoalStatus": {
       "schemaVersion": "workspai.verified-goal-status.v1",
       "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json",
+      "publication": "json-schema"
+    },
+    "goalPack": {
+      "schemaVersion": "workspai.goal-pack.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-pack.v1.json",
+      "publication": "json-schema"
+    },
+    "goalAgentHandoff": {
+      "schemaVersion": "workspai.goal-agent-handoff.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-agent-handoff.v1.json",
+      "publication": "json-schema"
+    },
+    "goalPlanResult": {
+      "schemaVersion": "workspai.goal-plan-result.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-plan-result.v1.json",
+      "publication": "json-schema"
+    },
+    "goalIndex": {
+      "schemaVersion": "workspai.goal-index.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-index.v1.json",
+      "publication": "json-schema"
+    },
+    "goalLifecycleResult": {
+      "schemaVersion": "workspai.goal-lifecycle-result.v1",
+      "contractPath": "contracts/workspace-intelligence/goal-lifecycle-result.v1.json",
       "publication": "json-schema"
     },
     "workspaceIntelligenceArchitecture": {

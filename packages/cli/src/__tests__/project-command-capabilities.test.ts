@@ -259,4 +259,37 @@ describe('project command capabilities', () => {
     expect(capabilities.fleetStages).toEqual(expect.arrayContaining(['test', 'build']));
     expect(capabilities.localOnlyCommands).toEqual(expect.arrayContaining(['dev']));
   });
+
+  it('does not present a primary adapter as complete lifecycle coverage for a polyglot SDK', async () => {
+    const projectRoot = await createProject(
+      {
+        runtime: 'dotnet',
+        framework: 'dotnet',
+        module_support: false,
+      },
+      {
+        'dotnet/src/Sdk.csproj': '<Project Sdk="Microsoft.NET.Sdk"></Project>',
+        'go/go.mod': 'module example.test/sdk\n',
+        'java/pom.xml': '<project><modelVersion>4.0.0</modelVersion></project>',
+        'nodejs/package.json': '{"name":"example-sdk","version":"1.0.0"}',
+        'python/pyproject.toml': '[project]\nname="example-sdk"\n',
+        'rust/Cargo.toml': '[package]\nname="example-sdk"\nversion="1.0.0"\n',
+      }
+    );
+
+    const capabilities = resolveProjectCommandCapabilities(projectRoot);
+
+    expect(capabilities.runtimeCandidates).toEqual([
+      'dotnet',
+      'go',
+      'rust',
+      'java',
+      'node',
+      'python',
+    ]);
+    expect(capabilities.compositeRuntime).toBe(true);
+    expect(capabilities.lifecycleCoverage).toBe('primary-runtime-only');
+    expect(capabilities.commandMap.build.reason).toContain('primary dotnet adapter');
+    expect(capabilities.commandMap.build.reason).toContain('explicit project boundaries');
+  });
 });

@@ -27,7 +27,8 @@
         "name": { "type": "string" },
         "path": { "type": "string" },
         "runtimeFamily": { "type": "string" },
-        "framework": { "type": "string" }
+        "framework": { "type": "string" },
+        "projectArchetype": { "enum": ["application", "service", "library", "sdk", "platform", "plugin", "monorepo", "unknown"] }
       },
       "additionalProperties": false
     },
@@ -40,6 +41,7 @@
           "name": { "type": "string" },
           "path": { "type": "string" },
           "runtimeFamily": { "type": "string" },
+          "projectArchetype": { "enum": ["application", "service", "library", "sdk", "platform", "plugin", "monorepo", "unknown"] },
           "verdict": { "enum": ["passed", "attention", "blocked"] },
           "blockingCauses": { "type": "integer", "minimum": 0 },
           "advisoryFindings": { "type": "integer", "minimum": 0 },

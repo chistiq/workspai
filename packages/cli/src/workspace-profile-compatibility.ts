@@ -25,6 +25,116 @@ export type WorkspaceProfile =
   | 'polyglot'
   | 'enterprise';
 
+export const WORKSPACE_PROFILES: readonly WorkspaceProfile[] = [
+  'minimal',
+  'python-only',
+  'node-only',
+  'go-only',
+  'java-only',
+  'dotnet-only',
+  'polyglot',
+  'enterprise',
+] as const;
+
+export const PYTHON_FREE_WORKSPACE_PROFILES: ReadonlySet<WorkspaceProfile> = new Set([
+  'minimal',
+  'node-only',
+  'go-only',
+  'java-only',
+  'dotnet-only',
+]);
+
+export const PYTHON_CAPABLE_WORKSPACE_PROFILES: ReadonlySet<WorkspaceProfile> = new Set([
+  'python-only',
+  'polyglot',
+  'enterprise',
+]);
+
+export type WorkspaceProfileDefinition = {
+  id: WorkspaceProfile;
+  runtimePolicy: 'single-detected' | 'bounded' | 'multi-runtime';
+  runtimeFamilies: WorkspaceProfileRuntime[];
+  setupRuntimeFamilies: WorkspaceProfileRuntime[];
+  pythonEngineAtCreate: 'skipped' | 'optional-default-install';
+  pythonEngineAtBootstrap: 'disabled' | 'on-demand';
+};
+
+/** Canonical profile semantics shared by Create, Bootstrap, contracts, and IDEs. */
+export const WORKSPACE_PROFILE_DEFINITIONS: readonly WorkspaceProfileDefinition[] = [
+  {
+    id: 'minimal',
+    runtimePolicy: 'single-detected',
+    runtimeFamilies: [],
+    setupRuntimeFamilies: [],
+    pythonEngineAtCreate: 'skipped',
+    pythonEngineAtBootstrap: 'on-demand',
+  },
+  {
+    id: 'python-only',
+    runtimePolicy: 'bounded',
+    runtimeFamilies: ['python'],
+    setupRuntimeFamilies: ['python'],
+    pythonEngineAtCreate: 'optional-default-install',
+    pythonEngineAtBootstrap: 'on-demand',
+  },
+  {
+    id: 'node-only',
+    runtimePolicy: 'bounded',
+    runtimeFamilies: ['node'],
+    setupRuntimeFamilies: ['node'],
+    pythonEngineAtCreate: 'skipped',
+    pythonEngineAtBootstrap: 'disabled',
+  },
+  {
+    id: 'go-only',
+    runtimePolicy: 'bounded',
+    runtimeFamilies: ['go'],
+    setupRuntimeFamilies: ['go'],
+    pythonEngineAtCreate: 'skipped',
+    pythonEngineAtBootstrap: 'disabled',
+  },
+  {
+    id: 'java-only',
+    runtimePolicy: 'bounded',
+    runtimeFamilies: ['java'],
+    setupRuntimeFamilies: ['java'],
+    pythonEngineAtCreate: 'skipped',
+    pythonEngineAtBootstrap: 'disabled',
+  },
+  {
+    id: 'dotnet-only',
+    runtimePolicy: 'bounded',
+    runtimeFamilies: ['dotnet'],
+    setupRuntimeFamilies: ['dotnet'],
+    pythonEngineAtCreate: 'skipped',
+    pythonEngineAtBootstrap: 'disabled',
+  },
+  {
+    id: 'polyglot',
+    runtimePolicy: 'multi-runtime',
+    runtimeFamilies: [],
+    setupRuntimeFamilies: ['python', 'node', 'go', 'java', 'dotnet'],
+    pythonEngineAtCreate: 'optional-default-install',
+    pythonEngineAtBootstrap: 'on-demand',
+  },
+  {
+    id: 'enterprise',
+    runtimePolicy: 'multi-runtime',
+    runtimeFamilies: [],
+    setupRuntimeFamilies: ['python', 'node', 'go', 'java', 'dotnet'],
+    pythonEngineAtCreate: 'optional-default-install',
+    pythonEngineAtBootstrap: 'on-demand',
+  },
+] as const;
+
+export function isWorkspaceProfile(value: unknown): value is WorkspaceProfile {
+  return typeof value === 'string' && WORKSPACE_PROFILES.includes(value as WorkspaceProfile);
+}
+
+export function isPythonFreeWorkspaceProfile(value: unknown): value is WorkspaceProfile {
+  return isWorkspaceProfile(value) && PYTHON_FREE_WORKSPACE_PROFILES.has(value);
+}
+
 export type WorkspaceProfilePolicyMode = 'warn' | 'strict';
 
 export type WorkspaceProfileRuntime = BackendRuntimeFamily;

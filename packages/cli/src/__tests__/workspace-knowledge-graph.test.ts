@@ -352,6 +352,36 @@ describe('workspace knowledge graph', () => {
     expect(JSON.stringify(result).length).toBeLessThan(JSON.stringify(graph).length);
   });
 
+  it('rejects empty manifest identifiers and guarantees schema-safe entity identity text', async () => {
+    const root = await fixture();
+    await fsExtra.outputJson(path.join(root, 'api', 'package.json'), {
+      name: '@platform/api',
+      version: '1.0.0',
+      dependencies: { '': '1.0.0', '  ': '2.0.0', '@nestjs/core': '^11.0.0' },
+    });
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(graph.entities.every((entity) => entity.label.trim().length > 0)).toBe(true);
+    expect(
+      graph.entities.every((entity) =>
+        entity.identity.aliases.every((alias) => alias.trim().length > 0)
+      )
+    ).toBe(true);
+    expect(
+      graph.entities.some((entity) => entity.kind === 'module' && entity.label === '@nestjs/core')
+    ).toBe(true);
+    expect(graph.entities.some((entity) => entity.identity.key === 'dependency:npm:')).toBe(false);
+  });
+
   it('keeps generated test hosts and fixture code out of production architecture surfaces', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -598,6 +628,99 @@ describe('workspace knowledge graph', () => {
         (entity) => entity.kind === 'test-suite' && entity.attributes.language === 'python'
       )
     ).toMatchObject({ attributes: { fileCount: 1, language: 'python' } });
+  });
+
+  it('uses language-aware imports and resolves project-root C/C++ includes', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-native-imports-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'native' },
+      projects: [],
+    });
+    await fsExtra.outputFile(path.join(root, 'native', 'include', 'local.h'), '#pragma once\n');
+    await fsExtra.outputFile(
+      path.join(root, 'native', 'src', 'main.cc'),
+      '#include "include/local.h"\nint main() { return 0; }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'native', 'src', 'lib.rs'),
+      'const TEMPLATE: &str = r#"\nimport "./ghost.js";\n"#;\nuse crate::real;\npub mod real;\n'
+    );
+    await fsExtra.outputFile(path.join(root, 'native', 'src', 'real.rs'), 'pub fn run() {}\n');
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'native' },
+      projects: [{ id: 'native', path: 'native', runtime: 'cpp', framework: 'cpp' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities.some(
+        (entity) => entity.kind === 'module' && entity.attributes.specifier === './ghost.js'
+      )
+    ).toBe(false);
+    expect(
+      graph.relations.some((relation) => {
+        if (relation.kind !== 'imports') return false;
+        const target = graph.entities.find((entity) => entity.id === relation.to);
+        return String(target?.label).endsWith('native/include/local.h');
+      })
+    ).toBe(true);
+  });
+
+  it('resolves local imports against the full fingerprint inventory beyond the extraction window', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-large-imports-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'api', 'package.json'), {
+      name: '@example/large-api',
+    });
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', '000-importer.ts'),
+      "import { target } from './zzz-target';\nexport const value = target;\n"
+    );
+    await Promise.all(
+      Array.from({ length: 105 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(root, 'api', 'src', `middle-${String(index).padStart(3, '0')}.ts`),
+          `export const value${index} = ${index};\n`
+        )
+      )
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', 'zzz-target.ts'),
+      'export const target = true;\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'large-imports' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      maxFilesPerProject: 100,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.kind === 'module' &&
+          entity.attributes.specifier === './zzz-target' &&
+          entity.attributes.resolution === 'unresolved-local'
+      )
+    ).toBe(false);
+    expect(
+      graph.relations.some((relation) => {
+        if (relation.kind !== 'imports') return false;
+        const target = graph.entities.find((entity) => entity.id === relation.to);
+        return String(target?.label).endsWith('src/zzz-target.ts');
+      })
+    ).toBe(true);
   });
 
   it('parses Python, Cargo, and Maven dependencies without manifest metadata pollution', async () => {
@@ -925,6 +1048,122 @@ describe('workspace knowledge graph', () => {
     );
   });
 
+  it('does not classify unrelated Rust extension macros as Deno runtime bridges', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-rust-extension-macro-'));
+    tempDirs.push(root);
+    await fsExtra.outputFile(
+      path.join(root, 'Cargo.toml'),
+      ['[package]', 'name = "editor-extension"', 'version = "1.0.0"'].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'src', 'lib.rs'),
+      [
+        'const AUTOGEN_HEADERS: [&str; 1] = ["Code generated by"];',
+        'zed::register_extension!(EditorExtension);',
+      ].join('\n')
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'editor' },
+      projects: [
+        {
+          id: 'editor',
+          path: '.',
+          runtime: 'rust',
+          runtimeCandidates: ['unknown', 'rust'],
+          framework: 'rust',
+        },
+      ],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.providers.find((provider) => provider.id === 'runtime-bridge-semantics')
+    ).toMatchObject({ status: 'skipped', diagnostics: [] });
+    expect(graph.providers.find((provider) => provider.id === 'polyglot-semantics')).toMatchObject({
+      status: 'skipped',
+      diagnostics: [],
+    });
+    expect(
+      graph.entities.some(
+        (entity) => entity.kind === 'protocol' && entity.attributes.runtimeBridge === 'deno-core'
+      )
+    ).toBe(false);
+    expect(
+      graph.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.knowledge.empty_label_normalized'
+      )
+    ).toBe(false);
+    expect(
+      graph.entities.some(
+        (entity) => entity.kind === 'schema' && entity.attributes.discoveredFromGeneratedHeader
+      )
+    ).toBe(false);
+  });
+
+  it('keeps same-name monorepo packages distinct by portable manifest boundary', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-package-boundary-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'package.json'), {
+      name: 'shared-name',
+      private: true,
+      dependencies: { turbo: '^2.0.0' },
+    });
+    await fsExtra.outputJson(path.join(root, 'packages', 'cli', 'package.json'), {
+      name: 'shared-name',
+      version: '1.0.0',
+      bin: { shared: './bin/shared.js' },
+    });
+    await fsExtra.outputFile(
+      path.join(root, 'packages', 'cli', 'src', 'index.mts'),
+      "import { helper } from './helper.js';\nexport { helper };\n"
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'packages', 'cli', 'src', 'helper.ts'),
+      'export const helper = true;\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'monorepo' },
+      projects: [{ id: 'monorepo', path: '.', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const packages = graph.entities.filter(
+      (entity) => entity.kind === 'package' && entity.label === 'shared-name'
+    );
+    expect(packages).toHaveLength(2);
+    expect(packages.map((entity) => entity.attributes.manifest).sort()).toEqual([
+      'monorepo/package.json',
+      'monorepo/packages/cli/package.json',
+    ]);
+    expect(
+      graph.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.knowledge.attribute_conflict'
+      )
+    ).toBe(false);
+    const indexModule = graph.entities.find(
+      (entity) => entity.kind === 'file' && entity.label.endsWith('/src/index.mts')
+    );
+    const helperModule = graph.entities.find(
+      (entity) => entity.kind === 'file' && entity.label.endsWith('/src/helper.ts')
+    );
+    expect(
+      graph.relations.some(
+        (relation) =>
+          relation.kind === 'imports' &&
+          relation.from === indexModule?.id &&
+          relation.to === helperModule?.id
+      )
+    ).toBe(true);
+  });
+
   it('weights meaningful rare terms above natural-language stopwords', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -977,6 +1216,60 @@ describe('workspace knowledge graph', () => {
     expect(
       result.entities.filter((entity) => entity.label.startsWith('check-windows')).length
     ).toBe(0);
+  });
+
+  it('does not let a generic service intent outrank multi-term repository evidence', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [
+        { id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' },
+        { id: 'web', path: 'web', runtime: 'python', framework: 'fastapi' },
+      ],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-generic-service',
+        kind: 'api',
+        label: 'EchoService',
+        projectId: 'api',
+        identity: {
+          key: 'api:echo-service',
+          scope: 'project',
+          aliases: ['service'],
+          fingerprint: 'echo-service',
+        },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-extension-host-ipc',
+        kind: 'file',
+        label: 'src/workbench/services/extensions/common/extensionHostIpc.ts',
+        projectId: 'web',
+        identity: {
+          key: 'file:web:extension-host-ipc',
+          scope: 'project',
+          aliases: ['extension host IPC'],
+          fingerprint: 'extension-host-ipc',
+        },
+        attributes: {},
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'extension host workbench IPC service',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('synthetic-extension-host-ipc');
+    expect(result.entities.some((entity) => entity.id === 'synthetic-generic-service')).toBe(false);
   });
 
   it('diversifies broad operational architecture searches across consumer surfaces', async () => {

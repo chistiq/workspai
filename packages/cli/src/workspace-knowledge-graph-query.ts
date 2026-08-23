@@ -234,6 +234,8 @@ export type WorkspaceKnowledgeSearchOptions = {
   limit?: number;
   relationsPerEntity?: number;
   projection?: 'full' | 'agent';
+  /** Internal deterministic relaxation for long goal statements. */
+  minimumTermMatches?: number;
 };
 
 export type WorkspaceKnowledgeSearchBudget = {
@@ -681,8 +683,13 @@ export function searchKnowledgeGraph(
   const terms = meaningfulTerms.length > 0 ? meaningfulTerms : contentTerms;
   const languages = requestedLanguages(terms);
   const termSet = new Set(terms);
-  const minimumTermMatches =
+  const broadArchitectureIntent = hasBroadArchitectureIntent(termSet);
+  const defaultMinimumTermMatches =
     terms.length <= 1 ? terms.length : Math.min(3, Math.ceil(terms.length / 3));
+  const minimumTermMatches =
+    options.minimumTermMatches === undefined
+      ? defaultMinimumTermMatches
+      : Math.min(defaultMinimumTermMatches, Math.max(1, Math.trunc(options.minimumTermMatches)));
   const limit = Math.max(1, Math.min(Math.trunc(options.limit ?? 12), 100));
   const relationsPerEntity = Math.max(0, Math.min(Math.trunc(options.relationsPerEntity ?? 4), 20));
   const scopedSharedEntityIds = new Set<string>();
@@ -741,7 +748,9 @@ export function searchKnowledgeGraph(
         (languages.size === 0 || language === null || languages.has(language)) &&
         (query.length === 0 ||
           (entry.score > 0 &&
-            (scopeOnlyQuery || entry.matchedTerms >= minimumTermMatches || entry.intentScore > 0)))
+            (scopeOnlyQuery ||
+              entry.matchedTerms >= minimumTermMatches ||
+              (entry.intentScore > 0 && (broadArchitectureIntent || terms.length <= 2)))))
       );
     })
     .sort(
@@ -750,7 +759,7 @@ export function searchKnowledgeGraph(
         a.entity.kind.localeCompare(b.entity.kind) ||
         a.entity.label.localeCompare(b.entity.label)
     );
-  const selectionPool = hasBroadArchitectureIntent(termSet)
+  const selectionPool = broadArchitectureIntent
     ? (() => {
         const selected: typeof ranked = [];
         const deferred: typeof ranked = [];

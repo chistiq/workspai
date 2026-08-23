@@ -39,6 +39,10 @@ Checks:
 
 > Compatibility note: `npx workspai doctor --workspace` still works, but `doctor workspace` is the canonical form.
 
+Both workspace forms use the canonical project-to-workspace resolver. After a
+project is adopted, imported, or relinked, they can be launched from that
+project directory and resolve its validated machine-local workspace binding.
+
 ### 3) Project Check (Canonical)
 
 ```bash
@@ -111,6 +115,9 @@ npx workspai doctor
 # Full check inside a workspace
 npx workspai doctor workspace
 
+# Expand every probe and lifecycle capability (default output is summary-first)
+npx workspai doctor workspace --verbose
+
 # Focus only on current project
 npx workspai doctor project
 
@@ -119,6 +126,9 @@ npx workspai doctor workspace --json
 
 # Compact agent/CI projection; full evidence is still written
 npx workspai doctor workspace --fresh --json=summary
+
+# Review the governed plan before mutation
+npx workspai doctor workspace --plan
 
 # Attempt safe fixes (interactive)
 npx workspai doctor workspace --fix
@@ -145,7 +155,7 @@ CI, and agents: it distinguishes blocking causes, advisory findings, unknowns, d
 subjects, vulnerability findings, not-applicable checks, and the next safe action. The complete
 probe and diagnosis evidence remains in `doctor-last-run.json` or `doctor-project-last-run.json`.
 
-## One verdict, backed by every probe
+## One verdict, multi-axis accounting
 
 Doctor calculates one verdict from the host and every project probe:
 
@@ -153,12 +163,26 @@ Doctor calculates one verdict from the host and every project probe:
 - **Needs attention** means the current profile found advisory work.
 - **Blocked** means at least one error-level probe failed.
 
-The score and verdict use the same counts. A failed security, coverage, or
-runtime probe cannot be hidden behind a high percentage or a healthy host. New
-evidence includes the host/project score components and per-project probe
-summary; semantic validation rejects contradictory artifacts before they are
-written. Older v1 evidence remains readable so existing workspaces and IDEs do
-not break during migration.
+The verdict is authoritative. Human output presents blocking, advisory,
+unknown, contradictory, and not-applicable counts separately; it never calls a
+single percentage “health.” The additive `healthScore.presentation` contract
+labels its percentage as a diagnostic pass rate for accounting only. A failed
+security, coverage, or runtime probe therefore cannot be hidden behind a high
+percentage or a healthy host. Existing score fields remain readable for older
+IDEs, while updated consumers prefer the multi-axis projection.
+
+Doctor also publishes `projectArchetype` independently from `projectKind`.
+`projectKind` describes the technical surface (backend, frontend, extension,
+and so on); the archetype describes the product role (service, application,
+library, SDK, platform, plugin, or monorepo). Service-only checks such as a
+runtime health endpoint, database migrations, or an executable boot entrypoint
+are retained as explicit `not-applicable` evidence for non-deployable
+archetypes instead of becoming false warnings.
+
+The default terminal view is summary-first and uses portable boundaries such
+as `$WORKSPACE`, `$PROJECT`, and `external/<project>`. `--verbose` expands all
+probes and lifecycle capabilities. JSON continues to retain canonical absolute
+paths because local machine consumers need them for governed operations.
 
 ## Universal diagnosis core
 
@@ -192,10 +216,10 @@ The same diagnosis contract is used for Node, Python, Go, JVM, Rust, .NET, PHP, 
 Clojure, Deno, Bun, Scala, Kotlin, C, C++, and unknown/custom projects. Runtime adapters gather
 different evidence; the diagnosis, causality, safety, and verification vocabulary stays the same.
 Composite projects publish every detected family under `project.runtimeFamilies`; Doctor keeps a
-primary runtime for compatibility and explicitly warns when secondary runtimes need their own
-project boundary or custom adapter instead of silently claiming full coverage. Every unevaluated
-secondary runtime is also published as a diagnosis unknown and proportionally lowers diagnosis
-completeness; a primary-only polyglot scan can never report 100%.
+primary runtime for compatibility. A detected cross-language platform is evaluated through primary
+and portable evidence, and asks for explicit custom adapters only for runtime-specific checks the
+portable contract cannot represent. Every unevaluated secondary runtime remains a diagnosis unknown
+and proportionally lowers completeness; a primary-only polyglot scan can never report 100%.
 
 Workspace project boundaries come from the canonical workspace contract/registry when available.
 A nested solution, test project, or manifest inside a registered project is treated as evidence for

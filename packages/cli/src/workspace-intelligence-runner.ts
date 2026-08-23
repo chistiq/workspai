@@ -25,6 +25,7 @@ import {
   writeWorkspaceVerify,
 } from './workspace-verify.js';
 import { buildWorkspaceAgentContext, writeWorkspaceAgentContext } from './workspace-context.js';
+import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
 import {
   buildWorkspaceAgentReportsIndex,
   syncWorkspaceAgentGrounding,
@@ -403,14 +404,71 @@ async function runWorkspaceIntelligenceChainLocked(input: {
   });
 
   await stage('agent-sync', async () => {
-    const result = await syncWorkspaceAgentGrounding({
+    let result = await syncWorkspaceAgentGrounding({
       workspacePath,
       agent: input.agent ?? 'generic',
+      // The canonical chain always publishes portable discovery surfaces for
+      // every supported agent host. `--for-agent` selects the shared context
+      // consumer; it must not make an adopted project undiscoverable when the
+      // eventual host is not known yet.
+      targets: ['all'],
       write: true,
       refreshContext: false,
       strict: input.strict === true,
       preset: 'enterprise',
     });
+    let reconciled = false;
+    const postGroundingSnapshot = await readWorkspaceKnowledgeGraphSnapshot(workspacePath);
+    if (postGroundingSnapshot.status === 'miss') {
+      if (postGroundingSnapshot.reason !== 'live-input-mismatch') {
+        throw new Error(
+          `Agent grounding left canonical evidence invalid (${postGroundingSnapshot.reason}).`
+        );
+      }
+      // Managed project grounding can update tracked AGENTS.md/.gitignore
+      // after the first model stage. Seal those CLI-owned writes into a fresh
+      // Model/Graph pair, then republish context and grounding once. Without
+      // this reconciliation the intelligence command can invalidate its own
+      // output before a Goal or graph consumer gets a chance to read it.
+      model = {
+        ...(await buildWorkspaceModel({ workspacePath, includeEvidence: true })),
+        build: createWorkspaceModelBuildProvenance({
+          mode: 'full',
+          engineStatus: 'disabled',
+        }),
+      };
+      await writeWorkspaceModel(model, workspacePath);
+      const reconciledContext = await buildWorkspaceAgentContext({
+        workspacePath,
+        model,
+        agent: input.agent ?? 'generic',
+        includeEvidence: true,
+      });
+      await writeWorkspaceAgentContext(reconciledContext, workspacePath);
+      const secondPass = await syncWorkspaceAgentGrounding({
+        workspacePath,
+        agent: input.agent ?? 'generic',
+        targets: ['all'],
+        write: true,
+        refreshContext: false,
+        strict: input.strict === true,
+        preset: 'enterprise',
+      });
+      result = {
+        ...secondPass,
+        writtenFiles: [...new Set([...result.writtenFiles, ...secondPass.writtenFiles])].sort(),
+        strictViolations: [
+          ...new Set([...(result.strictViolations ?? []), ...(secondPass.strictViolations ?? [])]),
+        ].sort(),
+      };
+      const sealedSnapshot = await readWorkspaceKnowledgeGraphSnapshot(workspacePath);
+      if (sealedSnapshot.status === 'miss') {
+        throw new Error(
+          `Agent grounding reconciliation did not produce fresh canonical evidence (${sealedSnapshot.reason}).`
+        );
+      }
+      reconciled = true;
+    }
     const strictViolations = result.strictViolations ?? [];
     const blocked = input.strict === true && strictViolations.length > 0;
     return {
@@ -418,7 +476,7 @@ async function runWorkspaceIntelligenceChainLocked(input: {
       exitCode: blocked ? 2 : 0,
       message: blocked
         ? `${result.writtenFiles.length} grounding files written; ${strictViolations.length} strict grounding violation(s): ${strictViolations.join('; ')}`
-        : `${result.writtenFiles.length} grounding files written`,
+        : `${result.writtenFiles.length} grounding files written; portable entry surfaces prepared for all supported hosts${reconciled ? '; canonical Model/Graph freshness sealed' : ''}`,
     };
   });
 
@@ -428,7 +486,16 @@ async function runWorkspaceIntelligenceChainLocked(input: {
       target: { kind: 'release-blocked' },
     });
     await writeWorkspaceExplainReport(report, workspacePath);
-    return { message: report.summary };
+    const strictBlockedStages =
+      input.strict === true
+        ? stages.filter((item) => item.status === 'blocked').map((item) => item.id)
+        : [];
+    return {
+      message:
+        strictBlockedStages.length > 0 && report.blocking !== true
+          ? `Strict policy blocked advisory or incomplete evidence in ${strictBlockedStages.join(', ')}. ${report.summary}`
+          : report.summary,
+    };
   });
 
   const hasBlocked = stages.some((item) => item.status === 'blocked');

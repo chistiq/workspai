@@ -159,6 +159,7 @@ describe('workspace explain (Phase 4.B)', () => {
     const report = await buildWorkspaceExplain({
       workspacePath,
       target: { kind: 'release-blocked' },
+      model: { summary: { projectCount: 1 }, projects: [] } as never,
     });
 
     expect(report.schemaVersion).toBe(WORKSPACE_EXPLAIN_SCHEMA_VERSION);
@@ -183,11 +184,16 @@ describe('workspace explain (Phase 4.B)', () => {
     const report = await buildWorkspaceExplain({
       workspacePath,
       target: { kind: 'release-blocked' },
+      model: { summary: { projectCount: 1 }, projects: [] } as never,
     });
 
     expect(report.releaseVerdict).toBe('needs-attention');
     expect(report.blockingReasons).toEqual([]);
     expect(report.blocking).toBe(false);
+    expect(report.summary).toBe(
+      'Release needs attention: advisory or incomplete verification evidence remains; no blocking reason was reported.'
+    );
+    expect(report.summary).not.toContain('0 blocking reason');
   });
 
   it('renders structured resolution hints and blocker-specific guidance', async () => {

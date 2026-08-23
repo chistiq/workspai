@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/goal-lifecycle-result.v1.json",
+  "title": "Workspai Goal Lifecycle Result",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "operation",
+    "activeGoalId",
+    "goal",
+    "goals",
+    "goalPack",
+    "verifiedGoalId",
+    "verification"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.goal-lifecycle-result.v1" },
+    "operation": { "enum": ["status", "list", "activate", "cancel", "prepare", "verify"] },
+    "activeGoalId": { "type": ["string", "null"] },
+    "goal": { "anyOf": [{ "$ref": "#/$defs/goalEntry" }, { "type": "null" }] },
+    "goals": { "type": "array", "items": { "$ref": "#/$defs/goalEntry" } },
+    "goalPack": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["schemaVersion", "id", "fingerprint", "state"],
+          "properties": {
+            "schemaVersion": { "const": "workspai.goal-pack.v1" },
+            "id": { "type": "string" },
+            "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "state": {
+              "enum": ["ready-to-plan", "needs-confirmation", "needs-evidence", "blocked"]
+            }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "verifiedGoalId": { "type": ["string", "null"] },
+    "verification": { "type": ["object", "null"] }
+  },
+  "$defs": {
+    "goalEntry": {
+      "type": "object",
+      "required": [
+        "id",
+        "fingerprint",
+        "objective",
+        "category",
+        "state",
+        "lifecycle",
+        "scope",
+        "createdAt",
+        "updatedAt",
+        "goalPack",
+        "agentHandoff"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "objective": { "type": "string", "minLength": 1 },
+        "category": {
+          "enum": [
+            "release-readiness",
+            "dependency-security",
+            "test-coverage",
+            "defect-repair",
+            "feature-change",
+            "refactor",
+            "performance",
+            "documentation",
+            "system-understanding"
+          ]
+        },
+        "state": { "enum": ["ready-to-plan", "needs-confirmation", "needs-evidence", "blocked"] },
+        "lifecycle": {
+          "enum": ["planned", "active", "cancelled", "verification-ready", "verified", "failed"]
+        },
+        "scope": {
+          "type": "object",
+          "required": ["kind", "projects", "selectionSource"],
+          "properties": {
+            "kind": { "enum": ["workspace", "project", "project-set"] },
+            "projects": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            },
+            "selectionSource": {
+              "enum": [
+                "workspace",
+                "single-project-workspace",
+                "invocation-project",
+                "explicit",
+                "interactive"
+              ]
+            },
+            "resolution": { "enum": ["selected", "selection-required"] }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "const": "project" } } },
+              "then": {
+                "properties": { "projects": { "type": "array", "maxItems": 1 } }
+              }
+            },
+            {
+              "if": { "properties": { "kind": { "const": "project-set" } } },
+              "then": {
+                "properties": { "projects": { "type": "array", "minItems": 2 } }
+              }
+            },
+            {
+              "if": {
+                "properties": { "resolution": { "const": "selection-required" } },
+                "required": ["resolution"]
+              },
+              "then": {
+                "properties": {
+                  "kind": { "const": "workspace" },
+                  "selectionSource": { "const": "workspace" }
+                }
+              }
+            }
+          ],
+          "additionalProperties": false
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "goalPack": { "type": "string" },
+        "agentHandoff": { "type": "string" },
+        "verifiedGoalId": { "type": "string" },
+        "repairTransactionId": { "type": "string" },
+        "verificationReceipt": {
+          "type": "object",
+          "required": [
+            "verifiedGoalId",
+            "attempt",
+            "statusHash",
+            "modelHash",
+            "graphFingerprint",
+            "graphFingerprintSemantics",
+            "recordedAt"
+          ],
+          "properties": {
+            "verifiedGoalId": { "type": "string", "minLength": 1 },
+            "attempt": { "type": "integer", "minimum": 1 },
+            "statusHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "modelHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "graphFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "graphFingerprintSemantics": {
+              "enum": ["workspace-knowledge-graph-inputs-v1", "canonical-json-v1"]
+            },
+            "recordedAt": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

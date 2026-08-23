@@ -64,6 +64,34 @@
         "additionalProperties": false
       }
     },
+    "selectedTarget": {
+      "type": "object",
+      "description": "One immutable causal finding target selected from an aggregate card for the next CLI-owned transaction.",
+      "required": ["findingId", "actionIds", "repairMode", "sourceMutation"],
+      "properties": {
+        "findingId": { "type": "string", "minLength": 1 },
+        "causalKey": { "type": "string", "minLength": 1 },
+        "actionIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sourcePaths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "projectName": { "type": "string", "minLength": 1 },
+        "projectPath": { "type": "string", "minLength": 1 },
+        "repairMode": {
+          "enum": ["edit-file", "run-command", "refresh-evidence", "verify-before-fix", "manual-guidance"]
+        },
+        "sourceMutation": { "enum": ["required", "allowed", "forbidden"] },
+        "verifyCommand": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
     "artifactPath": {
       "type": "string"
     },

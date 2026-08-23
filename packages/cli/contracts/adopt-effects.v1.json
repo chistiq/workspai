@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/adopt-effects.v1.json",
+  "title": "Workspai Adopt Effects v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceMode",
+    "sourceCodeModified",
+    "projectMetadataFiles",
+    "repositoryControlFiles",
+    "workspaceOperations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "workspai.adopt-effects.v1"
+    },
+    "sourceMode": {
+      "const": "linked"
+    },
+    "sourceCodeModified": {
+      "const": false
+    },
+    "projectMetadataFiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "repositoryControlFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "action",
+          "condition"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "const": "reconcile"
+          },
+          "condition": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "workspaceOperations": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "register-project",
+          "sync-contract",
+          "rebuild-model",
+          "rebuild-graph",
+          "sync-agent-grounding"
+        ]
+      },
+      "uniqueItems": true
+    }
+  }
+}

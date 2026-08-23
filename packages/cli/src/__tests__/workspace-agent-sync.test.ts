@@ -18,11 +18,25 @@ import {
   WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH,
   WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH,
+  WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
   WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
   WORKSPAI_MCP_DESIGN_REPORT_PATH,
   WORKSPAI_VSCODE_AGENT_HOOKS_PATH,
+  WORKSPAI_WINDSURF_RULES_PATH,
 } from '../workspace-agent-sync.js';
-import { WORKSPACE_SKILLS_INDEX_PATH } from '../contracts/workspace-artifact-paths.js';
+import {
+  WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+  WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH,
+  WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH,
+  WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH,
+  WORKSPAI_CURSOR_GROUNDING_SKILL_PATH,
+  WORKSPAI_GROK_EVIDENCE_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_RULE_PATH,
+  WORKSPAI_GROK_GROUNDING_SKILL_PATH,
+  WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH,
+  WORKSPAI_WINDSURF_GROUNDING_RULE_PATH,
+  WORKSPACE_SKILLS_INDEX_PATH,
+} from '../contracts/workspace-artifact-paths.js';
 import {
   LEGACY_COPILOT_REPAIR_PROMPT_PATH,
   WORKSPAI_COPILOT_REPAIR_PROMPT_PATH,
@@ -113,15 +127,18 @@ describe('workspace agent sync', () => {
       contractPath: 'contracts/workspace-intelligence-chain.v1.json',
       currentStep: 'agent-sync',
     });
-    expect(index.readOrder[0]).toBe(WORKSPACE_CONTEXT_AGENT_REPORT_PATH);
-    expect(index.readOrder).toEqual(
-      expect.arrayContaining([
-        '.workspai/reports/doctor-project-last-run.json',
-        '.workspai/reports/doctor-remediation-plan-last-run.json',
-        '.workspai/reports/artifact-remediation-plan-last-run.json',
-        '.workspai/reports/doctor-fix-result-last-run.json',
-      ])
-    );
+    expect(index.workspaceRoot).toBe('workspace:sync-lab');
+    expect(index.readOrder).toEqual([
+      '.workspai/goals/index.json',
+      '.workspai/reports/goal-pack-last-run.json',
+      WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+      WORKSPACE_SKILLS_INDEX_PATH,
+      '.workspai/reports/workspace-verify-last-run.json',
+      '.workspai/reports/workspace-impact-last-run.json',
+      '.workspai/reports/workspace-explain-last-run.json',
+    ]);
+    expect(index.readOrder).not.toContain('.workspai/reports/workspace-model.json');
+    expect(index.readOrder).not.toContain('.workspai/reports/workspace-knowledge-graph.json');
     expect(index.blockers).toContain('pipeline stage failed');
     expect(
       index.reports.find((report) => report.path === WORKSPACE_CONTEXT_AGENT_REPORT_PATH)?.exists
@@ -171,8 +188,28 @@ describe('workspace agent sync', () => {
         'AGENTS.md',
         '.github/copilot-instructions.md',
         WORKSPAI_CURSOR_GROUNDING_RULE_PATH,
+        WORKSPAI_CURSOR_EVIDENCE_RULE_PATH,
         LEGACY_CURSOR_GROUNDING_RULE_PATH,
         'CLAUDE.md',
+        'GEMINI.md',
+        'QWEN.md',
+        '.amazonq/rules/workspai-agent-entry.md',
+        WORKSPAI_WINDSURF_RULES_PATH,
+        WORKSPAI_WINDSURF_GROUNDING_RULE_PATH,
+        WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH,
+        WORKSPAI_GROK_GROUNDING_RULE_PATH,
+        WORKSPAI_GROK_EVIDENCE_RULE_PATH,
+        WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH,
+        WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH,
+        WORKSPAI_CURSOR_GROUNDING_SKILL_PATH,
+        WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH,
+        WORKSPAI_GROK_GROUNDING_SKILL_PATH,
+        WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+        '.agents/skills/workspai-release-readiness/SKILL.md',
+        '.github/skills/workspai-release-readiness/SKILL.md',
+        '.claude/skills/workspai-release-readiness/SKILL.md',
+        '.cursor/skills/workspai-release-readiness/SKILL.md',
+        '.grok/skills/workspai-release-readiness/SKILL.md',
         WORKSPAI_COPILOT_GROUNDING_SKILL_PATH,
         LEGACY_COPILOT_GROUNDING_SKILL_PATH,
         AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
@@ -182,15 +219,126 @@ describe('workspace agent sync', () => {
     const agents = await fsExtra.readFile(path.join(workspacePath, 'AGENTS.md'), 'utf8');
     expect(agents).toContain(RAPIDKIT_AGENT_GROUNDING_START);
     expect(agents).toContain('Read order (mandatory before workspace diagnosis)');
+    expect(agents).toContain('select only the Skill that matches the task');
+
+    const portableReadinessSkill = await fsExtra.readFile(
+      path.join(workspacePath, '.github/skills/workspai-release-readiness/SKILL.md'),
+      'utf8'
+    );
+    expect(portableReadinessSkill).toContain('name: workspai-release-readiness');
+    expect(portableReadinessSkill).toContain('WORKSPAI:GENERATED-OPERATIONAL-SKILL');
+
+    const customizationPack = await fsExtra.readJson(
+      path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH)
+    );
+    expect(customizationPack.workspaceRoot).toBe('workspace:sync-lab');
+    expect(JSON.stringify(customizationPack)).not.toContain(workspacePath);
 
     const claude = await fsExtra.readFile(path.join(workspacePath, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('@AGENTS.md');
+    expect(await fsExtra.readFile(path.join(workspacePath, 'GEMINI.md'), 'utf8')).toContain(
+      '@./AGENTS.md'
+    );
+    expect(await fsExtra.readFile(path.join(workspacePath, 'QWEN.md'), 'utf8')).toContain(
+      '@AGENTS.md'
+    );
+    const amazonQ = await fsExtra.readFile(
+      path.join(workspacePath, '.amazonq/rules/workspai-agent-entry.md'),
+      'utf8'
+    );
+    expect(amazonQ).toContain('Amazon Q Developer');
+    expect(amazonQ).toContain('@../../AGENTS.md');
+
+    const windsurfRules = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_WINDSURF_RULES_PATH),
+      'utf8'
+    );
+    expect(windsurfRules).toContain('## Scope rules');
+    expect(windsurfRules).toContain('## Answer contract');
+
+    const claudeWorkspace = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH),
+      'utf8'
+    );
+    expect(claudeWorkspace).toContain('## Intelligent loop');
+    expect(claudeWorkspace).toContain('## Answer contract');
+
+    const claudeEvidence = await fsExtra.readFile(
+      path.join(workspacePath, '.claude/rules/workspai-evidence.md'),
+      'utf8'
+    );
+    expect(claudeEvidence).toContain('paths:');
+    expect(claudeEvidence).toContain('.workspai/**');
+
+    const windsurfGrounding = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_WINDSURF_GROUNDING_RULE_PATH),
+      'utf8'
+    );
+    expect(windsurfGrounding).toContain('trigger: always_on');
+    expect(windsurfGrounding).toContain('## Answer contract');
+
+    const windsurfEvidence = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH),
+      'utf8'
+    );
+    expect(windsurfEvidence).toContain('trigger: glob');
+
+    const grokGrounding = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_GROK_GROUNDING_RULE_PATH),
+      'utf8'
+    );
+    expect(grokGrounding).toContain('## Answer contract');
+
+    const grokEvidence = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_GROK_EVIDENCE_RULE_PATH),
+      'utf8'
+    );
+    expect(grokEvidence).toContain('canonical gate and health evidence');
+
+    const amazonqWorkspace = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH),
+      'utf8'
+    );
+    expect(amazonqWorkspace).toContain('## Answer contract');
+
+    const cursorSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CURSOR_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(cursorSkill).toContain('name: workspai-grounding');
+
+    const claudeSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(claudeSkill).toContain('name: workspai-grounding');
+
+    const grokSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_GROK_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(grokSkill).toContain('name: workspai-grounding');
+
+    const agentsSkill = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH),
+      'utf8'
+    );
+    expect(agentsSkill).toContain('name: workspai-grounding');
 
     const cursorRule = await fsExtra.readFile(
       path.join(workspacePath, WORKSPAI_CURSOR_GROUNDING_RULE_PATH),
       'utf8'
     );
     expect(cursorRule).toContain('alwaysApply: true');
+    expect(cursorRule).toContain('## Intelligent loop');
+    expect(cursorRule).toContain('## Answer contract');
+
+    const cursorEvidence = await fsExtra.readFile(
+      path.join(workspacePath, WORKSPAI_CURSOR_EVIDENCE_RULE_PATH),
+      'utf8'
+    );
+    expect(cursorEvidence).toContain('alwaysApply: false');
+    expect(cursorEvidence).toContain('.workspai/**');
 
     const groundingDoc = await fsExtra.readFile(
       path.join(workspacePath, AGENT_GROUNDING_DOC_PATH),
@@ -330,6 +478,157 @@ describe('workspace agent sync', () => {
     expect(result.strictViolations.join('\n')).toContain('Missing required reports');
   });
 
+  it('enforces project entry coverage only for the selected agent host', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'apps', 'api');
+    const outsideAmazonQ = path.join(workspacePath, 'outside-amazonq');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'api',
+      runtime: 'node',
+      framework: 'express',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: new Date().toISOString(),
+      workspace: { name: 'sync-lab', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'api',
+          relativePath: 'apps/api',
+          relationship: 'managed',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+    await fsExtra.ensureDir(outsideAmazonQ);
+    try {
+      await fsExtra.symlink(outsideAmazonQ, path.join(projectPath, '.amazonq'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const codex = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      strict: true,
+      targets: ['codex'],
+    });
+    expect(codex.strictViolations.join('\n')).not.toContain('Project agent entry coverage blocked');
+
+    const amazonQ = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      strict: true,
+      targets: ['amazon-q'],
+    });
+    expect(amazonQ.strictViolations.join('\n')).toContain(
+      'Project agent entry coverage blocked: api:amazon-q'
+    );
+    expect(
+      await fsExtra.pathExists(path.join(outsideAmazonQ, 'rules', 'workspai-agent-entry.md'))
+    ).toBe(false);
+  });
+
+  it('refuses to write a workspace host adapter through an authored parent symlink', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const outsidePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-agent-sync-outside-'));
+    tempDirs.push(outsidePath);
+    try {
+      await fsExtra.symlink(outsidePath, path.join(workspacePath, '.amazonq'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    await expect(
+      syncWorkspaceAgentGrounding({
+        workspacePath,
+        write: true,
+        targets: ['amazon-q'],
+      })
+    ).rejects.toThrow(/blocked by authored repository state/);
+    expect(
+      await fsExtra.pathExists(path.join(outsidePath, 'rules', 'workspai-agent-entry.md'))
+    ).toBe(false);
+  });
+
+  it('preserves an authored project provider adapter symlink during transactional sync', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'apps', 'web');
+    const authoredRulesPath = path.join(projectPath, '.claude-rules.md');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'web',
+      runtime: 'node',
+      framework: 'astro',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: new Date().toISOString(),
+      workspace: { name: 'sync-lab', profile: 'node-only' },
+      projects: [
+        {
+          slug: 'web',
+          relativePath: 'apps/web',
+          relationship: 'managed',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+    await fsExtra.writeFile(authoredRulesPath, '# Repository Claude rules\n');
+    try {
+      await fsExtra.symlink('.claude-rules.md', path.join(projectPath, 'CLAUDE.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      targets: ['claude'],
+    });
+
+    expect((await fsExtra.lstat(path.join(projectPath, 'CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    expect(await fsExtra.readFile(authoredRulesPath, 'utf8')).toBe('# Repository Claude rules\n');
+    expect(result.projectLenses?.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          projectPath,
+          hostCoverage: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'claude',
+              status: 'blocked',
+              reason: expect.stringContaining('repository-authored symbolic link'),
+            }),
+          ]),
+        }),
+      ])
+    );
+  });
+
   it('does not treat the accepted model snapshot baseline as TTL-stale', async () => {
     const workspacePath = await makeWorkspace();
     await fsExtra.outputJson(
@@ -388,6 +687,15 @@ describe('workspace agent sync', () => {
 
   it('rolls back every generated surface when agent-sync fails before its pack commit', async () => {
     const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'app');
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'app',
+      version: '1.0.0',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      workspace: { name: 'sync-lab', profile: 'minimal' },
+      projects: [{ slug: 'app', relativePath: 'app', relationship: 'managed' }],
+    });
     const agentsPath = path.join(workspacePath, 'AGENTS.md');
     await fsExtra.writeFile(agentsPath, '# operator-owned preimage\n');
 
@@ -414,5 +722,14 @@ describe('workspace agent sync', () => {
         path.join(workspacePath, '.github', 'agents', 'workspai-repair.agent.md')
       )
     ).toBe(false);
+    for (const relativePath of [
+      '.workspai/agent-entry.v1.json',
+      'CLAUDE.md',
+      'GEMINI.md',
+      'QWEN.md',
+      '.amazonq/rules/workspai-agent-entry.md',
+    ]) {
+      expect(await fsExtra.pathExists(path.join(projectPath, relativePath))).toBe(false);
+    }
   });
 });

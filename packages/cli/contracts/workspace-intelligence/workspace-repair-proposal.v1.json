@@ -9,6 +9,7 @@
   "properties": {
     "schemaVersion": { "const": "workspai.workspace-repair-proposal.v1" },
     "cardId": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "goalId": { "type": "string", "pattern": "^goal-[A-Za-z0-9._-]{3,90}$" },
     "blockerSignature": { "type": "string", "minLength": 1, "maxLength": 256 },
     "targetActionIds": {
       "type": "array",

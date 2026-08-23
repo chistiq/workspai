@@ -1253,8 +1253,9 @@ async function collectDoctorDependencyAuditUncached(input: {
     const parsed = parseAudit(input.runtime, result.stdout, result.stderr);
     if (!parsed) {
       const unavailable =
-        /not found|no module named pip_audit|unknown command|unrecognized (?:command|option)/i.test(
-          `${result.stdout}\n${result.stderr}`
+        String(result.code ?? '') === 'ENOENT' ||
+        /not found|no such (?:command|subcommand)|script not found|no module named pip_audit|unknown command|unrecognized (?:command|option)/i.test(
+          `${result.stdout}\n${result.stderr}\n${result.shortMessage ?? ''}`
         );
       return {
         ...base,

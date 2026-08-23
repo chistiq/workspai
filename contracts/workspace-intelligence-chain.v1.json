@@ -1263,14 +1263,13 @@
     "agents": {
       "canonicalReadOrder": [
         ".workspai/reports/INDEX.json",
+        ".workspai/goals/index.json",
+        ".workspai/reports/goal-pack-last-run.json",
         ".workspai/reports/workspace-context-agent.json",
+        ".workspai/reports/workspace-skills-index.json",
         ".workspai/reports/workspace-verify-last-run.json",
         ".workspai/reports/workspace-impact-last-run.json",
-        ".workspai/reports/workspace-explain-last-run.json",
-        ".workspai/reports/workspace-model.json",
-        ".workspai/reports/workspace-knowledge-graph.json",
-        ".workspai/reports/agent-customization-pack.json",
-        ".workspai/reports/workspace-skills-index.json"
+        ".workspai/reports/workspace-explain-last-run.json"
       ],
       "entrypoints": [
         "AGENTS.md",

@@ -18,6 +18,9 @@ const args = new Set(process.argv.slice(2));
 const checkOnly = args.has('--check');
 const npmOnly = args.has('--npm-only');
 const stageGit = args.has('--stage-git');
+const requireConsumer = args.has('--require-consumer');
+const requireClean = args.has('--require-clean');
+const requireConsumerClean = args.has('--require-consumer-clean');
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const cliRoot = path.resolve(scriptDir, '..');
@@ -27,6 +30,7 @@ const rootContractsDir = path.resolve(monorepoRoot, 'contracts');
 const vscodeRoot = process.env.RAPIDKIT_VSCODE_REPO_PATH
   ? path.resolve(process.env.RAPIDKIT_VSCODE_REPO_PATH)
   : path.resolve(monorepoRoot, '..', 'rapidkit-vscode');
+const vscodeConsumerPresent = !npmOnly && fs.existsSync(vscodeRoot);
 
 const GENERATED_FILES = [
   'runtime-command-surface.v1.json',
@@ -67,6 +71,8 @@ const GENERATED_FILES = [
   'workspace-repair-capabilities.v1.json',
   'workspace-intelligence/workspace-repair-proposal.v1.json',
   'workspace-intelligence/workspace-repair-transaction.v1.json',
+  'workspace-intelligence/project-agent-entry.v1.json',
+  'workspace-intelligence/agent-bootstrap-receipt.v1.json',
 ];
 
 const VSCODE_SRC_CONTRACT_FILES = [
@@ -87,6 +93,8 @@ const VSCODE_SRC_CONTRACT_FILES = [
   'workspace-repair-capabilities.v1.json',
   'workspace-intelligence/workspace-repair-proposal.v1.json',
   'workspace-intelligence/workspace-repair-transaction.v1.json',
+  'workspace-intelligence/project-agent-entry.v1.json',
+  'workspace-intelligence/agent-bootstrap-receipt.v1.json',
 ];
 const LEGACY_CONTRACT_PORTAL_PATTERN = /https:\/\/(?:www\.)?(?:getrapidkit\.com|rapidkit\.dev)\//i;
 const WORKSPAI_CONTRACT_TITLE_PATTERN = /^Workspai\b/;
@@ -350,6 +358,67 @@ function stageSyncedContracts(canonicalRelativePaths) {
   }
 }
 
+function assertContractOutputsCommitted(repoRoot, absolutePaths, label) {
+  if (!repoRoot) {
+    console.error(`${label} is not inside a Git repository.`);
+    process.exit(1);
+  }
+
+  const relativePaths = absolutePaths
+    .map((absolutePath) => toRepoRelativePath(repoRoot, absolutePath))
+    .filter((relativePath) => relativePath && !relativePath.startsWith('..'));
+  const result = spawnSync(
+    'git',
+    ['status', '--porcelain=v1', '--untracked-files=all', '--', ...relativePaths],
+    { cwd: repoRoot, encoding: 'utf-8' }
+  );
+  if (result.status !== 0) {
+    console.error(`Could not inspect ${label} contract state.`);
+    process.exit(result.status ?? 1);
+  }
+  if (result.stdout.trim()) {
+    console.error(`${label} contract outputs are synchronized but not committed:`);
+    console.error(result.stdout.trim());
+    console.error('Commit the generated contract mirrors before pushing or releasing the CLI.');
+    process.exit(1);
+  }
+}
+
+function assertCanonicalContractsCommitted(canonicalRelativePaths) {
+  const npmGitRoot = getGitTopLevel(cliRoot);
+  assertContractOutputsCommitted(
+    npmGitRoot,
+    canonicalRelativePaths.flatMap((relativePath) => [
+      path.resolve(contractsDir, relativePath),
+      path.resolve(rootContractsDir, relativePath),
+    ]),
+    'Workspai CLI'
+  );
+}
+
+function assertConsumerContractsCommitted(canonicalRelativePaths) {
+  if (!vscodeConsumerPresent) {
+    return;
+  }
+  const vscodeGitRoot = getGitTopLevel(vscodeRoot);
+  assertContractOutputsCommitted(
+    vscodeGitRoot,
+    canonicalRelativePaths.flatMap((relativePath) => [
+      path.resolve(vscodeRoot, 'contracts', relativePath),
+      ...(VSCODE_SRC_CONTRACT_FILES.includes(relativePath)
+        ? [path.resolve(vscodeRoot, 'src', 'contracts', relativePath)]
+        : []),
+    ]),
+    'Workspai VS Code consumer'
+  );
+}
+
+if (requireConsumer && !vscodeConsumerPresent) {
+  console.error(`Required Workspai VS Code contract consumer not found at: ${vscodeRoot}`);
+  console.error('Set RAPIDKIT_VSCODE_REPO_PATH to the checked-out rapidkit-vscode repository.');
+  process.exit(1);
+}
+
 const generatedSnapshot = checkOnly ? snapshotGeneratedFiles() : null;
 runGenerator();
 if (checkOnly) {
@@ -372,7 +441,7 @@ for (const relativePath of canonicalFiles) {
 
   syncContract(relativePath, rootContractsDir, 'workspai/contracts', content);
 
-  if (!npmOnly && fs.existsSync(vscodeRoot)) {
+  if (vscodeConsumerPresent) {
     syncContract(
       relativePath,
       path.resolve(vscodeRoot, 'contracts'),
@@ -398,4 +467,14 @@ if (checkOnly) {
   if (stageGit) {
     stageSyncedContracts(canonicalFiles);
   }
+}
+
+if (requireClean) {
+  assertCanonicalContractsCommitted(canonicalFiles);
+  console.log('Canonical CLI contract outputs are committed.');
+}
+
+if (requireConsumerClean) {
+  assertConsumerContractsCommitted(canonicalFiles);
+  console.log('Consumer contract outputs are committed.');
 }

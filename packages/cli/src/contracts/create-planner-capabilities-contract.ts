@@ -5,6 +5,7 @@ import {
   type CreatePlannerStatus,
 } from '../utils/create-planner-capabilities.js';
 import { listInteractiveKits } from '../utils/kit-registry.js';
+import { WORKSPACE_PROFILE_DEFINITIONS } from '../workspace-profile-compatibility.js';
 
 export const CREATE_PLANNER_CAPABILITIES_SCHEMA_VERSION = 'rapidkit-create-planner-capabilities-v1';
 
@@ -21,16 +22,22 @@ export type CreatePlannerCapabilitiesContract = {
     id: string;
     runtime: string;
     framework: string;
+    plannerFramework: string;
     category: string;
     owner: string;
     stability: string;
     versionPolicy: 'tested-baseline';
     moduleSupport: boolean;
+    workspacePythonEngine: 'required' | 'optional' | 'none';
   }>;
   officialCreate: Array<{
     id: string;
     aliases: string[];
     ecosystem: string;
+    plannerFramework: string;
+    runtime: string;
+    runtimeCandidates: string[];
+    workspacePythonEngine: 'none';
     category: string;
     status: CreatePlannerStatus;
     canExecuteCreate: boolean;
@@ -40,19 +47,39 @@ export type CreatePlannerCapabilitiesContract = {
     runtimeRequirements?: Record<string, string>;
   }>;
   existingRuntimeSignals: string[];
+  workspaceProfiles: Array<{
+    id: string;
+    runtimePolicy: 'single-detected' | 'bounded' | 'multi-runtime';
+    runtimeFamilies: string[];
+    setupRuntimeFamilies: string[];
+    pythonEngineAtCreate: 'skipped' | 'optional-default-install';
+    pythonEngineAtBootstrap: 'disabled' | 'on-demand';
+  }>;
+  lifecycle: {
+    automatic: string[];
+    explicit: string[];
+  };
   productRules: string[];
 };
+
+function plannerFrameworkForNativeKit(kit: ReturnType<typeof listInteractiveKits>[number]): string {
+  if (kit.runtime === 'go') return 'go';
+  if (kit.runtime === 'rust') return 'rust';
+  return kit.framework;
+}
 
 export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilitiesContract {
   const backendNative = listInteractiveKits().map((kit) => ({
     id: kit.id,
     runtime: kit.runtime,
     framework: kit.framework,
+    plannerFramework: plannerFrameworkForNativeKit(kit),
     category: kit.category,
     owner: kit.owner,
     stability: kit.stability,
     versionPolicy: kit.versionPolicy,
     moduleSupport: kit.moduleSupport,
+    workspacePythonEngine: kit.workspacePythonEngine,
   }));
   const existingRuntimeSignals = ['php', 'ruby', 'rust', 'elixir', 'clojure', 'scala', 'kotlin'];
 
@@ -87,8 +114,26 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
             : 'backend',
       officialCommands: [...candidate.officialCommands],
       aliases: [...candidate.aliases],
+      runtimeCandidates: [...candidate.runtimeCandidates],
     })),
     existingRuntimeSignals,
+    workspaceProfiles: WORKSPACE_PROFILE_DEFINITIONS.map((profile) => ({
+      ...profile,
+      runtimeFamilies: [...profile.runtimeFamilies],
+      setupRuntimeFamilies: [...profile.setupRuntimeFamilies],
+    })),
+    lifecycle: {
+      automatic: [
+        'Create the workspace foundation without installing an optional workspace Python engine unless the user explicitly selected that engine in CLI workspace creation.',
+        'Run the selected native or official project generator and let that generator own project dependency installation unless --skip-install is set.',
+        'Register every created project and refresh the canonical contract, model, proof-backed graph, diff, impact, agent context, grounding, and evidence index.',
+      ],
+      explicit: [
+        'Run workspai bootstrap only when the user requests profile and project dependency initialization or a required kit reports a missing workspace engine.',
+        'Run workspai workspace intelligence run --for-agent <agent> --strict for a complete evidence and verification loop.',
+        'Run doctor, analyze, readiness, verify, run, Goal, and repair operations when requested by the user or the governed workflow; Create does not silently claim those gates passed.',
+      ],
+    },
     productRules: [
       'Do not translate unsupported stack requests into unrelated native kits.',
       'If native create is unavailable, explain the lane and guide to adopt/import.',

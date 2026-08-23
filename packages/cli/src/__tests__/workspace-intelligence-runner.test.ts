@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   recordWorkspaceHistory: vi.fn(),
   buildWorkspaceAgentContext: vi.fn(),
   writeWorkspaceAgentContext: vi.fn(),
+  readWorkspaceKnowledgeGraphSnapshot: vi.fn(),
   syncWorkspaceAgentGrounding: vi.fn(),
   buildWorkspaceAgentReportsIndex: vi.fn(),
   buildWorkspaceExplain: vi.fn(),
@@ -66,6 +67,9 @@ vi.mock('../workspace-verify.js', () => ({
 vi.mock('../workspace-context.js', () => ({
   buildWorkspaceAgentContext: mocks.buildWorkspaceAgentContext,
   writeWorkspaceAgentContext: mocks.writeWorkspaceAgentContext,
+}));
+vi.mock('../workspace-knowledge-graph-snapshot.js', () => ({
+  readWorkspaceKnowledgeGraphSnapshot: mocks.readWorkspaceKnowledgeGraphSnapshot,
 }));
 vi.mock('../workspace-agent-sync.js', () => ({
   syncWorkspaceAgentGrounding: mocks.syncWorkspaceAgentGrounding,
@@ -136,6 +140,7 @@ function configurePassingChain(): void {
     writtenFiles: ['AGENTS.md'],
     strictViolations: [],
   });
+  mocks.readWorkspaceKnowledgeGraphSnapshot.mockResolvedValue({ status: 'hit' });
   mocks.buildWorkspaceAgentReportsIndex.mockResolvedValue({
     schemaVersion: 'rapidkit-agent-reports-index.v1',
   });
@@ -231,10 +236,14 @@ describe('unified Workspace Intelligence runner', () => {
     expect(mocks.syncWorkspaceAgentGrounding).toHaveBeenCalledWith(
       expect.objectContaining({
         agent: 'codex',
+        targets: ['all'],
         preset: 'enterprise',
         write: true,
         strict: true,
       })
+    );
+    expect(report.stages.find((stage) => stage.id === 'agent-sync')?.message).toContain(
+      'portable entry surfaces prepared for all supported hosts'
     );
     expect(mocks.writeWorkspaceArtifactJson).toHaveBeenCalledWith(
       workspacePath,
@@ -282,6 +291,29 @@ describe('unified Workspace Intelligence runner', () => {
     expect(mocks.buildWorkspaceModelSnapshot).not.toHaveBeenCalled();
   });
 
+  it('reconciles CLI-owned grounding writes before returning canonical evidence', async () => {
+    mocks.readWorkspaceKnowledgeGraphSnapshot
+      .mockResolvedValueOnce({ status: 'miss', reason: 'live-input-mismatch' })
+      .mockResolvedValueOnce({ status: 'hit' });
+    mocks.buildWorkspaceModel
+      .mockResolvedValueOnce({ summary: { projectCount: 1 }, generation: 'initial' })
+      .mockResolvedValueOnce({ summary: { projectCount: 1 }, generation: 'sealed' });
+
+    const report = await runWorkspaceIntelligenceChain({
+      workspacePath: '/tmp/workspai-intelligence-grounding-seal',
+      agent: 'codex',
+    });
+
+    expect(report.status).toBe('passed');
+    expect(mocks.buildWorkspaceModel).toHaveBeenCalledTimes(2);
+    expect(mocks.writeWorkspaceModel).toHaveBeenCalledTimes(2);
+    expect(mocks.buildWorkspaceAgentContext).toHaveBeenCalledTimes(2);
+    expect(mocks.syncWorkspaceAgentGrounding).toHaveBeenCalledTimes(2);
+    expect(report.stages.find((stage) => stage.id === 'agent-sync')?.message).toContain(
+      'canonical Model/Graph freshness sealed'
+    );
+  });
+
   it('migrates an authenticated legacy baseline before diffing without replacing it', async () => {
     mocks.pathExists.mockResolvedValue(true);
     const legacy = { schemaVersion: 'workspace-model-snapshot.v1', modelHash: 'legacy' };
@@ -325,6 +357,9 @@ describe('unified Workspace Intelligence runner', () => {
       message: expect.stringContaining('missing required project grounding'),
     });
     expect(report.stages.find((stage) => stage.id === 'explain')?.status).toBe('passed');
+    expect(report.stages.find((stage) => stage.id === 'explain')?.message).toContain(
+      'Strict policy blocked advisory or incomplete evidence in agent-sync.'
+    );
   });
 
   it('fails closed on preflight failure and deterministically skips all downstream stages', async () => {

@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
+const isWindows = process.platform === 'win32';
+
 export default defineConfig({
   test: {
     globals: true,
@@ -7,12 +9,13 @@ export default defineConfig({
     setupFiles: ['src/__tests__/setup.ts'],
     // Full workspace operations perform real filesystem transactions and are
     // intentionally exercised under coverage on all three CI platforms.
-    // Five seconds is below normal Windows/macOS runner variance and can leave
-    // an in-flight transaction racing teardown. Keep a bounded, platform-safe
-    // budget while individual long-running scenarios retain explicit limits.
-    testTimeout: 30_000,
-    hookTimeout: 60_000,
-    teardownTimeout: 30_000,
+    // Windows filesystem transactions and V8 coverage contend heavily when
+    // Vitest uses every runner core. Bound concurrency instead of allowing
+    // timed-out work to race teardown and create EBUSY/ENOTEMPTY cascades.
+    ...(isWindows ? { maxWorkers: 2 } : {}),
+    testTimeout: isWindows ? 90_000 : 30_000,
+    hookTimeout: isWindows ? 120_000 : 60_000,
+    teardownTimeout: isWindows ? 60_000 : 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

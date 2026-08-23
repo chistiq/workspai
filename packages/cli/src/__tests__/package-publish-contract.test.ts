@@ -27,12 +27,22 @@ describe('npm publish contract', () => {
   };
 
   function isPublishedByFiles(assetPath: string): boolean {
-    return (packageJson.files ?? []).some((entry) => {
-      if (entry === assetPath) {
-        return true;
+    const matches = (entry: string): boolean => {
+      const normalizedEntry = entry.replace(/\/$/, '');
+      if (!normalizedEntry.includes('*')) {
+        return assetPath === normalizedEntry || assetPath.startsWith(`${normalizedEntry}/`);
       }
-      return assetPath.startsWith(`${entry.replace(/\/$/, '')}/`);
-    });
+      const expression = normalizedEntry
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replaceAll('*', '.*')
+        .replaceAll('?', '.');
+      return new RegExp(`^${expression}$`).test(assetPath);
+    };
+    const entries = packageJson.files ?? [];
+    if (entries.some((entry) => entry.startsWith('!') && matches(entry.slice(1)))) {
+      return false;
+    }
+    return entries.some((entry) => !entry.startsWith('!') && matches(entry));
   }
 
   const enterpriseSmokeScript = 'scripts/enterprise-package-smoke.mjs';
@@ -91,6 +101,18 @@ describe('npm publish contract', () => {
       expect(independentManifest.private).toBe(true);
       expect(independentManifest.scripts?.prepublishOnly).toBe('node scripts/refuse-publish.mjs');
     }
+    expect(rootPackage.scripts?.postinstall).toBe('node scripts/check-cross-platform-lockfile.mjs');
+    expect(rootPackage.scripts?.['prepush:check']).toContain('run check:cross-platform-lockfile');
+
+    const lockfileGuard = fs.readFileSync(
+      path.join(monorepoRoot, 'scripts/check-cross-platform-lockfile.mjs'),
+      'utf8'
+    );
+    expect(lockfileGuard).toContain('packageName: "rolldown"');
+    expect(lockfileGuard).toContain('packageName: "rollup"');
+    expect(lockfileGuard).toContain('packageName: "esbuild"');
+    expect(lockfileGuard).toContain('bindingPrefix: "@rolldown/binding-"');
+    expect(lockfileGuard).toContain('Restore package-lock.json from Git');
     expect(rootPackage.scripts?.['install:local']).toContain('--workspace workspai link');
     expect(rootPackage.scripts?.['install:local']).toContain('--workspace wspai link');
     expect(rootPackage.scripts?.['uninstall:local']).toContain('unlink -g workspai');
@@ -170,6 +192,28 @@ describe('npm publish contract', () => {
         env: { ...env, npm_config_user_agent: userAgent },
       });
       expect(result.status, userAgent).toBe(expectedStatus);
+    }
+  });
+
+  it('locks native test-runner bindings for every supported CI platform', () => {
+    const packageLock = JSON.parse(
+      fs.readFileSync(path.join(monorepoRoot, 'package-lock.json'), 'utf8')
+    ) as {
+      packages?: Record<string, { version?: string; optional?: boolean }>;
+    };
+    const lockedPackages = packageLock.packages ?? {};
+    const requiredBindings = [
+      '@rolldown/binding-linux-x64-gnu',
+      '@rolldown/binding-darwin-arm64',
+      '@rolldown/binding-darwin-x64',
+      '@rolldown/binding-win32-x64-msvc',
+    ];
+
+    for (const binding of requiredBindings) {
+      const entry = lockedPackages[`node_modules/${binding}`];
+      expect(entry, `${binding} must remain represented in package-lock.json`).toBeDefined();
+      expect(entry?.version).toMatch(/^1\./);
+      expect(entry?.optional).toBe(true);
     }
   });
 
@@ -268,7 +312,7 @@ describe('npm publish contract', () => {
     expect(commit).toBeGreaterThan(dryRun);
   });
 
-  it('publishes README image assets referenced from npm-safe raw GitHub URLs', () => {
+  it('keeps README image assets resolvable from npm-safe raw GitHub URLs', () => {
     const readme = fs.readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
     const rawImageUrls = [
       ...readme.matchAll(/!\[[^\]]+\]\((https:\/\/raw\.githubusercontent\.com\/[^)]+)\)/g),
@@ -288,12 +332,26 @@ describe('npm publish contract', () => {
       expect(match, imageUrl).not.toBeNull();
 
       const encodedAssetPath = match?.[1] ?? '';
-      expect(encodedAssetPath, imageUrl).toContain('%20');
       const assetPath = decodeURIComponent(encodedAssetPath);
 
       expect(fs.existsSync(path.join(process.cwd(), assetPath)), assetPath).toBe(true);
-      expect(isPublishedByFiles(assetPath), assetPath).toBe(true);
+      if (assetPath.endsWith('.gif')) {
+        expect(isPublishedByFiles(assetPath), assetPath).toBe(false);
+      } else {
+        expect(isPublishedByFiles(assetPath), assetPath).toBe(true);
+      }
     }
+  });
+
+  it('keeps generated video masters and README GIFs out of the published package', () => {
+    const npmIgnore = fs.readFileSync(path.join(process.cwd(), '.npmignore'), 'utf8');
+
+    expect(npmIgnore).toContain('docs/*.mp4');
+    expect(npmIgnore).toContain('docs/*.gif');
+    expect(packageJson.files).toContain('!docs/*.mp4');
+    expect(packageJson.files).toContain('!docs/*.gif');
+    expect(packageJson.files).not.toContain('docs/workspai-grpc-readme-cli.mp4');
+    expect(packageJson.files).not.toContain('docs/workspai-grpc-readme-cli.gif');
   });
 
   it('publishes local documentation linked from the npm README', () => {

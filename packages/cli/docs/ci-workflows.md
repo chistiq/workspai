@@ -22,6 +22,16 @@ The release workflow requires the cost-bounded
 normal push that touches the contracted generator surface produces this gate;
 maintainers do not need to run the full cross-platform matrix before publishing.
 
+Consumer mirror synchronization does not add another required CLI workflow.
+Local pre-commit synchronizes mirrors when contract sources are staged;
+pre-push requires canonical CLI outputs to be committed but does not require a
+consumer release. The extension's own CI remains responsible for hard parity
+against the CLI version selected for that extension release. Consumer-owned
+version floors remain separate from CLI-owned schema inventories, preventing
+parity checks from coupling product versions. Breaking contract removal or
+incompatible schema changes remain CLI release blockers through the canonical
+compatibility and schema-version gates.
+
 Pushes and pull requests run every contracted generator on the primary Linux
 lane. The weekly schedule and manual dispatch can run the complete Linux,
 macOS, and Windows matrix as a non-blocking compatibility and upstream-drift
@@ -29,6 +39,13 @@ signal. npm and Composer download caches reduce repeated network work without
 caching generated projects; every smoke run still exercises the current
 upstream generator, generated artifacts, build surface, registry, and Doctor
 evidence.
+
+The Windows coverage lane intentionally uses bounded Vitest worker concurrency
+and platform-aware transaction timeouts. Filesystem-heavy workspace tests must
+finish their transaction before teardown; cleanup retries transient Windows
+`EBUSY` and `ENOTEMPTY` states instead of converting one slow operation into a
+cascade of unrelated missing-file failures. These budgets remain finite and do
+not retry failed assertions or product operations.
 
 ## Release announcements
 
@@ -46,7 +63,7 @@ Validate or preview the current CLI announcement locally:
 npm --workspace workspai run check:release-announcement
 npm --workspace workspai run release:announcement -- \
   --product workspai-cli \
-  --tag v0.56.0 \
+  --tag v0.64.0 \
   --markdown-output /tmp/workspai-discord-announcement.md
 ```
 
@@ -93,6 +110,14 @@ the exact preflight, 11-stage, artifact, and exit contract.
 | Docs drift guard              | `npm run check:docs-drift`                                                |
 | README command smoke          | `npm run smoke:readme`                                                    |
 | Agent customization drift     | `npm run check:agent-customization-drift -- --workspace <workspace-root>` |
+| Cross-platform lockfile       | `npm run check:cross-platform-lockfile`                                   |
+
+The root `postinstall` lifecycle runs the lockfile check before build or test
+jobs can start. This prevents a lockfile regenerated from a platform-pruned
+`node_modules` tree from reaching native Vitest/Rolldown startup on another
+operating system. Restore an accidentally deleted lockfile from Git; perform a
+deliberate full regeneration only with both the lockfile and `node_modules`
+absent.
 
 ## Recommended pre-release checks
 

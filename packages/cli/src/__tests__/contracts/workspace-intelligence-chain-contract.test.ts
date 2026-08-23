@@ -79,6 +79,9 @@ describe('workspace intelligence chain contract', () => {
       sourceRoot,
       'contracts/workspace-intelligence-runtime-registry.ts'
     );
+    const extractionSafeContractSources = new Set([
+      path.resolve(sourceRoot, 'goals/goal-pack-contract.ts'),
+    ]);
     const testSegment = `${path.sep}__tests__${path.sep}`;
     const sourceFiles: string[] = [];
     const visit = (directory: string) => {
@@ -90,6 +93,7 @@ describe('workspace intelligence chain contract', () => {
           entry.isFile() &&
           entry.name.endsWith('.ts') &&
           absolutePath !== registryPath &&
+          !extractionSafeContractSources.has(absolutePath) &&
           !absolutePath.includes(testSegment)
         ) {
           sourceFiles.push(absolutePath);
@@ -127,6 +131,7 @@ describe('workspace intelligence chain contract', () => {
     );
     const extractionSafeSchemaSources = new Set([
       path.resolve(sourceRoot, 'contracts/doctor-capabilities-contract.ts'),
+      path.resolve(sourceRoot, 'goals/goal-pack-contract.ts'),
     ]);
     const testSegment = `${path.sep}__tests__${path.sep}`;
     const schemaVersions = [

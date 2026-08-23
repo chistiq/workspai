@@ -36,6 +36,7 @@ describe('workspace operational skills (Phase 4.A)', () => {
     for (const skill of skills) {
       expect(skill.skillId).toMatch(/^workspai-/);
       expect(skill.canonicalPath).toBe(`.workspai/skills/${skill.skillId}.md`);
+      expect(skill.markdown).toContain(`name: ${skill.skillId}`);
       expect(skill.markdown).toContain('## Answer contract');
     }
   });
@@ -70,5 +71,81 @@ describe('workspace operational skills (Phase 4.A)', () => {
     const second = buildWorkspaceOperationalSkills(input);
     expect(first.map((skill) => skill.markdown)).toEqual(second.map((skill) => skill.markdown));
     expect(first.map((skill) => skill.skillId)).toEqual(second.map((skill) => skill.skillId));
+  });
+
+  it('derives runtime, polyglot, test, and delivery skills from workspace signals', async () => {
+    const base = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
+    const model = {
+      ...base,
+      projects: [
+        {
+          name: 'web',
+          runtime: 'node',
+          commands: { supported: ['test'] },
+          importantFiles: ['Dockerfile', '.github/workflows/ci.yml'],
+        },
+        {
+          name: 'api',
+          runtime: 'python',
+          commands: { supported: ['test'] },
+          importantFiles: ['pyproject.toml'],
+        },
+      ],
+    } as unknown as typeof base;
+
+    const skills = buildWorkspaceOperationalSkills({ workspacePath, model });
+    const ids = skills.map((skill) => skill.skillId);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'workspai-node-runtime-validation',
+        'workspai-python-runtime-validation',
+        'workspai-polyglot-change-validation',
+        'workspai-test-evidence-recovery',
+        'workspai-delivery-evidence',
+      ])
+    );
+    expect(
+      skills.find((skill) => skill.skillId === 'workspai-node-runtime-validation')?.scopedProjects
+    ).toEqual(['web']);
+  });
+
+  it('reconciles only stale Workspai-generated skills and preserves authored files', async () => {
+    const base = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
+    const runtimeModel = {
+      ...base,
+      projects: [
+        {
+          name: 'web',
+          runtime: 'node',
+          commands: { supported: [] },
+          importantFiles: [],
+        },
+      ],
+    } as unknown as typeof base;
+    const first = buildWorkspaceOperationalSkills({ workspacePath, model: runtimeModel });
+    await writeWorkspaceOperationalSkills({
+      workspacePath,
+      skills: first,
+      generatedAt: new Date().toISOString(),
+      write: true,
+    });
+    const authoredPath = path.join(workspacePath, '.workspai', 'skills', 'authored.md');
+    await fsExtra.writeFile(authoredPath, '# Authored Skill\n', 'utf8');
+
+    const second = buildWorkspaceOperationalSkills({ workspacePath, model: base });
+    const result = await writeWorkspaceOperationalSkills({
+      workspacePath,
+      skills: second,
+      generatedAt: new Date().toISOString(),
+      write: true,
+    });
+
+    expect(result.removedSkillIds).toContain('workspai-node-runtime-validation');
+    expect(
+      await fsExtra.pathExists(
+        path.join(workspacePath, '.workspai', 'skills', 'workspai-node-runtime-validation.md')
+      )
+    ).toBe(false);
+    expect(await fsExtra.pathExists(authoredPath)).toBe(true);
   });
 });

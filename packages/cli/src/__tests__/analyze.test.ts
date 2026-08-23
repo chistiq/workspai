@@ -235,6 +235,16 @@ describe('analyze command', () => {
 
     expect(payload.summary.verdict).toBe('blocked');
     expect(payload.findings.some((item: any) => item.severity === 'warn')).toBe(true);
+    expect(
+      payload.findings.find((item: { id: string }) => item.id === 'project.ci.missing')
+    ).toMatchObject({
+      files: ['.github/workflows/ci.yml'],
+    });
+    expect(
+      payload.findings.find((item: { id: string }) => item.id === 'project.env.example.missing')
+    ).toMatchObject({
+      files: ['.env.example'],
+    });
   });
 
   it('warns instead of failing when workspace has no projects', async () => {

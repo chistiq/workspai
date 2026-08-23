@@ -17,9 +17,21 @@ export const WORKSPACE_TRACE_REPORT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.work
 export const AGENT_GROUNDING_DOC_PATH = '.workspai/AGENT-GROUNDING.md' as const;
 export const LEGACY_AGENT_GROUNDING_DOC_PATH = '.rapidkit/AGENT-GROUNDING.md' as const;
 export const WORKSPAI_CURSOR_GROUNDING_RULE_PATH = '.cursor/rules/workspai-grounding.mdc' as const;
+export const WORKSPAI_CURSOR_EVIDENCE_RULE_PATH = '.cursor/rules/workspai-evidence.mdc' as const;
+export const WORKSPAI_CURSOR_DIAGNOSE_RULE_PATH = '.cursor/rules/workspai-diagnose.mdc' as const;
+export const WORKSPAI_CURSOR_REPAIR_RULE_PATH = '.cursor/rules/workspai-repair.mdc' as const;
+export const WORKSPAI_CURSOR_RELEASE_RULE_PATH = '.cursor/rules/workspai-release.mdc' as const;
 export const LEGACY_CURSOR_GROUNDING_RULE_PATH = '.cursor/rules/rapidkit-grounding.mdc' as const;
+export const WORKSPAI_WINDSURF_RULES_PATH = '.windsurfrules' as const;
+export const WORKSPAI_WINDSURF_GROUNDING_RULE_PATH =
+  '.windsurf/rules/workspai-grounding.md' as const;
+export const WORKSPAI_WINDSURF_EVIDENCE_RULE_PATH = '.windsurf/rules/workspai-evidence.md' as const;
+export const WORKSPAI_GROK_GROUNDING_RULE_PATH = '.grok/rules/workspai-grounding.md' as const;
+export const WORKSPAI_GROK_EVIDENCE_RULE_PATH = '.grok/rules/workspai-evidence.md' as const;
 export const WORKSPAI_CLAUDE_EVIDENCE_RULE_PATH = '.claude/rules/workspai-evidence.md' as const;
+export const WORKSPAI_CLAUDE_WORKSPACE_RULE_PATH = '.claude/rules/workspai-workspace.md' as const;
 export const LEGACY_CLAUDE_EVIDENCE_RULE_PATH = '.claude/rules/rapidkit-evidence.md' as const;
+export const WORKSPAI_AMAZONQ_WORKSPACE_RULE_PATH = '.amazonq/rules/workspai-workspace.md' as const;
 export const WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH =
   '.github/instructions/workspai-workspace.instructions.md' as const;
 export const LEGACY_COPILOT_WORKSPACE_INSTRUCTIONS_PATH =
@@ -56,6 +68,14 @@ export const WORKSPAI_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH =
   '.github/skills/workspai-workspace-intelligence/SKILL.md' as const;
 export const LEGACY_COPILOT_WORKSPACE_INTELLIGENCE_SKILL_PATH =
   '.github/skills/rapidkit-workspace-intelligence/SKILL.md' as const;
+export const WORKSPAI_CURSOR_GROUNDING_SKILL_PATH =
+  '.cursor/skills/workspai-grounding/SKILL.md' as const;
+export const WORKSPAI_CLAUDE_GROUNDING_SKILL_PATH =
+  '.claude/skills/workspai-grounding/SKILL.md' as const;
+export const WORKSPAI_AGENTS_GROUNDING_SKILL_PATH =
+  '.agents/skills/workspai-grounding/SKILL.md' as const;
+export const WORKSPAI_GROK_GROUNDING_SKILL_PATH =
+  '.grok/skills/workspai-grounding/SKILL.md' as const;
 export const WORKSPAI_MCP_DESIGN_REPORT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaiMcpDesign;
 export const LEGACY_MCP_DESIGN_REPORT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.legacyMcpDesign;
 export const WORKSPAI_VSCODE_AGENT_HOOKS_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.agentHooks;

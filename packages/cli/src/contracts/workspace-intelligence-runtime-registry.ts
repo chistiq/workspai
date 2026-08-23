@@ -106,6 +106,12 @@ export type WorkspaceSupplementalArtifactContract = {
  * this table directly; producer paths must never be re-declared elsewhere.
  */
 export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
+  goalIndex: {
+    artifactPath: '.workspai/goals/index.json',
+    schemaVersion: 'workspai.goal-index.v1',
+    contractPath: 'contracts/workspace-intelligence/goal-index.v1.json',
+    producerCommands: [['goal']],
+  },
   projectWorkspaceLink: {
     artifactPath: '.workspai/workspace-link.local.json',
     schemaVersion: 'project-workspace-link.v1',
@@ -121,6 +127,17 @@ export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
     artifactPath: '.workspai/reports/project-context-agent.json',
     schemaVersion: 'project-context-agent.v1',
     contractPath: 'contracts/workspace-intelligence/project-context-agent.v1.json',
+    producerCommands: [
+      ['adopt'],
+      ['import'],
+      ['workspace', 'sync'],
+      ['workspace', 'agent-sync', '--write'],
+    ],
+  },
+  projectAgentEntry: {
+    artifactPath: '.workspai/agent-entry.v1.json',
+    schemaVersion: 'workspai.agent-entry.v1',
+    contractPath: 'contracts/workspace-intelligence/project-agent-entry.v1.json',
     producerCommands: [
       ['adopt'],
       ['import'],
@@ -218,6 +235,12 @@ export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
     schemaVersion: 'workspai.project-test-coverage.v1',
     contractPath: 'contracts/project-test-coverage.v1.json',
     producerCommands: [['project', 'coverage']],
+  },
+  goalPackLastRun: {
+    artifactPath: '.workspai/reports/goal-pack-last-run.json',
+    schemaVersion: 'workspai.goal-pack.v1',
+    contractPath: 'contracts/workspace-intelligence/goal-pack.v1.json',
+    producerCommands: [['goal']],
   },
   doctorRemediationPlan: {
     artifactPath: '.workspai/reports/doctor-remediation-plan-last-run.json',
