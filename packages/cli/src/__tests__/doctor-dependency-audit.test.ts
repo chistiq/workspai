@@ -497,6 +497,33 @@ describe('Doctor dependency audit evidence', () => {
     });
   });
 
+  it('uses the declared pnpm audit surface for a lockfile-free Bun-assisted monorepo', async () => {
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'hybrid-monorepo',
+      packageManager: 'pnpm@10.33.0',
+    });
+    await fsExtra.writeFile(
+      path.join(projectPath, 'pnpm-workspace.yaml'),
+      'lockfile: false\npackages:\n  - packages/**\n'
+    );
+    await fsExtra.writeFile(
+      path.join(projectPath, '.bunfig.toml'),
+      '[install.lockfile]\nsave = false\n'
+    );
+    execaMock.mockResolvedValue({
+      stdout: JSON.stringify({ metadata: { vulnerabilities: { total: 0 } } }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const evidence = await collectDoctorDependencyAudit({ projectPath, runtime: 'node' });
+
+    expect(evidence).toMatchObject({
+      tool: 'pnpm audit',
+      invocation: { executable: 'pnpm', args: ['audit', '--json'] },
+    });
+  });
+
   it('does not report Python as clean when pip-audit is unavailable', async () => {
     execaMock.mockResolvedValue({
       stdout: '',

@@ -108,6 +108,7 @@
         "framework": { "type": "string" },
         "kit": { "type": "string" },
         "supportTier": { "type": "string" },
+        "governance": { "$ref": "#/$defs/projectGovernance" },
         "commands": {
           "type": "object",
           "required": ["supported", "unsupported", "fleetStages"],
@@ -424,6 +425,34 @@
     }
   },
   "$defs": {
+    "governanceControl": {
+      "type": "object",
+      "required": ["status", "provider", "evidence", "reference"],
+      "properties": {
+        "status": {
+          "enum": ["repository", "external-declared", "external-observed", "unknown"]
+        },
+        "provider": { "type": ["string", "null"] },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "reference": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "projectGovernance": {
+      "type": "object",
+      "required": ["schemaVersion", "ci", "release", "ownership"],
+      "properties": {
+        "schemaVersion": { "const": "workspai.project-governance.v1" },
+        "ci": { "$ref": "#/$defs/governanceControl" },
+        "release": { "$ref": "#/$defs/governanceControl" },
+        "ownership": { "$ref": "#/$defs/governanceControl" }
+      },
+      "additionalProperties": false
+    },
     "portableString": {
       "type": "string",
       "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }

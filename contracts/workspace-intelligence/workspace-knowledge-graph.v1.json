@@ -50,7 +50,15 @@
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["kind", "id", "strategy", "hash", "fileCount", "fileLimit", "truncated"],
+                "required": [
+                  "kind",
+                  "id",
+                  "strategy",
+                  "hash",
+                  "fileCount",
+                  "fileLimit",
+                  "truncated"
+                ],
                 "properties": {
                   "kind": { "enum": ["workspace", "project"] },
                   "id": { "type": "string", "minLength": 1 },
@@ -284,12 +292,14 @@
           "type": "object",
           "required": [
             "apiImplementation",
+            "apiRuntimeRegistration",
             "projectTests",
             "projectDeployment",
             "projectOwnership"
           ],
           "properties": {
             "apiImplementation": { "$ref": "#/$defs/bindingCoverage" },
+            "apiRuntimeRegistration": { "$ref": "#/$defs/bindingCoverage" },
             "projectTests": { "$ref": "#/$defs/bindingCoverage" },
             "projectDeployment": { "$ref": "#/$defs/bindingCoverage" },
             "projectOwnership": { "$ref": "#/$defs/bindingCoverage" }

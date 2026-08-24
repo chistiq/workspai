@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-08-24
+
+### Added
+
+- Added proof-bounded runtime-generated API registration bindings with separate
+  runtime-registration and endpoint-implementation coverage.
+- Added repository, declared-external, observed-external, and unknown CI,
+  release, and ownership governance profiles to the workspace contract, Model,
+  Graph, facts, Analyze, project lens, and agent context.
+- Added a portable project test-surface detector and runtime-aware Go lifecycle
+  discovery for test, build, run, lint, format, and dependency commands.
+- Added contract-enforced repair qualification across 13 runtime adapters, four
+  workspace/project boundary types, ten failure families, and six terminal
+  recovery paths.
+- Added `workspace graph search --kind <entity-kind>` for precise bounded
+  retrieval by canonical entity kind.
+
+### Changed
+
+- Expanded project classification for platforms, libraries, extensions,
+  desktop applications, multi-command Go repositories, JVM aggregators, and
+  native projects with language-binding ecosystems without relying on a
+  repository-specific patch.
+- Enriched the Workspace Model and Knowledge Graph with runtime units, test
+  surfaces, lifecycle capabilities, governance controls, API registration,
+  ownership, generated-source, package, and cross-project evidence.
+- Made Goal grounding scope-aware and diversity-preserving so project names and
+  generic objective words do not crowd source, package, test, lifecycle, and
+  API evidence out of the bounded Goal Pack.
+- Made Doctor, Analyze, and Readiness apply deployability, health, environment,
+  dependency, test, and governance checks according to the detected project
+  kind and proven runtime surface.
+- Expanded isolated real-world qualification to assert deterministic Model,
+  Graph, Doctor, Analyze, Goal, consumer artifact, and publication-safety
+  behavior across large polyglot repositories.
+- Clarified the canonical workspace and project-local metadata boundaries in
+  the README files and added an actual Workspace Graph preview.
+
+### Fixed
+
+- Made adoption snapshots include every generated agent entry and repository-
+  local symlink target, and require rollback snapshots to match the exact
+  canonical file set before restoration.
+- Prevented runtime-neutral repositories from becoming false blocking Doctor
+  failures while retaining an explicit advisory that runtime coverage is not
+  proven.
+- Prevented library, platform, plugin, SDK, and monorepo projects from receiving
+  service-only deployment, health, migration, or environment requirements.
+- Corrected Node, Go, JVM, native, and mixed-runtime lifecycle inference so
+  incidental tooling and nested fixtures do not become the primary project
+  identity or executable surface.
+- Invalidated Workspace Model caches by semantic producer revision so local
+  candidates and backports cannot reuse structurally valid but semantically
+  obsolete project models under an unchanged package version.
+- Bounded dynamic route discovery by runtime, production surface, filename, and
+  per-API evidence limits to prevent generic framework symbols from inflating
+  topology coverage.
+- Excluded shared contract APIs without project ownership from project-local
+  runtime-registration coverage, preserving honest coverage on shared-schema
+  repositories.
+
 ## [0.64.0] - 2026-08-22
 
 ### Added

@@ -2,7 +2,11 @@ import fsExtra from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { evaluateReleaseReadiness, runReleaseReadinessCommand } from '../readiness.js';
+import {
+  dependencyBlockingSummary,
+  evaluateReleaseReadiness,
+  runReleaseReadinessCommand,
+} from '../readiness.js';
 
 const createdPaths: string[] = [];
 
@@ -362,6 +366,16 @@ describe('release readiness', () => {
     expect(readiness.overallStatus).toBe('fail');
     expect(dependencyGate?.status).toBe('fail');
     expect(dependencyGate?.summary).toContain('vulnerability');
+  });
+
+  it('does not describe a dependency environment blocker as a known vulnerability', () => {
+    const summary = dependencyBlockingSummary({
+      blockingFindings: 1,
+      vulnerableDependencies: 0,
+    });
+
+    expect(summary).toBe('1 blocking dependency/security finding(s) reported');
+    expect(summary).not.toContain('vulnerability');
   });
 
   it('treats unknown doctor evidence schema as missing evidence', async () => {

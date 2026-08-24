@@ -258,6 +258,13 @@ describe('backend-framework-contract', () => {
       path.join(monorepo, 'node_modules', 'ignored', 'Cargo.toml'),
       '[package]\nname = "ignored"\n'
     );
+    await fs.outputFile(
+      path.join(monorepo, 'tests', 'fixtures', 'bun-project', 'bun.lock'),
+      '{"lockfileVersion": 1}\n'
+    );
+    await fs.outputJson(path.join(monorepo, 'tests', 'specs', 'node-project', 'package.json'), {
+      name: 'fixture-only',
+    });
 
     expect(detectNestedRuntimeCandidatesFromProject(monorepo)).toEqual([
       'go',
@@ -265,6 +272,18 @@ describe('backend-framework-contract', () => {
       'node',
       'python',
     ]);
+  });
+
+  it('keeps a supplemental Bun tool runner distinct from the Node project runtime', async () => {
+    const monorepo = await createTempProject('node-bun-tool-runner');
+    await fs.outputJson(path.join(monorepo, 'package.json'), {
+      name: 'node-bun-tool-runner',
+      packageManager: 'pnpm@10.33.0',
+    });
+    await fs.outputFile(path.join(monorepo, '.bunfig.toml'), '[install.lockfile]\nsave = false\n');
+
+    expect(detectRuntimeCandidatesFromProject(monorepo)).toEqual(['node', 'bun']);
+    expect(detectNestedRuntimeCandidatesFromProject(monorepo)).toEqual(['node', 'bun']);
   });
 
   it('pins unknown normalization and returns immutable public descriptors', () => {
@@ -333,6 +352,18 @@ describe('backend-framework-contract', () => {
     const project = await createTempProject(name);
     await fs.writeFile(path.join(project, fileName), content);
     expect(detectBackendFrameworkFromProject(project).key).toBe(expectedKey);
+  });
+
+  it('treats an authored Go module as authoritative runtime evidence', async () => {
+    const project = await createTempProject('go-module-confidence');
+    await fs.writeFile(path.join(project, 'go.mod'), 'module example.com/service\n\ngo 1.24\n');
+
+    expect(detectBackendFrameworkFromProject(project)).toMatchObject({
+      key: 'go',
+      runtime: 'go',
+      confidence: 'high',
+      source: 'manifest',
+    });
   });
 
   it.each([

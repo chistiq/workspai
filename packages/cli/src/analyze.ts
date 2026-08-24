@@ -23,6 +23,17 @@ import {
   projectMetadataCandidates,
   workspaceMetadataCandidates,
 } from './utils/workspace-paths.js';
+import { inferWorkspaceProjectKind } from './utils/project-kind.js';
+import { detectProjectTestSurface } from './utils/project-test-surface.js';
+import {
+  detectProjectGovernance,
+  type ProjectGovernanceProfile,
+} from './utils/project-governance.js';
+import {
+  readWorkspaceContract,
+  type WorkspaceContract,
+  type WorkspaceContractProject,
+} from './utils/workspace-contract.js';
 
 export type AnalyzeSeverity = 'info' | 'warn' | 'fail';
 
@@ -50,6 +61,7 @@ export interface AnalyzeProject {
   hasDockerfile: boolean;
   hasEnvExample: boolean;
   hasCiConfig: boolean;
+  governance: ProjectGovernanceProfile;
   hasHealthEndpoint: boolean;
   scripts: string[];
   findings: AnalyzeFinding[];
@@ -231,30 +243,6 @@ async function hasAnyAbsolutePath(candidates: string[]): Promise<boolean> {
   return false;
 }
 
-async function hasCiConfiguration(projectPath: string): Promise<boolean> {
-  if (
-    await hasAnyPath(projectPath, [
-      '.gitlab-ci.yml',
-      '.circleci/config.yml',
-      'azure-pipelines.yml',
-      'bitbucket-pipelines.yml',
-      'cloudbuild.yaml',
-    ])
-  ) {
-    return true;
-  }
-  try {
-    const workflows = await fs.promises.readdir(path.join(projectPath, '.github', 'workflows'), {
-      withFileTypes: true,
-    });
-    return workflows.some(
-      (entry) => entry.isFile() && /\.(?:ya?ml)$/i.test(entry.name) && !entry.name.startsWith('.')
-    );
-  } catch {
-    return false;
-  }
-}
-
 async function readFirstJsonObject(candidates: string[]): Promise<Record<string, unknown> | null> {
   for (const candidate of candidates) {
     const payload = await readJsonObject(candidate);
@@ -294,23 +282,7 @@ async function hasHealthEndpoint(projectPath: string): Promise<boolean> {
 }
 
 async function hasTestFiles(projectPath: string): Promise<boolean> {
-  const direct = await hasAnyPath(projectPath, [
-    'tests',
-    'test',
-    '__tests__',
-    'src/__tests__',
-    'pytest.ini',
-    'vitest.config.ts',
-    'jest.config.ts',
-  ]);
-  if (direct) return true;
-
-  const packageJson = await readJsonObject(path.join(projectPath, 'package.json'));
-  const scripts =
-    packageJson?.scripts && typeof packageJson.scripts === 'object'
-      ? (packageJson.scripts as Record<string, unknown>)
-      : {};
-  return typeof scripts.test === 'string' && scripts.test.trim().length > 0;
+  return (await detectProjectTestSurface(projectPath)).detected;
 }
 
 async function readScripts(projectPath: string): Promise<string[]> {
@@ -351,7 +323,11 @@ function scoreProject(findings: AnalyzeFinding[]): number {
   return Math.max(0, 100 - penalty);
 }
 
-async function analyzeProject(workspacePath: string, projectPath: string): Promise<AnalyzeProject> {
+async function analyzeProject(
+  workspacePath: string,
+  projectPath: string,
+  contractProject?: WorkspaceContractProject
+): Promise<AnalyzeProject> {
   const projectJson = await readFirstJsonObject(
     projectMetadataCandidates(projectPath, 'project.json')
   );
@@ -359,6 +335,11 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
   const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
   const runtime =
     detection.runtime === 'unknown' ? runtimeCandidates[0] || 'unknown' : detection.runtime;
+  const projectKind = await inferWorkspaceProjectKind(projectPath, projectJson, {
+    runtime,
+    framework: detection.key,
+  });
+  const requiresDeploymentSurface = ['backend', 'service', 'worker'].includes(projectKind);
   const relativePath = normalizeRelative(workspacePath, projectPath);
   const target = relativePath;
   const scripts = await readScripts(projectPath);
@@ -373,7 +354,11 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
     'env.example',
     'config/env.example',
   ]);
-  const hasCiConfig = await hasCiConfiguration(projectPath);
+  const governance = await detectProjectGovernance({
+    projectPath,
+    declaration: contractProject?.governance,
+  });
+  const hasCiConfig = governance.ci.status === 'repository';
   const hasHealthEndpointFlag = await hasHealthEndpoint(projectPath);
 
   const findings: AnalyzeFinding[] = [];
@@ -413,7 +398,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
       )
     );
   }
-  if (!hasEnvExample) {
+  if (requiresDeploymentSurface && !hasEnvExample) {
     findings.push(
       finding(
         'project.env.example.missing',
@@ -426,20 +411,31 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
       )
     );
   }
-  if (!hasCiConfig) {
+  if (governance.ci.status === 'unknown') {
     findings.push(
       finding(
         'project.ci.missing',
         'warn',
         target,
-        'Continuous integration is missing',
-        'No recognized CI/CD configuration file was detected for this project.',
-        'Add CI configuration so tests and checks run automatically for every change.',
+        'CI governance is not proven',
+        'No repository CI surface or canonical external CI declaration was found for this project.',
+        'Add repository CI configuration or declare the external CI authority in the workspace contract.',
         ['.github/workflows/ci.yml']
       )
     );
+  } else if (governance.ci.status === 'external-observed') {
+    findings.push(
+      finding(
+        'project.ci.external-observed',
+        'info',
+        target,
+        'Continuous integration appears externally managed',
+        `Repository documentation references an external CI control plane (${governance.ci.evidence.join(', ')}).`,
+        'Declare the external CI provider in the canonical workspace contract when authoritative release gating depends on it.'
+      )
+    );
   }
-  if (!hasHealthEndpointFlag) {
+  if (requiresDeploymentSurface && !hasHealthEndpointFlag) {
     findings.push(
       finding(
         'project.health.missing',
@@ -451,7 +447,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
       )
     );
   }
-  if (!hasDockerfile) {
+  if (requiresDeploymentSurface && !hasDockerfile) {
     findings.push(
       finding(
         'project.container.missing',
@@ -481,6 +477,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
     hasDockerfile,
     hasEnvExample,
     hasCiConfig,
+    governance,
     hasHealthEndpoint: hasHealthEndpointFlag,
     scripts,
     findings,
@@ -642,8 +639,20 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
   const workspaceDetected = hasWorkspaceRootMarkers(workspacePath);
   const profile = await readWorkspaceProfile(workspacePath);
   const projectPaths = await discoverProjects(workspacePath);
+  let workspaceContract: WorkspaceContract | undefined;
+  try {
+    workspaceContract = (await readWorkspaceContract({ workspacePath })).contract;
+  } catch {
+    // Observed repositories without a canonical contract remain analyzable.
+  }
   const projects = await Promise.all(
-    projectPaths.map((projectPath) => analyzeProject(workspacePath, projectPath))
+    projectPaths.map((projectPath) => {
+      const contractProject = workspaceContract?.projects.find((project) => {
+        const declaredPath = project.externalPath ?? project.relativePath;
+        return path.resolve(workspacePath, declaredPath) === path.resolve(projectPath);
+      });
+      return analyzeProject(workspacePath, projectPath, contractProject);
+    })
   );
   const dependencyEdges = await buildDependencyGraph(projects);
   const dependencyImpact = computeDependencyImpact(projects, dependencyEdges);

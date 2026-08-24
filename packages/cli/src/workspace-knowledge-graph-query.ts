@@ -424,11 +424,34 @@ const NATURAL_LANGUAGE_STOPWORDS = new Set([
   'your',
 ]);
 
+const SEARCH_TOKEN_CANONICAL_FORMS = new Map<string, string>([
+  ['authenticate', 'auth'],
+  ['authenticated', 'auth'],
+  ['authentication', 'auth'],
+  ['authorization', 'auth'],
+  ['authorizing', 'auth'],
+  ['config', 'configuration'],
+  ['configs', 'configuration'],
+  ['dependencies', 'dependency'],
+  ['diagnostics', 'diagnostic'],
+  ['reliable', 'reliability'],
+  ['tested', 'test'],
+  ['testing', 'test'],
+  ['tests', 'test'],
+  ['verification', 'verify'],
+  ['verified', 'verify'],
+  ['verifies', 'verify'],
+  ['verifying', 'verify'],
+]);
+
 function searchTokens(value: string): string[] {
   const tokenize = (candidate: string): string[] =>
     normalized(candidate)
+      .replace(/\bc\+\+/gu, ' cplusplus ')
+      .replace(/\bc#/gu, ' csharp ')
       .split(/[^a-z0-9]+/u)
-      .filter((term) => term.length > 1);
+      .filter((term) => term.length > 1 || term === 'c' || term === 'r')
+      .map((term) => SEARCH_TOKEN_CANONICAL_FORMS.get(term) ?? term);
   return [
     ...new Set([...tokenize(value), ...tokenize(value.replace(/([a-z0-9])([A-Z])/g, '$1 $2'))]),
   ];
@@ -518,6 +541,7 @@ function matchedSearchTerms(document: SearchDocument, terms: string[]): number {
 }
 
 const LANGUAGE_QUERY_TERMS = new Map<string, string>([
+  ['c', 'c'],
   ['clojure', 'clojure'],
   ['cplusplus', 'cpp'],
   ['cpp', 'cpp'],
@@ -539,6 +563,7 @@ const LANGUAGE_QUERY_TERMS = new Map<string, string>([
   ['kotlin', 'kotlin'],
   ['lua', 'lua'],
   ['php', 'php'],
+  ['r', 'r'],
   ['ruby', 'ruby'],
   ['rust', 'rust'],
   ['scala', 'scala'],

@@ -23,6 +23,10 @@ import {
 } from './utils/project-kind.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import {
+  detectProjectGovernance,
+  type ProjectGovernanceProfile,
+} from './utils/project-governance.js';
+import {
   resolveCreatePlannerCapability,
   type CreatePlannerCapability,
 } from './utils/create-planner-capabilities.js';
@@ -108,6 +112,7 @@ export type WorkspaceModelProject = {
     map: Record<string, CommandCapability>;
   };
   importantFiles: string[];
+  governance?: ProjectGovernanceProfile;
   evidence: Record<string, WorkspaceModelEvidenceRef | null>;
   provenance: Record<string, string>;
 };
@@ -278,11 +283,15 @@ const OBSERVABLE_PROJECT_MARKERS = [
   'deno.jsonc',
   'bun.lock',
   'bun.lockb',
+  'bunfig.toml',
+  '.bunfig.toml',
   'deps.edn',
   'project.clj',
   'build.sbt',
   'docker-compose.yml',
   'docker-compose.yaml',
+  'compose.yml',
+  'compose.yaml',
   'terraform.tf',
 ];
 
@@ -455,13 +464,24 @@ async function collectImportantFiles(projectPath: string): Promise<string[]> {
     '.rapidkit/project.json',
     '.rapidkit/context.json',
     'package.json',
+    'product.json',
+    'tsconfig.json',
+    'pnpm-workspace.yaml',
+    'bunfig.toml',
+    '.bunfig.toml',
+    'nx.json',
+    'turbo.json',
     'pyproject.toml',
     'requirements.txt',
     'go.mod',
+    'go.work',
+    'go.work.sum',
     'pom.xml',
     'build.gradle',
     'build.gradle.kts',
     'Cargo.toml',
+    'rust-toolchain.toml',
+    'rust-toolchain',
     'CMakeLists.txt',
     'meson.build',
     'Makefile',
@@ -479,6 +499,9 @@ async function collectImportantFiles(projectPath: string): Promise<string[]> {
     'setup.cfg',
     'Dockerfile',
     'docker-compose.yml',
+    'docker-compose.yaml',
+    'compose.yml',
+    'compose.yaml',
     'README.md',
   ];
   const existing: string[] = [];
@@ -486,6 +509,101 @@ async function collectImportantFiles(projectPath: string): Promise<string[]> {
     if (await fsExtra.pathExists(path.join(projectPath, candidate))) {
       existing.push(candidate);
     }
+  }
+  const rootRuntimeManifests = new Set([
+    'package.json',
+    'pyproject.toml',
+    'go.mod',
+    'go.work',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'Cargo.toml',
+    'CMakeLists.txt',
+    'meson.build',
+    'composer.json',
+    'Gemfile',
+    'mix.exs',
+    'deno.json',
+  ]);
+  if (!existing.some((candidate) => rootRuntimeManifests.has(candidate))) {
+    const nestedCandidates: string[] = [];
+    const ignored = new Set([
+      '.git',
+      '.workspai',
+      '.rapidkit',
+      '.venv',
+      'build',
+      'dist',
+      'node_modules',
+      'target',
+      'third_party',
+      'vendor',
+    ]);
+    const isManifest = (name: string, parentName: string): boolean => {
+      const lower = name.toLowerCase();
+      return (
+        [
+          'package.json',
+          'pyproject.toml',
+          'go.mod',
+          'pom.xml',
+          'build.gradle',
+          'build.gradle.kts',
+          'cargo.toml',
+          'cmakelists.txt',
+          'meson.build',
+          'composer.json',
+          'gemfile',
+          'mix.exs',
+          'deno.json',
+        ].includes(lower) ||
+        lower.endsWith('.gemspec') ||
+        (lower === 'description' && parentName.toLowerCase() === 'r')
+      );
+    };
+    const visit = async (directory: string, depth: number): Promise<void> => {
+      if (depth > 3 || nestedCandidates.length >= 512) return;
+      const entries = await fsExtra.readdir(directory, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (nestedCandidates.length >= 512) return;
+        if (entry.isFile() && isManifest(entry.name, path.basename(directory))) {
+          nestedCandidates.push(
+            path.relative(projectPath, path.join(directory, entry.name)).split(path.sep).join('/')
+          );
+        } else if (entry.isDirectory() && !ignored.has(entry.name)) {
+          await visit(path.join(directory, entry.name), depth + 1);
+        }
+      }
+    };
+    await visit(projectPath, 0);
+    const candidatesByBoundary = new Map<string, string[]>();
+    for (const candidate of nestedCandidates) {
+      const boundary = candidate.split('/')[0];
+      const candidates = candidatesByBoundary.get(boundary) ?? [];
+      candidates.push(candidate);
+      candidatesByBoundary.set(boundary, candidates);
+    }
+    for (const candidates of candidatesByBoundary.values()) {
+      candidates.sort(
+        (left, right) =>
+          left.split('/').length - right.split('/').length || left.localeCompare(right)
+      );
+    }
+    const nested: string[] = [];
+    const boundaries = [...candidatesByBoundary.keys()].sort();
+    for (
+      let offset = 0;
+      nested.length < 16 &&
+      boundaries.some((boundary) => offset < (candidatesByBoundary.get(boundary)?.length ?? 0));
+      offset += 1
+    ) {
+      for (const boundary of boundaries) {
+        const candidate = candidatesByBoundary.get(boundary)?.[offset];
+        if (candidate && nested.length < 16) nested.push(candidate);
+      }
+    }
+    existing.push(...nested.filter((candidate) => !existing.includes(candidate)));
   }
   return existing;
 }
@@ -556,7 +674,10 @@ async function buildProjectModel(
   const detection = detectBackendFrameworkFromProject(projectPath, projectJson);
   const capabilities = resolveProjectCommandCapabilities(projectPath);
   const runtimeSupport = getRuntimeSupport(detection.runtime);
-  const kind = await inferWorkspaceProjectKind(projectPath, projectJson);
+  const kind = await inferWorkspaceProjectKind(projectPath, projectJson, {
+    runtime: detection.runtime,
+    framework: detection.key,
+  });
   const projectName = options.contractProject?.slug
     ? options.contractProject.slug
     : typeof projectJson?.name === 'string' && projectJson.name.trim()
@@ -590,6 +711,10 @@ async function buildProjectModel(
     detection.runtime,
     ...detectedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
   ];
+  const governance = await detectProjectGovernance({
+    projectPath,
+    declaration: options.contractProject?.governance,
+  });
 
   return {
     name: projectName,
@@ -620,6 +745,7 @@ async function buildProjectModel(
       map: capabilities.commandMap,
     },
     importantFiles: await collectImportantFiles(projectPath),
+    governance,
     evidence: await projectEvidenceRefs(workspacePath, projectPath, options.includeEvidence),
     provenance: {
       path: options.contractProject
@@ -629,6 +755,10 @@ async function buildProjectModel(
       framework: detection.source,
       commands: 'project command capability matrix',
       createCapability: 'create planner capability contract',
+      governance:
+        options.contractProject?.governance !== undefined
+          ? 'workspace contract declaration reconciled with repository evidence'
+          : 'repository and documented external governance discovery',
       evidence: 'project .workspai/reports',
     },
   };
@@ -663,6 +793,9 @@ function inferWorkspaceType(projects: WorkspaceModelProject[]): string {
   }
   if (categories.has('extension')) {
     return 'extension-workspace';
+  }
+  if (categories.has('platform')) {
+    return 'platform-workspace';
   }
   if (categories.has('library')) {
     return 'library-workspace';
@@ -1152,7 +1285,27 @@ export function buildWorkspaceModelFacts(model: WorkspaceModel, now: Date): Work
           sourcePath: modelFactSourcePath([projectSource, 'commands', 'fleetStages']),
           reason: 'Safe command availability is derived from package and project command surfaces.',
         },
-      })
+      }),
+      ...(['ci', 'release', 'ownership'] as const).map((control) =>
+        buildWorkspaceFact({
+          id: `project.${project.name}.governance.${control}`,
+          label: `${project.name} ${control} governance`,
+          scope: 'policy',
+          project: project.name,
+          value: project.governance?.[control] ?? {
+            status: 'unknown',
+            provider: null,
+            evidence: [],
+            reference: null,
+          },
+          freshness: {
+            ...projectFreshness,
+            sourcePath: modelFactSourcePath([projectSource, 'governance', control]),
+            reason:
+              'Governance truth is reconciled from repository surfaces and explicit workspace contract declarations.',
+          },
+        })
+      )
     );
 
     for (const [key, ref] of Object.entries(project.evidence)) {
@@ -1806,6 +1959,7 @@ export async function writeWorkspaceModel(
       framework: project.framework,
       kind: project.kind,
       category: project.category,
+      ...(project.governance ? { governance: project.governance } : {}),
       ...(project.kit ? { kit: project.kit } : {}),
     })),
     projectTopology:

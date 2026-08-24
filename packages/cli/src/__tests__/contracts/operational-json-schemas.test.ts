@@ -117,6 +117,7 @@ describe('operational JSON producer contracts', () => {
   it('requires a complete model-cache envelope', () => {
     expectValid('workspace-model-cache.v1.json', {
       schemaVersion: 'workspace-model-cache.v1',
+      producerRevision: 'workspace-model-producer.v3',
       cliVersion: '0.44.0',
       inputsHash: 'a'.repeat(64),
       generatedAt: '2026-07-13T00:00:00.000Z',

@@ -109,6 +109,41 @@ describe('workspace operational skills (Phase 4.A)', () => {
     ).toEqual(['web']);
   });
 
+  it('derives every runtime skill and polyglot validation from one composite project', async () => {
+    const base = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
+    const model = {
+      ...base,
+      projects: [
+        {
+          name: 'runtime-platform',
+          runtime: 'rust',
+          runtimeCandidates: ['rust', 'node', 'deno'],
+          commands: { supported: ['test'] },
+          importantFiles: ['Cargo.toml', 'deno.json'],
+        },
+      ],
+    } as unknown as typeof base;
+
+    const skills = buildWorkspaceOperationalSkills({ workspacePath, model });
+    const ids = skills.map((skill) => skill.skillId);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'workspai-rust-runtime-validation',
+        'workspai-node-runtime-validation',
+        'workspai-deno-runtime-validation',
+        'workspai-polyglot-change-validation',
+      ])
+    );
+    expect(
+      skills.find((skill) => skill.skillId === 'workspai-deno-runtime-validation')?.scopedProjects
+    ).toEqual(['runtime-platform']);
+    expect(
+      skills.find((skill) => skill.skillId === 'workspai-deno-runtime-validation')?.markdown
+    ).toContain(
+      'for a composite secondary boundary, inspect its manifest and Graph proofs instead of assuming the primary adapter covers it'
+    );
+  });
+
   it('reconciles only stale Workspai-generated skills and preserves authored files', async () => {
     const base = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
     const runtimeModel = {

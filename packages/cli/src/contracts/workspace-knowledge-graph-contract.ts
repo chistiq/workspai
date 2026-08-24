@@ -211,6 +211,7 @@ export type WorkspaceKnowledgeGraph = {
     unknownCount: number;
     bindingCoverage?: {
       apiImplementation: WorkspaceKnowledgeBindingCoverage;
+      apiRuntimeRegistration: WorkspaceKnowledgeBindingCoverage;
       projectTests: WorkspaceKnowledgeBindingCoverage;
       projectDeployment: WorkspaceKnowledgeBindingCoverage;
       projectOwnership: WorkspaceKnowledgeBindingCoverage;

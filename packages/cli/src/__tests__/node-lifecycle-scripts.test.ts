@@ -82,6 +82,27 @@ describe('node-lifecycle-scripts', () => {
     });
   });
 
+  it('maps established monorepo lifecycle aliases without requiring wrapper scripts', async () => {
+    const projectPath = await createTempProject('monorepo-aliases', {
+      watch: 'npm-run-all --parallel watch:*',
+      compile: 'gulp compile',
+      eslint: 'node build/eslint.js',
+    });
+
+    expect(resolveNodeLifecycleScript(projectPath, 'dev')).toMatchObject({
+      scriptName: 'watch',
+      source: 'generic-candidate',
+    });
+    expect(resolveNodeLifecycleScript(projectPath, 'build')).toMatchObject({
+      scriptName: 'compile',
+      source: 'generic-candidate',
+    });
+    expect(resolveNodeLifecycleScript(projectPath, 'lint')).toMatchObject({
+      scriptName: 'eslint',
+      source: 'generic-candidate',
+    });
+  });
+
   it('lists only commands with resolvable scripts', async () => {
     const projectPath = await createTempProject('partial', {
       dev: 'next dev',

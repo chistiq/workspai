@@ -3,7 +3,22 @@ import path from 'path';
 
 export type NodePackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
+function declaredNodePackageManager(projectPath: string): NodePackageManager | null {
+  try {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(projectPath, 'package.json'), 'utf8')
+    ) as { packageManager?: unknown };
+    if (typeof packageJson.packageManager !== 'string') return null;
+    const match = packageJson.packageManager.trim().match(/^(npm|pnpm|yarn|bun)(?:@|$)/);
+    return (match?.[1] as NodePackageManager | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function detectNodePackageManager(projectPath: string): NodePackageManager {
+  const declared = declaredNodePackageManager(projectPath);
+  if (declared) return declared;
   if (
     fs.existsSync(path.join(projectPath, 'bun.lock')) ||
     fs.existsSync(path.join(projectPath, 'bunfig.toml'))
@@ -18,6 +33,9 @@ export function detectNodePackageManager(projectPath: string): NodePackageManage
   }
   if (fs.existsSync(path.join(projectPath, 'package-lock.json'))) {
     return 'npm';
+  }
+  if (fs.existsSync(path.join(projectPath, 'pnpm-workspace.yaml'))) {
+    return 'pnpm';
   }
 
   return 'npm';

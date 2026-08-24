@@ -238,6 +238,53 @@ async function captureMissingAdapterDirectories(projectPath: string): Promise<st
   return rulesStat ? [] : [rulesPath];
 }
 
+async function adoptSnapshotFilePaths(
+  workspacePath: string,
+  projectPath: string
+): Promise<string[]> {
+  const projectProviderPaths = [
+    path.join(projectPath, 'AGENTS.md'),
+    ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((relativePath) =>
+      path.join(projectPath, relativePath)
+    ),
+  ];
+  const repositoryLocalTargets: string[] = [];
+  for (const providerPath of projectProviderPaths) {
+    const stat = await fsExtra.lstat(providerPath).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat?.isSymbolicLink()) continue;
+    const targetPath = await fsExtra.realpath(providerPath).catch(() => null);
+    if (!targetPath) continue;
+    const relative = path.relative(projectPath, targetPath);
+    if (
+      !relative ||
+      path.isAbsolute(relative) ||
+      relative === '..' ||
+      relative.startsWith(`..${path.sep}`)
+    ) {
+      continue;
+    }
+    const targetStat = await fsExtra.stat(targetPath).catch(() => null);
+    if (targetStat?.isFile()) repositoryLocalTargets.push(targetPath);
+  }
+
+  return [
+    projectMetadataPath(projectPath, 'project.json'),
+    projectMetadataPath(projectPath, 'adopt.json'),
+    projectMetadataPath(projectPath, 'adopt-readiness.json'),
+    path.join(projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH),
+    ...projectProviderPaths,
+    ...repositoryLocalTargets,
+    path.join(projectPath, '.gitignore'),
+    workspaceMetadataPath(workspacePath, 'imported-projects.json'),
+  ].filter((filePath, index, paths) => paths.indexOf(filePath) === index);
+}
+
 export async function captureAdoptProjectRollbackSnapshot(
   workspacePath: string,
   projectPath: string
@@ -245,21 +292,7 @@ export async function captureAdoptProjectRollbackSnapshot(
   const resolvedWorkspacePath = path.resolve(workspacePath);
   const resolvedProjectPath = path.resolve(projectPath);
   await assertSafeProjectMetadataDirectories(resolvedProjectPath);
-  const filePaths = [
-    projectMetadataPath(resolvedProjectPath, 'project.json'),
-    projectMetadataPath(resolvedProjectPath, 'adopt.json'),
-    projectMetadataPath(resolvedProjectPath, 'adopt-readiness.json'),
-    path.join(resolvedProjectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
-    path.join(resolvedProjectPath, PROJECT_GROUNDING_RELATIVE_PATH),
-    path.join(resolvedProjectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
-    path.join(resolvedProjectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH),
-    path.join(resolvedProjectPath, 'AGENTS.md'),
-    ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((relativePath) =>
-      path.join(resolvedProjectPath, relativePath)
-    ),
-    path.join(resolvedProjectPath, '.gitignore'),
-    workspaceMetadataPath(resolvedWorkspacePath, 'imported-projects.json'),
-  ];
+  const filePaths = await adoptSnapshotFilePaths(resolvedWorkspacePath, resolvedProjectPath);
 
   return {
     workspacePath: resolvedWorkspacePath,
@@ -289,26 +322,14 @@ export async function captureAdoptProjectRollbackSnapshot(
   };
 }
 
-function assertMatchingRollbackSnapshot(
+async function assertMatchingRollbackSnapshot(
   snapshot: AdoptProjectRollbackSnapshot,
   workspacePath: string,
   projectPath: string
-): void {
-  const expectedPaths = [
-    projectMetadataPath(projectPath, 'project.json'),
-    projectMetadataPath(projectPath, 'adopt.json'),
-    projectMetadataPath(projectPath, 'adopt-readiness.json'),
-    path.join(projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
-    path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH),
-    path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
-    path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH),
-    path.join(projectPath, 'AGENTS.md'),
-    ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((relativePath) =>
-      path.join(projectPath, relativePath)
-    ),
-    path.join(projectPath, '.gitignore'),
-    workspaceMetadataPath(workspacePath, 'imported-projects.json'),
-  ].map((filePath) => path.resolve(filePath));
+): Promise<void> {
+  const expectedPaths = (await adoptSnapshotFilePaths(workspacePath, projectPath)).map((filePath) =>
+    path.resolve(filePath)
+  );
   const allowedAdapterDirectories = new Set(
     ['.amazonq', '.amazonq/rules'].map((relativePath) => path.resolve(projectPath, relativePath))
   );
@@ -418,7 +439,7 @@ export async function cleanupAdoptedProjectImport(
   snapshot: AdoptProjectRollbackSnapshot
 ): Promise<void> {
   await assertSafeProjectMetadataDirectories(projectPath);
-  assertMatchingRollbackSnapshot(snapshot, workspacePath, projectPath);
+  await assertMatchingRollbackSnapshot(snapshot, workspacePath, projectPath);
   const failures: unknown[] = [];
   for (const file of snapshot.files) {
     try {
@@ -468,7 +489,7 @@ export async function adoptProjectIntoWorkspace(
   const rollbackSnapshot =
     options.rollbackSnapshot ??
     (await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath));
-  assertMatchingRollbackSnapshot(rollbackSnapshot, workspacePath, projectPath);
+  await assertMatchingRollbackSnapshot(rollbackSnapshot, workspacePath, projectPath);
 
   const existingProjectJson = await readExistingProjectJson(projectPath);
   const refreshManagedDetection = isWorkspaiManagedAdoption(existingProjectJson);
@@ -485,7 +506,16 @@ export async function adoptProjectIntoWorkspace(
     ...nestedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
   ].filter((runtime, index, values) => runtime !== 'unknown' && values.indexOf(runtime) === index);
   if (runtimeCandidates.length === 0) runtimeCandidates.push('unknown');
-  const projectKind = await inferWorkspaceProjectKind(projectPath, existingProjectJson);
+  const projectKind = await inferWorkspaceProjectKind(
+    projectPath,
+    // Bypass the managed project.json kind emitted by an older adoption so a
+    // fresh observation can correct stale runtime-derived classification.
+    refreshManagedDetection ? {} : existingProjectJson,
+    {
+      runtime: detection.runtime,
+      framework: detection.key,
+    }
+  );
   const projectName =
     normalizeProjectName(
       options.name ||

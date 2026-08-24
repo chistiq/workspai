@@ -74,6 +74,16 @@ export interface WorkspaceContractProject {
   runtime?: string;
   framework?: string;
   kit?: string;
+  governance?: Partial<
+    Record<
+      'ci' | 'release' | 'ownership',
+      {
+        mode: 'repository' | 'external';
+        provider?: string;
+        reference?: string;
+      }
+    >
+  >;
   modules: string[];
   ports: WorkspaceContractPort[];
   contracts: {

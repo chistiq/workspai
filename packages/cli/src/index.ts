@@ -8749,6 +8749,7 @@ program
   .option('--include-evidence', 'Read status metadata from referenced evidence reports')
   .option('--scan-depth <count>', 'Observable project discovery depth for large monorepos')
   .option('--limit <count>', 'Bound graph search results (default 12, maximum 100)')
+  .option('--kind <kind>', 'Limit graph search to one canonical entity kind')
   .option(
     '--refresh-graph',
     'Bypass the compatible persisted knowledge graph and rebuild from live workspace sources'
@@ -8905,6 +8906,7 @@ See the command reference for action-specific required inputs and output artifac
       includeEvidence?: boolean;
       scanDepth?: string;
       limit?: string;
+      kind?: string;
       forAgent?: string | boolean;
       agentSync?: boolean;
       noAgentSync?: boolean;
@@ -10032,6 +10034,9 @@ See the command reference for action-specific required inputs and output artifac
             runtime: project.runtime,
             runtimeCandidates: project.runtimeCandidates,
             framework: project.framework,
+            kind: project.kind,
+            category: project.category,
+            ...(project.governance ? { governance: project.governance } : {}),
             ...(project.kit ? { kit: project.kit } : {}),
           })),
           projectTopology: graph,
@@ -10270,9 +10275,20 @@ See the command reference for action-specific required inputs and output artifac
         const projectId = actionOptions.scope?.startsWith('project:')
           ? actionOptions.scope.slice('project:'.length).trim()
           : undefined;
+        const requestedKind = actionOptions.kind ? String(actionOptions.kind).trim() : undefined;
+        if (requestedKind) {
+          const { WORKSPACE_KNOWLEDGE_ENTITY_KINDS } =
+            await import('./contracts/workspace-knowledge-graph-contract.js');
+          if (!WORKSPACE_KNOWLEDGE_ENTITY_KINDS.includes(requestedKind as never)) {
+            console.log(chalk.red(`❌ Unknown graph entity kind: ${requestedKind}`));
+            console.log(chalk.gray(`   Supported: ${WORKSPACE_KNOWLEDGE_ENTITY_KINDS.join(', ')}`));
+            process.exit(1);
+          }
+        }
         const result = searchKnowledgeGraph(knowledgeGraph, {
           query,
           limit: limitValue,
+          ...(requestedKind ? { kind: requestedKind } : {}),
           ...(projectId ? { projectId } : {}),
           projection: 'agent',
         });

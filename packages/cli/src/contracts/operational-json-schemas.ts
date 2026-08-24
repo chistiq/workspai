@@ -2,6 +2,7 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
 } from './workspace-intelligence-runtime-registry.js';
+import { WORKSPACE_MODEL_PRODUCER_REVISION } from './workspace-model-cache-contract.js';
 
 type JsonSchema = Record<string, unknown>;
 
@@ -539,8 +540,9 @@ export function buildOperationalJsonSchemas(): Record<string, JsonSchema> {
     ),
     'workspace-model-cache.v1.json': objectSchema(
       versions.workspaceModelCache,
-      ['cliVersion', 'inputsHash', 'generatedAt', 'model'],
+      ['producerRevision', 'cliVersion', 'inputsHash', 'generatedAt', 'model'],
       {
+        producerRevision: { const: WORKSPACE_MODEL_PRODUCER_REVISION },
         cliVersion: { type: 'string', minLength: 1 },
         inputsHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
         generatedAt: { type: 'string', format: 'date-time' },

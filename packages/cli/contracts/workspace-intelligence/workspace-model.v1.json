@@ -47,6 +47,7 @@
               "extension",
               "service",
               "worker",
+              "platform",
               "library",
               "infra",
               "docs",
@@ -63,6 +64,7 @@
               "frontend",
               "desktop",
               "extension",
+              "platform",
               "library",
               "infrastructure",
               "documentation",
@@ -92,6 +94,7 @@
               "desktop",
               "extension",
               "worker",
+              "platform",
               "library",
               "infra",
               "docs",
@@ -105,13 +108,15 @@
               "frontend",
               "desktop",
               "extension",
+              "platform",
               "library",
               "infrastructure",
               "documentation",
               "quality",
               "unknown"
             ]
-          }
+          },
+          "governance": { "$ref": "#/$defs/projectGovernance" }
         },
         "additionalProperties": true
       }
@@ -135,6 +140,28 @@
     "build": { "$ref": "#/$defs/buildProvenance" }
   },
   "$defs": {
+    "projectGovernance": {
+      "type": "object",
+      "required": ["schemaVersion", "ci", "release", "ownership"],
+      "properties": {
+        "schemaVersion": { "const": "workspai.project-governance.v1" },
+        "ci": { "$ref": "#/$defs/governanceControl" },
+        "release": { "$ref": "#/$defs/governanceControl" },
+        "ownership": { "$ref": "#/$defs/governanceControl" }
+      },
+      "additionalProperties": false
+    },
+    "governanceControl": {
+      "type": "object",
+      "required": ["status", "provider", "evidence", "reference"],
+      "properties": {
+        "status": { "enum": ["repository", "external-declared", "external-observed", "unknown"] },
+        "provider": { "type": ["string", "null"] },
+        "evidence": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "reference": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
     "buildProvenance": {
       "type": "object",
       "description": "Non-structural provenance for the model command execution. It is excluded from the canonical workspace-model hash.",

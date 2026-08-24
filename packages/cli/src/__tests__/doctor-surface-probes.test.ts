@@ -150,6 +150,15 @@ describe('doctor enterprise surface probes', () => {
         command: expect.stringContaining('pnpm install'),
       },
     });
+    expect(probes.find((probe) => probe.id === 'runtime-security-tooling')).toMatchObject({
+      repairCapability: {
+        operation: {
+          type: 'package-json-script',
+          scriptName: 'audit',
+          scriptValue: 'pnpm audit --audit-level=moderate',
+        },
+      },
+    });
   });
 
   it('emits runtime-native dependency baseline repairs across enterprise runtimes', async () => {
@@ -172,7 +181,7 @@ describe('doctor enterprise surface probes', () => {
           process.platform === 'win32'
             ? '.\\mvnw.cmd -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline'
             : './mvnw -B -DskipTests -Dmaven.repo.local=.workspai/cache/java/m2 dependency:go-offline',
-        expectedFiles: ['pom.xml', 'gradle.lockfile'],
+        expectedFiles: ['pom.xml'],
       },
       {
         runtimeFamily: 'rust',
@@ -216,10 +225,8 @@ describe('doctor enterprise surface probes', () => {
         vulnerabilities: 0,
       });
 
-      expect(
-        probes.find((probe) => probe.id === 'surface-dependency-contract'),
-        testCase.runtimeFamily
-      ).toMatchObject({
+      const dependencyProbe = probes.find((probe) => probe.id === 'surface-dependency-contract');
+      expect(dependencyProbe, testCase.runtimeFamily).toMatchObject({
         status: 'warn',
         repairCapability: {
           fixKind: 'dependency-sync',
@@ -230,6 +237,17 @@ describe('doctor enterprise surface probes', () => {
           ),
         },
       });
+      if (testCase.runtimeFamily === 'java') {
+        expect(dependencyProbe).toMatchObject({
+          reason: expect.stringContaining('Maven has no native transitive lockfile'),
+          recommendation: expect.stringContaining('resolved dependency tree or SBOM'),
+          repairCapability: {
+            title: 'Warm Maven dependency graph',
+            limitations: [expect.stringContaining('does not create reproducibility evidence')],
+          },
+        });
+        expect(dependencyProbe?.reason).not.toContain('gradle.lockfile');
+      }
     }
   });
 
@@ -385,6 +403,33 @@ describe('doctor enterprise surface probes', () => {
       status: 'pass',
       applicability: 'not-applicable',
     });
+  });
+
+  it('recognizes both modern Compose filename extensions as container contracts', async () => {
+    for (const fileName of ['compose.yaml', 'docker-compose.yaml']) {
+      const projectPath = await makeProject({
+        'package.json': { name: `compose-${fileName}`, version: '1.0.0' },
+        'package-lock.json': '{}',
+        [fileName]: 'services:\n  api:\n    image: example/api\n',
+      });
+      const probes = await buildEnterpriseSurfaceProbes({
+        projectPath,
+        runtimeFamily: 'node',
+        projectKind: 'platform',
+        packageJsonData: (await fsExtra.readJSON(path.join(projectPath, 'package.json'))) as Record<
+          string,
+          unknown
+        >,
+        hasTests: true,
+        vulnerabilities: 0,
+      });
+
+      expect(probes.find((probe) => probe.id === 'surface-container-contract')).toMatchObject({
+        status: 'pass',
+        applicability: 'applicable',
+        reason: expect.stringContaining('Compose surface detected'),
+      });
+    }
   });
 
   it('does not require an environment contract when source does not consume environment variables', async () => {

@@ -37,6 +37,10 @@ describe('workspace agent context', () => {
       runtime: 'python',
       kit_name: 'fastapi.standard',
     });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', '.github', 'workflows', 'ci.yml'),
+      'name: ci\n'
+    );
     await fsExtra.outputJson(path.join(workspacePath, 'web', 'package.json'), {
       dependencies: {
         next: '^15.0.0',
@@ -76,6 +80,13 @@ describe('workspace agent context', () => {
       lane: 'native',
       canExecuteCreate: true,
       resolved: 'fastapi.standard',
+    });
+    expect(context.projects.find((project) => project.name === 'api')?.governance).toMatchObject({
+      schemaVersion: 'workspai.project-governance.v1',
+      ci: {
+        status: 'repository',
+        evidence: ['.github/workflows'],
+      },
     });
     expect(context.projects.find((project) => project.name === 'web')?.safeCommands).toEqual([]);
     expect(context.workspaceSummary).toContain('polyglot-product-workspace');

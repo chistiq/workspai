@@ -15,6 +15,39 @@ const createTempDir = async (): Promise<string> => {
 };
 
 describe('analyze command', () => {
+  it('recognizes nested tests and avoids deployment findings for package workspaces', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'polyglot-library');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'polyglot-library', kind: 'library', runtime: 'rust' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'Cargo.toml'),
+      '[workspace]\nmembers = ["crates/core"]\n'
+    );
+    await fs.mkdir(path.join(projectDir, 'crates', 'core', 'tests'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'crates', 'core', 'tests', 'parser.rs'), '#[test]\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0].hasTests).toBe(true);
+    expect(report.findings.map((finding) => finding.id)).not.toEqual(
+      expect.arrayContaining([
+        'project.tests.missing',
+        'project.env.example.missing',
+        'project.health.missing',
+        'project.container.missing',
+      ])
+    );
+  });
+
   it('generates a workspace analysis report with project health and CI detection', async () => {
     const workspaceDir = await createTempDir();
     const projectDir = path.join(workspaceDir, 'service-a');
@@ -59,6 +92,82 @@ describe('analyze command', () => {
     expect(report.projects[0].hasHealthEndpoint).toBe(true);
     expect(report.findings.some((item) => item.id === 'project.ci.missing')).toBe(false);
     expect(report.findings.some((item) => item.id === 'project.health.missing')).toBe(false);
+  });
+
+  it('recognizes repository-authored Prow jobs as external CI evidence', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'go-platform');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' }, null, 2)
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'go-platform', runtime: 'go', kind: 'platform' }, null, 2)
+    );
+    await fs.writeFile(path.join(projectDir, 'go.mod'), 'module example.com/platform\n');
+    await fs.mkdir(path.join(projectDir, 'prow'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'prow', 'presubmit.sh'), '#!/usr/bin/env bash\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0].hasCiConfig).toBe(true);
+    expect(report.findings.some((item) => item.id === 'project.ci.missing')).toBe(false);
+  });
+
+  it('accepts authoritative external CI governance without inventing repository files', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'externally-governed');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'externally-governed', runtime: 'go', kind: 'platform' })
+    );
+    await fs.writeFile(path.join(projectDir, 'go.mod'), 'module example.com/platform\n');
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.contract.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'rapidkit.workspace.contract',
+        generatedAt: '2026-08-24T00:00:00.000Z',
+        workspace: { name: 'platform' },
+        projects: [
+          {
+            slug: 'externally-governed',
+            relativePath: 'externally-governed',
+            modules: [],
+            ports: [],
+            contracts: {
+              owns: [],
+              apis: [],
+              publishes: [],
+              consumes: [],
+              dependsOn: [],
+              env: [],
+            },
+            governance: {
+              ci: {
+                mode: 'external',
+                provider: 'central-prow',
+                reference: 'https://example.test/ci/platform',
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0].hasCiConfig).toBe(false);
+    expect(report.projects[0].governance.ci).toMatchObject({
+      status: 'external-declared',
+      provider: 'central-prow',
+    });
+    expect(report.findings.some((item) => item.id === 'project.ci.missing')).toBe(false);
   });
 
   it('analyzes adopted external projects registered by the workspace', async () => {

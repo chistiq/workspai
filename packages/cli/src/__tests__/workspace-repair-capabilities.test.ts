@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   WORKSPACE_REPAIR_ADAPTER_CAPABILITIES,
+  WORKSPACE_REPAIR_FAILURE_FAMILIES,
+  WORKSPACE_REPAIR_FAILURE_RECOVERY_POLICY,
+  WORKSPACE_REPAIR_QUALIFICATION_SCOPES,
+  WORKSPACE_REPAIR_RECOVERY_PATHS,
   buildWorkspaceRepairCapabilitiesContract,
+  validateWorkspaceRepairQualificationMatrix,
   type WorkspaceRepairAdapterId,
 } from '../contracts/workspace-repair-capabilities-contract.js';
 import { inspectWorkspaceRepairCapabilities } from '../workspace-repair-engine.js';
@@ -62,6 +67,25 @@ describe('Workspace Repair capability contract', () => {
       contract.adapters.length
     );
     expect(contract.adapters).toEqual(WORKSPACE_REPAIR_ADAPTER_CAPABILITIES);
+    expect(validateWorkspaceRepairQualificationMatrix()).toEqual([]);
+    expect(contract.qualificationMatrix).toMatchObject({
+      schemaVersion: 'workspai.workspace-repair-qualification-matrix.v1',
+      status: 'contract-enforced',
+      dimensions: {
+        adapters: WORKSPACE_REPAIR_ADAPTER_CAPABILITIES.map((adapter) => adapter.id),
+        scopes: WORKSPACE_REPAIR_QUALIFICATION_SCOPES,
+        failureFamilies: WORKSPACE_REPAIR_FAILURE_FAMILIES,
+        recoveryPaths: WORKSPACE_REPAIR_RECOVERY_PATHS,
+        failureRecoveryPolicy: WORKSPACE_REPAIR_FAILURE_RECOVERY_POLICY,
+      },
+      invariants: {
+        everyAdapterDeclaresClosureStages: true,
+        everyFailureTerminates: true,
+        everyMutationIsCheckpointed: true,
+        workspaceAndProjectScopesUseTheSameEngine: true,
+        linkedProjectsRemainBoundaryChecked: true,
+      },
+    });
     for (const adapter of contract.adapters) {
       expect(adapter.manifests.length).toBeGreaterThan(0);
       expect(adapter.requiredToolFamilies.length).toBeGreaterThan(0);

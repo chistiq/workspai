@@ -292,4 +292,42 @@ describe('project command capabilities', () => {
     expect(capabilities.commandMap.build.reason).toContain('primary dotnet adapter');
     expect(capabilities.commandMap.build.reason).toContain('explicit project boundaries');
   });
+
+  it('exposes only root-declared Bun lifecycle scripts inside a composite boundary', async () => {
+    const projectRoot = await createProject(
+      {
+        runtime: 'bun',
+        framework: 'bun',
+        module_support: false,
+      },
+      {
+        'package.json': JSON.stringify({
+          packageManager: 'bun@1.3.14',
+          scripts: {
+            dev: 'bun src/index.ts',
+            test: 'bun test',
+            lint: 'oxlint',
+          },
+        }),
+        'bun.lock': '',
+        'packages/sdk/package.json': JSON.stringify({ name: '@example/sdk' }),
+      }
+    );
+
+    const capabilities = resolveProjectCommandCapabilities(projectRoot);
+
+    expect(capabilities.runtimeCandidates).toEqual(['bun', 'node']);
+    expect(capabilities.lifecycleCoverage).toBe('primary-runtime-only');
+    expect(capabilities.commandMap.dev).toMatchObject({
+      status: 'supported',
+      executionScope: 'local-only',
+    });
+    expect(capabilities.commandMap.test).toMatchObject({
+      status: 'supported',
+      fleetEligible: true,
+    });
+    expect(capabilities.commandMap.lint).toMatchObject({ status: 'supported' });
+    expect(capabilities.commandMap.build).toMatchObject({ status: 'unsupported' });
+    expect(capabilities.commandMap.dev.reason).toContain('primary bun adapter');
+  });
 });

@@ -84,6 +84,7 @@ export interface ProjectContextAgent {
     framework?: string;
     kit?: string;
     supportTier?: string;
+    governance?: NonNullable<WorkspaceModelProject['governance']>;
     commands: {
       supported: string[];
       unsupported: string[];
@@ -787,13 +788,36 @@ async function readProjectBlockers(
       }
     }
   }
-  const doctor = await readJsonIfPresent<{
+  const projectDoctor = await readJsonIfPresent<{
+    generatedAt?: unknown;
     projectName?: unknown;
     project?: Record<string, unknown>;
   }>(path.join(workspacePath, '.workspai', 'reports', 'doctor-project-last-run.json'));
-  if (doctor?.projectName === projectName) {
+  const workspaceDoctor = await readJsonIfPresent<{
+    generatedAt?: unknown;
+    projects?: Array<Record<string, unknown>>;
+  }>(path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'));
+  const workspaceProject = workspaceDoctor?.projects?.find(
+    (project) => project.name === projectName
+  );
+  const doctorCandidates = [
+    ...(projectDoctor?.project &&
+    (projectDoctor.projectName === projectName || projectDoctor.project.name === projectName)
+      ? [{ generatedAt: projectDoctor.generatedAt, project: projectDoctor.project }]
+      : []),
+    ...(workspaceProject
+      ? [{ generatedAt: workspaceDoctor?.generatedAt, project: workspaceProject }]
+      : []),
+  ].sort((left, right) => {
+    const leftTime = typeof left.generatedAt === 'string' ? Date.parse(left.generatedAt) || 0 : 0;
+    const rightTime =
+      typeof right.generatedAt === 'string' ? Date.parse(right.generatedAt) || 0 : 0;
+    return rightTime - leftTime;
+  });
+  const currentDoctor = doctorCandidates[0];
+  if (currentDoctor) {
     for (const finding of listCanonicalDoctorFindings({
-      project: doctor.project,
+      project: currentDoctor.project,
     })) {
       blockers.push({
         source: 'doctor-project',
@@ -993,6 +1017,7 @@ export async function buildProjectContextAgent(
         ? { kit: modelProject?.kit ?? contractProject?.kit }
         : {}),
       ...(modelProject?.supportTier ? { supportTier: modelProject.supportTier } : {}),
+      ...(modelProject?.governance ? { governance: modelProject.governance } : {}),
       commands: {
         supported: [...(modelProject?.commands.supported ?? [])].sort(),
         unsupported: [...(modelProject?.commands.unsupported ?? [])].sort(),
@@ -1480,6 +1505,28 @@ async function findUnsafeAdapterParent(
   return null;
 }
 
+async function repositoryLocalSymlinkTarget(
+  projectPath: string,
+  linkPath: string
+): Promise<string | null> {
+  const targetPath = await fsp.realpath(linkPath).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!targetPath) return null;
+  const relative = path.relative(projectPath, targetPath);
+  if (
+    !relative ||
+    path.isAbsolute(relative) ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`)
+  ) {
+    return null;
+  }
+  const stat = await fsp.stat(targetPath).catch(() => null);
+  return stat?.isFile() ? targetPath : null;
+}
+
 function projectAgentAdapterBody(input: {
   adapter: ProjectAgentAdapter;
   agentsAvailable: boolean;
@@ -1524,15 +1571,26 @@ async function reconcileProjectAgentAdapter(input: {
     };
   }
   const absolutePath = path.join(input.projectPath, input.adapter.relativePath);
+  let managedPath = absolutePath;
   const stat = await fsp.lstat(absolutePath).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   });
   if (stat?.isSymbolicLink()) {
-    return { reason: `${input.adapter.relativePath} is a repository-authored symbolic link.` };
+    const targetPath = await repositoryLocalSymlinkTarget(input.projectPath, absolutePath);
+    if (!targetPath) {
+      return {
+        reason: `${input.adapter.relativePath} is a symbolic link without a safe repository-local file target.`,
+      };
+    }
+    const target = await fsp.readFile(targetPath, 'utf8');
+    if (target.includes(WORKSPAI_PROJECT_GROUNDING_START)) {
+      return { path: input.adapter.relativePath };
+    }
+    managedPath = targetPath;
   }
   const existed = stat?.isFile() === true;
-  const existing = await fsp.readFile(absolutePath, 'utf8').catch((error) => {
+  const existing = await fsp.readFile(managedPath, 'utf8').catch((error) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
     throw error;
   });
@@ -1557,11 +1615,11 @@ async function reconcileProjectAgentAdapter(input: {
           .join('\n\n')
       : withoutManaged;
   if (!updated) {
-    if (existed) await fsp.rm(absolutePath, { force: true });
+    if (existed && !stat?.isSymbolicLink()) await fsp.rm(managedPath, { force: true });
     return {};
   }
   const normalized = `${updated.trimEnd()}\n`;
-  if (normalized !== existing) await writeAtomic(absolutePath, normalized);
+  if (normalized !== existing) await writeAtomic(managedPath, normalized);
   return input.mode === 'managed' ? { path: input.adapter.relativePath } : {};
 }
 
@@ -1628,11 +1686,15 @@ async function reconcileProjectAgents(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   });
-  // Preserve repository-authored symlinks. Workspai still publishes portable
-  // grounding under .workspai without following or replacing the link target.
-  if (agentsStat?.isSymbolicLink()) return undefined;
-  const existed = agentsStat?.isFile() === true;
-  const existing = await fsp.readFile(agentsPath, 'utf8').catch((error) => {
+  const managedPath = agentsStat?.isSymbolicLink()
+    ? await repositoryLocalSymlinkTarget(projectPath, agentsPath)
+    : agentsPath;
+  // Never replace or follow a link outside the project. A repository-local
+  // regular target is the authored instruction file that the host actually
+  // reads, so the same bounded managed block used for AGENTS.md is safe there.
+  if (!managedPath) return undefined;
+  const existed = agentsStat?.isFile() === true || agentsStat?.isSymbolicLink() === true;
+  const existing = await fsp.readFile(managedPath, 'utf8').catch((error) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
     throw error;
   });
@@ -1651,11 +1713,11 @@ async function reconcileProjectAgents(
       ? upsertProjectManagedAgentSection(existing, buildProjectAgentsSection(context))
       : removeProjectManagedAgentSection(existing);
   if (!updated) {
-    if (existed) await fsp.rm(agentsPath, { force: true });
+    if (existed && !agentsStat?.isSymbolicLink()) await fsp.rm(managedPath, { force: true });
     return undefined;
   }
   const normalized = `${updated.trimEnd()}\n`;
-  if (normalized !== existing) await writeAtomic(agentsPath, normalized);
+  if (normalized !== existing) await writeAtomic(managedPath, normalized);
   return mode === 'managed' ? agentsPath : undefined;
 }
 

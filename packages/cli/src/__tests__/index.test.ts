@@ -1290,10 +1290,22 @@ describe('CLI Entry Point', () => {
 
       const search = await execa(
         'node',
-        [CLI_PATH, 'workspace', 'graph', 'search', 'project', '--limit', '1', '--json'],
+        [
+          CLI_PATH,
+          'workspace',
+          'graph',
+          'search',
+          'project',
+          '--kind',
+          'project',
+          '--limit',
+          '1',
+          '--json',
+        ],
         { cwd: workspaceRoot, reject: false }
       );
       expect(search.stdout).not.toContain('workspace.option.unsupported');
+      expect(JSON.parse(search.stdout)).toMatchObject({ kind: 'project' });
 
       const overlay = await execa(
         'node',

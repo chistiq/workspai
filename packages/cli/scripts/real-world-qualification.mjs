@@ -229,6 +229,28 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
       'The canonical chain must retain model and agent-context stages on blocked repositories.'
     )
   );
+  const modelArtifact = readJsonFile(
+    path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
+  );
+  const qualifiedProjectModel = modelArtifact?.projects?.find(
+    (candidate) => candidate?.name === projectName
+  );
+  project.assertions.push(
+    assertion(
+      'model.governance-truth-contract',
+      modelArtifact?.schemaVersion === 'workspace-model.v1' &&
+        ['repository', 'external-declared', 'external-observed', 'unknown'].includes(
+          qualifiedProjectModel?.governance?.ci?.status
+        ) &&
+        ['repository', 'external-declared', 'external-observed', 'unknown'].includes(
+          qualifiedProjectModel?.governance?.release?.status
+        ) &&
+        ['repository', 'external-declared', 'external-observed', 'unknown'].includes(
+          qualifiedProjectModel?.governance?.ownership?.status
+        ),
+      'Every qualified project must publish explicit CI, release, and ownership truth without treating unknown external systems as repository evidence.'
+    )
+  );
   const graphArtifact = readJsonFile(
     path.join(workspacePath, '.workspai', 'reports', 'workspace-knowledge-graph.json')
   );
@@ -246,6 +268,30 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
           serializedGraphArtifact.includes(candidate)
         ),
       'The canonical graph must remain proof-carrying, portable, secret-free, and free of failed providers or machine-local paths.'
+    )
+  );
+
+  const repairCapabilities = run(project, {
+    id: 'workspace.repair-capabilities',
+    cwd: workspacePath,
+    argv: ['workspace', 'repair', 'capabilities', '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 60_000,
+  });
+  const repairMatrix = repairCapabilities.json?.qualificationMatrix;
+  project.assertions.push(
+    assertion(
+      'repair.qualification-matrix-contract',
+      repairCapabilities.json?.schemaVersion === 'workspai.workspace-repair-capabilities.v1' &&
+        repairMatrix?.status === 'contract-enforced' &&
+        repairMatrix?.dimensions?.adapters?.length >= 13 &&
+        repairMatrix?.dimensions?.scopes?.length >= 4 &&
+        repairMatrix?.dimensions?.failureFamilies?.length >= 10 &&
+        repairMatrix?.dimensions?.recoveryPaths?.length >= 6 &&
+        repairMatrix?.invariants?.everyAdapterDeclaresClosureStages === true &&
+        repairMatrix?.invariants?.everyFailureTerminates === true &&
+        repairMatrix?.invariants?.everyMutationIsCheckpointed === true,
+      'Repair qualification must expose the complete adapter, scope, failure, recovery, and closure matrix used by every consumer.'
     )
   );
 

@@ -262,6 +262,43 @@ describe('adopt-project', () => {
     });
   });
 
+  it('keeps detected application runtime ahead of repository-level infrastructure markers', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = await makeTempDir('rapidkit-adopt-composite-fastapi-source-');
+    await fsExtra.writeFile(path.join(projectPath, 'requirements.txt'), 'fastapi\nuvicorn\n');
+    await fsExtra.writeFile(path.join(projectPath, 'Dockerfile'), 'FROM python:3.13-slim\n');
+    await fsExtra.writeFile(path.join(projectPath, 'docker-compose.yml'), 'services: {}\n');
+
+    const adopted = await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      name: 'composite-api',
+    });
+
+    const projectJson = await fsExtra.readJson(adopted.projectJsonPath);
+    expect(projectJson).toMatchObject({
+      kind: 'backend',
+      runtime: 'python',
+      framework: 'fastapi',
+    });
+    const model = await buildWorkspaceModel({ workspacePath });
+    expect(model.projects).toEqual([
+      expect.objectContaining({ name: 'composite-api', kind: 'backend', runtime: 'python' }),
+    ]);
+
+    await fsExtra.writeJson(adopted.projectJsonPath, { ...projectJson, kind: 'infra' });
+    await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      name: 'composite-api',
+    });
+    expect(await fsExtra.readJson(adopted.projectJsonPath)).toMatchObject({
+      kind: 'backend',
+      runtime: 'python',
+      framework: 'fastapi',
+    });
+  });
+
   it('blocks mismatched adoption in strict profile policy mode', async () => {
     const workspacePath = await makeWorkspace();
     await fsExtra.writeJson(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
@@ -552,24 +589,31 @@ describe('adopt-project', () => {
       return;
     }
 
+    const snapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath);
     const adopted = await adoptProjectIntoWorkspace({
       workspacePath,
       source: projectPath,
       projectGrounding: 'managed',
+      rollbackSnapshot: snapshot,
     });
 
     expect((await fsExtra.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
     expect(await fsExtra.readlink(path.join(projectPath, 'AGENTS.md'))).toBe('.rules');
-    expect(await fsExtra.readFile(path.join(projectPath, '.rules'), 'utf8')).toBe(authoredRules);
+    const groundedRules = await fsExtra.readFile(path.join(projectPath, '.rules'), 'utf8');
+    expect(groundedRules).toContain(authoredRules.trim());
+    expect(groundedRules).toContain('WORKSPAI:PROJECT-GROUNDING:START');
     expect(
       await fsExtra.pathExists(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))
     ).toBe(true);
-    const snapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath);
     expect(snapshot.files.find((file) => file.path.endsWith('AGENTS.md'))).toMatchObject({
       preserve: 'symbolic-link',
     });
+    expect(snapshot.files.find((file) => file.path.endsWith('.rules'))?.contents?.toString()).toBe(
+      authoredRules
+    );
     await cleanupAdoptedProjectImport(workspacePath, projectPath, snapshot);
     expect((await fsExtra.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+    expect(await fsExtra.readFile(path.join(projectPath, '.rules'), 'utf8')).toBe(authoredRules);
     expect(adopted.effects.repositoryControlFiles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

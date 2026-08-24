@@ -469,7 +469,10 @@ export async function importProjectIntoWorkspace(
     await assertSafeProjectMetadataDirectories(destinationPath);
     const existingProjectJson = await readExistingProjectJson(destinationPath);
     const detection = detectBackendFrameworkFromProject(destinationPath, existingProjectJson);
-    const projectKind = await inferWorkspaceProjectKind(destinationPath, existingProjectJson);
+    const projectKind = await inferWorkspaceProjectKind(destinationPath, existingProjectJson, {
+      runtime: detection.runtime,
+      framework: detection.key,
+    });
     const [workspaceProfile, profilePolicyMode] = await Promise.all([
       readWorkspaceManifestProfile(workspacePath),
       options.profilePolicyMode

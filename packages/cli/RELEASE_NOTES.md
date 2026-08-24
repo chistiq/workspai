@@ -5,7 +5,49 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.64.0 (August 22, 2026)
+## Latest Release: v0.65.0 (August 24, 2026)
+
+### Evidence-Bound Project Intelligence and Repair Qualification
+
+Workspai 0.65.0 strengthens the complete path from repository adoption to an
+agent-ready, verifiable workspace. Project identity, lifecycle, tests,
+governance, runtime topology, and Goal context are now derived through shared
+evidence rules that remain accurate across application, library, platform,
+extension, native, and polyglot repositories.
+
+**What's New:**
+
+- Higher-fidelity project taxonomy and lifecycle discovery for Node.js, Go,
+  JVM, native, generated, aggregate, and mixed-runtime repositories.
+- Proof-backed runtime API registration, explicit implementation-versus-
+  registration coverage, and entity-kind-filtered Graph retrieval.
+- Canonical CI, release, and ownership governance shared by the workspace
+  contract, Model, Graph, Analyze, project lens, and agent context.
+- Portable test-surface evidence used consistently by Doctor, Analyze,
+  Readiness, Goal Packs, and runtime capabilities.
+- A contract-enforced repair qualification matrix covering every supported
+  adapter, scope, failure family, and terminal recovery path.
+- Stronger Goal retrieval diversity, cache invalidation, adoption rollback, and
+  real-repository qualification guarantees.
+
+**Compatibility:** Existing CLI commands and version-one Workspace
+Intelligence contracts remain supported. New governance, test-surface, Graph,
+and repair-qualification fields are additive. No public command is removed.
+
+**Publication status:** Released August 24, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.65.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.65.0/packages/cli/releases/RELEASE_NOTES_v0.65.0.md)
+
+---
+
+## v0.64.0 (August 22, 2026)
 
 ### Platform-Aware Creation and Polyglot Intelligence Fidelity
 

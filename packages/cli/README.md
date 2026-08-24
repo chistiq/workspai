@@ -18,28 +18,28 @@ npx workspai adopt .
 npx workspai workspace intelligence run --for-agent generic
 ```
 
-Two commands. Your project becomes a fully understood workspace:
+Two commands. Your project gains a bounded, evidence-backed system view:
 
 ### Before vs After
 
 | Before Workspai | After Workspai |
 | --- | --- |
-| Agent scans thousands of files for context | Agent reads one bounded context document |
+| Agent scans thousands of files for context | Agent starts from bounded entry and context artifacts |
 | No dependency map between services | Searchable graph with source-level proof |
-| Broken test blocks release, no one knows why | Doctor names the failing project and fix path |
+| Broken test blocks release, no one knows why | Doctor localizes the blocker and next target |
 | Every AI session starts from scratch | Sessions resume from durable evidence |
 
 Here is what you get:
 
 | What it produces | Why it matters |
 | --- | --- |
-| **Workspace Model** | A canonical inventory of every project, runtime, framework, and dependency |
+| **Workspace Model** | A canonical inventory of registered projects, detected runtimes, frameworks, and proven dependencies |
 | **Knowledge Graph** | Searchable relationships between projects, backed by source-level proof |
 | **Health & Readiness** | Doctor checks, verification gates, and release posture based on evidence, not guesses |
 | **Agent Context** | Bounded, focused instructions so AI tools read what they need, not the entire repo |
 | **Agent Rules** | Ready-to-use grounding for Cursor, Copilot, Claude, Codex, Gemini, and more |
 | **Agent Skills** | Runtime-, polyglot-, test-, and delivery-aware operational playbooks, with portable `SKILL.md` projections where the host supports Agent Skills |
-| **MCP Server** | 14 read-oriented tools so MCP clients can query evidence, graph, blockers, and context live |
+| **MCP Server** | Versioned read-oriented tools for querying evidence, graph, blockers, and context live |
 
 `generic` is the safe default when you do not yet know which agent will use the
 project: Workspai builds one portable context and prepares discovery adapters
@@ -47,46 +47,28 @@ for every supported host, without duplicating the Model or Graph.
 
 ### What the output looks like
 
-After a single run, `.workspai/` contains everything agents and CI need:
+After a single run, the canonical workspace stores governed artifacts under
+`.workspai/`. Each linked project keeps only its local entry contract, scoped
+lens, and workspace binding under its own `.workspai/` directory:
 
 ```text
-your-workspace/                              # ── Workspace level ──
+your-workspace/                         # canonical system boundary
 ├── .workspai/
-│   ├── workspace.json                       # workspace identity & profile
-│   ├── workspace.contract.json              # project registry, ports, APIs
-│   ├── reports/                             # intelligence artifacts
-│   │   ├── workspace-model.json             # projects, runtimes, deps
-│   │   ├── workspace-knowledge-graph.json   # proof-backed relationships
-│   │   ├── workspace-context-agent.json     # bounded context for AI agents
-│   │   ├── workspace-skills-index.json      # operational skills inventory
-│   │   ├── workspace-verify-last-run.json   # pass/fail with evidence
-│   │   ├── INDEX.json                       # evidence inventory & read order
-│   │   └── ...                              # impact, doctor, analyze, explain, etc.
-│   └── skills/                              # generated operational skills
-│       ├── workspai-release-readiness.md     # always available
-│       ├── workspai-node-runtime-validation.md  # only when Node is detected
-│       └── workspai-polyglot-change-validation.md # only for multi-runtime workspaces
-│
-│  # Workspace-level agent grounding (per host):
+│   ├── workspace.contract.json         # registered projects and declarations
+│   ├── reports/
+│   │   ├── workspace-model.json        # canonical system model
+│   │   ├── workspace-knowledge-graph.json # derived proof-backed graph
+│   │   ├── workspace-context-agent.json   # bounded consumer context
+│   │   └── INDEX.json                  # evidence inventory and read order
+│   └── skills/                         # detected operational playbooks
 ├── AGENTS.md · CLAUDE.md · GEMINI.md · QWEN.md
-├── .cursor/rules/workspai-*.mdc             # 5 rules + skill
-├── .claude/rules/workspai-*.md              # workspace + evidence
-├── .grok/rules/ · .windsurf/rules/          # grounding + evidence
-├── .amazonq/rules/ · .github/               # Copilot, prompts, agents, skills
-│
-│  # ── Project level (repeated per project) ──
+├── .cursor/ · .claude/ · .github/ · .agents/ # host-native projections
 ├── nova-api/
-│   ├── .workspai/
-│   │   ├── project.json                     # project identity & metadata
-│   │   ├── workspace-link.local.json        # machine-local workspace binding
-│   │   ├── agent-entry.v1.json              # canonical agent entry point
-│   │   ├── PROJECT-GROUNDING.md             # project-level grounding
-│   │   └── reports/
-│   │       └── project-context-agent.json   # scoped project context
-│   ├── AGENTS.md · CLAUDE.md · GEMINI.md · QWEN.md
-│   └── .amazonq/rules/workspai-agent-entry.md
-│
-└── summit-web/                              # (same structure per project)
+│   └── .workspai/
+│       ├── agent-entry.v1.json         # canonical project entry
+│       ├── workspace-link.local.json   # machine-local binding
+│       └── reports/project-context-agent.json
+└── summit-web/                         # same project-level boundary
 ```
 
 Your agent starts with `agent-entry.v1.json`, compact workspace context, and the Skills
@@ -105,8 +87,8 @@ scan or complete Graph load is needed for ordinary work.
 Workspai is an open-source CLI that brings related software projects together,
 so people and AI tools can understand and work with the same system.
 
-- **See the whole system:** every project, service, and dependency in one model.
-- **Ask with proof:** trace any answer back to the exact file and line.
+- **See the whole system:** registered projects and proven relationships in one model.
+- **Ask with proof:** trace answers back to their evidence record and source location.
 - **Change safely:** know impact before you commit, verify after, and give AI agents
   only the context they need.
 
@@ -202,7 +184,7 @@ generated in one run. The key files for each audience:
 | **AI agent** | `agent-entry.v1.json` (project) → `workspace-context-agent.json` (workspace) |
 | **Developer** | Terminal summary, or `workspace-explain-last-run.json` for diagnosis |
 | **CI / automation** | `workspace-verify-last-run.json` (exit code 0 = pass, 2 = blocked) |
-| **MCP client** | `workspace mcp serve` (14 read-oriented tools over JSON-RPC) |
+| **MCP client** | `workspace mcp serve` (versioned read-oriented tools over JSON-RPC) |
 | **IDE extension** | Same artifacts + watch events |
 
 An agent can prove that it entered through governed evidence before scanning
@@ -264,6 +246,17 @@ complements this chain; it does not replace it.
 
 The deterministic model, graph, and checks do not require an AI API key.
 
+### See the evidence-backed graph
+
+The graph connects projects, APIs, packages, tests, infrastructure, ownership,
+and runtime topology only when current evidence supports the relationship.
+Every visible relationship can retain proof, while missing relationships stay
+explicitly unproven.
+
+![Interactive 3D view of a real Workspai workspace graph](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspace-graph.gif)
+
+[Query, explain, and export the graph](docs/workspace-knowledge-graph.md)
+
 ## Everyday workflows
 
 | Goal                                       | Command                                                                          |
@@ -294,7 +287,7 @@ Workspai exposes the same governed data through several stable surfaces:
 - JSON output for scripts and CI;
 - versioned artifacts under `.workspai/reports/`;
 - focused context and instructions for AI agents;
-- MCP server with 14 read-oriented workspace tools (`workspace mcp serve`);
+- MCP server with versioned read-oriented workspace tools (`workspace mcp serve`);
 - watch events and reports for IDEs and dashboards;
 - JSON, JSON-LD, Mermaid, DOT, GraphML, and GEXF graph exports.
 

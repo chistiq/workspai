@@ -8,6 +8,7 @@ import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-poli
 import { parseAllDocuments } from 'yaml';
 
 import type { WorkspaceContract } from './utils/workspace-contract.js';
+import type { ProjectGovernanceProfile } from './utils/project-governance.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
@@ -46,6 +47,7 @@ export type WorkspaceKnowledgeProjectInput = {
   kit?: string;
   kind?: string;
   category?: string;
+  governance?: ProjectGovernanceProfile;
 };
 
 export type BuildWorkspaceKnowledgeGraphOptions = {
@@ -246,6 +248,8 @@ const MANIFEST_NAMES = new Set([
   'WORKSPACE.bazel',
 ]);
 
+const ARCHITECTURE_CONTROL_NAMES = new Set([...MANIFEST_NAMES, 'go.work', 'go.work.sum']);
+
 const HTTP_METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
 const SOURCE_EXTENSIONS = new Set([
   '.c',
@@ -332,10 +336,61 @@ function sourceLanguage(filePath: string, primaryRuntime?: string): string {
   return languages[extension] ?? extension.slice(1);
 }
 
-function balancedSourceSelection(files: readonly string[], limit: number): string[] {
+const LOWER_PRIORITY_SOURCE_SEGMENTS = new Set([
+  'external',
+  'third_party',
+  'third-party',
+  'vendor',
+  'vendors',
+  'vendored',
+]);
+
+const CANONICAL_SOURCE_SEGMENTS = new Set([
+  'app',
+  'apps',
+  'cli',
+  'cmd',
+  'core',
+  'extensions',
+  'internal',
+  'lib',
+  'packages',
+  'services',
+  'src',
+]);
+
+function sourceSelectionPriority(file: string, projectRoot: string): number {
+  const relative = toPosix(path.relative(projectRoot, file));
+  const segments = relative.split('/').filter(Boolean);
+  const topLevel = segments[0]?.toLowerCase() ?? '';
+  const containsLowerPrioritySegment = segments.some((segment) =>
+    LOWER_PRIORITY_SOURCE_SEGMENTS.has(segment.toLowerCase())
+  );
+
+  // Prefer the repository's authored source surfaces over vendored or mirrored
+  // trees. The latter remain eligible and language balancing can still select
+  // representatives from them; they simply cannot consume the entire bounded
+  // extraction window before canonical source is observed.
+  return (
+    (containsLowerPrioritySegment ? 1_000 : 0) +
+    (CANONICAL_SOURCE_SEGMENTS.has(topLevel) ? -100 : 0) +
+    Math.min(segments.length, 20)
+  );
+}
+
+function balancedSourceSelection(
+  files: readonly string[],
+  limit: number,
+  projectRoot: string
+): string[] {
   if (files.length <= limit) return [...files];
+  const prioritized = [...files].sort(
+    (left, right) =>
+      sourceSelectionPriority(left, projectRoot) - sourceSelectionPriority(right, projectRoot) ||
+      left.localeCompare(right)
+  );
   const byLanguage = new Map<string, string[]>();
-  for (const file of files) {
+  for (const file of prioritized) {
     const language = sourceLanguage(file);
     const languageFiles = byLanguage.get(language) ?? [];
     languageFiles.push(file);
@@ -346,7 +401,7 @@ function balancedSourceSelection(files: readonly string[], limit: number): strin
   for (const languageFiles of [...byLanguage.values()]) {
     for (const file of languageFiles.slice(0, floor)) selected.add(file);
   }
-  for (const file of files) {
+  for (const file of prioritized) {
     if (selected.size >= limit) break;
     selected.add(file);
   }
@@ -789,6 +844,45 @@ async function listFiles(root: string, maxFiles: number): Promise<string[]> {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * Architecture manifests must not disappear merely because a large monorepo
+ * exhausts the ordinary source inventory before traversal reaches a deep
+ * package boundary. Keep this inventory independently bounded so manifests
+ * participate in Graph extraction and freshness without making source scans
+ * unbounded.
+ */
+async function listArchitectureControlFiles(root: string, maxFiles = 1_024): Promise<string[]> {
+  const files: string[] = [];
+  const queue = [root];
+  let head = 0;
+  while (head < queue.length && files.length < maxFiles) {
+    const current = queue[head++];
+    let entries: fsExtra.Dirent[];
+    try {
+      entries = await fsExtra.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const candidate = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (
+          !IGNORED_DIRECTORIES.has(entry.name) &&
+          !isPythonVirtualEnvironmentDirectory(entry.name)
+        ) {
+          queue.push(candidate);
+        }
+      } else if (entry.isFile() && ARCHITECTURE_CONTROL_NAMES.has(entry.name)) {
+        files.push(candidate);
+        if (files.length >= maxFiles) break;
+      }
+    }
+  }
+  return files.sort((a, b) => a.localeCompare(b));
+}
+
 type KnowledgeGraphFingerprintProject = {
   id: string;
   path: string;
@@ -1104,7 +1198,13 @@ function isInterfaceContractCandidate(file: string): boolean {
 
 function isInfrastructureCandidate(file: string): boolean {
   const base = path.basename(file);
-  return /^Dockerfile(?:\..+)?$/i.test(base) || /\.tf$/i.test(base) || base === 'Chart.yaml';
+  const normalized = toPosix(file);
+  const isDevelopmentContainer = /(?:^|\/)\.devcontainer(?:\/|$)/i.test(normalized);
+  return (
+    (!isDevelopmentContainer && /^Dockerfile(?:\..+)?$/i.test(base)) ||
+    /\.tf$/i.test(base) ||
+    base === 'Chart.yaml'
+  );
 }
 
 function isDocumentationCandidate(file: string): boolean {
@@ -1115,10 +1215,13 @@ function isCiWorkflowCandidate(root: string, file: string): boolean {
   const relative = toPosix(path.relative(root, file));
   return (
     /^\.github\/workflows\/.+\.ya?ml$/i.test(relative) ||
-    /^(?:\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|Jenkinsfile|bitbucket-pipelines\.ya?ml|\.woodpecker\.ya?ml)$/i.test(
+    /^(?:\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|Jenkinsfile|bitbucket-pipelines\.ya?ml|\.woodpecker\.ya?ml|\.drone\.ya?ml|\.travis\.ya?ml|appveyor\.ya?ml)$/i.test(
       relative
     ) ||
-    /^\.circleci\/config\.ya?ml$/i.test(relative)
+    /^\.circleci\/config\.ya?ml$/i.test(relative) ||
+    /^\.buildkite\/pipeline\.ya?ml$/i.test(relative) ||
+    /^\.tekton\/.+\.ya?ml$/i.test(relative) ||
+    /^prow\/[^/]+\.(?:sh|py)$/i.test(relative)
   );
 }
 
@@ -1143,6 +1246,11 @@ async function composeCandidateFiles(context: ProviderContext): Promise<string[]
       if (await fsExtra.pathExists(candidate)) candidates.add(candidate);
     }
   }
+  for (const file of uniqueInventoryFiles(context)) {
+    if (/^(?:docker-)?compose(?:\.[a-z0-9_-]+)*\.ya?ml$/i.test(path.basename(file))) {
+      candidates.add(file);
+    }
+  }
   return [...candidates].sort((a, b) => a.localeCompare(b));
 }
 
@@ -1153,6 +1261,9 @@ async function ownershipCandidateFiles(context: ProviderContext): Promise<string
     path.join(root, '.github', 'CODEOWNERS'),
     path.join(root, 'docs', 'CODEOWNERS'),
   ]);
+  for (const file of uniqueInventoryFiles(context)) {
+    if (path.basename(file) === 'OWNERS') candidates.push(file);
+  }
   const existing = await Promise.all(
     candidates.map(async (candidate) => ((await fsExtra.pathExists(candidate)) ? candidate : null))
   );
@@ -1300,6 +1411,7 @@ class KnowledgeGraphState {
     aliases?: string[];
     attributes?: Record<string, WorkspaceKnowledgeAttribute | undefined>;
     proofIds?: string[];
+    mergeArrayAttributes?: string[];
   }): string {
     const id = stableId(input.kind, input.key);
     const attributes = portableAttributes(input.attributes ?? {});
@@ -1323,6 +1435,14 @@ class KnowledgeGraphState {
         attribute in mergedAttributes &&
         JSON.stringify(mergedAttributes[attribute]) !== JSON.stringify(value)
       ) {
+        if (
+          input.mergeArrayAttributes?.includes(attribute) &&
+          Array.isArray(mergedAttributes[attribute]) &&
+          Array.isArray(value)
+        ) {
+          mergedAttributes[attribute] = value;
+          continue;
+        }
         const conflictKey = `${id}\0${attribute}`;
         if (!this.attributeConflicts.has(conflictKey)) {
           this.attributeConflicts.add(conflictKey);
@@ -1458,9 +1578,73 @@ function cargoDependencyName(dependency: string): string {
   );
 }
 
+type CargoWorkspacePackageDefaults = {
+  edition?: string;
+  rustVersion?: string;
+  version?: string;
+};
+
+function cargoWorkspacePackageDefaults(contents: string): CargoWorkspacePackageDefaults {
+  const workspacePackage = tomlTableSections(contents).find(
+    ({ name }) => name === 'workspace.package'
+  )?.body;
+  if (!workspacePackage) return {};
+  const value = (key: string): string | undefined => {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return workspacePackage.match(
+      new RegExp(`^\\s*${escapedKey}\\s*=\\s*["']([^"']+)["']`, 'm')
+    )?.[1];
+  };
+  return {
+    edition: value('edition'),
+    rustVersion: value('rust-version'),
+    version: value('version'),
+  };
+}
+
+function cargoPackageValue(
+  contents: string,
+  key: string,
+  workspaceDefault: string | undefined
+): string | undefined {
+  const packageBody = tomlTableSections(contents).find(({ name }) => name === 'package')?.body;
+  if (!packageBody) return workspaceDefault;
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const explicit = packageBody.match(
+    new RegExp(`^\\s*${escapedKey}\\s*=\\s*["']([^"']+)["']`, 'm')
+  )?.[1];
+  if (explicit) return explicit;
+  const inheritsWorkspace = new RegExp(
+    `^\\s*${escapedKey}(?:\\.workspace\\s*=\\s*true|\\s*=\\s*\\{[^}]*\\bworkspace\\s*=\\s*true[^}]*\\})`,
+    'm'
+  ).test(packageBody);
+  return inheritsWorkspace ? workspaceDefault : undefined;
+}
+
+function rustToolchainMetadata(contents: string): {
+  channel?: string;
+  profile?: string;
+  components: string[];
+  targets: string[];
+} {
+  const toolchain = tomlTableSections(contents).find(({ name }) => name === 'toolchain')?.body;
+  if (!toolchain) return { components: [], targets: [] };
+  const value = (key: string): string | undefined => {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return toolchain.match(new RegExp(`^\\s*${escapedKey}\\s*=\\s*["']([^"']+)["']`, 'm'))?.[1];
+  };
+  return {
+    channel: value('channel'),
+    profile: value('profile'),
+    components: extractTomlArrayAssignment(toolchain, 'components').sort(),
+    targets: extractTomlArrayAssignment(toolchain, 'targets').sort(),
+  };
+}
+
 function parseManifestMetadata(
   filePath: string,
-  contents: string
+  contents: string,
+  cargoWorkspaceDefaults: CargoWorkspacePackageDefaults = {}
 ): {
   ecosystem: string;
   name?: string;
@@ -1576,8 +1760,8 @@ function parseManifestMetadata(
       .join('\n');
     return {
       ecosystem: 'cargo',
-      name: first(/^name\s*=\s*["']([^"']+)["']/m),
-      version: first(/^version\s*=\s*["']([^"']+)["']/m),
+      name: cargoPackageValue(contents, 'name', undefined),
+      version: cargoPackageValue(contents, 'version', cargoWorkspaceDefaults.version),
       dependencies: [
         ...dependencyBlocks.matchAll(/^\s*(?:["']([^"']+)["']|([A-Za-z0-9_.-]+))\s*=/gm),
       ]
@@ -1586,8 +1770,11 @@ function parseManifestMetadata(
         .filter((dependency, index, values) => values.indexOf(dependency) === index)
         .sort(),
       metadata: {
-        edition: first(/^edition\s*=\s*["']([^"']+)["']/m) ?? 'unknown',
-        rustVersion: first(/^rust-version\s*=\s*["']([^"']+)["']/m) ?? 'unknown',
+        edition:
+          cargoPackageValue(contents, 'edition', cargoWorkspaceDefaults.edition) ?? 'unknown',
+        rustVersion:
+          cargoPackageValue(contents, 'rust-version', cargoWorkspaceDefaults.rustVersion) ??
+          'unknown',
         features:
           tomlTableSections(contents)
             .find(({ name: table }) => table === 'features')
@@ -1692,6 +1879,25 @@ function parseManifestMetadata(
       .filter((dependency, index, values) => values.indexOf(dependency) === index)
       .sort(),
   };
+}
+
+function parseGoWorkspaceMembers(contents: string): string[] {
+  const members = new Set<string>();
+  const add = (value: string): void => {
+    const member = value
+      .replace(/\/\/.*$/u, '')
+      .trim()
+      .replace(/^["']|["']$/gu, '')
+      .replace(/\\/gu, '/');
+    if (member && member !== '(' && member !== ')') members.add(member);
+  };
+  for (const block of contents.matchAll(/^\s*use\s*\(([\s\S]*?)^\s*\)/gmu)) {
+    for (const line of (block[1] ?? '').split(/\r?\n/u)) add(line);
+  }
+  for (const match of contents.matchAll(/^\s*use\s+([^\s(][^\r\n]*)$/gmu)) {
+    add(match[1] ?? '');
+  }
+  return [...members].sort((left, right) => left.localeCompare(right));
 }
 
 function normalizedPackageCoordinate(ecosystem: string, value: string): string {
@@ -1808,6 +2014,18 @@ const foundationProvider: Provider = {
           kit: project.kit,
           kind: project.kind,
           category: project.category,
+          ...(project.governance
+            ? {
+                governanceCiStatus: project.governance.ci.status,
+                governanceReleaseStatus: project.governance.release.status,
+                governanceOwnershipStatus: project.governance.ownership.status,
+                governanceProviders: [
+                  project.governance.ci.provider,
+                  project.governance.release.provider,
+                  project.governance.ownership.provider,
+                ].filter((value): value is string => Boolean(value)),
+              }
+            : {}),
         },
         proofIds: [projectProof],
       });
@@ -1822,6 +2040,64 @@ const foundationProvider: Provider = {
 
       const envKeys = new Set<string>();
       const testFiles: string[] = [];
+      const goWorkspacePath = files.find(
+        (file) => path.resolve(file) === path.resolve(project.root, 'go.work')
+      );
+      let goWorkspace: { entityId: string; members: string[]; proofId: string } | undefined;
+      if (goWorkspacePath) {
+        try {
+          const contents = await fsExtra.readFile(goWorkspacePath, 'utf8');
+          const members = parseGoWorkspaceMembers(contents);
+          const artifact = state.artifactPath(goWorkspacePath, project);
+          const proofId = await state.addProof({
+            provider: this.id,
+            artifact,
+            absolutePath: goWorkspacePath,
+            pointer: '/use',
+            trust: 'authoritative',
+            derivation: 'authored',
+            confidence: 'high',
+            detail: `Go workspace with ${members.length} member(s)`,
+          });
+          const entityId = state.addEntity({
+            kind: 'module',
+            key: `go-workspace:${project.id}:${artifact}`,
+            label: `${project.id} Go workspace`,
+            projectId: project.id,
+            aliases: ['go.work'],
+            attributes: {
+              ecosystem: 'go',
+              manifest: artifact,
+              members,
+            },
+            proofIds: [proofId],
+          });
+          state.addRelation({
+            from: projectEntity,
+            to: entityId,
+            kind: 'contains',
+            trust: 'authoritative',
+            derivation: 'authored',
+            proofIds: [proofId],
+          });
+          goWorkspace = { entityId, members, proofId };
+        } catch {
+          // An unreadable go.work must not suppress package extraction.
+        }
+      }
+      let cargoDefaults: CargoWorkspacePackageDefaults = {};
+      const rootCargoManifest = files.find(
+        (file) => path.resolve(file) === path.resolve(project.root, 'Cargo.toml')
+      );
+      if (rootCargoManifest) {
+        try {
+          cargoDefaults = cargoWorkspacePackageDefaults(
+            await fsExtra.readFile(rootCargoManifest, 'utf8')
+          );
+        } catch {
+          // An unreadable root manifest must not suppress other package evidence.
+        }
+      }
       for (const file of files) {
         const base = path.basename(file);
         if (/^(?:\.env\.example|\.env\.sample|\.env\.template)$/i.test(base)) {
@@ -1846,7 +2122,7 @@ const foundationProvider: Provider = {
         if (!MANIFEST_NAMES.has(base) && !/\.(?:cs|fs|vb)proj$/i.test(base)) continue;
         try {
           const contents = await fsExtra.readFile(file, 'utf8');
-          const manifest = parseManifestMetadata(file, contents);
+          const manifest = parseManifestMetadata(file, contents, cargoDefaults);
           const manifestArtifact = state.artifactPath(file, project);
           const proof = await state.addProof({
             provider: this.id,
@@ -1902,6 +2178,30 @@ const foundationProvider: Provider = {
           }
         } catch {
           // Malformed manifests are reported by the dependency provider diagnostics.
+        }
+      }
+      if (goWorkspace) {
+        const packages = [...state.entities.values()].filter(
+          (entity) => entity.kind === 'package' && entity.projectId === project.id
+        );
+        for (const member of goWorkspace.members) {
+          const memberManifest = state.artifactPath(
+            path.join(project.root, member, 'go.mod'),
+            project
+          );
+          const memberPackage = packages.find(
+            (candidate) => candidate.attributes.manifest === memberManifest
+          );
+          if (!memberPackage) continue;
+          state.addRelation({
+            from: goWorkspace.entityId,
+            to: memberPackage.id,
+            kind: 'contains',
+            trust: 'authoritative',
+            derivation: 'authored',
+            confidence: 'high',
+            proofIds: [...new Set([goWorkspace.proofId, ...memberPackage.proofIds])],
+          });
         }
       }
       resolveLocalPackageDependencies(state, project.id);
@@ -1997,179 +2297,128 @@ function contributionCount(value: unknown): number {
 
 const vscodeExtensionManifestProvider: Provider = {
   id: 'vscode-extension-manifest',
-  version: '1.0.0',
+  version: '1.1.0',
   async applicable(context) {
     for (const project of context.projects) {
-      const manifestPath = path.join(project.root, 'package.json');
-      try {
-        const manifest = asRecord(await fsExtra.readJson(manifestPath));
-        if (stringValue(asRecord(manifest?.engines)?.vscode) || asRecord(manifest?.contributes)) {
-          return true;
+      const manifests = (context.filesByProject.get(project.id) ?? []).filter(
+        (file) => path.basename(file).toLowerCase() === 'package.json'
+      );
+      for (const manifestPath of manifests) {
+        try {
+          const manifest = asRecord(await fsExtra.readJson(manifestPath));
+          if (stringValue(asRecord(manifest?.engines)?.vscode) || asRecord(manifest?.contributes)) {
+            return true;
+          }
+        } catch {
+          // Missing or malformed manifests are not VS Code extension evidence.
         }
-      } catch {
-        // Missing or malformed root manifests are not VS Code extension evidence.
       }
     }
     return false;
   },
   async run(context) {
     for (const project of context.projects) {
-      const manifestPath = path.join(project.root, 'package.json');
-      let manifest: JsonRecord | null = null;
-      try {
-        manifest = asRecord(await fsExtra.readJson(manifestPath));
-      } catch {
-        continue;
-      }
-      const contributes = asRecord(manifest?.contributes);
-      const vscodeEngine = stringValue(asRecord(manifest?.engines)?.vscode);
-      if (!vscodeEngine && !contributes) continue;
+      const manifestPaths = (context.filesByProject.get(project.id) ?? [])
+        .filter((file) => path.basename(file).toLowerCase() === 'package.json')
+        .sort((left, right) => left.localeCompare(right));
+      for (const manifestPath of manifestPaths) {
+        let manifest: JsonRecord | null = null;
+        try {
+          manifest = asRecord(await fsExtra.readJson(manifestPath));
+        } catch {
+          continue;
+        }
+        const contributes = asRecord(manifest?.contributes);
+        const vscodeEngine = stringValue(asRecord(manifest?.engines)?.vscode);
+        if (!vscodeEngine && !contributes) continue;
 
-      const artifact = context.state.artifactPath(manifestPath, project);
-      const manifestProof = await context.state.addProof({
-        provider: this.id,
-        artifact,
-        absolutePath: manifestPath,
-        pointer: '/',
-        trust: 'authoritative',
-        derivation: 'authored',
-        confidence: 'high',
-        detail: `VS Code extension manifest for ${project.id}`,
-      });
-      const projectEntity = context.state.addEntity({
-        kind: 'project',
-        key: `project:${project.id}`,
-        label: project.id,
-        projectId: project.id,
-        attributes: {
-          vscodeExtension: true,
-          vscodeEngine,
-          extensionEntry: stringValue(manifest?.main) ?? stringValue(manifest?.browser),
-          extensionKind: stringArray(manifest?.extensionKind),
-          activationEvents: stringArray(manifest?.activationEvents),
-          contributionCounts: Object.entries(contributes ?? {})
-            .map(([name, value]) => `${name}:${contributionCount(value)}`)
-            .sort(),
-        },
-        proofIds: [manifestProof],
-      });
+        const manifestDirectory = path.dirname(manifestPath);
+        const isProjectManifest = path.resolve(manifestDirectory) === path.resolve(project.root);
+        const extensionPath = path
+          .relative(project.root, manifestDirectory)
+          .split(path.sep)
+          .join('/');
+        const extensionId =
+          stringValue(manifest?.name) ??
+          (extensionPath && extensionPath !== '.' ? extensionPath : project.id);
 
-      const commands = Array.isArray(contributes?.commands) ? contributes.commands : [];
-      const menus = asRecord(contributes?.menus);
-      const menuItems = Object.values(menus ?? {}).flatMap((value) =>
-        Array.isArray(value) ? value : []
-      );
-      const keybindings = Array.isArray(contributes?.keybindings) ? contributes.keybindings : [];
-      for (const [index, rawCommand] of commands.entries()) {
-        const command = asRecord(rawCommand);
-        const commandId = stringValue(command?.command);
-        if (!commandId) continue;
-        const pointer = `/contributes/commands/${index}`;
-        const proof = await context.state.addProof({
+        const artifact = context.state.artifactPath(manifestPath, project);
+        const manifestProof = await context.state.addProof({
           provider: this.id,
           artifact,
           absolutePath: manifestPath,
-          pointer,
+          pointer: '/',
           trust: 'authoritative',
           derivation: 'authored',
           confidence: 'high',
-          detail: `VS Code command ${commandId}`,
+          detail: `VS Code extension manifest for ${extensionId}`,
         });
-        const menuCount = menuItems.filter(
-          (item) => stringValue(asRecord(item)?.command) === commandId
-        ).length;
-        const keybindingCount = keybindings.filter(
-          (item) => stringValue(asRecord(item)?.command) === commandId
-        ).length;
-        const commandEntity = context.state.addEntity({
-          kind: 'api',
-          key: `vscode-command:${project.id}:${commandId}`,
-          label: commandId,
+        const projectEntity = context.state.addEntity({
+          kind: 'project',
+          key: `project:${project.id}`,
+          label: project.id,
           projectId: project.id,
-          aliases: [stringValue(command?.title), stringValue(command?.shortTitle)].filter(
-            (value): value is string => Boolean(value)
-          ),
-          attributes: {
-            surface: 'vscode-command',
-            title: stringValue(command?.title),
-            shortTitle: stringValue(command?.shortTitle),
-            category: stringValue(command?.category),
-            enablement: stringValue(command?.enablement),
-            icon: stringValue(command?.icon),
-            menuCount,
-            keybindingCount,
-            manifest: artifact,
-            pointer,
-          },
-          proofIds: [proof],
         });
-        context.state.addRelation({
-          from: projectEntity,
-          to: commandEntity,
-          kind: 'exposes',
-          trust: 'authoritative',
-          derivation: 'authored',
-          confidence: 'high',
-          proofIds: [proof],
-        });
-      }
-
-      const viewContainers = asRecord(contributes?.viewsContainers);
-      const containerEntities = new Map<string, string>();
-      for (const [location, rawContainers] of Object.entries(viewContainers ?? {})) {
-        if (!Array.isArray(rawContainers)) continue;
-        for (const [index, rawContainer] of rawContainers.entries()) {
-          const container = asRecord(rawContainer);
-          const containerId = stringValue(container?.id);
-          if (!containerId) continue;
-          const pointer = `/contributes/viewsContainers/${jsonPointerSegment(location)}/${index}`;
-          const proof = await context.state.addProof({
-            provider: this.id,
-            artifact,
-            absolutePath: manifestPath,
-            pointer,
-            trust: 'authoritative',
-            derivation: 'authored',
-            detail: `VS Code view container ${containerId}`,
-          });
-          const entity = context.state.addEntity({
-            kind: 'service',
-            key: `vscode-view-container:${project.id}:${containerId}`,
-            label: containerId,
-            projectId: project.id,
-            aliases: [stringValue(container?.title)].filter((value): value is string =>
-              Boolean(value)
-            ),
-            attributes: {
-              surface: 'vscode-view-container',
-              title: stringValue(container?.title),
-              location,
-              icon: stringValue(container?.icon),
-              manifest: artifact,
-              pointer,
-            },
-            proofIds: [proof],
-          });
-          containerEntities.set(containerId, entity);
+        const extensionEntity = isProjectManifest
+          ? context.state.addEntity({
+              kind: 'project',
+              key: `project:${project.id}`,
+              label: project.id,
+              projectId: project.id,
+              attributes: {
+                vscodeExtension: true,
+                vscodeEngine,
+                extensionEntry: stringValue(manifest?.main) ?? stringValue(manifest?.browser),
+                extensionKind: stringArray(manifest?.extensionKind),
+                activationEvents: stringArray(manifest?.activationEvents),
+                contributionCounts: Object.entries(contributes ?? {})
+                  .map(([name, value]) => `${name}:${contributionCount(value)}`)
+                  .sort(),
+              },
+              proofIds: [manifestProof],
+            })
+          : context.state.addEntity({
+              kind: 'package',
+              key: `vscode-extension:${project.id}:${extensionPath}`,
+              label: extensionId,
+              projectId: project.id,
+              attributes: {
+                surface: 'vscode-extension',
+                extensionPath,
+                manifest: artifact,
+                vscodeEngine,
+                extensionEntry: stringValue(manifest?.main) ?? stringValue(manifest?.browser),
+                extensionKind: stringArray(manifest?.extensionKind),
+                activationEvents: stringArray(manifest?.activationEvents),
+                contributionCounts: Object.entries(contributes ?? {})
+                  .map(([name, value]) => `${name}:${contributionCount(value)}`)
+                  .sort(),
+              },
+              proofIds: [manifestProof],
+            });
+        if (!isProjectManifest) {
           context.state.addRelation({
             from: projectEntity,
-            to: entity,
+            to: extensionEntity,
             kind: 'contains',
             trust: 'authoritative',
             derivation: 'authored',
-            proofIds: [proof],
+            confidence: 'high',
+            proofIds: [manifestProof],
           });
         }
-      }
 
-      const views = asRecord(contributes?.views);
-      for (const [containerId, rawViews] of Object.entries(views ?? {})) {
-        if (!Array.isArray(rawViews)) continue;
-        for (const [index, rawView] of rawViews.entries()) {
-          const view = asRecord(rawView);
-          const viewId = stringValue(view?.id);
-          if (!viewId) continue;
-          const pointer = `/contributes/views/${jsonPointerSegment(containerId)}/${index}`;
+        const commands = Array.isArray(contributes?.commands) ? contributes.commands : [];
+        const menus = asRecord(contributes?.menus);
+        const menuItems = Object.values(menus ?? {}).flatMap((value) =>
+          Array.isArray(value) ? value : []
+        );
+        const keybindings = Array.isArray(contributes?.keybindings) ? contributes.keybindings : [];
+        for (const [index, rawCommand] of commands.entries()) {
+          const command = asRecord(rawCommand);
+          const commandId = stringValue(command?.command);
+          if (!commandId) continue;
+          const pointer = `/contributes/commands/${index}`;
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
@@ -2177,52 +2426,203 @@ const vscodeExtensionManifestProvider: Provider = {
             pointer,
             trust: 'authoritative',
             derivation: 'authored',
-            detail: `VS Code view ${viewId}`,
+            confidence: 'high',
+            detail: `VS Code command ${commandId}`,
           });
-          const entity = context.state.addEntity({
-            kind: 'service',
-            key: `vscode-view:${project.id}:${viewId}`,
-            label: viewId,
+          const menuCount = menuItems.filter(
+            (item) => stringValue(asRecord(item)?.command) === commandId
+          ).length;
+          const keybindingCount = keybindings.filter(
+            (item) => stringValue(asRecord(item)?.command) === commandId
+          ).length;
+          const commandEntity = context.state.addEntity({
+            kind: 'api',
+            key: `vscode-command:${project.id}:${commandId}`,
+            label: commandId,
             projectId: project.id,
-            aliases: [stringValue(view?.name), stringValue(view?.contextualTitle)].filter(
+            aliases: [stringValue(command?.title), stringValue(command?.shortTitle)].filter(
               (value): value is string => Boolean(value)
             ),
             attributes: {
-              surface: view?.type === 'webview' ? 'vscode-webview' : 'vscode-view',
-              name: stringValue(view?.name),
-              contextualTitle: stringValue(view?.contextualTitle),
-              containerId,
-              viewType: stringValue(view?.type) ?? 'tree',
+              surface: 'vscode-command',
+              title: stringValue(command?.title),
+              shortTitle: stringValue(command?.shortTitle),
+              category: stringValue(command?.category),
+              enablement: stringValue(command?.enablement),
+              icon: stringValue(command?.icon),
+              menuCount,
+              keybindingCount,
               manifest: artifact,
               pointer,
             },
             proofIds: [proof],
           });
           context.state.addRelation({
-            from: containerEntities.get(containerId) ?? projectEntity,
-            to: entity,
-            kind: 'contains',
+            from: extensionEntity,
+            to: commandEntity,
+            kind: 'exposes',
             trust: 'authoritative',
             derivation: 'authored',
+            confidence: 'high',
             proofIds: [proof],
           });
         }
-      }
 
-      const configurations = Array.isArray(contributes?.configuration)
-        ? contributes.configuration
-        : contributes?.configuration
-          ? [contributes.configuration]
+        const viewContainers = asRecord(contributes?.viewsContainers);
+        const containerEntities = new Map<string, string>();
+        for (const [location, rawContainers] of Object.entries(viewContainers ?? {})) {
+          if (!Array.isArray(rawContainers)) continue;
+          for (const [index, rawContainer] of rawContainers.entries()) {
+            const container = asRecord(rawContainer);
+            const containerId = stringValue(container?.id);
+            if (!containerId) continue;
+            const pointer = `/contributes/viewsContainers/${jsonPointerSegment(location)}/${index}`;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath: manifestPath,
+              pointer,
+              trust: 'authoritative',
+              derivation: 'authored',
+              detail: `VS Code view container ${containerId}`,
+            });
+            const entity = context.state.addEntity({
+              kind: 'service',
+              key: `vscode-view-container:${project.id}:${containerId}`,
+              label: containerId,
+              projectId: project.id,
+              aliases: [stringValue(container?.title)].filter((value): value is string =>
+                Boolean(value)
+              ),
+              attributes: {
+                surface: 'vscode-view-container',
+                title: stringValue(container?.title),
+                location,
+                icon: stringValue(container?.icon),
+                manifest: artifact,
+                pointer,
+              },
+              proofIds: [proof],
+            });
+            containerEntities.set(containerId, entity);
+            context.state.addRelation({
+              from: extensionEntity,
+              to: entity,
+              kind: 'contains',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+        }
+
+        const views = asRecord(contributes?.views);
+        for (const [containerId, rawViews] of Object.entries(views ?? {})) {
+          if (!Array.isArray(rawViews)) continue;
+          for (const [index, rawView] of rawViews.entries()) {
+            const view = asRecord(rawView);
+            const viewId = stringValue(view?.id);
+            if (!viewId) continue;
+            const pointer = `/contributes/views/${jsonPointerSegment(containerId)}/${index}`;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath: manifestPath,
+              pointer,
+              trust: 'authoritative',
+              derivation: 'authored',
+              detail: `VS Code view ${viewId}`,
+            });
+            const entity = context.state.addEntity({
+              kind: 'service',
+              key: `vscode-view:${project.id}:${viewId}`,
+              label: viewId,
+              projectId: project.id,
+              aliases: [stringValue(view?.name), stringValue(view?.contextualTitle)].filter(
+                (value): value is string => Boolean(value)
+              ),
+              attributes: {
+                surface: view?.type === 'webview' ? 'vscode-webview' : 'vscode-view',
+                name: stringValue(view?.name),
+                contextualTitle: stringValue(view?.contextualTitle),
+                containerId,
+                viewType: stringValue(view?.type) ?? 'tree',
+                manifest: artifact,
+                pointer,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: containerEntities.get(containerId) ?? extensionEntity,
+              to: entity,
+              kind: 'contains',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+        }
+
+        const configurations = Array.isArray(contributes?.configuration)
+          ? contributes.configuration
+          : contributes?.configuration
+            ? [contributes.configuration]
+            : [];
+        for (const [configurationIndex, rawConfiguration] of configurations.entries()) {
+          const configuration = asRecord(rawConfiguration);
+          const properties = asRecord(configuration?.properties);
+          for (const [setting, rawDefinition] of Object.entries(properties ?? {})) {
+            const definition = asRecord(rawDefinition);
+            const configurationPointer = Array.isArray(contributes?.configuration)
+              ? `/contributes/configuration/${configurationIndex}`
+              : '/contributes/configuration';
+            const pointer = `${configurationPointer}/properties/${jsonPointerSegment(setting)}`;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath: manifestPath,
+              pointer,
+              trust: 'authoritative',
+              derivation: 'authored',
+              detail: `VS Code configuration ${setting}`,
+            });
+            const entity = context.state.addEntity({
+              kind: 'schema',
+              key: `vscode-configuration:${project.id}:${setting}`,
+              label: setting,
+              projectId: project.id,
+              attributes: {
+                surface: 'vscode-configuration',
+                title: stringValue(configuration?.title),
+                type: stringValue(definition?.type),
+                scope: stringValue(definition?.scope),
+                description:
+                  stringValue(definition?.description) ??
+                  stringValue(definition?.markdownDescription),
+                manifest: artifact,
+                pointer,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: extensionEntity,
+              to: entity,
+              kind: 'configured-by',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+        }
+
+        const chatParticipants = Array.isArray(contributes?.chatParticipants)
+          ? contributes.chatParticipants
           : [];
-      for (const [configurationIndex, rawConfiguration] of configurations.entries()) {
-        const configuration = asRecord(rawConfiguration);
-        const properties = asRecord(configuration?.properties);
-        for (const [setting, rawDefinition] of Object.entries(properties ?? {})) {
-          const definition = asRecord(rawDefinition);
-          const configurationPointer = Array.isArray(contributes?.configuration)
-            ? `/contributes/configuration/${configurationIndex}`
-            : '/contributes/configuration';
-          const pointer = `${configurationPointer}/properties/${jsonPointerSegment(setting)}`;
+        for (const [index, rawParticipant] of chatParticipants.entries()) {
+          const participant = asRecord(rawParticipant);
+          const participantId = stringValue(participant?.id);
+          if (!participantId) continue;
+          const pointer = `/contributes/chatParticipants/${index}`;
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
@@ -2230,80 +2630,35 @@ const vscodeExtensionManifestProvider: Provider = {
             pointer,
             trust: 'authoritative',
             derivation: 'authored',
-            detail: `VS Code configuration ${setting}`,
+            detail: `VS Code chat participant ${participantId}`,
           });
           const entity = context.state.addEntity({
-            kind: 'schema',
-            key: `vscode-configuration:${project.id}:${setting}`,
-            label: setting,
+            kind: 'api',
+            key: `vscode-chat-participant:${project.id}:${participantId}`,
+            label: participantId,
             projectId: project.id,
+            aliases: [stringValue(participant?.name), stringValue(participant?.fullName)].filter(
+              (value): value is string => Boolean(value)
+            ),
             attributes: {
-              surface: 'vscode-configuration',
-              title: stringValue(configuration?.title),
-              type: stringValue(definition?.type),
-              scope: stringValue(definition?.scope),
-              description:
-                stringValue(definition?.description) ??
-                stringValue(definition?.markdownDescription),
+              surface: 'vscode-chat-participant',
+              name: stringValue(participant?.name),
+              fullName: stringValue(participant?.fullName),
+              description: stringValue(participant?.description),
               manifest: artifact,
               pointer,
             },
             proofIds: [proof],
           });
           context.state.addRelation({
-            from: projectEntity,
+            from: extensionEntity,
             to: entity,
-            kind: 'configured-by',
+            kind: 'exposes',
             trust: 'authoritative',
             derivation: 'authored',
             proofIds: [proof],
           });
         }
-      }
-
-      const chatParticipants = Array.isArray(contributes?.chatParticipants)
-        ? contributes.chatParticipants
-        : [];
-      for (const [index, rawParticipant] of chatParticipants.entries()) {
-        const participant = asRecord(rawParticipant);
-        const participantId = stringValue(participant?.id);
-        if (!participantId) continue;
-        const pointer = `/contributes/chatParticipants/${index}`;
-        const proof = await context.state.addProof({
-          provider: this.id,
-          artifact,
-          absolutePath: manifestPath,
-          pointer,
-          trust: 'authoritative',
-          derivation: 'authored',
-          detail: `VS Code chat participant ${participantId}`,
-        });
-        const entity = context.state.addEntity({
-          kind: 'api',
-          key: `vscode-chat-participant:${project.id}:${participantId}`,
-          label: participantId,
-          projectId: project.id,
-          aliases: [stringValue(participant?.name), stringValue(participant?.fullName)].filter(
-            (value): value is string => Boolean(value)
-          ),
-          attributes: {
-            surface: 'vscode-chat-participant',
-            name: stringValue(participant?.name),
-            fullName: stringValue(participant?.fullName),
-            description: stringValue(participant?.description),
-            manifest: artifact,
-            pointer,
-          },
-          proofIds: [proof],
-        });
-        context.state.addRelation({
-          from: projectEntity,
-          to: entity,
-          kind: 'exposes',
-          trust: 'authoritative',
-          derivation: 'authored',
-          proofIds: [proof],
-        });
       }
     }
   },
@@ -2420,7 +2775,7 @@ const pythonProjectManifestProvider: Provider = {
 
 const sourceLanguageProvider: Provider = {
   id: 'source-language-inventory',
-  version: '1.0.0',
+  version: '1.1.0',
   applicable(context) {
     return context.projects.some((project) =>
       (context.semanticFilesByProject.get(project.id) ?? []).some((file) =>
@@ -2431,6 +2786,28 @@ const sourceLanguageProvider: Provider = {
   async run(context) {
     for (const project of context.projects) {
       const inventory = context.semanticFilesByProject.get(project.id) ?? [];
+      const rustToolchainPath = (context.filesByProject.get(project.id) ?? []).find((file) =>
+        /^rust-toolchain(?:\.toml)?$/i.test(path.basename(file))
+      );
+      let rustToolchain: ReturnType<typeof rustToolchainMetadata> | undefined;
+      let rustToolchainProof: string | undefined;
+      if (rustToolchainPath) {
+        try {
+          rustToolchain = rustToolchainMetadata(await fsExtra.readFile(rustToolchainPath, 'utf8'));
+          rustToolchainProof = await context.state.addProof({
+            provider: this.id,
+            artifact: context.state.artifactPath(rustToolchainPath, project),
+            absolutePath: rustToolchainPath,
+            pointer: '/toolchain',
+            derivation: 'authored',
+            trust: 'authoritative',
+            confidence: 'high',
+            detail: 'Rust toolchain contract',
+          });
+        } catch {
+          // Source-language inventory remains usable when the toolchain file is unreadable.
+        }
+      }
       const sourceFiles = inventory.filter((file) =>
         SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())
       );
@@ -2495,6 +2872,8 @@ const sourceLanguageProvider: Provider = {
           ...(entry.examples.length > 0 ? ['example'] : []),
           ...(entry.generated.length > 0 ? ['generated'] : []),
         ];
+        const languageProofIds =
+          language === 'rust' && rustToolchainProof ? [...proofIds, rustToolchainProof] : proofIds;
         const languageEntity = context.state.addEntity({
           kind: 'language',
           key: `language:${project.id}:${language}`,
@@ -2517,8 +2896,16 @@ const sourceLanguageProvider: Provider = {
             generatedFileCount: entry.generated.length,
             extensions: [...entry.extensions].sort(),
             inventoryTruncated: inventory.length >= context.semanticScanLimit,
+            ...(language === 'rust' && rustToolchain
+              ? {
+                  toolchainChannel: rustToolchain.channel,
+                  toolchainProfile: rustToolchain.profile,
+                  toolchainComponents: rustToolchain.components,
+                  toolchainTargets: rustToolchain.targets,
+                }
+              : {}),
           },
-          proofIds,
+          proofIds: languageProofIds,
         });
         context.state.addRelation({
           from: projectEntity,
@@ -2527,7 +2914,7 @@ const sourceLanguageProvider: Provider = {
           derivation: 'extracted',
           trust: 'observed',
           confidence: inventory.length >= context.semanticScanLimit ? 'medium' : 'high',
-          proofIds,
+          proofIds: languageProofIds,
         });
       }
       if (inventory.length >= context.semanticScanLimit) {
@@ -2563,12 +2950,13 @@ const sourceStructureProvider: Provider = {
       const resolutionInventory =
         context.semanticFilesByProject.get(project.id) ?? projectInventory;
       const files = balancedSourceSelection(
-        (context.filesByProject.get(project.id) ?? []).filter(
+        resolutionInventory.filter(
           (file) =>
             SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
             !isNonProductionArtifact(project.root, file)
         ),
-        1_000
+        1_000,
+        project.root
       );
       // Extraction stays deliberately bounded, but local import resolution
       // must see the complete fingerprint inventory. Otherwise imports from a
@@ -2704,18 +3092,40 @@ const sourceStructureProvider: Provider = {
           } else {
             const unresolvedLocal = imported.name.startsWith('.');
             if (unresolvedLocal) unresolvedLocalImports += 1;
-            const module = context.state.addEntity({
-              kind: 'module',
-              key: `module:${project.id}:${imported.name}`,
-              label: imported.name,
-              projectId: project.id,
-              aliases: [imported.name],
-              attributes: {
-                specifier: imported.name,
-                resolution: unresolvedLocal ? 'unresolved-local' : 'external',
-              },
-              proofIds: [proof],
-            });
+            const language = sourceLanguage(file, project.runtime);
+            const npmDependencyName =
+              !unresolvedLocal && (language === 'javascript' || language === 'typescript')
+                ? imported.name.startsWith('@')
+                  ? imported.name.split('/').slice(0, 2).join('/')
+                  : imported.name.split('/')[0]
+                : null;
+            const declaredDependencyId = npmDependencyName
+              ? stableId('module', `dependency:npm:${npmDependencyName}`)
+              : null;
+            const declaredDependency = declaredDependencyId
+              ? context.state.entities.get(declaredDependencyId)
+              : undefined;
+            const module = declaredDependency
+              ? context.state.addEntity({
+                  kind: 'module',
+                  key: declaredDependency.identity.key,
+                  label: declaredDependency.label,
+                  aliases: [...declaredDependency.identity.aliases, imported.name],
+                  attributes: declaredDependency.attributes,
+                  proofIds: [...declaredDependency.proofIds, proof],
+                })
+              : context.state.addEntity({
+                  kind: 'module',
+                  key: `module:${project.id}:${imported.name}`,
+                  label: imported.name,
+                  projectId: project.id,
+                  aliases: [imported.name],
+                  attributes: {
+                    specifier: imported.name,
+                    resolution: unresolvedLocal ? 'unresolved-local' : 'external',
+                  },
+                  proofIds: [proof],
+                });
             context.state.addRelation({
               from: fileEntity,
               to: module,
@@ -3701,6 +4111,353 @@ const openApiProvider: Provider = {
   },
 };
 
+const API_IMPLEMENTATION_SCAN_LIMIT = 5_000;
+
+function apiImplementationCandidateScore(root: string, file: string): number {
+  const artifact = toPosix(path.relative(root, file)).toLowerCase();
+  let score = 0;
+  if (/(^|\/)(routes?|handlers?|controllers?|server|httpapi)(\/|$)/.test(artifact)) score += 100;
+  if (/(?:^|\/)(?:api|routes?|handlers?|controllers?|server)(?:\.[a-z0-9]+)$/.test(artifact)) {
+    score += 80;
+  }
+  if (/(^|\/)(src|app|lib)(\/|$)/.test(artifact)) score += 20;
+  if (/(^|\/)(protocol|sdk|client)(\/|$)/.test(artifact)) score -= 30;
+  return score;
+}
+
+function quotedOperationIdOffset(contents: string, operationId: string): number {
+  for (const quote of ['"', "'", '`']) {
+    const offset = contents.indexOf(`${quote}${operationId}${quote}`);
+    if (offset >= 0) return offset;
+  }
+  return -1;
+}
+
+/**
+ * Binds authored OpenAPI operations to the production source file that names
+ * the same stable operation identifier. Framework route extraction remains the
+ * stronger method/path proof; this provider covers router libraries and custom
+ * HTTP abstractions without treating tests, generated clients, docs, or
+ * filename guesses as implementation evidence.
+ */
+const authoredApiImplementationProvider: Provider = {
+  id: 'authored-api-implementation-binding',
+  version: '1.0.0',
+  applicable(context) {
+    return [...context.state.entities.values()].some(
+      (entity) => entity.kind === 'endpoint' && typeof entity.attributes.operationId === 'string'
+    );
+  },
+  async run(context) {
+    for (const project of context.projects) {
+      const endpointsByOperationId = new Map<string, WorkspaceKnowledgeEntity[]>();
+      for (const endpoint of context.state.entities.values()) {
+        const operationId = endpoint.attributes.operationId;
+        if (
+          endpoint.kind !== 'endpoint' ||
+          endpoint.projectId !== project.id ||
+          typeof operationId !== 'string' ||
+          operationId.trim().length === 0
+        ) {
+          continue;
+        }
+        const endpoints = endpointsByOperationId.get(operationId) ?? [];
+        endpoints.push(endpoint);
+        endpointsByOperationId.set(operationId, endpoints);
+      }
+      if (endpointsByOperationId.size === 0) continue;
+
+      const candidates = (context.semanticFilesByProject.get(project.id) ?? [])
+        .filter(
+          (file) =>
+            SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
+            !isNonProductionArtifact(project.root, file) &&
+            !isGeneratedArtifact(project.root, file)
+        )
+        .sort(
+          (left, right) =>
+            apiImplementationCandidateScore(project.root, right) -
+              apiImplementationCandidateScore(project.root, left) || left.localeCompare(right)
+        )
+        .slice(0, API_IMPLEMENTATION_SCAN_LIMIT);
+
+      const bestMatches = new Map<
+        string,
+        { file: string; contents: string; offset: number; score: number }
+      >();
+      for (const file of candidates) {
+        let contents: string;
+        try {
+          const stats = await fsExtra.stat(file);
+          if (!stats.isFile() || stats.size > 2 * 1024 * 1024) continue;
+          contents = await fsExtra.readFile(file, 'utf8');
+        } catch {
+          continue;
+        }
+        const score = apiImplementationCandidateScore(project.root, file);
+        // An operation identifier in a protocol declaration or client surface
+        // proves contract reuse, not server implementation. Only handler-like
+        // production locations may satisfy implementation coverage.
+        if (score < 50) continue;
+        for (const operationId of endpointsByOperationId.keys()) {
+          const offset = quotedOperationIdOffset(contents, operationId);
+          if (offset < 0) continue;
+          const current = bestMatches.get(operationId);
+          if (
+            current &&
+            (current.score > score ||
+              (current.score === score && current.file.localeCompare(file) <= 0))
+          ) {
+            continue;
+          }
+          bestMatches.set(operationId, { file, contents, offset, score });
+        }
+      }
+
+      for (const [operationId, match] of bestMatches) {
+        const artifact = context.state.artifactPath(match.file, project);
+        const line = match.contents.slice(0, match.offset).split(/\r?\n/).length;
+        const proof = await context.state.addProof({
+          provider: this.id,
+          artifact,
+          absolutePath: match.file,
+          line,
+          derivation: 'extracted',
+          trust: 'observed',
+          confidence: 'high',
+          detail: `Production handler binds OpenAPI operation ${operationId}`,
+        });
+        const fileEntity = context.state.addEntity({
+          kind: 'file',
+          key: `file:${project.id}:${artifact}`,
+          label: artifact,
+          projectId: project.id,
+          aliases: [path.basename(match.file)],
+          attributes: {
+            artifact,
+            language: sourceLanguage(match.file, project.runtime),
+            bytes: Buffer.byteLength(match.contents),
+          },
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: stableId('project', `project:${project.id}`),
+          to: fileEntity,
+          kind: 'contains',
+          derivation: 'extracted',
+          trust: 'observed',
+          proofIds: [proof],
+        });
+        for (const endpoint of endpointsByOperationId.get(operationId) ?? []) {
+          context.state.addRelation({
+            from: fileEntity,
+            to: endpoint.id,
+            kind: 'implements',
+            derivation: 'extracted',
+            trust: 'corroborated',
+            confidence: 'high',
+            proofIds: [...endpoint.proofIds, proof],
+          });
+        }
+      }
+    }
+  },
+};
+
+const DYNAMIC_API_REGISTRATION_MAX_PER_API = 8;
+
+const CONFIG_DRIVEN_ROUTE_PATTERN =
+  /(?:^|[,{\n]\s*)["']?(?:routes?|upstreams?|virtualHosts?|pathPrefix)["']?\s*[:=]/im;
+
+function dynamicApiRegistrationOffset(file: string, contents: string): number {
+  const extension = path.extname(file).toLowerCase();
+  if (/\.(?:json|ya?ml|toml)$/i.test(file)) {
+    if (!/(?:route|routing|gateway|proxy|ingress|server)/i.test(path.basename(file))) return -1;
+    const match = CONFIG_DRIVEN_ROUTE_PATTERN.exec(contents);
+    return match?.index ?? -1;
+  }
+  const patterns: readonly RegExp[] =
+    extension === '.py'
+      ? [/\b(?:include_router|add_api_route|mount)\s*\(/]
+      : ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts'].includes(extension)
+        ? [
+            /\b(?:router|app)\.(?:use|route|register)\s*\(/,
+            /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+          ]
+        : extension === '.go'
+          ? [
+              /\.\s*InstallAPIGroups?\s*\(/,
+              /\.\s*registerResourceHandlers\s*\(/,
+              /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+            ]
+          : ['.java', '.kt', '.kts', '.scala', '.cs', '.fs', '.fsx', '.vb'].includes(extension)
+            ? [
+                /\b(?:RouterFunction|RequestMappingHandlerMapping|MapControllers|MapGroup)\s*[<(]/,
+                /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+              ]
+            : extension === '.rb'
+              ? [/\broutes\.draw\s+do\b/, /\b(?:resources|namespace)\s+[:"']/]
+              : [/\b(?:registerRoutes?|configureRoutes?)\s*\(/i];
+  for (const pattern of patterns) {
+    const match = pattern.exec(contents);
+    if (match) return match.index;
+  }
+  return -1;
+}
+
+/**
+ * Represents runtime- and configuration-generated routing without pretending
+ * that every authored endpoint has a statically provable handler. The graph
+ * binds a proof-carrying registration unit to the API; endpoint-level coverage
+ * remains unknown until a method/path or operation-id implementation is found.
+ */
+const dynamicApiRegistrationProvider: Provider = {
+  id: 'dynamic-api-registration-binding',
+  version: '1.0.0',
+  applicable(context) {
+    if (![...context.state.entities.values()].some((entity) => entity.kind === 'api')) return false;
+    return context.projects.some((project) =>
+      (context.semanticFilesByProject.get(project.id) ?? [])
+        .filter(
+          (file) =>
+            (SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
+              /\.(?:json|ya?ml|toml)$/i.test(file)) &&
+            (apiImplementationCandidateScore(project.root, file) >= 20 ||
+              /\.(?:json|ya?ml|toml)$/i.test(file)) &&
+            !isNonProductionArtifact(project.root, file) &&
+            !isGeneratedArtifact(project.root, file) &&
+            !isOpenApiCandidate(file)
+        )
+        .slice(0, API_IMPLEMENTATION_SCAN_LIMIT)
+        .some((file) => {
+          try {
+            const stat = fsExtra.statSync(file);
+            return (
+              stat.isFile() &&
+              stat.size <= 2 * 1024 * 1024 &&
+              dynamicApiRegistrationOffset(file, fsExtra.readFileSync(file, 'utf8')) >= 0
+            );
+          } catch {
+            return false;
+          }
+        })
+    );
+  },
+  async run(context) {
+    for (const project of context.projects) {
+      const apis = [...context.state.entities.values()].filter(
+        (entity) => entity.kind === 'api' && entity.projectId === project.id
+      );
+      if (apis.length === 0) continue;
+      const candidates = (context.semanticFilesByProject.get(project.id) ?? [])
+        .filter(
+          (file) =>
+            (SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
+              /\.(?:json|ya?ml|toml)$/i.test(file)) &&
+            !isNonProductionArtifact(project.root, file) &&
+            !isGeneratedArtifact(project.root, file) &&
+            !isOpenApiCandidate(file) &&
+            (apiImplementationCandidateScore(project.root, file) >= 20 ||
+              /\.(?:json|ya?ml|toml)$/i.test(file))
+        )
+        .sort(
+          (left, right) =>
+            apiImplementationCandidateScore(project.root, right) -
+              apiImplementationCandidateScore(project.root, left) || left.localeCompare(right)
+        )
+        .slice(0, API_IMPLEMENTATION_SCAN_LIMIT);
+      let emittedRegistrations = 0;
+      const registrationLimit = Math.max(1, apis.length * DYNAMIC_API_REGISTRATION_MAX_PER_API);
+      for (const file of candidates) {
+        if (emittedRegistrations >= registrationLimit) break;
+        let contents: string;
+        try {
+          const stat = await fsExtra.stat(file);
+          if (!stat.isFile() || stat.size > 2 * 1024 * 1024) continue;
+          contents = await fsExtra.readFile(file, 'utf8');
+        } catch {
+          continue;
+        }
+        const offset = dynamicApiRegistrationOffset(file, contents);
+        if (offset < 0) continue;
+        const targetApis =
+          apis.length === 1
+            ? apis
+            : apis.filter((api) =>
+                api.label
+                  .toLowerCase()
+                  .split(/[^a-z0-9]+/)
+                  .filter((token) => token.length >= 4)
+                  .some((token) => contents.toLowerCase().includes(token))
+              );
+        if (targetApis.length === 0) continue;
+        const artifact = context.state.artifactPath(file, project);
+        const proof = await context.state.addProof({
+          provider: this.id,
+          artifact,
+          absolutePath: file,
+          line: contents.slice(0, offset).split(/\r?\n/).length,
+          derivation: 'extracted',
+          trust: 'observed',
+          confidence: 'high',
+          detail: /\.(?:json|ya?ml|toml)$/i.test(file)
+            ? 'Configuration-driven API topology registration'
+            : 'Runtime-generated API topology registration',
+        });
+        const fileEntity = context.state.addEntity({
+          kind: 'file',
+          key: `file:${project.id}:${artifact}`,
+          label: artifact,
+          projectId: project.id,
+          aliases: [path.basename(file)],
+          attributes: { artifact, language: sourceLanguage(file, project.runtime) },
+          proofIds: [proof],
+        });
+        const registration = context.state.addEntity({
+          kind: 'runtime-unit',
+          key: `dynamic-api-registration:${project.id}:${artifact}`,
+          label: `${path.basename(file)} API registration`,
+          projectId: project.id,
+          attributes: {
+            mechanism: /\.(?:json|ya?ml|toml)$/i.test(file)
+              ? 'configuration-driven-routing'
+              : 'runtime-generated-routing',
+          },
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: stableId('project', `project:${project.id}`),
+          to: registration,
+          kind: 'contains',
+          derivation: 'extracted',
+          trust: 'observed',
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: registration,
+          to: fileEntity,
+          kind: 'configured-by',
+          derivation: 'extracted',
+          trust: 'observed',
+          proofIds: [proof],
+        });
+        for (const api of targetApis) {
+          context.state.addRelation({
+            from: registration,
+            to: api.id,
+            kind: 'implements',
+            derivation: 'extracted',
+            trust: 'corroborated',
+            confidence: 'high',
+            proofIds: [...api.proofIds, proof],
+          });
+        }
+        emittedRegistrations += 1;
+      }
+    }
+  },
+};
+
 const interfaceContractProvider: Provider = {
   id: 'interface-contracts',
   version: '1.0.0',
@@ -3991,6 +4748,11 @@ const composeProvider: Provider = {
     return (await composeCandidateFiles(context)).length > 0;
   },
   async run(context) {
+    const pendingDependencies: Array<{
+      from: string;
+      to: string;
+      proofId: string;
+    }> = [];
     for (const file of await composeCandidateFiles(context)) {
       let document: JsonRecord | undefined;
       try {
@@ -4005,7 +4767,12 @@ const composeProvider: Provider = {
       const services = asRecord(document?.services);
       if (!services) continue;
       const ownerProject = projectForFile(context.projects, file);
-      const serviceIds = new Map<string, string>();
+      const artifact = context.state.artifactPath(file, ownerProject);
+      const composeFamily = path.basename(file).toLowerCase().startsWith('docker-compose')
+        ? 'docker-compose'
+        : 'compose';
+      const stackScope = `${ownerProject?.id ?? 'workspace'}:${path.posix.dirname(artifact)}:${composeFamily}`;
+      const serviceKey = (serviceName: string) => `compose-service:${stackScope}:${serviceName}`;
       for (const serviceName of Object.keys(services).sort()) {
         const service = asRecord(services[serviceName]);
         const build = service?.build;
@@ -4019,7 +4786,7 @@ const composeProvider: Provider = {
             ) ?? ownerProject);
         const proof = await context.state.addProof({
           provider: this.id,
-          artifact: context.state.artifactPath(file, ownerProject),
+          artifact,
           absolutePath: file,
           pointer: `/services/${serviceName}`,
           trust: 'authoritative',
@@ -4027,20 +4794,43 @@ const composeProvider: Provider = {
           detail: `Compose service ${serviceName}`,
         });
         const image = stringValue(service?.image);
+        const key = serviceKey(serviceName);
+        const existing = context.state.entities.get(stableId('service', key));
+        const existingPorts = Array.isArray(existing?.attributes.ports)
+          ? existing.attributes.ports.filter((value): value is string => typeof value === 'string')
+          : [];
+        const existingNetworks = Array.isArray(existing?.attributes.networks)
+          ? existing.attributes.networks.filter(
+              (value): value is string => typeof value === 'string'
+            )
+          : [];
+        const existingEnvironmentKeys = Array.isArray(existing?.attributes.environmentKeys)
+          ? existing.attributes.environmentKeys.filter(
+              (value): value is string => typeof value === 'string'
+            )
+          : [];
         const serviceEntity = context.state.addEntity({
           kind: 'service',
-          key: `compose-service:${context.state.artifactPath(file, ownerProject)}:${serviceName}`,
+          key,
           label: serviceName,
-          ...(serviceProject ? { projectId: serviceProject.id } : {}),
+          ...(serviceProject?.id || existing?.projectId
+            ? { projectId: serviceProject?.id ?? existing?.projectId }
+            : {}),
           attributes: {
-            image,
-            ports: stringArray(service?.ports).map(String),
-            networks: stringArray(service?.networks),
-            environmentKeys: environmentKeys(service?.environment),
+            image: image ?? existing?.attributes.image,
+            ports: [
+              ...new Set([...existingPorts, ...stringArray(service?.ports).map(String)]),
+            ].sort((left, right) => left.localeCompare(right)),
+            networks: [...new Set([...existingNetworks, ...stringArray(service?.networks)])].sort(
+              (left, right) => left.localeCompare(right)
+            ),
+            environmentKeys: [
+              ...new Set([...existingEnvironmentKeys, ...environmentKeys(service?.environment)]),
+            ].sort((left, right) => left.localeCompare(right)),
           },
-          proofIds: [proof],
+          proofIds: [...(existing?.proofIds ?? []), proof],
+          mergeArrayAttributes: ['ports', 'networks', 'environmentKeys'],
         });
-        serviceIds.set(serviceName, serviceEntity);
         if (serviceProject) {
           context.state.addRelation({
             from: stableId('project', `project:${serviceProject.id}`),
@@ -4072,30 +4862,39 @@ const composeProvider: Provider = {
       }
       for (const serviceName of Object.keys(services).sort()) {
         const service = asRecord(services[serviceName]);
-        const from = serviceIds.get(serviceName);
-        if (!from) continue;
         for (const dependency of stringArray(service?.depends_on)) {
-          const to = serviceIds.get(dependency);
-          if (!to) continue;
           const proof = await context.state.addProof({
             provider: this.id,
-            artifact: context.state.artifactPath(file, ownerProject),
+            artifact,
             absolutePath: file,
             pointer: `/services/${serviceName}/depends_on/${dependency}`,
             trust: 'authoritative',
             derivation: 'authored',
             detail: `${serviceName} depends on ${dependency}`,
           });
-          context.state.addRelation({
-            from,
-            to,
-            kind: 'depends-on',
-            trust: 'authoritative',
-            derivation: 'authored',
-            proofIds: [proof],
+          pendingDependencies.push({
+            from: stableId('service', serviceKey(serviceName)),
+            to: stableId('service', serviceKey(dependency)),
+            proofId: proof,
           });
         }
       }
+    }
+    for (const dependency of pendingDependencies) {
+      if (
+        !context.state.entities.has(dependency.from) ||
+        !context.state.entities.has(dependency.to)
+      ) {
+        continue;
+      }
+      context.state.addRelation({
+        from: dependency.from,
+        to: dependency.to,
+        kind: 'depends-on',
+        trust: 'authoritative',
+        derivation: 'authored',
+        proofIds: [dependency.proofId],
+      });
     }
   },
 };
@@ -4255,12 +5054,22 @@ const ciProvider: Provider = {
       const project = projectForFile(context.projects, file);
       const artifact = context.state.artifactPath(file, project);
       const isJenkins = path.basename(file) === 'Jenkinsfile';
+      const relative = toPosix(path.relative(project?.root ?? context.workspacePath, file));
+      const isExternalCiScript = /^prow\/[^/]+\.(?:sh|py)$/i.test(relative);
       let label = path.basename(file);
       let jobs: string[] = [];
       let triggers: string[] = [];
-      if (isJenkins) {
+      if (isJenkins || isExternalCiScript) {
         const contents = await fsExtra.readFile(file, 'utf8');
-        jobs = [...contents.matchAll(/\bstage\s*\(\s*["']([^"']+)["']/g)].map((match) => match[1]);
+        if (isJenkins) {
+          jobs = [...contents.matchAll(/\bstage\s*\(\s*["']([^"']+)["']/g)].map(
+            (match) => match[1]
+          );
+        } else {
+          label = `${path.basename(file)} · Prow`;
+          jobs = [path.basename(file).replace(/\.(?:sh|py)$/i, '')];
+          triggers = ['external-provider'];
+        }
       } else {
         let document: JsonRecord | undefined;
         try {
@@ -4270,7 +5079,6 @@ const ciProvider: Provider = {
         }
         if (!document) continue;
         label = stringValue(document.name) ?? label;
-        const relative = toPosix(path.relative(project?.root ?? context.workspacePath, file));
         if (/^\.gitlab-ci\./i.test(relative)) {
           const reserved = new Set([
             'stages',
@@ -4303,7 +5111,7 @@ const ciProvider: Provider = {
         provider: this.id,
         artifact,
         absolutePath: file,
-        ...(!isJenkins ? { pointer: '/jobs' } : {}),
+        ...(!isJenkins && !isExternalCiScript ? { pointer: '/jobs' } : {}),
         trust: 'authoritative',
         derivation: 'authored',
         detail: 'CI/CD workflow',
@@ -4312,6 +5120,7 @@ const ciProvider: Provider = {
         kind: 'pipeline',
         key: `pipeline:${artifact}`,
         label,
+        ...(project ? { projectId: project.id } : {}),
         attributes: { jobs, triggers, artifact },
         proofIds: [proof],
       });
@@ -4331,13 +5140,53 @@ const ciProvider: Provider = {
 
 const ownershipProvider: Provider = {
   id: 'codeowners',
-  version: '1.0.0',
+  version: '1.1.0',
   async applicable(context) {
     return (await ownershipCandidateFiles(context)).length > 0;
   },
   async run(context) {
     for (const file of await ownershipCandidateFiles(context)) {
       const owningProject = projectForFile(context.projects, file);
+      if (path.basename(file) === 'OWNERS') {
+        const documents = await readStructuredDocuments(file);
+        for (const document of documents) {
+          for (const role of ['approvers', 'reviewers'] as const) {
+            const owners = Array.isArray(document[role]) ? document[role] : [];
+            for (let index = 0; index < owners.length; index += 1) {
+              const rawOwner = stringValue(owners[index]);
+              if (!rawOwner) continue;
+              const owner = rawOwner.startsWith('@') ? rawOwner : `@${rawOwner}`;
+              const proof = await context.state.addProof({
+                provider: this.id,
+                artifact: context.state.artifactPath(file, owningProject),
+                absolutePath: file,
+                pointer: `/${role}/${index}`,
+                trust: 'authoritative',
+                derivation: 'authored',
+                detail: `${role}: ${owner}`,
+              });
+              const ownerEntity = context.state.addEntity({
+                kind: 'owner',
+                key: `owner:${owner.toLowerCase()}`,
+                label: owner,
+                aliases: [rawOwner, owner],
+                proofIds: [proof],
+              });
+              context.state.addRelation({
+                from: ownerEntity,
+                to: owningProject
+                  ? stableId('project', `project:${owningProject.id}`)
+                  : stableId('workspace', `workspace:${context.state.workspaceName}`),
+                kind: 'owns',
+                trust: 'authoritative',
+                derivation: 'authored',
+                proofIds: [proof],
+              });
+            }
+          }
+        }
+        continue;
+      }
       const contents = await fsExtra.readFile(file, 'utf8');
       const lines = contents.split(/\r?\n/);
       for (let index = 0; index < lines.length; index += 1) {
@@ -4472,6 +5321,8 @@ const PROVIDERS: Provider[] = [
   polyglotSemanticProvider,
   serviceContractProvider,
   openApiProvider,
+  authoredApiImplementationProvider,
+  dynamicApiRegistrationProvider,
   interfaceContractProvider,
   composeProvider,
   infrastructureProvider,
@@ -4579,10 +5430,48 @@ function calculateBindingCoverage(
   const endpointIds = entities
     .filter((entity) => entity.kind === 'endpoint')
     .map((entity) => entity.id);
+  const endpointIdSet = new Set(endpointIds);
+  // Runtime registration is a project-local implementation claim. Shared
+  // protobuf/OpenAPI identities deliberately have no projectId after semantic
+  // reconciliation, so counting them here would manufacture an impossible
+  // registration deficit for contract-only or multi-project APIs.
+  const apiIds = entities
+    .filter((entity) => entity.kind === 'api' && Boolean(entity.projectId))
+    .map((entity) => entity.id);
+  const apiIdSet = new Set(apiIds);
+  const entityKindById = new Map(entities.map((entity) => [entity.id, entity.kind]));
   const implementedEndpoints = new Set(
     relations
-      .filter((relation) => relation.kind === 'implements')
-      .flatMap((relation) => [relation.from, relation.to])
+      .filter(
+        (relation) =>
+          relation.kind === 'implements' ||
+          (relation.kind === 'defines' &&
+            entityKindById.get(relation.from) === 'file' &&
+            entityKindById.get(relation.to) === 'endpoint')
+      )
+      .flatMap((relation) =>
+        endpointIdSet.has(relation.from)
+          ? [relation.from]
+          : endpointIdSet.has(relation.to)
+            ? [relation.to]
+            : []
+      )
+  );
+  const registeredApis = new Set(
+    relations
+      .filter(
+        (relation) =>
+          relation.kind === 'implements' &&
+          (entityKindById.get(relation.from) === 'runtime-unit' ||
+            entityKindById.get(relation.to) === 'runtime-unit')
+      )
+      .flatMap((relation) =>
+        apiIdSet.has(relation.from)
+          ? [relation.from]
+          : apiIdSet.has(relation.to)
+            ? [relation.to]
+            : []
+      )
   );
   const testedProjects = new Set(
     relations
@@ -4604,6 +5493,7 @@ function calculateBindingCoverage(
   );
   return {
     apiImplementation: bindingCoverage(endpointIds, implementedEndpoints),
+    apiRuntimeRegistration: bindingCoverage(apiIds, registeredApis),
     projectTests: bindingCoverage(projectIds, testedProjects),
     projectDeployment: bindingCoverage(projectIds, deployedProjects),
     projectOwnership: bindingCoverage(projectIds, ownedProjects),
@@ -4637,17 +5527,42 @@ export async function buildWorkspaceKnowledgeGraph(
   const state = new KnowledgeGraphState(workspacePath, now, options.workspace.name);
   const maxFilesPerProject = Math.max(100, Math.min(options.maxFilesPerProject ?? 2_000, 10_000));
   const semanticScanLimit = Math.min(Math.max(maxFilesPerProject * 10, 20_000), 50_000);
+  const architectureFilesByProject = new Map(
+    await Promise.all(
+      projects.map(
+        async (project) => [project.id, await listArchitectureControlFiles(project.root)] as const
+      )
+    )
+  );
   const filesByProject = new Map(
     await Promise.all(
       projects.map(
-        async (project) => [project.id, await listFiles(project.root, maxFilesPerProject)] as const
+        async (project) =>
+          [
+            project.id,
+            [
+              ...new Set([
+                ...(await listFiles(project.root, maxFilesPerProject)),
+                ...(architectureFilesByProject.get(project.id) ?? []),
+              ]),
+            ].sort((left, right) => left.localeCompare(right)),
+          ] as const
       )
     )
   );
   const semanticFilesByProject = new Map(
     await Promise.all(
       projects.map(
-        async (project) => [project.id, await listFiles(project.root, semanticScanLimit)] as const
+        async (project) =>
+          [
+            project.id,
+            [
+              ...new Set([
+                ...(await listFiles(project.root, semanticScanLimit)),
+                ...(architectureFilesByProject.get(project.id) ?? []),
+              ]),
+            ].sort((left, right) => left.localeCompare(right)),
+          ] as const
       )
     )
   );

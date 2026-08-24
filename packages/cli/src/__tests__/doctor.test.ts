@@ -925,6 +925,147 @@ describe('Doctor Command', () => {
     }
   });
 
+  it('treats an adopted runtime-neutral repository as observed evidence instead of a blocker', async () => {
+    const projectPath = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-observed-project-'))
+    );
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'agent-plugin-catalog',
+      runtime: 'unknown',
+      framework: 'unknown',
+      kit: 'adopted.unknown',
+      support_tier: 'observed',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'README.md'), '# Agent plugin catalog\n');
+    await fsExtra.ensureDir(path.join(projectPath, '.claude-plugin'));
+    await fsExtra.writeJSON(path.join(projectPath, '.claude-plugin', 'plugin.json'), {
+      name: 'agent-plugin-catalog',
+      version: '1.0.0',
+    });
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+
+      expect(payload.project.framework).toBe('Unknown');
+      expect(payload.project.runtimeFamily).toBe('unknown');
+      expect(payload.project.issues).not.toContain(
+        'Unknown project type (no recognized runtime marker files)'
+      );
+      expect(payload.project.probes).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-classification',
+          status: 'warn',
+          applicability: 'unknown',
+        })
+      );
+      expect(payload.project.diagnosis.findings).toContainEqual(
+        expect.objectContaining({
+          probeId: 'runtime-classification',
+          status: 'advisory',
+          issueClass: 'runtime',
+        })
+      );
+      expect(payload.project.diagnosis.findings).not.toContainEqual(
+        expect.objectContaining({
+          status: 'blocking',
+          symptom: expect.stringContaining('Unknown project type'),
+        })
+      );
+      expect(payload.project.verdict).toBe('attention');
+
+      const receipt = await fsExtra.readJSON(
+        path.join(projectPath, '.workspai', 'reports', 'doctor-receipt-last-run.json')
+      );
+      expect(receipt.verdict).toBe('attention');
+      expect(receipt.next).toMatchObject({ action: 'review' });
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(projectPath);
+    }
+  });
+
+  it('does not advertise repair when only an advisory has an executable capability', async () => {
+    const projectPath = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-causal-receipt-'))
+    );
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'causal-receipt',
+      runtime: 'node',
+      framework: 'node',
+    });
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'causal-receipt',
+      version: '1.0.0',
+      scripts: { dev: 'node src.js', build: 'node --check src.js', test: 'vitest run' },
+      dependencies: { express: '^5.1.0' },
+    });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), {
+      name: 'causal-receipt',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: { '': { name: 'causal-receipt', version: '1.0.0' } },
+    });
+    await fsExtra.ensureDir(path.join(projectPath, 'node_modules', 'express'));
+    await fsExtra.writeJSON(path.join(projectPath, 'node_modules', 'express', 'package.json'), {
+      name: 'express',
+      version: '5.1.0',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'src.js'), 'export {};\n');
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'doctor.probes.json'), {
+      probes: [
+        {
+          id: 'required-governance-contract',
+          label: 'Required governance contract',
+          severity: 'error',
+          allOfPaths: ['GOVERNANCE.md'],
+          recommendation: 'Add the reviewed governance contract.',
+        },
+      ],
+    });
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const receipt = await fsExtra.readJSON(
+        path.join(projectPath, '.workspai', 'reports', 'doctor-receipt-last-run.json')
+      );
+      expect(receipt.counts.blockingCauses).toBeGreaterThan(0);
+      expect(receipt.counts.repairableFindings).toBeGreaterThan(0);
+      expect(receipt.blockers).toContainEqual(
+        expect.objectContaining({
+          repairDisposition: 'unavailable',
+          symptom: expect.stringContaining('Custom probe failed'),
+        })
+      );
+      expect(receipt.next).toMatchObject({
+        action: 'review',
+        reason: expect.stringContaining('no automatic typed repair'),
+      });
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(projectPath);
+    }
+  });
+
   it('should detect workspace root with .rapidkit-workspace marker only', async () => {
     const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-doctor-marker-only-'));
     const workspacePath = path.join(tempRoot, 'workspace');
@@ -2883,6 +3024,10 @@ describe('Doctor Command', () => {
     await fsExtra.ensureDir(path.join(projectPath, 'src'));
     await fsExtra.ensureDir(path.join(projectPath, 'include'));
     await fsExtra.ensureDir(path.join(projectPath, 'bindings'));
+    await fsExtra.outputFile(
+      path.join(projectPath, 'k8s', 'deployment.yaml'),
+      'apiVersion: apps/v1\nkind: Deployment\n'
+    );
     await fsExtra.writeFile(path.join(projectPath, 'CMakeLists.txt'), 'project(polyglot_core)\n');
     await fsExtra.writeFile(
       path.join(projectPath, 'src', 'core.cpp'),
@@ -2909,6 +3054,11 @@ describe('Doctor Command', () => {
         .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
       const payload = JSON.parse(jsonLine);
       expect(payload.project.projectArchetype).toBe('platform');
+      expect(
+        payload.project.probes.find(
+          (probe: { id: string }) => probe.id === 'surface-kubernetes-readiness'
+        )
+      ).toMatchObject({ status: 'pass', applicability: 'not-applicable' });
       for (const probeId of [
         'surface-env-contract',
         'migration-surface',

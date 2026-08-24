@@ -80,6 +80,7 @@ import {
 import { buildEnterpriseSurfaceProbes } from './utils/doctor-surface-probes.js';
 import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './workspace-history.js';
 import { findWorkspaceRootUp, isWorkspaceShellDirectory } from './utils/workspace-root.js';
+import { detectProjectTestSurface } from './utils/project-test-surface.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
@@ -317,7 +318,15 @@ type ProjectRuntimeFamily =
   | 'c'
   | 'cpp'
   | 'unknown';
-type ProjectKind = 'backend' | 'frontend' | 'desktop' | 'extension' | 'fullstack' | 'generic';
+type ProjectKind =
+  | 'backend'
+  | 'frontend'
+  | 'desktop'
+  | 'extension'
+  | 'fullstack'
+  | 'platform'
+  | 'library'
+  | 'generic';
 type ProjectArchetype =
   'application' | 'service' | 'library' | 'sdk' | 'platform' | 'plugin' | 'monorepo' | 'unknown';
 type FrameworkConfidence = 'high' | 'medium' | 'low';
@@ -675,7 +684,7 @@ const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
 // Bump whenever project diagnosis or executable-remediation semantics change.
 // This keeps unchanged source trees from reusing evidence produced by an older
 // Doctor policy after a CLI upgrade.
-const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v3';
+const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v4';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
@@ -2745,7 +2754,8 @@ async function performCommonChecks(
     }
   }
 
-  health.hasTests = hasTestDir || hasGoTests;
+  const portableTestSurface = await detectProjectTestSurface(projectPath);
+  health.hasTests = hasTestDir || hasGoTests || portableTestSurface.detected;
   if ((health.runtimeFamily === 'node' || health.runtimeFamily === 'bun') && !health.hasTests) {
     health.hasTests = await detectNodeTestSurface(projectPath, packageJsonData);
   }
@@ -4728,9 +4738,27 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  // If runtime markers are absent, return basic health
+  // Absence of a recognized runtime marker is uncertainty, not proof that the
+  // repository is broken. Documentation, agent-plugin, infrastructure, policy,
+  // and other runtime-neutral repositories are valid adopted projects. Keep
+  // the framework/runtime explicitly unknown and surface an advisory so strict
+  // consumers cannot claim runtime coverage, while avoiding a false blocking
+  // legacy issue with no causal repair.
   applyFrameworkMetadata(health, 'Unknown', 'low');
-  health.issues.push('Unknown project type (no recognized runtime marker files)');
+  pushProjectProbe(health, {
+    id: 'runtime-classification',
+    label: 'Runtime classification',
+    status: 'warn',
+    severity: 'warn',
+    scope: 'project-scoped',
+    applicability: 'unknown',
+    issueClass: 'runtime',
+    operationalImpact: 'developer-friction',
+    reason:
+      'No recognized runtime marker files were found. Doctor is applying runtime-neutral checks without claiming runtime-specific coverage.',
+    recommendation:
+      'If this repository executes code, add or configure its canonical runtime/build manifest; otherwise retain it as an observed runtime-neutral project.',
+  });
 
   await performCommonChecks(projectPath, health);
   await appendEnterpriseSurfaceProbes(projectPath, health);
@@ -4816,6 +4844,13 @@ async function detectProjectArchetype(
   health: ProjectHealth
 ): Promise<ProjectArchetype> {
   if (health.projectKind === 'extension') return 'plugin';
+  if (health.projectKind === 'platform') {
+    const packageJson = await fsExtra
+      .readJson(path.join(projectPath, 'package.json'))
+      .catch(() => null);
+    return packageJson?.workspaces ? 'monorepo' : 'platform';
+  }
+  if (health.projectKind === 'library') return 'library';
   if (
     health.projectKind === 'frontend' ||
     health.projectKind === 'desktop' ||
@@ -4877,7 +4912,13 @@ function applyArchetypeApplicability(project: ProjectHealth): void {
     project.probes = probes.filter((_, index) => !duplicateConfigIndexes.includes(index));
   }
 
-  const nonDeployable = new Set<ProjectArchetype>(['library', 'sdk', 'platform', 'plugin']);
+  const nonDeployable = new Set<ProjectArchetype>([
+    'library',
+    'sdk',
+    'platform',
+    'plugin',
+    'monorepo',
+  ]);
   if (!project.projectArchetype || !nonDeployable.has(project.projectArchetype)) return;
 
   const suppressedCommands = new Set<string>();
@@ -4885,6 +4926,7 @@ function applyArchetypeApplicability(project: ProjectHealth): void {
     const isDeployableOnly =
       probe.id === 'migration-surface' ||
       probe.id === 'runtime-health-surface' ||
+      probe.id === 'surface-kubernetes-readiness' ||
       probe.id.endsWith('-boot-entrypoint') ||
       (probe.id === 'runtime-security-tooling' &&
         project.probes?.some((candidate) => candidate.id === 'surface-security-hygiene')) ||
@@ -4956,6 +4998,8 @@ async function checkProject(
     canonicalKind === 'desktop' ||
     canonicalKind === 'extension'
   ) {
+    health.projectKind = canonicalKind;
+  } else if (canonicalKind === 'platform' || canonicalKind === 'library') {
     health.projectKind = canonicalKind;
   } else if (!health.projectKind) {
     health.projectKind = 'generic';
@@ -5917,6 +5961,17 @@ function buildDoctorReceiptPayload(input: {
         ...(finding.repair.capabilityId ? { capabilityId: finding.repair.capabilityId } : {}),
       }))
   );
+  const repairableBlockingFindings = input.projects.reduce(
+    (count, project) =>
+      count +
+      (project.diagnosis?.findings ?? []).filter(
+        (finding) =>
+          finding.status === 'blocking' &&
+          (finding.repair.disposition === 'automatic' ||
+            finding.repair.disposition === 'approval-required')
+      ).length,
+    0
+  );
   const verdict =
     input.healthScore?.verdict ??
     (counts.blockingCauses > 0
@@ -5931,7 +5986,7 @@ function buildDoctorReceiptPayload(input: {
           reason: 'Doctor evidence is stale or has unknown freshness.',
           commands: [`npx workspai doctor ${input.scopeKind} --fresh --json=summary`],
         }
-      : counts.blockingCauses > 0 && counts.repairableFindings > 0
+      : counts.blockingCauses > 0 && repairableBlockingFindings > 0
         ? {
             action: 'repair',
             reason: 'At least one blocking cause has a typed repair capability.',

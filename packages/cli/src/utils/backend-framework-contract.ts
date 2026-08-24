@@ -601,6 +601,13 @@ const NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES = new Set([
   'coverage',
   '.next',
   '.cache',
+  'test',
+  'tests',
+  'spec',
+  'specs',
+  'testdata',
+  'fixtures',
+  '__fixtures__',
 ]);
 
 function listFilesRecursive(dirPath: string, maxDepth: number): string[] {
@@ -841,10 +848,9 @@ function detectPythonBackendFromProject(projectPath: string): BackendFrameworkDe
 }
 
 function detectGoBackendFromProject(projectPath: string): BackendFrameworkDetection {
-  const merged = [
-    readTextIfExists(path.join(projectPath, 'go.mod')),
-    readTextIfExists(path.join(projectPath, 'main.go')),
-  ].join('\n');
+  const goModule = readTextIfExists(path.join(projectPath, 'go.mod'));
+  const mainSource = readTextIfExists(path.join(projectPath, 'main.go'));
+  const merged = [goModule, mainSource].join('\n');
 
   if (merged.includes('github.com/gofiber/fiber')) {
     return buildDetection('gofiber', 'high', 'manifest');
@@ -855,7 +861,10 @@ function detectGoBackendFromProject(projectPath: string): BackendFrameworkDetect
   if (merged.includes('github.com/labstack/echo')) {
     return buildDetection('echo', 'high', 'manifest');
   }
-  if (merged.trim()) {
+  if (goModule.trim()) {
+    return buildDetection('go', 'high', 'manifest');
+  }
+  if (mainSource.trim()) {
     return buildDetection('go', 'medium', 'marker');
   }
 
@@ -1013,7 +1022,9 @@ export function detectRuntimeCandidatesFromProject(projectPath: string): Backend
   }
   if (
     fs.existsSync(path.join(projectPath, 'bun.lockb')) ||
-    fs.existsSync(path.join(projectPath, 'bun.lock'))
+    fs.existsSync(path.join(projectPath, 'bun.lock')) ||
+    fs.existsSync(path.join(projectPath, 'bunfig.toml')) ||
+    fs.existsSync(path.join(projectPath, '.bunfig.toml'))
   ) {
     push('bun');
   }
@@ -1076,7 +1087,7 @@ export function detectNestedRuntimeCandidatesFromProject(
   if (hasName('deps.edn', 'project.clj')) push('clojure');
   if (hasName('build.sbt')) push('scala');
   if (hasName('deno.json', 'deno.jsonc')) push('deno');
-  if (hasName('bun.lockb', 'bun.lock')) push('bun');
+  if (hasName('bun.lockb', 'bun.lock', 'bunfig.toml', '.bunfig.toml')) push('bun');
   if (
     hasName('CMakeLists.txt', 'meson.build') ||
     hasSuffix('.cpp', '.cc', '.cxx', '.hpp', '.hh', '.hxx')

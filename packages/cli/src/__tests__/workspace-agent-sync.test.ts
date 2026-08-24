@@ -564,7 +564,7 @@ describe('workspace agent sync', () => {
     ).toBe(false);
   });
 
-  it('preserves an authored project provider adapter symlink during transactional sync', async (context) => {
+  it('grounds a safe repository-local project provider symlink during transactional sync', async (context) => {
     const workspacePath = await makeWorkspace();
     const projectPath = path.join(workspacePath, 'apps', 'web');
     const authoredRulesPath = path.join(projectPath, '.claude-rules.md');
@@ -612,7 +612,13 @@ describe('workspace agent sync', () => {
     });
 
     expect((await fsExtra.lstat(path.join(projectPath, 'CLAUDE.md'))).isSymbolicLink()).toBe(true);
-    expect(await fsExtra.readFile(authoredRulesPath, 'utf8')).toBe('# Repository Claude rules\n');
+    const authoredRules = await fsExtra.readFile(authoredRulesPath, 'utf8');
+    expect(authoredRules).toContain('# Repository Claude rules');
+    expect(authoredRules).toContain('WORKSPAI:AGENT-ENTRY:START');
+    expect(authoredRules).toContain('@AGENTS.md');
+    expect(await fsExtra.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8')).toContain(
+      'WORKSPAI:PROJECT-GROUNDING:START'
+    );
     expect(result.projectLenses?.projects).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -620,8 +626,8 @@ describe('workspace agent sync', () => {
           hostCoverage: expect.arrayContaining([
             expect.objectContaining({
               id: 'claude',
-              status: 'blocked',
-              reason: expect.stringContaining('repository-authored symbolic link'),
+              status: 'ready',
+              entryFiles: ['CLAUDE.md'],
             }),
           ]),
         }),

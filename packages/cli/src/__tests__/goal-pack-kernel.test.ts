@@ -220,6 +220,52 @@ describe('goal pack pure kernel', () => {
     expect(handoff.workflow.at(-1)).toMatchObject({ order: 6, owner: 'agent' });
   });
 
+  it('distinguishes domain memory features from runtime memory performance', () => {
+    expect(
+      compileGoalIntent('Add tenant-scoped memory retention across the Python and TypeScript SDKs')
+    ).toMatchObject({
+      category: 'feature-change',
+      confidence: 'high',
+    });
+    expect(
+      compileGoalIntent('Reduce memory usage and heap pressure in the indexing worker')
+    ).toMatchObject({
+      category: 'performance',
+    });
+  });
+
+  it('recognizes improvement objectives as high-confidence feature changes', () => {
+    expect(
+      compileGoalIntent(
+        'Improve agent tool execution reliability while preserving session isolation'
+      )
+    ).toMatchObject({
+      category: 'feature-change',
+      confidence: 'high',
+      ambiguities: [],
+    });
+  });
+
+  it('recognizes policy enforcement as a high-confidence feature goal', () => {
+    expect(
+      compileGoalIntent(
+        'Enforce namespace-aware admission policy across the API server and generated clients'
+      )
+    ).toMatchObject({
+      category: 'feature-change',
+      confidence: 'high',
+      ambiguities: [],
+    });
+  });
+
+  it('lets a specific objective category override generic feature verbs', () => {
+    expect(compileGoalIntent('Harden release readiness across the workspace')).toMatchObject({
+      category: 'release-readiness',
+      confidence: 'high',
+      ambiguities: [],
+    });
+  });
+
   it('recognizes a named project in a natural release-readiness objective', () => {
     expect(compileGoalIntent('Prepare gRPC for release')).toMatchObject({
       category: 'release-readiness',

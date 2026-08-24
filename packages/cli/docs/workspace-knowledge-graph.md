@@ -457,6 +457,18 @@ Use full graph export for interchange or offline analysis. Use bounded search
 for interactive agents. The latter keeps response size proportional to the
 question instead of workspace size.
 
+### Runtime-generated API topology
+
+When an authored API contract is wired through framework registration or
+configuration rather than a literal route handler, the
+`dynamic-api-registration-binding` provider creates a proof-backed
+`runtime-unit -> implements -> api` relation. Detection is runtime-specific,
+production-only, filename-aware for routing configuration, and bounded per API.
+It intentionally does not claim endpoint implementation: endpoint coverage
+remains unknown until a method/path or operation-id binding is proven. Consumers
+can distinguish the two guarantees through `bindingCoverage.apiRuntimeRegistration`
+and `bindingCoverage.apiImplementation`.
+
 ## Measuring retrieval payload reduction
 
 Workspai does not publish an unqualified “N× fewer tokens” claim. Such a claim
@@ -468,6 +480,10 @@ Measure the current workspace instead:
 ```bash
 npx workspai workspace graph benchmark "authentication endpoint" --limit 12 --json
 ```
+
+Use `--kind <entity-kind>` with search when the task requires a precise
+semantic surface, for example `--kind runtime-unit` for dynamic registration
+units or `--kind endpoint` for authored operations.
 
 The report compares the readable, proof-indexed source corpus with the bounded
 search payload using a clearly labelled `characters / 4` token estimate. It
@@ -497,6 +513,8 @@ a general performance claim.
 - The live-input fingerprint enables whole-graph snapshot reuse; it is not yet
   a per-file incremental graph rebuild or a hosted semantic-vector index.
 - Compiler/LSP-grade symbol resolution belongs in deeper language providers.
+- Runtime registration evidence proves that an API enters the running topology;
+  it does not prove that every authored operation has a reachable handler.
 - Missing project edges mean “relationship not proven,” not “projects are
   independent.” Author service contracts or provide API/package/runtime
   evidence to close that gap.

@@ -95,7 +95,7 @@ npx workspai workspace snapshot [--workspace <path>] [--json] [--include-paths] 
 npx workspai workspace diff --from <snapshot-or-model|git[:ref]> [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace impact --from <workspace-diff-report> [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace verify [--from-impact <file>] [--workspace <path>] [--scope project:<name>] [--strict] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
+npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--kind <entity-kind>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace eval [init <task> [strategy]|record|status|report|compare --from <report>] [--workspace <path>] [--output <file>] [--json]
 npx workspai workspace watch [--workspace <path>] [--json] [--graph-stream] [--once] [--scan-depth <count>]
 npx workspai workspace explain <target> [--workspace <path>] [--json] [--write]
@@ -239,6 +239,8 @@ assert equivalent answer quality or model-specific billing savings.
 
 Add `--scope project:<name>` to retrieve project-owned facts plus
 workspace-level shared entities proven to be connected to that project. The
+`search` mode also accepts `--kind <entity-kind>` so agents can retrieve a
+precise semantic surface such as `runtime-unit`, `endpoint`, or `owner`. The
 agent projection reports explicit omission budgets for relations, related
 entities, proofs, aliases, attributes, and proof references. Read-oriented
 `search`, `entities`, `evidence`, `path`, and `benchmark` modes reuse the

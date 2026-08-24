@@ -16,6 +16,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
+import { WORKSPACE_MODEL_PRODUCER_REVISION } from './contracts/workspace-model-cache-contract.js';
 
 /**
  * On-disk cache for the workspace model + graph, keyed by `inputsHash` (roadmap 1.15).
@@ -36,6 +37,7 @@ import {
 export const WORKSPACE_MODEL_CACHE_SCHEMA_VERSION =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceModelCache.schemaVersion;
 export const WORKSPACE_MODEL_CACHE_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceModelCache;
+export { WORKSPACE_MODEL_PRODUCER_REVISION } from './contracts/workspace-model-cache-contract.js';
 
 /** Manifest files whose contents materially change model/graph inference. */
 export const MODEL_INPUT_MANIFEST_FILES = [
@@ -60,6 +62,7 @@ export const MODEL_INPUT_MANIFEST_FILES = [
 
 export type WorkspaceModelCacheEnvelope = {
   schemaVersion: typeof WORKSPACE_MODEL_CACHE_SCHEMA_VERSION;
+  producerRevision: typeof WORKSPACE_MODEL_PRODUCER_REVISION;
   cliVersion: string;
   inputsHash: string;
   generatedAt: string;
@@ -290,6 +293,7 @@ export async function readWorkspaceModelCache(
     if (
       !payload ||
       payload.schemaVersion !== WORKSPACE_MODEL_CACHE_SCHEMA_VERSION ||
+      payload.producerRevision !== WORKSPACE_MODEL_PRODUCER_REVISION ||
       typeof payload.inputsHash !== 'string' ||
       typeof payload.cliVersion !== 'string' ||
       !payload.model
@@ -304,10 +308,11 @@ export async function readWorkspaceModelCache(
 
 export async function writeWorkspaceModelCache(
   workspacePath: string,
-  envelope: Omit<WorkspaceModelCacheEnvelope, 'schemaVersion'>
+  envelope: Omit<WorkspaceModelCacheEnvelope, 'schemaVersion' | 'producerRevision'>
 ): Promise<string> {
   const full: WorkspaceModelCacheEnvelope = {
     schemaVersion: WORKSPACE_MODEL_CACHE_SCHEMA_VERSION,
+    producerRevision: WORKSPACE_MODEL_PRODUCER_REVISION,
     ...envelope,
   };
   return writeWorkspaceArtifactJson(workspacePath, WORKSPACE_MODEL_CACHE_PATH, full);

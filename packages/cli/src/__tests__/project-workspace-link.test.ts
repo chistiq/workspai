@@ -86,6 +86,66 @@ afterEach(async () => {
 });
 
 describe('project workspace binding', () => {
+  it('uses the newest canonical Doctor evidence in the portable project lens', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fsp.writeFile(
+      path.join(reportsPath, 'doctor-project-last-run.json'),
+      `${JSON.stringify({
+        generatedAt: '2026-07-27T00:00:00.000Z',
+        projectName: 'web',
+        project: {
+          name: 'web',
+          diagnosis: {
+            findings: [
+              {
+                id: 'stale-runtime',
+                status: 'advisory',
+                symptom: 'Stale runtime composition.',
+              },
+            ],
+          },
+        },
+      })}\n`
+    );
+    await fsp.writeFile(
+      path.join(reportsPath, 'doctor-last-run.json'),
+      `${JSON.stringify({
+        generatedAt: '2026-07-27T00:05:00.000Z',
+        projects: [
+          {
+            name: 'web',
+            diagnosis: {
+              findings: [
+                {
+                  id: 'current-security',
+                  status: 'advisory',
+                  symptom: 'Current security evidence is incomplete.',
+                },
+              ],
+            },
+          },
+        ],
+      })}\n`
+    );
+
+    const context = await buildProjectContextAgent({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      now: new Date('2026-07-27T00:06:00.000Z'),
+    });
+
+    expect(context.blockers).toEqual([
+      expect.objectContaining({
+        code: 'current-security',
+        message: 'Current security evidence is incomplete.',
+      }),
+    ]);
+    expect(JSON.stringify(context.blockers)).not.toContain('Stale runtime composition');
+  });
+
   it('validates the public project workspace resolution result contract', () => {
     const payload: ProjectWorkspaceResolutionContract = {
       schemaVersion: 'project-workspace-resolution.v1',
@@ -848,6 +908,75 @@ describe('project workspace binding', () => {
     );
     expect(await fsp.readFile(path.join(projectPath, 'CLAUDE.md'), 'utf8')).toContain(
       '@.workspai/PROJECT-GROUNDING.md'
+    );
+  });
+
+  it('grounds shared repository-local AGENTS and Claude symlink targets without replacing them', async (context) => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'shared-agent-rules-workspace',
+    });
+    const rulesPath = path.join(projectPath, '.rules');
+    await fsp.writeFile(rulesPath, '# Repository rules\n\nKeep this guidance.\n');
+    try {
+      await fsp.symlink('.rules', path.join(projectPath, 'AGENTS.md'));
+      await fsp.symlink('.rules', path.join(projectPath, 'CLAUDE.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const first = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect((await fsp.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+    expect((await fsp.lstat(path.join(projectPath, 'CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    const rules = await fsp.readFile(rulesPath, 'utf8');
+    expect(rules).toContain('# Repository rules');
+    expect(rules.match(/WORKSPAI:PROJECT-GROUNDING:START/g)).toHaveLength(1);
+    expect(first.hostCoverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'codex', status: 'ready', entryFiles: ['AGENTS.md'] }),
+        expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
+      ])
+    );
+  });
+
+  it('never follows an AGENTS symlink outside the adopted project boundary', async (context) => {
+    const { root, workspacePath, projectPath } = await fixture({
+      workspaceName: 'external-agent-rules-workspace',
+    });
+    const outsideRules = path.join(root, 'outside-rules.md');
+    await fsp.writeFile(outsideRules, '# Outside rules\n');
+    try {
+      await fsp.symlink(outsideRules, path.join(projectPath, 'AGENTS.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(await fsp.readFile(outsideRules, 'utf8')).toBe('# Outside rules\n');
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'codex', status: 'blocked' })])
     );
   });
 

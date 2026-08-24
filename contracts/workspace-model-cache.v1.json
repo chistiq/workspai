@@ -5,6 +5,7 @@
   "type": "object",
   "required": [
     "schemaVersion",
+    "producerRevision",
     "cliVersion",
     "inputsHash",
     "generatedAt",
@@ -13,6 +14,9 @@
   "properties": {
     "schemaVersion": {
       "const": "workspace-model-cache.v1"
+    },
+    "producerRevision": {
+      "const": "workspace-model-producer.v3"
     },
     "cliVersion": {
       "type": "string",

@@ -2695,6 +2695,10 @@
           "description": "Bound graph query results (1–100)."
         },
         {
+          "flag": "--kind",
+          "description": "Limit graph entity search to one canonical entity kind."
+        },
+        {
           "flag": "--refresh-graph",
           "description": "Bypass the compatible persisted graph and rebuild from live sources."
         },
@@ -2732,7 +2736,7 @@
       ],
       "artifact": null,
       "examples": [
-        "workspai workspace graph search \"authentication endpoint\" --limit 12 --json",
+        "workspai workspace graph search \"authentication endpoint\" --kind endpoint --limit 12 --json",
         "workspai workspace graph evidence \"GET /users\" --json",
         "workspai workspace graph mermaid"
       ]
@@ -4133,6 +4137,13 @@
       "moduleCommands": false,
       "doctor": "observed",
       "lifecycleCommands": [
+        "init",
+        "dev",
+        "start",
+        "build",
+        "test",
+        "lint",
+        "format",
         "help"
       ]
     },

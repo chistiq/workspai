@@ -1474,6 +1474,10 @@
           "attributeName": "limit"
         },
         {
+          "flags": "--kind <kind>",
+          "attributeName": "kind"
+        },
+        {
           "flags": "--refresh-graph",
           "attributeName": "refreshGraph"
         },

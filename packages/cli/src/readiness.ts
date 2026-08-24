@@ -46,6 +46,15 @@ export interface ReadinessGateResult {
   evidencePath?: string;
 }
 
+export function dependencyBlockingSummary(assessment: {
+  blockingFindings: number;
+  vulnerableDependencies: number;
+}): string {
+  return assessment.vulnerableDependencies > 0
+    ? `${assessment.vulnerableDependencies} known dependency vulnerability finding(s) reported`
+    : `${assessment.blockingFindings} blocking dependency/security finding(s) reported`;
+}
+
 export const RELEASE_READINESS_SCHEMA_VERSION = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.readiness;
 
 export interface ReleaseReadinessContract {
@@ -635,7 +644,7 @@ function buildDependencyGate(
     return {
       gate: 'dependency',
       status: 'fail',
-      summary: `${Math.max(assessment.blockingFindings, assessment.vulnerableDependencies)} blocking dependency/security vulnerability finding(s) reported`,
+      summary: dependencyBlockingSummary(assessment),
       details: [
         'Resolve the typed dependency/security findings and regenerate focused audit evidence.',
       ],

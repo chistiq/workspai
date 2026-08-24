@@ -82,4 +82,17 @@ describe('workspace model cache (1.15)', () => {
     expect(next.cache).toBe('miss');
     expect(next.model.projectTopology).toEqual(next.model.graph);
   });
+
+  it('rebuilds a cache produced by an older semantic producer revision', async () => {
+    await buildWorkspaceModelCached({ workspacePath, cache: true });
+    const cachePath = path.join(workspacePath, WORKSPACE_MODEL_CACHE_PATH);
+    const envelope = await fsExtra.readJson(cachePath);
+    envelope.producerRevision = 'workspace-model-producer.v1';
+    await fsExtra.writeJson(cachePath, envelope, { spaces: 2 });
+
+    const next = await buildWorkspaceModelCached({ workspacePath, cache: true });
+    expect(next.cache).toBe('miss');
+    const refreshed = await readWorkspaceModelCache(workspacePath);
+    expect(refreshed?.producerRevision).toBe('workspace-model-producer.v3');
+  });
 });

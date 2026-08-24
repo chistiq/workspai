@@ -189,6 +189,11 @@ describe('workspace intelligence model', () => {
           runtime: 'node',
           framework: 'nestjs',
           kit: 'nestjs.standard',
+          governance: {
+            ci: { mode: 'external', provider: 'Buildkite', reference: 'platform/orders' },
+            release: { mode: 'external', provider: 'Release Engineering' },
+            ownership: { mode: 'external', provider: 'Service Catalog' },
+          },
           modules: [],
           ports: [],
           contracts: {
@@ -217,6 +222,14 @@ describe('workspace intelligence model', () => {
       name: 'orders-api',
       path: 'services/orders',
       kit: 'nestjs.standard',
+      governance: {
+        schemaVersion: 'workspai.project-governance.v1',
+        ci: {
+          status: 'external-declared',
+          provider: 'Buildkite',
+          reference: 'platform/orders',
+        },
+      },
       provenance: {
         path: 'workspace contract declaration reconciled with filesystem discovery',
       },
@@ -556,6 +569,127 @@ describe('workspace intelligence model', () => {
 
     expect(model.projects[0].importantFiles).toEqual(
       expect.arrayContaining(['CMakeLists.txt', 'WORKSPACE', '.bazelrc'])
+    );
+  });
+
+  it('publishes modern Compose files as important project control surfaces', async () => {
+    const workspacePath = await makeTempDir('rk-model-compose-controls-');
+    const projectPath = path.join(workspacePath, 'platform');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'platform',
+      runtime: 'node',
+      framework: 'node',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'compose.yaml'),
+      'services:\n  api:\n    image: example/api\n'
+    );
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toContain('compose.yaml');
+  });
+
+  it('publishes bounded nested ecosystem entry manifests for composite roots', async () => {
+    const workspacePath = await makeTempDir('rk-model-composite-controls-');
+    const projectPath = path.join(workspacePath, 'bindings');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'bindings',
+      runtime: 'cpp',
+      framework: 'cpp',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'compose.yaml'), 'services: {}\n');
+    await fsExtra.outputFile(path.join(projectPath, 'cpp', 'CMakeLists.txt'), 'project(core)\n');
+    await fsExtra.outputFile(path.join(projectPath, 'python', 'pyproject.toml'), '[project]\n');
+    await fsExtra.outputFile(path.join(projectPath, 'r', 'DESCRIPTION'), 'Package: bindings\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'ruby', 'client', 'client.gemspec'),
+      'Gem::Specification.new\n'
+    );
+    for (let index = 0; index < 20; index += 1) {
+      await fsExtra.outputFile(
+        path.join(projectPath, 'a-native', `module-${index}`, 'meson.build'),
+        `project('module-${index}')\n`
+      );
+    }
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining([
+        'cpp/CMakeLists.txt',
+        'python/pyproject.toml',
+        'r/DESCRIPTION',
+        'ruby/client/client.gemspec',
+      ])
+    );
+    expect(model.projects[0].importantFiles.length).toBeLessThanOrEqual(19);
+  });
+
+  it('publishes the pinned Rust toolchain as an important project control surface', async () => {
+    const workspacePath = await makeTempDir('rk-model-rust-toolchain-');
+    const projectPath = path.join(workspacePath, 'editor');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'editor',
+      runtime: 'rust',
+      framework: 'rust',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'Cargo.toml'), '[workspace]\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'rust-toolchain.toml'),
+      '[toolchain]\nchannel = "1.90.0"\n'
+    );
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining(['Cargo.toml', 'rust-toolchain.toml'])
+    );
+  });
+
+  it('publishes Go workspace control files as important project surfaces', async () => {
+    const workspacePath = await makeTempDir('rk-model-go-workspace-');
+    const projectPath = path.join(workspacePath, 'platform');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'platform',
+      runtime: 'go',
+      framework: 'go',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.com/platform\n');
+    await fsExtra.outputFile(path.join(projectPath, 'go.work'), 'go 1.24\nuse (\n  .\n)\n');
+    await fsExtra.outputFile(path.join(projectPath, 'go.work.sum'), 'example checksum\n');
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining(['go.mod', 'go.work', 'go.work.sum'])
+    );
+  });
+
+  it('publishes product and monorepo control surfaces as important files', async () => {
+    const workspacePath = await makeTempDir('rk-model-product-controls-');
+    const projectPath = path.join(workspacePath, 'editor');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'editor',
+      runtime: 'node',
+      framework: 'electron',
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), { private: true });
+    await fsExtra.outputJson(path.join(projectPath, 'product.json'), { nameShort: 'Editor' });
+    await fsExtra.outputJson(path.join(projectPath, 'tsconfig.json'), { compilerOptions: {} });
+    await fsExtra.outputFile(path.join(projectPath, 'pnpm-workspace.yaml'), 'packages: []\n');
+    await fsExtra.outputFile(path.join(projectPath, '.bunfig.toml'), '[install.lockfile]\n');
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining([
+        'package.json',
+        'product.json',
+        'tsconfig.json',
+        'pnpm-workspace.yaml',
+        '.bunfig.toml',
+      ])
     );
   });
 

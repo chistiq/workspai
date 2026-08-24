@@ -197,10 +197,13 @@ export const RUNTIME_SUPPORT_MATRIX: Record<string, RuntimeSupportMatrixEntry> =
     tier: 'observed',
     scaffoldSupport: false,
     importSupport: true,
-    lifecycleCommands: ['help'],
+    lifecycleCommands: ['init', 'dev', 'start', 'build', 'test', 'lint', 'format', 'help'],
     moduleCommands: false,
     doctorSupport: 'observed',
-    notes: ['Bun projects are importable and governed as observed projects until a kit exists.'],
+    notes: [
+      'Bun projects are importable and governed as observed projects until a kit exists.',
+      'Declared package scripts execute through the Bun-aware npm wrapper; undeclared lifecycle commands remain unavailable.',
+    ],
   },
   c: {
     runtime: 'c',

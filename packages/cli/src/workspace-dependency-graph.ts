@@ -847,7 +847,11 @@ function buildOperationalProfiles(
       reasons.push(`${lowConfidenceEdges} low-confidence inferred edge(s) need review`);
     }
     if (incidentEdges.length === 0) {
-      reasons.push('No dependency evidence connected to this project yet');
+      reasons.push(
+        nodes.length === 1
+          ? 'Single-project workspace; inter-project dependency edges are not applicable'
+          : 'No dependency evidence connected to this project yet'
+      );
     }
 
     const normalizedScore = clampScore(score);
@@ -948,7 +952,7 @@ function buildGraphDiagnostics(
         'Run graph explain, add workspace contract relationships, or define manual graph overrides for operational dependencies that code imports cannot reveal.',
       nodeIds: orphanIds,
     });
-  } else if (stats.orphanCount > 0) {
+  } else if (stats.nodeCount > 1 && stats.orphanCount > 0) {
     diagnostics.push({
       code: 'graph.orphans.detected',
       severity: 'warning',

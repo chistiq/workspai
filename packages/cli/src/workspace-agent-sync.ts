@@ -2857,6 +2857,7 @@ export async function syncWorkspaceAgentGrounding(
       await transaction.captureFile(absolutePath);
     }
     const projectTargets = await resolveWorkspaceProjectLensTargets(workspacePath);
+    const capturedProjectFiles = new Set<string>();
     for (const project of projectTargets.resolved) {
       for (const relativePath of [
         PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
@@ -2867,7 +2868,7 @@ export async function syncWorkspaceAgentGrounding(
         'AGENTS.md',
         '.gitignore',
       ]) {
-        const absolutePath = path.join(project.projectPath, relativePath);
+        let absolutePath = path.join(project.projectPath, relativePath);
         const preservesAuthoredSymlink =
           relativePath === 'AGENTS.md' ||
           PROJECT_AGENT_ADAPTER_ENTRY_FILES.some((entryPath) => entryPath === relativePath);
@@ -2876,11 +2877,28 @@ export async function syncWorkspaceAgentGrounding(
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
             throw error;
           });
-          // Project grounding treats provider entry symlinks as authored
-          // repository state. Do not follow, replace, or snapshot their target.
-          if (stat?.isSymbolicLink()) continue;
+          // Never replace a provider symlink. A regular repository-local target
+          // may receive a bounded managed block, so checkpoint that actual file.
+          if (stat?.isSymbolicLink()) {
+            const targetPath = await fsExtra.realpath(absolutePath).catch(() => null);
+            if (!targetPath) continue;
+            const targetRelative = path.relative(project.projectPath, targetPath);
+            if (
+              !targetRelative ||
+              path.isAbsolute(targetRelative) ||
+              targetRelative === '..' ||
+              targetRelative.startsWith(`..${path.sep}`)
+            ) {
+              continue;
+            }
+            const targetStat = await fsExtra.stat(targetPath).catch(() => null);
+            if (!targetStat?.isFile()) continue;
+            absolutePath = targetPath;
+          }
         }
+        if (capturedProjectFiles.has(absolutePath)) continue;
         await transaction.captureFile(absolutePath);
+        capturedProjectFiles.add(absolutePath);
       }
     }
     const result = await syncWorkspaceAgentGroundingUnsafe(options);

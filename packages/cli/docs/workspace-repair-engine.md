@@ -184,6 +184,23 @@ transaction. If a manifest, required executable, isolated environment, project-d
 validation, or audit surface is unavailable, the engine returns `decision-required`; it never
 hides the gap behind a model fallback.
 
+The same capability contract publishes an executable qualification matrix over
+adapter, scope, failure family, and recovery path. Every failure family has one
+bounded terminal policy: refresh stale/missing evidence, replan no-op/source
+drift/producer failures, require a toolchain decision, rollback failed
+validation, durably resume provider outages or interrupted rollback, and route
+unsupported runtimes to manual repair. Contract generation fails if an adapter
+omits reconcile/audit/test/build closure or a failure family has no recovery
+policy. This matrix is consumed through:
+
+```bash
+npx workspai workspace repair capabilities --json
+```
+
+It describes authority and deterministic recovery; conditional runtime support
+remains conditional until Doctor proves the required executable and project
+surface on the current machine.
+
 ## Consumer contract
 
 The latest transaction is written to:

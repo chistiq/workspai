@@ -198,11 +198,16 @@ function normalizedSkillSegment(value: string): string {
 function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
   const projectsByRuntime = new Map<string, string[]>();
   for (const project of model.projects) {
-    const runtime = normalizedSkillSegment(project.runtime);
-    if (!runtime || runtime === 'unknown') continue;
-    const projects = projectsByRuntime.get(runtime) ?? [];
-    projects.push(project.name);
-    projectsByRuntime.set(runtime, projects);
+    const runtimes = new Set(
+      [project.runtime, ...(project.runtimeCandidates ?? [])]
+        .map(normalizedSkillSegment)
+        .filter((runtime) => runtime && runtime !== 'unknown')
+    );
+    for (const runtime of runtimes) {
+      const projects = projectsByRuntime.get(runtime) ?? [];
+      if (!projects.includes(project.name)) projects.push(project.name);
+      projectsByRuntime.set(runtime, projects);
+    }
   }
 
   const templates: SkillTemplate[] = [];
@@ -213,10 +218,10 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
       skillId: `workspai-${runtime}-runtime-validation`,
       title: `${runtime.toUpperCase()} runtime validation`,
       triggers: [`${runtime} build`, `${runtime} test`, `${runtime} runtime failure`],
-      objective: `Validate ${runtime} changes against the detected project commands and canonical Workspai evidence.`,
+      objective: `Validate ${runtime} changes against the detected runtime boundary, registered project commands, and canonical Workspai evidence.`,
       steps: [
         'Read the scoped project lens and current fail/warn evidence before changing source.',
-        'Use the registered project commands; do not substitute a different runtime toolchain.',
+        `Use a registered ${runtime} command only when the project model identifies ${runtime} as the primary runtime; for a composite secondary boundary, inspect its manifest and Graph proofs instead of assuming the primary adapter covers it.`,
         'Run only the affected project validation first, then verify the workspace when the change crosses a contract boundary.',
       ],
       scopedProjects: [...projects].sort(),

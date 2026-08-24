@@ -226,6 +226,28 @@ npx workspai workspace contract graph --output ./contract-graph.json --json
 
 Contract file: `.workspai/workspace.contract.json`. Verification checks schema, duplicate slugs, port collisions, and unknown dependencies.
 
+Project entries may also declare governance that lives outside the repository:
+
+```json
+{
+  "slug": "api",
+  "relativePath": "services/api",
+  "governance": {
+    "ci": { "mode": "external", "provider": "Prow", "reference": "platform/test-infra" },
+    "release": { "mode": "external", "provider": "Release Engineering" },
+    "ownership": { "mode": "repository" }
+  }
+}
+```
+
+Workspai reconciles each control as `repository`, `external-declared`,
+`external-observed`, or `unknown`. Analyze does not misreport an explicitly
+external control as a missing repository file. Observed-but-undeclared external
+governance stays advisory until the canonical contract names its authority.
+The resolved profile is emitted by the Workspace Model, project lens, agent
+context, facts, and project graph attributes so every consumer sees the same
+truth.
+
 `workspace contract graph --json` preserves its original `nodes`, `edges`, and
 summary fields for existing consumers, and now adds an evidence-backed
 `dependencyGraph` using the public `workspace-dependency-graph.v1` contract. It

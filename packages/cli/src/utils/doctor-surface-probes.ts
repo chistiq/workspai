@@ -13,6 +13,8 @@ import {
   type DoctorRepairStrategyStage,
 } from './doctor-repair-capabilities.js';
 import type { DoctorDependencyAuditEvidence } from './doctor-dependency-audit.js';
+import { detectNodePackageManager } from './node-package-manager.js';
+import { detectProjectTestSurface } from './project-test-surface.js';
 import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
@@ -41,7 +43,14 @@ export const DOCTOR_SURFACE_RUNTIME_FAMILIES = [
 export type DoctorSurfaceRuntimeFamily = (typeof DOCTOR_SURFACE_RUNTIME_FAMILIES)[number];
 
 export type DoctorSurfaceProjectKind =
-  'backend' | 'frontend' | 'desktop' | 'extension' | 'fullstack' | 'generic';
+  | 'backend'
+  | 'frontend'
+  | 'desktop'
+  | 'extension'
+  | 'fullstack'
+  | 'platform'
+  | 'library'
+  | 'generic';
 
 export interface DoctorSurfaceProbe {
   id: string;
@@ -90,7 +99,7 @@ const DEPENDENCY_LOCKFILES: Record<DoctorSurfaceRuntimeFamily, string[]> = {
 const DEPENDENCY_MANIFESTS: Record<DoctorSurfaceRuntimeFamily, string[]> = {
   node: ['package.json'],
   deno: ['deno.json', 'deno.jsonc'],
-  bun: ['package.json', 'bunfig.toml'],
+  bun: ['package.json', 'bunfig.toml', '.bunfig.toml'],
   python: ['pyproject.toml', 'requirements.txt', 'setup.py'],
   go: ['go.mod'],
   java: ['pom.xml', 'build.gradle', 'build.gradle.kts'],
@@ -411,10 +420,20 @@ async function inferDependencyBaselineRepair(input: {
           ? '.\\gradlew.bat --project-cache-dir .workspai/cache/java/gradle dependencies'
           : './gradlew --project-cache-dir .workspai/cache/java/gradle dependencies'
         : 'gradle --project-cache-dir .workspai/cache/java/gradle dependencies';
+    if (hasPom) {
+      return {
+        command,
+        title: 'Warm Maven dependency graph',
+        files: ['pom.xml'],
+        limitations: [
+          'Maven does not provide a native transitive lockfile; dependency:go-offline warms dependencies but does not create reproducibility evidence.',
+        ],
+      };
+    }
     return {
       command,
-      title: 'Prepare Java dependency baseline',
-      files: ['pom.xml', 'build.gradle', 'build.gradle.kts', 'gradle.lockfile'],
+      title: 'Prepare Gradle dependency baseline',
+      files: ['build.gradle', 'build.gradle.kts', 'gradle.lockfile'],
       limitations: ['Review resolved dependency and lockfile changes before committing.'],
     };
   }
@@ -560,8 +579,19 @@ function runtimeCommandContract(input: {
         : null;
     }
     if (input.kind === 'security') {
+      const packageManager = detectNodePackageManager(input.projectPath);
+      const command =
+        packageManager === 'pnpm'
+          ? 'pnpm audit --audit-level=moderate'
+          : packageManager === 'yarn'
+            ? fsExtra.existsSync(path.join(input.projectPath, '.yarnrc.yml'))
+              ? 'yarn npm audit --severity moderate'
+              : 'yarn audit --level moderate'
+            : packageManager === 'bun'
+              ? 'bun audit'
+              : 'npm audit --audit-level=moderate';
       return {
-        command: 'npm audit --audit-level=moderate',
+        command,
         title: 'Define Node security audit script',
         targetName: 'audit',
         files: ['package.json'],
@@ -1050,6 +1080,10 @@ async function buildDependencyContractProbe(input: {
 
   const hasManifest = await anyPathExists(input.projectPath, manifests);
   const hasLockfile = await anyPathExists(input.projectPath, lockfiles);
+  const isMavenProject =
+    input.runtime === 'java' &&
+    (await fsExtra.pathExists(path.join(input.projectPath, 'pom.xml'))) &&
+    !(await anyPathExists(input.projectPath, ['build.gradle', 'build.gradle.kts']));
   const dependencyRepair =
     hasManifest && !hasLockfile
       ? await inferDependencyBaselineRepair({
@@ -1069,10 +1103,14 @@ async function buildDependencyContractProbe(input: {
       ? 'No dependency manifest markers detected for this runtime.'
       : hasLockfile
         ? 'Dependency manifest and deterministic lock/baseline markers detected.'
-        : `Dependency manifest detected, but no deterministic baseline found (${lockfiles.join(', ')}).`,
+        : isMavenProject
+          ? 'Maven manifest detected. Maven has no native transitive lockfile, so reproducibility requires pinned dependency and plugin versions plus published resolved-dependency evidence.'
+          : `Dependency manifest detected, but no deterministic baseline found (${lockfiles.join(', ')}).`,
     recommendation:
       hasManifest && !hasLockfile
-        ? 'Generate and commit the runtime-native lockfile or package baseline before release.'
+        ? isMavenProject
+          ? 'Pin dependency and plugin versions, then publish a resolved dependency tree or SBOM as release evidence.'
+          : 'Generate and commit the runtime-native lockfile or package baseline before release.'
         : undefined,
     repairCapability:
       hasManifest && !hasLockfile && dependencyRepair
@@ -1083,8 +1121,9 @@ async function buildDependencyContractProbe(input: {
             command: dependencyRepair.command,
             files: dependencyRepair.files,
             fixKind: 'dependency-sync',
-            reason:
-              'Generate the runtime-native dependency baseline so CI, Doctor, and Studio share deterministic dependency evidence.',
+            reason: isMavenProject
+              ? 'Warm the Maven dependency graph for inspection; reproducibility still requires pinned versions and published resolved-dependency evidence.'
+              : 'Generate the runtime-native dependency baseline so CI, Doctor, and Studio share deterministic dependency evidence.',
             limitations: dependencyRepair.limitations,
           })
         : undefined,
@@ -1187,7 +1226,9 @@ async function buildContainerProbe(input: SurfaceInput): Promise<DoctorSurfacePr
   );
   const composeExists =
     (await fsExtra.pathExists(path.join(input.projectPath, 'docker-compose.yml'))) ||
-    (await fsExtra.pathExists(path.join(input.projectPath, 'compose.yml')));
+    (await fsExtra.pathExists(path.join(input.projectPath, 'docker-compose.yaml'))) ||
+    (await fsExtra.pathExists(path.join(input.projectPath, 'compose.yml'))) ||
+    (await fsExtra.pathExists(path.join(input.projectPath, 'compose.yaml')));
 
   if (dockerfileExists) {
     return {
@@ -1762,6 +1803,7 @@ async function buildRuntimeTestDepthProbe(input: SurfaceInput): Promise<DoctorSu
     deno: ['deno.json', 'deno.jsonc'],
     bun: [
       'bunfig.toml',
+      '.bunfig.toml',
       'test',
       'tests',
       'vitest.config.ts',
@@ -1793,7 +1835,10 @@ async function buildRuntimeTestDepthProbe(input: SurfaceInput): Promise<DoctorSu
   const markers = markersByRuntime[runtime] ?? [];
   if (markers.length === 0) return null;
 
-  const hasRuntimeMarker = await anyPathExists(input.projectPath, markers);
+  const portableTestSurface = await detectProjectTestSurface(input.projectPath);
+  const hasRuntimeMarker =
+    (await anyPathExists(input.projectPath, markers)) ||
+    portableTestSurface.runtimeFamilies.some((candidate) => candidate === runtime);
   const scripts = scriptsFromPackageJson(input.packageJsonData);
   const scriptText = Object.values(scripts).join('\n');
   const manifestText = await collectTextFromExisting(input.projectPath, [
@@ -1869,7 +1914,7 @@ async function buildRuntimeQualityProbe(input: SurfaceInput): Promise<DoctorSurf
       'biome.jsonc',
     ],
     deno: ['deno.json', 'deno.jsonc'],
-    bun: ['eslint.config.js', 'biome.json', 'bunfig.toml'],
+    bun: ['eslint.config.js', 'biome.json', 'bunfig.toml', '.bunfig.toml'],
     python: ['ruff.toml', 'pyproject.toml', '.flake8', 'mypy.ini', 'Makefile'],
     go: ['.golangci.yml', '.golangci.yaml', 'Makefile'],
     java: ['checkstyle.xml', 'pom.xml', 'build.gradle', 'build.gradle.kts'],
@@ -1947,7 +1992,7 @@ async function buildRuntimeSecurityProbe(input: SurfaceInput): Promise<DoctorSur
   const markersByRuntime: Record<DoctorSurfaceRuntimeFamily, string[]> = {
     node: ['package.json'],
     deno: ['deno.json', 'deno.jsonc'],
-    bun: ['package.json', 'bunfig.toml'],
+    bun: ['package.json', 'bunfig.toml', '.bunfig.toml'],
     python: ['pyproject.toml', 'requirements.txt', 'Makefile'],
     go: ['Makefile', 'go.mod'],
     java: ['pom.xml', 'build.gradle', 'build.gradle.kts'],

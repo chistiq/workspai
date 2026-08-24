@@ -6,6 +6,7 @@ import { getRuntimeSupport } from './support-matrix.js';
 export const NPM_EXECUTOR_RUNTIMES = [
   'python',
   'node',
+  'bun',
   'go',
   'java',
   'dotnet',
@@ -86,5 +87,5 @@ const RUNTIME_PRIMARY_FILES: Partial<Record<BackendRuntimeFamily, string[]>> = {
   elixir: ['mix.exs'],
   kotlin: ['settings.gradle.kts'],
   deno: ['deno.json', 'deno.jsonc'],
-  bun: ['package.json', 'bunfig.toml'],
+  bun: ['package.json', 'bunfig.toml', '.bunfig.toml'],
 };
