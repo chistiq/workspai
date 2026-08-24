@@ -36,6 +36,7 @@ import {
   inferWorkspaceDependencyGraphIncremental,
 } from './workspace-dependency-graph.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
+import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
 import {
   computeModelInputsHash,
   computeProjectSignatures,
@@ -1944,6 +1945,10 @@ export async function writeWorkspaceModel(
   const contract = model.contracts.exists ? await loadWorkspaceContractSafely(workspacePath) : null;
   const { buildWorkspaceKnowledgeGraph } = await import('./workspace-knowledge-graph.js');
   const persistedModel = attachRunCorrelation(model);
+  const previousGraph = await fsExtra
+    .readJson(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph))
+    .then((value) => value as WorkspaceKnowledgeGraph)
+    .catch(() => null);
   const knowledgeGraph = await buildWorkspaceKnowledgeGraph({
     workspacePath,
     workspace: {
@@ -1976,6 +1981,7 @@ export async function writeWorkspaceModel(
       hashAlgorithm: 'sha256',
       hash: hashWorkspaceModel(persistedModel),
     },
+    previousGraph,
   });
   const [, modelPath] = await writeWorkspaceArtifactJsonSet(
     workspacePath,

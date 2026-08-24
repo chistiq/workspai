@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertQualificationReportIsPublicationSafe,
+  canonicalQualificationWorkspaceName,
   createQualificationCommandRecord,
   isQualificationCommandAccepted,
 } from '../../scripts/qualification-publication-safety.mjs';
 
 describe('qualification report publication safety', () => {
+  it.each([
+    ['next.js', /^next-js-[a-f0-9]{10}$/],
+    ['OpenSearch', /^opensearch-[a-f0-9]{10}$/],
+    ['Apache Arrow / C++', /^apache-arrow-c-[a-f0-9]{10}$/],
+    ['test', /^workspace-test-[a-f0-9]{10}$/],
+    ['valid-workspace', /^valid-workspace$/],
+  ])('maps repository identifier %s to a canonical workspace name', (source, expected) => {
+    expect(canonicalQualificationWorkspaceName(source)).toMatch(expected);
+  });
+
   it('retains bounded process metadata without command output or local paths', () => {
     const record = createQualificationCommandRecord({
       id: 'command-001',

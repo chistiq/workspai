@@ -31,6 +31,7 @@ import {
   RAPIDKIT_AGENT_GROUNDING_START,
 } from './utils/managed-agent-markers.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
+import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   type ProjectWorkspaceRelationship,
   writeProjectWorkspaceLink,
@@ -1505,28 +1506,6 @@ async function findUnsafeAdapterParent(
   return null;
 }
 
-async function repositoryLocalSymlinkTarget(
-  projectPath: string,
-  linkPath: string
-): Promise<string | null> {
-  const targetPath = await fsp.realpath(linkPath).catch((error) => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  });
-  if (!targetPath) return null;
-  const relative = path.relative(projectPath, targetPath);
-  if (
-    !relative ||
-    path.isAbsolute(relative) ||
-    relative === '..' ||
-    relative.startsWith(`..${path.sep}`)
-  ) {
-    return null;
-  }
-  const stat = await fsp.stat(targetPath).catch(() => null);
-  return stat?.isFile() ? targetPath : null;
-}
-
 function projectAgentAdapterBody(input: {
   adapter: ProjectAgentAdapter;
   agentsAvailable: boolean;
@@ -1577,14 +1556,14 @@ async function reconcileProjectAgentAdapter(input: {
     throw error;
   });
   if (stat?.isSymbolicLink()) {
-    const targetPath = await repositoryLocalSymlinkTarget(input.projectPath, absolutePath);
+    const targetPath = await resolveRepositoryLocalSymlinkFile(input.projectPath, absolutePath);
     if (!targetPath) {
       return {
         reason: `${input.adapter.relativePath} is a symbolic link without a safe repository-local file target.`,
       };
     }
     const target = await fsp.readFile(targetPath, 'utf8');
-    if (target.includes(WORKSPAI_PROJECT_GROUNDING_START)) {
+    if (target.includes(WORKSPAI_AGENT_ENTRY_START)) {
       return { path: input.adapter.relativePath };
     }
     managedPath = targetPath;
@@ -1687,7 +1666,7 @@ async function reconcileProjectAgents(
     throw error;
   });
   const managedPath = agentsStat?.isSymbolicLink()
-    ? await repositoryLocalSymlinkTarget(projectPath, agentsPath)
+    ? await resolveRepositoryLocalSymlinkFile(projectPath, agentsPath)
     : agentsPath;
   // Never replace or follow a link outside the project. A repository-local
   // regular target is the authored instruction file that the host actually

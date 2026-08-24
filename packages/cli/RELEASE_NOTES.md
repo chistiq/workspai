@@ -20,15 +20,16 @@ extension, native, and polyglot repositories.
 - Higher-fidelity project taxonomy and lifecycle discovery for Node.js, Go,
   JVM, native, generated, aggregate, and mixed-runtime repositories.
 - Proof-backed runtime API registration, explicit implementation-versus-
-  registration coverage, and entity-kind-filtered Graph retrieval.
+  registration coverage, proof-bounded source call binding, incremental project-
+  scope reuse, and entity-kind-filtered Graph retrieval.
 - Canonical CI, release, and ownership governance shared by the workspace
   contract, Model, Graph, Analyze, project lens, and agent context.
 - Portable test-surface evidence used consistently by Doctor, Analyze,
   Readiness, Goal Packs, and runtime capabilities.
 - A contract-enforced repair qualification matrix covering every supported
   adapter, scope, failure family, and terminal recovery path.
-- Stronger Goal retrieval diversity, cache invalidation, adoption rollback, and
-  real-repository qualification guarantees.
+- Stronger Goal retrieval diversity, cache invalidation, canonical symlink-safe
+  adoption rollback, and real-repository qualification guarantees.
 
 **Compatibility:** Existing CLI commands and version-one Workspace
 Intelligence contracts remain supported. New governance, test-surface, Graph,

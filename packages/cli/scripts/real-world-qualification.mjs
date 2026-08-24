@@ -6,6 +6,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import {
   assertQualificationReportIsPublicationSafe,
+  canonicalQualificationWorkspaceName,
   createQualificationCommandRecord,
   isQualificationCommandAccepted,
 } from './qualification-publication-safety.mjs';
@@ -23,7 +24,9 @@ const projectNames = (args.projects ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-const sharedWorkspaceName = args.sharedWorkspace ? slug(args.sharedWorkspace) : null;
+const sharedWorkspaceName = args.sharedWorkspace
+  ? canonicalQualificationWorkspaceName(args.sharedWorkspace)
+  : null;
 const sourceMode = args.sourceMode ?? 'snapshot';
 const isolatedStateRoot = path.join(runRoot, 'state');
 
@@ -64,7 +67,7 @@ const report = {
 
 for (const [projectIndex, projectName] of projectNames.entries()) {
   const sourceProjectPath = path.join(referenceRoot, projectName);
-  const workspaceName = sharedWorkspaceName ?? slug(projectName);
+  const workspaceName = sharedWorkspaceName ?? canonicalQualificationWorkspaceName(projectName);
   const workspacePath = path.join(runRoot, workspaceName);
   const project = {
     id: `project-${String(projectIndex + 1).padStart(3, '0')}`,
@@ -164,6 +167,7 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     writeReport();
     continue;
   }
+  const canonicalProjectName = adoptedProject?.name ?? projectName.toLowerCase();
   project.assertions.push(
     assertion(
       'adopt.runtime-composition',
@@ -233,7 +237,7 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
   );
   const qualifiedProjectModel = modelArtifact?.projects?.find(
-    (candidate) => candidate?.name === projectName
+    (candidate) => candidate?.name === canonicalProjectName
   );
   project.assertions.push(
     assertion(
@@ -292,6 +296,32 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
         repairMatrix?.invariants?.everyFailureTerminates === true &&
         repairMatrix?.invariants?.everyMutationIsCheckpointed === true,
       'Repair qualification must expose the complete adapter, scope, failure, recovery, and closure matrix used by every consumer.'
+    )
+  );
+  const scopedRepairCapabilities = run(project, {
+    id: 'workspace.repair-capabilities-project',
+    cwd: workspacePath,
+    argv: ['workspace', 'repair', 'capabilities', '--project', canonicalProjectName, '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 60_000,
+  });
+  const detectedRepairAdapters = scopedRepairCapabilities.json?.inspection?.detectedAdapters;
+  const primaryRuntime = adoptedProject?.runtimeCandidates?.[0] ?? null;
+  const primaryRepairAdapters = repairAdaptersForRuntime(primaryRuntime);
+  project.assertions.push(
+    assertion(
+      'repair.runtime-adapter-detection',
+      Array.isArray(detectedRepairAdapters) &&
+        detectedRepairAdapters.every((adapter) =>
+          repairMatrix?.dimensions?.adapters?.includes(adapter)
+        ) &&
+        (detectedRepairAdapters.length > 0
+          ? primaryRepairAdapters.length === 0 ||
+            primaryRepairAdapters.some((adapter) => detectedRepairAdapters.includes(adapter))
+          : primaryRepairAdapters.length === 0 &&
+            repairMatrix?.dimensions?.failureRecoveryPolicy?.['unsupported-runtime'] ===
+              'manual-repair'),
+      'Every real project must resolve its canonical repair adapter, or explicitly terminate through the governed unsupported-runtime manual-repair path.'
     )
   );
 
@@ -623,6 +653,27 @@ function hasValidCoverageMeasurementPreflight(goalPack) {
   );
 }
 
+function repairAdaptersForRuntime(runtime) {
+  const normalized = typeof runtime === 'string' ? runtime.trim().toLowerCase() : '';
+  return (
+    {
+      node: ['node'],
+      python: ['python'],
+      go: ['go'],
+      rust: ['rust'],
+      php: ['php-composer'],
+      ruby: ['ruby-bundler'],
+      elixir: ['elixir-mix'],
+      deno: ['deno'],
+      dotnet: ['dotnet'],
+      java: ['jvm-maven', 'jvm-gradle'],
+      kotlin: ['jvm-maven', 'jvm-gradle'],
+      clojure: ['clojure'],
+      scala: ['scala-sbt'],
+    }[normalized] ?? []
+  );
+}
+
 function isDirectory(target) {
   try {
     return fs.statSync(target).isDirectory();
@@ -664,15 +715,6 @@ function prepareSourceSnapshot({ sourceProjectPath, runRoot, projectId }) {
     shell: false,
   });
   return verified.status === 0 ? snapshotPath : null;
-}
-
-function slug(value) {
-  const normalized = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[._-]+|[._-]+$/g, '');
-  return normalized || 'qualified-project';
 }
 
 function writeReport() {

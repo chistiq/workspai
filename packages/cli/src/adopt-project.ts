@@ -16,6 +16,7 @@ import {
 } from './utils/project-kind.js';
 import { resolveWorkspaceProjectPaths } from './utils/workspace-project-paths.js';
 import { assertSafeProjectMetadataDirectories } from './utils/project-metadata-path-safety.js';
+import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
@@ -255,19 +256,9 @@ async function adoptSnapshotFilePaths(
       throw error;
     });
     if (!stat?.isSymbolicLink()) continue;
-    const targetPath = await fsExtra.realpath(providerPath).catch(() => null);
+    const targetPath = await resolveRepositoryLocalSymlinkFile(projectPath, providerPath);
     if (!targetPath) continue;
-    const relative = path.relative(projectPath, targetPath);
-    if (
-      !relative ||
-      path.isAbsolute(relative) ||
-      relative === '..' ||
-      relative.startsWith(`..${path.sep}`)
-    ) {
-      continue;
-    }
-    const targetStat = await fsExtra.stat(targetPath).catch(() => null);
-    if (targetStat?.isFile()) repositoryLocalTargets.push(targetPath);
+    repositoryLocalTargets.push(targetPath);
   }
 
   return [

@@ -59,6 +59,11 @@ export type BuildWorkspaceKnowledgeGraphOptions = {
   now?: Date;
   maxFilesPerProject?: number;
   source: Omit<WorkspaceKnowledgeGraph['source'], 'inputs'>;
+  /**
+   * Optional last valid artifact used only as a project-scope cache. Reuse is
+   * authorized by matching live input fingerprints, never by timestamps.
+   */
+  previousGraph?: WorkspaceKnowledgeGraph | null;
 };
 
 export function assertWorkspaceKnowledgeGraphSourceBinding(
@@ -170,6 +175,32 @@ const IGNORED_DIRECTORIES = new Set([
   '__fixtures__',
   'testdata',
 ]);
+
+/**
+ * Workspai writes these portable agent entry projections after Graph creation.
+ * They are consumers of canonical evidence, never inputs to that evidence. If
+ * they participate in inventory or Git diff hashing, a successful intelligence
+ * run invalidates its own Graph as soon as agent synchronization completes.
+ *
+ * Match at every project boundary because a workspace may contain nested
+ * projects. Repository-authored instructions remain available directly to the
+ * agent; excluding adapter projections from Graph evidence also prevents the
+ * Graph from citing its own generated guidance as source architecture.
+ */
+const GENERATED_AGENT_PROJECTION_BASENAMES = new Set([
+  'AGENTS.md',
+  'CLAUDE.md',
+  'GEMINI.md',
+  'QWEN.md',
+]);
+
+function isGeneratedAgentProjection(root: string, candidate: string): boolean {
+  const relative = toPosix(path.relative(root, candidate));
+  return (
+    GENERATED_AGENT_PROJECTION_BASENAMES.has(path.posix.basename(relative)) ||
+    /(?:^|\/)\.amazonq\/rules\/workspai-agent-entry\.md$/u.test(relative)
+  );
+}
 
 const TEST_OR_FIXTURE_DIRECTORIES = new Set([
   'test',
@@ -837,7 +868,7 @@ async function listFiles(root: string, maxFiles: number): Promise<string[]> {
           queue.push(candidate);
         }
       } else if (entry.isFile()) {
-        files.push(candidate);
+        if (!isGeneratedAgentProjection(root, candidate)) files.push(candidate);
       }
     }
   }
@@ -924,6 +955,10 @@ function gitInventoryPathspecs(): string[] {
     ...[...IGNORED_DIRECTORIES]
       .sort((left, right) => left.localeCompare(right))
       .map((directory) => `:(exclude,glob)**/${directory}/**`),
+    ...[...GENERATED_AGENT_PROJECTION_BASENAMES]
+      .sort((left, right) => left.localeCompare(right))
+      .map((file) => `:(exclude,glob)**/${file}`),
+    ':(exclude,glob)**/.amazonq/rules/workspai-agent-entry.md',
   ];
 }
 
@@ -1135,7 +1170,12 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
         : path.resolve(workspacePath, project.path);
       const files =
         input.inventories?.projectFiles?.get(project.id) ??
-        (await listFiles(root, input.projectFileLimit));
+        [
+          ...new Set([
+            ...(await listFiles(root, input.projectFileLimit)),
+            ...(await listArchitectureControlFiles(root)),
+          ]),
+        ].sort((left, right) => left.localeCompare(right));
       return fingerprintScope({
         kind: 'project',
         id: project.id,
@@ -3236,6 +3276,132 @@ const sourceStructureProvider: Provider = {
   },
 };
 
+/**
+ * Binds executable call sites only across relationships already proven by the
+ * source-structure provider. This is deliberately stricter than a repository-
+ * wide name search: a target must be uniquely defined in the same file or in a
+ * locally imported file. Ambiguous names remain unknown for a compiler/LSP
+ * adapter to resolve rather than becoming confident but false topology.
+ */
+const sourceSymbolBindingProvider: Provider = {
+  id: 'source-symbol-binding',
+  version: '1.0.0',
+  applicable(context) {
+    return [...context.state.entities.values()].some((entity) => entity.kind === 'symbol');
+  },
+  async run(context) {
+    let ambiguousBindings = 0;
+    let emittedBindings = 0;
+    const maxBindings = 10_000;
+    for (const project of context.projects) {
+      const entities = [...context.state.entities.values()].filter(
+        (entity) => entity.projectId === project.id
+      );
+      const fileEntities = entities.filter((entity) => entity.kind === 'file');
+      const symbols = new Map(
+        entities.filter((entity) => entity.kind === 'symbol').map((entity) => [entity.id, entity])
+      );
+      const symbolsByFile = new Map<string, WorkspaceKnowledgeEntity[]>();
+      const importedFilesByFile = new Map<string, Set<string>>();
+      for (const relation of context.state.relations.values()) {
+        if (relation.kind === 'defines' && symbols.has(relation.to)) {
+          const values = symbolsByFile.get(relation.from) ?? [];
+          values.push(symbols.get(relation.to) as WorkspaceKnowledgeEntity);
+          symbolsByFile.set(relation.from, values);
+        }
+        if (relation.kind === 'imports') {
+          const target = context.state.entities.get(relation.to);
+          if (target?.kind !== 'file' || target.projectId !== project.id) continue;
+          const values = importedFilesByFile.get(relation.from) ?? new Set<string>();
+          values.add(relation.to);
+          importedFilesByFile.set(relation.from, values);
+        }
+      }
+      for (const fileEntity of fileEntities) {
+        if (emittedBindings >= maxBindings) break;
+        const artifact = stringValue(fileEntity.attributes.artifact);
+        if (!artifact) continue;
+        const projectRelative = artifact.startsWith(`${project.artifactPrefix}/`)
+          ? artifact.slice(project.artifactPrefix.length + 1)
+          : artifact;
+        const absolutePath = path.resolve(project.root, ...projectRelative.split('/'));
+        let contents: string;
+        try {
+          const stat = await fsExtra.stat(absolutePath);
+          if (!stat.isFile() || stat.size > 2 * 1024 * 1024) continue;
+          contents = sourceCodeForExtraction(
+            absolutePath,
+            await fsExtra.readFile(absolutePath, 'utf8')
+          );
+        } catch {
+          continue;
+        }
+        const candidateSymbols = [
+          ...(symbolsByFile.get(fileEntity.id) ?? []),
+          ...[...(importedFilesByFile.get(fileEntity.id) ?? [])].flatMap(
+            (targetFile) => symbolsByFile.get(targetFile) ?? []
+          ),
+        ];
+        const byName = new Map<string, WorkspaceKnowledgeEntity[]>();
+        for (const symbol of candidateSymbols) {
+          if (symbol.label.length < 3) continue;
+          const values = byName.get(symbol.label) ?? [];
+          if (!values.some((value) => value.id === symbol.id)) values.push(symbol);
+          byName.set(symbol.label, values);
+        }
+        for (const [name, targets] of byName) {
+          const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const callPattern = new RegExp(`\\b${escapedName}\\s*\\(`, 'g');
+          const matches = [...contents.matchAll(callPattern)];
+          if (matches.length === 0) continue;
+          if (targets.length !== 1) {
+            ambiguousBindings += matches.length;
+            continue;
+          }
+          const target = targets[0];
+          for (const match of matches.slice(0, 20)) {
+            if (emittedBindings >= maxBindings) break;
+            const line = contents.slice(0, match.index ?? 0).split(/\r?\n/).length;
+            // The declaration itself has the same lexical shape in several
+            // languages. Never turn its proven definition line into a call.
+            if (target.proofIds.some((proofId) => context.state.proofs.get(proofId)?.line === line))
+              continue;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath,
+              line,
+              derivation: 'extracted',
+              trust: 'observed',
+              confidence: 'medium',
+              detail: `Unambiguous local call to ${name}`,
+            });
+            context.state.addRelation({
+              from: fileEntity.id,
+              to: target.id,
+              kind: 'calls',
+              derivation: 'extracted',
+              trust: 'observed',
+              confidence: 'medium',
+              proofIds: [proof],
+            });
+            emittedBindings += 1;
+          }
+        }
+      }
+    }
+    if (ambiguousBindings > 0) {
+      context.state.diagnostics.push({
+        code: 'graph.provider.source_symbol_binding.ambiguous_calls',
+        severity: 'info',
+        message: `${ambiguousBindings} call site(s) were left unbound because more than one proven local symbol matched.`,
+        recommendation:
+          'Provide compiler or language-server semantic evidence when exact overload or dynamic dispatch resolution is required.',
+      });
+    }
+  },
+};
+
 function generatedReference(contents: string): string | null {
   const header = contents.slice(0, 12_000);
   const reference = header.match(
@@ -4283,6 +4449,7 @@ function dynamicApiRegistrationOffset(file: string, contents: string): number {
         ? [
             /\b(?:router|app)\.(?:use|route|register)\s*\(/,
             /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+            /\b(?:routeModule|routeMatcher|routesManifest|appPathsManifest)\b/,
           ]
         : extension === '.go'
           ? [
@@ -4294,6 +4461,7 @@ function dynamicApiRegistrationOffset(file: string, contents: string): number {
             ? [
                 /\b(?:RouterFunction|RequestMappingHandlerMapping|MapControllers|MapGroup)\s*[<(]/,
                 /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+                /\bregister(?:Rest)?(?:Action|Handler)\s*\(/,
               ]
             : extension === '.rb'
               ? [/\broutes\.draw\s+do\b/, /\b(?:resources|namespace)\s+[:"']/]
@@ -5317,6 +5485,7 @@ const PROVIDERS: Provider[] = [
   pythonProjectManifestProvider,
   sourceLanguageProvider,
   sourceStructureProvider,
+  sourceSymbolBindingProvider,
   runtimeBridgeSemanticProvider,
   polyglotSemanticProvider,
   serviceContractProvider,
@@ -5578,6 +5747,67 @@ export async function buildWorkspaceKnowledgeGraph(
       projectFiles: semanticFilesByProject,
     },
   });
+  const currentProjectScopes = new Map(
+    inputFingerprint.scopes
+      .filter((scope) => scope.kind === 'project')
+      .map((scope) => [scope.id, scope.hash] as const)
+  );
+  const previousProjectScopes = new Map(
+    (options.previousGraph?.source.inputs?.scopes ?? [])
+      .filter((scope) => scope.kind === 'project')
+      .map((scope) => [scope.id, scope.hash] as const)
+  );
+  const previousProviderVersions = new Map(
+    (options.previousGraph?.providers ?? [])
+      .filter((provider) => provider.id !== 'incremental-project-cache')
+      .map((provider) => [provider.id, provider.version] as const)
+  );
+  const providerSetIsCompatible = PROVIDERS.every(
+    (provider) => previousProviderVersions.get(provider.id) === provider.version
+  );
+  const canReusePrevious =
+    options.previousGraph?.workspace.name === options.workspace.name &&
+    providerSetIsCompatible &&
+    currentProjectScopes.size > 0 &&
+    currentProjectScopes.size === previousProjectScopes.size &&
+    [...currentProjectScopes.keys()].every((id) => previousProjectScopes.has(id));
+  const reusableProjectIds = new Set(
+    canReusePrevious
+      ? [...currentProjectScopes]
+          .filter(([id, fingerprint]) => previousProjectScopes.get(id) === fingerprint)
+          .map(([id]) => id)
+      : []
+  );
+  const projectsToScan = projects.filter((project) => !reusableProjectIds.has(project.id));
+  if (options.previousGraph && reusableProjectIds.size > 0) {
+    const reusableEntities = options.previousGraph.entities.filter(
+      (entity) => entity.projectId && reusableProjectIds.has(entity.projectId)
+    );
+    const reusableEntityIds = new Set(reusableEntities.map((entity) => entity.id));
+    const reusableRelations = options.previousGraph.relations.filter(
+      (relation) => reusableEntityIds.has(relation.from) && reusableEntityIds.has(relation.to)
+    );
+    const reusableProofIds = new Set(
+      [...reusableEntities, ...reusableRelations].flatMap((entry) => entry.proofIds)
+    );
+    for (const proof of options.previousGraph.proofs) {
+      if (reusableProofIds.has(proof.id)) state.proofs.set(proof.id, proof);
+    }
+    for (const entity of reusableEntities) state.entities.set(entity.id, entity);
+    for (const relation of reusableRelations) state.relations.set(relation.id, relation);
+    state.providers.push({
+      id: 'incremental-project-cache',
+      version: '1.0.0',
+      status: 'passed',
+      permission: 'filesystem-read',
+      discoveredEntities: reusableEntities.length,
+      discoveredRelations: reusableRelations.length,
+      proofCount: reusableProofIds.size,
+      diagnostics: [
+        `Reused ${reusableProjectIds.size} unchanged project scope(s); rescanning ${projectsToScan.length}.`,
+      ],
+    });
+  }
   const context: ProviderContext = {
     workspacePath,
     projects,
@@ -5591,6 +5821,22 @@ export async function buildWorkspaceKnowledgeGraph(
     state,
   };
 
+  const incrementalProjectProviderIds = new Set([
+    'vscode-extension-manifest',
+    'python-project-manifest',
+    'source-language-inventory',
+    'source-structure',
+    'source-symbol-binding',
+    'runtime-bridge-semantics',
+    'polyglot-semantics',
+    'workspace-service-contract',
+    'openapi',
+    'authored-api-implementation-binding',
+    'dynamic-api-registration-binding',
+    'interface-contracts',
+  ]);
+  const incrementalContext: ProviderContext = { ...context, projects: projectsToScan };
+
   for (const provider of PROVIDERS) {
     const before = {
       entities: state.entities.size,
@@ -5601,11 +5847,15 @@ export async function buildWorkspaceKnowledgeGraph(
     let status: WorkspaceKnowledgeProviderRun['status'] = 'passed';
     let executionError: string | null = null;
     try {
-      const applicable = provider.applicable ? await provider.applicable(context) : true;
+      const providerContext =
+        reusableProjectIds.size > 0 && incrementalProjectProviderIds.has(provider.id)
+          ? incrementalContext
+          : context;
+      const applicable = provider.applicable ? await provider.applicable(providerContext) : true;
       if (!applicable) {
         status = 'skipped';
       } else {
-        await provider.run(context);
+        await provider.run(providerContext);
         const discoveredEntities = state.entities.size - before.entities;
         const discoveredRelations = state.relations.size - before.relations;
         const discoveredProofs = state.proofs.size - before.proofs;

@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery paths.
 - Added `workspace graph search --kind <entity-kind>` for precise bounded
   retrieval by canonical entity kind.
+- Added proof-bounded source-symbol call binding across same-file and proven
+  local-import boundaries, leaving ambiguous dispatch explicit for compiler or
+  language-server adapters.
+- Added project-scope incremental Knowledge Graph reuse based on live input
+  fingerprints, with full workspace-control re-evaluation and an auditable
+  cache provider receipt.
 
 ### Changed
 
@@ -44,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behavior across large polyglot repositories.
 - Clarified the canonical workspace and project-local metadata boundaries in
   the README files and added an actual Workspace Graph preview.
+- Extended real-world qualification with collision-resistant canonical
+  workspace names and project-scoped repair-adapter validation against the
+  complete governed runtime matrix.
+- Expanded runtime-generated API registration recognition for Next.js route
+  manifests/modules and JVM REST action and handler registries.
 
 ### Fixed
 
@@ -67,6 +78,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Excluded shared contract APIs without project ownership from project-local
   runtime-registration coverage, preserving honest coverage on shared-schema
   repositories.
+- Prevented generated agent entry projections from becoming Graph source
+  evidence or invalidating the Graph that produced them.
+- Made large-repository Graph generation and freshness validation hash the
+  exact same bounded inventory, including architecture manifests retained
+  beyond the ordinary source scan limit.
+- Preserved repository-authored provider symlinks across canonical path aliases
+  while publishing each bounded project-grounding and host-entry block exactly
+  once into a safe repository-local regular-file target.
 
 ## [0.64.0] - 2026-08-22
 

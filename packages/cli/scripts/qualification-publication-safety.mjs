@@ -1,4 +1,20 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+
+const RESERVED_PROJECT_NAMES = new Set([
+  'build',
+  'dist',
+  'lib',
+  'node',
+  'npm',
+  'pip',
+  'poetry',
+  'python',
+  'rapidkit',
+  'src',
+  'test',
+  'tests',
+]);
 
 const FORBIDDEN_REPORT_KEYS = new Set([
   'argv',
@@ -52,6 +68,33 @@ export function isQualificationCommandAccepted({
   return (
     acceptedExitCodes.includes(exitCode) && (!expectJson || parsed !== null) && processStateAccepted
   );
+}
+
+/**
+ * Convert an arbitrary repository identifier into a collision-resistant name
+ * accepted by the public workspace/project naming contract. Repository names
+ * may contain dots, uppercase letters, spaces, Unicode, or reserved package
+ * names; qualification must never fail before adoption because of that source
+ * naming difference.
+ */
+export function canonicalQualificationWorkspaceName(value) {
+  const source = String(value).trim();
+  const normalized = source
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, '-')
+    .replace(/^[^a-z]+/gu, '')
+    .replace(/[-_]{2,}/gu, '-')
+    .replace(/^[-_]+|[-_]+$/gu, '');
+  const base = normalized.length >= 2 && !RESERVED_PROJECT_NAMES.has(normalized)
+    ? normalized
+    : `workspace-${normalized || 'repository'}`;
+  const changed = base !== source;
+  const truncated = base.length > 196;
+  if (!changed && !truncated) return base;
+  const digest = createHash('sha256').update(source).digest('hex').slice(0, 10);
+  return `${base.slice(0, 196).replace(/[-_]+$/gu, '')}-${digest}`;
 }
 
 export function assertQualificationReportIsPublicationSafe(report, forbiddenPaths = []) {

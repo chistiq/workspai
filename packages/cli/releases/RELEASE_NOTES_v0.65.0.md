@@ -71,6 +71,12 @@ present. Runtime registration and endpoint implementation remain separate
 coverage guarantees: Workspai never converts registration evidence into a
 claim that every operation has a reachable implementation.
 
+Source-symbol calls are now bound only across same-file definitions or proven
+local imports. Ambiguous dispatch remains explicit for compiler and language-
+server adapters instead of being converted into a guessed relation. Next.js
+route manifests and modules, plus JVM REST action and handler registries, add
+runtime-generated topology without weakening that proof boundary.
+
 Dynamic binding is runtime-specific, limited to production routing surfaces,
 bounded per API, and backed by source proofs. Shared contract APIs without
 project ownership are excluded from project-local registration denominators.
@@ -128,13 +134,24 @@ machine.
 
 Adoption snapshots now include generated agent entry files and repository-local
 symlink targets. Rollback validates the exact canonical file set before it
-restores state.
+restores state. Provider symlinks remain intact, including when the operating
+system exposes the project root through an alternate canonical path; Workspai
+writes each project-grounding and host-entry block exactly once to the safe
+repository-local target.
 
 Workspace Model caches carry a semantic producer revision, preventing a local
 candidate or backport from reusing structurally valid but semantically obsolete
 models when the package version has not changed. Model, Graph, project lens,
 agent context, and generated operational Skills expose the new evidence through
 their existing versioned consumer surfaces.
+
+Knowledge Graph rebuilds now reuse unchanged project scopes by live input
+fingerprint while reevaluating workspace-level topology and governance. The
+provider receipt records reused and rescanned scopes, and any incompatible
+provider inventory forces a complete rebuild. Generated agent projections are
+excluded from Graph source evidence so a Graph cannot invalidate itself; large-
+repository generation and freshness checks also consume the same bounded file
+and architecture-manifest inventory.
 
 The root and CLI documentation now distinguish canonical workspace artifacts
 from project-local portable entry artifacts and include an actual Workspace
@@ -148,6 +165,10 @@ Python, .NET, PHP, Ruby, native bindings, generated APIs, monorepos, and
 polyglot platforms. Qualification asserts deterministic Model and Graph output,
 Doctor applicability, Analyze and Readiness semantics, Goal evidence quality,
 consumer artifact validity, repair capability closure, and publication safety.
+Qualification workspaces use collision-resistant canonical names, resolve the
+actual adopted project identity, and validate project-scoped repair adapters
+against the governed runtime matrix. Explicitly unsupported runtimes retain a
+bounded manual-repair terminal path instead of receiving a false adapter claim.
 
 ## Upgrade
 

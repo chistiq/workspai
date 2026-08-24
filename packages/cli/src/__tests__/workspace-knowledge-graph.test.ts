@@ -74,11 +74,11 @@ describe('workspace knowledge graph', () => {
     );
     await fsExtra.outputFile(
       path.join(root, 'api', 'src', 'health.controller.ts'),
-      "import { Controller, Get } from '@nestjs/common';\nimport { NestFactory } from '@nestjs/core';\nimport { healthValue } from './health.service';\nexport class HealthController {\n  @Get('/health')\n  health() { return healthValue; }\n}\n"
+      "import { Controller, Get } from '@nestjs/common';\nimport { NestFactory } from '@nestjs/core';\nimport { healthValue } from './health.service';\nexport class HealthController {\n  @Get('/health')\n  health() { return healthValue(); }\n}\n"
     );
     await fsExtra.outputFile(
       path.join(root, 'api', 'src', 'health.service.ts'),
-      "export const healthValue = 'ok';\n"
+      "export function healthValue() { return 'ok'; }\n"
     );
     await fsExtra.outputFile(
       path.join(root, 'api', 'src', 'routes', 'users.ts'),
@@ -813,6 +813,36 @@ describe('workspace knowledge graph', () => {
         return String(target?.label).endsWith('src/zzz-target.ts');
       })
     ).toBe(true);
+  });
+
+  it('binds only unambiguous calls to locally imported source symbols', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-symbol-binding-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'service', 'package.json'), { name: 'service' });
+    await fsExtra.outputFile(
+      path.join(root, 'service', 'src', 'handler.ts'),
+      "import { loadUser } from './users';\nexport function handler() { return loadUser(); }\n"
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'service', 'src', 'users.ts'),
+      'export function loadUser() { return { id: 1 }; }\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'symbol-binding' },
+      projects: [{ id: 'service', path: 'service', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const call = graph.relations.find((relation) => relation.kind === 'calls');
+    expect(call).toBeDefined();
+    expect(graph.entities.find((entity) => entity.id === call?.to)?.label).toBe('loadUser');
+    expect(call?.trust).toBe('observed');
+    expect(call?.confidence).toBe('medium');
+    expect(call?.proofIds.length).toBeGreaterThan(0);
   });
 
   it('parses Python, Cargo, and Maven dependencies without manifest metadata pollution', async () => {
@@ -2316,6 +2346,7 @@ describe('workspace knowledge graph', () => {
       'runtime-bridge-semantics',
       'source-language-inventory',
       'source-structure',
+      'source-symbol-binding',
       'vscode-extension-manifest',
       'workspace-foundation',
       'workspace-service-contract',
@@ -2539,6 +2570,67 @@ describe('workspace knowledge graph', () => {
       )
     );
     expect(validate(overlay), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it('reuses unchanged project scopes while rescanning the changed project', async () => {
+    const workspacePath = await fixture();
+    const options = {
+      workspacePath,
+      workspace: { name: 'platform' },
+      projects: [
+        { id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' },
+        { id: 'web', path: 'web', runtime: 'python', framework: 'fastapi' },
+      ],
+      projectTopology: topology(),
+      contract: contract(),
+      source: modelSource(),
+    };
+    const base = await buildWorkspaceKnowledgeGraph({ ...options, now: NOW });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'src', 'incremental.ts'),
+      "export function incrementalRoute() { return 'ready'; }\n"
+    );
+    const head = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:01:00.000Z'),
+      previousGraph: base,
+    });
+
+    expect(
+      head.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({
+      status: 'passed',
+    });
+    const baseWebProofs = new Set(
+      base.entities
+        .filter((entity) => entity.projectId === 'web')
+        .flatMap((entity) => entity.proofIds)
+    );
+    const headWebProofs = new Set(
+      head.entities
+        .filter((entity) => entity.projectId === 'web')
+        .flatMap((entity) => entity.proofIds)
+    );
+    expect([...baseWebProofs].every((proofId) => headWebProofs.has(proofId))).toBe(true);
+    expect(
+      head.entities.some(
+        (entity) => entity.projectId === 'api' && entity.label === 'incrementalRoute'
+      )
+    ).toBe(true);
+
+    const incompatible = structuredClone(head);
+    const sourceProvider = incompatible.providers.find(
+      (provider) => provider.id === 'source-structure'
+    );
+    if (sourceProvider) sourceProvider.version = '0.0.0';
+    const fullRebuild = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:02:00.000Z'),
+      previousGraph: incompatible,
+    });
+    expect(
+      fullRebuild.providers.some((provider) => provider.id === 'incremental-project-cache')
+    ).toBe(false);
   });
 
   it('supports entity, evidence and shortest proof-path queries', async () => {

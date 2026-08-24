@@ -73,6 +73,7 @@ import {
 } from './utils/lifecycle-transaction.js';
 import { readWorkspaceContract } from './utils/workspace-contract.js';
 import { firstExistingWorkspaceArtifactPath } from './utils/artifact-path-compat.js';
+import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   buildWorkspaceModel,
   WORKSPACE_MODEL_REPORT_PATH,
@@ -2880,19 +2881,11 @@ export async function syncWorkspaceAgentGrounding(
           // Never replace a provider symlink. A regular repository-local target
           // may receive a bounded managed block, so checkpoint that actual file.
           if (stat?.isSymbolicLink()) {
-            const targetPath = await fsExtra.realpath(absolutePath).catch(() => null);
+            const targetPath = await resolveRepositoryLocalSymlinkFile(
+              project.projectPath,
+              absolutePath
+            );
             if (!targetPath) continue;
-            const targetRelative = path.relative(project.projectPath, targetPath);
-            if (
-              !targetRelative ||
-              path.isAbsolute(targetRelative) ||
-              targetRelative === '..' ||
-              targetRelative.startsWith(`..${path.sep}`)
-            ) {
-              continue;
-            }
-            const targetStat = await fsExtra.stat(targetPath).catch(() => null);
-            if (!targetStat?.isFile()) continue;
             absolutePath = targetPath;
           }
         }

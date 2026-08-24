@@ -116,6 +116,19 @@ symbols are not implied to have been extracted. The graph diagnostic reports
 the sampled and indexed candidate counts and must not be read as exhaustive
 symbol coverage.
 
+Call binding follows the same proof boundary. Workspai binds a call only when
+its target is uniquely defined in the same file or in a locally imported file
+that the Graph already resolved. Overloads, dynamic dispatch, and ambiguous
+names remain explicit unknowns for compiler or language-server evidence; the
+CLI does not turn a repository-wide text match into semantic certainty.
+
+When a previous graph has the same project set, provider versions, and live
+project fingerprints, unchanged project slices are reused and only changed
+projects repeat the expensive semantic scan. Workspace-level CI, governance,
+infrastructure, and topology providers still run against the complete current
+workspace. The `incremental-project-cache` provider receipt records reused and
+rescanned scope counts. A provider-version change forces a full rebuild.
+
 ### Fast reads without stale answers
 
 The read-oriented `search`, `entities`, `evidence`, `path`, and `benchmark`
@@ -146,6 +159,11 @@ npx workspai workspace graph search "protobuf ownership" --refresh-graph --json
 The fingerprint proves compatibility of the exact bounded provider inventory;
 if a scope reports `truncated: true`, it must not be interpreted as proof about
 files beyond that declared limit.
+
+Workspai-generated agent entry projections are downstream consumers and are
+excluded from Graph inventory and Git diff hashing. Regenerating `AGENTS.md`,
+adapter entry files, or the Amazon Q entry rule therefore cannot invalidate the
+Graph that produced them or become circular architecture evidence.
 
 ## Pick the command by question
 

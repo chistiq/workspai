@@ -26,6 +26,7 @@ import {
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
 import type { WorkspaceModel } from '../workspace-model.js';
 import { normalizeRegistryPath } from '../utils/registry-path.js';
+import { resolveRepositoryLocalSymlinkFile } from '../utils/repository-local-symlink.js';
 
 const cleanup: string[] = [];
 
@@ -945,12 +946,34 @@ describe('project workspace binding', () => {
     const rules = await fsp.readFile(rulesPath, 'utf8');
     expect(rules).toContain('# Repository rules');
     expect(rules.match(/WORKSPAI:PROJECT-GROUNDING:START/g)).toHaveLength(1);
+    expect(rules.match(/WORKSPAI:AGENT-ENTRY:START/g)).toHaveLength(1);
+    expect(rules).toContain('@AGENTS.md');
     expect(first.hostCoverage).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'codex', status: 'ready', entryFiles: ['AGENTS.md'] }),
         expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
       ])
     );
+  });
+
+  it('accepts a local symlink target when the project root uses an alias path', async (context) => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'workspai-project-alias-'));
+    cleanup.push(root);
+    const canonicalProjectPath = path.join(root, 'canonical-project');
+    const aliasProjectPath = path.join(root, 'project-alias');
+    await fsp.mkdir(canonicalProjectPath, { recursive: true });
+    await fsp.writeFile(path.join(canonicalProjectPath, '.rules'), '# Repository rules\n');
+    try {
+      await fsp.symlink('.rules', path.join(canonicalProjectPath, 'AGENTS.md'));
+      await fsp.symlink(canonicalProjectPath, aliasProjectPath, 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    await expect(
+      resolveRepositoryLocalSymlinkFile(aliasProjectPath, path.join(aliasProjectPath, 'AGENTS.md'))
+    ).resolves.toBe(await fsp.realpath(path.join(canonicalProjectPath, '.rules')));
   });
 
   it('never follows an AGENTS symlink outside the adopted project boundary', async (context) => {

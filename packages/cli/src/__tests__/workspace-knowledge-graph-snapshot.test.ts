@@ -158,6 +158,28 @@ describe('workspace knowledge graph snapshot', () => {
     });
   });
 
+  it('does not let generated agent projections invalidate their source graph', async () => {
+    const { root } = await fixture({ git: true });
+    await fsExtra.outputFile(
+      path.join(root, 'AGENTS.md'),
+      '<!-- WORKSPAI:PROJECT-GROUNDING:START -->\nGenerated entry\n<!-- WORKSPAI:PROJECT-GROUNDING:END -->\n'
+    );
+    await fsExtra.outputFile(path.join(root, 'GEMINI.md'), '@./AGENTS.md\n');
+    await fsExtra.outputFile(
+      path.join(root, '.amazonq', 'rules', 'workspai-agent-entry.md'),
+      'Read AGENTS.md first.\n'
+    );
+
+    await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
+      status: 'hit',
+    });
+
+    await fsExtra.outputFile(path.join(root, 'AGENTS.md'), 'Regenerated entry\n');
+    await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
+      status: 'hit',
+    });
+  });
+
   it.runIf(process.platform !== 'win32')(
     'keeps the Git strategy when the workspace path is a logical alias of the physical worktree',
     async () => {
