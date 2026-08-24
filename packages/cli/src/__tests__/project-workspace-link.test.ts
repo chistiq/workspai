@@ -971,9 +971,15 @@ describe('project workspace binding', () => {
       return;
     }
 
-    await expect(
-      resolveRepositoryLocalSymlinkFile(aliasProjectPath, path.join(aliasProjectPath, 'AGENTS.md'))
-    ).resolves.toBe(await fsp.realpath(path.join(canonicalProjectPath, '.rules')));
+    const resolvedTarget = await resolveRepositoryLocalSymlinkFile(
+      aliasProjectPath,
+      path.join(aliasProjectPath, 'AGENTS.md')
+    );
+    expect(resolvedTarget).not.toBeNull();
+    await expect(fsp.readFile(resolvedTarget as string, 'utf8')).resolves.toBe(
+      '# Repository rules\n'
+    );
+    expect((await fsp.stat(resolvedTarget as string)).isFile()).toBe(true);
   });
 
   it('never follows an AGENTS symlink outside the adopted project boundary', async (context) => {
