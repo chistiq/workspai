@@ -58,4 +58,42 @@ describe('polyglot lifecycle plan', () => {
       ],
     });
   });
+
+  it('models a Gradle multi-project build once at its root while preserving other runtimes', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-gradle-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'settings.gradle'),
+      "include ':server', ':plugins:alpha'\n"
+    );
+    await fs.outputFile(path.join(root, 'build.gradle'), 'plugins { id "java" }\n');
+    await fs.outputFile(path.join(root, 'server', 'build.gradle'), 'plugins { id "java" }\n');
+    await fs.outputFile(
+      path.join(root, 'plugins', 'alpha', 'build.gradle'),
+      'plugins { id "java" }\n'
+    );
+    await fs.outputFile(path.join(root, 'native', 'Cargo.toml'), '[package]\nname = "native"\n');
+    await fs.outputFile(path.join(root, 'gradlew'), '#!/bin/sh\n');
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.polyglot).toBe(true);
+    expect(plan.runtimes).toEqual(['java', 'rust']);
+    expect(plan.units.map((unit) => `${unit.ecosystem}:${unit.root}`)).toEqual([
+      'gradle:.',
+      'cargo:native',
+    ]);
+    expect(plan.units[0]?.stages[0]?.command).toBe('./gradlew dependencies');
+  });
+
+  it('keeps nested Gradle builds independent when no root settings boundary exists', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-gradle-independent-'));
+    tempDirs.push(root);
+    await fs.outputFile(path.join(root, 'service-a', 'build.gradle'), 'plugins { id "java" }\n');
+    await fs.outputFile(path.join(root, 'service-b', 'build.gradle.kts'), 'plugins { java }\n');
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['service-a', 'service-b']);
+  });
 });

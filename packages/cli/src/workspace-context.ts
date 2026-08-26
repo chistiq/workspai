@@ -212,6 +212,54 @@ export type BuildWorkspaceAgentContextOptions = {
   model?: WorkspaceModel;
 };
 
+type WorkspaceContextDoctorSignal = NonNullable<
+  NonNullable<WorkspaceAgentContext['doctorSummary']>['topSignals']
+>[number];
+
+type WorkspaceContextImpactArtifact = {
+  schemaVersion: string;
+  summary?: WorkspaceAgentContext['impactSummary'];
+};
+
+type WorkspaceContextDoctorArtifact = {
+  schemaVersion: string;
+  summary?: Omit<NonNullable<WorkspaceAgentContext['doctorSummary']>, 'topSignals'>;
+  projects?: Array<{ probes?: WorkspaceContextDoctorSignal[] }>;
+};
+
+type WorkspaceContextAnalyzeArtifact = {
+  schemaVersion: string;
+  summary?: {
+    score?: number;
+    verdict?: string;
+    findings?: Record<string, unknown>;
+  };
+  findings?: NonNullable<WorkspaceAgentContext['analyzeSummary']>['topFindings'];
+};
+
+type WorkspaceContextReadinessArtifact = {
+  schemaVersion: string;
+} & NonNullable<WorkspaceAgentContext['readinessSummary']>;
+
+type WorkspaceContextVerifyArtifact = {
+  schemaVersion: string;
+  summary?: Pick<
+    NonNullable<WorkspaceAgentContext['verifySummary']>,
+    'verdict' | 'exitCode' | 'stepsFailed' | 'stepsMissing'
+  >;
+  blockingReasons?: string[];
+  missingEvidence?: string[];
+};
+
+type WorkspaceContextExplainArtifact = {
+  schemaVersion: string;
+} & NonNullable<WorkspaceAgentContext['explainSummary']>;
+
+type WorkspaceContextDiffArtifact = {
+  schemaVersion: string;
+  summary?: NonNullable<WorkspaceAgentContext['diffSummary']>;
+};
+
 function normalizeAgent(agent: string | boolean | undefined): WorkspaceContextAgent {
   if (typeof agent !== 'string' || !agent.trim() || agent === 'true') {
     return 'generic';
@@ -251,8 +299,15 @@ async function safeReadWorkspaceJsonArtifact<T>(
   const absolutePath = path.join(workspacePath, artifactPath);
   if (!(await fsExtra.pathExists(absolutePath))) return null;
   try {
-    const json = (await fsExtra.readJson(absolutePath)) as any;
-    if (!json || json.schemaVersion !== expectedSchemaVersion) return null;
+    const json: unknown = await fsExtra.readJson(absolutePath);
+    if (
+      typeof json !== 'object' ||
+      json === null ||
+      !('schemaVersion' in json) ||
+      json.schemaVersion !== expectedSchemaVersion
+    ) {
+      return null;
+    }
     return json as T;
   } catch {
     return null;
@@ -488,9 +543,9 @@ function unsafeAssumptions(model: WorkspaceModel): string[] {
   if (!model.contracts.exists) {
     assumptions.push('Workspace contract is missing; dependency and API edges may be incomplete.');
   }
-  if (model.summary.observedProjects > 0) {
+  if ((model.summary.extendedProjects ?? 0) > 0 || model.summary.observedProjects > 0) {
     assumptions.push(
-      'Some projects are observed rather than first-class; command support may be partial.'
+      'Some projects use extended or observed support tiers; command coverage may be partial.'
     );
   }
   return assumptions;
@@ -567,37 +622,37 @@ export async function buildWorkspaceAgentContext(
   const workspaceSummary = summarizeWorkspace(model);
   const safeCommands = buildSafeCommands(model, activeProject, now);
 
-  const impactArtifact = await safeReadWorkspaceJsonArtifact<any>(
+  const impactArtifact = await safeReadWorkspaceJsonArtifact<WorkspaceContextImpactArtifact>(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.impact,
     WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.impact
   );
-  const doctorArtifact = await safeReadWorkspaceJsonArtifact<any>(
+  const doctorArtifact = await safeReadWorkspaceJsonArtifact<WorkspaceContextDoctorArtifact>(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor,
     WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.doctor
   );
-  const analyzeArtifact = await safeReadWorkspaceJsonArtifact<any>(
+  const analyzeArtifact = await safeReadWorkspaceJsonArtifact<WorkspaceContextAnalyzeArtifact>(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.analyze,
     WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.analyze
   );
-  const readinessArtifact = await safeReadWorkspaceJsonArtifact<any>(
+  const readinessArtifact = await safeReadWorkspaceJsonArtifact<WorkspaceContextReadinessArtifact>(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.readiness,
     WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.readiness
   );
-  const verifyArtifact = await safeReadWorkspaceJsonArtifact<any>(
+  const verifyArtifact = await safeReadWorkspaceJsonArtifact<WorkspaceContextVerifyArtifact>(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.verify,
     WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.verify
   );
-  const explainArtifact = await safeReadWorkspaceJsonArtifact<any>(
+  const explainArtifact = await safeReadWorkspaceJsonArtifact<WorkspaceContextExplainArtifact>(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.explain,
     WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.explain
   );
-  const diffArtifact = await safeReadWorkspaceJsonArtifact<any>(
+  const diffArtifact = await safeReadWorkspaceJsonArtifact<WorkspaceContextDiffArtifact>(
     input.workspacePath,
     WORKSPACE_INTELLIGENCE_ARTIFACTS.diff,
     WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.diff
@@ -622,12 +677,16 @@ export async function buildWorkspaceAgentContext(
         unknownFindings: doctorArtifact.summary.unknownFindings,
         hasSystemErrors: doctorArtifact.summary.hasSystemErrors,
         topSignals: (() => {
-          const projects: any[] = Array.isArray(doctorArtifact.projects)
+          const projects: Array<{ probes?: WorkspaceContextDoctorSignal[] }> = Array.isArray(
+            doctorArtifact.projects
+          )
             ? doctorArtifact.projects
             : [];
-          const signals: any[] = [];
+          const signals: WorkspaceContextDoctorSignal[] = [];
           for (const project of projects.slice(0, 6)) {
-            const probes: any[] = Array.isArray(project?.probes) ? project.probes : [];
+            const probes: WorkspaceContextDoctorSignal[] = Array.isArray(project.probes)
+              ? project.probes
+              : [];
             for (const probe of probes.slice(0, 10)) {
               if (probe?.status === 'fail' || probe?.severity === 'error') {
                 signals.push({
@@ -652,9 +711,8 @@ export async function buildWorkspaceAgentContext(
         verdict: analyzeArtifact.summary.verdict,
         findingCounts: analyzeArtifact.summary.findings,
         topFindings: (() => {
-          const findings: any[] = Array.isArray(analyzeArtifact.findings)
-            ? analyzeArtifact.findings
-            : [];
+          const findings: NonNullable<WorkspaceAgentContext['analyzeSummary']>['topFindings'] =
+            Array.isArray(analyzeArtifact.findings) ? analyzeArtifact.findings : [];
           const prioritized = findings
             .filter((f) => f?.severity === 'fail' || f?.severity === 'warn')
             .slice(0, 8);
@@ -675,7 +733,7 @@ export async function buildWorkspaceAgentContext(
         blockingReasons: readinessArtifact.blockingReasons,
         evidencePath: readinessArtifact.evidencePath,
         gates: Array.isArray(readinessArtifact.gates)
-          ? readinessArtifact.gates.slice(0, 6).map((g: any) => ({
+          ? readinessArtifact.gates.slice(0, 6).map((g) => ({
               gate: g.gate,
               status: g.status,
               summary: g.summary,
@@ -702,7 +760,7 @@ export async function buildWorkspaceAgentContext(
         releaseVerdict: explainArtifact.releaseVerdict,
         evidenceFreshness: explainArtifact.evidenceFreshness,
         sections: Array.isArray(explainArtifact.sections)
-          ? explainArtifact.sections.slice(0, 4).map((s: any) => ({
+          ? explainArtifact.sections.slice(0, 4).map((s) => ({
               id: s.id,
               title: s.title,
               body: s.body,

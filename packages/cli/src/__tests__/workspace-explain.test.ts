@@ -374,6 +374,51 @@ describe('workspace explain (Phase 4.B)', () => {
     );
   });
 
+  it('traces added and removed projects from diff changes rather than numeric summary counters', async () => {
+    const diffPath = path.join(workspacePath, 'added-project-diff.json');
+    await fsExtra.outputJson(diffPath, {
+      schemaVersion: 'workspace-model-diff.v1',
+      generatedAt: new Date().toISOString(),
+      fromRef: 'empty.json',
+      toRef: 'current.json',
+      fromHash: 'before',
+      toHash: 'after',
+      summary: {
+        changed: true,
+        addedProjects: 1,
+        removedProjects: 0,
+        changedProjects: 0,
+        workspaceChanges: 0,
+        validationChanges: 0,
+        gitChangedFiles: 0,
+      },
+      changes: [
+        {
+          type: 'project.added',
+          severity: 'info',
+          target: '../OpenSearch',
+          message: 'Project OpenSearch added',
+          after: { name: 'opensearch' },
+        },
+      ],
+      currentModel: { schemaVersion: 'workspace-model.v1' },
+    });
+
+    const report = await buildWorkspaceExplain({
+      workspacePath,
+      target: { kind: 'trace', diffRef: diffPath },
+      model: { summary: { projectCount: 1 }, projects: [] } as never,
+      contract: null,
+      verify: null,
+      impact: null,
+    });
+
+    expect(report.summary).toContain('1 changed project');
+    expect(report.sections.find((section) => section.id === 'origin')?.body).toContain(
+      'opensearch'
+    );
+  });
+
   it('rejects malformed verify evidence instead of narrating unvalidated data', async () => {
     await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_VERIFY_REPORT_PATH), {
       schemaVersion: 'workspace-verify.v1',

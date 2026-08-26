@@ -574,6 +574,8 @@ function relatedGraphProjection(
   const diagnostics = graph.diagnostics
     .filter(
       (diagnostic) =>
+        ((!diagnostic.entityIds || diagnostic.entityIds.length === 0) &&
+          (!diagnostic.relationIds || diagnostic.relationIds.length === 0)) ||
         diagnostic.entityIds?.some((id) => connectedEntityIds.has(id)) ||
         diagnostic.relationIds?.some((id) => relations.some((relation) => relation.id === id))
     )
@@ -623,6 +625,10 @@ function relatedGraphProjection(
     ...projectedEntities.flatMap((entity) => entity.proofIds),
     ...projectedRelations.flatMap((relation) => relation.proofIds),
   ]);
+  const projectedProofs = proofs
+    .filter((proof) => projectedProofIds.has(proof.id))
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .slice(0, 128);
   return {
     entityCount: entities.length,
     relationCount: relations.length,
@@ -649,13 +655,12 @@ function relatedGraphProjection(
       ].sort(),
     },
     relatedProjects,
-    proofArtifacts: [...new Set(proofs.map((proof) => proof.artifact))].sort(),
+    proofArtifacts: [...new Set(projectedProofs.map((proof) => proof.artifact))]
+      .sort()
+      .slice(0, 128),
     entities: projectedEntities,
     relations: projectedRelations,
-    proofs: proofs
-      .filter((proof) => projectedProofIds.has(proof.id))
-      .sort((left, right) => left.id.localeCompare(right.id))
-      .slice(0, 128),
+    proofs: projectedProofs,
     topology: {
       status:
         dependencies.length > 0 || dependents.length > 0
@@ -1563,6 +1568,21 @@ async function reconcileProjectAgentAdapter(input: {
       };
     }
     const target = await fsp.readFile(targetPath, 'utf8');
+    if (input.agentsAvailable && target.includes(WORKSPAI_PROJECT_GROUNDING_START)) {
+      // A provider adapter can legitimately alias AGENTS.md (for example
+      // CLAUDE.md -> AGENTS.md). In that case the provider already discovers
+      // the canonical project gate through the shared file. Appending an
+      // adapter import to the target would make AGENTS.md import itself and
+      // pollute every other host. Remove any legacy block produced by older
+      // Workspai versions and treat the adapter as inherited coverage.
+      const withoutLegacyAdapter = target
+        .replace(managedBlockPattern(WORKSPAI_AGENT_ENTRY_START, WORKSPAI_AGENT_ENTRY_END), '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trimEnd();
+      const normalizedTarget = `${withoutLegacyAdapter}\n`;
+      if (normalizedTarget !== target) await writeAtomic(targetPath, normalizedTarget);
+      return { path: input.adapter.relativePath };
+    }
     if (target.includes(WORKSPAI_AGENT_ENTRY_START)) {
       return { path: input.adapter.relativePath };
     }

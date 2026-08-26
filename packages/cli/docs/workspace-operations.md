@@ -417,6 +417,12 @@ Artifacts:
 | `workspace run`                                             | Workspace orchestrator | Fleet stage execution                              |
 | `infra`                                                     | Workspace sidecar      | Contract-driven local dependencies                 |
 
+The readiness `env` gate only treats runtimes represented in
+`.workspai/toolchain.lock` as pinned. A Workspai Node pin does not prove a
+native C/C++ compiler or another unrepresented project toolchain; those scopes
+remain `warn` until the project build contract or organization CI policy
+provides verifiable toolchain evidence.
+
 The unified intelligence runner keeps `sync` and baseline resolution in a
 separate two-entry execution envelope and emits exactly 11 canonical stages.
 Exit `2` means the evidence gate blocked readiness after successful execution;

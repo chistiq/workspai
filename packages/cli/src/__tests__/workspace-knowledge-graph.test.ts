@@ -1,5 +1,6 @@
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import fsExtra from 'fs-extra';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
@@ -815,6 +816,219 @@ describe('workspace knowledge graph', () => {
     ).toBe(true);
   });
 
+  it('keeps the complete project inventory when adaptive deep providers are bounded', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-adaptive-inventory-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'platform', 'package.json'), {
+      name: '@example/platform',
+      workspaces: ['apps/*'],
+    });
+    await Promise.all(
+      Array.from({ length: 140 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(
+            root,
+            'platform',
+            'apps',
+            index % 2 === 0 ? 'api' : 'worker',
+            'src',
+            `unit-${String(index).padStart(3, '0')}.ts`
+          ),
+          `export const unit${index} = ${index};\n`
+        )
+      )
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'adaptive-inventory' },
+      projects: [
+        { id: 'platform', path: 'platform', runtime: 'node', framework: 'node', kind: 'platform' },
+      ],
+      projectTopology: topology(),
+      now: NOW,
+      maxFilesPerProject: 100,
+      semanticFilesPerProject: 100,
+      sourceFilesPerProject: 100,
+      source: modelSource(),
+    });
+
+    const scope = graph.source.inputs?.scopes.find(
+      (candidate) => candidate.kind === 'project' && candidate.id === 'platform'
+    );
+    expect(scope).toMatchObject({
+      fileCount: 141,
+      eligibleFileCount: 141,
+      eligibleFileCountExact: true,
+      inventoryMode: 'complete',
+      truncated: false,
+    });
+    expect(scope?.selection).toMatchObject({
+      strategy: 'component-language-round-robin-v1',
+      semanticFileCount: 100,
+      deepFileCount: 100,
+      sourceExtractionFileBudget: 100,
+    });
+    const language = graph.entities.find(
+      (entity) => entity.kind === 'language' && entity.attributes.language === 'typescript'
+    );
+    expect(language?.attributes.fileCount).toBe(140);
+    const sourceCoverage = graph.providers.find((provider) => provider.id === 'source-structure')
+      ?.inputCoverage?.[0];
+    expect(sourceCoverage).toMatchObject({
+      tier: 'adaptive-deep',
+      status: 'bounded',
+      eligibleFiles: 141,
+      suppliedFiles: 100,
+      fileBudget: 100,
+      selectionStrategy: 'component-language-round-robin-v1',
+    });
+    const extractedFiles = graph.entities
+      .filter((entity) => entity.kind === 'file')
+      .map((entity) => String(entity.attributes.artifact));
+    expect(extractedFiles.some((artifact) => artifact.includes('/apps/api/'))).toBe(true);
+    expect(extractedFiles.some((artifact) => artifact.includes('/apps/worker/'))).toBe(true);
+    expect(graph.quality.completeness).toMatchObject({
+      status: 'bounded',
+      inventory: { boundedScopes: 0, eligibleFileCountExact: true },
+      providers: { bounded: expect.any(Number), failed: 0 },
+    });
+  });
+
+  it('uses an explicit emergency inventory bound without silently claiming completeness', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-emergency-inventory-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'api', 'package.json'), { name: 'api' });
+    await Promise.all(
+      Array.from({ length: 130 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(root, 'api', 'src', `module-${String(index).padStart(3, '0')}.ts`),
+          `export const module${index} = ${index};\n`
+        )
+      )
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'emergency-inventory' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      inventoryFileLimitPerProject: 100,
+      source: modelSource(),
+    });
+
+    const scope = graph.source.inputs?.scopes.find(
+      (candidate) => candidate.kind === 'project' && candidate.id === 'api'
+    );
+    expect(scope).toMatchObject({
+      fileCount: 100,
+      eligibleFileCount: 101,
+      eligibleFileCountExact: false,
+      inventoryMode: 'emergency-bounded',
+      truncated: true,
+    });
+    expect(graph.quality.completeness?.inventory).toMatchObject({
+      boundedScopes: 1,
+      eligibleFileCountExact: false,
+    });
+    expect(
+      graph.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.input.project_file_limit_reached'
+      )
+    ).toBe(true);
+  });
+
+  it('inventories systems languages and compiler DSLs without unsafe generic parsing', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-language-inventory-'));
+    tempDirs.push(root);
+    const projectRoot = path.join(root, 'compiler');
+    const languageFiles: Record<string, string> = {
+      'frontend/lowering.f90': 'subroutine lower()\nend subroutine lower\n',
+      'ir/pipeline.ll': 'define i32 @main() { ret i32 0 }\n',
+      'dialects/ops.mlir': 'module {}\n',
+      'targets/instructions.td': 'def Instruction;\n',
+      'runtime/startup.S': '.text\n',
+      'bindings/api.mm': '@interface Api\n@end\n',
+      'shaders/pass.hlsl': 'float4 main() : SV_Target { return 0; }\n',
+    };
+    await Promise.all(
+      Object.entries(languageFiles).map(([relative, contents]) =>
+        fsExtra.outputFile(path.join(projectRoot, relative), contents)
+      )
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'language-inventory' },
+      projects: [{ id: 'compiler', path: 'compiler', runtime: 'cpp', framework: 'cpp' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const counts = Object.fromEntries(
+      graph.entities
+        .filter((entity) => entity.kind === 'language')
+        .map((entity) => [String(entity.attributes.language), entity.attributes.fileCount])
+    );
+    expect(counts).toMatchObject({
+      fortran: 1,
+      'llvm-ir': 1,
+      mlir: 1,
+      tablegen: 1,
+      assembly: 1,
+      'objective-cpp': 1,
+      hlsl: 1,
+    });
+    expect(graph.providers.find((provider) => provider.id === 'source-structure')?.status).toBe(
+      'skipped'
+    );
+  });
+
+  it('rejects tracked files replaced by worktree symlinks before provider reads', async () => {
+    if (process.platform === 'win32') return;
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-git-symlink-inventory-'));
+    const outsideRoot = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-git-symlink-target-')
+    );
+    tempDirs.push(root, outsideRoot);
+    const projectRoot = path.join(root, 'api');
+    const trackedPath = path.join(projectRoot, 'src', 'tracked.ts');
+    const outsidePath = path.join(outsideRoot, 'outside.ts');
+    await fsExtra.outputJson(path.join(projectRoot, 'package.json'), { name: 'api' });
+    await fsExtra.outputFile(trackedPath, 'export const safe = true;\n');
+    await fsExtra.outputFile(outsidePath, 'export const must_not_escape_project = true;\n');
+    execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['add', 'package.json', 'src/tracked.ts'], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    await fsExtra.remove(trackedPath);
+    await fsExtra.symlink(outsidePath, trackedPath);
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'git-symlink-inventory' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const scope = graph.source.inputs?.scopes.find(
+      (candidate) => candidate.kind === 'project' && candidate.id === 'api'
+    );
+    expect(scope).toMatchObject({ fileCount: 1, eligibleFileCount: 1, truncated: false });
+    expect(JSON.stringify(graph)).not.toContain('must_not_escape_project');
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.kind === 'file' && String(entity.attributes.artifact).endsWith('/src/tracked.ts')
+      )
+    ).toBe(false);
+  });
+
   it('binds only unambiguous calls to locally imported source symbols', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-symbol-binding-'));
     tempDirs.push(root);
@@ -1119,7 +1333,7 @@ describe('workspace knowledge graph', () => {
     ).toBe(true);
     expect(
       graph.providers.find((provider) => provider.id === 'source-language-inventory')?.version
-    ).toBe('1.1.0');
+    ).toBe('1.2.0');
   });
 
   it('keeps deep Go workspace manifests and membership beyond the ordinary file budget', async () => {
@@ -1605,6 +1819,59 @@ describe('workspace knowledge graph', () => {
     });
 
     expect(result.entities[0]?.id).toBe('auth-service-module');
+  });
+
+  it('retrieves bounded cross-cutting evidence for long architecture queries', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'compiler', path: 'api', runtime: 'cpp', framework: 'cpp' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'clang-ir-lowering',
+        kind: 'module',
+        label: 'ClangToLLVMIRLoweringPass',
+        projectId: 'compiler',
+        identity: {
+          key: 'module:compiler:clang-ir-lowering',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'clang-ir-lowering',
+        },
+        attributes: { language: 'cpp' },
+        proofIds: [],
+      },
+      {
+        id: 'optimization-pipeline',
+        kind: 'module',
+        label: 'OptimizationLevel pipeline',
+        projectId: 'compiler',
+        identity: {
+          key: 'module:compiler:optimization-pipeline',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'optimization-pipeline',
+        },
+        attributes: { language: 'cpp' },
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'Clang AST LLVM IR lowering optimization pass pipeline',
+      projectId: 'compiler',
+      limit: 12,
+    });
+
+    expect(result.entities.map((entity) => entity.id)).toEqual(
+      expect.arrayContaining(['clang-ir-lowering', 'optimization-pipeline'])
+    );
   });
 
   it('diversifies broad operational architecture searches across consumer surfaces', async () => {
@@ -2337,6 +2604,7 @@ describe('workspace knowledge graph', () => {
       'compose',
       'documentation',
       'dynamic-api-registration-binding',
+      'incremental-project-cache',
       'infrastructure-as-code',
       'interface-contracts',
       'kubernetes',
@@ -2574,6 +2842,14 @@ describe('workspace knowledge graph', () => {
 
   it('reuses unchanged project scopes while rescanning the changed project', async () => {
     const workspacePath = await fixture();
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', '.github', 'workflows', 'verify.yml'),
+      'name: Verify\non:\n  push:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: []\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', '.github', 'CODEOWNERS'),
+      '* @platform-team\n'
+    );
     const options = {
       workspacePath,
       workspace: { name: 'platform' },
@@ -2617,6 +2893,65 @@ describe('workspace knowledge graph', () => {
         (entity) => entity.projectId === 'api' && entity.label === 'incrementalRoute'
       )
     ).toBe(true);
+    expect(
+      head.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'graph.provider.ci-workflow.empty_result' ||
+          diagnostic.code === 'graph.provider.codeowners.empty_result'
+      )
+    ).toBe(false);
+
+    const reusableHead = structuredClone(head);
+    const reusableDiagnostic = {
+      code: 'graph.provider.source_structure.unresolved_local_imports',
+      severity: 'warning' as const,
+      message: 'Synthetic reusable provider diagnostic.',
+      recommendation: 'Keep this diagnostic attached to reused provider evidence.',
+    };
+    reusableHead.diagnostics.push(reusableDiagnostic);
+    reusableHead.providers
+      .find((provider) => provider.id === 'source-structure')
+      ?.diagnostics.push(`${reusableDiagnostic.code}: ${reusableDiagnostic.message}`);
+    const unchanged = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:01:30.000Z'),
+      previousGraph: reusableHead,
+    });
+    expect(
+      unchanged.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({ status: 'passed', version: '1.3.0' });
+    for (const providerId of ['source-language-inventory', 'source-structure'] as const) {
+      const original = reusableHead.providers.find((provider) => provider.id === providerId);
+      const reused = unchanged.providers.find((provider) => provider.id === providerId);
+      expect(reused).toMatchObject({
+        status: original?.status,
+        discoveredEntities: original?.discoveredEntities,
+        discoveredRelations: original?.discoveredRelations,
+        proofCount: original?.proofCount,
+      });
+      expect(reused?.diagnostics).toContain(
+        'Provider evidence reused from unchanged project scopes.'
+      );
+    }
+    expect(
+      unchanged.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.provider.source-symbol-binding.empty_result'
+      )
+    ).toBe(false);
+    expect(
+      unchanged.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === reusableDiagnostic.code &&
+          diagnostic.message === reusableDiagnostic.message
+      )
+    ).toBe(true);
+    expect(
+      head.entities
+        .filter((entity) => !unchanged.entities.some((candidate) => candidate.id === entity.id))
+        .map((entity) => ({ id: entity.id, kind: entity.kind, label: entity.label }))
+    ).toEqual([]);
+    expect(unchanged.relations).toHaveLength(head.relations.length);
+    expect(unchanged.proofs).toHaveLength(head.proofs.length);
 
     const incompatible = structuredClone(head);
     const sourceProvider = incompatible.providers.find(
@@ -2629,8 +2964,8 @@ describe('workspace knowledge graph', () => {
       previousGraph: incompatible,
     });
     expect(
-      fullRebuild.providers.some((provider) => provider.id === 'incremental-project-cache')
-    ).toBe(false);
+      fullRebuild.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({ status: 'skipped', version: '1.3.0' });
   });
 
   it('supports entity, evidence and shortest proof-path queries', async () => {

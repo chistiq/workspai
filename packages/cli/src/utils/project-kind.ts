@@ -3,6 +3,7 @@ import path from 'path';
 
 import fsExtra from 'fs-extra';
 import { parse } from 'yaml';
+import { hasNativeWorkspaceTopology } from './backend-framework-contract.js';
 import { projectMetadataCandidates } from './workspace-paths.js';
 
 export type WorkspaceProjectKind =
@@ -351,6 +352,29 @@ export async function inferWorkspaceProjectKind(
     return 'extension';
   }
 
+  // Repository topology is stronger evidence than an inferred application
+  // framework. A monorepo root may legitimately carry Next.js, NestJS, React,
+  // or another app dependency while governing many independently addressable
+  // packages. Classifying that root as one frontend/backend application loses
+  // its workspace boundary and misleads every downstream consumer.
+  const cargoToml = await fsExtra
+    .readFile(path.join(projectPath, 'Cargo.toml'), 'utf8')
+    .catch(() => '');
+  const isCargoWorkspace =
+    /^\s*\[workspace\]\s*$/m.test(cargoToml) && !/^\s*\[package\]\s*$/m.test(cargoToml);
+  const packageJson = await readJsonIfExists(path.join(projectPath, 'package.json'));
+  const hasWorkspaceDeclaration =
+    packageJson !== null &&
+    (Array.isArray(packageJson.workspaces) ||
+      (packageJson.workspaces !== null && typeof packageJson.workspaces === 'object'));
+  if (hasWorkspaceDeclaration || isCargoWorkspace) {
+    return 'platform';
+  }
+
+  if (hasNativeWorkspaceTopology(projectPath)) {
+    return 'platform';
+  }
+
   if (
     /\b(frontend|nextjs|next\.js|react|vue|svelte|vite|angular|astro|remix|nuxt)\b/.test(
       serviceSignals
@@ -367,12 +391,6 @@ export async function inferWorkspaceProjectKind(
     return 'backend';
   }
 
-  const cargoToml = await fsExtra
-    .readFile(path.join(projectPath, 'Cargo.toml'), 'utf8')
-    .catch(() => '');
-  const isCargoWorkspace =
-    /^\s*\[workspace\]\s*$/m.test(cargoToml) && !/^\s*\[package\]\s*$/m.test(cargoToml);
-  const packageJson = await readJsonIfExists(path.join(projectPath, 'package.json'));
   if (packageJson) {
     const dependencies = {
       ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
@@ -393,10 +411,6 @@ export async function inferWorkspaceProjectKind(
     const categories = Array.isArray(packageJson.categories)
       ? packageJson.categories.filter((item): item is string => typeof item === 'string')
       : [];
-    const hasWorkspaceDeclaration =
-      Array.isArray(packageJson.workspaces) ||
-      (packageJson.workspaces !== null && typeof packageJson.workspaces === 'object');
-
     if (
       dependencies['@tauri-apps/api'] ||
       dependencies['@tauri-apps/cli'] ||
@@ -433,9 +447,6 @@ export async function inferWorkspaceProjectKind(
     ) {
       return 'frontend';
     }
-    if (hasWorkspaceDeclaration || isCargoWorkspace) {
-      return 'platform';
-    }
     if (packageJson.private === true && !dependencies.express && !dependencies['@nestjs/core']) {
       return 'library';
     }
@@ -466,7 +477,6 @@ export async function inferWorkspaceProjectKind(
   }
 
   if (
-    (await fsExtra.pathExists(path.join(projectPath, 'Dockerfile'))) ||
     (await fsExtra.pathExists(path.join(projectPath, 'compose.yaml'))) ||
     (await fsExtra.pathExists(path.join(projectPath, 'compose.yml'))) ||
     (await fsExtra.pathExists(path.join(projectPath, 'docker-compose.yml'))) ||

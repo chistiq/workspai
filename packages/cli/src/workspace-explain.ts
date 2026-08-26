@@ -32,6 +32,12 @@ import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 
 export type WorkspaceExplainArtifactKind = 'explain' | 'why' | 'trace';
 
+function toObjectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 export function resolveWorkspaceExplainArtifactPath(
   artifactKind: WorkspaceExplainArtifactKind
 ): string {
@@ -307,11 +313,36 @@ export async function buildWorkspaceExplain(
       ? input.target.diffRef
       : path.join(workspacePath, input.target.diffRef);
     const diff = await readJsonFile<{
-      summary?: { changedProjects?: string[] };
-      changes?: Array<{ project?: string; type?: string }>;
+      summary?: {
+        changedProjects?: number;
+        addedProjects?: number;
+        removedProjects?: number;
+      };
+      changes?: Array<{
+        project?: string;
+        target?: string;
+        type?: string;
+        before?: unknown;
+        after?: unknown;
+      }>;
     }>(diffPath, undefined, 'contracts/workspace-intelligence/workspace-model-diff.v1.json');
-    const changed = diff?.summary?.changedProjects ?? [
-      ...new Set((diff?.changes ?? []).map((change) => change.project).filter(Boolean)),
+    const changed = [
+      ...new Set(
+        (diff?.changes ?? [])
+          .filter((change) => change.type?.startsWith('project.'))
+          .map((change) => {
+            const after = toObjectRecord(change.after);
+            const before = toObjectRecord(change.before);
+            return (
+              (typeof after.name === 'string' && after.name.trim()) ||
+              (typeof before.name === 'string' && before.name.trim()) ||
+              change.project?.trim() ||
+              change.target?.trim() ||
+              ''
+            );
+          })
+          .filter(Boolean)
+      ),
     ];
     const projectCount = model.summary?.projectCount ?? model.projects.length;
     const emptyWorkspaceShell = projectCount === 0;

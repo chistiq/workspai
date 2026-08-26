@@ -79,6 +79,27 @@ describe('project taxonomy and expanded kit families', () => {
     ).toBe('backend');
   });
 
+  it('prefers authored workspace topology over an application framework hint', async () => {
+    const nodeWorkspace = await tempRoot('workspai-node-framework-workspace-kind-');
+    await fsExtra.outputJson(path.join(nodeWorkspace, 'package.json'), {
+      name: 'product-platform',
+      private: true,
+      workspaces: ['packages/*'],
+      devDependencies: { next: 'workspace:*', react: '^19.0.0' },
+    });
+
+    expect(
+      await inferWorkspaceProjectKind(
+        nodeWorkspace,
+        {},
+        {
+          runtime: 'node',
+          framework: 'nextjs',
+        }
+      )
+    ).toBe('platform');
+  });
+
   it('classifies Go workspaces and multi-command roots as platforms', async () => {
     const goWorkspace = await tempRoot('workspai-go-workspace-kind-');
     await fsExtra.outputFile(path.join(goWorkspace, 'go.mod'), 'module example.com/platform\n');
@@ -221,6 +242,38 @@ describe('project taxonomy and expanded kit families', () => {
     expect(
       await inferWorkspaceProjectKind(nativeApplication, {}, { runtime: 'cpp', framework: 'cpp' })
     ).toBe('infra');
+  });
+
+  it('treats a Dockerfile as deployment evidence rather than an infrastructure identity', async () => {
+    const application = await tempRoot('workspai-dockerized-python-application-kind-');
+    await fsExtra.outputFile(path.join(application, 'pyproject.toml'), '[project]\nname = "api"\n');
+    await fsExtra.outputFile(path.join(application, 'Dockerfile'), 'FROM python:3.14\n');
+
+    expect(
+      await inferWorkspaceProjectKind(application, {}, { runtime: 'python', framework: 'python' })
+    ).toBe('backend');
+  });
+
+  it('classifies a sibling-component native monorepo as a platform', async () => {
+    const nativeWorkspace = await tempRoot('workspai-native-workspace-kind-');
+    await fsExtra.outputFile(
+      path.join(nativeWorkspace, 'pyproject.toml'),
+      '[project]\nname = "build-tooling"\n'
+    );
+    for (const component of ['compiler', 'linker', 'runtime']) {
+      await fsExtra.outputFile(
+        path.join(nativeWorkspace, component, 'CMakeLists.txt'),
+        `project(${component} CXX)\n`
+      );
+      await fsExtra.outputFile(
+        path.join(nativeWorkspace, component, 'lib', `${component}.cpp`),
+        `int ${component}_entry() { return 0; }\n`
+      );
+    }
+
+    expect(
+      await inferWorkspaceProjectKind(nativeWorkspace, {}, { runtime: 'cpp', framework: 'cpp' })
+    ).toBe('platform');
   });
 
   it('publishes deterministic official plans for every external generator', async () => {

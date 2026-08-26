@@ -129,6 +129,22 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
   }
   let liveInputs: WorkspaceKnowledgeGraph['source']['inputs'];
   try {
+    const scanBudgetsByProject = new Map(
+      projectScopes.flatMap((scope) =>
+        scope.selection
+          ? [
+              [
+                scope.id,
+                {
+                  semanticFileBudget: scope.selection.semanticFileBudget,
+                  deepFileBudget: scope.selection.deepFileBudget,
+                  sourceExtractionFileBudget: scope.selection.sourceExtractionFileBudget,
+                },
+              ] as const,
+            ]
+          : []
+      )
+    );
     liveInputs = await computeWorkspaceKnowledgeGraphInputFingerprint({
       workspacePath,
       projects: modelCandidate.projects.map((project) => ({
@@ -136,8 +152,9 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
         path: project.path,
         ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
       })),
-      projectFileLimit: projectScopes[0]?.fileLimit ?? 20_000,
+      projectFileLimit: projectScopes[0]?.fileLimit ?? 500_000,
       workspaceFileLimit: workspaceScopes[0].fileLimit,
+      ...(scanBudgetsByProject.size > 0 ? { inventories: { scanBudgetsByProject } } : {}),
     });
   } catch {
     return { status: 'miss', reason: 'input-scan-failed' };

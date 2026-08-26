@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createProject } from '../create.js';
 import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 import { registerProjectInWorkspaceStrict } from '../workspace.js';
+import { readWorkspaceKnowledgeGraphSnapshot } from '../workspace-knowledge-graph-snapshot.js';
 import {
   getLegacyWorkspaceRegistryDirectory,
   getWorkspaceRegistryDirectory,
@@ -179,6 +180,11 @@ describe('workspace create registry integration', () => {
 
     expect(refreshed.projectCount).toBe(1);
     expect(refreshed.baselineCreated).toBe(false);
+    expect(refreshed.freshnessSealed).toBe(true);
+    expect(refreshed.reconciledAfterGrounding).toBe(true);
+    expect(await readWorkspaceKnowledgeGraphSnapshot(workspacePath)).toMatchObject({
+      status: 'hit',
+    });
     expect(refreshedModel.projects).toEqual([
       expect.objectContaining({
         name: 'api',

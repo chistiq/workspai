@@ -220,10 +220,15 @@ export function queryKnowledgePath(
 
 export function queryKnowledgeEntities(
   graph: WorkspaceKnowledgeGraph,
-  kind?: string
+  kind?: string,
+  projectId?: string
 ): WorkspaceKnowledgeEntity[] {
   return graph.entities
-    .filter((entity) => !kind || entity.kind === (kind as WorkspaceKnowledgeEntityKind))
+    .filter(
+      (entity) =>
+        (!kind || entity.kind === (kind as WorkspaceKnowledgeEntityKind)) &&
+        (!projectId || entity.projectId === projectId)
+    )
     .sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label));
 }
 
@@ -276,9 +281,9 @@ export type WorkspaceKnowledgeSearchResult = {
 };
 
 const AGENT_SEARCH_LIMITS = {
-  relations: 24,
-  relatedEntities: 24,
-  proofs: 16,
+  relations: 12,
+  relatedEntities: 12,
+  proofs: 8,
   proofIdsPerItem: 4,
   aliasesPerEntity: 8,
   attributeArrayItems: 8,
@@ -537,7 +542,23 @@ function searchScore(
 }
 
 function matchedSearchTerms(document: SearchDocument, terms: string[]): number {
-  return terms.filter((term) => documentMatchesTerm(document, term)).length;
+  // Count distinct document concepts rather than query aliases that happen to
+  // hit the same token. For example, camel-case expansion yields both
+  // "typescript" and "type"; those must not satisfy a two-term threshold by
+  // matching the single document token "typescript" twice.
+  const matchedDocumentTokens = new Set<string>();
+  for (const term of terms) {
+    const exact = document.allTokens.has(term) ? term : undefined;
+    const prefix =
+      exact === undefined && term.length >= 3
+        ? [...document.allTokens].find(
+            (token) => token.startsWith(term) && !matchedDocumentTokens.has(token)
+          )
+        : undefined;
+    const token = exact ?? prefix;
+    if (token && !matchedDocumentTokens.has(token)) matchedDocumentTokens.add(token);
+  }
+  return matchedDocumentTokens.size;
 }
 
 const LANGUAGE_QUERY_TERMS = new Map<string, string>([
@@ -555,17 +576,26 @@ const LANGUAGE_QUERY_TERMS = new Map<string, string>([
   ['go', 'go'],
   ['golang', 'go'],
   ['csharp', 'csharp'],
+  ['ada', 'ada'],
+  ['assembly', 'assembly'],
+  ['asm', 'assembly'],
+  ['cuda', 'cuda'],
   ['dotnet', 'csharp'],
   ['dart', 'dart'],
   ['elixir', 'elixir'],
   ['fsharp', 'fsharp'],
+  ['fortran', 'fortran'],
   ['java', 'java'],
   ['kotlin', 'kotlin'],
+  ['hlsl', 'hlsl'],
+  ['llvmir', 'llvm-ir'],
+  ['mlir', 'mlir'],
   ['lua', 'lua'],
   ['php', 'php'],
   ['r', 'r'],
   ['ruby', 'ruby'],
   ['rust', 'rust'],
+  ['tablegen', 'tablegen'],
   ['scala', 'scala'],
   ['svelte', 'svelte'],
   ['swift', 'swift'],
@@ -710,7 +740,7 @@ export function searchKnowledgeGraph(
   const termSet = new Set(terms);
   const broadArchitectureIntent = hasBroadArchitectureIntent(termSet);
   const defaultMinimumTermMatches =
-    terms.length <= 1 ? terms.length : Math.min(3, Math.ceil(terms.length / 3));
+    terms.length <= 1 ? terms.length : Math.min(2, Math.ceil(terms.length / 3));
   const minimumTermMatches =
     options.minimumTermMatches === undefined
       ? defaultMinimumTermMatches

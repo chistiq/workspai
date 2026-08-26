@@ -189,6 +189,7 @@ export type WorkspaceModel = {
     runtimes: string[];
     frameworks: string[];
     firstClassProjects: number;
+    extendedProjects: number;
     observedProjects: number;
   };
   facts?: WorkspaceFact[];
@@ -1551,6 +1552,7 @@ export async function buildWorkspaceModel(
       frameworks,
       firstClassProjects: projects.filter((project) => project.supportTier === 'first-class')
         .length,
+      extendedProjects: projects.filter((project) => project.supportTier === 'extended').length,
       observedProjects: projects.filter((project) => project.supportTier === 'observed').length,
     },
   };

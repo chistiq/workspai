@@ -2404,6 +2404,7 @@ describe('Doctor Command', () => {
     });
     await fsExtra.writeFile(path.join(projectPath, 'go.mod'), 'module example.com/go-api\n');
     await fsExtra.writeFile(path.join(projectPath, 'go.sum'), '');
+    await fsExtra.writeFile(path.join(projectPath, 'Makefile'), '.PHONY:\n');
     await fsExtra.writeFile(path.join(projectPath, '.gitignore'), '.env\n.env.*\n!.env.example\n');
 
     mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
@@ -4841,6 +4842,77 @@ describe('Doctor Command', () => {
           repair: expect.objectContaining({
             capabilityId: 'runtime-dependency-materialization.dependency-materialization',
             disposition: 'approval-required',
+          }),
+        })
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('honors requires-python and repository-authored setup commands', async () => {
+    const tempRoot = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-python-requirement-'))
+    );
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'project.json'), {
+      name: 'python-platform',
+      runtime: 'python',
+      framework: 'python',
+    });
+    await fsExtra.writeFile(
+      path.join(tempRoot, 'pyproject.toml'),
+      '[project]\nname = "python-platform"\nversion = "0.1.0"\nrequires-python = ">=3.14.2"\n'
+    );
+    const setupPath = path.join(tempRoot, 'script', 'setup');
+    await fsExtra.outputFile(setupPath, '#!/bin/sh\nexit 0\n');
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.13.5', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: 'not found', exitCode: 1 } as any;
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+
+      expect(payload.project.name).toBe('python-platform');
+      expect(payload.system.python).toMatchObject({
+        status: 'error',
+        message: 'Python 3.13.5 does not satisfy >=3.14.2',
+      });
+      expect(payload.project.issues).toContain(
+        'Python 3.13.5 does not satisfy requires-python >=3.14.2'
+      );
+      expect(payload.project.probes).toContainEqual(
+        expect.objectContaining({ id: 'runtime-python-version', status: 'fail' })
+      );
+      expect(payload.project.fixCommands).toContainEqual(expect.stringContaining('script/setup'));
+      expect(payload.project.fixCommands).not.toContainEqual(
+        expect.stringContaining('python3 -m venv')
+      );
+      expect(payload.project.repairCapabilities).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization.dependency-materialization',
+          invocation: expect.objectContaining({
+            cwd: tempRoot,
+            executable: 'script/setup',
+            args: [],
+          }),
+          transaction: expect.objectContaining({
+            kind: 'dependency-materialization',
+            ecosystem: 'python',
           }),
         })
       );

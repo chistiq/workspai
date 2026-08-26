@@ -12,6 +12,8 @@ export interface WorkspaceConsumerArtifactSyncResult {
   workspacePath: string;
   projectCount: number;
   baselineCreated: boolean;
+  freshnessSealed: boolean;
+  reconciledAfterGrounding: boolean;
   writtenFiles: string[];
   warnings: string[];
 }
@@ -53,11 +55,11 @@ export async function syncWorkspaceConsumerArtifacts(
   });
 
   const { buildWorkspaceModel, writeWorkspaceModel } = await import('../workspace-model.js');
-  const model = await buildWorkspaceModel({
+  let model = await buildWorkspaceModel({
     workspacePath: resolvedPath,
     includeEvidence: true,
   });
-  const modelPath = await writeWorkspaceModel(model, resolvedPath);
+  let modelPath = await writeWorkspaceModel(model, resolvedPath);
 
   const {
     buildWorkspaceImpact,
@@ -69,6 +71,76 @@ export async function syncWorkspaceConsumerArtifacts(
   } = await import('../workspace-intelligence.js');
   const { WORKSPACE_INTELLIGENCE_ARTIFACTS } =
     await import('../contracts/workspace-intelligence-runtime-registry.js');
+  const { syncWorkspaceAgentGrounding } = await import('../workspace-agent-sync.js');
+  const firstAgentSync = await syncWorkspaceAgentGrounding({
+    workspacePath: resolvedPath,
+    model,
+    write: true,
+    refreshContext: true,
+    strict: false,
+    preset: 'enterprise',
+    targets: ['all'],
+    projectGrounding: options.projectGrounding ?? 'managed',
+  });
+  const groundingFiles = new Set(firstAgentSync.writtenFiles);
+  const groundingWarnings = new Set(
+    firstAgentSync.projectLenses?.skipped.map((project) => `${project.name}: ${project.reason}`) ??
+      []
+  );
+
+  // Grounding is part of the observable project input. The first projection
+  // pass can therefore invalidate the Model/Graph pair it just consumed. Seal
+  // lifecycle onboarding exactly as the governed Intelligence runner does so
+  // `adopt` and `connect` never report success with immediately stale evidence.
+  const { readWorkspaceKnowledgeGraphSnapshot } =
+    await import('../workspace-knowledge-graph-snapshot.js');
+  let sealedSnapshot = await readWorkspaceKnowledgeGraphSnapshot(resolvedPath);
+  let reconciledAfterGrounding = false;
+  if (sealedSnapshot.status === 'miss') {
+    if (sealedSnapshot.reason !== 'live-input-mismatch') {
+      throw new Error(
+        `Workspace consumer sync could not validate canonical Model/Graph evidence (${sealedSnapshot.reason}).`
+      );
+    }
+    model = await buildWorkspaceModel({
+      workspacePath: resolvedPath,
+      includeEvidence: true,
+    });
+    modelPath = await writeWorkspaceModel(model, resolvedPath);
+    const { buildWorkspaceAgentContext, writeWorkspaceAgentContext } =
+      await import('../workspace-context.js');
+    const reconciledContext = await buildWorkspaceAgentContext({
+      workspacePath: resolvedPath,
+      model,
+      agent: 'generic',
+      includeEvidence: true,
+    });
+    await writeWorkspaceAgentContext(reconciledContext, resolvedPath);
+    const secondAgentSync = await syncWorkspaceAgentGrounding({
+      workspacePath: resolvedPath,
+      model,
+      write: true,
+      refreshContext: false,
+      strict: false,
+      preset: 'enterprise',
+      targets: ['all'],
+      projectGrounding: options.projectGrounding ?? 'managed',
+    });
+    for (const file of secondAgentSync.writtenFiles) groundingFiles.add(file);
+    for (const project of secondAgentSync.projectLenses?.skipped ?? []) {
+      groundingWarnings.add(`${project.name}: ${project.reason}`);
+    }
+    sealedSnapshot = await readWorkspaceKnowledgeGraphSnapshot(resolvedPath);
+    if (sealedSnapshot.status === 'miss') {
+      throw new Error(
+        `Workspace consumer reconciliation did not produce fresh canonical evidence (${sealedSnapshot.reason}).`
+      );
+    }
+    reconciledAfterGrounding = true;
+  }
+
+  // Diff and impact must bind to the final sealed model, not the pre-grounding
+  // model. A first-time baseline represents the completed adoption state.
   const snapshotPath = path.join(resolvedPath, WORKSPACE_INTELLIGENCE_ARTIFACTS.snapshot);
   let baselineCreated = false;
   if (!(await fsExtra.pathExists(snapshotPath))) {
@@ -101,17 +173,20 @@ export async function syncWorkspaceConsumerArtifacts(
     result: verification,
   });
 
-  const { syncWorkspaceAgentGrounding } = await import('../workspace-agent-sync.js');
-  const agentSync = await syncWorkspaceAgentGrounding({
-    workspacePath: resolvedPath,
-    model,
-    write: true,
-    refreshContext: true,
-    strict: false,
-    preset: 'enterprise',
-    targets: ['all'],
-    projectGrounding: options.projectGrounding ?? 'managed',
-  });
+  const truncatedScopes = (sealedSnapshot.graph.source.inputs?.scopes ?? []).filter(
+    (scope) => scope.truncated
+  );
+  for (const scope of truncatedScopes) {
+    groundingWarnings.add(
+      `${scope.kind}:${scope.id} graph inventory reached its ${scope.fileLimit}-file emergency bound; inventory completeness is bounded.`
+    );
+  }
+  const boundedProviders = sealedSnapshot.graph.quality.completeness?.providers.bounded ?? 0;
+  if (boundedProviders > 0) {
+    groundingWarnings.add(
+      `${boundedProviders} graph provider(s) used declared adaptive semantic/deep budgets; inspect provider inputCoverage before making exhaustive symbol-level claims.`
+    );
+  }
 
   const writtenFiles = [
     WORKSPACE_CONTRACT_PATH,
@@ -123,13 +198,13 @@ export async function syncWorkspaceConsumerArtifacts(
     path.relative(resolvedPath, diffPath).split(path.sep).join('/'),
     path.relative(resolvedPath, impactPath).split(path.sep).join('/'),
     path.relative(resolvedPath, contractVerifyPath).split(path.sep).join('/'),
-    ...agentSync.writtenFiles,
+    ...groundingFiles,
   ].filter((value, index, values) => values.indexOf(value) === index);
 
   if (!options.silent) {
     console.log(
       chalk.gray(
-        `✓ Workspace Intelligence synced · ${model.summary.projectCount} project(s) · model + graph + agent grounding`
+        `✓ Workspace Intelligence synced · ${model.summary.projectCount} project(s) · model + graph + agent grounding · freshness sealed`
       )
     );
   }
@@ -138,9 +213,10 @@ export async function syncWorkspaceConsumerArtifacts(
     workspacePath: resolvedPath,
     projectCount: model.summary.projectCount,
     baselineCreated,
+    freshnessSealed: true,
+    reconciledAfterGrounding,
     writtenFiles,
-    warnings:
-      agentSync.projectLenses?.skipped.map((project) => `${project.name}: ${project.reason}`) ?? [],
+    warnings: [...groundingWarnings].sort(),
   };
 }
 

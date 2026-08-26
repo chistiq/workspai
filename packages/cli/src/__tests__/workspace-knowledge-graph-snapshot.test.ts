@@ -51,6 +51,7 @@ describe('workspace knowledge graph snapshot', () => {
         runtimes: [],
         frameworks: [],
         firstClassProjects: 0,
+        extendedProjects: 0,
         observedProjects: 0,
       },
     } as unknown as WorkspaceModel;

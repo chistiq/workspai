@@ -25,6 +25,7 @@ import {
   type WorkspaceKnowledgeGraph,
   type WorkspaceKnowledgeGraphInputFingerprint,
   type WorkspaceKnowledgeProof,
+  type WorkspaceKnowledgeProviderInputCoverage,
   type WorkspaceKnowledgeProviderRun,
   type WorkspaceKnowledgeRelation,
   type WorkspaceKnowledgeRelationKind,
@@ -57,7 +58,14 @@ export type BuildWorkspaceKnowledgeGraphOptions = {
   projectTopology: WorkspaceDependencyGraph;
   contract?: WorkspaceContract | null;
   now?: Date;
+  /** Adaptive deep-provider budget override. This is not the inventory limit. */
   maxFilesPerProject?: number;
+  /** Emergency safety boundary for a complete per-project path inventory. */
+  inventoryFileLimitPerProject?: number;
+  /** Adaptive semantic-provider budget override. */
+  semanticFilesPerProject?: number;
+  /** Adaptive source extraction budget override. */
+  sourceFilesPerProject?: number;
   source: Omit<WorkspaceKnowledgeGraph['source'], 'inputs'>;
   /**
    * Optional last valid artifact used only as a project-scope cache. Reuse is
@@ -123,12 +131,16 @@ type JsonRecord = Record<string, unknown>;
 type ProviderContext = {
   workspacePath: string;
   projects: ResolvedProject[];
+  /** Complete eligible path inventory, subject only to the emergency bound. */
   filesByProject: ReadonlyMap<string, readonly string[]>;
+  /** Fair, component/language-balanced input for content-heavy providers. */
+  deepFilesByProject: ReadonlyMap<string, readonly string[]>;
+  /** Larger balanced input for semantic providers. */
   semanticFilesByProject: ReadonlyMap<string, readonly string[]>;
-  semanticScanLimit: number;
+  inventoryByProject: ReadonlyMap<string, ProjectFileInventory>;
+  scanBudgetsByProject: ReadonlyMap<string, ProjectGraphScanBudget>;
   workspaceFiles: readonly string[];
   now: Date;
-  maxFilesPerProject: number;
   contract: WorkspaceContract | null;
   state: KnowledgeGraphState;
 };
@@ -136,6 +148,7 @@ type ResolvedProject = WorkspaceKnowledgeProjectInput & { root: string; artifact
 type Provider = {
   id: string;
   version: string;
+  scanTier?: 'complete-inventory' | 'adaptive-semantic' | 'adaptive-deep' | 'derived';
   /**
    * Applicability is deliberately separate from execution success. A provider
    * that has no matching source surface is skipped; a provider that has a
@@ -145,6 +158,35 @@ type Provider = {
   applicable?(context: ProviderContext): boolean | Promise<boolean>;
   run(context: ProviderContext): Promise<void>;
 };
+
+type ProjectFileInventory = {
+  files: string[];
+  eligibleFileCount: number;
+  eligibleFileCountExact: boolean;
+  truncated: boolean;
+  fileLimit: number;
+  strategy: 'git-index-worktree-v1' | 'filesystem-bfs-v1';
+};
+
+type ProjectGraphScanBudget = {
+  semanticFileBudget: number;
+  deepFileBudget: number;
+  sourceExtractionFileBudget: number;
+};
+
+const DEFAULT_GRAPH_INVENTORY_EMERGENCY_LIMIT = 500_000;
+const MAX_GRAPH_INVENTORY_EMERGENCY_LIMIT = 2_000_000;
+
+function positiveGraphBudgetOverride(
+  value: number | undefined,
+  environmentName: string
+): number | undefined {
+  if (value !== undefined && Number.isFinite(value) && value > 0) return Math.floor(value);
+  const raw = process.env[environmentName];
+  if (!raw) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -194,11 +236,24 @@ const GENERATED_AGENT_PROJECTION_BASENAMES = new Set([
   'QWEN.md',
 ]);
 
+const GENERATED_AGENT_PROJECTION_PATTERNS = [
+  /(?:^|\/)\.agents\/skills\/workspai-[^/]+\//u,
+  /(?:^|\/)\.amazonq\/rules\/workspai-[^/]+\.md$/u,
+  /(?:^|\/)\.claude\/(?:rules|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.cursor\/(?:rules|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.grok\/(?:rules|skills)\/workspai-[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.github\/(?:instructions|prompts|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.github\/copilot-instructions\.md$/u,
+  /(?:^|\/)\.windsurf\/rules\/workspai-[^/]+\.md$/u,
+  /(?:^|\/)\.windsurfrules$/u,
+  /(?:^|\/)\.vscode\/(?:workspai|rapidkit)-agent-hooks\.json$/u,
+];
+
 function isGeneratedAgentProjection(root: string, candidate: string): boolean {
   const relative = toPosix(path.relative(root, candidate));
   return (
     GENERATED_AGENT_PROJECTION_BASENAMES.has(path.posix.basename(relative)) ||
-    /(?:^|\/)\.amazonq\/rules\/workspai-agent-entry\.md$/u.test(relative)
+    GENERATED_AGENT_PROJECTION_PATTERNS.some((pattern) => pattern.test(relative))
   );
 }
 
@@ -321,6 +376,63 @@ const SOURCE_EXTENSIONS = new Set([
   '.vb',
 ]);
 
+// Language inventory is intentionally broader than source-structure parsing.
+// DSLs and systems languages still define architecture even when Workspai has
+// no safe import/symbol extractor for their grammar yet.
+const LANGUAGE_INVENTORY_EXTENSIONS = new Set([
+  ...SOURCE_EXTENSIONS,
+  '.adb',
+  '.ads',
+  '.asm',
+  '.bash',
+  '.bat',
+  '.cl',
+  '.cob',
+  '.cu',
+  '.cuh',
+  '.erl',
+  '.f',
+  '.f03',
+  '.f08',
+  '.f77',
+  '.f90',
+  '.f95',
+  '.fish',
+  '.for',
+  '.gql',
+  '.graphql',
+  '.groovy',
+  '.hip',
+  '.hrl',
+  '.hs',
+  '.hlsl',
+  '.jl',
+  '.ll',
+  '.m',
+  '.metal',
+  '.mir',
+  '.mlir',
+  '.mm',
+  '.nim',
+  '.pas',
+  '.pl',
+  '.pm',
+  '.proto',
+  '.ps1',
+  '.s',
+  '.sh',
+  '.sol',
+  '.sql',
+  '.sv',
+  '.td',
+  '.thrift',
+  '.v',
+  '.vhd',
+  '.vhdl',
+  '.zig',
+  '.zsh',
+]);
+
 type SourceFinding = { name: string; line: number; detail: string };
 
 function sourceLanguage(filePath: string, primaryRuntime?: string): string {
@@ -328,16 +440,42 @@ function sourceLanguage(filePath: string, primaryRuntime?: string): string {
   if (extension === '.h' && primaryRuntime === 'cpp') return 'cpp';
   const languages: Record<string, string> = {
     '.c': 'c',
+    '.adb': 'ada',
+    '.ads': 'ada',
+    '.asm': 'assembly',
+    '.bash': 'shell',
+    '.bat': 'batch',
     '.cc': 'cpp',
+    '.cl': 'opencl',
+    '.cob': 'cobol',
     '.cpp': 'cpp',
     '.cs': 'csharp',
+    '.cu': 'cuda',
+    '.cuh': 'cuda',
     '.dart': 'dart',
+    '.erl': 'erlang',
     '.ex': 'elixir',
     '.exs': 'elixir',
+    '.f': 'fortran',
+    '.f03': 'fortran',
+    '.f08': 'fortran',
+    '.f77': 'fortran',
+    '.f90': 'fortran',
+    '.f95': 'fortran',
+    '.fish': 'shell',
+    '.for': 'fortran',
+    '.gql': 'graphql',
     '.go': 'go',
+    '.graphql': 'graphql',
+    '.groovy': 'groovy',
     '.h': 'c',
+    '.hip': 'hip',
     '.hpp': 'cpp',
+    '.hrl': 'erlang',
+    '.hs': 'haskell',
+    '.hlsl': 'hlsl',
     '.java': 'java',
+    '.jl': 'julia',
     '.cjs': 'javascript',
     '.cts': 'typescript',
     '.js': 'javascript',
@@ -362,7 +500,31 @@ function sourceLanguage(filePath: string, primaryRuntime?: string): string {
     '.fs': 'fsharp',
     '.fsx': 'fsharp',
     '.lua': 'lua',
+    '.ll': 'llvm-ir',
+    '.m': 'objective-c',
+    '.metal': 'metal',
+    '.mir': 'llvm-mir',
+    '.mlir': 'mlir',
+    '.mm': 'objective-cpp',
+    '.nim': 'nim',
+    '.pas': 'pascal',
+    '.pl': 'perl',
+    '.pm': 'perl',
+    '.proto': 'protobuf',
+    '.ps1': 'powershell',
+    '.s': 'assembly',
+    '.sh': 'shell',
+    '.sol': 'solidity',
+    '.sql': 'sql',
+    '.sv': 'systemverilog',
+    '.td': 'tablegen',
+    '.thrift': 'thrift',
+    '.v': 'verilog',
     '.vb': 'visual-basic',
+    '.vhd': 'vhdl',
+    '.vhdl': 'vhdl',
+    '.zig': 'zig',
+    '.zsh': 'shell',
   };
   return languages[extension] ?? extension.slice(1);
 }
@@ -437,6 +599,114 @@ function balancedSourceSelection(
     selected.add(file);
   }
   return [...selected].sort((left, right) => left.localeCompare(right));
+}
+
+function projectComponentKey(file: string, projectRoot: string): string {
+  const segments = toPosix(path.relative(projectRoot, file)).split('/').filter(Boolean);
+  if (segments.length === 0) return '<root>';
+  const first = segments[0].toLowerCase();
+  if (
+    [
+      'app',
+      'apps',
+      'cmd',
+      'components',
+      'crates',
+      'modules',
+      'packages',
+      'plugins',
+      'services',
+    ].includes(first) &&
+    segments[1]
+  ) {
+    return `${first}/${segments[1].toLowerCase()}`;
+  }
+  return first;
+}
+
+/**
+ * Deterministic stratified selection for large repositories. Architecture
+ * contracts are retained first, then files are round-robined across component
+ * and language buckets. A large package or alphabetically early tree can no
+ * longer starve the rest of a polyglot monorepo.
+ */
+function balancedProjectFileSelection(
+  files: readonly string[],
+  limit: number,
+  projectRoot: string
+): string[] {
+  const unique = [...new Set(files)].sort((left, right) => left.localeCompare(right));
+  if (unique.length <= limit) return unique;
+
+  const selected = new Set<string>();
+  const mandatory = unique
+    .filter((file) => ARCHITECTURE_CONTROL_NAMES.has(path.basename(file)))
+    .sort(
+      (left, right) =>
+        toPosix(path.relative(projectRoot, left)).split('/').length -
+          toPosix(path.relative(projectRoot, right)).split('/').length || left.localeCompare(right)
+    );
+  for (const file of mandatory) {
+    if (selected.size >= limit) break;
+    selected.add(file);
+  }
+
+  const buckets = new Map<string, string[]>();
+  for (const file of unique) {
+    if (selected.has(file)) continue;
+    const bucket = `${projectComponentKey(file, projectRoot)}\0${sourceLanguage(file)}`;
+    const values = buckets.get(bucket) ?? [];
+    values.push(file);
+    buckets.set(bucket, values);
+  }
+  const orderedBuckets = [...buckets.entries()].sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  let offset = 0;
+  while (selected.size < limit) {
+    let added = false;
+    for (const [, values] of orderedBuckets) {
+      const file = values[offset];
+      if (!file) continue;
+      selected.add(file);
+      added = true;
+      if (selected.size >= limit) break;
+    }
+    if (!added) break;
+    offset += 1;
+  }
+  return [...selected].sort((left, right) => left.localeCompare(right));
+}
+
+function adaptiveGraphScanBudget(input: {
+  eligibleFiles: number;
+  deepOverride?: number;
+  semanticOverride?: number;
+  sourceOverride?: number;
+}): ProjectGraphScanBudget {
+  const eligible = Math.max(0, input.eligibleFiles);
+  const deepDefault = Math.min(25_000, Math.max(5_000, Math.ceil(eligible * 0.2)));
+  const deepFileBudget = Math.max(
+    100,
+    Math.min(input.deepOverride ?? deepDefault, Math.max(eligible, 100), 100_000)
+  );
+  const semanticDefault = Math.min(
+    100_000,
+    Math.max(25_000, deepFileBudget * 4, Math.ceil(eligible * 0.6))
+  );
+  const semanticFileBudget = Math.max(
+    deepFileBudget,
+    Math.min(input.semanticOverride ?? semanticDefault, Math.max(eligible, deepFileBudget), 250_000)
+  );
+  const sourceDefault = Math.min(
+    20_000,
+    Math.max(2_000, Math.ceil(Math.min(eligible, deepFileBudget) * 0.25))
+  );
+  const sourceExtractionFileBudget = Math.max(
+    100,
+    Math.min(input.sourceOverride ?? sourceDefault, deepFileBudget, 50_000)
+  );
+  return { semanticFileBudget, deepFileBudget, sourceExtractionFileBudget };
 }
 
 function captureSourceFindings(
@@ -843,9 +1113,20 @@ function portableAttributes(
   );
 }
 
-async function listFiles(root: string, maxFiles: number): Promise<string[]> {
+async function listFiles(
+  root: string,
+  maxFiles: number,
+  excludedRoots: readonly string[] = []
+): Promise<string[]> {
   const files: string[] = [];
   const queue = [root];
+  const normalizedExcludedRoots = excludedRoots.map((candidate) => path.resolve(candidate));
+  const isExcluded = (candidate: string): boolean => {
+    const absolute = path.resolve(candidate);
+    return normalizedExcludedRoots.some(
+      (excluded) => absolute === excluded || absolute.startsWith(`${excluded}${path.sep}`)
+    );
+  };
   let head = 0;
   while (head < queue.length && files.length < maxFiles) {
     const current = queue[head++];
@@ -860,6 +1141,7 @@ async function listFiles(root: string, maxFiles: number): Promise<string[]> {
       if (files.length >= maxFiles) break;
       if (entry.isSymbolicLink()) continue;
       const candidate = path.join(current, entry.name);
+      if (isExcluded(candidate)) continue;
       if (entry.isDirectory()) {
         if (
           !IGNORED_DIRECTORIES.has(entry.name) &&
@@ -875,45 +1157,6 @@ async function listFiles(root: string, maxFiles: number): Promise<string[]> {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
-/**
- * Architecture manifests must not disappear merely because a large monorepo
- * exhausts the ordinary source inventory before traversal reaches a deep
- * package boundary. Keep this inventory independently bounded so manifests
- * participate in Graph extraction and freshness without making source scans
- * unbounded.
- */
-async function listArchitectureControlFiles(root: string, maxFiles = 1_024): Promise<string[]> {
-  const files: string[] = [];
-  const queue = [root];
-  let head = 0;
-  while (head < queue.length && files.length < maxFiles) {
-    const current = queue[head++];
-    let entries: fsExtra.Dirent[];
-    try {
-      entries = await fsExtra.readdir(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
-      const candidate = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (
-          !IGNORED_DIRECTORIES.has(entry.name) &&
-          !isPythonVirtualEnvironmentDirectory(entry.name)
-        ) {
-          queue.push(candidate);
-        }
-      } else if (entry.isFile() && ARCHITECTURE_CONTROL_NAMES.has(entry.name)) {
-        files.push(candidate);
-        if (files.length >= maxFiles) break;
-      }
-    }
-  }
-  return files.sort((a, b) => a.localeCompare(b));
-}
-
 type KnowledgeGraphFingerprintProject = {
   id: string;
   path: string;
@@ -923,6 +1166,9 @@ type KnowledgeGraphFingerprintProject = {
 type KnowledgeGraphFingerprintInventories = {
   workspaceFiles?: readonly string[];
   projectFiles?: ReadonlyMap<string, readonly string[]>;
+  workspaceInventory?: ProjectFileInventory;
+  projectInventories?: ReadonlyMap<string, ProjectFileInventory>;
+  scanBudgetsByProject?: ReadonlyMap<string, ProjectGraphScanBudget>;
 };
 
 async function contentHash(filePath: string): Promise<string> {
@@ -958,8 +1204,133 @@ function gitInventoryPathspecs(): string[] {
     ...[...GENERATED_AGENT_PROJECTION_BASENAMES]
       .sort((left, right) => left.localeCompare(right))
       .map((file) => `:(exclude,glob)**/${file}`),
-    ':(exclude,glob)**/.amazonq/rules/workspai-agent-entry.md',
+    ':(exclude,glob)**/.agents/skills/workspai-*/**',
+    ':(exclude,glob)**/.amazonq/rules/workspai-*.md',
+    ':(exclude,glob)**/.claude/rules/workspai-*.md',
+    ':(exclude,glob)**/.claude/rules/rapidkit-*.md',
+    ':(exclude,glob)**/.claude/skills/workspai-*/**',
+    ':(exclude,glob)**/.cursor/rules/workspai-*.*',
+    ':(exclude,glob)**/.cursor/rules/rapidkit-*.*',
+    ':(exclude,glob)**/.cursor/skills/workspai-*/**',
+    ':(exclude,glob)**/.grok/rules/workspai-*.md',
+    ':(exclude,glob)**/.grok/skills/workspai-*/**',
+    ':(exclude,glob)**/.github/copilot-instructions.md',
+    ':(exclude,glob)**/.github/instructions/workspai-*.md',
+    ':(exclude,glob)**/.github/instructions/rapidkit-*.md',
+    ':(exclude,glob)**/.github/prompts/workspai-*.md',
+    ':(exclude,glob)**/.github/prompts/rapidkit-*.md',
+    ':(exclude,glob)**/.github/skills/workspai-*/**',
+    ':(exclude,glob)**/.github/skills/rapidkit-*/**',
+    ':(exclude,glob)**/.windsurf/rules/workspai-*.md',
+    ':(exclude,glob)**/.windsurfrules',
+    ':(exclude,glob)**/.vscode/workspai-agent-hooks.json',
+    ':(exclude,glob)**/.vscode/rapidkit-agent-hooks.json',
   ];
+}
+
+function parseNullSeparatedPaths(buffer: Buffer): string[] {
+  return buffer
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean)
+    .map((value) => value.replace(/\\/gu, '/'));
+}
+
+async function gitProjectFileInventory(
+  root: string,
+  fileLimit: number,
+  excludedRoots: readonly string[] = []
+): Promise<ProjectFileInventory | null> {
+  try {
+    await gitOutput(root, ['rev-parse', '--show-toplevel']);
+    const pathspecs = gitInventoryPathspecs();
+    const [staged, deleted, untracked] = await Promise.all([
+      gitOutput(root, ['ls-files', '--stage', '-z', '--', ...pathspecs]),
+      gitOutput(root, ['ls-files', '--deleted', '-z', '--', ...pathspecs]),
+      gitOutput(root, ['ls-files', '--others', '--exclude-standard', '-z', '--', ...pathspecs]),
+    ]);
+    const deletedPaths = new Set(parseNullSeparatedPaths(deleted));
+    const trackedPaths = staged
+      .toString('utf8')
+      .split('\0')
+      .filter(Boolean)
+      .flatMap((entry) => {
+        const match = entry.match(/^(\d{6}) [0-9a-f]+ \d\t([\s\S]+)$/u);
+        if (!match) return [];
+        const [, mode, rawPath] = match;
+        const relative = rawPath.replace(/\\/gu, '/');
+        if (mode === '120000' || mode === '160000' || deletedPaths.has(relative)) return [];
+        return [relative];
+      });
+    // The index mode alone is insufficient: a tracked regular file can be
+    // replaced by an unstaged symlink. Validate the live worktree object so no
+    // graph provider can follow a path outside the adopted project boundary.
+    const safeWorktreePaths = await mapWithConcurrency(
+      [...new Set([...trackedPaths, ...parseNullSeparatedPaths(untracked)])],
+      64,
+      async (relative) => {
+        const normalizedRelative = path.normalize(relative);
+        if (
+          path.isAbsolute(normalizedRelative) ||
+          normalizedRelative === '..' ||
+          normalizedRelative.startsWith(`..${path.sep}`)
+        )
+          return null;
+        const candidate = path.resolve(root, normalizedRelative);
+        try {
+          const stats = await fsExtra.lstat(candidate);
+          return stats.isFile() && !stats.isSymbolicLink() ? relative : null;
+        } catch {
+          return null;
+        }
+      }
+    );
+    const verifiedPaths = safeWorktreePaths.filter(
+      (relative): relative is string => relative !== null
+    );
+    const allFiles = verifiedPaths
+      .map((relative) => path.resolve(root, ...relative.split('/').filter(Boolean)))
+      .filter((candidate) => !isGeneratedAgentProjection(root, candidate))
+      .filter(
+        (candidate) =>
+          !excludedRoots.some(
+            (excludedRoot) =>
+              candidate === path.resolve(excludedRoot) ||
+              candidate.startsWith(`${path.resolve(excludedRoot)}${path.sep}`)
+          )
+      )
+      .sort((left, right) => left.localeCompare(right));
+    const truncated = allFiles.length > fileLimit;
+    return {
+      files: truncated ? balancedProjectFileSelection(allFiles, fileLimit, root) : allFiles,
+      eligibleFileCount: allFiles.length,
+      eligibleFileCountExact: true,
+      truncated,
+      fileLimit,
+      strategy: 'git-index-worktree-v1',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function projectFileInventory(
+  root: string,
+  fileLimit: number,
+  excludedRoots: readonly string[] = []
+): Promise<ProjectFileInventory> {
+  const gitInventory = await gitProjectFileInventory(root, fileLimit, excludedRoots);
+  if (gitInventory) return gitInventory;
+  const observed = await listFiles(root, fileLimit + 1, excludedRoots);
+  const truncated = observed.length > fileLimit;
+  return {
+    files: truncated ? balancedProjectFileSelection(observed, fileLimit, root) : observed,
+    eligibleFileCount: observed.length,
+    eligibleFileCountExact: !truncated,
+    truncated,
+    fileLimit,
+    strategy: 'filesystem-bfs-v1',
+  };
 }
 
 async function gitFingerprintScope(input: {
@@ -1118,10 +1489,27 @@ async function fingerprintScope(input: {
   root: string;
   files: readonly string[];
   fileLimit: number;
+  eligibleFileCount?: number;
+  eligibleFileCountExact?: boolean;
+  inventoryStrategy?: ProjectFileInventory['strategy'];
+  selection?: WorkspaceKnowledgeGraphInputFingerprint['scopes'][number]['selection'];
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint['scopes'][number]> {
-  const gitFingerprint = await gitFingerprintScope(input);
-  if (gitFingerprint) return gitFingerprint;
-  const entries = await mapWithConcurrency(input.files, 16, async (filePath) => ({
+  const inventory = [...new Set(input.files)].sort((left, right) => left.localeCompare(right));
+  const eligibleFileCount = input.eligibleFileCount ?? inventory.length;
+  const truncated = eligibleFileCount > input.fileLimit || inventory.length > input.fileLimit;
+  const boundedFiles = inventory.slice(0, input.fileLimit);
+  const gitFingerprint = await gitFingerprintScope({ ...input, files: boundedFiles });
+  const inventoryMetadata = {
+    eligibleFileCount,
+    eligibleFileCountExact: input.eligibleFileCountExact ?? !truncated,
+    inventoryMode: truncated ? ('emergency-bounded' as const) : ('complete' as const),
+    ...(input.inventoryStrategy ? { inventoryStrategy: input.inventoryStrategy } : {}),
+    ...(input.selection ? { selection: input.selection } : {}),
+  };
+  if (gitFingerprint) {
+    return { ...gitFingerprint, fileCount: boundedFiles.length, truncated, ...inventoryMetadata };
+  }
+  const entries = await mapWithConcurrency(boundedFiles, 16, async (filePath) => ({
     path: toPosix(path.relative(input.root, filePath)),
     hash: await contentHash(filePath),
   }));
@@ -1136,14 +1524,16 @@ async function fingerprintScope(input: {
     hash: hash.digest('hex'),
     fileCount: entries.length,
     fileLimit: input.fileLimit,
-    truncated: entries.length >= input.fileLimit,
+    truncated,
+    ...inventoryMetadata,
   };
 }
 
 /**
- * Hash the exact bounded file inventories consumed by integrated graph
- * providers. Paths are scoped and portable; file contents, additions,
- * deletions and renames all change the resulting Merkle-style digest.
+ * Hash the complete eligible file inventories consumed by integrated graph
+ * providers. Only the explicit emergency bound may truncate a scope. Paths
+ * are scoped and portable; contents, additions, deletions and renames all
+ * change the resulting Merkle-style digest.
  */
 export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
   workspacePath: string;
@@ -1154,34 +1544,85 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint> {
   const workspacePath = path.resolve(input.workspacePath);
   const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
-  const workspaceFiles =
-    input.inventories?.workspaceFiles ?? (await listFiles(workspacePath, input.workspaceFileLimit));
+  const projectRoots = projects.map((project) =>
+    project.absolutePath
+      ? path.resolve(project.absolutePath)
+      : path.resolve(workspacePath, project.path)
+  );
+  const workspaceInventory =
+    input.inventories?.workspaceInventory ??
+    (input.inventories?.workspaceFiles
+      ? {
+          files: [...input.inventories.workspaceFiles],
+          eligibleFileCount: input.inventories.workspaceFiles.length,
+          eligibleFileCountExact:
+            input.inventories.workspaceFiles.length <= input.workspaceFileLimit,
+          truncated: input.inventories.workspaceFiles.length > input.workspaceFileLimit,
+          fileLimit: input.workspaceFileLimit,
+          strategy: 'filesystem-bfs-v1' as const,
+        }
+      : await projectFileInventory(workspacePath, input.workspaceFileLimit, projectRoots));
+  const scopedWorkspaceFiles = workspaceInventory.files.filter(
+    (file) => !projectRoots.some((root) => file === root || file.startsWith(`${root}${path.sep}`))
+  );
+  const scopedWorkspaceInventory: ProjectFileInventory = {
+    ...workspaceInventory,
+    files: scopedWorkspaceFiles,
+    eligibleFileCount:
+      workspaceInventory.eligibleFileCountExact && !workspaceInventory.truncated
+        ? scopedWorkspaceFiles.length
+        : workspaceInventory.eligibleFileCount,
+  };
   const scopes = await Promise.all([
     fingerprintScope({
       kind: 'workspace',
       id: 'workspace',
       root: workspacePath,
-      files: workspaceFiles,
+      files: scopedWorkspaceInventory.files,
       fileLimit: input.workspaceFileLimit,
+      eligibleFileCount: scopedWorkspaceInventory.eligibleFileCount,
+      eligibleFileCountExact: scopedWorkspaceInventory.eligibleFileCountExact,
+      inventoryStrategy: scopedWorkspaceInventory.strategy,
     }),
     ...projects.map(async (project) => {
       const root = project.absolutePath
         ? path.resolve(project.absolutePath)
         : path.resolve(workspacePath, project.path);
-      const files =
-        input.inventories?.projectFiles?.get(project.id) ??
-        [
-          ...new Set([
-            ...(await listFiles(root, input.projectFileLimit)),
-            ...(await listArchitectureControlFiles(root)),
-          ]),
-        ].sort((left, right) => left.localeCompare(right));
+      const providedFiles = input.inventories?.projectFiles?.get(project.id);
+      const inventory =
+        input.inventories?.projectInventories?.get(project.id) ??
+        (providedFiles
+          ? {
+              files: [...providedFiles],
+              eligibleFileCount: providedFiles.length,
+              eligibleFileCountExact: providedFiles.length <= input.projectFileLimit,
+              truncated: providedFiles.length > input.projectFileLimit,
+              fileLimit: input.projectFileLimit,
+              strategy: 'filesystem-bfs-v1' as const,
+            }
+          : await projectFileInventory(root, input.projectFileLimit));
+      const budget = input.inventories?.scanBudgetsByProject?.get(project.id);
       return fingerprintScope({
         kind: 'project',
         id: project.id,
         root,
-        files,
+        files: inventory.files,
         fileLimit: input.projectFileLimit,
+        eligibleFileCount: inventory.eligibleFileCount,
+        eligibleFileCountExact: inventory.eligibleFileCountExact,
+        inventoryStrategy: inventory.strategy,
+        ...(budget
+          ? {
+              selection: {
+                strategy: 'component-language-round-robin-v1' as const,
+                semanticFileCount: Math.min(inventory.files.length, budget.semanticFileBudget),
+                semanticFileBudget: budget.semanticFileBudget,
+                deepFileCount: Math.min(inventory.files.length, budget.deepFileBudget),
+                deepFileBudget: budget.deepFileBudget,
+                sourceExtractionFileBudget: budget.sourceExtractionFileBudget,
+              },
+            }
+          : {}),
       });
     }),
   ]);
@@ -1192,7 +1633,7 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
   hash.update('workspace-knowledge-graph-inputs.v1\0hybrid-git-content-v2\0');
   for (const scope of scopes) {
     hash.update(
-      `${scope.kind}\0${scope.id}\0${scope.hash}\0${scope.fileCount}\0${scope.fileLimit}\0${scope.truncated}\0`
+      `${scope.kind}\0${scope.id}\0${scope.hash}\0${scope.fileCount}\0${scope.fileLimit}\0${scope.truncated}\0${scope.eligibleFileCount ?? scope.fileCount}\0${scope.eligibleFileCountExact ?? !scope.truncated}\0${scope.inventoryMode ?? (scope.truncated ? 'emergency-bounded' : 'complete')}\0${scope.inventoryStrategy ?? 'unknown'}\0${scope.selection ? hashCanonicalJson(scope.selection) : ''}\0`
     );
   }
   return {
@@ -2005,6 +2446,7 @@ function resolveLocalPackageDependencies(state: KnowledgeGraphState, projectId: 
 const foundationProvider: Provider = {
   id: 'workspace-foundation',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   async run(context) {
     const { state } = context;
     const workspaceProof = await state.addProof({
@@ -2338,6 +2780,7 @@ function contributionCount(value: unknown): number {
 const vscodeExtensionManifestProvider: Provider = {
   id: 'vscode-extension-manifest',
   version: '1.1.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     for (const project of context.projects) {
       const manifests = (context.filesByProject.get(project.id) ?? []).filter(
@@ -2727,6 +3170,7 @@ function parseTomlStringTable(contents: string, table: string): Array<[string, s
 const pythonProjectManifestProvider: Provider = {
   id: 'python-project-manifest',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     for (const project of context.projects) {
       const manifestPath = (context.filesByProject.get(project.id) ?? []).find(
@@ -2815,17 +3259,19 @@ const pythonProjectManifestProvider: Provider = {
 
 const sourceLanguageProvider: Provider = {
   id: 'source-language-inventory',
-  version: '1.1.0',
+  version: '1.2.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
-      (context.semanticFilesByProject.get(project.id) ?? []).some((file) =>
-        SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())
+      (context.filesByProject.get(project.id) ?? []).some((file) =>
+        LANGUAGE_INVENTORY_EXTENSIONS.has(path.extname(file).toLowerCase())
       )
     );
   },
   async run(context) {
     for (const project of context.projects) {
-      const inventory = context.semanticFilesByProject.get(project.id) ?? [];
+      const inventory = context.filesByProject.get(project.id) ?? [];
+      const inventoryState = context.inventoryByProject.get(project.id);
       const rustToolchainPath = (context.filesByProject.get(project.id) ?? []).find((file) =>
         /^rust-toolchain(?:\.toml)?$/i.test(path.basename(file))
       );
@@ -2849,7 +3295,7 @@ const sourceLanguageProvider: Provider = {
         }
       }
       const sourceFiles = inventory.filter((file) =>
-        SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())
+        LANGUAGE_INVENTORY_EXTENSIONS.has(path.extname(file).toLowerCase())
       );
       const languages = new Map<
         string,
@@ -2935,7 +3381,7 @@ const sourceLanguageProvider: Provider = {
             exampleFileCount: entry.examples.length,
             generatedFileCount: entry.generated.length,
             extensions: [...entry.extensions].sort(),
-            inventoryTruncated: inventory.length >= context.semanticScanLimit,
+            inventoryTruncated: inventoryState?.truncated ?? false,
             ...(language === 'rust' && rustToolchain
               ? {
                   toolchainChannel: rustToolchain.channel,
@@ -2953,17 +3399,17 @@ const sourceLanguageProvider: Provider = {
           kind: 'uses-language',
           derivation: 'extracted',
           trust: 'observed',
-          confidence: inventory.length >= context.semanticScanLimit ? 'medium' : 'high',
+          confidence: inventoryState?.truncated ? 'medium' : 'high',
           proofIds: languageProofIds,
         });
       }
-      if (inventory.length >= context.semanticScanLimit) {
+      if (inventoryState?.truncated) {
         context.state.diagnostics.push({
           code: 'graph.provider.source_language_inventory.limit_reached',
           severity: 'warning',
-          message: `Language inventory for ${project.id} reached ${context.semanticScanLimit} files. Counts are lower bounds.`,
+          message: `Language inventory for ${project.id} reached the ${inventoryState.fileLimit}-file emergency bound. Counts are lower bounds.`,
           recommendation:
-            'Increase maxFilesPerProject or use a scoped project run before treating language counts as complete.',
+            'Increase inventoryFileLimitPerProject or split the repository into explicit project boundaries before treating language counts as complete.',
         });
       }
     }
@@ -2973,6 +3419,7 @@ const sourceLanguageProvider: Provider = {
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
   version: '1.0.0',
+  scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
       (context.filesByProject.get(project.id) ?? []).some(
@@ -2984,20 +3431,22 @@ const sourceStructureProvider: Provider = {
   },
   async run(context) {
     for (const project of context.projects) {
-      const projectInventory = (context.filesByProject.get(project.id) ?? []).filter(
+      const projectInventory = (context.deepFilesByProject.get(project.id) ?? []).filter(
         (file) => !isNonProductionArtifact(project.root, file)
       );
-      const resolutionInventory =
-        context.semanticFilesByProject.get(project.id) ?? projectInventory;
-      const files = balancedSourceSelection(
-        resolutionInventory.filter(
-          (file) =>
-            SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
-            !isNonProductionArtifact(project.root, file)
-        ),
-        1_000,
-        project.root
+      const resolutionInventory = context.filesByProject.get(project.id) ?? projectInventory;
+      const extractionLimit =
+        context.scanBudgetsByProject.get(project.id)?.sourceExtractionFileBudget ?? 2_000;
+      // Keep symbol and binding work proportional to the explicit source
+      // extraction budget. A fixed 10k ceiling silently penalized symbol-dense
+      // repositories even when callers deliberately raised the file budget.
+      const symbolBudget = Math.min(100_000, Math.max(10_000, extractionLimit * 10));
+      const fullSourceCandidates = resolutionInventory.filter(
+        (file) =>
+          SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
+          !isNonProductionArtifact(project.root, file)
       );
+      const files = balancedSourceSelection(fullSourceCandidates, extractionLimit, project.root);
       // Extraction stays deliberately bounded, but local import resolution
       // must see the complete fingerprint inventory. Otherwise imports from a
       // sampled file to a valid file outside the extraction window become
@@ -3176,11 +3625,11 @@ const sourceStructureProvider: Provider = {
           }
         }
 
-        if (symbolCount < 10_000) {
+        if (symbolCount < symbolBudget) {
           const symbols = captureSourceFindings(
             sourceContents,
             SYMBOL_PATTERNS,
-            Math.min(100, 10_000 - symbolCount)
+            Math.min(100, symbolBudget - symbolCount)
           );
           symbolCount += symbols.length;
           for (const symbol of symbols) {
@@ -3254,13 +3703,22 @@ const sourceStructureProvider: Provider = {
           });
         }
       }
-      if (files.length >= 1_000 || symbolCount >= 10_000) {
+      if (files.length < fullSourceCandidates.length) {
         context.state.diagnostics.push({
           code: 'graph.provider.source_structure.limit_reached',
           severity: 'info',
-          message: `Source extraction for ${project.id} sampled ${files.length} file(s) from ${projectInventory.length} indexed candidate(s).`,
+          message: `Source extraction for ${project.id} sampled ${files.length} file(s) from ${fullSourceCandidates.length} complete-inventory source candidate(s).`,
           recommendation:
             'Use bounded graph search, evidence, and path queries for proof-backed retrieval; do not treat the sampled symbol inventory as exhaustive.',
+        });
+      }
+      if (symbolCount >= symbolBudget) {
+        context.state.diagnostics.push({
+          code: 'graph.provider.source_structure.symbol_limit_reached',
+          severity: 'info',
+          message: `Symbol extraction for ${project.id} reached its adaptive ${symbolBudget}-symbol budget across ${files.length} selected source file(s).`,
+          recommendation:
+            'Increase graphSourceBudget when a more exhaustive symbol inventory is worth the additional graph size and extraction cost.',
         });
       }
       if (unresolvedLocalImports > 0) {
@@ -3286,14 +3744,17 @@ const sourceStructureProvider: Provider = {
 const sourceSymbolBindingProvider: Provider = {
   id: 'source-symbol-binding',
   version: '1.0.0',
+  scanTier: 'derived',
   applicable(context) {
     return [...context.state.entities.values()].some((entity) => entity.kind === 'symbol');
   },
   async run(context) {
     let ambiguousBindings = 0;
-    let emittedBindings = 0;
-    const maxBindings = 10_000;
     for (const project of context.projects) {
+      const sourceFileBudget =
+        context.scanBudgetsByProject.get(project.id)?.sourceExtractionFileBudget ?? 2_000;
+      const maxBindings = Math.min(100_000, Math.max(10_000, sourceFileBudget * 10));
+      let emittedBindings = 0;
       const entities = [...context.state.entities.values()].filter(
         (entity) => entity.projectId === project.id
       );
@@ -3388,6 +3849,15 @@ const sourceSymbolBindingProvider: Provider = {
             emittedBindings += 1;
           }
         }
+      }
+      if (emittedBindings >= maxBindings) {
+        context.state.diagnostics.push({
+          code: 'graph.provider.source_symbol_binding.limit_reached',
+          severity: 'info',
+          message: `Source call binding for ${project.id} reached its adaptive ${maxBindings}-relation budget.`,
+          recommendation:
+            'Increase graphSourceBudget or use compiler/language-server semantic evidence when more exhaustive call topology is required.',
+        });
       }
     }
     if (ambiguousBindings > 0) {
@@ -3495,6 +3965,7 @@ function lineOfToken(contents: string, token: string): number | undefined {
 const runtimeBridgeSemanticProvider: Provider = {
   id: 'runtime-bridge-semantics',
   version: '1.0.0',
+  scanTier: 'adaptive-semantic',
   async applicable(context) {
     for (const project of context.projects) {
       for (const file of context.semanticFilesByProject.get(project.id) ?? []) {
@@ -3745,6 +4216,7 @@ const SEMANTIC_PROTOCOL_STOP_NAMES = new Set([
 const polyglotSemanticProvider: Provider = {
   id: 'polyglot-semantics',
   version: '1.0.0',
+  scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) => {
       const concreteRuntimeCandidates = new Set(
@@ -3760,7 +4232,7 @@ const polyglotSemanticProvider: Provider = {
   async run(context) {
     for (const project of context.projects) {
       const projectEntity = stableId('project', `project:${project.id}`);
-      const projectFiles = context.filesByProject.get(project.id) ?? [];
+      const projectFiles = context.deepFilesByProject.get(project.id) ?? [];
       const lifecyclePlan = buildPolyglotLifecyclePlan(project.root);
 
       const packages = [...context.state.entities.values()].filter(
@@ -4013,6 +4485,7 @@ const polyglotSemanticProvider: Provider = {
 const serviceContractProvider: Provider = {
   id: 'workspace-service-contract',
   version: '1.0.0',
+  scanTier: 'derived',
   applicable(context) {
     return Boolean(
       context.contract?.projects.some(
@@ -4136,6 +4609,7 @@ const serviceContractProvider: Provider = {
 const openApiProvider: Provider = {
   id: 'openapi',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
       (context.filesByProject.get(project.id) ?? []).some(isOpenApiCandidate)
@@ -4309,6 +4783,7 @@ function quotedOperationIdOffset(contents: string, operationId: string): number 
 const authoredApiImplementationProvider: Provider = {
   id: 'authored-api-implementation-binding',
   version: '1.0.0',
+  scanTier: 'adaptive-semantic',
   applicable(context) {
     return [...context.state.entities.values()].some(
       (entity) => entity.kind === 'endpoint' && typeof entity.attributes.operationId === 'string'
@@ -4482,6 +4957,7 @@ function dynamicApiRegistrationOffset(file: string, contents: string): number {
 const dynamicApiRegistrationProvider: Provider = {
   id: 'dynamic-api-registration-binding',
   version: '1.0.0',
+  scanTier: 'adaptive-semantic',
   applicable(context) {
     if (![...context.state.entities.values()].some((entity) => entity.kind === 'api')) return false;
     return context.projects.some((project) =>
@@ -4629,6 +5105,7 @@ const dynamicApiRegistrationProvider: Provider = {
 const interfaceContractProvider: Provider = {
   id: 'interface-contracts',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
       (context.filesByProject.get(project.id) ?? []).some(isInterfaceContractCandidate)
@@ -4811,6 +5288,7 @@ const interfaceContractProvider: Provider = {
 const infrastructureProvider: Provider = {
   id: 'infrastructure-as-code',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return uniqueInventoryFiles(context).some(isInfrastructureCandidate);
   },
@@ -4912,6 +5390,7 @@ function classifyImage(image: string): WorkspaceKnowledgeEntityKind {
 const composeProvider: Provider = {
   id: 'compose',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     return (await composeCandidateFiles(context)).length > 0;
   },
@@ -5070,6 +5549,7 @@ const composeProvider: Provider = {
 const documentationProvider: Provider = {
   id: 'documentation',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return uniqueInventoryFiles(context).some(isDocumentationCandidate);
   },
@@ -5131,6 +5611,7 @@ const documentationProvider: Provider = {
 const kubernetesProvider: Provider = {
   id: 'kubernetes',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     return (await kubernetesCandidateFiles(context)).length > 0;
   },
@@ -5213,6 +5694,7 @@ const kubernetesProvider: Provider = {
 const ciProvider: Provider = {
   id: 'ci-workflow',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return ciCandidateFiles(context).length > 0;
   },
@@ -5309,6 +5791,7 @@ const ciProvider: Provider = {
 const ownershipProvider: Provider = {
   id: 'codeowners',
   version: '1.1.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     return (await ownershipCandidateFiles(context)).length > 0;
   },
@@ -5417,6 +5900,7 @@ const ownershipProvider: Provider = {
 const decisionProvider: Provider = {
   id: 'architecture-decisions',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return [
       { root: context.workspacePath, files: context.workspaceFiles },
@@ -5501,6 +5985,83 @@ const PROVIDERS: Provider[] = [
   documentationProvider,
   decisionProvider,
 ];
+
+function providerInputCoverage(
+  provider: Provider,
+  context: ProviderContext,
+  status: WorkspaceKnowledgeProviderRun['status']
+): WorkspaceKnowledgeProviderInputCoverage[] | undefined {
+  const tier = provider.scanTier;
+  if (!tier) return undefined;
+  const projects = context.projects;
+  if (projects.length === 0) {
+    return [
+      {
+        scope: 'workspace',
+        scopeId: 'workspace',
+        tier,
+        status: status === 'skipped' ? 'not-applicable' : 'complete',
+        eligibleFiles: context.workspaceFiles.length,
+        suppliedFiles: tier === 'derived' ? 0 : context.workspaceFiles.length,
+        ...(tier === 'derived' ? {} : { fileBudget: Math.max(context.workspaceFiles.length, 1) }),
+        selectionStrategy: tier === 'derived' ? 'derived' : 'complete',
+      },
+    ];
+  }
+  return projects.map((project) => {
+    const inventory = context.inventoryByProject.get(project.id);
+    const budget = context.scanBudgetsByProject.get(project.id);
+    const eligibleFiles = inventory?.eligibleFileCount ?? 0;
+    if (status === 'skipped') {
+      return {
+        scope: 'project' as const,
+        scopeId: project.id,
+        tier,
+        status: 'not-applicable' as const,
+        eligibleFiles,
+        suppliedFiles: 0,
+        selectionStrategy: tier === 'derived' ? ('derived' as const) : ('complete' as const),
+      };
+    }
+    if (tier === 'derived') {
+      return {
+        scope: 'project' as const,
+        scopeId: project.id,
+        tier,
+        status: 'complete' as const,
+        eligibleFiles: 0,
+        suppliedFiles: 0,
+        selectionStrategy: 'derived' as const,
+      };
+    }
+    const suppliedFiles =
+      tier === 'complete-inventory'
+        ? (context.filesByProject.get(project.id)?.length ?? 0)
+        : tier === 'adaptive-semantic'
+          ? (context.semanticFilesByProject.get(project.id)?.length ?? 0)
+          : (context.deepFilesByProject.get(project.id)?.length ?? 0);
+    const fileBudget =
+      tier === 'complete-inventory'
+        ? (inventory?.fileLimit ?? Math.max(suppliedFiles, 1))
+        : tier === 'adaptive-semantic'
+          ? (budget?.semanticFileBudget ?? Math.max(suppliedFiles, 1))
+          : (budget?.deepFileBudget ?? Math.max(suppliedFiles, 1));
+    const bounded = Boolean(inventory?.truncated) || suppliedFiles < eligibleFiles;
+    return {
+      scope: 'project' as const,
+      scopeId: project.id,
+      tier,
+      status: bounded ? ('bounded' as const) : ('complete' as const),
+      eligibleFiles,
+      suppliedFiles,
+      fileBudget: Math.max(fileBudget, 1),
+      selectionStrategy:
+        tier === 'complete-inventory'
+          ? ('complete' as const)
+          : ('component-language-round-robin-v1' as const),
+    };
+  });
+}
 
 async function addProjectTopology(
   state: KnowledgeGraphState,
@@ -5694,59 +6255,112 @@ export async function buildWorkspaceKnowledgeGraph(
     })
     .sort((a, b) => a.id.localeCompare(b.id));
   const state = new KnowledgeGraphState(workspacePath, now, options.workspace.name);
-  const maxFilesPerProject = Math.max(100, Math.min(options.maxFilesPerProject ?? 2_000, 10_000));
-  const semanticScanLimit = Math.min(Math.max(maxFilesPerProject * 10, 20_000), 50_000);
-  const architectureFilesByProject = new Map(
+  const requestedInventoryLimit = positiveGraphBudgetOverride(
+    options.inventoryFileLimitPerProject,
+    'WORKSPAI_GRAPH_INVENTORY_LIMIT'
+  );
+  const requestedDeepBudget = positiveGraphBudgetOverride(
+    options.maxFilesPerProject,
+    'WORKSPAI_GRAPH_DEEP_BUDGET'
+  );
+  const requestedSemanticBudget = positiveGraphBudgetOverride(
+    options.semanticFilesPerProject,
+    'WORKSPAI_GRAPH_SEMANTIC_BUDGET'
+  );
+  const requestedSourceBudget = positiveGraphBudgetOverride(
+    options.sourceFilesPerProject,
+    'WORKSPAI_GRAPH_SOURCE_BUDGET'
+  );
+  const inventoryFileLimit = Math.max(
+    100,
+    Math.min(
+      requestedInventoryLimit ?? DEFAULT_GRAPH_INVENTORY_EMERGENCY_LIMIT,
+      MAX_GRAPH_INVENTORY_EMERGENCY_LIMIT
+    )
+  );
+  const inventoryByProject = new Map(
     await Promise.all(
       projects.map(
-        async (project) => [project.id, await listArchitectureControlFiles(project.root)] as const
+        async (project) =>
+          [project.id, await projectFileInventory(project.root, inventoryFileLimit)] as const
       )
     )
   );
   const filesByProject = new Map(
-    await Promise.all(
-      projects.map(
-        async (project) =>
-          [
-            project.id,
-            [
-              ...new Set([
-                ...(await listFiles(project.root, maxFilesPerProject)),
-                ...(architectureFilesByProject.get(project.id) ?? []),
-              ]),
-            ].sort((left, right) => left.localeCompare(right)),
-          ] as const
-      )
+    projects.map(
+      (project) => [project.id, inventoryByProject.get(project.id)?.files ?? []] as const
     )
+  );
+  const scanBudgetsByProject = new Map(
+    projects.map((project) => {
+      const inventory = inventoryByProject.get(project.id);
+      return [
+        project.id,
+        adaptiveGraphScanBudget({
+          eligibleFiles: inventory?.files.length ?? 0,
+          ...(requestedDeepBudget !== undefined ? { deepOverride: requestedDeepBudget } : {}),
+          ...(requestedSemanticBudget !== undefined
+            ? { semanticOverride: requestedSemanticBudget }
+            : {}),
+          ...(requestedSourceBudget !== undefined ? { sourceOverride: requestedSourceBudget } : {}),
+        }),
+      ] as const;
+    })
+  );
+  const deepFilesByProject = new Map(
+    projects.map((project) => {
+      const inventory = inventoryByProject.get(project.id)?.files ?? [];
+      const budget = scanBudgetsByProject.get(project.id)?.deepFileBudget ?? inventory.length;
+      return [project.id, balancedProjectFileSelection(inventory, budget, project.root)] as const;
+    })
   );
   const semanticFilesByProject = new Map(
-    await Promise.all(
-      projects.map(
-        async (project) =>
-          [
-            project.id,
-            [
-              ...new Set([
-                ...(await listFiles(project.root, semanticScanLimit)),
-                ...(architectureFilesByProject.get(project.id) ?? []),
-              ]),
-            ].sort((left, right) => left.localeCompare(right)),
-          ] as const
-      )
-    )
+    projects.map((project) => {
+      const inventory = inventoryByProject.get(project.id)?.files ?? [];
+      const budget = scanBudgetsByProject.get(project.id)?.semanticFileBudget ?? inventory.length;
+      return [project.id, balancedProjectFileSelection(inventory, budget, project.root)] as const;
+    })
   );
-  const workspaceFileLimit = Math.min(maxFilesPerProject * Math.max(projects.length, 1), 20_000);
-  const workspaceFiles = await listFiles(workspacePath, workspaceFileLimit);
+  const rawWorkspaceInventory = await projectFileInventory(
+    workspacePath,
+    inventoryFileLimit,
+    projects.map((project) => project.root)
+  );
+  const workspaceFiles = rawWorkspaceInventory.files.filter(
+    (file) =>
+      !projects.some(
+        (project) => file === project.root || file.startsWith(`${project.root}${path.sep}`)
+      )
+  );
+  const workspaceInventory: ProjectFileInventory = {
+    ...rawWorkspaceInventory,
+    files: workspaceFiles,
+    eligibleFileCount:
+      rawWorkspaceInventory.eligibleFileCountExact && !rawWorkspaceInventory.truncated
+        ? workspaceFiles.length
+        : rawWorkspaceInventory.eligibleFileCount,
+    truncated: rawWorkspaceInventory.truncated,
+  };
   const inputFingerprint = await computeWorkspaceKnowledgeGraphInputFingerprint({
     workspacePath,
     projects,
-    projectFileLimit: semanticScanLimit,
-    workspaceFileLimit,
+    projectFileLimit: inventoryFileLimit,
+    workspaceFileLimit: inventoryFileLimit,
     inventories: {
-      workspaceFiles,
-      projectFiles: semanticFilesByProject,
+      workspaceInventory,
+      projectInventories: inventoryByProject,
+      scanBudgetsByProject,
     },
   });
+  for (const scope of inputFingerprint.scopes.filter((candidate) => candidate.truncated)) {
+    state.diagnostics.push({
+      code: `graph.input.${scope.kind}_file_limit_reached`,
+      severity: 'warning',
+      message: `${scope.kind === 'project' ? `Project ${scope.id}` : 'Workspace'} graph inventory reached the ${scope.fileLimit}-file emergency bound. The persisted graph remains usable, but completeness claims must be bounded.`,
+      recommendation:
+        'Increase inventoryFileLimitPerProject for this scope or split the repository into explicit project boundaries before claiming complete source coverage.',
+    });
+  }
   const currentProjectScopes = new Map(
     inputFingerprint.scopes
       .filter((scope) => scope.kind === 'project')
@@ -5757,14 +6371,19 @@ export async function buildWorkspaceKnowledgeGraph(
       .filter((scope) => scope.kind === 'project')
       .map((scope) => [scope.id, scope.hash] as const)
   );
+  const incrementalCacheProtocolVersion = '1.3.0';
   const previousProviderVersions = new Map(
     (options.previousGraph?.providers ?? [])
       .filter((provider) => provider.id !== 'incremental-project-cache')
       .map((provider) => [provider.id, provider.version] as const)
   );
-  const providerSetIsCompatible = PROVIDERS.every(
-    (provider) => previousProviderVersions.get(provider.id) === provider.version
+  const previousProviderRuns = new Map(
+    (options.previousGraph?.providers ?? []).map((provider) => [provider.id, provider] as const)
   );
+  const providerSetIsCompatible =
+    PROVIDERS.every((provider) => previousProviderVersions.get(provider.id) === provider.version) &&
+    previousProviderRuns.get('incremental-project-cache')?.version ===
+      incrementalCacheProtocolVersion;
   const canReusePrevious =
     options.previousGraph?.workspace.name === options.workspace.name &&
     providerSetIsCompatible &&
@@ -5778,49 +6397,6 @@ export async function buildWorkspaceKnowledgeGraph(
           .map(([id]) => id)
       : []
   );
-  const projectsToScan = projects.filter((project) => !reusableProjectIds.has(project.id));
-  if (options.previousGraph && reusableProjectIds.size > 0) {
-    const reusableEntities = options.previousGraph.entities.filter(
-      (entity) => entity.projectId && reusableProjectIds.has(entity.projectId)
-    );
-    const reusableEntityIds = new Set(reusableEntities.map((entity) => entity.id));
-    const reusableRelations = options.previousGraph.relations.filter(
-      (relation) => reusableEntityIds.has(relation.from) && reusableEntityIds.has(relation.to)
-    );
-    const reusableProofIds = new Set(
-      [...reusableEntities, ...reusableRelations].flatMap((entry) => entry.proofIds)
-    );
-    for (const proof of options.previousGraph.proofs) {
-      if (reusableProofIds.has(proof.id)) state.proofs.set(proof.id, proof);
-    }
-    for (const entity of reusableEntities) state.entities.set(entity.id, entity);
-    for (const relation of reusableRelations) state.relations.set(relation.id, relation);
-    state.providers.push({
-      id: 'incremental-project-cache',
-      version: '1.0.0',
-      status: 'passed',
-      permission: 'filesystem-read',
-      discoveredEntities: reusableEntities.length,
-      discoveredRelations: reusableRelations.length,
-      proofCount: reusableProofIds.size,
-      diagnostics: [
-        `Reused ${reusableProjectIds.size} unchanged project scope(s); rescanning ${projectsToScan.length}.`,
-      ],
-    });
-  }
-  const context: ProviderContext = {
-    workspacePath,
-    projects,
-    filesByProject,
-    semanticFilesByProject,
-    semanticScanLimit,
-    workspaceFiles,
-    now,
-    maxFilesPerProject,
-    contract: options.contract ?? null,
-    state,
-  };
-
   const incrementalProjectProviderIds = new Set([
     'vscode-extension-manifest',
     'python-project-manifest',
@@ -5834,10 +6410,164 @@ export async function buildWorkspaceKnowledgeGraph(
     'authored-api-implementation-binding',
     'dynamic-api-registration-binding',
     'interface-contracts',
+    'compose',
+    'infrastructure-as-code',
+    'kubernetes',
+    'ci-workflow',
+    'codeowners',
   ]);
+  const projectsToScan = projects.filter((project) => !reusableProjectIds.has(project.id));
+  let pendingReusableSharedRelations: WorkspaceKnowledgeRelation[] = [];
+  if (options.previousGraph && reusableProjectIds.size > 0) {
+    const reusableProjectEntities = options.previousGraph.entities.filter(
+      (entity) => entity.projectId && reusableProjectIds.has(entity.projectId)
+    );
+    const reusableProjectEntityIds = new Set(reusableProjectEntities.map((entity) => entity.id));
+    const previousEntitiesById = new Map(
+      options.previousGraph.entities.map((entity) => [entity.id, entity] as const)
+    );
+    const previousProofsById = new Map(
+      options.previousGraph.proofs.map((proof) => [proof.id, proof] as const)
+    );
+    const reusableScopeEntityIds = new Set(reusableProjectEntityIds);
+    let expandedReusableScope = true;
+    while (expandedReusableScope) {
+      expandedReusableScope = false;
+      for (const relation of options.previousGraph.relations) {
+        const fromReusable = reusableScopeEntityIds.has(relation.from);
+        const toReusable = reusableScopeEntityIds.has(relation.to);
+        if (fromReusable === toReusable) continue;
+        const sharedId = fromReusable ? relation.to : relation.from;
+        const sharedEntity = previousEntitiesById.get(sharedId);
+        if (!sharedEntity || sharedEntity.projectId !== undefined) continue;
+        const proofIds = [...sharedEntity.proofIds, ...relation.proofIds];
+        if (
+          proofIds.some((proofId) => {
+            const provider = previousProofsById.get(proofId)?.provider;
+            return provider !== undefined && incrementalProjectProviderIds.has(provider);
+          })
+        ) {
+          reusableScopeEntityIds.add(sharedId);
+          expandedReusableScope = true;
+        }
+      }
+    }
+    if (projectsToScan.length === 0) {
+      for (const entity of options.previousGraph.entities) {
+        if (entity.projectId !== undefined) continue;
+        if (
+          entity.proofIds.some((proofId) => {
+            const provider = previousProofsById.get(proofId)?.provider;
+            return provider !== undefined && incrementalProjectProviderIds.has(provider);
+          })
+        ) {
+          reusableScopeEntityIds.add(entity.id);
+        }
+      }
+    }
+    const reusableSharedEntityIds = new Set(
+      [...reusableScopeEntityIds].filter((id) => !reusableProjectEntityIds.has(id))
+    );
+    const reusableEntities = [
+      ...reusableProjectEntities,
+      ...options.previousGraph.entities.filter((entity) => reusableSharedEntityIds.has(entity.id)),
+    ];
+    const reusableEntityIds = new Set(reusableEntities.map((entity) => entity.id));
+    const reusableRelations = options.previousGraph.relations.filter(
+      (relation) => reusableEntityIds.has(relation.from) && reusableEntityIds.has(relation.to)
+    );
+    pendingReusableSharedRelations = options.previousGraph.relations.filter((relation) => {
+      const fromReusable = reusableEntityIds.has(relation.from);
+      const toReusable = reusableEntityIds.has(relation.to);
+      if (fromReusable === toReusable) return false;
+      const sharedEntity = previousEntitiesById.get(fromReusable ? relation.to : relation.from);
+      return sharedEntity?.projectId === undefined;
+    });
+    const reusableProofIds = new Set(
+      [...reusableEntities, ...reusableRelations].flatMap((entry) => entry.proofIds)
+    );
+    for (const proof of options.previousGraph.proofs) {
+      if (reusableProofIds.has(proof.id)) state.proofs.set(proof.id, proof);
+    }
+    for (const entity of reusableEntities) state.entities.set(entity.id, entity);
+    for (const relation of reusableRelations) state.relations.set(relation.id, relation);
+    state.providers.push({
+      id: 'incremental-project-cache',
+      version: incrementalCacheProtocolVersion,
+      status: 'passed',
+      permission: 'filesystem-read',
+      discoveredEntities: reusableEntities.length,
+      discoveredRelations: reusableRelations.length,
+      proofCount: reusableProofIds.size,
+      diagnostics: [
+        `Reused ${reusableProjectIds.size} unchanged project scope(s); rescanning ${projectsToScan.length}.`,
+      ],
+    });
+  } else {
+    state.providers.push({
+      id: 'incremental-project-cache',
+      version: incrementalCacheProtocolVersion,
+      status: 'skipped',
+      permission: 'filesystem-read',
+      discoveredEntities: 0,
+      discoveredRelations: 0,
+      proofCount: 0,
+      diagnostics: [
+        `No compatible unchanged project scope was reused; scanning ${projectsToScan.length}.`,
+      ],
+    });
+  }
+  const context: ProviderContext = {
+    workspacePath,
+    projects,
+    filesByProject,
+    deepFilesByProject,
+    semanticFilesByProject,
+    inventoryByProject,
+    scanBudgetsByProject,
+    workspaceFiles,
+    now,
+    contract: options.contract ?? null,
+    state,
+  };
+
   const incrementalContext: ProviderContext = { ...context, projects: projectsToScan };
 
   for (const provider of PROVIDERS) {
+    if (
+      reusableProjectIds.size > 0 &&
+      projectsToScan.length === 0 &&
+      incrementalProjectProviderIds.has(provider.id)
+    ) {
+      const previousRun = previousProviderRuns.get(provider.id);
+      if (previousRun) {
+        for (const diagnosticText of previousRun.diagnostics) {
+          const previousDiagnostic = options.previousGraph?.diagnostics.find(
+            (diagnostic) => `${diagnostic.code}: ${diagnostic.message}` === diagnosticText
+          );
+          if (
+            previousDiagnostic &&
+            !state.diagnostics.some(
+              (diagnostic) =>
+                diagnostic.code === previousDiagnostic.code &&
+                diagnostic.message === previousDiagnostic.message
+            )
+          ) {
+            state.diagnostics.push(previousDiagnostic);
+          }
+        }
+        state.providers.push({
+          ...previousRun,
+          diagnostics: [
+            ...new Set([
+              ...previousRun.diagnostics,
+              'Provider evidence reused from unchanged project scopes.',
+            ]),
+          ],
+        });
+        continue;
+      }
+    }
     const before = {
       entities: state.entities.size,
       relations: state.relations.size,
@@ -5889,6 +6619,10 @@ export async function buildWorkspaceKnowledgeGraph(
     if (executionError && providerDiagnostics.length === 0) {
       providerDiagnostics.push(executionError);
     }
+    const inputCoverage = providerInputCoverage(provider, context, status);
+    if (status === 'passed' && inputCoverage?.some((coverage) => coverage.status === 'bounded')) {
+      status = 'partial';
+    }
     state.providers.push({
       id: provider.id,
       version: provider.version,
@@ -5898,7 +6632,39 @@ export async function buildWorkspaceKnowledgeGraph(
       discoveredRelations: state.relations.size - before.relations,
       proofCount: state.proofs.size - before.proofs,
       diagnostics: providerDiagnostics,
+      ...(inputCoverage ? { inputCoverage } : {}),
     });
+  }
+  if (options.previousGraph && pendingReusableSharedRelations.length > 0) {
+    const previousProofsById = new Map(
+      options.previousGraph.proofs.map((proof) => [proof.id, proof] as const)
+    );
+    let restoredRelations = 0;
+    let restoredProofs = 0;
+    for (const relation of pendingReusableSharedRelations) {
+      if (!state.entities.has(relation.from) || !state.entities.has(relation.to)) continue;
+      if (!state.relations.has(relation.id)) {
+        state.relations.set(relation.id, relation);
+        restoredRelations += 1;
+      }
+      for (const proofId of relation.proofIds) {
+        const proof = previousProofsById.get(proofId);
+        if (proof && !state.proofs.has(proofId)) {
+          state.proofs.set(proofId, proof);
+          restoredProofs += 1;
+        }
+      }
+    }
+    const cacheRun = state.providers.find(
+      (provider) => provider.id === 'incremental-project-cache'
+    );
+    if (cacheRun) {
+      cacheRun.discoveredRelations += restoredRelations;
+      cacheRun.proofCount += restoredProofs;
+      cacheRun.diagnostics.push(
+        `Restored ${restoredRelations} reusable project-to-workspace relation(s) with ${restoredProofs} additional proof(s).`
+      );
+    }
   }
   reconcileCrossProviderEvidence(state);
   await addProjectTopology(state, options.projectTopology);
@@ -5946,6 +6712,36 @@ export async function buildWorkspaceKnowledgeGraph(
     (count, dimension) => count + dimension.unknownCount,
     0
   );
+  const completeInventoryScopes = inputFingerprint.scopes.filter(
+    (scope) => !scope.truncated
+  ).length;
+  const boundedInventoryScopes = inputFingerprint.scopes.length - completeInventoryScopes;
+  const providerCompleteness = state.providers.reduce(
+    (summary, provider) => {
+      if (provider.status === 'failed') summary.failed += 1;
+      else if (
+        provider.status === 'skipped' ||
+        provider.inputCoverage?.every((coverage) => coverage.status === 'not-applicable')
+      ) {
+        summary.notApplicable += 1;
+      } else if (
+        provider.status === 'partial' ||
+        provider.inputCoverage?.some((coverage) => coverage.status === 'bounded')
+      ) {
+        summary.bounded += 1;
+      } else {
+        summary.complete += 1;
+      }
+      return summary;
+    },
+    { complete: 0, bounded: 0, notApplicable: 0, failed: 0 }
+  );
+  const completenessStatus =
+    boundedInventoryScopes > 0 ||
+    providerCompleteness.bounded > 0 ||
+    providerCompleteness.failed > 0
+      ? ('bounded' as const)
+      : ('complete' as const);
 
   return {
     schemaVersion: WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
@@ -5969,6 +6765,26 @@ export async function buildWorkspaceKnowledgeGraph(
         .length,
       unknownCount: explicitUnknownCount + bindingUnknownCount,
       bindingCoverage,
+      completeness: {
+        status: completenessStatus,
+        inventory: {
+          scopeCount: inputFingerprint.scopes.length,
+          completeScopes: completeInventoryScopes,
+          boundedScopes: boundedInventoryScopes,
+          eligibleFiles: inputFingerprint.scopes.reduce(
+            (count, scope) => count + (scope.eligibleFileCount ?? scope.fileCount),
+            0
+          ),
+          indexedFiles: inputFingerprint.scopes.reduce(
+            (count, scope) => count + scope.fileCount,
+            0
+          ),
+          eligibleFileCountExact: inputFingerprint.scopes.every(
+            (scope) => scope.eligibleFileCountExact !== false
+          ),
+        },
+        providers: providerCompleteness,
+      },
       portable: true,
       secretValuesEmitted: false,
     },

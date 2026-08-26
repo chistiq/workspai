@@ -87,6 +87,8 @@ export interface AnalyzeReport {
   workspaceDetected: boolean;
   profile: string | null;
   summary: {
+    statusScope: 'source-structure';
+    releaseReadiness: 'not-evaluated';
     score: number;
     verdict: 'ready' | 'needs-attention' | 'blocked';
     projectCount: number;
@@ -281,6 +283,37 @@ async function hasHealthEndpoint(projectPath: string): Promise<boolean> {
   return hasAnyPath(projectPath, candidatePaths);
 }
 
+async function hasEnvironmentContractIntent(
+  projectPath: string,
+  projectJson: Record<string, unknown> | null
+): Promise<boolean> {
+  if (await hasAnyPath(projectPath, ['.env', '.env.local'])) return true;
+  const contracts =
+    projectJson?.contracts && typeof projectJson.contracts === 'object'
+      ? (projectJson.contracts as Record<string, unknown>)
+      : null;
+  if (Array.isArray(contracts?.env) && contracts.env.length > 0) return true;
+
+  const packageJson = await readJsonObject(path.join(projectPath, 'package.json'));
+  const dependencies = {
+    ...((packageJson?.dependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((packageJson?.devDependencies as Record<string, unknown> | undefined) ?? {}),
+  };
+  if (Object.keys(dependencies).some((name) => /^(?:dotenv|dotenv-flow|env-cmd)$/iu.test(name))) {
+    return true;
+  }
+
+  const pyproject = await readText(path.join(projectPath, 'pyproject.toml'));
+  if (/\b(?:python-dotenv|pydantic-settings)\b/iu.test(pyproject)) return true;
+  const compose = [
+    await readText(path.join(projectPath, 'compose.yaml')),
+    await readText(path.join(projectPath, 'compose.yml')),
+    await readText(path.join(projectPath, 'docker-compose.yml')),
+    await readText(path.join(projectPath, 'docker-compose.yaml')),
+  ].join('\n');
+  return /^\s*(?:env_file|environment)\s*:/imu.test(compose);
+}
+
 async function hasTestFiles(projectPath: string): Promise<boolean> {
   return (await detectProjectTestSurface(projectPath)).detected;
 }
@@ -340,6 +373,11 @@ async function analyzeProject(
     framework: detection.key,
   });
   const requiresDeploymentSurface = ['backend', 'service', 'worker'].includes(projectKind);
+  const requiresHttpHealthSurface =
+    requiresDeploymentSurface &&
+    /^(?:fastapi|django|flask|nestjs|express|fastify|springboot|gofiber|gogin|dotnet-webapi|laravel|rails|phoenix|axum|actix|rocket)$/u.test(
+      detection.key
+    );
   const relativePath = normalizeRelative(workspacePath, projectPath);
   const target = relativePath;
   const scripts = await readScripts(projectPath);
@@ -354,6 +392,7 @@ async function analyzeProject(
     'env.example',
     'config/env.example',
   ]);
+  const hasEnvContractIntent = await hasEnvironmentContractIntent(projectPath, projectJson);
   const governance = await detectProjectGovernance({
     projectPath,
     declaration: contractProject?.governance,
@@ -398,7 +437,7 @@ async function analyzeProject(
       )
     );
   }
-  if (requiresDeploymentSurface && !hasEnvExample) {
+  if (requiresDeploymentSurface && hasEnvContractIntent && !hasEnvExample) {
     findings.push(
       finding(
         'project.env.example.missing',
@@ -435,7 +474,7 @@ async function analyzeProject(
       )
     );
   }
-  if (requiresDeploymentSurface && !hasHealthEndpointFlag) {
+  if (requiresHttpHealthSurface && !hasHealthEndpointFlag) {
     findings.push(
       finding(
         'project.health.missing',
@@ -581,7 +620,7 @@ function summarizeFindings(findings: AnalyzeFinding[]): {
 function buildNextActions(report: {
   findings: AnalyzeFinding[];
   projectCount: number;
-  hasGraph: boolean;
+  hasCanonicalGraph: boolean;
   workspaceDetected: boolean;
 }): string[] {
   if (report.projectCount === 0) {
@@ -621,9 +660,9 @@ function buildNextActions(report: {
       'Add a health/readiness endpoint so runtime probes and deployment checks can verify service health.'
     );
   }
-  if (!report.hasGraph) {
+  if (!report.hasCanonicalGraph) {
     actions.push(
-      'Create `.workspai/workspace-dependency-graph.json` or use analyze output as the first graph seed.'
+      'Generate canonical topology with `workspai workspace model --write --include-evidence`.'
     );
   }
   actions.push('Run `workspai autopilot release --mode audit --json` before release.');
@@ -718,6 +757,8 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
     workspaceDetected,
     profile,
     summary: {
+      statusScope: 'source-structure',
+      releaseReadiness: 'not-evaluated',
       score,
       verdict,
       projectCount: projects.length,
@@ -735,7 +776,9 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
     nextActions: buildNextActions({
       findings,
       projectCount: projects.length,
-      hasGraph: dependencyEdges.length > 0,
+      hasCanonicalGraph: await pathExists(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+      ),
       workspaceDetected,
     }),
     enterpriseControls: {
@@ -791,8 +834,9 @@ export function printAnalyzeReport(report: AnalyzeReport): void {
   console.log(chalk.bold('\nWorkspai Workspace Analysis\n'));
   console.log(chalk.cyan('Workspace:'), report.workspacePath);
   console.log(chalk.cyan('Profile:'), report.profile || 'not configured');
-  console.log(chalk.cyan('Score:'), `${report.summary.score}/100`);
-  console.log(chalk.cyan('Verdict:'), verdictColor(report.summary.verdict));
+  console.log(chalk.cyan('Source score:'), `${report.summary.score}/100`);
+  console.log(chalk.cyan('Source verdict:'), verdictColor(report.summary.verdict));
+  console.log(chalk.cyan('Release readiness:'), report.summary.releaseReadiness);
   console.log(
     chalk.gray(
       `Projects: ${report.summary.projectCount}, runtimes: ${report.summary.runtimeCount}, findings: ${report.summary.findings.fail} fail / ${report.summary.findings.warn} warn / ${report.summary.findings.info} info`

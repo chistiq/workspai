@@ -56,6 +56,9 @@ Useful follow-up questions:
 # What APIs and endpoints exist?
 npx workspai workspace graph entities endpoint --json
 
+# Which languages are evidenced in one project? The flag form is equivalent.
+npx workspai workspace graph entities --kind language --scope project:billing --limit 100 --json
+
 # Why does Workspai believe this entity exists?
 npx workspai workspace graph evidence "GET /users" --json
 
@@ -116,6 +119,13 @@ symbols are not implied to have been extracted. The graph diagnostic reports
 the sampled and indexed candidate counts and must not be read as exhaustive
 symbol coverage.
 
+Language inventory is intentionally broader than source-structure parsing.
+The complete eligible-path inventory recognizes systems languages and compiler
+DSLs such as Assembly, CUDA, Fortran, HLSL, LLVM IR/MIR, MLIR, Objective-C,
+OpenCL, and TableGen even when Workspai has no safe generic symbol parser for
+that syntax. Language counts therefore remain project-wide inventory facts;
+symbols, imports, and calls remain bounded to parser-supported source inputs.
+
 Call binding follows the same proof boundary. Workspai binds a call only when
 its target is uniquely defined in the same file or in a locally imported file
 that the Graph already resolved. Overloads, dynamic dispatch, and ambiguous
@@ -140,13 +150,14 @@ only when all of the following remain true:
 - no proof is marked stale;
 - the graph fingerprint contains exactly one workspace scope and every
   canonical project scope with compatible scan limits;
-- a fresh bounded scan produces the same aggregate live-input hash.
+- a fresh complete eligible-path inventory produces the same aggregate
+  live-input hash.
 
 Git-backed scopes use `git-worktree-v2`, covering tracked tree state plus
-modified, deleted, renamed, untracked, and relevant ignored files. If Git cannot
+modified, deleted, renamed, and non-ignored untracked files. If Git cannot
 prove the scanned inventory safely—for example because a traversed initialized
 submodule or hidden index flag is present—Workspai falls back to
-`content-merkle-v1`, which hashes each bounded file by portable path and content.
+`content-merkle-v1`, which hashes each eligible file by portable path and content.
 The graph records the combined strategy as `hybrid-git-content-v2`.
 
 A miss rebuilds from live sources. Use `--refresh-graph` when the caller requires
@@ -156,9 +167,38 @@ an explicit rebuild even if the persisted snapshot is compatible:
 npx workspai workspace graph search "protobuf ownership" --refresh-graph --json
 ```
 
-The fingerprint proves compatibility of the exact bounded provider inventory;
-if a scope reports `truncated: true`, it must not be interpreted as proof about
-files beyond that declared limit.
+The fingerprint normally covers every eligible Git-tracked and non-ignored
+untracked file in each project scope. The default `500000`-file limit is an
+emergency safety boundary, not a semantic completeness target. A scope with
+`truncated: true` or `inventoryMode: emergency-bounded` must not be interpreted
+as proof about files beyond that boundary. Git inventories publish an exact
+`eligibleFileCount`; a non-Git fallback that reaches the boundary publishes
+`eligibleFileCountExact: false` instead of inventing a total.
+
+Path inventory and content-heavy extraction have separate budgets. Complete
+inventory feeds freshness, manifest discovery, language counts, architecture
+contracts, CI, ownership, infrastructure, and targeted providers. Semantic and
+deep providers receive deterministic adaptive selections distributed across
+component and language buckets. This prevents a large package, vendored tree,
+or alphabetically early directory from starving the rest of a polyglot
+monorepo. Every provider publishes `inputCoverage`; successful execution over a
+bounded selection is reported as `partial`, never as exhaustive coverage.
+
+Defaults scale with the eligible project population up to these safety
+ceilings:
+
+- complete inventory emergency bound: `500000` files per project;
+- adaptive semantic input: up to `100000` files per project;
+- adaptive deep-provider input: up to `25000` files per project;
+- source extraction: up to `20000` files per project.
+
+Use `--graph-inventory-limit`, `--graph-semantic-budget`,
+`--graph-deep-budget`, and `--graph-source-budget` on `workspace graph`, or the
+equivalent `WORKSPAI_GRAPH_INVENTORY_LIMIT`,
+`WORKSPAI_GRAPH_SEMANTIC_BUDGET`, `WORKSPAI_GRAPH_DEEP_BUDGET`, and
+`WORKSPAI_GRAPH_SOURCE_BUDGET` environment variables for non-interactive model,
+Adopt, and Intelligence runs. Increasing deep budgets affects cost, not the
+canonical per-project storage boundary.
 
 Workspai-generated agent entry projections are downstream consumers and are
 excluded from Graph inventory and Git diff hashing. Regenerating `AGENTS.md`,
@@ -170,7 +210,7 @@ Graph that produced them or become circular architecture evidence.
 | You want to know…                                    | Use                                                     |
 | ---------------------------------------------------- | ------------------------------------------------------- |
 | What is relevant to a natural-language question?     | `workspace graph search <query> --limit <n> --json`     |
-| Which entities of one type exist?                    | `workspace graph entities <kind> --json`                |
+| Which entities of one type exist?                    | `workspace graph entities <kind> [--scope project:name] [--limit <n>] --json` |
 | Why does Workspai believe an item exists?            | `workspace graph evidence <entity-or-relation> --json`  |
 | How are two things connected?                        | `workspace graph path <from> <to> --json`               |
 | What changed between graph revisions?                | `workspace graph overlay --from <graph.json> --json`    |

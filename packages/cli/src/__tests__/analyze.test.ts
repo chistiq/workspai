@@ -86,12 +86,48 @@ describe('analyze command', () => {
     const report = await runAnalyze({ workspacePath: workspaceDir });
 
     expect(report.workspaceDetected).toBe(true);
+    expect(report.summary).toMatchObject({
+      statusScope: 'source-structure',
+      releaseReadiness: 'not-evaluated',
+    });
     expect(report.profile).toBe('polyglot');
     expect(report.summary.projectCount).toBe(1);
     expect(report.projects[0].hasCiConfig).toBe(true);
     expect(report.projects[0].hasHealthEndpoint).toBe(true);
     expect(report.findings.some((item) => item.id === 'project.ci.missing')).toBe(false);
     expect(report.findings.some((item) => item.id === 'project.health.missing')).toBe(false);
+  });
+
+  it('does not invent dotenv or HTTP health contracts for a generic Python application', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'python-platform');
+    await fs.mkdir(path.join(workspaceDir, '.workspai', 'reports'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'minimal' })
+    );
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'reports', 'workspace-knowledge-graph.json'),
+      '{}\n'
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'python-platform', runtime: 'python', framework: 'python' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'pyproject.toml'),
+      '[project]\nname = "python-platform"\n'
+    );
+    await fs.writeFile(path.join(projectDir, 'Dockerfile'), 'FROM python:3.14\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.findings.map((item) => item.id)).not.toEqual(
+      expect.arrayContaining(['project.env.example.missing', 'project.health.missing'])
+    );
+    expect(report.nextActions.join('\n')).not.toContain('workspace-dependency-graph.json');
+    expect(report.nextActions.join('\n')).not.toContain('workspace model --write');
   });
 
   it('recognizes repository-authored Prow jobs as external CI evidence', async () => {
@@ -336,7 +372,11 @@ describe('analyze command', () => {
     );
     await fs.writeFile(
       path.join(projectDir, 'package.json'),
-      JSON.stringify({ name: 'service-b', scripts: {} }, null, 2)
+      JSON.stringify(
+        { name: 'service-b', scripts: {}, dependencies: { dotenv: '^16.0.0' } },
+        null,
+        2
+      )
     );
     await fs.writeFile(path.join(projectDir, 'src', 'index.ts'), 'export const app = true;');
 

@@ -671,6 +671,41 @@ function hasFileWithSuffix(projectPath: string, suffix: string, maxDepth = 2): b
   );
 }
 
+/**
+ * Detects a native monorepo whose project boundary is an aggregation of
+ * independently buildable CMake/Meson components. Requiring three direct
+ * component manifests keeps ordinary applications with one or two optional
+ * native extensions from displacing their authored primary runtime.
+ */
+export function hasNativeWorkspaceTopology(projectPath: string): boolean {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(projectPath, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  let nativeComponents = 0;
+  for (const entry of entries) {
+    if (
+      !entry.isDirectory() ||
+      NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES.has(entry.name) ||
+      isPythonVirtualEnvironmentDirectory(entry.name)
+    ) {
+      continue;
+    }
+    const componentRoot = path.join(projectPath, entry.name);
+    if (
+      fs.existsSync(path.join(componentRoot, 'CMakeLists.txt')) ||
+      fs.existsSync(path.join(componentRoot, 'meson.build'))
+    ) {
+      nativeComponents += 1;
+      if (nativeComponents >= 3) return true;
+    }
+  }
+  return false;
+}
+
 function findFilesWithSuffix(projectPath: string, suffix: string, maxDepth = 2): string[] {
   return listFilesRecursive(projectPath, maxDepth).filter((candidatePath) =>
     candidatePath.toLowerCase().endsWith(suffix.toLowerCase())
@@ -1139,6 +1174,7 @@ export function detectBackendFrameworkFromProject(
   const rootMeson = readTextIfExists(path.join(projectPath, 'meson.build'));
   const rootCargo = readTextIfExists(path.join(projectPath, 'Cargo.toml'));
   const hasRootNativeBuild = rootCmake.trim().length > 0 || rootMeson.trim().length > 0;
+  const hasNativeWorkspace = hasNativeWorkspaceTopology(projectPath);
   const hasCppSource =
     hasFileWithSuffix(projectPath, '.cpp', 3) ||
     hasFileWithSuffix(projectPath, '.cc', 3) ||
@@ -1149,7 +1185,11 @@ export function detectBackendFrameworkFromProject(
   // tooling manifests for Python, Node, Ruby, or .NET. Large native projects
   // such as gRPC intentionally ship those secondary language surfaces beside
   // their C/C++ core.
-  if (hasRootNativeBuild && runtimeCandidates.includes('cpp') && (hasCppSource || declaresCpp)) {
+  if (
+    (hasRootNativeBuild || hasNativeWorkspace) &&
+    runtimeCandidates.includes('cpp') &&
+    (hasCppSource || declaresCpp)
+  ) {
     return buildDetection('cpp', 'high', 'manifest');
   }
   if (

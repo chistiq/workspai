@@ -108,6 +108,22 @@ function isNestedTestFixtureManifest(projectRoot: string, manifest: string): boo
   return segments.length - testIndex > 2;
 }
 
+/**
+ * A Gradle settings file defines a single multi-project build boundary. Nested
+ * build.gradle files inside that boundary are subprojects executed by the root
+ * wrapper, not hundreds of independent lifecycle roots. Keeping them as units
+ * duplicates work, bypasses the wrapper, and can make fleet plans unsafe.
+ */
+function isNestedGradleSubproject(projectRoot: string, manifest: string): boolean {
+  const name = path.basename(manifest);
+  if (name !== 'build.gradle' && name !== 'build.gradle.kts') return false;
+  if (path.dirname(manifest) === projectRoot) return false;
+  return (
+    fs.existsSync(path.join(projectRoot, 'settings.gradle')) ||
+    fs.existsSync(path.join(projectRoot, 'settings.gradle.kts'))
+  );
+}
+
 function stage(
   name: PolyglotLifecycleStage['stage'],
   command: string,
@@ -266,6 +282,7 @@ export function buildPolyglotLifecyclePlan(
   const projectRoot = path.resolve(projectPath);
   const units = listManifests(projectRoot, Math.max(0, Math.min(options.maxDepth ?? 4, 12)))
     .filter((manifest) => !isNestedTestFixtureManifest(projectRoot, manifest))
+    .filter((manifest) => !isNestedGradleSubproject(projectRoot, manifest))
     .map((manifest) => manifestUnit(projectRoot, manifest))
     .filter((unit): unit is PolyglotRuntimeUnit => Boolean(unit))
     .filter((unit) => options.includeExamples === true || unit.role !== 'example')

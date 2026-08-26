@@ -89,12 +89,22 @@ provider-neutral bootstrap command; each runtime receipt replaces that step in
 `requiredReadOrder` with the resolved host (or `all` for a complete host audit),
 so a consumer is never routed back through the wrong adapter.
 
+The top-level `status` is explicitly scoped by `statusScope: agent-grounding`.
+It must not be interpreted as project setup or release readiness. The
+`readiness` object reports those dimensions separately: agent grounding,
+architecture evidence, project environment, and release. A clean bootstrap can
+therefore be `ready` while release remains `not-verified`, or while previously
+recorded Doctor findings make the project environment `degraded` or `blocked`.
+When live input validation succeeds, the receipt reports Model and Graph
+freshness as `fresh`; fact-level TTL and verify-before-use semantics remain in
+their individual evidence records and do not weaken structural freshness.
+
 The Workspace Model and complete Knowledge Graph are validated by the receipt,
 but are deliberately **not** part of `requiredReadOrder`. They are on-demand
 deep-evidence artifacts: load them only for an explicit full export, offline
 audit, or a task that cannot be answered from the project lens, bounded context,
 and task-scoped Graph query. This keeps first contact bounded on large workspaces.
-The compact Workspace Skills index *is* part of the route: use it to select one
+The compact Workspace Skills index _is_ part of the route: use it to select one
 relevant playbook, rather than loading every Skill or asking the model to infer
 an operational procedure from raw source alone.
 

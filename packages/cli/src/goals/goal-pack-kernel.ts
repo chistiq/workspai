@@ -111,13 +111,18 @@ export function buildGoalPack(
   const identity = {
     // Any semantic compiler change must advance this revision so an older
     // immutable Goal Pack can never be mistaken for current output.
-    kernelRevision: 'goal-pack-kernel-v10',
+    kernelRevision: 'goal-pack-kernel-v11',
     intent: input.intent.normalized,
     workspace: input.workspaceName,
     scope: input.scope,
     modelHash: input.sourceBinding.model.hash,
     graphSourceFingerprint: input.sourceBinding.graph.inputHash ?? input.sourceBinding.graph.hash,
     preflight: input.preflight,
+    // Baseline and consumer are both serialized into immutable publications.
+    // They must participate in identity or a provider upgrade (same live inputs,
+    // richer graph) or a consumer-specific handoff can collide with an older ID.
+    baseline: input.baseline,
+    consumer: input.consumer,
     policy: { maxAttempts: input.maxAttempts, mutationMode: 'proposal-only' },
   };
   const fingerprint = ports.digestCanonical(identity);

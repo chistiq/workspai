@@ -330,6 +330,7 @@ describe('doctor remediation canary matrix', () => {
         runtime: 'python',
       },
       files: {
+        Makefile: '.PHONY:\n',
         'pyproject.toml': '[tool.poetry]\nname = "python-api"\nversion = "0.1.0"\n',
         'src/python_api/__init__.py': '',
       },
@@ -344,6 +345,7 @@ describe('doctor remediation canary matrix', () => {
         runtime: 'go',
       },
       files: {
+        Makefile: '.PHONY:\n',
         'go.mod': 'module example.com/go-api\n\ngo 1.22\n',
         'main.go': 'package main\n\nfunc main() {}\n',
       },
@@ -358,6 +360,7 @@ describe('doctor remediation canary matrix', () => {
         runtime: 'rust',
       },
       files: {
+        Makefile: '.PHONY:\n',
         'Cargo.toml': '[package]\nname = "rust-api"\nversion = "0.1.0"\nedition = "2021"\n',
         'src/main.rs': 'fn main() {}\n',
       },
@@ -372,6 +375,7 @@ describe('doctor remediation canary matrix', () => {
         runtime: 'php',
       },
       files: {
+        Makefile: '.PHONY:\n',
         'composer.json': {
           name: 'rapidkit/php-api',
           require: {},
@@ -389,6 +393,7 @@ describe('doctor remediation canary matrix', () => {
         runtime: 'ruby',
       },
       files: {
+        Makefile: '.PHONY:\n',
         Gemfile: 'source "https://rubygems.org"\n',
         'app.rb': 'puts "ok"\n',
       },
@@ -403,6 +408,7 @@ describe('doctor remediation canary matrix', () => {
         runtime: 'dotnet',
       },
       files: {
+        Makefile: '.PHONY:\n',
         'Api.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n',
         'Program.cs': 'Console.WriteLine("ok");\n',
       },

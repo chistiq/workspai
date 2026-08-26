@@ -121,6 +121,13 @@ export interface AgentBootstrapReceipt {
   generatedAt: string;
   receiptId: string;
   status: AgentEntryHostStatus;
+  statusScope: 'agent-grounding';
+  readiness: {
+    agentGrounding: AgentEntryHostStatus;
+    architectureEvidence: AgentEntryHostStatus;
+    projectEnvironment: 'ready' | 'degraded' | 'blocked';
+    release: 'not-verified' | 'degraded' | 'blocked';
+  };
   requestedAgent: string;
   resolvedHost: AgentEntryHostId | 'all';
   project: {
@@ -671,6 +678,17 @@ export async function buildAgentBootstrapReceipt(input: {
       ? 'degraded'
       : 'ready';
   const status = mergedStatus([runtimeHostStatus, evidenceStatus]);
+  const projectEnvironment = context.blockers.some((blocker) => blocker.severity === 'error')
+    ? ('blocked' as const)
+    : context.blockers.length > 0
+      ? ('degraded' as const)
+      : ('ready' as const);
+  const releaseReadiness =
+    projectEnvironment === 'blocked'
+      ? ('blocked' as const)
+      : projectEnvironment === 'degraded'
+        ? ('degraded' as const)
+        : ('not-verified' as const);
   const resolvedBootstrapCommand = `command:workspai agent bootstrap --for-agent ${resolvedHost} --strict --json`;
   const requiredReadOrder = manifest.protocol.requiredReadOrder.map((entry) =>
     entry === 'command:workspai agent bootstrap --for-agent generic --strict --json'
@@ -681,6 +699,13 @@ export async function buildAgentBootstrapReceipt(input: {
     schemaVersion: AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
     generatedAt: (input.now ?? new Date()).toISOString(),
     status,
+    statusScope: 'agent-grounding' as const,
+    readiness: {
+      agentGrounding: status,
+      architectureEvidence: evidenceStatus,
+      projectEnvironment,
+      release: releaseReadiness,
+    },
     requestedAgent,
     resolvedHost,
     project: {
@@ -711,8 +736,8 @@ export async function buildAgentBootstrapReceipt(input: {
       workspaceSkillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}` as const,
       boundedGraphSearch:
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json' as const,
-      modelFreshness: context.intelligence.freshness.model,
-      graphFreshness: context.intelligence.freshness.graph,
+      modelFreshness: liveInputsValidated ? 'fresh' : context.intelligence.freshness.model,
+      graphFreshness: liveInputsValidated ? 'fresh' : context.intelligence.freshness.graph,
       graphMatchesModel: context.intelligence.freshness.graphMatchesModel,
       liveInputsValidated,
       blockerCount: context.blockers.length,
@@ -733,6 +758,14 @@ export async function buildAgentBootstrapReceipt(input: {
             ...(activeGoal.present && activeGoal.appliesToProject && activeGoal.agentHandoff
               ? [`read:${activeGoal.agentHandoff}`]
               : []),
+            ...(projectEnvironment === 'blocked'
+              ? [
+                  'workspai doctor project --json',
+                  'workspai workspace explain release-blocked --json',
+                ]
+              : projectEnvironment === 'degraded'
+                ? ['workspai doctor project --json']
+                : []),
             `workspai workspace graph search <task-query> --scope project:${context.project.name} --limit 12 --json`,
             'inspect only the returned proof paths and target source files',
           ]

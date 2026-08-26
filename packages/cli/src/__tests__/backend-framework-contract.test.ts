@@ -183,6 +183,31 @@ describe('backend-framework-contract', () => {
     expect(detectRuntimeCandidatesFromProject(nativePolyglotProject)).toEqual(['python', 'cpp']);
   });
 
+  it('keeps a multi-component native workspace primary over root-level Python tooling', async () => {
+    const nativeWorkspace = await createTempProject('native-workspace');
+    await fs.outputFile(
+      path.join(nativeWorkspace, 'pyproject.toml'),
+      '[project]\nname = "repository-tooling"\n'
+    );
+    for (const component of ['compiler', 'linker', 'runtime']) {
+      await fs.outputFile(
+        path.join(nativeWorkspace, component, 'CMakeLists.txt'),
+        `project(${component} CXX)\n`
+      );
+      await fs.outputFile(
+        path.join(nativeWorkspace, component, 'lib', `${component}.cpp`),
+        `int ${component}_entry() { return 0; }\n`
+      );
+    }
+
+    expect(detectBackendFrameworkFromProject(nativeWorkspace)).toMatchObject({
+      key: 'cpp',
+      runtime: 'cpp',
+      confidence: 'high',
+      source: 'manifest',
+    });
+  });
+
   it('keeps an explicit Cargo default workspace primary over Node binding tooling', async () => {
     const rustWorkspace = await createTempProject('rust-workspace-bindings');
     await fs.outputFile(

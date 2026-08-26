@@ -202,6 +202,42 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(workspacePath);
   });
 
+  it('propagates a runtime-unit timeout category to the project result', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-polyglot-timeout-'));
+    const projectPath = path.join(workspacePath, 'sdk');
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      scripts: { build: 'node -e "process.exit(0)"' },
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (cmd: string, args: string[]) => {
+      if ((cmd === 'go' && args.includes('build')) || cmd.includes('go build')) {
+        return { exitCode: 124, stdout: '', stderr: 'operation timed out' };
+      }
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      enforceGates: false,
+      json: true,
+    });
+    const failedUnit = report.projects[0]?.runtimeExecutions?.find(
+      (execution) => execution.status === 'failed'
+    );
+
+    expect(failedUnit?.errorCategory).toBe('timeout');
+    expect(failedUnit?.failureDiagnostic).toMatchObject({ timedOut: true, category: 'timeout' });
+    expect(report.projects[0]?.errorCategory).toBe('timeout');
+    expect(report.projects[0]?.failureDiagnostic).toMatchObject({
+      timedOut: true,
+      category: 'timeout',
+    });
+
+    await fsExtra.remove(workspacePath);
+  });
+
   it('reuses a previously passed project result without executing the stage again', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-reuse-'));
     await createProject(workspacePath, 'apps/api');

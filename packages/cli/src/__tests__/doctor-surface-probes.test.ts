@@ -251,7 +251,32 @@ describe('doctor enterprise surface probes', () => {
     }
   });
 
-  it('emits runtime-native test, quality, and security command contracts without Makefile conflicts', async () => {
+  it('recognizes component-level native manifests at a monorepo boundary', async () => {
+    const projectPath = await makeProject({
+      'pyproject.toml': '[project]\nname = "build-tooling"\n',
+      'compiler/CMakeLists.txt': 'project(compiler CXX)\n',
+      'compiler/lib/compiler.cpp': 'int compiler_entry() { return 0; }\n',
+      'linker/CMakeLists.txt': 'project(linker CXX)\n',
+      'linker/lib/linker.cpp': 'int linker_entry() { return 0; }\n',
+      'runtime/CMakeLists.txt': 'project(runtime CXX)\n',
+      'runtime/lib/runtime.cpp': 'int runtime_entry() { return 0; }\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'cpp',
+      projectKind: 'platform',
+      hasTests: false,
+      vulnerabilities: 0,
+    });
+
+    expect(probes.find((probe) => probe.id === 'surface-dependency-contract')).toMatchObject({
+      status: 'warn',
+      reason: expect.stringContaining('Dependency manifest detected'),
+    });
+  });
+
+  it('does not invent a Makefile command surface when a project has none', async () => {
     const projectPath = await makeProject({
       'go.mod': 'module example.com/api\n',
       'go.sum': '',
@@ -270,40 +295,53 @@ describe('doctor enterprise surface probes', () => {
       status: 'warn',
       repairCapability: {
         issueId: 'surface-test-contract',
-        fixKind: 'file-append',
-        files: [path.join(projectPath, 'Makefile')],
-        operation: {
-          type: 'makefile-target',
-          target: 'test',
-          command: 'go test ./...',
-        },
+        status: 'manual',
+        fixKind: 'manual',
+        canEditFiles: false,
+        files: [path.join(projectPath, 'go.mod')],
+        reason: expect.stringContaining('will not invent a new command surface'),
       },
     });
     expect(probes.find((probe) => probe.id === 'runtime-quality-tooling')).toMatchObject({
       status: 'warn',
       repairCapability: {
         issueId: 'runtime-quality-tooling',
-        fixKind: 'file-append',
-        files: [path.join(projectPath, 'Makefile')],
-        operation: {
-          type: 'makefile-target',
-          target: 'quality',
-          command: 'gofmt -w .',
-        },
+        status: 'manual',
+        fixKind: 'manual',
+        canEditFiles: false,
+        files: [path.join(projectPath, 'go.mod')],
       },
     });
     expect(probes.find((probe) => probe.id === 'runtime-security-tooling')).toMatchObject({
       status: 'warn',
       repairCapability: {
         issueId: 'runtime-security-tooling',
-        fixKind: 'file-append',
-        files: [path.join(projectPath, 'Makefile')],
-        operation: {
-          type: 'makefile-target',
-          target: 'security',
-          command: 'govulncheck ./...',
-        },
+        status: 'manual',
+        fixKind: 'manual',
+        canEditFiles: false,
+        files: [path.join(projectPath, 'go.mod')],
       },
+    });
+  });
+
+  it('recognizes repository security workflows as security tooling evidence', async () => {
+    const projectPath = await makeProject({
+      'pyproject.toml': '[project]\nname = "api"\nversion = "0.1.0"\n',
+      '.github/workflows/security.yml': 'steps:\n  - uses: github/codeql-action/analyze@v3\n',
+      '.gitignore': '.env\n.env.*\n!.env.example\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'python',
+      projectKind: 'backend',
+      hasTests: true,
+      vulnerabilities: 0,
+    });
+
+    expect(probes.find((probe) => probe.id === 'runtime-security-tooling')).toMatchObject({
+      status: 'pass',
+      repairCapability: undefined,
     });
   });
 
@@ -751,6 +789,34 @@ describe('doctor enterprise surface probes', () => {
     );
     expect(probes.find((probe) => probe.id === 'surface-test-contract')?.status).toBe('pass');
     expect(probes.find((probe) => probe.id === 'runtime-test-depth')?.status).toBe('warn');
+  });
+
+  it('detects nested container surfaces without proposing a root dockerignore repair', async () => {
+    const projectPath = await makeProject({
+      'settings.gradle': "include ':distribution'\n",
+      'build.gradle': 'plugins { id "java" }\n',
+      'distribution/docker/Dockerfile': 'FROM eclipse-temurin:21-jre\n',
+      'distribution/docker/docker-compose.yml': 'services:\n  api:\n    build: .\n',
+    });
+
+    const probes = await buildEnterpriseSurfaceProbes({
+      projectPath,
+      runtimeFamily: 'java',
+      projectKind: 'platform',
+      hasTests: true,
+      hasDocker: true,
+      vulnerabilities: 0,
+    });
+    const container = probes.find((probe) => probe.id === 'surface-container-contract');
+
+    expect(container).toMatchObject({
+      status: 'pass',
+      applicability: 'applicable',
+    });
+    expect(container?.reason).toContain('Dockerfile');
+    expect(container?.reason).toContain('Compose');
+    expect(container?.repairCapability).toBeUndefined();
+    expect(probes.find((probe) => probe.id === 'surface-dockerignore')).toBeUndefined();
   });
 
   it('recognizes real NestJS Jest and ESLint flat-config surfaces', async () => {

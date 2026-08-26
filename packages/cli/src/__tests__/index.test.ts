@@ -789,6 +789,15 @@ describe('CLI Entry Point', () => {
           adoptedProject: { name: string; path: string; stack: string };
           projectWorkspaceCommand: string;
           commandsResolveWorkspaceFromProject: boolean;
+          consumerArtifacts: {
+            freshnessSealed: boolean;
+            reconciledAfterGrounding: boolean;
+          };
+          agentBootstrap: {
+            status: string;
+            statusScope: string;
+            readiness: { release: string };
+          };
         };
         expect(payload.projectWorkspaceCommand).toBe(
           'npx workspai project workspace status --json'
@@ -798,6 +807,12 @@ describe('CLI Entry Point', () => {
           name: 'web',
           path: sourceDir,
           stack: 'nextjs',
+        });
+        expect(payload.consumerArtifacts).toMatchObject({ freshnessSealed: true });
+        expect(payload.agentBootstrap).toMatchObject({
+          status: 'ready',
+          statusScope: 'agent-grounding',
+          readiness: { release: 'not-verified' },
         });
       } finally {
         consoleLog.mockRestore();
@@ -1307,12 +1322,59 @@ describe('CLI Entry Point', () => {
       expect(search.stdout).not.toContain('workspace.option.unsupported');
       expect(JSON.parse(search.stdout)).toMatchObject({ kind: 'project' });
 
+      const entities = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'workspace',
+          'graph',
+          'entities',
+          '--kind',
+          'workspace',
+          '--limit',
+          '1',
+          '--json',
+        ],
+        { cwd: workspaceRoot, reject: false }
+      );
+      expect(entities.stdout).not.toContain('workspace.option.unsupported');
+      expect(JSON.parse(entities.stdout)).toMatchObject({
+        kind: 'workspace',
+        count: 1,
+        totalMatches: 1,
+        truncated: false,
+      });
+
       const overlay = await execa(
         'node',
         [CLI_PATH, 'workspace', 'graph', 'overlay', '--from', 'missing-graph.json', '--json'],
         { cwd: workspaceRoot, reject: false }
       );
       expect(overlay.stdout).not.toContain('workspace.option.unsupported');
+    });
+
+    it('rejects unknown graph modes before building or emitting the graph', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-graph-unknown-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+
+      const result = await execa('node', [CLI_PATH, 'workspace', 'graph', 'validate', '--json'], {
+        cwd: workspaceRoot,
+        reject: false,
+      });
+
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'workspace graph validate',
+        status: 'error',
+        exitCode: 2,
+        error: { code: 'workspace.graph.mode.unsupported' },
+        context: {
+          mode: 'validate',
+          supportedModes: expect.arrayContaining(['emit', 'search', 'overlay']),
+        },
+      });
+      expect(result.stdout.length).toBeLessThan(5000);
     });
 
     it('writes dependency graph renderers to --output with a structured receipt', async () => {

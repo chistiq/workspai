@@ -164,6 +164,13 @@ describe('canonical-first project agent entry', () => {
     expect(receipt.checks.filter((check) => check.status !== 'passed')).toEqual([]);
     expect(receipt).toMatchObject({
       status: 'ready',
+      statusScope: 'agent-grounding',
+      readiness: {
+        agentGrounding: 'ready',
+        architectureEvidence: 'ready',
+        projectEnvironment: 'ready',
+        release: 'not-verified',
+      },
       resolvedHost: 'codex',
       project: { name: 'api', relativePath: 'external/api' },
       workspace: {
@@ -184,6 +191,8 @@ describe('canonical-first project agent entry', () => {
           'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
         graphMatchesModel: true,
         liveInputsValidated: true,
+        modelFreshness: 'fresh',
+        graphFreshness: 'fresh',
       },
       claims: { architecture: 'allowed-with-citations' },
       integrity: { portable: true, absolutePathsEmitted: false },

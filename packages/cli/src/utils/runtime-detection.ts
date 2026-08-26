@@ -9,7 +9,10 @@ import { projectMetadataCandidates } from './workspace-paths.js';
 
 export type RapidkitProjectJson = Record<string, unknown> | null;
 
-function detectBackendRuntime(projectJson: RapidkitProjectJson, projectPath: string): string {
+export function detectBackendRuntime(
+  projectJson: RapidkitProjectJson,
+  projectPath: string
+): string {
   const hinted = detectBackendFrameworkFromHints({
     runtime: typeof projectJson?.runtime === 'string' ? (projectJson.runtime as string) : undefined,
     framework:

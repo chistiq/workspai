@@ -13,6 +13,7 @@ import {
   type DoctorRepairStrategyStage,
 } from './doctor-repair-capabilities.js';
 import type { DoctorDependencyAuditEvidence } from './doctor-dependency-audit.js';
+import { hasNativeWorkspaceTopology } from './backend-framework-contract.js';
 import { detectNodePackageManager } from './node-package-manager.js';
 import { detectProjectTestSurface } from './project-test-surface.js';
 import {
@@ -210,6 +211,62 @@ async function hasFileWithSuffix(root: string, suffix: string, maxDepth: number)
   return false;
 }
 
+export type ProjectContainerSurface = {
+  rootDockerfile: boolean;
+  nestedDockerfile: boolean;
+  compose: boolean;
+};
+
+/** Bounded, source-oriented container discovery for monorepos and platforms. */
+export async function detectProjectContainerSurface(
+  projectPath: string,
+  maxDepth = 6
+): Promise<ProjectContainerSurface> {
+  const rootDockerfile = await fsExtra.pathExists(path.join(projectPath, 'Dockerfile'));
+  let nestedDockerfile = false;
+  let compose = false;
+  const composeNames = new Set([
+    'docker-compose.yml',
+    'docker-compose.yaml',
+    'compose.yml',
+    'compose.yaml',
+  ]);
+  const ignored = new Set([
+    'node_modules',
+    '.git',
+    '.workspai',
+    '.rapidkit',
+    'dist',
+    'build',
+    'coverage',
+    'target',
+    'vendor',
+  ]);
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: projectPath, depth: 0 }];
+
+  while (queue.length > 0 && (!nestedDockerfile || !compose)) {
+    const current = queue.shift();
+    if (!current) break;
+    let entries: Dirent[] = [];
+    try {
+      entries = await fsExtra.readdir(current.dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (ignored.has(entry.name)) continue;
+      if (entry.isFile()) {
+        if (current.depth > 0 && entry.name === 'Dockerfile') nestedDockerfile = true;
+        if (composeNames.has(entry.name)) compose = true;
+      } else if (entry.isDirectory() && current.depth < maxDepth && !entry.name.startsWith('.')) {
+        queue.push({ dir: path.join(current.dir, entry.name), depth: current.depth + 1 });
+      }
+    }
+  }
+
+  return { rootDockerfile, nestedDockerfile, compose };
+}
+
 async function readTextIfExists(filePath: string): Promise<string> {
   try {
     if (!(await fsExtra.pathExists(filePath))) return '';
@@ -225,6 +282,35 @@ async function collectTextFromExisting(projectPath: string, candidates: string[]
     const text = await readTextIfExists(path.join(projectPath, candidate));
     if (text) chunks.push(text);
   }
+  return chunks.join('\n');
+}
+
+async function collectWorkflowText(projectPath: string): Promise<string> {
+  const workflowsPath = path.join(projectPath, '.github', 'workflows');
+  let entries: Dirent[] = [];
+  try {
+    entries = await fsExtra.readdir(workflowsPath, { withFileTypes: true });
+  } catch {
+    return '';
+  }
+
+  const chunks: string[] = [];
+  let totalBytes = 0;
+  for (const entry of entries
+    .filter((candidate) => candidate.isFile() && /\.(?:ya?ml)$/i.test(candidate.name))
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .slice(0, 64)) {
+    const workflowPath = path.join(workflowsPath, entry.name);
+    try {
+      const stat = await fsExtra.stat(workflowPath);
+      if (stat.size > 512 * 1024 || totalBytes + stat.size > 1024 * 1024) continue;
+      chunks.push(await fsExtra.readFile(workflowPath, 'utf8'));
+      totalBytes += stat.size;
+    } catch {
+      // A concurrently changed workflow should not make Doctor fail.
+    }
+  }
+
   return chunks.join('\n');
 }
 
@@ -994,6 +1080,17 @@ async function buildRuntimeCommandRepairCapability(input: {
     });
   }
 
+  if (!(await fsExtra.pathExists(path.join(input.projectPath, 'Makefile')))) {
+    return buildManualRepair({
+      issueId: input.issueId,
+      title: contract.title,
+      projectPath: input.projectPath,
+      files: contract.files.filter((file) => file !== 'Makefile'),
+      reason: `${input.reason} The repository does not expose a Makefile, so Doctor will not invent a new command surface.`,
+      limitations: contract.limitations,
+    });
+  }
+
   return buildMakefileCommandRepairCapability({
     issueId: input.issueId,
     projectPath: input.projectPath,
@@ -1078,7 +1175,10 @@ async function buildDependencyContractProbe(input: {
     return null;
   }
 
-  const hasManifest = await anyPathExists(input.projectPath, manifests);
+  const hasManifest =
+    ((input.runtime === 'c' || input.runtime === 'cpp') &&
+      hasNativeWorkspaceTopology(input.projectPath)) ||
+    (await anyPathExists(input.projectPath, manifests));
   const hasLockfile = await anyPathExists(input.projectPath, lockfiles);
   const isMavenProject =
     input.runtime === 'java' &&
@@ -1220,15 +1320,12 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
 }
 
 async function buildContainerProbe(input: SurfaceInput): Promise<DoctorSurfaceProbe> {
-  const dockerfileExists = await fsExtra.pathExists(path.join(input.projectPath, 'Dockerfile'));
+  const containerSurface = await detectProjectContainerSurface(input.projectPath);
+  const dockerfileExists = containerSurface.rootDockerfile;
   const dockerignoreExists = await fsExtra.pathExists(
     path.join(input.projectPath, '.dockerignore')
   );
-  const composeExists =
-    (await fsExtra.pathExists(path.join(input.projectPath, 'docker-compose.yml'))) ||
-    (await fsExtra.pathExists(path.join(input.projectPath, 'docker-compose.yaml'))) ||
-    (await fsExtra.pathExists(path.join(input.projectPath, 'compose.yml'))) ||
-    (await fsExtra.pathExists(path.join(input.projectPath, 'compose.yaml')));
+  const composeExists = containerSurface.compose;
 
   if (dockerfileExists) {
     return {
@@ -1253,10 +1350,15 @@ async function buildContainerProbe(input: SurfaceInput): Promise<DoctorSurfacePr
     status: 'pass',
     severity: 'warn',
     scope: 'project-scoped',
-    applicability: composeExists ? 'applicable' : 'not-applicable',
+    applicability:
+      composeExists || containerSurface.nestedDockerfile ? 'applicable' : 'not-applicable',
     reason: composeExists
-      ? 'Compose surface detected; project has a local container orchestration baseline.'
-      : 'No container intent was detected; a container contract is not currently applicable.',
+      ? `Compose surface detected${
+          containerSurface.nestedDockerfile ? ' with a nested Dockerfile' : ''
+        }; container ownership remains scoped to its module.`
+      : containerSurface.nestedDockerfile
+        ? 'Nested Dockerfile detected; container ownership remains scoped to its module.'
+        : 'No container intent was detected; a container contract is not currently applicable.',
   };
 }
 
@@ -1914,20 +2016,20 @@ async function buildRuntimeQualityProbe(input: SurfaceInput): Promise<DoctorSurf
       'biome.jsonc',
     ],
     deno: ['deno.json', 'deno.jsonc'],
-    bun: ['eslint.config.js', 'biome.json', 'bunfig.toml', '.bunfig.toml'],
-    python: ['ruff.toml', 'pyproject.toml', '.flake8', 'mypy.ini', 'Makefile'],
-    go: ['.golangci.yml', '.golangci.yaml', 'Makefile'],
-    java: ['checkstyle.xml', 'pom.xml', 'build.gradle', 'build.gradle.kts'],
-    rust: ['rustfmt.toml', 'clippy.toml', 'Cargo.toml'],
-    elixir: ['.formatter.exs', 'credo.exs', 'mix.exs'],
-    clojure: ['cljfmt.edn', '.clj-kondo', 'deps.edn'],
-    php: ['phpcs.xml', 'phpstan.neon', 'pint.json', 'composer.json'],
-    ruby: ['.rubocop.yml', 'Gemfile'],
-    dotnet: ['.editorconfig', 'Directory.Build.props', 'global.json'],
-    scala: ['.scalafmt.conf', '.scalafix.conf', 'build.sbt'],
-    kotlin: ['.editorconfig', 'detekt.yml', 'build.gradle', 'build.gradle.kts'],
-    c: ['.clang-format', '.clang-tidy', 'CMakeLists.txt'],
-    cpp: ['.clang-format', '.clang-tidy', 'CMakeLists.txt'],
+    bun: ['eslint.config.js', 'biome.json'],
+    python: ['ruff.toml', '.flake8', 'mypy.ini'],
+    go: ['.golangci.yml', '.golangci.yaml'],
+    java: ['checkstyle.xml'],
+    rust: ['rustfmt.toml', 'clippy.toml'],
+    elixir: ['.formatter.exs', 'credo.exs'],
+    clojure: ['cljfmt.edn', '.clj-kondo'],
+    php: ['phpcs.xml', 'phpstan.neon', 'pint.json'],
+    ruby: ['.rubocop.yml'],
+    dotnet: ['.editorconfig'],
+    scala: ['.scalafmt.conf', '.scalafix.conf'],
+    kotlin: ['.editorconfig', 'detekt.yml'],
+    c: ['.clang-format', '.clang-tidy'],
+    cpp: ['.clang-format', '.clang-tidy'],
     unknown: [],
   };
   const markers = markersByRuntime[runtime] ?? [];
@@ -2011,9 +2113,12 @@ async function buildRuntimeSecurityProbe(input: SurfaceInput): Promise<DoctorSur
   const markers = markersByRuntime[runtime] ?? [];
   if (markers.length === 0) return null;
 
-  const text = await collectTextFromExisting(input.projectPath, markers);
+  const text = [
+    await collectTextFromExisting(input.projectPath, markers),
+    await collectWorkflowText(input.projectPath),
+  ].join('\n');
   const hasSecurityTool =
-    /npm audit|pnpm audit|yarn audit|bun audit|pip[-_]audit|safety|bandit|govulncheck|gosec|dependency-check|owasp|cargo audit|mix hex.audit|composer audit|bundler-audit|brakeman|NuGetAudit|dotnet list package --vulnerable|dependencyCheck|dependency-check|snyk|trivy|osv-scanner|cyclonedx|sbom/i.test(
+    /npm audit|pnpm audit|yarn audit|bun audit|pip[-_]audit|safety|bandit|govulncheck|gosec|dependency-check|dependency-review-action|codeql-action|zizmor|owasp|cargo audit|mix hex.audit|composer audit|bundler-audit|brakeman|NuGetAudit|dotnet list package --vulnerable|dependencyCheck|dependency-check|snyk|trivy|osv-scanner|cyclonedx|sbom/i.test(
       text
     );
   const repairCapability = hasSecurityTool

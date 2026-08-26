@@ -728,7 +728,10 @@ export function categorizeError(
  * Validate that a command is available before execution.
  * Checks system executables and shell builtins.
  */
-export async function validateCommand(command: string): Promise<{
+export async function validateCommand(
+  command: string,
+  cwd?: string
+): Promise<{
   valid: boolean;
   reason?: string;
 }> {
@@ -742,6 +745,26 @@ export async function validateCommand(command: string): Promise<{
   const builtins = ['echo', 'cd', 'pwd', 'test', 'true', 'false', 'exit'];
   if (builtins.includes(cmd)) {
     return { valid: true };
+  }
+
+  // `which ./gradlew` (and the Windows equivalent) is always the wrong
+  // lookup: project-local wrappers are paths, not PATH entries. Resolve any
+  // command containing a path separator against the execution directory and
+  // validate the file directly.
+  if (cmd.includes('/') || cmd.includes('\\')) {
+    const executablePath = path.isAbsolute(cmd) ? cmd : path.resolve(cwd ?? process.cwd(), cmd);
+    try {
+      await fs.promises.access(
+        executablePath,
+        process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK
+      );
+      return { valid: true };
+    } catch {
+      return {
+        valid: false,
+        reason: `Command '${cmd}' not found or not executable in '${cwd ?? process.cwd()}'`,
+      };
+    }
   }
 
   try {

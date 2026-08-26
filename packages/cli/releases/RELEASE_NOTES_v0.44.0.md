@@ -129,14 +129,6 @@ None.
 - `corepack npm --workspace workspai run check:workspace-intelligence-adversarial`
 - `corepack npm --workspace workspai run docs:validate`
 - `corepack npm test`
-- `env NPM_CONFIG_PREFIX=/home/rapidx/.local corepack npm run install:local`
-
-Real workspace smoke coverage included:
-
-- `/home/rapidx/Documents/WOSP/Rapid/Test/my-new-wsp`
-- `/home/rapidx/Documents/WOSP/Rapid/Test/my-works`
-- `/home/rapidx/Documents/WOSP/Rapid/Test/my-workspace`
-- `/home/rapidx/Documents/WOSP/Rapid/Test/my-workspoly`
 
 The first three completed the Workspace Intelligence chain through
 `workspace verify`. `my-workspoly` correctly remained blocked because its

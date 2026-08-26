@@ -185,6 +185,42 @@ describe('adopt-project', () => {
     });
   });
 
+  it('adopts a native component workspace as a C++ platform despite Python tooling', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = await makeTempDir('rapidkit-adopt-native-workspace-');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[project]\nname = "repository-tooling"\n'
+    );
+    for (const component of ['compiler', 'linker', 'runtime']) {
+      await fsExtra.outputFile(
+        path.join(projectPath, component, 'CMakeLists.txt'),
+        `project(${component} CXX)\n`
+      );
+      await fsExtra.outputFile(
+        path.join(projectPath, component, 'lib', `${component}.cpp`),
+        `int ${component}_entry() { return 0; }\n`
+      );
+    }
+
+    const adopted = await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      name: 'native-platform',
+    });
+
+    expect(adopted).toMatchObject({
+      runtime: 'cpp',
+      framework: 'cpp',
+      confidence: 'high',
+    });
+    expect(adopted.runtimeCandidates).toEqual(['cpp', 'python']);
+    expect(await fsExtra.readJson(adopted.projectJsonPath)).toMatchObject({
+      kind: 'platform',
+      category: 'platform',
+    });
+  });
+
   it('previews adoption without writing metadata in dry-run mode', async () => {
     const workspacePath = await makeWorkspace();
     const projectPath = await makeTempDir('rapidkit-adopt-dry-source-');

@@ -114,6 +114,25 @@ describe('goal pack pure kernel', () => {
     expect(first.id).not.toBe(third.id);
   });
 
+  it('changes identity when an immutable baseline or consumer-specific handoff changes', () => {
+    const original = input('Map the authentication architecture');
+    original.sourceBinding.graph.inputHash = hash('i');
+    const first = buildGoalPack(original, ports).goalPack;
+
+    const richerBaseline = input('Map the authentication architecture');
+    richerBaseline.sourceBinding.graph.inputHash = hash('i');
+    richerBaseline.baseline.graph.entities += 1;
+    const second = buildGoalPack(richerBaseline, ports).goalPack;
+
+    const codexConsumer = input('Map the authentication architecture');
+    codexConsumer.sourceBinding.graph.inputHash = hash('i');
+    codexConsumer.consumer = 'codex';
+    const third = buildGoalPack(codexConsumer, ports).goalPack;
+
+    expect(second.id).not.toBe(first.id);
+    expect(third.id).not.toBe(first.id);
+  });
+
   it('requires clarification instead of inventing a metric for ambiguous coverage intent', () => {
     const { goalPack } = buildGoalPack(input('Improve test coverage'), ports);
 

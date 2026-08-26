@@ -22,6 +22,8 @@ import {
 import {
   buildAgentBootstrapReceipt,
   PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  WORKSPAI_AGENT_ENTRY_END,
+  WORKSPAI_AGENT_ENTRY_START,
 } from '../project-agent-entry.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
 import type { WorkspaceModel } from '../workspace-model.js';
@@ -733,6 +735,13 @@ describe('project workspace binding', () => {
     expect(receipt).toMatchObject({
       schemaVersion: 'workspai.agent-bootstrap-receipt.v1',
       status: 'blocked',
+      statusScope: 'agent-grounding',
+      readiness: {
+        agentGrounding: 'blocked',
+        architectureEvidence: 'blocked',
+        projectEnvironment: 'ready',
+        release: 'not-verified',
+      },
       resolvedHost: 'claude',
       entry: { hostStatus: 'ready', entryFiles: ['CLAUDE.md'] },
       claims: { architecture: 'prohibited' },
@@ -912,7 +921,7 @@ describe('project workspace binding', () => {
     );
   });
 
-  it('grounds shared repository-local AGENTS and Claude symlink targets without replacing them', async (context) => {
+  it('inherits shared repository-local AGENTS grounding without adding a self-import', async (context) => {
     const { workspacePath, projectPath } = await fixture({
       workspaceName: 'shared-agent-rules-workspace',
     });
@@ -946,13 +955,48 @@ describe('project workspace binding', () => {
     const rules = await fsp.readFile(rulesPath, 'utf8');
     expect(rules).toContain('# Repository rules');
     expect(rules.match(/WORKSPAI:PROJECT-GROUNDING:START/g)).toHaveLength(1);
-    expect(rules.match(/WORKSPAI:AGENT-ENTRY:START/g)).toHaveLength(1);
-    expect(rules).toContain('@AGENTS.md');
+    expect(rules).not.toContain('WORKSPAI:AGENT-ENTRY:START');
+    expect(rules).not.toContain('@AGENTS.md');
     expect(first.hostCoverage).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'codex', status: 'ready', entryFiles: ['AGENTS.md'] }),
         expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
       ])
+    );
+  });
+
+  it('removes a legacy Claude self-import when CLAUDE.md aliases AGENTS.md', async (context) => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'claude-agents-alias-workspace',
+    });
+    const agentsPath = path.join(projectPath, 'AGENTS.md');
+    await fsp.writeFile(
+      agentsPath,
+      `# Repository rules\n\n${WORKSPAI_AGENT_ENTRY_START}\n@AGENTS.md\n\n# Workspai host binding · claude\n${WORKSPAI_AGENT_ENTRY_END}\n`
+    );
+    try {
+      await fsp.symlink('AGENTS.md', path.join(projectPath, 'CLAUDE.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    const agents = await fsp.readFile(agentsPath, 'utf8');
+    expect(agents).toContain('# Repository rules');
+    expect(agents.match(/WORKSPAI:PROJECT-GROUNDING:START/g)).toHaveLength(1);
+    expect(agents).not.toContain('WORKSPAI:AGENT-ENTRY:START');
+    expect(agents).not.toContain('@AGENTS.md');
+    expect((await fsp.lstat(path.join(projectPath, 'CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'claude', status: 'ready' })])
     );
   });
 

@@ -689,48 +689,22 @@ function buildImpactCommand(
 function projectVerificationPlan(project: WorkspaceModelProject): WorkspaceImpactCommand[] {
   const scope = `project:${project.name}`;
   const fleetStages = project.commands.fleetStages;
-  return [
-    buildImpactCommand(
-      `project.${project.name}.init`,
-      `Run init for ${project.name}`,
-      ['workspace', 'run', 'init', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('init'),
-      }
-    ),
-    buildImpactCommand(
-      `project.${project.name}.test`,
-      `Run tests for ${project.name}`,
-      ['workspace', 'run', 'test', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('test'),
-      }
-    ),
-    buildImpactCommand(
-      `project.${project.name}.build`,
-      `Run build for ${project.name}`,
-      ['workspace', 'run', 'build', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('build'),
-      }
-    ),
-    buildImpactCommand(
-      `project.${project.name}.start`,
-      `Run start for ${project.name}`,
-      ['workspace', 'run', 'start', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('start'),
-      }
-    ),
-  ];
+  const labels = {
+    init: `Run init for ${project.name}`,
+    test: `Run tests for ${project.name}`,
+    build: `Run build for ${project.name}`,
+    start: `Run start for ${project.name}`,
+  } as const;
+  return (['init', 'test', 'build', 'start'] as const)
+    .filter((stage) => fleetStages.includes(stage))
+    .map((stage) =>
+      buildImpactCommand(
+        `project.${project.name}.${stage}`,
+        labels[stage],
+        ['workspace', 'run', stage, '--scope', scope, '--json'],
+        { scope: 'project', project: project.name }
+      )
+    );
 }
 
 export function workspaceVerificationPlan(): WorkspaceImpactCommand[] {

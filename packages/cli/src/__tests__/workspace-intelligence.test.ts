@@ -316,6 +316,27 @@ describe('workspace intelligence snapshots and diffs', () => {
     );
   });
 
+  it('does not recommend project stages that the model marks as unsupported', async () => {
+    const workspacePath = await makeTempDir('rk-intel-impact-unsupported-stage-');
+    const before = await buildWorkspaceModelSnapshot({ workspacePath });
+    const beforePath = await writeWorkspaceModelSnapshot(before, workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, 'native', '.rapidkit', 'project.json'), {
+      name: 'native',
+      runtime: 'cpp',
+      framework: 'cpp',
+      kit_name: 'adopted.cpp',
+    });
+
+    const impact = await buildWorkspaceImpact({ workspacePath, fromPath: beforePath });
+    const nativeImpact = impact.affectedProjects.find((item) => item.project?.name === 'native');
+
+    expect(nativeImpact?.project).toMatchObject({ runtime: 'cpp', framework: 'cpp' });
+    expect(nativeImpact?.verification).toEqual([]);
+    expect(
+      impact.verificationPlan.some((command) => command.id.startsWith('project.native.'))
+    ).toBe(false);
+  });
+
   it('honors project scope when building impact', async () => {
     const workspacePath = await makeTempDir('rk-intel-impact-scope-');
     await fsExtra.outputJson(path.join(workspacePath, 'api', '.rapidkit', 'project.json'), {

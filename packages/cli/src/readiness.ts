@@ -1,13 +1,7 @@
 import chalk from 'chalk';
 import fs from 'fs';
 import path from 'path';
-import {
-  isGoProject,
-  isJavaProject,
-  isNodeProject,
-  isPythonProject,
-  readRapidkitProjectJson,
-} from './utils/runtime-detection.js';
+import { detectBackendRuntime, readRapidkitProjectJson } from './utils/runtime-detection.js';
 import {
   assertDoctorEvidenceSemanticInvariants,
   isDoctorEvidencePayloadCompatible,
@@ -84,6 +78,28 @@ interface ReadinessCommandOptions {
   skipVerify?: boolean;
 }
 
+function readContractProjectPaths(workspacePath: string): string[] {
+  const contractPath = firstExistingWorkspaceMetadataPath(workspacePath, 'workspace.contract.json');
+  if (!fs.existsSync(contractPath)) return [];
+  try {
+    const contract = JSON.parse(fs.readFileSync(contractPath, 'utf-8')) as Record<string, unknown>;
+    const projects = Array.isArray(contract.projects) ? contract.projects : [];
+    return projects
+      .map((entry) => {
+        const record = toObjectRecord(entry);
+        const externalPath =
+          typeof record.externalPath === 'string' ? record.externalPath.trim() : '';
+        const relativePath =
+          typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
+        const registeredPath = externalPath || relativePath;
+        return registeredPath ? path.resolve(workspacePath, registeredPath) : '';
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function resolveReadinessProjectPath(startPath: string, workspacePath: string): string {
   const resolvedStart = path.resolve(startPath);
   if (!isWorkspaceShellDirectory(resolvedStart)) {
@@ -100,6 +116,11 @@ function resolveReadinessProjectPath(startPath: string, workspacePath: string): 
       const projects = Array.isArray(contract.projects) ? contract.projects : [];
       for (const entry of projects) {
         const record = toObjectRecord(entry);
+        const externalPath =
+          typeof record.externalPath === 'string' ? record.externalPath.trim() : '';
+        if (externalPath) {
+          return path.resolve(workspacePath, externalPath);
+        }
         const relativePath =
           typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
         if (relativePath) {
@@ -124,14 +145,9 @@ function resolveReadinessProjectPath(startPath: string, workspacePath: string): 
   return resolvedStart;
 }
 
-function detectProjectRuntime(projectPath: string): 'python' | 'node' | 'go' | 'java' | 'unknown' {
+function detectProjectRuntime(projectPath: string): string {
   const projectJson = readRapidkitProjectJson(projectPath);
-
-  if (isGoProject(projectJson, projectPath)) return 'go';
-  if (isJavaProject(projectJson, projectPath)) return 'java';
-  if (isNodeProject(projectJson, projectPath)) return 'node';
-  if (isPythonProject(projectJson, projectPath)) return 'python';
-  return 'unknown';
+  return detectBackendRuntime(projectJson, projectPath);
 }
 
 function selectLatestReport(reportsDir: string, patterns: RegExp[]): string | null {
@@ -192,13 +208,7 @@ async function resolveRegisteredWorkspaceProjectCount(workspacePath: string): Pr
 
 function buildEnvGate(
   workspacePath: string,
-  projectRuntime:
-    | 'python'
-    | 'node'
-    | 'go'
-    | 'java'
-    | 'unknown'
-    | Array<'python' | 'node' | 'go' | 'java' | 'unknown'>,
+  projectRuntime: string | string[],
   options?: { hasRegisteredProjects?: boolean }
 ): ReadinessGateResult {
   const lockPath = firstExistingWorkspaceMetadataPath(workspacePath, 'toolchain.lock');
@@ -218,7 +228,7 @@ function buildEnvGate(
   try {
     const parsed = JSON.parse(fs.readFileSync(lockPath, 'utf-8')) as Record<string, unknown>;
     const runtime = toObjectRecord(parsed.runtime);
-    const runtimeKeys = ['python', 'node', 'go', 'java'] as const;
+    const runtimeKeys = ['python', 'node', 'go', 'java', 'dotnet', 'rust', 'php'] as const;
     const pinned = runtimeKeys.filter((key) => {
       const item = toObjectRecord(runtime[key]);
       return typeof item.version === 'string' && item.version.trim().length > 0;
@@ -236,13 +246,19 @@ function buildEnvGate(
       };
     }
 
-    const requiredRuntimes = [
+    const detectedRuntimes = [
       ...new Set(
         (Array.isArray(projectRuntime) ? projectRuntime : [projectRuntime]).filter(
-          (candidate): candidate is 'python' | 'node' | 'go' | 'java' => candidate !== 'unknown'
+          (candidate) => candidate !== 'unknown'
         )
       ),
     ];
+    const requiredRuntimes = detectedRuntimes.filter((candidate) =>
+      runtimeKeys.includes(candidate as (typeof runtimeKeys)[number])
+    );
+    const unrepresentedRuntimes = detectedRuntimes.filter(
+      (candidate) => !runtimeKeys.includes(candidate as (typeof runtimeKeys)[number])
+    );
     const missingRuntimes = requiredRuntimes.filter((requiredRuntime) => {
       const runtimeEntry = toObjectRecord(runtime[requiredRuntime]);
       return typeof runtimeEntry.version !== 'string' || runtimeEntry.version.trim().length === 0;
@@ -257,6 +273,20 @@ function buildEnvGate(
           (missingRuntime) =>
             `Run workspai setup ${missingRuntime} and workspai bootstrap to lock ${missingRuntime} for this workspace.`
         ),
+        evidencePath: lockPath,
+      };
+    }
+
+    if (unrepresentedRuntimes.length > 0) {
+      const runtimeScopeLabel = options?.hasRegisteredProjects ? 'Project runtime' : 'Workspace';
+      return {
+        gate: 'env',
+        status: 'warn',
+        summary: `${runtimeScopeLabel}${unrepresentedRuntimes.length === 1 ? '' : 's'} (${unrepresentedRuntimes.join(', ')}) cannot be verified by toolchain.lock`,
+        details: [
+          `Pinned Workspai runtimes (${pinned.join(', ')}) do not prove the ${unrepresentedRuntimes.join(', ')} compiler or runtime toolchain.`,
+          'Declare and verify this runtime or toolchain through the project command contract or organization CI policy.',
+        ],
         evidencePath: lockPath,
       };
     }
@@ -725,21 +755,20 @@ export async function evaluateReleaseReadiness(
       : resolveReadinessProjectPath(startPath, workspacePath);
   const projectRuntime =
     projectPath === workspacePath ? 'unknown' : detectProjectRuntime(projectPath);
-  let effectiveRuntime:
-    | 'python'
-    | 'node'
-    | 'go'
-    | 'java'
-    | 'unknown'
-    | Array<'python' | 'node' | 'go' | 'java' | 'unknown'> = hasRegisteredProjects
-    ? projectRuntime
-    : 'unknown';
+  let effectiveRuntime: string | string[] = hasRegisteredProjects ? projectRuntime : 'unknown';
   if (hasRegisteredProjects && projectPath === workspacePath) {
     const { resolveWorkspaceRegisteredProjects } =
       await import('./utils/workspace-registry-summary.js');
     const registered = await resolveWorkspaceRegisteredProjects(workspacePath);
-    effectiveRuntime = registered.summary.projects.map((project) =>
-      detectProjectRuntime(path.resolve(workspacePath, project.relativePath))
+    const contractProjectPaths = readContractProjectPaths(workspacePath);
+    const registeredProjectPaths =
+      contractProjectPaths.length > 0
+        ? contractProjectPaths
+        : registered.summary.projects.map((project) =>
+            path.resolve(workspacePath, project.relativePath)
+          );
+    effectiveRuntime = registeredProjectPaths.map((registeredProjectPath) =>
+      detectProjectRuntime(registeredProjectPath)
     );
   }
 
