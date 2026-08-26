@@ -38,9 +38,9 @@ function emitProgress(
 
 export function createUiSpinner(initialText: string, meta: ProgressMeta): CliSpinnerHandle {
   let currentText = initialText;
+  emitProgress(meta, 'started', initialText);
 
   if (isCliJsonLogFormat()) {
-    emitProgress(meta, 'started', initialText);
     return {
       start(message?: string) {
         if (message) currentText = message;
@@ -76,19 +76,24 @@ export function createUiSpinner(initialText: string, meta: ProgressMeta): CliSpi
     start(message?: string) {
       spin.start(message ?? currentText);
       if (message) currentText = message;
+      emitProgress(meta, 'started', currentText);
       return this;
     },
     succeed(message?: string) {
       spin.stop(message ?? currentText);
+      emitProgress(meta, 'succeeded', message ?? currentText);
     },
     fail(message?: string) {
       spin.stop(message ?? currentText, 1);
+      emitProgress(meta, 'failed', message ?? currentText);
     },
     warn(message?: string) {
       spin.stop(message ?? currentText);
+      emitProgress(meta, 'warn', message ?? currentText);
     },
     stop(message?: string) {
       spin.stop(message ?? currentText);
+      emitProgress(meta, 'succeeded', message ?? currentText);
     },
     get text() {
       return currentText;
@@ -96,6 +101,7 @@ export function createUiSpinner(initialText: string, meta: ProgressMeta): CliSpi
     set text(value: string) {
       currentText = value;
       spin.message(value);
+      emitProgress(meta, 'started', value);
     },
   };
 }

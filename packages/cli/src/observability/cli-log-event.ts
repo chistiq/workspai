@@ -5,6 +5,7 @@ import {
   type CliLogLevel,
 } from '../contracts/cli-log-event-contract.js';
 import { isCliJsonLogFormat } from './cli-log-format.js';
+import { emitActivityBlock, emitWorkspaceActivity } from '../activity/activity-runtime.js';
 
 let activeRunId = 'unknown-run';
 
@@ -46,10 +47,64 @@ export function buildCliLogEvent(input: EmitCliLogEventInput): CliLogEventV1 {
 }
 
 export function emitCliLogEvent(input: EmitCliLogEventInput): void {
+  bridgeCliLogToActivity(input);
   if (!isCliJsonLogFormat()) {
     return;
   }
   emitCliLogEventRecord(buildCliLogEvent(input));
+}
+
+function bridgeCliLogToActivity(input: EmitCliLogEventInput): void {
+  if (input.event === 'progress') {
+    const phase =
+      typeof input.metadata?.phase === 'string'
+        ? input.metadata.phase
+        : `${input.component}.progress`;
+    const rawStatus = String(
+      input.metadata?.intelligenceMilestoneStatus ?? input.metadata?.status ?? 'started'
+    );
+    const status =
+      rawStatus === 'succeeded' || rawStatus === 'passed'
+        ? 'succeeded'
+        : rawStatus === 'failed'
+          ? 'failed'
+          : rawStatus === 'blocked'
+            ? 'blocked'
+            : rawStatus === 'skipped'
+              ? 'skipped'
+              : rawStatus === 'warn' || rawStatus === 'warning'
+                ? 'warned'
+                : 'running';
+    const completed = Number(input.metadata?.completed ?? input.metadata?.stepNum);
+    const total = Number(input.metadata?.total);
+    const percent = Number(input.metadata?.percent);
+    emitActivityBlock({
+      blockId: phase,
+      status,
+      message: input.message,
+      component: input.component,
+      ...(Number.isFinite(completed) || Number.isFinite(total) || Number.isFinite(percent)
+        ? {
+            progress: {
+              ...(Number.isFinite(completed) ? { completed } : {}),
+              ...(Number.isFinite(total) ? { total } : {}),
+              ...(Number.isFinite(percent) ? { percent } : {}),
+            },
+          }
+        : {}),
+      attributes: input.metadata,
+    });
+    return;
+  }
+  if (input.level === 'warn' || input.level === 'error') {
+    emitWorkspaceActivity({
+      kind: input.level === 'error' ? 'operation.failed' : 'warning.detected',
+      status: input.level === 'error' ? 'failed' : 'warned',
+      component: input.component,
+      message: input.message,
+      attributes: input.metadata,
+    });
+  }
 }
 
 export function emitCliLogEventRecord(record: CliLogEventV1): void {

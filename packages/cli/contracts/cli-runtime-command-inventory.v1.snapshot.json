@@ -729,6 +729,98 @@
     },
     {
       "path": [
+        "live"
+      ],
+      "command": "live",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Open a live cross-terminal execution graph for Workspai activity",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "target",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--global",
+          "attributeName": "global"
+        },
+        {
+          "flags": "--run <runId>",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--once",
+          "attributeName": "once"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--refresh-ms <milliseconds>",
+          "attributeName": "refreshMs"
+        },
+        {
+          "flags": "--max-runs <count>",
+          "attributeName": "maxRuns"
+        },
+        {
+          "flags": "--max-scopes <count>",
+          "attributeName": "maxScopes"
+        },
+        {
+          "flags": "--classic",
+          "attributeName": "classic"
+        },
+        {
+          "flags": "--no-color",
+          "attributeName": "color"
+        },
+        {
+          "flags": "--no-motion",
+          "attributeName": "motion"
+        },
+        {
+          "flags": "--ascii",
+          "attributeName": "ascii"
+        },
+        {
+          "flags": "--accessible",
+          "attributeName": "accessible"
+        },
+        {
+          "flags": "--capture <file>",
+          "attributeName": "capture"
+        },
+        {
+          "flags": "--capture-preset <preset>",
+          "attributeName": "capturePreset"
+        },
+        {
+          "flags": "--capture-theme <theme>",
+          "attributeName": "captureTheme"
+        },
+        {
+          "flags": "--no-capture-redact",
+          "attributeName": "captureRedact"
+        },
+        {
+          "flags": "--replay <runId>",
+          "attributeName": "replay"
+        },
+        {
+          "flags": "--replay-speed <multiplier>",
+          "attributeName": "replaySpeed"
+        }
+      ]
+    },
+    {
+      "path": [
         "mirror"
       ],
       "command": "mirror",
@@ -1470,6 +1562,22 @@
           "attributeName": "scanDepth"
         },
         {
+          "flags": "--graph-inventory-limit <count>",
+          "attributeName": "graphInventoryLimit"
+        },
+        {
+          "flags": "--graph-semantic-budget <count>",
+          "attributeName": "graphSemanticBudget"
+        },
+        {
+          "flags": "--graph-deep-budget <count>",
+          "attributeName": "graphDeepBudget"
+        },
+        {
+          "flags": "--graph-source-budget <count>",
+          "attributeName": "graphSourceBudget"
+        },
+        {
           "flags": "--limit <count>",
           "attributeName": "limit"
         },
@@ -1707,6 +1815,7 @@
     "goal",
     "import",
     "infra",
+    "live",
     "mirror",
     "pipeline",
     "product",

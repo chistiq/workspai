@@ -219,6 +219,7 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   license: 'Inspect or validate the effective Workspai license and feature entitlement state.',
   lint: 'Run the detected project lint lifecycle under workspace compatibility and policy gates.',
   list: 'List detected or registered resources for the current command scope.',
+  live: 'Render the versioned cross-terminal execution graph for Workspai runs in the current project or workspace.',
   merge:
     'Combine supported governed configuration or project state through the owning runtime operation.',
   mirror:

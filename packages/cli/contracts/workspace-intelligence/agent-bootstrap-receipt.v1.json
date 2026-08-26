@@ -10,6 +10,8 @@
     "generatedAt",
     "receiptId",
     "status",
+    "statusScope",
+    "readiness",
     "requestedAgent",
     "resolvedHost",
     "project",
@@ -28,6 +30,18 @@
     "generatedAt": { "type": "string", "format": "date-time" },
     "receiptId": { "$ref": "#/$defs/hash" },
     "status": { "$ref": "#/$defs/status" },
+    "statusScope": { "const": "agent-grounding" },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agentGrounding", "architectureEvidence", "projectEnvironment", "release"],
+      "properties": {
+        "agentGrounding": { "$ref": "#/$defs/status" },
+        "architectureEvidence": { "$ref": "#/$defs/status" },
+        "projectEnvironment": { "enum": ["ready", "degraded", "blocked"] },
+        "release": { "enum": ["not-verified", "degraded", "blocked"] }
+      }
+    },
     "requestedAgent": {
       "enum": [
         "generic",

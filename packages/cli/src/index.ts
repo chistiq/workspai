@@ -67,11 +67,15 @@ import {
   repairProjectWorkspaceLink,
   resolveProjectWorkspaceSync,
 } from './project-workspace-link.js';
+import { resolveCliActivityBlueprint } from './activity/cli-activity-blueprints.js';
+import { emitActivityBlock } from './activity/activity-runtime.js';
 import {
   resolveGovernanceRunId,
   withGovernanceRunMetadata,
 } from './utils/governance-report-metadata.js';
 import { hasNpmRuntimeExecutor } from './utils/runtime-executors.js';
+import type { AgentBootstrapReceipt } from './project-agent-entry.js';
+import type { WorkspaceConsumerArtifactSyncResult } from './utils/workspace-onboarding.js';
 
 export { PROJECT_COMMANDS_CORE_FALLBACK } from './utils/cli-lifecycle-contract.js';
 import {
@@ -1910,6 +1914,7 @@ const NPM_ONLY_PARSE_DIRECT_COMMANDS = [
   'import',
   'adopt',
   'snapshot',
+  'live',
   'ai',
   'config',
   'product',
@@ -2280,10 +2285,10 @@ function resolveWorkspaceForIngestion(startPath: string): {
 async function syncWorkspaceContractAfterProjectChange(
   workspacePath: string,
   options?: { silent?: boolean; strict?: boolean }
-): Promise<void> {
+): Promise<WorkspaceConsumerArtifactSyncResult | null> {
   try {
     const { syncWorkspaceConsumerArtifacts } = await import('./utils/workspace-onboarding.js');
-    await syncWorkspaceConsumerArtifacts(workspacePath, { silent: options?.silent });
+    return await syncWorkspaceConsumerArtifacts(workspacePath, { silent: options?.silent });
   } catch (error) {
     if (options?.strict) {
       throw error;
@@ -2296,6 +2301,7 @@ async function syncWorkspaceContractAfterProjectChange(
         )
       );
     }
+    return null;
   }
 }
 
@@ -3133,6 +3139,30 @@ export async function handleAdoptCommand(
     ) => Promise<void>;
   }
 ): Promise<number> {
+  let activeAdoptBlock: string | undefined;
+  const startAdoptBlock = (blockId: string, message: string): void => {
+    activeAdoptBlock = blockId;
+    emitActivityBlock({ blockId, status: 'running', message, component: 'adopt' });
+  };
+  const completeAdoptBlock = (blockId: string, message: string): void => {
+    emitActivityBlock({ blockId, status: 'succeeded', message, component: 'adopt' });
+    if (activeAdoptBlock === blockId) activeAdoptBlock = undefined;
+  };
+  const skipAdoptBlock = (blockId: string, message: string): void => {
+    emitActivityBlock({ blockId, status: 'skipped', message, component: 'adopt' });
+  };
+  const failActiveAdoptBlock = (message: string): void => {
+    if (!activeAdoptBlock) return;
+    emitActivityBlock({
+      blockId: activeAdoptBlock,
+      status: 'failed',
+      message,
+      component: 'adopt',
+    });
+    activeAdoptBlock = undefined;
+  };
+
+  startAdoptBlock('adopt.resolve', 'Resolving project and workspace');
   const sourcePath = path.resolve(source || process.cwd());
   const explicitWorkspace = options.workspace ? path.resolve(options.workspace) : null;
   const ingestionResolution = explicitWorkspace
@@ -3144,6 +3174,7 @@ export async function handleAdoptCommand(
   let willCreateDefaultWorkspace = false;
 
   if (ingestionResolution.error) {
+    failActiveAdoptBlock(ingestionResolution.error.message);
     if (options.json) {
       console.log(
         JSON.stringify(
@@ -3166,6 +3197,7 @@ export async function handleAdoptCommand(
   if (explicitWorkspace) {
     if (!hasWorkspaceRootMarkers(explicitWorkspace)) {
       const message = `Workspace path is not a valid Workspai workspace: ${explicitWorkspace}`;
+      failActiveAdoptBlock(message);
       if (options.json) {
         console.log(JSON.stringify({ error: message }, null, 2));
       } else {
@@ -3189,6 +3221,7 @@ export async function handleAdoptCommand(
     (!hasWorkspaceRootMarkers(workspacePath) && !allowsUncreatedDefaultWorkspace)
   ) {
     const message = 'Not inside a Workspai workspace';
+    failActiveAdoptBlock(message);
     if (options.json) {
       console.log(JSON.stringify({ error: message }, null, 2));
     } else {
@@ -3207,6 +3240,8 @@ export async function handleAdoptCommand(
       process.env.NODE_ENV === 'test');
 
   let transaction: ProjectLifecycleTransaction | undefined;
+  let consumerSyncResult: WorkspaceConsumerArtifactSyncResult | null = null;
+  let bootstrapReceipt: AgentBootstrapReceipt | null = null;
   try {
     if (options.dryRun !== true) {
       transaction = await beginProjectLifecycleTransaction(workspacePath, {
@@ -3221,6 +3256,8 @@ export async function handleAdoptCommand(
         createdDefaultWorkspace = ensuredWorkspace.created;
       }
     }
+    completeAdoptBlock('adopt.resolve', 'Project and workspace resolved');
+    startAdoptBlock('adopt.detect', 'Detecting architecture and adoption effects');
     const rollbackSnapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, sourcePath);
 
     const adoptedProject = await adoptProjectIntoWorkspace({
@@ -3232,6 +3269,7 @@ export async function handleAdoptCommand(
       projectGrounding: options.projectGrounding,
       rollbackSnapshot,
     });
+    completeAdoptBlock('adopt.detect', 'Architecture and adoption effects detected');
     const projectWorkspaceCommand = 'npx workspai project workspace status --json';
     const existingProjectResolution =
       options.dryRun === true ? resolveProjectWorkspaceSync({ startPath: sourcePath }) : null;
@@ -3243,6 +3281,7 @@ export async function handleAdoptCommand(
           path.resolve(existingProjectResolution.projectPath) === sourcePath));
 
     if (options.dryRun !== true) {
+      startAdoptBlock('adopt.link', 'Linking project to workspace');
       try {
         if (
           dependencies?.registerWorkspace ||
@@ -3275,8 +3314,30 @@ export async function handleAdoptCommand(
             throw new Error('forced sync failure for command-level adopt rollback test');
           }
         }
+        completeAdoptBlock('adopt.link', 'Project linked to workspace');
+        startAdoptBlock('adopt.publish', 'Sealing workspace intelligence');
+        consumerSyncResult = await syncWorkspaceContractAfterProjectChange(workspacePath, {
+          silent: options.json,
+          strict: true,
+        });
+        if (!consumerSyncResult?.freshnessSealed) {
+          throw new Error('Workspace consumer artifacts were generated without a freshness seal.');
+        }
+        completeAdoptBlock('adopt.publish', 'Workspace intelligence freshness sealed');
+        startAdoptBlock('adopt.ground', 'Building the project agent entry');
+        const { buildAgentBootstrapReceipt } = await import('./project-agent-entry.js');
+        bootstrapReceipt = await buildAgentBootstrapReceipt({
+          startPath: sourcePath,
+          forAgent: 'generic',
+          validateLiveInputs: true,
+        });
+        if (bootstrapReceipt.status === 'blocked') {
+          throw new Error(
+            'Adopted project did not produce a usable agent-grounding route; inspect the bootstrap checks.'
+          );
+        }
         await transaction?.commit();
-        await syncWorkspaceContractAfterProjectChange(workspacePath, { silent: options.json });
+        completeAdoptBlock('adopt.ground', 'Project agent entry is ready');
       } catch (syncError) {
         if (transaction) {
           try {
@@ -3289,6 +3350,10 @@ export async function handleAdoptCommand(
           `Workspace sync failed after adopt and adoption metadata was rolled back: ${syncError instanceof Error ? syncError.message : String(syncError)}`
         );
       }
+    } else {
+      skipAdoptBlock('adopt.link', 'Dry run: workspace link not written');
+      skipAdoptBlock('adopt.publish', 'Dry run: workspace intelligence not published');
+      skipAdoptBlock('adopt.ground', 'Dry run: project agent entry not written');
     }
 
     if (options.json) {
@@ -3311,6 +3376,15 @@ export async function handleAdoptCommand(
             dryRun: options.dryRun === true,
             plan: adoptedProject.ingestionPlan,
             adoptedProject,
+            consumerArtifacts:
+              options.dryRun === true || !consumerSyncResult
+                ? null
+                : {
+                    freshnessSealed: consumerSyncResult.freshnessSealed,
+                    reconciledAfterGrounding: consumerSyncResult.reconciledAfterGrounding,
+                    warnings: consumerSyncResult.warnings,
+                  },
+            agentBootstrap: bootstrapReceipt,
           },
           null,
           2
@@ -3365,6 +3439,16 @@ export async function handleAdoptCommand(
       console.log(
         chalk.gray(`   Workspai commands now resolve this workspace directly from the project.`)
       );
+      console.log(
+        chalk.gray(
+          `   Consumer evidence: ${consumerSyncResult?.freshnessSealed ? 'freshness sealed' : 'not sealed'}${consumerSyncResult?.reconciledAfterGrounding ? ' after grounding reconciliation' : ''}.`
+        )
+      );
+      console.log(
+        chalk.gray(
+          `   Agent grounding: ${bootstrapReceipt?.status ?? 'unknown'}; project environment: ${bootstrapReceipt?.readiness.projectEnvironment ?? 'unknown'}; release: ${bootstrapReceipt?.readiness.release ?? 'not-verified'}.`
+        )
+      );
       console.log(chalk.gray(`   Check: ${projectWorkspaceCommand}`));
       console.log(
         chalk.gray(
@@ -3384,6 +3468,7 @@ export async function handleAdoptCommand(
       }
     }
     const message = error instanceof Error ? error.message : String(error);
+    failActiveAdoptBlock(message);
     if (options.json) {
       console.log(JSON.stringify({ error: message }, null, 2));
     } else {
@@ -6763,6 +6848,110 @@ Discover more:
 `
 );
 
+program
+  .command('live [target]')
+  .description('Open a live cross-terminal execution graph for Workspai activity')
+  .option('--global', 'Monitor activity across all local Workspai projects and workspaces')
+  .option('--run <runId>', 'Show only one activity run')
+  .option('--once', 'Render one snapshot and exit')
+  .option('--json', 'Emit monitor snapshots as JSON')
+  .option('--refresh-ms <milliseconds>', 'Live refresh interval (100-5000ms)', '250')
+  .option('--max-runs <count>', 'Maximum runs rendered in the terminal', '6')
+  .option('--max-scopes <count>', 'Maximum local scopes discovered by --global', '12')
+  .option('--classic', 'Use the compatibility line-oriented renderer')
+  .option('--no-color', 'Disable terminal colors')
+  .option('--no-motion', 'Disable animated flow indicators')
+  .option('--ascii', 'Use ASCII-only symbols and connectors')
+  .option('--accessible', 'Use a stable screen-reader-friendly linear view')
+  .option('--capture <file>', 'Write a deterministic product-ready SVG snapshot and exit')
+  .option('--capture-preset <preset>', 'Capture size: github, linkedin, x, square, wide', 'github')
+  .option('--capture-theme <theme>', 'Capture theme: obsidian, light, mono', 'obsidian')
+  .option(
+    '--no-capture-redact',
+    'Keep local workspace, project, run and argument labels in capture'
+  )
+  .option('--replay <runId>', 'Replay a durable activity run with pause and step controls')
+  .option('--replay-speed <multiplier>', 'Replay speed from 0.25 to 64', '4')
+  .action(
+    async (
+      target: string | undefined,
+      options: {
+        run?: string;
+        once?: boolean;
+        json?: boolean;
+        refreshMs?: string;
+        maxRuns?: string;
+        classic?: boolean;
+        color?: boolean;
+        motion?: boolean;
+        ascii?: boolean;
+        accessible?: boolean;
+        global?: boolean;
+        maxScopes?: string;
+        capture?: string;
+        capturePreset?: string;
+        captureTheme?: string;
+        captureRedact?: boolean;
+        replay?: string;
+        replaySpeed?: string;
+      }
+    ) => {
+      const refreshMs = Number.parseInt(options.refreshMs ?? '250', 10);
+      const maxRuns = Number.parseInt(options.maxRuns ?? '6', 10);
+      const maxScopes = Number.parseInt(options.maxScopes ?? '12', 10);
+      const replaySpeed = Number.parseFloat(options.replaySpeed ?? '4');
+      if (!Number.isFinite(refreshMs) || refreshMs < 100 || refreshMs > 5_000) {
+        throw new Error('--refresh-ms must be an integer from 100 to 5000.');
+      }
+      if (!Number.isFinite(maxRuns) || maxRuns < 1 || maxRuns > 50) {
+        throw new Error('--max-runs must be an integer from 1 to 50.');
+      }
+      if (!Number.isFinite(maxScopes) || maxScopes < 1 || maxScopes > 50) {
+        throw new Error('--max-scopes must be an integer from 1 to 50.');
+      }
+      if (!Number.isFinite(replaySpeed) || replaySpeed < 0.25 || replaySpeed > 64) {
+        throw new Error('--replay-speed must be a number from 0.25 to 64.');
+      }
+      if (options.global === true && target) {
+        throw new Error('A target path cannot be combined with --global.');
+      }
+      if (options.replay && options.global === true) {
+        throw new Error('--replay cannot be combined with --global.');
+      }
+      if (options.replay && options.capture) {
+        throw new Error('--replay cannot be combined with --capture.');
+      }
+      if (!['github', 'linkedin', 'x', 'square', 'wide'].includes(options.capturePreset ?? '')) {
+        throw new Error('--capture-preset must be github, linkedin, x, square, or wide.');
+      }
+      if (!['obsidian', 'light', 'mono'].includes(options.captureTheme ?? '')) {
+        throw new Error('--capture-theme must be obsidian, light, or mono.');
+      }
+      const { runLiveCommand } = await import('./live-command.js');
+      await runLiveCommand({
+        targetPath: target,
+        runId: options.run,
+        once: options.once === true,
+        json: options.json === true,
+        refreshMs,
+        maxRuns,
+        classic: options.classic === true,
+        color: options.color === false ? false : undefined,
+        motion: options.motion === false ? false : undefined,
+        ascii: options.ascii === true ? true : undefined,
+        accessible: options.accessible === true,
+        global: options.global === true,
+        maxScopes,
+        capturePath: options.capture,
+        capturePreset: options.capturePreset as 'github' | 'linkedin' | 'x' | 'square' | 'wide',
+        captureTheme: options.captureTheme as 'obsidian' | 'light' | 'mono',
+        captureRedact: options.captureRedact !== false,
+        replayRunId: options.replay,
+        replaySpeed,
+      });
+    }
+  );
+
 // Main command: npx workspai <name> (legacy: npx rapidkit <name>)
 program
   .argument('[name]', 'Name of the workspace or project directory')
@@ -8748,6 +8937,13 @@ program
   .option('--write', 'Write workspace intelligence artifact to .workspai/reports')
   .option('--include-evidence', 'Read status metadata from referenced evidence reports')
   .option('--scan-depth <count>', 'Observable project discovery depth for large monorepos')
+  .option(
+    '--graph-inventory-limit <count>',
+    'Emergency per-project Graph inventory bound (default 500000, maximum 2000000)'
+  )
+  .option('--graph-semantic-budget <count>', 'Per-project adaptive semantic scan budget override')
+  .option('--graph-deep-budget <count>', 'Per-project adaptive deep-provider budget override')
+  .option('--graph-source-budget <count>', 'Per-project source extraction budget override')
   .option('--limit <count>', 'Bound graph search results (default 12, maximum 100)')
   .option('--kind <kind>', 'Limit graph search to one canonical entity kind')
   .option(
@@ -8905,6 +9101,10 @@ See the command reference for action-specific required inputs and output artifac
       write?: boolean;
       includeEvidence?: boolean;
       scanDepth?: string;
+      graphInventoryLimit?: string;
+      graphSemanticBudget?: string;
+      graphDeepBudget?: string;
+      graphSourceBudget?: string;
       limit?: string;
       kind?: string;
       forAgent?: string | boolean;
@@ -9046,6 +9246,56 @@ See the command reference for action-specific required inputs and output artifac
       const parsed = Number.parseInt(actionOptions.scanDepth, 10);
       return Number.isFinite(parsed) ? parsed : undefined;
     };
+    const workspaceGraphBudget = (
+      value: string | undefined,
+      flag: string,
+      maximum: number
+    ): number | undefined => {
+      if (value === undefined) return undefined;
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > maximum) {
+        throw new Error(`${flag} must be an integer between 1 and ${maximum}.`);
+      }
+      return parsed;
+    };
+    const workspaceGraphBudgets = () => ({
+      ...(actionOptions.graphInventoryLimit !== undefined
+        ? {
+            inventoryFileLimitPerProject: workspaceGraphBudget(
+              actionOptions.graphInventoryLimit,
+              '--graph-inventory-limit',
+              2_000_000
+            ),
+          }
+        : {}),
+      ...(actionOptions.graphSemanticBudget !== undefined
+        ? {
+            semanticFilesPerProject: workspaceGraphBudget(
+              actionOptions.graphSemanticBudget,
+              '--graph-semantic-budget',
+              250_000
+            ),
+          }
+        : {}),
+      ...(actionOptions.graphDeepBudget !== undefined
+        ? {
+            maxFilesPerProject: workspaceGraphBudget(
+              actionOptions.graphDeepBudget,
+              '--graph-deep-budget',
+              100_000
+            ),
+          }
+        : {}),
+      ...(actionOptions.graphSourceBudget !== undefined
+        ? {
+            sourceFilesPerProject: workspaceGraphBudget(
+              actionOptions.graphSourceBudget,
+              '--graph-source-budget',
+              50_000
+            ),
+          }
+        : {}),
+    });
     const parseArchiveByteSize = (raw: string | undefined, flag: string): number | undefined => {
       if (!raw) return undefined;
       const match = raw
@@ -9963,6 +10213,44 @@ See the command reference for action-specific required inputs and output artifac
       const { buildGraphEmit, renderGraphDot, renderGraphMermaid, explainGraphNode } =
         await import('./workspace-graph.js');
       const mode = (subaction || 'emit').toLowerCase();
+      const supportedGraphModes = [
+        'emit',
+        'dot',
+        'mermaid',
+        'jsonld',
+        'graphml',
+        'gexf',
+        'explain',
+        'entities',
+        'search',
+        'benchmark',
+        'evidence',
+        'path',
+        'overlay',
+      ] as const;
+      if (!supportedGraphModes.includes(mode as (typeof supportedGraphModes)[number])) {
+        const message = `Unknown workspace graph mode '${mode}'.`;
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: `workspace graph ${mode}`,
+                code: 'workspace.graph.mode.unsupported',
+                message,
+                exitCode: 2,
+                context: { mode, supportedModes: supportedGraphModes },
+                examples: ['workspai workspace graph emit --json'],
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ ${message}`));
+          console.log(chalk.gray(`   Supported: ${supportedGraphModes.join(', ')}`));
+        }
+        process.exit(2);
+      }
       const persistedReadModes = new Set(['benchmark', 'entities', 'evidence', 'path', 'search']);
       const forceGraphRefresh =
         actionOptions.refreshGraph === true || hasRawFlag('--refresh-graph');
@@ -10022,6 +10310,7 @@ See the command reference for action-specific required inputs and output artifac
           // Observed workspaces can still produce a knowledge graph without an authored contract.
         }
         return buildWorkspaceKnowledgeGraph({
+          ...workspaceGraphBudgets(),
           workspacePath,
           workspace: {
             name: model.workspace.name,
@@ -10196,15 +10485,38 @@ See the command reference for action-specific required inputs and output artifac
       if (mode === 'entities') {
         const knowledgeGraph = await buildKnowledgeGraph();
         const { queryKnowledgeEntities } = await import('./workspace-knowledge-graph-query.js');
-        const entities = queryKnowledgeEntities(knowledgeGraph, key);
+        const requestedKind = (key || actionOptions.kind || '').trim() || undefined;
+        if (requestedKind) {
+          const { WORKSPACE_KNOWLEDGE_ENTITY_KINDS } =
+            await import('./contracts/workspace-knowledge-graph-contract.js');
+          if (!WORKSPACE_KNOWLEDGE_ENTITY_KINDS.includes(requestedKind as never)) {
+            console.log(chalk.red(`❌ Unknown graph entity kind: ${requestedKind}`));
+            console.log(chalk.gray(`   Supported: ${WORKSPACE_KNOWLEDGE_ENTITY_KINDS.join(', ')}`));
+            process.exit(1);
+          }
+        }
+        const projectId = actionOptions.scope?.startsWith('project:')
+          ? actionOptions.scope.slice('project:'.length).trim()
+          : undefined;
+        const allEntities = queryKnowledgeEntities(knowledgeGraph, requestedKind, projectId);
+        const rawLimit = actionOptions.limit ?? rawFlagValue('--limit');
+        const limit = rawLimit === undefined ? undefined : Number.parseInt(rawLimit, 10);
+        if (limit !== undefined && (!Number.isFinite(limit) || limit < 1 || limit > 100)) {
+          console.log(chalk.red('❌ --limit must be an integer between 1 and 100.'));
+          process.exit(1);
+        }
+        const entities = limit === undefined ? allEntities : allEntities.slice(0, limit);
         if (actionOptions.json) {
           console.log(
             JSON.stringify(
               {
                 schemaVersion: knowledgeGraph.schemaVersion,
                 generatedAt: knowledgeGraph.generatedAt,
-                kind: key ?? null,
+                kind: requestedKind ?? null,
+                ...(projectId ? { projectId } : {}),
                 count: entities.length,
+                totalMatches: allEntities.length,
+                truncated: entities.length < allEntities.length,
                 entities,
               },
               null,
@@ -10213,8 +10525,14 @@ See the command reference for action-specific required inputs and output artifac
           );
           return;
         }
-        console.log(chalk.green(`✔ Workspace graph entities${key ? `: ${key}` : ''}`));
-        console.log(chalk.gray(`   Count: ${entities.length}`));
+        console.log(
+          chalk.green(`✔ Workspace graph entities${requestedKind ? `: ${requestedKind}` : ''}`)
+        );
+        console.log(
+          chalk.gray(
+            `   Count: ${entities.length}/${allEntities.length}${entities.length < allEntities.length ? ' (bounded)' : ''}`
+          )
+        );
         for (const entity of entities) {
           console.log(chalk.gray(`   • ${entity.kind}: ${entity.label} [${entity.id}]`));
         }
@@ -10510,6 +10828,31 @@ See the command reference for action-specific required inputs and output artifac
           `   Knowledge: ${knowledgeGraph.quality.entityCount} entities · ${knowledgeGraph.quality.relationCount} relations · ${knowledgeGraph.quality.proofCount} proofs · ${knowledgeGraph.providers.length} providers`
         )
       );
+      const truncatedGraphScopes = (knowledgeGraph.source.inputs?.scopes ?? []).filter(
+        (scope) => scope.truncated
+      );
+      const completeness = knowledgeGraph.quality.completeness;
+      if (truncatedGraphScopes.length > 0) {
+        console.log(
+          chalk.yellow(
+            `   Inventory: emergency-bounded — ${truncatedGraphScopes.map((scope) => `${scope.kind}:${scope.id} indexed ${scope.fileCount}/${scope.eligibleFileCountExact === false ? 'at-least-' : ''}${scope.eligibleFileCount ?? scope.fileCount} eligible files`).join(', ')}`
+          )
+        );
+      } else {
+        console.log(
+          chalk.gray(
+            `   Inventory: complete — ${completeness?.inventory.indexedFiles ?? (knowledgeGraph.source.inputs?.scopes ?? []).reduce((count, scope) => count + scope.fileCount, 0)} eligible files indexed across ${completeness?.inventory.scopeCount ?? (knowledgeGraph.source.inputs?.scopes ?? []).length} scope(s)`
+          )
+        );
+      }
+      if (completeness) {
+        const providerText = `${completeness.providers.complete} complete · ${completeness.providers.bounded} adaptive-bounded · ${completeness.providers.notApplicable} not-applicable · ${completeness.providers.failed} failed`;
+        console.log(
+          completeness.status === 'complete'
+            ? chalk.gray(`   Provider coverage: ${providerText}`)
+            : chalk.yellow(`   Provider coverage: ${providerText}`)
+        );
+      }
       console.log(
         chalk.gray(
           '   Query: workspace graph search <query> | entities [kind] | path <from> <to> | evidence <entity-or-relation> | overlay --from <graph.json>'
@@ -10574,6 +10917,7 @@ See the command reference for action-specific required inputs and output artifac
                 // Observed workspaces remain valid graph-stream sources.
               }
               const graph = await buildWorkspaceKnowledgeGraph({
+                ...workspaceGraphBudgets(),
                 workspacePath,
                 workspace: {
                   name: model.workspace.name,
@@ -12164,6 +12508,7 @@ export function printHelp() {
   line('npx workspai doctor workspace --json', 'Diagnose projects and workspace health');
   line('npx workspai project coverage --run --target 80 --json', 'Measure one project');
   line('npx workspai workspace explain <target> --write --json', 'Explain a blocker or project');
+  line('npx workspai live .', 'Watch every Workspai run and active architecture block live');
   line('npx workspai readiness --strict --json', 'Evaluate release readiness');
   line('npx workspai pipeline --strict --json', 'Run the broader governance and release loop');
 
@@ -12371,17 +12716,20 @@ export async function bootstrapCli(): Promise<void> {
   forceBlockingCliOutput();
   installSynchronousPipeWrites();
   installCliProcessExitHook();
+
+  // Resolve observability flags before the activity run is opened so the
+  // command identity excludes renderer/logging-only arguments.
+  normalizeObservabilityInvocation(process.argv);
   initializeCliRunContext({
     argv: process.argv,
     cwd: process.cwd(),
     rapidkitVersion: getVersion(),
+    activityBlueprint: resolveCliActivityBlueprint(process.argv.slice(2)),
   });
 
   // Make `--log-format json`/`--log-json` sticky via env and strip them from argv
   // so commander-parsed commands (e.g. `workspace`) don't reject them as unknown
   // options before the structured log stream can run.
-  normalizeObservabilityInvocation(process.argv);
-
   const preArgs = process.argv.slice(2);
   const preFirst = preArgs[0];
   const preCwd = process.cwd();

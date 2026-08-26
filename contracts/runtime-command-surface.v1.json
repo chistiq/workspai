@@ -51,6 +51,7 @@
     "goal",
     "agent",
     "snapshot",
+    "live",
     "bootstrap",
     "setup",
     "cache",
@@ -555,6 +556,13 @@
       "summary": "List detected or registered resources for the current command scope.",
       "canonicalArgv": [
         "list"
+      ]
+    },
+    {
+      "invocation": "live",
+      "summary": "Render the versioned cross-terminal execution graph for Workspai runs in the current project or workspace.",
+      "canonicalArgv": [
+        "live"
       ]
     },
     {

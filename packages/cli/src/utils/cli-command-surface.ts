@@ -67,6 +67,7 @@ export const NPM_ONLY_TOP_LEVEL_COMMANDS = [
   'goal',
   'agent',
   'snapshot',
+  'live',
   'bootstrap',
   'setup',
   'cache',

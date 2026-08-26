@@ -47,6 +47,9 @@ and model/graph freshness for the selected project.
 non-persisted `workspai.agent-bootstrap-receipt.v1` payload. The receipt proves
 the selected host route, contract validity, integrity, persisted and live
 freshness, and active Goal bindings without exposing the machine-local link.
+Its top-level status covers agent grounding only; project-environment and
+release readiness are emitted as separate dimensions so consumers cannot treat
+successful grounding as release approval.
 
 ## Naming conventions
 
@@ -397,9 +400,10 @@ Separate from the on-disk artifacts above, Workspai CLI emits a structured
 **NDJSON log stream on stderr** when `--log-format json` (or `RAPIDKIT_LOG_FORMAT=json`)
 is set. This is the deterministic progress/outcome channel for IDEs and CI.
 
-| Stream                  | Schema version     | Contract file                     | Doc                                                  |
-| ----------------------- | ------------------ | --------------------------------- | ---------------------------------------------------- |
-| CLI log events (stderr) | `cli-log-event-v1` | `contracts/cli-log-event.v1.json` | [CLI_LOG_EVENT_STREAM.md](./CLI_LOG_EVENT_STREAM.md) |
+| Stream                                      | Schema version                | Contract file                                | Doc                                                     |
+| ------------------------------------------- | ----------------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| CLI log events (stderr)                     | `cli-log-event-v1`            | `contracts/cli-log-event.v1.json`            | [CLI_LOG_EVENT_STREAM.md](./CLI_LOG_EVENT_STREAM.md)    |
+| Live activity events (machine-local NDJSON) | `workspace-activity-event.v1` | `contracts/workspace-activity-event.v1.json` | [Workspai Live Activity](../workspace-live-activity.md) |
 
 **Channel rule:** command **results** go to stdout (`--json`); **progress/lifecycle**
 events go to stderr (`--log-format json`). The two never mix.

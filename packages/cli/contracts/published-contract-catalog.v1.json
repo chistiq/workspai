@@ -321,6 +321,11 @@
       "contractPath": "contracts/cli-log-event.v1.json",
       "publication": "json-schema"
     },
+    "workspaceActivityEvent": {
+      "schemaVersion": "workspace-activity-event.v1",
+      "contractPath": "contracts/workspace-activity-event.v1.json",
+      "publication": "json-schema"
+    },
     "freshnessMetadata": {
       "schemaVersion": "rapidkit-freshness-metadata-v1",
       "contractPath": null,

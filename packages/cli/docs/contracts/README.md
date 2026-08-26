@@ -28,8 +28,8 @@ Canonical JSON lives in **`../../contracts/`** (CLI package root, published in t
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `npm run generate:contracts`                | Regenerate runtime surface, create planner, agent customization pack, import-stack parity, module-layout, infra-stack |
 | `npm run check:generated-contracts`         | Verify committed JSON matches generators                                                                              |
-| `npm run sync:shared-contracts`             | Generate canonical JSON and sync root plus locally available consumer mirrors                                          |
-| `npm run sync:parity-snapshot`              | Compatibility alias for canonical and consumer mirror synchronization                                                  |
+| `npm run sync:shared-contracts`             | Generate canonical JSON and sync root plus locally available consumer mirrors                                         |
+| `npm run sync:parity-snapshot`              | Compatibility alias for canonical and consumer mirror synchronization                                                 |
 | `npm run check:parity-snapshot`             | Verify mirrors match canonical                                                                                        |
 | `npm run contracts:prepush`                 | Sync local consumers and require generated canonical CLI mirrors to be committed                                      |
 | `npm run validate:contracts`                | Shared-contract checks and focused contract tests                                                                     |
@@ -88,7 +88,7 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `pipeline-last-run.v1.json` — governance pipeline orchestration
 - `project-entry-capability.v1.json` — open-ended adopt/import contract for readable projects
 - `workspace-intelligence/project-agent-entry.v1.json` — portable host discovery, canonical read order, authority boundaries, and integrity for an adopted project
-- `workspace-intelligence/agent-bootstrap-receipt.v1.json` — per-session proof of workspace membership, host coverage, schema validity, freshness, live inputs, and active Goal bindings
+- `workspace-intelligence/agent-bootstrap-receipt.v1.json` — per-session proof of workspace membership, host coverage, schema validity, freshness, live inputs, active Goal bindings, and explicitly separated grounding/environment/release readiness
 - `adopt-effects.v1.json` — dry-run disclosure of project metadata, conditional repository-control reconciliation, and workspace operations before adoption
 - `create-planner-capabilities.v1.json` — native, official, and existing capability lanes
 - `agent-customization-pack.v1.json` — generated instructions, prompts, skills, agents, optional hooks, MCP-ready design metadata, target matrix, and drift state for AI agent surfaces
@@ -96,6 +96,7 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `project-archive.v1.json`, `workspace-snapshot.v1.json`, and `workspace-snapshot.v2.json` — recoverable lifecycle records
 - `infra-plan.v1.json`, `private-product-manifest.v1.json`, and `product-factory-plan.v1.json` — infrastructure and product planning payloads
 - `workspace-model-cache.v1.json`, `workspace-watch-event.v1.json`, `doctor-project-scan.v2.json`, and `doctor-workspace-cache.v2.json` — cache/watch/diagnostic support contracts
+- `workspace-activity-event.v1.json` — local-first run/block/operation/touch stream consumed by `workspai live`; observational only, never Evidence/Decision authority
 
 Workspace intelligence (`../../contracts/workspace-intelligence/`):
 

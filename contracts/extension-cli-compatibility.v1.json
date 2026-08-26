@@ -63,6 +63,7 @@
       "repairTransaction": "workspai.workspace-repair-transaction.v1"
     },
     "cliLogEvent": "cli-log-event-v1",
+    "workspaceActivityEvent": "workspace-activity-event.v1",
     "freshnessMetadata": "rapidkit-freshness-metadata-v1",
     "factFreshness": "rapidkit-fact-freshness-v1",
     "blockerResolution": "rapidkit-blocker-resolution-v1",

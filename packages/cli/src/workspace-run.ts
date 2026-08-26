@@ -3,6 +3,7 @@ import path from 'path';
 
 import chalk from 'chalk';
 import { execa } from 'execa';
+import { emitActivityArtifact, emitActivityBlock } from './activity/activity-runtime.js';
 import {
   detectRuntimeFromMarkers,
   categorizeError,
@@ -102,6 +103,15 @@ interface ProjectExecutionResult {
     exitCode: number | null;
     durationMs: number;
     reason?: string;
+    errorCategory?: ErrorCategory;
+    failureDiagnostic?: {
+      category: ErrorCategory;
+      exitCode: number;
+      command: string;
+      timedOut: boolean;
+      timeoutMs: number;
+      outputExcerpt?: string;
+    };
   }>;
   // Enterprise features
   errorCategory?: ErrorCategory;
@@ -243,7 +253,7 @@ async function validateWrapperStagePreflight(
     }
   }
 
-  return validateCommand(nativeStageCommand);
+  return validateCommand(nativeStageCommand, projectPath);
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
@@ -636,6 +646,18 @@ function resolveWorkspaceRunStageTimeoutMs(stage: string): number {
     }
   }
   return stage === 'init' ? 120_000 : 90_000;
+}
+
+function parseDirectLocalWrapperCommand(command: string): { file: string; args: string[] } | null {
+  const normalized = command.trim();
+  // Generated Maven/Gradle wrappers are intentionally simple. Execute these
+  // without an intermediate shell so Execa's timeout targets the real wrapper
+  // process instead of leaving a descendant holding stdout/stderr open.
+  if (!/^\.\.?[\\/]/.test(normalized) || /[&|;<>()$`"']/.test(normalized)) {
+    return null;
+  }
+  const [file, ...args] = normalized.split(/\s+/);
+  return file ? { file, args } : null;
 }
 
 function resolvePositiveDuration(name: string, fallback: number): number {
@@ -1076,7 +1098,7 @@ async function executeStageCommand(
   });
 
   if (!useRapidkitWrapper) {
-    const validation = await validateCommand(finalCommand);
+    const validation = await validateCommand(finalCommand, projectPath);
     if (!validation.valid) {
       return {
         exitCode: 127,
@@ -1088,7 +1110,7 @@ async function executeStageCommand(
   } else if (nativeStageCommand) {
     const validation = useRapidkitWrapper
       ? await validateWrapperStagePreflight(projectPath, runtime, nativeStageCommand)
-      : await validateCommand(nativeStageCommand);
+      : await validateCommand(nativeStageCommand, projectPath);
     if (!validation.valid) {
       return {
         exitCode: 127,
@@ -1123,12 +1145,23 @@ async function executeStageCommand(
           ? stage === 'init' && isVitestRuntime()
             ? await runRapidkitInitInProcess(projectPath)
             : await runRapidkitSelfCommand([stage], projectPath, timeoutMs)
-          : await execa(finalCommand, [], {
-              cwd: projectPath,
-              reject: false,
-              shell: true,
-              timeout: timeoutMs,
-            });
+          : await (async () => {
+              const directWrapper = parseDirectLocalWrapperCommand(finalCommand);
+              return directWrapper
+                ? execa(directWrapper.file, directWrapper.args, {
+                    cwd: projectPath,
+                    reject: false,
+                    timeout: timeoutMs,
+                    forceKillAfterDelay: 1000,
+                  })
+                : execa(finalCommand, [], {
+                    cwd: projectPath,
+                    reject: false,
+                    shell: true,
+                    timeout: timeoutMs,
+                    forceKillAfterDelay: 1000,
+                  });
+            })();
 
     exitCode = Number(result.exitCode ?? 0);
     stdout = result.stdout;
@@ -1359,6 +1392,12 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
 
   const startedAt = Date.now();
   const workspacePath = path.resolve(options.workspacePath);
+  emitActivityBlock({
+    blockId: 'workspace.run.resolve',
+    status: 'running',
+    message: 'Resolving workspace project fleet',
+    component: 'workspace-run',
+  });
   const cachedEvidence = await readWorkspaceRunEvidence(workspacePath);
   const projectPaths = await discoverWorkspaceProjects(workspacePath);
   const { projects: scopedProjectPaths, normalizedScope } = await filterProjectsByScope(
@@ -1397,6 +1436,20 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
     selectionMode = 'all';
   }
 
+  emitActivityBlock({
+    blockId: 'workspace.run.resolve',
+    status: 'succeeded',
+    message: `Resolved ${scopedProjectPaths.length} project(s)`,
+    component: 'workspace-run',
+    attributes: { projects: scopedProjectPaths.length, selectionMode },
+  });
+
+  emitActivityBlock({
+    blockId: 'workspace.run.gates',
+    status: 'running',
+    message: 'Evaluating workspace run gates',
+    component: 'workspace-run',
+  });
   const enforceGates =
     options.stage === 'init' || options.planOnly === true
       ? false
@@ -1416,6 +1469,13 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         },
       ];
   const blockingGate = gateResults.find((gate) => gate.status === 'fail');
+  emitActivityBlock({
+    blockId: 'workspace.run.gates',
+    status: blockingGate ? 'blocked' : 'succeeded',
+    message: blockingGate ? `Blocked by ${blockingGate.gate}` : 'Workspace run gates passed',
+    component: 'workspace-run',
+    attributes: { gates: gateResults },
+  });
 
   const runTargets = scopedProjectPaths.filter((projectPath) => affectedProjects.has(projectPath));
   const continueOnError = options.continueOnError === true || options.stage === 'init';
@@ -1423,6 +1483,16 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   const maxWorkers = normalizeWorkers(options.maxWorkers, runTargets.length);
   const totalTargets = runTargets.length;
   let completedTargets = 0;
+  emitActivityBlock({
+    blockId: 'workspace.run.execute',
+    status: blockingGate ? 'blocked' : 'running',
+    message: blockingGate
+      ? `Execution blocked by ${blockingGate.gate}`
+      : `Executing ${options.stage} across ${totalTargets} project(s)`,
+    component: 'workspace-run',
+    progress: { completed: 0, total: totalTargets },
+    attributes: { stage: options.stage, parallel, maxWorkers },
+  });
 
   if (!options.json) {
     console.log(
@@ -1557,6 +1627,8 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
           execution.exitCode = result.exitCode;
           execution.status = result.exitCode === 0 ? 'passed' : 'failed';
           execution.reason = result.message;
+          execution.errorCategory = result.errorCategory;
+          execution.failureDiagnostic = result.failureDiagnostic;
           if (result.exitCode !== 0 && !firstFailure)
             firstFailure = result.message ?? stage.command;
           if (result.exitCode !== 0 && !continueOnError) {
@@ -1577,8 +1649,9 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         row.exitCode = failedUnit?.exitCode ?? 0;
         row.status = failedUnit ? 'failed' : 'passed';
         row.reason = failedUnit ? (firstFailure ?? 'runtime-unit stage failed') : undefined;
-        row.errorCategory = failedUnit ? 'runtime' : undefined;
+        row.errorCategory = failedUnit ? (failedUnit.errorCategory ?? 'runtime') : undefined;
         row.errorMessage = row.reason;
+        row.failureDiagnostic = failedUnit?.failureDiagnostic;
         completedTargets += 1;
         return;
       }
@@ -1767,6 +1840,15 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   const failed = rows.filter((row) => row.status === 'failed').length;
   const skipped = rows.filter((row) => row.status === 'skipped').length;
 
+  emitActivityBlock({
+    blockId: 'workspace.run.execute',
+    status: failed > 0 ? 'failed' : blockingGate ? 'blocked' : 'succeeded',
+    message: `Workspace run finished: ${passed} passed, ${failed} failed, ${skipped} skipped`,
+    component: 'workspace-run',
+    progress: { completed: totalTargets, total: totalTargets, percent: 100 },
+    attributes: { passed, failed, skipped, stage: options.stage },
+  });
+
   const strict = options.strict === true;
   const exitCode =
     failed > 0 ||
@@ -1823,7 +1905,33 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   };
 
   const reportPath = path.join(workspacePath, WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH);
-  await publishWorkspaceRunStageReport(workspacePath, report);
+  emitActivityBlock({
+    blockId: 'workspace.run.publish',
+    status: 'running',
+    message: 'Publishing workspace run evidence',
+    component: 'workspace.run',
+  });
+  try {
+    await publishWorkspaceRunStageReport(workspacePath, report);
+    emitActivityBlock({
+      blockId: 'workspace.run.publish',
+      status: 'succeeded',
+      message: 'Workspace run evidence published',
+      component: 'workspace.run',
+    });
+    emitActivityArtifact({
+      workspacePath,
+      relativePath: WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH,
+    });
+  } catch (error) {
+    emitActivityBlock({
+      blockId: 'workspace.run.publish',
+      status: 'failed',
+      message: error instanceof Error ? error.message : 'Workspace run evidence publish failed',
+      component: 'workspace.run',
+    });
+    throw error;
+  }
 
   if (!options.json) {
     if (blockingGate) {

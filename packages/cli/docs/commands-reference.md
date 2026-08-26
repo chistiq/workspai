@@ -1,5 +1,29 @@
 # Commands Reference
 
+## Live cross-terminal activity
+
+```bash
+workspai live [target]
+workspai live --global [--max-scopes <count>]
+workspai live --run <run-id>
+workspai live --once --json
+workspai live --no-motion --no-color
+workspai live --ascii|--accessible|--classic
+workspai live --capture <file.svg> [--capture-preset github|linkedin|x|square|wide]
+workspai live --replay <run-id> [--replay-speed <0.25..64>]
+```
+
+`workspai live` observes versioned run/block/activity journals emitted by every
+Workspai CLI command in the same project or workspace. It works without
+`adopt`; adoption adds workspace correlation and cross-project intelligence.
+Its default TTY surface is a bounded interactive Flow Board with live block and
+edge state, durable per-block retry attempts, semantic phase rails, an adaptive
+Inspector, a deduplicated multi-workspace Fleet Cockpit, deterministic
+redacted-by-default SVG capture, durable replay, responsive compaction and
+changed-row rendering. Use `--accessible` for stable screen-reader output or
+`--classic` for the compatibility line view.
+See [Workspai Live Activity](./workspace-live-activity.md).
+
 Human-readable CLI syntax for the Workspai CLI. The machine-complete command,
 argument, option, alias, ownership, and integrity inventory is available through
 `workspai commands --json` and
@@ -95,7 +119,7 @@ npx workspai workspace snapshot [--workspace <path>] [--json] [--include-paths] 
 npx workspai workspace diff --from <snapshot-or-model|git[:ref]> [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace impact --from <workspace-diff-report> [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace verify [--from-impact <file>] [--workspace <path>] [--scope project:<name>] [--strict] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--kind <entity-kind>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
+npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--kind <entity-kind>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--graph-inventory-limit <count>] [--graph-semantic-budget <count>] [--graph-deep-budget <count>] [--graph-source-budget <count>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace eval [init <task> [strategy]|record|status|report|compare --from <report>] [--workspace <path>] [--output <file>] [--json]
 npx workspai workspace watch [--workspace <path>] [--json] [--graph-stream] [--once] [--scan-depth <count>]
 npx workspai workspace explain <target> [--workspace <path>] [--json] [--write]
@@ -218,6 +242,10 @@ and a risk summary. Observation timestamps and freshness alone do not create
 false change noise. Query indexes are cached
 per immutable graph object and invalidated automatically when a new graph is
 built. `dot` and `mermaid` intentionally remain project-topology renderers.
+`workspace graph entities --kind <kind> --scope project:<name> --limit <n>` is
+equivalent to the positional kind form and applies all three bounds before
+serializing JSON; `count`, `totalMatches`, and `truncated` make omissions
+explicit.
 Without `--output` they emit raw text for direct piping. With `--output` they
 write a durable file; adding `--json` returns a structured operation receipt
 with the format, node and edge counts, and resolved output path.

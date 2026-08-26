@@ -36,6 +36,7 @@ These commands are implemented and orchestrated by Workspai CLI:
 - `goal`
 - `agent`
 - `project`
+- `live`
 - `shell activate`
 
 Reason: workspace-level policy, registry, and platform orchestration live in npm wrapper.

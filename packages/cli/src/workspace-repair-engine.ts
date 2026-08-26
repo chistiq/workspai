@@ -58,6 +58,7 @@ import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { inspectGoalLifecycle, linkGoalRepairTransaction } from './goal-lifecycle.js';
 import { withWorkspaceArtifactLock } from './utils/artifact-path-compat.js';
 import { readWorkspaceContract } from './utils/workspace-contract.js';
+import { emitActivityBlock, emitWorkspaceActivity } from './activity/activity-runtime.js';
 
 const REPAIR_ROOT = '.workspai/repair';
 const TRANSACTION_FILE = 'transaction.json';
@@ -673,14 +674,52 @@ function event(
   message: string,
   options: { stageId?: string; status?: string; now?: () => Date } = {}
 ): void {
-  transaction.events.push({
+  const repairEvent = {
     sequence: transaction.events.length + 1,
     at: iso(options.now),
     type,
     ...(options.stageId ? { stageId: options.stageId } : {}),
     ...(options.status ? { status: options.status } : {}),
     message,
-  });
+  };
+  transaction.events.push(repairEvent);
+
+  const rawStatus = options.status ?? type;
+  const status =
+    type === 'failed' || rawStatus === 'failed'
+      ? 'failed'
+      : type === 'cancelled'
+        ? 'cancelled'
+        : type === 'closed' || rawStatus === 'passed' || rawStatus === 'completed'
+          ? 'succeeded'
+          : type === 'rollback'
+            ? 'rolled-back'
+            : rawStatus === 'blocked'
+              ? 'blocked'
+              : 'running';
+  if (options.stageId) {
+    emitActivityBlock({
+      blockId: `repair.${options.stageId}`,
+      status,
+      message,
+      component: 'workspace-repair',
+      attributes: { transactionId: transaction.transactionId, repairEventType: type },
+    });
+  } else {
+    emitWorkspaceActivity({
+      kind:
+        status === 'failed'
+          ? 'operation.failed'
+          : status === 'succeeded' || status === 'rolled-back'
+            ? 'operation.completed'
+            : 'operation.started',
+      status,
+      component: 'workspace-repair',
+      message,
+      correlationId: transaction.transactionId,
+      attributes: { repairEventType: type },
+    });
+  }
 }
 
 async function saveTransaction(

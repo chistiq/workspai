@@ -1,4 +1,5 @@
 import path from 'path';
+import { emitActivityArtifact } from '../activity/activity-runtime.js';
 import { randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import fsExtra from 'fs-extra';
@@ -291,6 +292,8 @@ export async function writeWorkspaceArtifactJson(
     fsExtra.writeJson(temporaryPath, payload, { spaces: 2 })
   );
 
+  emitActivityArtifact({ workspacePath, relativePath });
+
   return primaryPath;
 }
 
@@ -333,6 +336,9 @@ export async function writeWorkspaceArtifactJsonSet(
           throw new Error(`Injected artifact-set failure after ${failAfter} write(s).`);
         }
       }
+      for (const artifact of normalized) {
+        emitActivityArtifact({ workspacePath, relativePath: artifact.relativePath });
+      }
       return normalized.map((artifact) => artifact.path);
     } catch (error) {
       const restorations = await Promise.allSettled(
@@ -370,6 +376,8 @@ export async function writeWorkspaceArtifactText(
   await replaceArtifactAtomically(workspacePath, primaryPath, (temporaryPath) =>
     fsExtra.writeFile(temporaryPath, payload, 'utf-8')
   );
+
+  emitActivityArtifact({ workspacePath, relativePath });
 
   return primaryPath;
 }

@@ -75,6 +75,7 @@ import {
   AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
   PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
 } from '../project-agent-entry.js';
+import { WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION } from '../activity/activity-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -123,6 +124,7 @@ export function getPublishedContractVersions() {
     workspaceIntelligenceChain: WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION,
     workspaceIntelligenceArtifacts: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
     cliLogEvent: CLI_LOG_EVENT_SCHEMA_VERSION,
+    workspaceActivityEvent: WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION,
     freshnessMetadata: FRESHNESS_METADATA_SCHEMA_VERSION,
     factFreshness: FACT_FRESHNESS_SCHEMA_VERSION,
     blockerResolution: BLOCKER_RESOLUTION_SCHEMA_VERSION,
@@ -231,6 +233,7 @@ export function getPublishedContractCatalog() {
     workspaceIntelligenceChain: 'contracts/workspace-intelligence-chain.v1.json',
     workspaceIntelligenceArtifacts: null,
     cliLogEvent: 'contracts/cli-log-event.v1.json',
+    workspaceActivityEvent: 'contracts/workspace-activity-event.v1.json',
     freshnessMetadata: null,
     factFreshness: 'contracts/workspace-intelligence/fact-freshness.v1.json',
     blockerResolution: 'contracts/workspace-intelligence/blocker-resolution.v1.json',
