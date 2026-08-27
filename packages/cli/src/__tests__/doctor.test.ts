@@ -3167,6 +3167,58 @@ describe('Doctor Command', () => {
     }
   });
 
+  it('routes a managed Rails application with frontend tooling to the Ruby adapter', async () => {
+    const projectPath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-doctor-managed-rails-')
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'Gemfile'),
+      "source 'https://rubygems.org'\ngem 'rails'\n"
+    );
+    await fsExtra.outputFile(path.join(projectPath, 'Gemfile.lock'), 'GEM\n');
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'rails-assets',
+      dependencies: { vue: '^3.0.0' },
+    });
+    await fsExtra.outputJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'managed-rails',
+      kind: 'frontend',
+      runtime: 'node',
+      framework: 'vue',
+      kit_name: 'adopted.vue',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+
+      expect(payload.project).toMatchObject({
+        runtimeFamily: 'ruby',
+        framework: 'Ruby on Rails',
+        projectKind: 'backend',
+      });
+      expect(payload.project.kit).toBeUndefined();
+      expect(payload.project.probes).not.toContainEqual(
+        expect.objectContaining({ id: 'runtime-node-dev-script' })
+      );
+      expect(payload.project.issues).not.toContain(
+        'Dependencies not installed (node_modules empty or missing)'
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(projectPath);
+    }
+  });
+
   it('should accept PEP 621 project scripts as Python command entrypoints', async () => {
     const tempRoot = await fsExtra.mkdtemp(
       path.join(os.tmpdir(), 'rapidkit-doctor-fastapi-entrypoint-')

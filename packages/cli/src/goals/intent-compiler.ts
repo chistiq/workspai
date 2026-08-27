@@ -88,7 +88,9 @@ function normalizedIntent(raw: string): string {
 }
 
 function coverageTarget(intent: string): number | null {
-  const match = intent.match(/\b(?:coverage\D{0,24})?(100|\d{1,2})(?:\.\d+)?\s*%/i);
+  const match = intent.match(
+    /\b(?:coverage\D{0,24})?((?:100(?:\.0+)?|\d{1,2}(?:\.\d+)?))\s*(?:%|percent(?:age)?(?:\s+points?)?)/i
+  );
   if (!match || !/coverage/i.test(intent)) return null;
   const value = Number(match[1]);
   return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;

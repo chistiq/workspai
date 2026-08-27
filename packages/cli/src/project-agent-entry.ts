@@ -8,6 +8,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
+import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
 import { assertWorkspaceArtifactContract } from './contracts/artifact-contract-registry.js';
 import { inspectGoalLifecycle } from './goal-lifecycle.js';
 import {
@@ -17,6 +18,7 @@ import {
 import type { ProjectContextAgent } from './project-intelligence-lens.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
+import { projectWorkspaceKnowledgeGraph } from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson } from './workspace-model-hash.js';
 
 export const PROJECT_AGENT_ENTRY_SCHEMA_VERSION =
@@ -82,9 +84,12 @@ export interface ProjectAgentEntryManifest {
   canonical: {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
     projectGrounding: '.workspai/PROJECT-GROUNDING.md';
+    projectKnowledgeGraph: typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
     goalIndex: `workspace:${typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
+    workspaceModel: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`;
+    knowledgeGraph: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`;
     workspaceSkillsIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`;
     boundedGraphSearch: 'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
   };
@@ -153,8 +158,11 @@ export interface AgentBootstrapReceipt {
   };
   canonicalEvidence: {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
+    projectKnowledgeGraph: typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
+    workspaceModel: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`;
+    knowledgeGraph: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`;
     workspaceSkillsIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`;
     boundedGraphSearch: 'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
     modelFreshness: ProjectContextAgent['intelligence']['freshness']['model'];
@@ -251,9 +259,12 @@ export function buildProjectAgentEntryManifest(input: {
     canonical: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
       projectGrounding: '.workspai/PROJECT-GROUNDING.md',
+      projectKnowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
       goalIndex: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
+      workspaceModel: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}` as const,
+      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}` as const,
       workspaceSkillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}` as const,
       boundedGraphSearch:
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json' as const,
@@ -506,8 +517,51 @@ export async function buildAgentBootstrapReceipt(input: {
       : `Canonical evidence failed contract validation: ${invalidCanonical.join(', ')}.`
   );
 
+  const projectGraphRelativePath = WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
+  const projectGraphPath = path.join(projectPath, projectGraphRelativePath);
+  let projectGraphStatus: AgentEntryCheckStatus = 'failed';
+  let projectGraphMessage = 'The project-owned Knowledge Graph is missing.';
+  if (fs.existsSync(projectGraphPath) && canonicalGraph) {
+    try {
+      const projectGraph = JSON.parse(await fsp.readFile(projectGraphPath, 'utf8'));
+      assertWorkspaceArtifactContract(
+        projectGraphRelativePath,
+        projectGraph,
+        projectGraphRelativePath
+      );
+      const samePhysicalArtifact = path.resolve(projectPath) === path.resolve(workspacePath);
+      const expectedGraph = samePhysicalArtifact
+        ? canonicalGraph
+        : projectWorkspaceKnowledgeGraph(
+            canonicalGraph as unknown as WorkspaceKnowledgeGraph,
+            context.project.name
+          );
+      if (hashCanonicalJson(projectGraph) === hashCanonicalJson(expectedGraph)) {
+        projectGraphStatus = 'passed';
+        projectGraphMessage = samePhysicalArtifact
+          ? 'The co-located project resolves the validated workspace aggregate without path ambiguity.'
+          : 'The project-owned Knowledge Graph is the exact current projection of canonical workspace evidence.';
+      } else {
+        projectGraphMessage =
+          'The project-owned Knowledge Graph is stale, mismatched, or not the canonical project projection.';
+      }
+    } catch {
+      projectGraphMessage =
+        'The project-owned Knowledge Graph failed schema or projection validation.';
+    }
+  }
+  check(
+    'project-knowledge-graph',
+    projectGraphStatus,
+    projectGraphMessage,
+    projectGraphRelativePath
+  );
+
   const modelWorkspace = canonicalModel?.workspace as Record<string, unknown> | undefined;
   const graphWorkspace = canonicalGraph?.workspace as Record<string, unknown> | undefined;
+  const graphEntities = Array.isArray(canonicalGraph?.entities)
+    ? (canonicalGraph.entities as Array<Record<string, unknown>>)
+    : [];
   const modelProjects = Array.isArray(canonicalModel?.projects)
     ? (canonicalModel.projects as Array<Record<string, unknown>>)
     : [];
@@ -515,7 +569,8 @@ export async function buildAgentBootstrapReceipt(input: {
     invalidCanonical.length === 0 &&
     modelWorkspace?.name === context.workspace.name &&
     graphWorkspace?.name === context.workspace.name &&
-    modelProjects.some((project) => project.name === context.project.name);
+    modelProjects.some((project) => project.name === context.project.name) &&
+    graphEntities.some((entity) => entity.projectId === context.project.name);
   check(
     'canonical-project-membership',
     canonicalMembershipValid ? 'passed' : 'failed',
@@ -731,8 +786,11 @@ export async function buildAgentBootstrapReceipt(input: {
     },
     canonicalEvidence: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
+      projectKnowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
+      workspaceModel: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}` as const,
+      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}` as const,
       workspaceSkillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}` as const,
       boundedGraphSearch:
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json' as const,

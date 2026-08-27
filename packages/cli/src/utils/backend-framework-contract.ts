@@ -784,6 +784,21 @@ export function detectBackendFrameworkFromHints(input: {
   return buildDetection('unknown', 'low', 'unknown');
 }
 
+/**
+ * Linked-adoption metadata is an observation emitted by Workspai, not an
+ * authored stack declaration. Treating it as an everlasting hint pins every
+ * later consumer to the first adoption guess and prevents source changes (or
+ * improved detectors) from correcting the model.
+ */
+export function isWorkspaiManagedLinkedProjectMetadata(
+  projectJsonData: Record<string, unknown> | null | undefined
+): boolean {
+  const adoption = projectJsonData?.adoption;
+  if (!adoption || typeof adoption !== 'object' || Array.isArray(adoption)) return false;
+  const value = adoption as Record<string, unknown>;
+  return value.managed_by === 'workspai' && value.mode === 'linked';
+}
+
 function detectNodeBackendFromProject(projectPath: string): BackendFrameworkDetection {
   const packageJson = readJsonIfExists(path.join(projectPath, 'package.json'));
   if (!packageJson) {
@@ -1149,20 +1164,83 @@ export function detectBackendFrameworkFromProject(
   projectPath: string,
   projectJsonData?: Record<string, unknown> | null
 ): BackendFrameworkDetection {
+  const managedLinkedMetadata = isWorkspaiManagedLinkedProjectMetadata(projectJsonData);
+  const rootEntries = (() => {
+    try {
+      return fs.readdirSync(projectPath, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  })();
+  const directManifestNames = new Set([
+    'package.json',
+    'Gemfile',
+    'go.mod',
+    'Cargo.toml',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'mix.exs',
+    'composer.json',
+    'pyproject.toml',
+    'setup.py',
+    'requirements.txt',
+    'requirements.in',
+    'deps.edn',
+    'project.clj',
+    'build.sbt',
+    'deno.json',
+    'deno.jsonc',
+    'CMakeLists.txt',
+    'meson.build',
+  ]);
+  const hasRootRuntimeOwner = rootEntries.some(
+    (entry) =>
+      entry.isFile() &&
+      (directManifestNames.has(entry.name) || /\.(?:csproj|sln)$/iu.test(entry.name))
+  );
+  // A manifest-free composite container has no source-backed way to choose one
+  // nested runtime as primary. Preserve the previous managed observation only
+  // while that runtime is still present; otherwise force fresh detection.
+  const managedCompositeFallback =
+    managedLinkedMetadata && !hasRootRuntimeOwner
+      ? detectBackendFrameworkFromHints({
+          framework:
+            typeof projectJsonData?.framework === 'string'
+              ? (projectJsonData.framework as string)
+              : undefined,
+          runtime:
+            typeof projectJsonData?.runtime === 'string'
+              ? (projectJsonData.runtime as string)
+              : undefined,
+          kitName:
+            typeof projectJsonData?.kit_name === 'string'
+              ? (projectJsonData.kit_name as string)
+              : typeof projectJsonData?.kit === 'string'
+                ? (projectJsonData.kit as string)
+                : undefined,
+        })
+      : null;
+  if (
+    managedCompositeFallback?.runtime &&
+    managedCompositeFallback.runtime !== 'unknown' &&
+    detectNestedRuntimeCandidatesFromProject(projectPath).includes(managedCompositeFallback.runtime)
+  ) {
+    return managedCompositeFallback;
+  }
+  const detectionHints = managedLinkedMetadata ? null : projectJsonData;
   const hinted = detectBackendFrameworkFromHints({
     framework:
-      typeof projectJsonData?.framework === 'string'
-        ? (projectJsonData.framework as string)
+      typeof detectionHints?.framework === 'string'
+        ? (detectionHints.framework as string)
         : undefined,
     runtime:
-      typeof projectJsonData?.runtime === 'string'
-        ? (projectJsonData.runtime as string)
-        : undefined,
+      typeof detectionHints?.runtime === 'string' ? (detectionHints.runtime as string) : undefined,
     kitName:
-      typeof projectJsonData?.kit_name === 'string'
-        ? (projectJsonData.kit_name as string)
-        : typeof projectJsonData?.kit === 'string'
-          ? (projectJsonData.kit as string)
+      typeof detectionHints?.kit_name === 'string'
+        ? (detectionHints.kit_name as string)
+        : typeof detectionHints?.kit === 'string'
+          ? (detectionHints.kit as string)
           : undefined,
   });
   if (hinted.key !== 'unknown') {
@@ -1230,15 +1308,38 @@ export function detectBackendFrameworkFromProject(
     if (applicationDetection.key !== 'unknown') {
       return applicationDetection;
     }
-    const frontendDetection = detectFrontendFrameworkFromProject(projectPath, projectJsonData);
+    const detection = detectNodeBackendFromProject(projectPath);
+    // A concrete Node server framework owns the application boundary. Generic
+    // Node tooling does not: keep looking for a root backend framework before
+    // allowing a frontend dependency to classify a polyglot application.
+    if (detection.key !== 'unknown' && detection.key !== 'node') {
+      return detection;
+    }
+  }
+  // Root backend frameworks are stronger ownership evidence than asset-pipeline
+  // dependencies in package.json. This keeps Rails/Django/etc. applications
+  // with Vue/React build surfaces from becoming standalone frontend projects.
+  const explicitBackendDetections = [
+    runtimeCandidates.includes('python') ? detectPythonBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('go') ? detectGoBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('java') ? detectJavaBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('php') ? detectPhpBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('ruby') ? detectRubyBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('rust') ? detectRustBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('elixir') ? detectElixirBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('dotnet') ? detectDotnetBackendFromProject(projectPath) : null,
+  ].filter((detection): detection is BackendFrameworkDetection => detection !== null);
+  const explicitBackend = explicitBackendDetections.find(
+    (detection) => detection.key !== 'unknown' && detection.key !== detection.runtime
+  );
+  if (explicitBackend) return explicitBackend;
+  if (runtimeCandidates.includes('node')) {
+    const frontendDetection = detectFrontendFrameworkFromProject(projectPath, detectionHints);
     if (frontendDetection.key !== 'unknown') {
       return frontendDetection;
     }
-
     const detection = detectNodeBackendFromProject(projectPath);
-    if (detection.key !== 'unknown') {
-      return detection;
-    }
+    if (detection.key !== 'unknown') return detection;
   }
   if (runtimeCandidates.includes('python')) {
     const detection = detectPythonBackendFromProject(projectPath);

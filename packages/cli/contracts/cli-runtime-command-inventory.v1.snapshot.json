@@ -1706,6 +1706,10 @@
           "attributeName": "parallel"
         },
         {
+          "flags": "--plan",
+          "attributeName": "plan"
+        },
+        {
           "flags": "--runtime <runtime>",
           "attributeName": "runtime"
         },

@@ -1214,6 +1214,52 @@ describe('CLI Entry Point', () => {
       });
     }, 30000);
 
+    it('accepts plan and runtime flags for workspace run without executing the lifecycle command', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-run-plan-'));
+      const projectRoot = path.join(workspaceRoot, 'api');
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      await fs.outputJson(path.join(projectRoot, 'package.json'), {
+        name: 'api',
+        scripts: { test: 'node --version' },
+      });
+      await fs.outputJson(path.join(projectRoot, '.workspai', 'project.json'), {
+        name: 'api',
+        runtime: 'node',
+        kit_name: 'node',
+      });
+      await fs.outputJson(path.join(projectRoot, '.workspai', 'context.json'), {
+        engine: 'npm',
+        runtime: 'node',
+        commands: { test: 'node --version' },
+      });
+
+      const result = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'workspace',
+          'run',
+          'test',
+          '--scope',
+          'project:api',
+          '--plan',
+          '--runtime',
+          'node',
+          '--json',
+          '--no-gates',
+        ],
+        { cwd: workspaceRoot }
+      );
+      const report = JSON.parse(result.stdout);
+      expect(report).toMatchObject({
+        stage: 'test',
+        options: { planOnly: true, runtime: 'node' },
+        summary: { selectedCount: 1, failed: 0 },
+      });
+      expect(report.projects[0]).toMatchObject({ projectName: 'api', status: 'skipped' });
+      expect(report.projects[0].reason).toContain('plan only');
+    }, 30000);
+
     it('rejects invalid max-workers with a structured JSON error', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-workers-invalid-'));
       await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
@@ -1435,6 +1481,15 @@ describe('CLI Entry Point', () => {
         graph: { schemaVersion: 'workspace-dependency-graph.v1' },
         knowledgeGraph: { schemaVersion: 'workspace-knowledge-graph.v1' },
       });
+      const canonicalGraph = await fs.readJson(
+        path.join(workspaceRoot, '.workspai', 'reports', 'workspace-knowledge-graph.json')
+      );
+      const canonicalModel = await fs.readJson(
+        path.join(workspaceRoot, '.workspai', 'reports', 'workspace-model.json')
+      );
+      expect(canonicalGraph).toEqual(artifact.knowledgeGraph);
+      expect(canonicalGraph.source.hash).toBeDefined();
+      expect(canonicalModel.schemaVersion).toBe('workspace-model.v1');
     });
 
     it('writes the rich contract graph to --output with a bounded JSON receipt', async () => {

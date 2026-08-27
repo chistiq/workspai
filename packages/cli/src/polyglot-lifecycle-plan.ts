@@ -12,8 +12,40 @@ export type PolyglotLifecycleStage = {
 
 export type PolyglotRuntimeUnit = {
   id: string;
-  runtime: 'node' | 'python' | 'go' | 'rust' | 'java' | 'dotnet' | 'c' | 'cpp';
-  ecosystem: 'npm' | 'python' | 'go' | 'cargo' | 'maven' | 'gradle' | 'nuget' | 'cmake' | 'meson';
+  runtime:
+    | 'node'
+    | 'bun'
+    | 'deno'
+    | 'python'
+    | 'go'
+    | 'rust'
+    | 'java'
+    | 'kotlin'
+    | 'scala'
+    | 'clojure'
+    | 'dotnet'
+    | 'php'
+    | 'ruby'
+    | 'elixir'
+    | 'c'
+    | 'cpp';
+  ecosystem:
+    | 'npm'
+    | 'bun'
+    | 'deno'
+    | 'python'
+    | 'go'
+    | 'cargo'
+    | 'maven'
+    | 'gradle'
+    | 'sbt'
+    | 'clojure-cli'
+    | 'nuget'
+    | 'composer'
+    | 'bundler'
+    | 'mix'
+    | 'cmake'
+    | 'meson';
   role: 'production' | 'tooling' | 'test' | 'example';
   root: string;
   manifest: string;
@@ -71,12 +103,19 @@ function listManifests(root: string, maxDepth: number): string[] {
         entry.isFile() &&
         ([
           'package.json',
+          'deno.json',
+          'deno.jsonc',
           'pyproject.toml',
           'go.mod',
           'Cargo.toml',
           'pom.xml',
           'build.gradle',
           'build.gradle.kts',
+          'build.sbt',
+          'deps.edn',
+          'composer.json',
+          'Gemfile',
+          'mix.exs',
           'CMakeLists.txt',
           'meson.build',
         ].includes(entry.name) ||
@@ -142,11 +181,17 @@ function nodeStages(root: string, contents: string): PolyglotLifecycleStage[] {
   } catch {
     // The install stage remains usable for a malformed scripts object.
   }
-  const runner = fs.existsSync(path.join(root, 'pnpm-lock.yaml'))
-    ? 'pnpm'
-    : fs.existsSync(path.join(root, 'yarn.lock'))
-      ? 'yarn'
-      : 'npm';
+  const runner =
+    fs.existsSync(path.join(root, 'bun.lock')) ||
+    fs.existsSync(path.join(root, 'bun.lockb')) ||
+    fs.existsSync(path.join(root, 'bunfig.toml')) ||
+    fs.existsSync(path.join(root, '.bunfig.toml'))
+      ? 'bun'
+      : fs.existsSync(path.join(root, 'pnpm-lock.yaml'))
+        ? 'pnpm'
+        : fs.existsSync(path.join(root, 'yarn.lock'))
+          ? 'yarn'
+          : 'npm';
   const run = (name: string): string => `${runner} run ${name}`;
   return [
     stage('init', runner === 'yarn' ? 'yarn install' : `${runner} install`),
@@ -185,9 +230,38 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
   let ecosystem: PolyglotRuntimeUnit['ecosystem'];
   let stages: PolyglotLifecycleStage[];
   if (name === 'package.json') {
-    runtime = 'node';
-    ecosystem = 'npm';
+    const bunOwned =
+      fs.existsSync(path.join(root, 'bun.lock')) ||
+      fs.existsSync(path.join(root, 'bun.lockb')) ||
+      fs.existsSync(path.join(root, 'bunfig.toml')) ||
+      fs.existsSync(path.join(root, '.bunfig.toml'));
+    runtime = bunOwned ? 'bun' : 'node';
+    ecosystem = bunOwned ? 'bun' : 'npm';
     stages = nodeStages(root, contents);
+  } else if (name === 'deno.json' || name === 'deno.jsonc') {
+    runtime = 'deno';
+    ecosystem = 'deno';
+    let tasks: Record<string, unknown> = {};
+    try {
+      const payload = JSON.parse(contents) as { tasks?: unknown };
+      if (payload.tasks && typeof payload.tasks === 'object' && !Array.isArray(payload.tasks)) {
+        tasks = payload.tasks as Record<string, unknown>;
+      }
+    } catch {
+      // JSONC configuration remains a valid Deno boundary even when comments
+      // prevent conservative JSON parsing; only evidence-backed defaults emit.
+    }
+    stages = [
+      ...(typeof tasks.test === 'string'
+        ? [stage('test', 'deno task test')]
+        : [stage('test', 'deno test', 'medium')]),
+      ...(typeof tasks.build === 'string' ? [stage('build', 'deno task build')] : []),
+      ...(typeof tasks.start === 'string'
+        ? [stage('start', 'deno task start')]
+        : typeof tasks.dev === 'string'
+          ? [stage('start', 'deno task dev', 'medium')]
+          : []),
+    ];
   } else if (name === 'pyproject.toml') {
     runtime = 'python';
     ecosystem = 'python';
@@ -225,13 +299,28 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
       stage('build', `${runner} package`),
     ];
   } else if (name === 'build.gradle' || name === 'build.gradle.kts') {
-    runtime = 'java';
+    runtime = /(?:kotlin|org\.jetbrains\.kotlin)/i.test(contents) ? 'kotlin' : 'java';
     ecosystem = 'gradle';
     const runner = fs.existsSync(path.join(root, 'gradlew')) ? './gradlew' : 'gradle';
     stages = [
       stage('init', `${runner} dependencies`),
       stage('test', `${runner} test`),
       stage('build', `${runner} build`),
+    ];
+  } else if (name === 'build.sbt') {
+    runtime = 'scala';
+    ecosystem = 'sbt';
+    stages = [
+      stage('init', 'sbt update'),
+      stage('test', 'sbt test'),
+      stage('build', 'sbt compile'),
+    ];
+  } else if (name === 'deps.edn') {
+    runtime = 'clojure';
+    ecosystem = 'clojure-cli';
+    stages = [
+      stage('init', 'clojure -P'),
+      ...(/:test\b/.test(contents) ? [stage('test', 'clojure -X:test', 'medium')] : []),
     ];
   } else if (/\.(?:cs|fs|vb)proj$/i.test(name)) {
     runtime = 'dotnet';
@@ -244,6 +333,62 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
       stage('init', `dotnet restore ${name}`),
       ...(testProject ? [stage('test', `dotnet test ${name}`)] : []),
       stage('build', `dotnet build ${name}`),
+    ];
+  } else if (name === 'composer.json') {
+    runtime = 'php';
+    ecosystem = 'composer';
+    let scripts: Record<string, unknown> = {};
+    try {
+      const payload = JSON.parse(contents) as { scripts?: unknown };
+      if (
+        payload.scripts &&
+        typeof payload.scripts === 'object' &&
+        !Array.isArray(payload.scripts)
+      ) {
+        scripts = payload.scripts as Record<string, unknown>;
+      }
+    } catch {
+      // Composer install remains an evidence-backed stage for malformed script metadata.
+    }
+    stages = [
+      stage('init', 'composer install'),
+      ...(typeof scripts.test !== 'undefined'
+        ? [stage('test', 'composer test')]
+        : fs.existsSync(path.join(root, 'vendor', 'bin', 'phpunit')) ||
+            fs.existsSync(path.join(root, 'phpunit.xml')) ||
+            fs.existsSync(path.join(root, 'phpunit.xml.dist'))
+          ? [stage('test', 'vendor/bin/phpunit', 'medium')]
+          : []),
+      ...(typeof scripts.build !== 'undefined' ? [stage('build', 'composer build')] : []),
+      ...(typeof scripts.start !== 'undefined' ? [stage('start', 'composer start')] : []),
+    ];
+  } else if (name === 'Gemfile') {
+    runtime = 'ruby';
+    ecosystem = 'bundler';
+    const railsExecutable = fs.existsSync(path.join(root, 'bin', 'rails'));
+    const rails = railsExecutable || /\bgem\s+['\"]rails['\"]/.test(contents);
+    const rspec =
+      fs.existsSync(path.join(root, 'spec')) || /\bgem\s+['\"]rspec(?:-rails)?['\"]/.test(contents);
+    const railsTests = fs.existsSync(path.join(root, 'test'));
+    stages = [
+      stage('init', 'bundle install'),
+      ...(railsTests && rails
+        ? [stage('test', 'bundle exec rails test')]
+        : rspec
+          ? [stage('test', 'bundle exec rspec')]
+          : fs.existsSync(path.join(root, 'Rakefile'))
+            ? [stage('test', 'bundle exec rake test', 'medium')]
+            : []),
+      ...(railsExecutable ? [stage('start', 'bundle exec rails server')] : []),
+    ];
+  } else if (name === 'mix.exs') {
+    runtime = 'elixir';
+    ecosystem = 'mix';
+    stages = [
+      stage('init', 'mix deps.get'),
+      stage('test', 'mix test'),
+      stage('build', 'mix compile'),
+      ...(/(?:phoenix|phx\.server)/i.test(contents) ? [stage('start', 'mix phx.server')] : []),
     ];
   } else if (name === 'CMakeLists.txt') {
     runtime = /(?:\bcxx\b|\bcplusplus\b|\bc\+\+\b)/iu.test(contents) ? 'cpp' : 'c';

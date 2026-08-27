@@ -15,6 +15,57 @@ const createTempDir = async (): Promise<string> => {
 };
 
 describe('analyze command', () => {
+  it('reports every runtime and Rails health evidence for a managed polyglot application', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'application');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'app', 'controllers'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'workhorse'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'spec'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({
+        name: 'application',
+        kind: 'frontend',
+        runtime: 'node',
+        framework: 'vue',
+        adoption: { managed_by: 'workspai', mode: 'linked' },
+      })
+    );
+    await fs.writeFile(path.join(projectDir, 'Gemfile'), "gem 'rails'\n");
+    await fs.writeFile(
+      path.join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'assets', dependencies: { vue: '^3.0.0' } })
+    );
+    await fs.writeFile(path.join(projectDir, 'workhorse', 'go.mod'), 'module example.test/app\n');
+    await fs.writeFile(
+      path.join(projectDir, 'app', 'controllers', 'health_controller.rb'),
+      'class HealthController; end\n'
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'spec', 'health_spec.rb'),
+      'describe :health do; end\n'
+    );
+    await fs.writeFile(path.join(projectDir, '.gitlab-ci.yml'), 'test:\n  script: echo ok\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.summary.runtimeCount).toBe(3);
+    expect(report.runtimes).toEqual({ ruby: 1, go: 1, node: 1 });
+    expect(report.projects[0]).toMatchObject({
+      runtime: 'ruby',
+      runtimeCandidates: ['ruby', 'go', 'node'],
+      framework: 'rails',
+      hasHealthEndpoint: true,
+    });
+    expect(report.findings.map((finding) => finding.id)).not.toContain('project.health.missing');
+  });
+
   it('recognizes nested tests and avoids deployment findings for package workspaces', async () => {
     const workspaceDir = await createTempDir();
     const projectDir = path.join(workspaceDir, 'polyglot-library');

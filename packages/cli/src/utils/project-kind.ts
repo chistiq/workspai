@@ -3,7 +3,11 @@ import path from 'path';
 
 import fsExtra from 'fs-extra';
 import { parse } from 'yaml';
-import { hasNativeWorkspaceTopology } from './backend-framework-contract.js';
+import {
+  detectBackendFrameworkFromProject,
+  hasNativeWorkspaceTopology,
+  isWorkspaiManagedLinkedProjectMetadata,
+} from './backend-framework-contract.js';
 import { projectMetadataCandidates } from './workspace-paths.js';
 
 export type WorkspaceProjectKind =
@@ -319,19 +323,31 @@ export async function inferWorkspaceProjectKind(
   const metadata =
     projectJson ??
     (await readFirstProjectMetadata(projectMetadataCandidates(projectPath, 'project.json')));
-  const metadataKind = normalizeProjectKind(metadata?.kind) ?? normalizeProjectKind(metadata?.type);
+  const authoredMetadata = isWorkspaiManagedLinkedProjectMetadata(metadata) ? null : metadata;
+  const observedManagedDetection =
+    authoredMetadata === null && metadata !== null
+      ? detectBackendFrameworkFromProject(projectPath, null)
+      : null;
+  const metadataKind =
+    normalizeProjectKind(authoredMetadata?.kind) ?? normalizeProjectKind(authoredMetadata?.type);
   if (metadataKind) {
     return metadataKind;
   }
 
   const kit =
-    typeof metadata?.kit_name === 'string'
-      ? metadata.kit_name
-      : typeof metadata?.kit === 'string'
-        ? metadata.kit
+    typeof authoredMetadata?.kit_name === 'string'
+      ? authoredMetadata.kit_name
+      : typeof authoredMetadata?.kit === 'string'
+        ? authoredMetadata.kit
         : hints.kit;
-  const framework = typeof metadata?.framework === 'string' ? metadata.framework : hints.framework;
-  const runtime = typeof metadata?.runtime === 'string' ? metadata.runtime : hints.runtime;
+  const framework =
+    typeof authoredMetadata?.framework === 'string'
+      ? authoredMetadata.framework
+      : (hints.framework ?? observedManagedDetection?.key);
+  const runtime =
+    typeof authoredMetadata?.runtime === 'string'
+      ? authoredMetadata.runtime
+      : (hints.runtime ?? observedManagedDetection?.runtime);
   const serviceSignals = `${typeof kit === 'string' ? kit : ''} ${framework ?? ''} ${runtime ?? ''}`
     .trim()
     .toLowerCase();

@@ -1,7 +1,7 @@
 import path from 'path';
 import { emitActivityArtifact } from '../activity/activity-runtime.js';
 import { randomUUID } from 'node:crypto';
-import { open } from 'node:fs/promises';
+import { copyFile, link, open } from 'node:fs/promises';
 import fsExtra from 'fs-extra';
 import { assertWorkspaceArtifactContract } from '../contracts/artifact-contract-registry.js';
 import { toLegacyRapidkitArtifactPath, toWorkspaiArtifactPath } from './workspace-paths.js';
@@ -302,10 +302,32 @@ export async function writeWorkspaceArtifactJsonSet(
   lockRelativePath: string,
   artifacts: readonly { relativePath: string; payload: unknown }[]
 ): Promise<string[]> {
+  return writeWorkspaceArtifactJsonSetAcrossRoots(
+    workspacePath,
+    lockRelativePath,
+    artifacts.map((artifact) => ({
+      rootPath: workspacePath,
+      ...artifact,
+    }))
+  );
+}
+
+/**
+ * Publish one logical artifact revision across the workspace root and any
+ * project roots. All targets are validated against their own containment root,
+ * serialized under the workspace lock, and restored to their exact preimages
+ * when any replacement fails.
+ */
+export async function writeWorkspaceArtifactJsonSetAcrossRoots(
+  workspacePath: string,
+  lockRelativePath: string,
+  artifacts: readonly { rootPath: string; relativePath: string; payload: unknown }[]
+): Promise<string[]> {
   if (artifacts.length === 0) return [];
   const normalized = artifacts.map((artifact) => ({
     ...artifact,
-    path: resolveWorkspaceArtifactPath(workspacePath, artifact.relativePath),
+    rootPath: path.resolve(artifact.rootPath),
+    path: resolveWorkspaceArtifactPath(artifact.rootPath, artifact.relativePath),
   }));
   const duplicate = normalized.find(
     (artifact, index) =>
@@ -318,17 +340,45 @@ export async function writeWorkspaceArtifactJsonSet(
   }
 
   return withWorkspaceArtifactLock(workspacePath, lockRelativePath, async () => {
-    const preimages = await Promise.all(
-      normalized.map(async (artifact) => ({
-        path: artifact.path,
-        exists: await fsExtra.pathExists(artifact.path),
-        contents: await fsExtra.readFile(artifact.path).catch(() => null),
-      }))
-    );
+    const transactionId = randomUUID();
+    const preimages: Array<{
+      path: string;
+      rootPath: string;
+      exists: boolean;
+      backupPath: string | null;
+    }> = [];
     try {
+      for (const artifact of normalized) {
+        const exists = await fsExtra.pathExists(artifact.path);
+        const preimage = {
+          path: artifact.path,
+          rootPath: artifact.rootPath,
+          exists,
+          backupPath: null as string | null,
+        };
+        preimages.push(preimage);
+        if (exists) {
+          const backupPath = `${artifact.path}.${process.pid}.${transactionId}.rollback`;
+          await assertExistingArtifactIsContained(artifact.rootPath, artifact.path);
+          try {
+            try {
+              await link(artifact.path, backupPath);
+            } catch {
+              // Hard links keep large graph rollback preimages constant-space on
+              // supporting filesystems. Copy is the portable cross-device and
+              // Windows fallback.
+              await copyFile(artifact.path, backupPath);
+            }
+            preimage.backupPath = backupPath;
+          } catch (error) {
+            await fsExtra.remove(backupPath).catch(() => undefined);
+            throw error;
+          }
+        }
+      }
       for (let index = 0; index < normalized.length; index += 1) {
         const artifact = normalized[index];
-        await replaceArtifactAtomically(workspacePath, artifact.path, (temporaryPath) =>
+        await replaceArtifactAtomically(artifact.rootPath, artifact.path, (temporaryPath) =>
           fsExtra.writeJson(temporaryPath, artifact.payload, { spaces: 2 })
         );
         const failAfter = Number(process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER ?? 0);
@@ -337,18 +387,22 @@ export async function writeWorkspaceArtifactJsonSet(
         }
       }
       for (const artifact of normalized) {
-        emitActivityArtifact({ workspacePath, relativePath: artifact.relativePath });
+        emitActivityArtifact({
+          workspacePath: artifact.rootPath,
+          relativePath: artifact.relativePath,
+        });
       }
       return normalized.map((artifact) => artifact.path);
     } catch (error) {
       const restorations = await Promise.allSettled(
         preimages.map(async (preimage) => {
-          if (!preimage.exists || preimage.contents === null) {
+          if (!preimage.exists) {
             await fsExtra.remove(preimage.path);
             return;
           }
-          await replaceArtifactAtomically(workspacePath, preimage.path, (temporaryPath) =>
-            fsExtra.writeFile(temporaryPath, preimage.contents as Buffer)
+          if (!preimage.backupPath) return;
+          await replaceArtifactAtomically(preimage.rootPath, preimage.path, (temporaryPath) =>
+            copyFile(preimage.backupPath as string, temporaryPath)
           );
         })
       );
@@ -362,6 +416,14 @@ export async function writeWorkspaceArtifactJsonSet(
         );
       }
       throw error;
+    } finally {
+      await Promise.all(
+        preimages.map((preimage) =>
+          preimage.backupPath
+            ? fsExtra.remove(preimage.backupPath).catch(() => undefined)
+            : Promise.resolve()
+        )
+      );
     }
   });
 }

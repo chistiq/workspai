@@ -23,6 +23,7 @@ import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
   hasNativeWorkspaceTopology,
+  isWorkspaiManagedLinkedProjectMetadata,
   type BackendFrameworkDetection,
   type BackendPlatformKey,
   type BackendImportStack,
@@ -3975,7 +3976,9 @@ async function checkProjectUnnormalized(
         health.name = canonicalProjectName.trim();
       }
       // Support both 'kit' (legacy) and 'kit_name' (new generator) fields
-      const kitValue = (projectJsonData?.kit_name || projectJsonData?.kit) as string | undefined;
+      const kitValue = isWorkspaiManagedLinkedProjectMetadata(projectJsonData)
+        ? undefined
+        : ((projectJsonData?.kit_name || projectJsonData?.kit) as string | undefined);
       if (kitValue) {
         health.kit = kitValue;
       }
@@ -4040,22 +4043,6 @@ async function checkProjectUnnormalized(
   const isScalaProject = await fsExtra.pathExists(buildSbtPath);
   const isDenoProject =
     (await fsExtra.pathExists(denoJsonPath)) || (await fsExtra.pathExists(denoJsoncPath));
-  let isDotnetProject = projectJsonData?.runtime === 'dotnet';
-  try {
-    isDotnetProject =
-      isDotnetProject ||
-      (await hasFileWithSuffixWithinDepth(projectPath, '.csproj', 3)) ||
-      (await hasFileWithSuffixWithinDepth(projectPath, '.sln', 2));
-  } catch {
-    isDotnetProject = projectJsonData?.runtime === 'dotnet';
-  }
-
-  const isGoProject =
-    (await fsExtra.pathExists(goModPath)) ||
-    projectJsonData?.runtime === 'go' ||
-    (typeof projectJsonData?.kit_name === 'string' &&
-      ((projectJsonData.kit_name as string).startsWith('gofiber') ||
-        (projectJsonData.kit_name as string).startsWith('gogin')));
 
   const isBunProject =
     isNodeProject &&
@@ -4091,18 +4078,11 @@ async function checkProjectUnnormalized(
   const isCompositeContainerBoundary =
     !hasRootRuntimeManifest && nestedRuntimeCandidates.length >= 2;
 
-  const kotlinBuildPath = path.join(projectPath, 'build.gradle.kts');
-  const isKotlinProject =
-    projectJsonData?.runtime === 'kotlin' ||
-    (await fsExtra.pathExists(path.join(projectPath, 'settings.gradle.kts'))) ||
-    ((await fsExtra.pathExists(kotlinBuildPath)) &&
-      ((await findFileByName(projectPath, { suffix: '.kt', under: ['src', '.'] })) ||
-        (await readFileIfExists(kotlinBuildPath)).includes('kotlin')));
-
   const primaryBackendDetection = detectBackendFrameworkFromProject(
     projectPath,
     projectJsonData ?? null
   );
+  const primaryRuntime = primaryBackendDetection.runtime;
 
   if (isCompositeContainerBoundary) {
     applyBackendFrameworkDetection(health, primaryBackendDetection);
@@ -4148,7 +4128,7 @@ async function checkProjectUnnormalized(
   }
 
   // Go project checks (Fiber or Gin)
-  if (isGoProject) {
+  if (primaryRuntime === 'go') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4184,13 +4164,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  const isJavaProject =
-    (!isKotlinProject && (await fsExtra.pathExists(pomXmlPath))) ||
-    projectJsonData?.runtime === 'java' ||
-    (typeof projectJsonData?.kit_name === 'string' &&
-      (projectJsonData.kit_name as string).startsWith('springboot'));
-
-  if (isKotlinProject) {
+  if (primaryRuntime === 'kotlin') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4223,7 +4197,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isJavaProject) {
+  if (primaryRuntime === 'java') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4332,7 +4306,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isRustProject) {
+  if (primaryRuntime === 'rust') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4360,7 +4334,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isElixirProject) {
+  if (primaryRuntime === 'elixir') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4388,7 +4362,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isClojureProject) {
+  if (primaryRuntime === 'clojure') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4422,7 +4396,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isScalaProject) {
+  if (primaryRuntime === 'scala') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4448,7 +4422,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isDenoProject) {
+  if (primaryRuntime === 'deno') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4468,7 +4442,7 @@ async function checkProjectUnnormalized(
   }
 
   // Node.js project checks
-  if (isNodeProject) {
+  if (primaryRuntime === 'node' || primaryRuntime === 'bun') {
     let packageJsonData: Record<string, unknown> | null = null;
     try {
       packageJsonData = await fsExtra.readJson(packageJsonPath);
@@ -4629,7 +4603,7 @@ async function checkProjectUnnormalized(
   }
 
   // Python/FastAPI project checks
-  if (isPythonProject) {
+  if (primaryRuntime === 'python') {
     const pythonDetection = await detectPythonFramework(projectPath, projectJsonData);
     applyFrameworkMetadata(health, pythonDetection.framework, pythonDetection.confidence);
 
@@ -4781,7 +4755,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isPhpProject) {
+  if (primaryRuntime === 'php') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4806,7 +4780,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isRubyProject) {
+  if (primaryRuntime === 'ruby') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4832,7 +4806,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isDotnetProject) {
+  if (primaryRuntime === 'dotnet') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -5184,53 +5158,6 @@ async function listDirectories(basePath: string): Promise<string[]> {
       return [];
     }
   }
-}
-
-async function hasFileWithSuffixWithinDepth(
-  basePath: string,
-  suffix: string,
-  maxDepth: number
-): Promise<boolean> {
-  const queue: Array<{ dir: string; depth: number }> = [{ dir: basePath, depth: 0 }];
-  const ignoredDirs = new Set([
-    '.git',
-    '.workspai',
-    '.rapidkit',
-    'node_modules',
-    'bin',
-    'obj',
-    'target',
-  ]);
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || current.depth > maxDepth) {
-      continue;
-    }
-
-    let entries;
-    try {
-      entries = await fsExtra.readdir(current.dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.toLowerCase().endsWith(suffix.toLowerCase())) {
-        return true;
-      }
-
-      if (
-        entry.isDirectory() &&
-        !ignoredDirs.has(entry.name) &&
-        !isPythonVirtualEnvironmentDirectory(entry.name)
-      ) {
-        queue.push({ dir: path.join(current.dir, entry.name), depth: current.depth + 1 });
-      }
-    }
-  }
-
-  return false;
 }
 
 async function hasRapidkitProjectMarkers(projectPath: string): Promise<boolean> {

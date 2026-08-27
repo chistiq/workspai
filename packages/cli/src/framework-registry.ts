@@ -31,6 +31,11 @@ export type RuntimeFamily =
   | 'cpp'
   | 'elixir'
   | 'ruby'
+  | 'clojure'
+  | 'scala'
+  | 'kotlin'
+  | 'deno'
+  | 'bun'
   | 'jvm-generic'
   | 'unknown';
 
@@ -504,6 +509,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: ['cmake -S . -B build'],
     elixir: ['mix deps.get'],
     ruby: ['bundle install'],
+    clojure: ['clojure -P'],
+    scala: ['sbt update'],
+    kotlin: ['./gradlew dependencies', 'gradle dependencies'],
+    deno: [],
+    bun: ['bun install'],
     'jvm-generic': ['mvn dependency:go-offline', 'gradle dependencies'],
     unknown: [],
   },
@@ -520,6 +530,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: ['ctest --test-dir build --output-on-failure'],
     elixir: ['mix test'],
     ruby: ['rspec', 'ruby -m minitest'],
+    clojure: ['clojure -X:test'],
+    scala: ['sbt test'],
+    kotlin: ['./gradlew test', 'gradle test'],
+    deno: ['deno task test', 'deno test'],
+    bun: ['bun test', 'bun run test'],
     'jvm-generic': ['mvn test', 'gradle test'],
     unknown: [],
   },
@@ -536,6 +551,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: ['cmake --build build'],
     elixir: ['mix compile'],
     ruby: ['gem build *.gemspec'],
+    clojure: [],
+    scala: ['sbt compile'],
+    kotlin: ['./gradlew build', 'gradle build'],
+    deno: ['deno task build'],
+    bun: ['bun run build'],
     'jvm-generic': ['mvn package -DskipTests', 'gradle build'],
     unknown: [],
   },
@@ -552,6 +572,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: [],
     elixir: ['mix phx.server', 'iex -S mix'],
     ruby: ['rails server', 'ruby app.rb', 'bundle exec puma'],
+    clojure: ['clojure -M:run'],
+    scala: ['sbt run'],
+    kotlin: ['./gradlew run', 'gradle run'],
+    deno: ['deno task start', 'deno task dev'],
+    bun: ['bun run start', 'bun run dev'],
     'jvm-generic': ['java -jar *.jar', 'gradle run'],
     unknown: [],
   },

@@ -29,6 +29,9 @@
           "enum": ["managed", "adopted", "imported", "linked", "restored"]
         },
         "contract": { "const": "workspace:.workspai/workspace.contract.json" },
+        "projectKnowledgeGraph": {
+          "const": ".workspai/reports/workspace-knowledge-graph.json"
+        },
         "model": { "const": "workspace:.workspai/reports/workspace-model.json" },
         "knowledgeGraph": {
           "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"

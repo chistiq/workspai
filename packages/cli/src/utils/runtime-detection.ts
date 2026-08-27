@@ -4,6 +4,7 @@ import path from 'path';
 import {
   detectBackendFrameworkFromProject,
   detectBackendFrameworkFromHints,
+  isWorkspaiManagedLinkedProjectMetadata,
 } from './backend-framework-contract.js';
 import { projectMetadataCandidates } from './workspace-paths.js';
 
@@ -13,15 +14,23 @@ export function detectBackendRuntime(
   projectJson: RapidkitProjectJson,
   projectPath: string
 ): string {
+  const authoredProjectJson = isWorkspaiManagedLinkedProjectMetadata(projectJson)
+    ? null
+    : projectJson;
   const hinted = detectBackendFrameworkFromHints({
-    runtime: typeof projectJson?.runtime === 'string' ? (projectJson.runtime as string) : undefined,
+    runtime:
+      typeof authoredProjectJson?.runtime === 'string'
+        ? (authoredProjectJson.runtime as string)
+        : undefined,
     framework:
-      typeof projectJson?.framework === 'string' ? (projectJson.framework as string) : undefined,
+      typeof authoredProjectJson?.framework === 'string'
+        ? (authoredProjectJson.framework as string)
+        : undefined,
     kitName:
-      typeof projectJson?.kit_name === 'string'
-        ? (projectJson.kit_name as string)
-        : typeof projectJson?.kit === 'string'
-          ? (projectJson.kit as string)
+      typeof authoredProjectJson?.kit_name === 'string'
+        ? (authoredProjectJson.kit_name as string)
+        : typeof authoredProjectJson?.kit === 'string'
+          ? (authoredProjectJson.kit as string)
           : undefined,
   });
 
@@ -29,7 +38,7 @@ export function detectBackendRuntime(
     return hinted.runtime;
   }
 
-  return detectBackendFrameworkFromProject(projectPath, projectJson).runtime;
+  return detectBackendFrameworkFromProject(projectPath, authoredProjectJson).runtime;
 }
 
 export function readRapidkitProjectJson(start: string): RapidkitProjectJson {

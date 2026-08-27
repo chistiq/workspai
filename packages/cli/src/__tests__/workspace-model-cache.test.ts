@@ -1,11 +1,19 @@
 import path from 'path';
 import os from 'os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import fsExtra from 'fs-extra';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildWorkspaceModelCached } from '../workspace-model.js';
-import { WORKSPACE_MODEL_CACHE_PATH, readWorkspaceModelCache } from '../workspace-model-cache.js';
+import {
+  WORKSPACE_MODEL_CACHE_PATH,
+  computeProjectSignatures,
+  readWorkspaceModelCache,
+} from '../workspace-model-cache.js';
+
+const execFileAsync = promisify(execFile);
 
 let workspacePath: string;
 
@@ -94,5 +102,37 @@ describe('workspace model cache (1.15)', () => {
     expect(next.cache).toBe('miss');
     const refreshed = await readWorkspaceModelCache(workspacePath);
     expect(refreshed?.producerRevision).toBe('workspace-model-producer.v3');
+  });
+
+  it('uses Git content identity while detecting dirty and untracked polyglot source', async () => {
+    await fsExtra.outputFile(path.join(workspacePath, 'api', 'app.rb'), 'class App; end\n');
+    await execFileAsync('/usr/bin/git', ['init'], { cwd: workspacePath });
+    await execFileAsync('/usr/bin/git', ['config', 'user.email', 'tests@workspai.dev'], {
+      cwd: workspacePath,
+    });
+    await execFileAsync('/usr/bin/git', ['config', 'user.name', 'Workspai Tests'], {
+      cwd: workspacePath,
+    });
+    await execFileAsync('/usr/bin/git', ['add', '.'], { cwd: workspacePath });
+    await execFileAsync('/usr/bin/git', ['commit', '-m', 'fixture'], { cwd: workspacePath });
+
+    const initial = await computeProjectSignatures(workspacePath, [
+      path.join(workspacePath, 'api'),
+    ]);
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'app.rb'),
+      'class App; def ready? = true; end\n'
+    );
+    const dirty = await computeProjectSignatures(workspacePath, [path.join(workspacePath, 'api')]);
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'worker.go'),
+      'package api\nfunc Ready() bool { return true }\n'
+    );
+    const untracked = await computeProjectSignatures(workspacePath, [
+      path.join(workspacePath, 'api'),
+    ]);
+
+    expect(dirty.api).not.toBe(initial.api);
+    expect(untracked.api).not.toBe(dirty.api);
   });
 });

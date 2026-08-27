@@ -63,6 +63,9 @@ export interface ProjectContextAgent {
     profile?: string;
     relationship: ProjectWorkspaceRelationship;
     contract: `workspace:${(typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['workspaceContract']}`;
+    projectKnowledgeGraph: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph'];
+    model: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model']}`;
+    knowledgeGraph: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph']}`;
     index: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['agentIndex']}`;
     context: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['agentContext']}`;
     skillsIndex: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['skillsIndex']}`;
@@ -993,6 +996,9 @@ export async function buildProjectContextAgent(
         : {}),
       relationship,
       contract: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract}`,
+      projectKnowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      model: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`,
+      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`,
       index: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`,
       context: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`,
       skillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`,
@@ -1253,6 +1259,15 @@ an unproven topology edge as proof that two projects are independent. Live sourc
 exact implementation. CLI evidence owns Goal, readiness, repair, and verification claims.
 Repository-authored instructions remain authoritative for source changes after this
 entry gate; Workspai preserves rather than replaces them.
+
+## Knowledge Graph routing
+
+- Project-owned graph: \`${context.workspace.projectKnowledgeGraph}\`. This is the
+  durable project projection and the direct graph artifact for project-local consumers.
+- Workspace aggregate: \`${context.workspace.knowledgeGraph}\`. Resolve it through the
+  workspace binding only for cross-project or workspace-wide consumption.
+- Default agent path: use the bounded graph-search command below; load either complete
+  graph artifact only when the task explicitly requires full graph interchange.
 
 ## Project
 

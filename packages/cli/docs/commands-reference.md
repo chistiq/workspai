@@ -218,7 +218,10 @@ the same runtime remains part of baseline and verification identity.
 `agent bootstrap` is the project-local canonical-first preflight. It validates
 the host discovery route, project/workspace binding, public artifact schemas,
 integrity hashes, Model/Graph freshness, live source inputs, and active Goal
-handoff before broad repository discovery. `project agent-entry verify` uses
+handoff before broad repository discovery. It also proves that the local
+project graph is the exact current projection of the canonical workspace
+aggregate; a missing, stale, foreign, or tampered shard blocks architecture
+claims. `project agent-entry verify` uses
 the same receipt and can audit every supported host with `--for-agent all`.
 Blocked receipts exit `2`; strict mode also maps degraded evidence to exit `2`.
 See [Canonical-first agent entry](./agent-entry.md).
@@ -288,11 +291,15 @@ are suitable for IDE dashboards and conform to
 `workspace-intelligence-evaluation.v1`.
 
 `workspace model --write` also materializes the derived, contract-validated
-knowledge graph at `.workspai/reports/workspace-knowledge-graph.json`. The
-unified intelligence runner treats that artifact as a required output of the
-Model step, so CI, IDE adapters, agent grounding, and MCP all observe the same
-revision. Agent contexts carry its reference, quality counts, and bounded query
-commands instead of copying the entire graph into every prompt. MCP exposes
+knowledge graph as the complete workspace aggregate at
+`<workspace>/.workspai/reports/workspace-knowledge-graph.json` and as a scoped,
+project-owned artifact at the same relative path inside every registered
+project. The unified intelligence runner treats the aggregate and its project
+shards as one atomic Model-stage revision, so CI, IDE adapters, agent grounding,
+and MCP cannot observe a partially published graph set. Agent contexts identify
+both the project-owned artifact and the workspace aggregate, while keeping
+bounded search as the default retrieval path instead of copying either complete
+graph into every prompt. MCP exposes
 `getWorkspaceKnowledgeGraph`, `searchWorkspaceGraph`, `queryWorkspaceEntities`,
 `getWorkspaceGraphEvidence`, and `findWorkspaceGraphPath`.
 

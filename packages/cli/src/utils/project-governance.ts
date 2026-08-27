@@ -58,7 +58,15 @@ const REPOSITORY_SURFACES = {
     'build/release.sh',
     'hack/lib/release.sh',
   ],
-  ownership: ['.github/CODEOWNERS', 'CODEOWNERS', 'OWNERS', 'OWNERS_ALIASES', 'MAINTAINERS'],
+  ownership: [
+    '.github/CODEOWNERS',
+    '.gitlab/CODEOWNERS',
+    'CODEOWNERS',
+    'docs/CODEOWNERS',
+    'OWNERS',
+    'OWNERS_ALIASES',
+    'MAINTAINERS',
+  ],
 } as const;
 
 const RELEASE_WORKFLOW_NAME_PATTERN =

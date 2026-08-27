@@ -175,6 +175,50 @@ describe('workspace intelligence model', () => {
     expect(model.summary.runtimes).toEqual(['dotnet', 'go', 'node', 'python']);
   });
 
+  it('keeps internal and external linked projects semantically equivalent after managed re-detection', async () => {
+    const workspacePath = await makeTempDir('rk-model-internal-polyglot-adopted-');
+    const projectPath = path.join(workspacePath, 'application');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'application-platform',
+      profile: 'polyglot',
+    });
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'application',
+      kind: 'frontend',
+      runtime: 'node',
+      runtime_candidates: ['node', 'go', 'ruby'],
+      framework: 'vue',
+      kit_name: 'adopted.vue',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'Gemfile'),
+      "source 'https://rubygems.org'\ngem 'rails'\n"
+    );
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'application-assets',
+      dependencies: { vue: '^3.0.0' },
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'components', 'gateway', 'go.mod'),
+      'module example.test/gateway\n'
+    );
+
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+
+    expect(model.projects[0]).toMatchObject({
+      name: 'application',
+      kind: 'backend',
+      runtime: 'ruby',
+      framework: 'rails',
+      runtimeCandidates: ['ruby', 'go', 'node'],
+    });
+    expect(model.identity.runtimeFamilies).toEqual(['go', 'node', 'ruby']);
+  });
+
   it('treats contract-declared projects as canonical inventory and reports missing roots', async () => {
     const workspacePath = await makeTempDir('rk-model-contract-inventory-');
     await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
@@ -879,6 +923,221 @@ describe('workspace intelligence model', () => {
         secretValuesEmitted: false,
       },
     });
+  });
+
+  it('publishes project-owned graph shards and keeps the workspace graph aggregated', async () => {
+    const workspacePath = await makeTempDir('rk-model-project-graphs-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'commerce-platform',
+      workspace_name: 'commerce-platform',
+      profile: 'polyglot',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, 'api', 'package.json'), {
+      name: 'api',
+      version: '1.0.0',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, 'web', 'package.json'), {
+      name: 'web',
+      version: '1.0.0',
+      dependencies: { api: 'workspace:*' },
+    });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'src', 'server.ts'),
+      'export const apiPort = 8080;\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'client.ts'),
+      "import { apiPort } from '../../api/src/server';\nexport { apiPort };\n"
+    );
+
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await writeWorkspaceModel(model, workspacePath);
+
+    const aggregate = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+    );
+    expect(
+      aggregate.entities.some((entity: { projectId?: string }) => entity.projectId === 'api')
+    ).toBe(true);
+    expect(
+      aggregate.entities.some((entity: { projectId?: string }) => entity.projectId === 'web')
+    ).toBe(true);
+
+    for (const projectName of ['api', 'web']) {
+      const projectGraphPath = path.join(
+        workspacePath,
+        projectName,
+        WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+      );
+      const projectGraph = await fsExtra.readJson(projectGraphPath);
+      const foreignProject = projectName === 'api' ? 'web' : 'api';
+      expect(
+        projectGraph.entities.some(
+          (entity: { projectId?: string }) => entity.projectId === projectName
+        )
+      ).toBe(true);
+      expect(projectGraph.source.hash).toBe(aggregate.source.hash);
+      expect(projectGraph.quality.entityCount).toBe(projectGraph.entities.length);
+      expect(projectGraph.quality.relationCount).toBe(projectGraph.relations.length);
+      expect(projectGraph.quality.proofCount).toBe(projectGraph.proofs.length);
+      expect(projectGraph.quality.providerSuccessRatio).toBe(
+        aggregate.quality.providerSuccessRatio
+      );
+      expect(projectGraph.quality.bindingCoverage).toBeDefined();
+
+      const entityIds = new Set(projectGraph.entities.map((entity: { id: string }) => entity.id));
+      const ownedEntityIds = new Set(
+        projectGraph.entities
+          .filter((entity: { projectId?: string }) => entity.projectId === projectName)
+          .map((entity: { id: string }) => entity.id)
+      );
+      const foreignEntities = projectGraph.entities.filter(
+        (entity: { projectId?: string }) => entity.projectId === foreignProject
+      );
+      expect(
+        foreignEntities.every((entity: { id: string }) =>
+          projectGraph.relations.some(
+            (relation: { from: string; to: string }) =>
+              (relation.from === entity.id && ownedEntityIds.has(relation.to)) ||
+              (relation.to === entity.id && ownedEntityIds.has(relation.from))
+          )
+        )
+      ).toBe(true);
+      const proofIds = new Set(projectGraph.proofs.map((proof: { id: string }) => proof.id));
+      expect(
+        projectGraph.relations.every(
+          (relation: { from: string; to: string }) =>
+            entityIds.has(relation.from) && entityIds.has(relation.to)
+        )
+      ).toBe(true);
+      expect(
+        [...projectGraph.entities, ...projectGraph.relations].every(
+          (entry: { proofIds: string[] }) => entry.proofIds.every((id) => proofIds.has(id))
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('publishes a project graph beside an external sibling project', async () => {
+    const fixtureRoot = await makeTempDir('rk-model-external-project-');
+    const workspacePath = path.join(fixtureRoot, 'workspace');
+    const originalProjectPath = path.join(workspacePath, 'grpc');
+    const externalProjectPath = path.join(fixtureRoot, 'grpc');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'grpc-lab',
+      workspace_name: 'grpc-lab',
+    });
+    await fsExtra.outputJson(path.join(originalProjectPath, 'package.json'), {
+      name: 'grpc',
+      version: '1.0.0',
+    });
+    await fsExtra.outputFile(
+      path.join(originalProjectPath, 'src', 'server.ts'),
+      'export const service = "grpc";\n'
+    );
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await fsExtra.move(originalProjectPath, externalProjectPath);
+    model.projects[0].path = '../grpc';
+    for (const topology of [model.projectTopology, model.graph]) {
+      const node = topology?.nodes.find((candidate) => candidate.id === model.projects[0].name);
+      if (node) node.path = '../grpc';
+    }
+
+    await writeWorkspaceModel(model, workspacePath);
+
+    const projectGraph = await fsExtra.readJson(
+      path.join(externalProjectPath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+    );
+    expect(projectGraph.entities).toEqual(
+      expect.arrayContaining([expect.objectContaining({ projectId: model.projects[0].name })])
+    );
+    expect(
+      await fsExtra.pathExists(
+        path.join(workspacePath, 'grpc', WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+      )
+    ).toBe(false);
+  });
+
+  it('does not recreate a missing project root while publishing graph artifacts', async () => {
+    const workspacePath = await makeTempDir('rk-model-missing-project-graph-');
+    const projectPath = path.join(workspacePath, 'retired-service');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'retirement-lab',
+      workspace_name: 'retirement-lab',
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'retired-service',
+      version: '1.0.0',
+    });
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await fsExtra.remove(projectPath);
+
+    await writeWorkspaceModel(model, workspacePath);
+
+    expect(await fsExtra.pathExists(projectPath)).toBe(false);
+    const aggregate = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+    );
+    expect(
+      aggregate.entities.some(
+        (entity: { projectId?: string }) => entity.projectId === model.projects[0].name
+      )
+    ).toBe(true);
+  });
+
+  it('rolls back workspace and project graph revisions as one transaction', async () => {
+    const workspacePath = await makeTempDir('rk-model-project-graph-transaction-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'transaction-lab',
+      workspace_name: 'transaction-lab',
+    });
+    for (const projectName of ['api', 'web']) {
+      await fsExtra.outputJson(path.join(workspacePath, projectName, 'package.json'), {
+        name: projectName,
+        version: '1.0.0',
+      });
+    }
+    const first = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await writeWorkspaceModel(first, workspacePath);
+    const paths = [
+      path.join(workspacePath, WORKSPACE_MODEL_REPORT_PATH),
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph),
+      ...['api', 'web'].map((projectName) =>
+        path.join(workspacePath, projectName, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+      ),
+    ];
+    const preimages = await Promise.all(
+      paths.map((artifactPath) => fsExtra.readFile(artifactPath))
+    );
+    const second = { ...first, generatedAt: '2026-08-27T00:00:00.000Z' };
+
+    process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER = '3';
+    try {
+      await expect(writeWorkspaceModel(second, workspacePath)).rejects.toThrow(
+        'Injected artifact-set failure'
+      );
+    } finally {
+      delete process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER;
+    }
+
+    const restored = await Promise.all(paths.map((artifactPath) => fsExtra.readFile(artifactPath)));
+    expect(restored).toEqual(preimages);
+    for (const artifactPath of paths) {
+      const siblings = await fsExtra.readdir(path.dirname(artifactPath));
+      expect(siblings.some((name) => name.endsWith('.rollback'))).toBe(false);
+    }
   });
 
   it('rolls back model and knowledge graph as one publication transaction', async () => {

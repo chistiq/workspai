@@ -570,6 +570,68 @@ describe('workspace contract registry', () => {
     expect(result.updatedProjects).toEqual(['native-service']);
   });
 
+  it('migrates an internal linked adoption from workspace source without preserving stale identity', async () => {
+    const workspacePath = await makeTempDir('rk-contract-refresh-internal-ws-');
+    const projectPath = path.join(workspacePath, 'application');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'refresh-internal-ws',
+    });
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'application',
+      runtime: 'ruby',
+      framework: 'rails',
+      kit_name: 'adopted.rails',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'application',
+        path: projectPath,
+        relativePath: 'application',
+        relationship: 'adopted',
+        source: 'adopted-local',
+        stack: 'rails',
+        runtime: 'ruby',
+        framework: 'rails',
+        frameworkDisplayName: 'Ruby on Rails',
+        supportTier: 'extended',
+        moduleSupport: false,
+        confidence: 'high',
+        importedAt: '2026-08-26T00:00:00.000Z',
+      },
+    ]);
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'refresh-internal-ws' },
+      projects: [
+        {
+          slug: 'application',
+          relativePath: 'application',
+          source: 'workspace',
+          runtime: 'node',
+          framework: 'vue',
+          kit: 'adopted.vue',
+          modules: [],
+          ports: [],
+          contracts: { owns: [], apis: [], publishes: [], consumes: [], dependsOn: [], env: [] },
+        },
+      ],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+
+    expect(result.contract.projects[0]).toMatchObject({
+      source: 'adopted-local',
+      relationship: 'adopted',
+      relativePath: 'application',
+      runtime: 'ruby',
+      framework: 'rails',
+      kit: 'adopted.rails',
+    });
+    expect(result.updatedProjects).toEqual(['application']);
+  });
+
   it('fails verification for colliding ports and unknown dependencies', async () => {
     const workspacePath = await makeTempDir('rk-contract-fail-');
     await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {

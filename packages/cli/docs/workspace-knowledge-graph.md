@@ -207,17 +207,17 @@ Graph that produced them or become circular architecture evidence.
 
 ## Pick the command by question
 
-| You want to know…                                    | Use                                                     |
-| ---------------------------------------------------- | ------------------------------------------------------- |
-| What is relevant to a natural-language question?     | `workspace graph search <query> --limit <n> --json`     |
+| You want to know…                                    | Use                                                                           |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| What is relevant to a natural-language question?     | `workspace graph search <query> --limit <n> --json`                           |
 | Which entities of one type exist?                    | `workspace graph entities <kind> [--scope project:name] [--limit <n>] --json` |
-| Why does Workspai believe an item exists?            | `workspace graph evidence <entity-or-relation> --json`  |
-| How are two things connected?                        | `workspace graph path <from> <to> --json`               |
-| What changed between graph revisions?                | `workspace graph overlay --from <graph.json> --json`    |
-| What is the full portable graph?                     | `workspace graph emit --output graph.json --json`       |
-| How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`        |
-| How do I export to semantic or graph-analysis tools? | `workspace graph jsonld\|graphml\|gexf --output <file>` |
-| How much retrieval payload did one query avoid?      | `workspace graph benchmark <query> --limit <n> --json`  |
+| Why does Workspai believe an item exists?            | `workspace graph evidence <entity-or-relation> --json`                        |
+| How are two things connected?                        | `workspace graph path <from> <to> --json`                                     |
+| What changed between graph revisions?                | `workspace graph overlay --from <graph.json> --json`                          |
+| What is the full portable graph?                     | `workspace graph emit --output graph.json --json`                             |
+| How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`                              |
+| How do I export to semantic or graph-analysis tools? | `workspace graph jsonld\|graphml\|gexf --output <file>`                       |
+| How much retrieval payload did one query avoid?      | `workspace graph benchmark <query> --limit <n> --json`                        |
 
 `graph emit --json` writes the complete dependency and Knowledge Graph to
 stdout and can be very large. Automation, IDEs, and agents should pass
@@ -333,9 +333,10 @@ in `project.runtimeCandidates` and aggregates them into
 monorepo's internal services, contracts, delivery surfaces, and proofs without
 pretending that the primary runtime describes the whole repository.
 
-The two artifacts are published under one workspace lock using a
-rollback-capable artifact transaction. Each file replacement is atomic; if any
-write fails, Workspai restores both preimages. `graph.source.kind` is fixed to
+The model, workspace aggregate, and all project graph artifacts are published
+under one workspace lock using a rollback-capable multi-root artifact
+transaction. Each file replacement is atomic; if any write fails, Workspai
+restores every preimage. `graph.source.kind` is fixed to
 `workspace-model`, `graph.source.artifact` is fixed to
 `.workspai/reports/workspace-model.json`, and `graph.source.hash` contains the
 stable structural hash of the persisted model. A current-state consumer must
@@ -415,13 +416,25 @@ into a false “complete” claim.
 
 ## Outputs and consumers
 
-`workspace model --write` publishes these two artifacts as one locked,
-rollback-capable artifact set:
+`workspace model --write` publishes the canonical model, the complete workspace
+aggregate, and one project-owned scoped graph for every registered project as
+one locked, rollback-capable multi-root artifact set:
 
 ```text
-.workspai/reports/workspace-model.json
-.workspai/reports/workspace-knowledge-graph.json
+<workspace>/.workspai/reports/workspace-model.json
+<workspace>/.workspai/reports/workspace-knowledge-graph.json
+<project>/.workspai/reports/workspace-knowledge-graph.json
 ```
+
+The workspace artifact aggregates all registered project graphs and preserves
+cross-project relations for workspace-level Graph, Doctor, Context, Goal, and
+MCP consumers. Each project artifact contains the complete project-owned entity
+and evidence surface plus directly connected shared or foreign boundary
+entities required to keep its relations resolvable. It never copies the full
+graph of another project. Nested and external projects follow the same rule. If
+the project root and workspace root are identical, the aggregate is written
+once and serves both scopes. Any failure restores the model, aggregate, and all
+project graph preimages together.
 
 The Knowledge Graph is consumed by:
 
@@ -444,7 +457,11 @@ The Knowledge Graph is consumed by:
 
 The complete graph is an interchange artifact, not a prompt. Agents should
 start with `INDEX.json`, use bounded search, then retrieve evidence or a path
-for the selected result.
+for the selected result. Generated `project-context-agent.json`,
+`agent-entry.v1.json`, and bootstrap receipts expose the project-owned graph
+separately from the `workspace:` aggregate. Bootstrap schema-validates the
+local graph and compares it with a fresh projection of the aggregate before it
+allows architecture claims.
 
 ### Interchange and visualization
 
@@ -526,6 +543,16 @@ It intentionally does not claim endpoint implementation: endpoint coverage
 remains unknown until a method/path or operation-id binding is proven. Consumers
 can distinguish the two guarantees through `bindingCoverage.apiRuntimeRegistration`
 and `bindingCoverage.apiImplementation`.
+
+Runtime-registration eligibility is explicit. Network and event contracts such
+as OpenAPI, server-root GraphQL schemas, AsyncAPI, and authored workspace API
+contracts participate; command palettes, console scripts, chat participants,
+shared protocol identities, and client GraphQL operations do not. GraphQL query,
+mutation, subscription, and fragment documents are modeled as proof-backed
+symbols that consume the GraphQL protocol. Only an authored root `schema` or
+non-extension `Query`, `Mutation`, or `Subscription` type establishes a
+runtime-served GraphQL API. This prevents client-heavy repositories from
+inflating API registration unknowns while preserving their operation topology.
 
 ## Measuring retrieval payload reduction
 

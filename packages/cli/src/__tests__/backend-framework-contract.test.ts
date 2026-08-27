@@ -183,6 +183,32 @@ describe('backend-framework-contract', () => {
     expect(detectRuntimeCandidatesFromProject(nativePolyglotProject)).toEqual(['python', 'cpp']);
   });
 
+  it('refreshes managed adoption detection and keeps a root backend stronger than frontend tooling', async () => {
+    const managedApplication = await createTempProject('managed-rails-vue');
+    await fs.outputFile(
+      path.join(managedApplication, 'Gemfile'),
+      "source 'https://rubygems.org'\ngem 'rails'\n"
+    );
+    await fs.outputJson(path.join(managedApplication, 'package.json'), {
+      name: 'asset-pipeline',
+      dependencies: { vue: '^3.0.0' },
+    });
+
+    expect(
+      detectBackendFrameworkFromProject(managedApplication, {
+        runtime: 'node',
+        framework: 'vue',
+        kit_name: 'adopted.vue',
+        adoption: { managed_by: 'workspai', mode: 'linked' },
+      })
+    ).toMatchObject({
+      key: 'rails',
+      runtime: 'ruby',
+      confidence: 'high',
+      source: 'manifest',
+    });
+  });
+
   it('keeps a multi-component native workspace primary over root-level Python tooling', async () => {
     const nativeWorkspace = await createTempProject('native-workspace');
     await fs.outputFile(

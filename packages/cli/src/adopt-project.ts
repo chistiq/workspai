@@ -20,6 +20,7 @@ import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-syml
 import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
+  isWorkspaiManagedLinkedProjectMetadata,
   type BackendConfidence,
   type BackendImportStack,
   type BackendRuntimeFamily,
@@ -196,12 +197,6 @@ async function readExistingProjectJson(
     return parsed as Record<string, unknown>;
   }
   return null;
-}
-
-function isWorkspaiManagedAdoption(projectJson: Record<string, unknown> | null): boolean {
-  if (!projectJson?.adoption || typeof projectJson.adoption !== 'object') return false;
-  const adoption = projectJson.adoption as Record<string, unknown>;
-  return adoption.managed_by === 'workspai' && adoption.mode === 'linked';
 }
 
 async function hasUnsafeProjectParent(projectPath: string, filePath: string): Promise<boolean> {
@@ -483,7 +478,7 @@ export async function adoptProjectIntoWorkspace(
   await assertMatchingRollbackSnapshot(rollbackSnapshot, workspacePath, projectPath);
 
   const existingProjectJson = await readExistingProjectJson(projectPath);
-  const refreshManagedDetection = isWorkspaiManagedAdoption(existingProjectJson);
+  const refreshManagedDetection = isWorkspaiManagedLinkedProjectMetadata(existingProjectJson);
   // Re-adoption must re-observe source markers instead of pinning a previous
   // Workspai-generated runtime/framework hint forever. Authored project
   // metadata remains authoritative; only managed linked adoption is refreshed.

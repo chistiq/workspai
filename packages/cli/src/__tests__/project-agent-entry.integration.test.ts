@@ -184,8 +184,11 @@ describe('canonical-first project agent entry', () => {
       activeGoal: { present: false, appliesToProject: false, status: 'none' },
       canonicalEvidence: {
         projectContext: '.workspai/reports/project-context-agent.json',
+        projectKnowledgeGraph: '.workspai/reports/workspace-knowledge-graph.json',
         workspaceIndex: 'workspace:.workspai/reports/INDEX.json',
         workspaceContext: 'workspace:.workspai/reports/workspace-context-agent.json',
+        workspaceModel: 'workspace:.workspai/reports/workspace-model.json',
+        knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
         workspaceSkillsIndex: 'workspace:.workspai/reports/workspace-skills-index.json',
         boundedGraphSearch:
           'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
@@ -213,6 +216,44 @@ describe('canonical-first project agent entry', () => {
       'workspace:.workspai/reports/workspace-skills-index.json'
     );
     expect(JSON.stringify(receipt)).not.toContain(root);
+
+    const projectContext = await fsExtra.readJson(
+      path.join(projectPath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent)
+    );
+    const agentEntry = await fsExtra.readJson(
+      path.join(projectPath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectAgentEntry)
+    );
+    expect(projectContext.workspace).toMatchObject({
+      projectKnowledgeGraph: '.workspai/reports/workspace-knowledge-graph.json',
+      model: 'workspace:.workspai/reports/workspace-model.json',
+      knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+    });
+    expect(agentEntry.canonical).toMatchObject({
+      projectKnowledgeGraph: '.workspai/reports/workspace-knowledge-graph.json',
+      workspaceModel: 'workspace:.workspai/reports/workspace-model.json',
+      knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+    });
+
+    const projectGraphPath = path.join(
+      projectPath,
+      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+    );
+    const mismatchedProjectGraph = await fsExtra.readJson(projectGraphPath);
+    mismatchedProjectGraph.quality.entityCount += 1;
+    await fsExtra.outputJson(projectGraphPath, mismatchedProjectGraph);
+    const mismatchedReceipt = await buildAgentBootstrapReceipt({
+      startPath: projectPath,
+      forAgent: 'codex',
+      now: new Date('2026-08-16T00:04:30.000Z'),
+    });
+    expect(mismatchedReceipt).toMatchObject({
+      status: 'blocked',
+      claims: { architecture: 'prohibited' },
+    });
+    expect(mismatchedReceipt.checks).toContainEqual(
+      expect.objectContaining({ id: 'project-knowledge-graph', status: 'failed' })
+    );
+    await writeWorkspaceModel(persistedModel, workspacePath);
 
     const plannedGoal = await planGoalPack({
       startPath: projectPath,

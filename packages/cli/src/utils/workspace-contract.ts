@@ -454,8 +454,12 @@ function mergeProjectContract(
   const existingPorts = existing?.ports || [];
   const discoveredPorts = discovered.ports || [];
   const nonServiceExtension = (discovered.kit || '').toLowerCase().includes('vscode-extension');
+  // Any source-bearing record is a managed discovery projection; source-less
+  // records are the authored contract authority. An internal linked adoption
+  // used to be labeled `workspace`, so allow it to migrate to adopted-local
+  // and refresh derived runtime identity on the first re-adopt as well.
   const refreshAdoptedPorts =
-    discovered.source === 'adopted-local' && existing?.source === 'adopted-local';
+    discovered.source === 'adopted-local' && existing?.source !== undefined;
   const refreshAdoptedMetadata = refreshAdoptedPorts;
   const selectedPorts =
     nonServiceExtension && discoveredPorts.length === 0
@@ -540,6 +544,9 @@ export async function buildWorkspaceContract(input: {
   const workspace = await readWorkspaceMetadata(workspacePath);
   const projectJsonFiles = await discoverProjectJsonFiles(workspacePath);
   const importedProjects = await readImportedProjectsRegistry(workspacePath);
+  const importedProjectsByPath = new Map(
+    importedProjects.map((project) => [path.resolve(project.path), project] as const)
+  );
   const externalProjectJsonFiles: Array<{
     projectJsonPath: string;
     registryEntry: ImportedProjectRegistryEntry;
@@ -562,7 +569,12 @@ export async function buildWorkspaceContract(input: {
     projectJsonPath: string;
     registryEntry?: ImportedProjectRegistryEntry;
   }> = [
-    ...projectJsonFiles.map((projectJsonPath) => ({ projectJsonPath })),
+    ...projectJsonFiles.map((projectJsonPath) => ({
+      projectJsonPath,
+      registryEntry: importedProjectsByPath.get(
+        path.resolve(path.dirname(path.dirname(projectJsonPath)))
+      ),
+    })),
     ...externalProjectJsonFiles,
   ];
 

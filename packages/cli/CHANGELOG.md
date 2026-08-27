@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added project-owned Knowledge Graph artifacts at each registered project's
+  `.workspai/reports/workspace-knowledge-graph.json`, while preserving the
+  complete workspace aggregate for cross-project consumers.
+- Expanded evidence-backed lifecycle planning to Bun, Deno, Kotlin, Scala,
+  Clojure, PHP, Ruby, and Elixir projects, including nested runtime units in
+  polyglot repositories.
+
+### Fixed
+
+- Made Workspace Model publication atomically commit or roll back the model,
+  workspace graph aggregate, and every project graph shard across nested and
+  external project roots. Project shards retain only project-owned evidence and
+  directly connected boundary entities, preventing full graphs from unrelated
+  projects from being copied into the project.
+- Made generated project context, agent-entry manifests, and bootstrap receipts
+  distinguish the project-owned graph from the workspace aggregate. Agent
+  bootstrap now blocks architecture claims when the local graph is missing,
+  invalid, stale, tampered, or not the exact canonical project projection.
+- Made `workspace graph emit` publish the canonical Workspace Model, aggregate
+  Graph, and project Graph projections together; `--refresh-graph` now bypasses
+  semantic Graph reuse instead of returning a transient, unpublished result.
+- Recognized legacy Compose v1 service maps without weakening modern Compose
+  reserved-key handling, so provider applicability cannot silently produce an
+  empty topology, and discarded unresolved `depends_on` evidence instead of
+  publishing orphan Graph proofs.
+- Registered and contract-tested `--plan` and `--runtime` for `workspace run`,
+  allowing runtime-unit plans to be inspected without executing project code.
+- Accepted natural-language and decimal coverage targets such as `80 percent`
+  and `82.5 percentage points` in Goal intent compilation.
+- Kept read-only Graph retrieval cryptographically fresh while replacing full
+  tracked-file walks with an exact Git index, worktree-diff, and safe untracked
+  content fast path; uncertain and non-Git scopes still use complete scanning.
+- Separated GraphQL executable documents from server schema contracts in the
+  Knowledge Graph. Queries and fragments are now proof-backed consumer symbols
+  instead of fabricated APIs, runtime-registration coverage is limited to
+  explicitly runtime-served surfaces, and Rails route mounts are recognized.
+
 ## [0.65.0] - 2026-08-24
 
 ### Added

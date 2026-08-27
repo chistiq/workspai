@@ -57,6 +57,19 @@ describe('project governance discovery', () => {
     expect(governance.ownership.status).toBe('unknown');
   });
 
+  it('recognizes GitLab CODEOWNERS as repository ownership evidence', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-governance-gitlab-'));
+    roots.push(root);
+    await fsExtra.outputFile(path.join(root, '.gitlab', 'CODEOWNERS'), '* @platform/owners\n');
+
+    const governance = await detectProjectGovernance({ projectPath: root });
+
+    expect(governance.ownership).toMatchObject({
+      status: 'repository',
+      evidence: ['.gitlab/CODEOWNERS'],
+    });
+  });
+
   it('discovers repository release automation from bounded workflow names and release roots', async () => {
     const workflowRoot = await fsExtra.mkdtemp(
       path.join(os.tmpdir(), 'workspai-governance-release-workflow-')

@@ -161,6 +161,25 @@ describe('goal pack pure kernel', () => {
     expect(goalPack.successCriteria[0]?.producerCommand).toContain('--runtime cpp');
   });
 
+  it('accepts natural-language and decimal coverage targets without losing precision', () => {
+    expect(
+      compileGoalIntent('Raise Ruby test coverage to 80 percent', {
+        availableCoverageRuntimes: ['ruby'],
+      })
+    ).toMatchObject({
+      ambiguities: [],
+      requestedTarget: { value: 80, runtime: 'ruby' },
+    });
+    expect(
+      compileGoalIntent('Raise Python coverage by at least 82.5 percentage points', {
+        availableCoverageRuntimes: ['python'],
+      })
+    ).toMatchObject({
+      ambiguities: [],
+      requestedTarget: { value: 82.5, runtime: 'python' },
+    });
+  });
+
   it('uses structured common runtime choices in the user decision', () => {
     const candidate = input('Raise test coverage to 85%');
     candidate.intent = compileGoalIntent(candidate.intent.original, {

@@ -193,6 +193,10 @@ describe('workspace knowledge graph', () => {
       ].join('\n')
     );
     await fsExtra.outputFile(
+      path.join(root, 'api', 'compose.yml'),
+      ['legacy-cache:', '  image: redis:7', '  depends_on:', '    - api'].join('\n')
+    );
+    await fsExtra.outputFile(
       path.join(root, '.github', 'workflows', 'ci.yml'),
       'name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n'
     );
@@ -2166,7 +2170,7 @@ describe('workspace knowledge graph', () => {
   it('distinguishes non-applicable providers from applicable providers with empty output', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-provider-quality-'));
     tempDirs.push(root);
-    await fsExtra.outputFile(path.join(root, '.github', 'CODEOWNERS'), '# no owners declared\n');
+    await fsExtra.outputFile(path.join(root, '.gitlab', 'CODEOWNERS'), '# no owners declared\n');
     const graph = await buildWorkspaceKnowledgeGraph({
       workspacePath: root,
       workspace: { name: 'empty' },
@@ -2375,7 +2379,7 @@ describe('workspace knowledge graph', () => {
 
     expect(graph.providers.find((provider) => provider.id === 'codeowners')).toMatchObject({
       status: 'passed',
-      version: '1.1.0',
+      version: '1.2.0',
     });
     expect(
       graph.entities.some((entity) => entity.kind === 'owner' && entity.label === '@platform-admin')
@@ -2633,6 +2637,7 @@ describe('workspace knowledge graph', () => {
         'api',
         'endpoint',
         'schema',
+        'protocol',
         'service',
         'container',
         'database',
@@ -2720,12 +2725,19 @@ describe('workspace knowledge graph', () => {
       )
     ).toBe(true);
     expect(graph.proofs.every((proof) => !path.isAbsolute(proof.artifact))).toBe(true);
+    const referencedProofIds = new Set(
+      [...graph.entities, ...graph.relations].flatMap((entry) => entry.proofIds)
+    );
+    expect(graph.proofs.every((proof) => referencedProofIds.has(proof.id))).toBe(true);
     expect(JSON.stringify(graph)).not.toContain('never-export-this');
     expect(JSON.stringify(graph)).not.toContain('postgres://user:secret');
     expect(JSON.stringify(graph)).not.toContain('compose-secret-must-not-leak');
     expect(JSON.stringify(graph)).toContain('API_TOKEN');
     expect(
       graph.entities.some((entity) => entity.kind === 'service' && entity.label === 'telemetry')
+    ).toBe(true);
+    expect(
+      graph.entities.some((entity) => entity.kind === 'service' && entity.label === 'legacy-cache')
     ).toBe(true);
     const apiServices = graph.entities.filter(
       (entity) =>
@@ -2919,7 +2931,7 @@ describe('workspace knowledge graph', () => {
     });
     expect(
       unchanged.providers.find((provider) => provider.id === 'incremental-project-cache')
-    ).toMatchObject({ status: 'passed', version: '1.3.0' });
+    ).toMatchObject({ status: 'passed', version: '1.4.0' });
     for (const providerId of ['source-language-inventory', 'source-structure'] as const) {
       const original = reusableHead.providers.find((provider) => provider.id === providerId);
       const reused = unchanged.providers.find((provider) => provider.id === providerId);
@@ -2951,7 +2963,33 @@ describe('workspace knowledge graph', () => {
         .map((entity) => ({ id: entity.id, kind: entity.kind, label: entity.label }))
     ).toEqual([]);
     expect(unchanged.relations).toHaveLength(head.relations.length);
-    expect(unchanged.proofs).toHaveLength(head.proofs.length);
+    expect(new Set(unchanged.proofs.map((proof) => proof.id))).toEqual(
+      new Set(head.proofs.map((proof) => proof.id))
+    );
+
+    const semanticHead = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      projects: options.projects.map((project) =>
+        project.id === 'api'
+          ? { ...project, runtime: 'ruby', framework: 'rails', kit: 'adopted.rails' }
+          : project
+      ),
+      now: new Date('2026-07-21T12:01:45.000Z'),
+      previousGraph: unchanged,
+    });
+    const semanticApi = semanticHead.entities.find(
+      (entity) => entity.kind === 'project' && entity.projectId === 'api'
+    );
+    expect(semanticApi?.attributes).toMatchObject({
+      runtime: 'ruby',
+      framework: 'rails',
+      kit: 'adopted.rails',
+    });
+    expect(
+      semanticHead.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.knowledge.attribute_conflict'
+      )
+    ).toBe(false);
 
     const incompatible = structuredClone(head);
     const sourceProvider = incompatible.providers.find(
@@ -2965,7 +3003,7 @@ describe('workspace knowledge graph', () => {
     });
     expect(
       fullRebuild.providers.find((provider) => provider.id === 'incremental-project-cache')
-    ).toMatchObject({ status: 'skipped', version: '1.3.0' });
+    ).toMatchObject({ status: 'skipped', version: '1.4.0' });
   });
 
   it('supports entity, evidence and shortest proof-path queries', async () => {
@@ -3104,6 +3142,145 @@ describe('workspace knowledge graph', () => {
       boundCount: 0,
       unknownCount: 1,
       coverageRatio: 0,
+    });
+  });
+
+  it('separates GraphQL executable documents from runtime-served schema APIs', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-graphql-doc-'));
+    tempDirs.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, 'web', 'package.json'), {
+      name: 'graphql-client',
+    });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'get-user.query.graphql'),
+      'query GetUser($id: ID!) { user(id: $id) { id type } }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'user.fragment.graphql'),
+      'fragment UserFields on User { id type }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'viewer.query.graphql'),
+      '{ viewer { id } }\n'
+    );
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath,
+      workspace: { name: 'graphql-client' },
+      projects: [{ id: 'web', path: 'web', runtime: 'node' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'web', path: 'web', runtime: 'node' }],
+        edges: [],
+        stats: {
+          ...topology().stats,
+          nodeCount: 1,
+          edgeCount: 0,
+          contractEdges: 0,
+          authoritativeEdges: 0,
+          orphanCount: 1,
+          connectedNodeCount: 0,
+          density: 0,
+          edgeCoverageRatio: 0,
+          evidenceCoverageRatio: 1,
+        },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(graph.entities.filter((entity) => entity.kind === 'api')).toHaveLength(0);
+    expect(
+      graph.entities.find(
+        (entity) =>
+          entity.kind === 'symbol' &&
+          entity.attributes.operationKind === 'query' &&
+          entity.label === 'GetUser'
+      )?.label
+    ).toBe('GetUser');
+    expect(
+      graph.entities.find(
+        (entity) => entity.kind === 'symbol' && entity.attributes.symbolKind === 'fragment'
+      )?.label
+    ).toBe('UserFields');
+    expect(
+      graph.entities.find(
+        (entity) =>
+          entity.kind === 'symbol' &&
+          entity.attributes.operationKind === 'query' &&
+          entity.label.startsWith('anonymous-')
+      )
+    ).toBeDefined();
+    expect(graph.quality.bindingCoverage?.apiRuntimeRegistration).toEqual({
+      eligibleCount: 0,
+      boundCount: 0,
+      unknownCount: 0,
+      coverageRatio: null,
+    });
+  });
+
+  it('binds a GraphQL schema API through a proof-carrying Rails mount', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-graphql-rails-'));
+    tempDirs.push(workspacePath);
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'Gemfile'),
+      "source 'https://rubygems.org'\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'schema.graphql'),
+      'type Query { health: String! }\nextend type Query { viewer: String }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'config', 'routes.rb'),
+      "Rails.application.routes.draw do\n  mount GraphqlSchema, at: '/graphql'\nend\n"
+    );
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath,
+      workspace: { name: 'graphql-rails' },
+      projects: [{ id: 'api', path: 'api', runtime: 'ruby', framework: 'rails' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'api', path: 'api', runtime: 'ruby', framework: 'rails' }],
+        edges: [],
+        stats: {
+          ...topology().stats,
+          nodeCount: 1,
+          edgeCount: 0,
+          contractEdges: 0,
+          authoritativeEdges: 0,
+          orphanCount: 1,
+          connectedNodeCount: 0,
+          density: 0,
+          edgeCoverageRatio: 0,
+          evidenceCoverageRatio: 1,
+        },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const api = graph.entities.find(
+      (entity) => entity.kind === 'api' && entity.attributes.surface === 'graphql-schema'
+    );
+    const registration = graph.entities.find(
+      (entity) =>
+        entity.kind === 'runtime-unit' &&
+        entity.attributes.mechanism === 'runtime-generated-routing'
+    );
+    expect(api).toBeDefined();
+    expect(registration).toBeDefined();
+    expect(
+      graph.relations.some(
+        (relation) =>
+          relation.kind === 'implements' &&
+          relation.from === registration?.id &&
+          relation.to === api?.id
+      )
+    ).toBe(true);
+    expect(graph.quality.bindingCoverage?.apiRuntimeRegistration).toEqual({
+      eligibleCount: 1,
+      boundCount: 1,
+      unknownCount: 0,
+      coverageRatio: 1,
     });
   });
 });

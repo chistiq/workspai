@@ -141,6 +141,9 @@
       ],
       "properties": {
         "projectContext": { "const": ".workspai/reports/project-context-agent.json" },
+        "projectKnowledgeGraph": {
+          "const": ".workspai/reports/workspace-knowledge-graph.json"
+        },
         "workspaceIndex": { "const": "workspace:.workspai/reports/INDEX.json" },
         "workspaceContext": {
           "const": "workspace:.workspai/reports/workspace-context-agent.json"

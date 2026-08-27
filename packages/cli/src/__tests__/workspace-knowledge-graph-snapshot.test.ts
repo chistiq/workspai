@@ -24,7 +24,7 @@ describe('workspace knowledge graph snapshot', () => {
     await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
   });
 
-  async function fixture(options: { git?: boolean } = {}): Promise<{
+  async function fixture(options: { git?: boolean; nestedGitProject?: boolean } = {}): Promise<{
     root: string;
     model: WorkspaceModel;
     graph: WorkspaceKnowledgeGraph;
@@ -38,18 +38,21 @@ describe('workspace knowledge graph snapshot', () => {
       edges: [],
       stats: { nodeCount: 0, edgeCount: 0, inferredEdges: 0, contractEdges: 0, manualEdges: 0 },
     };
+    const projects = options.nestedGitProject
+      ? [{ name: 'app', path: 'app', runtime: 'rust', framework: 'rust' }]
+      : [];
     const model = {
       schemaVersion: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.model,
       generatedAt: '2026-08-10T00:00:00.000Z',
       workspace: { name: 'snapshot', profile: 'polyglot' },
-      projects: [],
+      projects,
       projectTopology: topology,
       graph: topology,
       evidence: {},
       summary: {
-        projectCount: 0,
-        runtimes: [],
-        frameworks: [],
+        projectCount: projects.length,
+        runtimes: options.nestedGitProject ? ['rust'] : [],
+        frameworks: options.nestedGitProject ? ['rust'] : [],
         firstClassProjects: 0,
         extendedProjects: 0,
         observedProjects: 0,
@@ -84,7 +87,8 @@ describe('workspace knowledge graph snapshot', () => {
       },
       diagnostics: [],
     } as unknown as WorkspaceKnowledgeGraph;
-    await fsExtra.outputFile(path.join(root, 'src', 'main.rs'), 'fn main() {}\n');
+    const sourceRoot = options.nestedGitProject ? path.join(root, 'app') : root;
+    await fsExtra.outputFile(path.join(sourceRoot, 'src', 'main.rs'), 'fn main() {}\n');
     if (options.git) {
       await execFileAsync('git', ['init', '--quiet'], { cwd: root });
       await execFileAsync('git', ['config', 'user.email', 'test@workspai.local'], { cwd: root });
@@ -93,9 +97,19 @@ describe('workspace knowledge graph snapshot', () => {
       await execFileAsync('git', ['add', 'src/main.rs'], { cwd: root });
       await execFileAsync('git', ['commit', '--quiet', '-m', 'fixture'], { cwd: root });
     }
+    if (options.nestedGitProject) {
+      await execFileAsync('git', ['init', '--quiet'], { cwd: sourceRoot });
+      await execFileAsync('git', ['config', 'user.email', 'test@workspai.local'], {
+        cwd: sourceRoot,
+      });
+      await execFileAsync('git', ['config', 'user.name', 'Workspai Test'], { cwd: sourceRoot });
+      await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], { cwd: sourceRoot });
+      await execFileAsync('git', ['add', 'src/main.rs'], { cwd: sourceRoot });
+      await execFileAsync('git', ['commit', '--quiet', '-m', 'fixture'], { cwd: sourceRoot });
+    }
     graph.source.inputs = await computeWorkspaceKnowledgeGraphInputFingerprint({
       workspacePath: root,
-      projects: [],
+      projects: projects.map((project) => ({ id: project.name, path: project.path })),
       projectFileLimit: 100,
       workspaceFileLimit: 100,
     });
@@ -137,6 +151,28 @@ describe('workspace knowledge graph snapshot', () => {
       workspaceFileLimit: 100,
     });
     expect(first.hash).not.toBe(second.hash);
+    await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
+      status: 'miss',
+      reason: 'live-input-mismatch',
+    });
+  });
+
+  it('validates a nested Git project without weakening the non-Git workspace scope', async () => {
+    const { root, graph } = await fixture({ nestedGitProject: true });
+    expect(graph.source.inputs?.scopes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'workspace', strategy: 'content-merkle-v1' }),
+        expect.objectContaining({ kind: 'project', id: 'app', strategy: 'git-worktree-v2' }),
+      ])
+    );
+    await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
+      status: 'hit',
+    });
+
+    await fsExtra.outputFile(
+      path.join(root, 'app', 'src', 'main.rs'),
+      'fn main() { println!("changed"); }\n'
+    );
     await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
       status: 'miss',
       reason: 'live-input-mismatch',
@@ -250,6 +286,20 @@ describe('workspace knowledge graph snapshot', () => {
     await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
       status: 'miss',
       reason: 'missing-input-fingerprint',
+    });
+  });
+
+  it('rejects a tampered aggregate input hash even when every scope remains live', async () => {
+    const { root, graph } = await fixture({ git: true });
+    if (!graph.source.inputs) throw new Error('Expected graph input fingerprint.');
+    graph.source.inputs.hash = 'f'.repeat(64);
+    await fsExtra.outputJson(
+      path.join(root, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph),
+      graph
+    );
+    await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
+      status: 'miss',
+      reason: 'live-input-mismatch',
     });
   });
 

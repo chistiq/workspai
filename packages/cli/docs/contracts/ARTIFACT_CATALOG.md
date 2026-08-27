@@ -25,13 +25,14 @@ exclude the canonical marker.
 These paths are relative to each registered project root, not the workspace
 root:
 
-| Artifact                                       | Writer                                                                            | Schema / format             | Portability and reader purpose                                                        |
-| ---------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------- |
-| `.workspai/workspace-link.local.json`          | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1` | Machine-local absolute binding; always gitignored and never an agent evidence payload |
-| `.workspai/agent-entry.v1.json`                | Project lens reconciliation and `workspace agent-sync --write`                    | `workspai.agent-entry.v1`   | Portable host-discovery, canonical read-order, authority, and integrity contract      |
-| `.workspai/reports/project-context-agent.json` | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`  | Portable bounded model/graph/proof projection for project-local agents                |
-| `.workspai/PROJECT-GROUNDING.md`               | Project lens reconciliation                                                       | Markdown                    | Portable human/agent entry guide with path-free workspace references                  |
-| `AGENTS.md` managed section                    | Project lens reconciliation in `managed` mode                                     | Managed Markdown block      | Preserves user content and routes compatible agents to project/workspace evidence     |
+| Artifact                                           | Writer                                                                            | Schema / format                | Portability and reader purpose                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------- |
+| `.workspai/workspace-link.local.json`              | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1`    | Machine-local absolute binding; always gitignored and never an agent evidence payload |
+| `.workspai/agent-entry.v1.json`                    | Project lens reconciliation and `workspace agent-sync --write`                    | `workspai.agent-entry.v1`      | Portable host-discovery, canonical read-order, authority, and integrity contract      |
+| `.workspai/reports/project-context-agent.json`     | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`     | Portable bounded model/graph/proof projection for project-local agents                |
+| `.workspai/reports/workspace-knowledge-graph.json` | Workspace Model publication                                                       | `workspace-knowledge-graph.v1` | Project-owned graph projection; exactness is verified by agent bootstrap              |
+| `.workspai/PROJECT-GROUNDING.md`                   | Project lens reconciliation                                                       | Markdown                       | Portable human/agent entry guide with path-free workspace references                  |
+| `AGENTS.md` managed section                        | Project lens reconciliation in `managed` mode                                     | Managed Markdown block         | Preserves user content and routes compatible agents to project/workspace evidence     |
 
 The project link is validated against the canonical workspace contract and a
 SHA-256 binding over workspace identity, project identity, portable relative
@@ -49,7 +50,9 @@ the selected host route, contract validity, integrity, persisted and live
 freshness, and active Goal bindings without exposing the machine-local link.
 Its top-level status covers agent grounding only; project-environment and
 release readiness are emitted as separate dimensions so consumers cannot treat
-successful grounding as release approval.
+successful grounding as release approval. The receipt exposes distinct
+`projectKnowledgeGraph` and workspace-prefixed graph references and blocks when
+the local artifact is not the exact current project projection.
 
 ## Naming conventions
 
@@ -126,7 +129,7 @@ Entries beginning with `reports/` are relative to `.workspai/`; paths such as
 | Command                                         | Artifact                                                                                                                     | Schema                                 | Contract file                                                                |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
 | `workspace model --write`                       | `workspace-model.json`                                                                                                       | `workspace-model.v1`                   | `contracts/workspace-intelligence/workspace-model.v1.json`                   |
-| `workspace model --write`                       | `workspace-knowledge-graph.json`                                                                                             | `workspace-knowledge-graph.v1`         | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json`         |
+| `workspace model --write`                       | `workspace-knowledge-graph.json` (workspace aggregate and project-local scoped artifacts)                                    | `workspace-knowledge-graph.v1`         | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json`         |
 | `workspace snapshot`                            | `workspace-model-snapshot.json`                                                                                              | `workspace-model-snapshot.v1`          | `contracts/workspace-intelligence/workspace-model-snapshot.v1.json`          |
 | `workspace diff`                                | `workspace-model-diff-last-run.json`                                                                                         | `workspace-model-diff.v1`              | `contracts/workspace-intelligence/workspace-model-diff.v1.json`              |
 | `workspace impact --from <diff>`                | `workspace-impact-last-run.json`                                                                                             | `workspace-impact.v1`                  | `contracts/workspace-intelligence/workspace-impact.v1.json`                  |
@@ -155,10 +158,16 @@ status/exit coherence, hard-failure skip propagation, and the aggregate verdict.
 See [Unified Workspace Intelligence Runner](../workspace-intelligence-runner.md)
 for the normative user and integration semantics.
 
-`workspace-model.json` and `workspace-knowledge-graph.json` are published under
-one workspace lock as a rollback-capable artifact transaction. Individual file
-replacement is atomic, and a partial set failure restores both preimages. The
-model is canonical; the graph is derived and cannot mutate it during the run.
+`workspace-model.json`, the workspace `workspace-knowledge-graph.json`
+aggregate, and each registered project's project-local
+`.workspai/reports/workspace-knowledge-graph.json` are published under one
+workspace lock as a rollback-capable multi-root artifact transaction.
+Individual file replacement is atomic, and a partial set failure restores every
+preimage. A project-local graph contains that project's complete owned graph
+surface plus only directly connected boundary entities; it does not duplicate
+another project's complete graph. When a project and workspace share one root,
+the aggregate is written once and is also the project-local artifact. The model
+is canonical; every graph is derived and cannot mutate it during the run.
 The graph contract fixes `source.kind` to `workspace-model`,
 `source.artifact` to `.workspai/reports/workspace-model.json`, and `source.hash`
 to the model's stable structural SHA-256. Current-state consumers must reject a

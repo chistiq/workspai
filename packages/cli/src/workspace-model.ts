@@ -5,7 +5,6 @@ import { readImportedProjectsRegistry } from './imported-projects-registry.js';
 import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
-  detectRuntimeCandidatesFromProject,
   type BackendConfidence,
   type BackendRuntimeFamily,
   type BackendSupportTier,
@@ -64,8 +63,12 @@ import {
 } from './contracts/fact-freshness-contract.js';
 import {
   firstExistingWorkspaceArtifactPath,
-  writeWorkspaceArtifactJsonSet,
+  writeWorkspaceArtifactJsonSetAcrossRoots,
 } from './utils/artifact-path-compat.js';
+import {
+  projectWorkspaceKnowledgeGraph,
+  workspaceModelProjectRoot,
+} from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 
 export const WORKSPACE_MODEL_SCHEMA_VERSION = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.model;
@@ -703,12 +706,11 @@ async function buildProjectModel(
     framework: detection.key,
     runtime: detection.runtime,
   });
-  const relativeProjectPath = path.relative(workspacePath, projectPath);
-  const isExternalProject =
-    relativeProjectPath === '..' || relativeProjectPath.startsWith(`..${path.sep}`);
-  const detectedRuntimeCandidates = isExternalProject
-    ? detectNestedRuntimeCandidatesFromProject(projectPath)
-    : detectRuntimeCandidatesFromProject(projectPath);
+  // Every registered project root is an authorized ownership boundary,
+  // regardless of whether it is physically inside or outside the workspace.
+  // Preserve bounded nested runtime surfaces for both layouts so moving the
+  // same project across that boundary cannot change its semantic model.
+  const detectedRuntimeCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
   const runtimeCandidates = [
     detection.runtime,
     ...detectedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
@@ -1942,15 +1944,18 @@ async function inferModelDependencyGraph(
 
 export async function writeWorkspaceModel(
   model: WorkspaceModel,
-  workspacePath: string
+  workspacePath: string,
+  options: { refreshKnowledgeGraph?: boolean } = {}
 ): Promise<string> {
   const contract = model.contracts.exists ? await loadWorkspaceContractSafely(workspacePath) : null;
   const { buildWorkspaceKnowledgeGraph } = await import('./workspace-knowledge-graph.js');
   const persistedModel = attachRunCorrelation(model);
-  const previousGraph = await fsExtra
-    .readJson(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph))
-    .then((value) => value as WorkspaceKnowledgeGraph)
-    .catch(() => null);
+  const previousGraph = options.refreshKnowledgeGraph
+    ? null
+    : await fsExtra
+        .readJson(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph))
+        .then((value) => value as WorkspaceKnowledgeGraph)
+        .catch(() => null);
   const knowledgeGraph = await buildWorkspaceKnowledgeGraph({
     workspacePath,
     workspace: {
@@ -1985,13 +1990,50 @@ export async function writeWorkspaceModel(
     },
     previousGraph,
   });
-  const [, modelPath] = await writeWorkspaceArtifactJsonSet(
+  const workspacePhysicalRoot = await fsExtra
+    .realpath(workspacePath)
+    .catch(() => path.resolve(workspacePath));
+  const projectGraphArtifacts: Array<{
+    rootPath: string;
+    relativePath: typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
+    payload: WorkspaceKnowledgeGraph;
+  }> = [];
+  const projectIdsByPhysicalRoot = new Map<string, string>();
+  for (const project of model.projects) {
+    const projectRoot = workspaceModelProjectRoot(workspacePath, project);
+    const projectStat = await fsExtra.stat(projectRoot).catch(() => null);
+    if (!projectStat?.isDirectory()) continue;
+    const projectPhysicalRoot = await fsExtra.realpath(projectRoot);
+    if (projectPhysicalRoot === workspacePhysicalRoot) continue;
+    const existingProjectId = projectIdsByPhysicalRoot.get(projectPhysicalRoot);
+    if (existingProjectId) {
+      throw new Error(
+        `Projects ${existingProjectId} and ${project.name} resolve to the same graph artifact root: ${projectRoot}`
+      );
+    }
+    projectIdsByPhysicalRoot.set(projectPhysicalRoot, project.name);
+    projectGraphArtifacts.push({
+      rootPath: projectRoot,
+      relativePath: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      payload: projectWorkspaceKnowledgeGraph(knowledgeGraph, project.name),
+    });
+  }
+  const publishedPaths = await writeWorkspaceArtifactJsonSetAcrossRoots(
     workspacePath,
     WORKSPACE_MODEL_REPORT_PATH,
     [
-      { relativePath: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph, payload: knowledgeGraph },
-      { relativePath: WORKSPACE_MODEL_REPORT_PATH, payload: persistedModel },
+      {
+        rootPath: workspacePath,
+        relativePath: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+        payload: knowledgeGraph,
+      },
+      {
+        rootPath: workspacePath,
+        relativePath: WORKSPACE_MODEL_REPORT_PATH,
+        payload: persistedModel,
+      },
+      ...projectGraphArtifacts,
     ]
   );
-  return modelPath;
+  return publishedPaths[1];
 }

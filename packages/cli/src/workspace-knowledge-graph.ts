@@ -34,6 +34,10 @@ import {
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 import { workspaceModelProjectTopology, type WorkspaceModel } from './workspace-model.js';
 import { buildPolyglotLifecyclePlan } from './polyglot-lifecycle-plan.js';
+import {
+  calculateWorkspaceKnowledgeBindingCoverage,
+  countWorkspaceKnowledgeUnknowns,
+} from './workspace-knowledge-graph-quality.js';
 
 export const WORKSPACE_KNOWLEDGE_GRAPH_REPORT_PATH =
   WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
@@ -145,6 +149,34 @@ type ProviderContext = {
   state: KnowledgeGraphState;
 };
 type ResolvedProject = WorkspaceKnowledgeProjectInput & { root: string; artifactPrefix: string };
+
+function projectFoundationAttributes(
+  project: WorkspaceKnowledgeProjectInput
+): Record<string, WorkspaceKnowledgeAttribute> {
+  return {
+    path: project.path,
+    ...(project.runtime !== undefined ? { runtime: project.runtime } : {}),
+    ...(project.runtimeCandidates !== undefined
+      ? { runtimeCandidates: project.runtimeCandidates }
+      : {}),
+    ...(project.framework !== undefined ? { framework: project.framework } : {}),
+    ...(project.kit !== undefined ? { kit: project.kit } : {}),
+    ...(project.kind !== undefined ? { kind: project.kind } : {}),
+    ...(project.category !== undefined ? { category: project.category } : {}),
+    ...(project.governance
+      ? {
+          governanceCiStatus: project.governance.ci.status,
+          governanceReleaseStatus: project.governance.release.status,
+          governanceOwnershipStatus: project.governance.ownership.status,
+          governanceProviders: [
+            project.governance.ci.provider,
+            project.governance.release.provider,
+            project.governance.ownership.provider,
+          ].filter((value): value is string => Boolean(value)),
+        }
+      : {}),
+  };
+}
 type Provider = {
   id: string;
   version: string;
@@ -1463,6 +1495,119 @@ async function gitFingerprintScope(input: {
   }
 }
 
+async function persistedGitFingerprintMatches(input: {
+  kind: 'workspace' | 'project';
+  id: string;
+  root: string;
+  fileLimit: number;
+  expectedHash: string;
+  excludedRoots?: readonly string[];
+}): Promise<boolean | null> {
+  try {
+    const rawScopePrefix = (await gitOutput(input.root, ['rev-parse', '--show-prefix']))
+      .toString('utf8')
+      .trim()
+      .replace(/\\/gu, '/');
+    const scopePrefix = rawScopePrefix ? `${rawScopePrefix.replace(/^\/+|\/+$/gu, '')}/` : '';
+    if (
+      path.posix.isAbsolute(scopePrefix) ||
+      scopePrefix === '../' ||
+      scopePrefix.startsWith('../') ||
+      scopePrefix.includes('/../')
+    ) {
+      return null;
+    }
+
+    const pathspecs = gitInventoryPathspecs();
+    const [tree, diff, untracked, flags] = await Promise.all([
+      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', ...pathspecs]),
+      gitOutput(input.root, [
+        'diff',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--binary',
+        'HEAD',
+        '--',
+        ...pathspecs,
+      ]),
+      gitOutput(input.root, [
+        'ls-files',
+        '--full-name',
+        '--others',
+        '--exclude-standard',
+        '-z',
+        '--',
+        ...pathspecs,
+      ]),
+      gitOutput(input.root, ['ls-files', '-v', '--', ...pathspecs]),
+    ]);
+    if (
+      flags
+        .toString('utf8')
+        .split(/\r?\n/u)
+        .some((line) => /^[a-z] /u.test(line))
+    ) {
+      return null;
+    }
+
+    // A compatible persisted git-worktree-v2 scope already proves the tracked
+    // inventory. Recompute its exact digest from Git's content-addressed index
+    // and worktree diff, then hash only safe untracked regular files. This
+    // avoids lstat-ing every tracked file for each read-only graph query while
+    // preserving additions, deletions, mode changes, dirty content, and
+    // untracked-content invalidation.
+    const excludedRoots = (input.excludedRoots ?? []).map((root) => path.resolve(root));
+    const extras = (
+      await mapWithConcurrency(
+        [...new Set(parseNullSeparatedPaths(untracked))].sort((left, right) =>
+          left.localeCompare(right)
+        ),
+        16,
+        async (repositoryRelativePath) => {
+          if (scopePrefix && !repositoryRelativePath.startsWith(scopePrefix)) return null;
+          const scopeRelativePath = scopePrefix
+            ? repositoryRelativePath.slice(scopePrefix.length)
+            : repositoryRelativePath;
+          const normalizedRelative = path.normalize(scopeRelativePath);
+          if (
+            !scopeRelativePath ||
+            path.isAbsolute(normalizedRelative) ||
+            normalizedRelative === '..' ||
+            normalizedRelative.startsWith(`..${path.sep}`)
+          ) {
+            return null;
+          }
+          const absolutePath = path.resolve(input.root, normalizedRelative);
+          if (
+            excludedRoots.some(
+              (root) => absolutePath === root || absolutePath.startsWith(`${root}${path.sep}`)
+            ) ||
+            isGeneratedAgentProjection(input.root, absolutePath)
+          ) {
+            return null;
+          }
+          try {
+            const stats = await fsExtra.lstat(absolutePath);
+            if (!stats.isFile() || stats.isSymbolicLink()) return null;
+          } catch {
+            return null;
+          }
+          return { path: scopeRelativePath, hash: await contentHash(absolutePath) };
+        }
+      )
+    ).filter((entry): entry is { path: string; hash: string } => entry !== null);
+
+    const digest = createHash('sha256');
+    digest.update(`git-worktree-v2\0${input.kind}\0${input.id}\0${input.fileLimit}\0`);
+    digest.update(tree);
+    digest.update(createHash('sha256').update(diff).digest());
+    for (const entry of extras) digest.update(`${entry.path}\0${entry.hash}\0`);
+    return digest.digest('hex') === input.expectedHash;
+  } catch {
+    return null;
+  }
+}
+
 async function mapWithConcurrency<T, R>(
   values: readonly T[],
   concurrency: number,
@@ -1629,6 +1774,15 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
   scopes.sort(
     (left, right) => left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id)
   );
+  return workspaceKnowledgeGraphInputAggregate(scopes);
+}
+
+function workspaceKnowledgeGraphInputAggregate(
+  inputScopes: readonly WorkspaceKnowledgeGraphInputFingerprint['scopes'][number][]
+): WorkspaceKnowledgeGraphInputFingerprint {
+  const scopes = [...inputScopes].sort(
+    (left, right) => left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id)
+  );
   const hash = createHash('sha256');
   hash.update('workspace-knowledge-graph-inputs.v1\0hybrid-git-content-v2\0');
   for (const scope of scopes) {
@@ -1643,6 +1797,105 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
     hash: hash.digest('hex'),
     scopes,
   };
+}
+
+/**
+ * Verify a persisted graph fingerprint against live inputs. Git-backed scopes
+ * use the exact git-worktree-v2 digest without walking every tracked file;
+ * scopes that cannot prove that fast path fall back to the complete inventory.
+ */
+export async function workspaceKnowledgeGraphInputsMatchLiveState(input: {
+  workspacePath: string;
+  projects: readonly KnowledgeGraphFingerprintProject[];
+  expected: WorkspaceKnowledgeGraphInputFingerprint;
+}): Promise<boolean> {
+  if (workspaceKnowledgeGraphInputAggregate(input.expected.scopes).hash !== input.expected.hash) {
+    return false;
+  }
+  const workspacePath = path.resolve(input.workspacePath);
+  const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
+  const projectRoots = projects.map((project) =>
+    project.absolutePath
+      ? path.resolve(project.absolutePath)
+      : path.resolve(workspacePath, project.path)
+  );
+  const projectById = new Map(projects.map((project) => [project.id, project] as const));
+
+  for (const expectedScope of input.expected.scopes) {
+    const project =
+      expectedScope.kind === 'project' ? projectById.get(expectedScope.id) : undefined;
+    if (expectedScope.kind === 'project' && !project) return false;
+    const root = project
+      ? project.absolutePath
+        ? path.resolve(project.absolutePath)
+        : path.resolve(workspacePath, project.path)
+      : workspacePath;
+
+    if (expectedScope.strategy === 'git-worktree-v2') {
+      const fastMatch = await persistedGitFingerprintMatches({
+        kind: expectedScope.kind,
+        id: expectedScope.id,
+        root,
+        fileLimit: expectedScope.fileLimit,
+        expectedHash: expectedScope.hash,
+        ...(expectedScope.kind === 'workspace' ? { excludedRoots: projectRoots } : {}),
+      });
+      if (fastMatch !== null) {
+        if (!fastMatch) return false;
+        continue;
+      }
+    }
+
+    const rawInventory = await projectFileInventory(
+      root,
+      expectedScope.fileLimit,
+      expectedScope.kind === 'workspace' ? projectRoots : []
+    );
+    const files =
+      expectedScope.kind === 'workspace'
+        ? rawInventory.files.filter(
+            (file) =>
+              !projectRoots.some(
+                (projectRoot) =>
+                  file === projectRoot || file.startsWith(`${projectRoot}${path.sep}`)
+              )
+          )
+        : rawInventory.files;
+    const inventory: ProjectFileInventory = {
+      ...rawInventory,
+      files,
+      eligibleFileCount:
+        rawInventory.eligibleFileCountExact && !rawInventory.truncated
+          ? files.length
+          : rawInventory.eligibleFileCount,
+    };
+    const selection = expectedScope.selection
+      ? {
+          strategy: 'component-language-round-robin-v1' as const,
+          semanticFileCount: Math.min(
+            inventory.files.length,
+            expectedScope.selection.semanticFileBudget
+          ),
+          semanticFileBudget: expectedScope.selection.semanticFileBudget,
+          deepFileCount: Math.min(inventory.files.length, expectedScope.selection.deepFileBudget),
+          deepFileBudget: expectedScope.selection.deepFileBudget,
+          sourceExtractionFileBudget: expectedScope.selection.sourceExtractionFileBudget,
+        }
+      : undefined;
+    const actualScope = await fingerprintScope({
+      kind: expectedScope.kind,
+      id: expectedScope.id,
+      root,
+      files: inventory.files,
+      fileLimit: expectedScope.fileLimit,
+      eligibleFileCount: inventory.eligibleFileCount,
+      eligibleFileCountExact: inventory.eligibleFileCountExact,
+      inventoryStrategy: inventory.strategy,
+      ...(selection ? { selection } : {}),
+    });
+    if (hashCanonicalJson(actualScope) !== hashCanonicalJson(expectedScope)) return false;
+  }
+  return true;
 }
 
 async function readStructuredDocuments(filePath: string): Promise<JsonRecord[]> {
@@ -1740,6 +1993,7 @@ async function ownershipCandidateFiles(context: ProviderContext): Promise<string
   const candidates = roots.flatMap((root) => [
     path.join(root, 'CODEOWNERS'),
     path.join(root, '.github', 'CODEOWNERS'),
+    path.join(root, '.gitlab', 'CODEOWNERS'),
     path.join(root, 'docs', 'CODEOWNERS'),
   ]);
   for (const file of uniqueInventoryFiles(context)) {
@@ -2488,27 +2742,7 @@ const foundationProvider: Provider = {
         label: project.id,
         projectId: project.id,
         aliases: [project.id, project.path],
-        attributes: {
-          path: project.path,
-          runtime: project.runtime,
-          runtimeCandidates: project.runtimeCandidates,
-          framework: project.framework,
-          kit: project.kit,
-          kind: project.kind,
-          category: project.category,
-          ...(project.governance
-            ? {
-                governanceCiStatus: project.governance.ci.status,
-                governanceReleaseStatus: project.governance.release.status,
-                governanceOwnershipStatus: project.governance.ownership.status,
-                governanceProviders: [
-                  project.governance.ci.provider,
-                  project.governance.release.provider,
-                  project.governance.ownership.provider,
-                ].filter((value): value is string => Boolean(value)),
-              }
-            : {}),
-        },
+        attributes: projectFoundationAttributes(project),
         proofIds: [projectProof],
       });
       state.addRelation({
@@ -2779,7 +3013,7 @@ function contributionCount(value: unknown): number {
 
 const vscodeExtensionManifestProvider: Provider = {
   id: 'vscode-extension-manifest',
-  version: '1.1.0',
+  version: '1.2.0',
   scanTier: 'complete-inventory',
   async applicable(context) {
     for (const project of context.projects) {
@@ -2928,6 +3162,7 @@ const vscodeExtensionManifestProvider: Provider = {
             ),
             attributes: {
               surface: 'vscode-command',
+              runtimeRegistrationRequired: false,
               title: stringValue(command?.title),
               shortTitle: stringValue(command?.shortTitle),
               category: stringValue(command?.category),
@@ -3125,6 +3360,7 @@ const vscodeExtensionManifestProvider: Provider = {
             ),
             attributes: {
               surface: 'vscode-chat-participant',
+              runtimeRegistrationRequired: false,
               name: stringValue(participant?.name),
               fullName: stringValue(participant?.fullName),
               description: stringValue(participant?.description),
@@ -3169,7 +3405,7 @@ function parseTomlStringTable(contents: string, table: string): Array<[string, s
 
 const pythonProjectManifestProvider: Provider = {
   id: 'python-project-manifest',
-  version: '1.0.0',
+  version: '1.1.0',
   scanTier: 'complete-inventory',
   async applicable(context) {
     for (const project of context.projects) {
@@ -3241,7 +3477,13 @@ const pythonProjectManifestProvider: Provider = {
           label: script,
           projectId: project.id,
           aliases: [entrypoint],
-          attributes: { surface: 'python-console-script', entrypoint, manifest: artifact, pointer },
+          attributes: {
+            surface: 'python-console-script',
+            runtimeRegistrationRequired: false,
+            entrypoint,
+            manifest: artifact,
+            pointer,
+          },
           proofIds: [proof],
         });
         context.state.addRelation({
@@ -4215,7 +4457,7 @@ const SEMANTIC_PROTOCOL_STOP_NAMES = new Set([
  */
 const polyglotSemanticProvider: Provider = {
   id: 'polyglot-semantics',
-  version: '1.0.0',
+  version: '1.1.0',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) => {
@@ -4484,7 +4726,7 @@ const polyglotSemanticProvider: Provider = {
 
 const serviceContractProvider: Provider = {
   id: 'workspace-service-contract',
-  version: '1.0.0',
+  version: '1.1.0',
   scanTier: 'derived',
   applicable(context) {
     return Boolean(
@@ -4552,7 +4794,7 @@ const serviceContractProvider: Provider = {
           key: `contract-api:${project.slug}:${api.name}:${api.basePath}`,
           label: api.name,
           projectId: project.slug,
-          attributes: { basePath: api.basePath },
+          attributes: { basePath: api.basePath, runtimeRegistrationRequired: true },
           proofIds: [proof],
         });
         context.state.addRelation({
@@ -4608,7 +4850,7 @@ const serviceContractProvider: Provider = {
 
 const openApiProvider: Provider = {
   id: 'openapi',
-  version: '1.0.0',
+  version: '1.1.0',
   scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
@@ -4651,6 +4893,7 @@ const openApiProvider: Provider = {
             attributes: {
               version: stringValue(info?.version),
               specification: stringValue(document.openapi) ?? stringValue(document.swagger),
+              runtimeRegistrationRequired: true,
             },
             proofIds: [apiProof],
           });
@@ -4939,7 +5182,12 @@ function dynamicApiRegistrationOffset(file: string, contents: string): number {
                 /\bregister(?:Rest)?(?:Action|Handler)\s*\(/,
               ]
             : extension === '.rb'
-              ? [/\broutes\.draw\s+do\b/, /\b(?:resources|namespace)\s+[:"']/]
+              ? [
+                  /\broutes\.draw\s+do\b/,
+                  /\bmount\s+(?:[A-Z][\w:]*|["'])/,
+                  /\b(?:resources?|namespace|scope)\s+[:"']/,
+                  /\b(?:get|post|put|patch|delete|match)\s+["']/,
+                ]
               : [/\b(?:registerRoutes?|configureRoutes?)\s*\(/i];
   for (const pattern of patterns) {
     const match = pattern.exec(contents);
@@ -4956,7 +5204,7 @@ function dynamicApiRegistrationOffset(file: string, contents: string): number {
  */
 const dynamicApiRegistrationProvider: Provider = {
   id: 'dynamic-api-registration-binding',
-  version: '1.0.0',
+  version: '1.1.0',
   scanTier: 'adaptive-semantic',
   applicable(context) {
     if (![...context.state.entities.values()].some((entity) => entity.kind === 'api')) return false;
@@ -4990,7 +5238,10 @@ const dynamicApiRegistrationProvider: Provider = {
   async run(context) {
     for (const project of context.projects) {
       const apis = [...context.state.entities.values()].filter(
-        (entity) => entity.kind === 'api' && entity.projectId === project.id
+        (entity) =>
+          entity.kind === 'api' &&
+          entity.projectId === project.id &&
+          entity.attributes.runtimeRegistrationRequired === true
       );
       if (apis.length === 0) continue;
       const candidates = (context.semanticFilesByProject.get(project.id) ?? [])
@@ -5102,9 +5353,156 @@ const dynamicApiRegistrationProvider: Provider = {
   },
 };
 
+type GraphqlTopLevelDefinition = {
+  kind:
+    | 'schema'
+    | 'scalar'
+    | 'type'
+    | 'interface'
+    | 'union'
+    | 'enum'
+    | 'input'
+    | 'directive'
+    | 'query'
+    | 'mutation'
+    | 'subscription'
+    | 'fragment';
+  name: string;
+  line: number;
+  extended: boolean;
+};
+
+/**
+ * Tokenize enough of GraphQL to classify top-level SDL and executable
+ * definitions without mistaking selection fields such as `type` for schema
+ * declarations. This intentionally avoids a heavyweight parser dependency,
+ * while honoring comments, quoted strings, block strings and brace depth.
+ */
+function graphqlTopLevelDefinitions(contents: string): GraphqlTopLevelDefinition[] {
+  const tokens: Array<{ value: string; line: number }> = [];
+  let line = 1;
+  for (let index = 0; index < contents.length;) {
+    const character = contents[index];
+    if (character === '\n') {
+      line += 1;
+      index += 1;
+      continue;
+    }
+    if (/\s|,/.test(character)) {
+      index += 1;
+      continue;
+    }
+    if (character === '#') {
+      while (index < contents.length && contents[index] !== '\n') index += 1;
+      continue;
+    }
+    if (contents.startsWith('"""', index)) {
+      index += 3;
+      while (index < contents.length && !contents.startsWith('"""', index)) {
+        if (contents[index] === '\n') line += 1;
+        index += 1;
+      }
+      index = Math.min(contents.length, index + 3);
+      continue;
+    }
+    if (character === '"') {
+      index += 1;
+      let escaped = false;
+      while (index < contents.length) {
+        const current = contents[index];
+        if (current === '\n') line += 1;
+        if (current === '"' && !escaped) {
+          index += 1;
+          break;
+        }
+        escaped = current === '\\' && !escaped;
+        if (current !== '\\') escaped = false;
+        index += 1;
+      }
+      continue;
+    }
+    const name = contents.slice(index).match(/^[_A-Za-z][_0-9A-Za-z]*/)?.[0];
+    if (name) {
+      tokens.push({ value: name, line });
+      index += name.length;
+      continue;
+    }
+    tokens.push({ value: character, line });
+    index += 1;
+  }
+
+  const schemaKinds = new Set<GraphqlTopLevelDefinition['kind']>([
+    'schema',
+    'scalar',
+    'type',
+    'interface',
+    'union',
+    'enum',
+    'input',
+    'directive',
+  ]);
+  const executableKinds = new Set<GraphqlTopLevelDefinition['kind']>([
+    'query',
+    'mutation',
+    'subscription',
+    'fragment',
+  ]);
+  const definitions: GraphqlTopLevelDefinition[] = [];
+  if (tokens[0]?.value === '{') {
+    definitions.push({
+      kind: 'query',
+      name: `anonymous-${tokens[0].line}`,
+      line: tokens[0].line,
+      extended: false,
+    });
+  }
+  let braceDepth = 0;
+  let extended = false;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.value === '}') {
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+    if (braceDepth === 0 && token.value === 'extend') {
+      extended = true;
+      continue;
+    }
+    if (braceDepth === 0) {
+      const kind = token.value as GraphqlTopLevelDefinition['kind'];
+      if (schemaKinds.has(kind)) {
+        const name =
+          kind === 'schema'
+            ? 'schema'
+            : kind === 'directive'
+              ? tokens[index + 1]?.value === '@'
+                ? tokens[index + 2]?.value
+                : undefined
+              : tokens[index + 1]?.value;
+        if (name && /^[_A-Za-z][_0-9A-Za-z]*$/.test(name)) {
+          definitions.push({ kind, name, line: token.line, extended });
+        }
+        extended = false;
+      } else if (executableKinds.has(kind)) {
+        const candidate = tokens[index + 1]?.value;
+        const name =
+          candidate && /^[_A-Za-z][_0-9A-Za-z]*$/.test(candidate)
+            ? candidate
+            : `anonymous-${token.line}`;
+        definitions.push({ kind, name, line: token.line, extended: false });
+        extended = false;
+      } else if (!['@', '&', '|'].includes(token.value)) {
+        extended = false;
+      }
+    }
+    if (token.value === '{') braceDepth += 1;
+  }
+  return definitions;
+}
+
 const interfaceContractProvider: Provider = {
   id: 'interface-contracts',
-  version: '1.0.0',
+  version: '1.1.0',
   scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
@@ -5121,44 +5519,167 @@ const interfaceContractProvider: Provider = {
         const extension = path.extname(file).toLowerCase();
         if (extension === '.graphql' || extension === '.gql') {
           const contents = await fsExtra.readFile(file, 'utf8');
+          const definitions = graphqlTopLevelDefinitions(contents);
+          const schemaDefinitions = definitions.filter((definition) =>
+            [
+              'schema',
+              'scalar',
+              'type',
+              'interface',
+              'union',
+              'enum',
+              'input',
+              'directive',
+            ].includes(definition.kind)
+          );
+          const executableDefinitions = definitions.filter((definition) =>
+            ['query', 'mutation', 'subscription', 'fragment'].includes(definition.kind)
+          );
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
             absolutePath: file,
             trust: 'authoritative',
             derivation: 'authored',
-            detail: 'GraphQL schema',
+            detail:
+              schemaDefinitions.length > 0
+                ? 'GraphQL schema contract'
+                : 'GraphQL executable document',
           });
-          const api = context.state.addEntity({
-            kind: 'api',
-            key: `graphql:${project.id}:${artifact}`,
-            label: `${project.id} GraphQL API`,
+          const fileEntity = context.state.addEntity({
+            kind: 'file',
+            key: `file:${project.id}:${artifact}`,
+            label: artifact,
             projectId: project.id,
-            attributes: { specification: 'graphql', artifact },
+            aliases: [path.basename(file)],
+            attributes: {
+              artifact,
+              language: 'graphql',
+              bytes: Buffer.byteLength(contents),
+              graphqlDocumentKind:
+                schemaDefinitions.length > 0 && executableDefinitions.length > 0
+                  ? 'mixed'
+                  : schemaDefinitions.length > 0
+                    ? 'schema'
+                    : 'executable',
+            },
             proofIds: [proof],
           });
           context.state.addRelation({
             from: stableId('project', `project:${project.id}`),
-            to: api,
-            kind: 'exposes',
+            to: fileEntity,
+            kind: 'contains',
             trust: 'authoritative',
             derivation: 'authored',
             proofIds: [proof],
           });
-          for (const match of contents.matchAll(
-            /^\s*(?:type|input|interface|enum|scalar|union)\s+([A-Za-z_]\w*)/gm
-          )) {
-            const schema = context.state.addEntity({
-              kind: 'schema',
-              key: `graphql-schema:${project.id}:${artifact}:${match[1]}`,
-              label: match[1],
-              projectId: project.id,
+          const protocol = context.state.addEntity({
+            kind: 'protocol',
+            key: 'protocol:graphql',
+            label: 'GraphQL',
+            aliases: ['graphql'],
+            attributes: { specification: 'GraphQL' },
+            proofIds: [proof],
+          });
+          const exposesRuntimeApi = schemaDefinitions.some(
+            (definition) =>
+              !definition.extended &&
+              (definition.kind === 'schema' ||
+                (definition.kind === 'type' &&
+                  ['Query', 'Mutation', 'Subscription'].includes(definition.name)))
+          );
+          const api = exposesRuntimeApi
+            ? context.state.addEntity({
+                kind: 'api',
+                key: `graphql-api:${project.id}`,
+                label: `${project.id} GraphQL API`,
+                projectId: project.id,
+                attributes: {
+                  specification: 'graphql',
+                  surface: 'graphql-schema',
+                  runtimeRegistrationRequired: true,
+                },
+                proofIds: [proof],
+              })
+            : null;
+          if (api) {
+            context.state.addRelation({
+              from: stableId('project', `project:${project.id}`),
+              to: api,
+              kind: 'exposes',
+              trust: 'authoritative',
+              derivation: 'authored',
               proofIds: [proof],
             });
             context.state.addRelation({
               from: api,
+              to: protocol,
+              kind: 'implements-protocol',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+          for (const definition of schemaDefinitions) {
+            const schema = context.state.addEntity({
+              kind: 'schema',
+              key: `graphql-schema:${project.id}:${artifact}:${definition.kind}:${definition.name}`,
+              label: definition.name,
+              projectId: project.id,
+              attributes: {
+                specification: 'graphql',
+                definitionKind: definition.kind,
+                extended: definition.extended,
+                line: definition.line,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: fileEntity,
               to: schema,
-              kind: 'contains',
+              kind: 'defines',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+            if (api) {
+              context.state.addRelation({
+                from: api,
+                to: schema,
+                kind: 'contains',
+                trust: 'authoritative',
+                derivation: 'authored',
+                proofIds: [proof],
+              });
+            }
+          }
+          for (const definition of executableDefinitions) {
+            const operation = context.state.addEntity({
+              kind: 'symbol',
+              key: `graphql-operation:${project.id}:${artifact}:${definition.kind}:${definition.name}`,
+              label: definition.name,
+              projectId: project.id,
+              attributes: {
+                language: 'graphql',
+                symbolKind: definition.kind === 'fragment' ? 'fragment' : 'operation',
+                operationKind: definition.kind,
+                artifact,
+                line: definition.line,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: fileEntity,
+              to: operation,
+              kind: 'defines',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: operation,
+              to: protocol,
+              kind: 'consumes',
               trust: 'authoritative',
               derivation: 'authored',
               proofIds: [proof],
@@ -5248,7 +5769,11 @@ const interfaceContractProvider: Provider = {
             key: `asyncapi:${project.id}:${artifact}`,
             label: stringValue(asRecord(document.info)?.title) ?? `${project.id} AsyncAPI`,
             projectId: project.id,
-            attributes: { specification: `asyncapi ${String(document.asyncapi)}`, artifact },
+            attributes: {
+              specification: `asyncapi ${String(document.asyncapi)}`,
+              artifact,
+              runtimeRegistrationRequired: true,
+            },
             proofIds: [proof],
           });
           context.state.addRelation({
@@ -5387,9 +5912,40 @@ function classifyImage(image: string): WorkspaceKnowledgeEntityKind {
   return 'container';
 }
 
+function legacyComposeServices(document: JsonRecord | undefined): JsonRecord | undefined {
+  if (!document) return undefined;
+  const reserved = new Set([
+    'version',
+    'name',
+    'services',
+    'networks',
+    'volumes',
+    'configs',
+    'secrets',
+  ]);
+  const serviceMarkers = new Set([
+    'image',
+    'build',
+    'command',
+    'entrypoint',
+    'ports',
+    'links',
+    'environment',
+    'volumes',
+    'depends_on',
+    'external_links',
+  ]);
+  const entries = Object.entries(document).filter(([name, value]) => {
+    if (reserved.has(name.toLowerCase())) return false;
+    const candidate = asRecord(value);
+    return candidate ? Object.keys(candidate).some((key) => serviceMarkers.has(key)) : false;
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
 const composeProvider: Provider = {
   id: 'compose',
-  version: '1.0.0',
+  version: '1.2.0',
   scanTier: 'complete-inventory',
   async applicable(context) {
     return (await composeCandidateFiles(context)).length > 0;
@@ -5411,7 +5967,10 @@ const composeProvider: Provider = {
           message: `Could not parse ${context.state.artifactPath(file)}: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
-      const services = asRecord(document?.services);
+      // Compose v1 placed service definitions at the document root. It still
+      // appears in long-lived enterprise repositories, so preserve that
+      // authored topology without misclassifying modern top-level resources.
+      const services = asRecord(document?.services) ?? legacyComposeServices(document);
       if (!services) continue;
       const ownerProject = projectForFile(context.projects, file);
       const artifact = context.state.artifactPath(file, ownerProject);
@@ -5532,6 +6091,10 @@ const composeProvider: Provider = {
         !context.state.entities.has(dependency.from) ||
         !context.state.entities.has(dependency.to)
       ) {
+        // `depends_on` can name a service that is absent from the authored
+        // Compose stack. Do not retain a proof that cannot back an entity or
+        // relation in the published graph.
+        context.state.proofs.delete(dependency.proofId);
         continue;
       }
       context.state.addRelation({
@@ -5790,7 +6353,7 @@ const ciProvider: Provider = {
 
 const ownershipProvider: Provider = {
   id: 'codeowners',
-  version: '1.1.0',
+  version: '1.2.0',
   scanTier: 'complete-inventory',
   async applicable(context) {
     return (await ownershipCandidateFiles(context)).length > 0;
@@ -5974,9 +6537,9 @@ const PROVIDERS: Provider[] = [
   polyglotSemanticProvider,
   serviceContractProvider,
   openApiProvider,
+  interfaceContractProvider,
   authoredApiImplementationProvider,
   dynamicApiRegistrationProvider,
-  interfaceContractProvider,
   composeProvider,
   infrastructureProvider,
   kubernetesProvider,
@@ -6139,97 +6702,6 @@ function reconcileCrossProviderEvidence(state: KnowledgeGraphState): void {
   }
 }
 
-function bindingCoverage(eligibleIds: readonly string[], boundIds: ReadonlySet<string>) {
-  const eligible = [...new Set(eligibleIds)];
-  const boundCount = eligible.filter((id) => boundIds.has(id)).length;
-  return {
-    eligibleCount: eligible.length,
-    boundCount,
-    unknownCount: eligible.length - boundCount,
-    coverageRatio: eligible.length === 0 ? null : boundCount / eligible.length,
-  };
-}
-
-function calculateBindingCoverage(
-  entities: readonly WorkspaceKnowledgeEntity[],
-  relations: readonly WorkspaceKnowledgeRelation[]
-): NonNullable<WorkspaceKnowledgeGraph['quality']['bindingCoverage']> {
-  const projectIds = entities
-    .filter((entity) => entity.kind === 'project')
-    .map((entity) => entity.id);
-  const endpointIds = entities
-    .filter((entity) => entity.kind === 'endpoint')
-    .map((entity) => entity.id);
-  const endpointIdSet = new Set(endpointIds);
-  // Runtime registration is a project-local implementation claim. Shared
-  // protobuf/OpenAPI identities deliberately have no projectId after semantic
-  // reconciliation, so counting them here would manufacture an impossible
-  // registration deficit for contract-only or multi-project APIs.
-  const apiIds = entities
-    .filter((entity) => entity.kind === 'api' && Boolean(entity.projectId))
-    .map((entity) => entity.id);
-  const apiIdSet = new Set(apiIds);
-  const entityKindById = new Map(entities.map((entity) => [entity.id, entity.kind]));
-  const implementedEndpoints = new Set(
-    relations
-      .filter(
-        (relation) =>
-          relation.kind === 'implements' ||
-          (relation.kind === 'defines' &&
-            entityKindById.get(relation.from) === 'file' &&
-            entityKindById.get(relation.to) === 'endpoint')
-      )
-      .flatMap((relation) =>
-        endpointIdSet.has(relation.from)
-          ? [relation.from]
-          : endpointIdSet.has(relation.to)
-            ? [relation.to]
-            : []
-      )
-  );
-  const registeredApis = new Set(
-    relations
-      .filter(
-        (relation) =>
-          relation.kind === 'implements' &&
-          (entityKindById.get(relation.from) === 'runtime-unit' ||
-            entityKindById.get(relation.to) === 'runtime-unit')
-      )
-      .flatMap((relation) =>
-        apiIdSet.has(relation.from)
-          ? [relation.from]
-          : apiIdSet.has(relation.to)
-            ? [relation.to]
-            : []
-      )
-  );
-  const testedProjects = new Set(
-    relations
-      .filter((relation) => relation.kind === 'tests')
-      .flatMap((relation) => [relation.from, relation.to])
-      .filter((id) => projectIds.includes(id))
-  );
-  const deployedProjects = new Set(
-    relations
-      .filter((relation) => relation.kind === 'deploys')
-      .flatMap((relation) => [relation.from, relation.to])
-      .filter((id) => projectIds.includes(id))
-  );
-  const ownedProjects = new Set(
-    relations
-      .filter((relation) => relation.kind === 'owns')
-      .flatMap((relation) => [relation.from, relation.to])
-      .filter((id) => projectIds.includes(id))
-  );
-  return {
-    apiImplementation: bindingCoverage(endpointIds, implementedEndpoints),
-    apiRuntimeRegistration: bindingCoverage(apiIds, registeredApis),
-    projectTests: bindingCoverage(projectIds, testedProjects),
-    projectDeployment: bindingCoverage(projectIds, deployedProjects),
-    projectOwnership: bindingCoverage(projectIds, ownedProjects),
-  };
-}
-
 export async function buildWorkspaceKnowledgeGraph(
   options: BuildWorkspaceKnowledgeGraphOptions
 ): Promise<WorkspaceKnowledgeGraph> {
@@ -6371,7 +6843,7 @@ export async function buildWorkspaceKnowledgeGraph(
       .filter((scope) => scope.kind === 'project')
       .map((scope) => [scope.id, scope.hash] as const)
   );
-  const incrementalCacheProtocolVersion = '1.3.0';
+  const incrementalCacheProtocolVersion = '1.4.0';
   const previousProviderVersions = new Map(
     (options.previousGraph?.providers ?? [])
       .filter((provider) => provider.id !== 'incremental-project-cache')
@@ -6390,10 +6862,30 @@ export async function buildWorkspaceKnowledgeGraph(
     currentProjectScopes.size > 0 &&
     currentProjectScopes.size === previousProjectScopes.size &&
     [...currentProjectScopes.keys()].every((id) => previousProjectScopes.has(id));
+  const previousProjectEntities = new Map(
+    (options.previousGraph?.entities ?? [])
+      .filter((entity) => entity.kind === 'project' && entity.projectId)
+      .map((entity) => [entity.projectId as string, entity] as const)
+  );
+  const currentProjectsById = new Map(projects.map((project) => [project.id, project] as const));
+  const projectSemanticsMatch = (project: ResolvedProject): boolean => {
+    const previousEntity = previousProjectEntities.get(project.id);
+    if (!previousEntity) return false;
+    const expected = projectFoundationAttributes(project);
+    const previousComparable = Object.fromEntries(
+      Object.keys(expected).map((key) => [key, previousEntity.attributes[key]])
+    );
+    return hashCanonicalJson(previousComparable) === hashCanonicalJson(expected);
+  };
   const reusableProjectIds = new Set(
     canReusePrevious
       ? [...currentProjectScopes]
-          .filter(([id, fingerprint]) => previousProjectScopes.get(id) === fingerprint)
+          .filter(
+            ([id, fingerprint]) =>
+              previousProjectScopes.get(id) === fingerprint &&
+              currentProjectsById.has(id) &&
+              projectSemanticsMatch(currentProjectsById.get(id) as ResolvedProject)
+          )
           .map(([id]) => id)
       : []
   );
@@ -6694,24 +7186,7 @@ export async function buildWorkspaceKnowledgeGraph(
         'Author service contracts or add OpenAPI, Compose, Kubernetes, package or import evidence.',
     });
   }
-  const explicitUnknownCount = state.diagnostics
-    .filter(
-      (diagnostic) =>
-        diagnostic.code.includes('unknown') ||
-        diagnostic.code.includes('unresolved') ||
-        diagnostic.code.includes('limit_reached') ||
-        diagnostic.code.endsWith('.empty_result')
-    )
-    .reduce(
-      (count, diagnostic) =>
-        count + Math.max(diagnostic.entityIds?.length ?? 0, diagnostic.relationIds?.length ?? 0, 1),
-      0
-    );
-  const bindingCoverage = calculateBindingCoverage(entities, relations);
-  const bindingUnknownCount = Object.values(bindingCoverage).reduce(
-    (count, dimension) => count + dimension.unknownCount,
-    0
-  );
+  const bindingCoverage = calculateWorkspaceKnowledgeBindingCoverage(entities, relations);
   const completeInventoryScopes = inputFingerprint.scopes.filter(
     (scope) => !scope.truncated
   ).length;
@@ -6763,7 +7238,7 @@ export async function buildWorkspaceKnowledgeGraph(
         state.providers.length === 0 ? 1 : successfulProviders / state.providers.length,
       conflictCount: state.diagnostics.filter((diagnostic) => diagnostic.code.includes('conflict'))
         .length,
-      unknownCount: explicitUnknownCount + bindingUnknownCount,
+      unknownCount: countWorkspaceKnowledgeUnknowns(state.diagnostics, bindingCoverage),
       bindingCoverage,
       completeness: {
         status: completenessStatus,

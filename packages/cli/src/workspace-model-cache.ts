@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 import path from 'path';
+import { promisify } from 'node:util';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import { createRequire } from 'module';
 
@@ -87,7 +89,43 @@ export const MODEL_INPUT_WORKSPACE_FILES = [
 ] as const;
 
 /** Scannable source extensions whose changes can alter code-import edges. */
-const SOURCE_FINGERPRINT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
+const SOURCE_FINGERPRINT_EXTENSIONS = new Set([
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.vue',
+  '.svelte',
+  '.rb',
+  '.go',
+  '.py',
+  '.java',
+  '.kt',
+  '.kts',
+  '.rs',
+  '.cs',
+  '.php',
+  '.ex',
+  '.exs',
+  '.clj',
+  '.cljs',
+  '.scala',
+  '.c',
+  '.cc',
+  '.cpp',
+  '.cxx',
+  '.h',
+  '.hh',
+  '.hpp',
+  '.hxx',
+  '.proto',
+  '.graphql',
+  '.gql',
+  '.sql',
+  '.sh',
+]);
 const SOURCE_FINGERPRINT_SKIP_DIRS = new Set([
   '.git',
   '.workspai',
@@ -104,6 +142,70 @@ const SOURCE_FINGERPRINT_SKIP_DIRS = new Set([
   '.venv',
 ]);
 const SOURCE_FINGERPRINT_MAX_FILES = 1500;
+const execFileAsync = promisify(execFile);
+
+function isFingerprintSourcePath(relativePath: string): boolean {
+  return SOURCE_FINGERPRINT_EXTENSIONS.has(path.extname(relativePath).toLowerCase());
+}
+
+/**
+ * Git already owns a complete content-addressed inventory. Reuse its tree hash
+ * and hash only dirty/untracked source files instead of cold-walking a very
+ * large checkout. The fallback walker remains authoritative for non-Git roots.
+ */
+async function gitProjectSourceFingerprint(projectDir: string): Promise<string[] | null> {
+  try {
+    const { stdout: rootOutput } = await execFileAsync(
+      'git',
+      ['-C', projectDir, 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024 }
+    );
+    const repositoryRoot = rootOutput.trim();
+    if (!repositoryRoot) return null;
+    const relativeRoot = path.relative(repositoryRoot, projectDir).split(path.sep).join('/');
+    if (relativeRoot === '..' || relativeRoot.startsWith('../')) return null;
+    const pathspec = relativeRoot || '.';
+    const treeish = relativeRoot ? `HEAD:${relativeRoot}` : 'HEAD^{tree}';
+    const { stdout: treeOutput } = await execFileAsync(
+      'git',
+      ['-C', repositoryRoot, 'rev-parse', treeish],
+      { encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024 }
+    );
+    const [changed, untracked] = await Promise.all([
+      execFileAsync(
+        'git',
+        ['-C', repositoryRoot, 'diff', '--name-only', '-z', 'HEAD', '--', pathspec],
+        { encoding: 'buffer', timeout: 20_000, maxBuffer: 64 * 1024 * 1024 }
+      ),
+      execFileAsync(
+        'git',
+        ['-C', repositoryRoot, 'ls-files', '--others', '--exclude-standard', '-z', '--', pathspec],
+        { encoding: 'buffer', timeout: 20_000, maxBuffer: 64 * 1024 * 1024 }
+      ),
+    ]);
+    const dirtyPaths = new Set(
+      [changed.stdout, untracked.stdout]
+        .flatMap((buffer) => buffer.toString('utf8').split('\0'))
+        .filter(Boolean)
+    );
+    const entries = [`git-tree:${treeOutput.trim()}`];
+    for (const repositoryRelative of [...dirtyPaths].sort((a, b) => a.localeCompare(b))) {
+      const absolutePath = path.resolve(repositoryRoot, repositoryRelative);
+      const projectRelative = path.relative(projectDir, absolutePath).split(path.sep).join('/');
+      if (
+        projectRelative === '..' ||
+        projectRelative.startsWith('../') ||
+        !isFingerprintSourcePath(projectRelative)
+      ) {
+        continue;
+      }
+      entries.push(`${projectRelative}:${(await fileSignature(absolutePath)) ?? '<deleted>'}`);
+    }
+    return entries;
+  } catch {
+    return null;
+  }
+}
 
 export type ModelInputsSignatureInput = {
   workspacePath: string;
@@ -159,7 +261,11 @@ async function projectSignature(projectDir: string): Promise<string> {
     }
   }
 
-  const sourceEntries: string[] = [];
+  const gitSourceEntries = await gitProjectSourceFingerprint(projectDir);
+  const sourceEntries: string[] = gitSourceEntries ?? [];
+  if (gitSourceEntries) {
+    return computeInputsHash({ manifests, source: sourceEntries });
+  }
   const queue: string[] = [projectDir];
   while (queue.length > 0 && sourceEntries.length < SOURCE_FINGERPRINT_MAX_FILES) {
     const current = queue.shift();

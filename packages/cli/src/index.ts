@@ -9022,6 +9022,7 @@ program
   .option('--blast-radius', 'Include downstream dependents from workspace dependency graph')
   .option('--since <ref>', 'Git ref for affected calculation (default: HEAD~1)')
   .option('--parallel', 'Run project stages in parallel')
+  .option('--plan', 'Resolve runtime units and lifecycle commands without executing them')
   .option(
     '--runtime <runtime>',
     'Limit workspace run or a test-coverage Goal to one detected runtime family'
@@ -10775,7 +10776,13 @@ See the command reference for action-specific required inputs and output artifac
       }
 
       const emit = buildGraphEmit(graph);
-      const knowledgeGraph = await buildKnowledgeGraph();
+      const { writeWorkspaceModel } = await import('./workspace-model.js');
+      await writeWorkspaceModel(model, workspacePath, {
+        refreshKnowledgeGraph: forceGraphRefresh,
+      });
+      const knowledgeGraph = (await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+      )) as Awaited<ReturnType<typeof buildKnowledgeGraph>>;
       const payload = { ...emit, knowledgeGraph };
       const output = workspaceOutputPath();
       if (output) {

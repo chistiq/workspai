@@ -3,6 +3,7 @@ import path from 'path';
 import chalk from 'chalk';
 import {
   detectBackendFrameworkFromProject,
+  detectNestedRuntimeCandidatesFromProject,
   detectRuntimeCandidatesFromProject,
   type BackendRuntimeFamily,
 } from './utils/backend-framework-contract.js';
@@ -53,6 +54,7 @@ export interface AnalyzeProject {
   path: string;
   relativePath: string;
   runtime: BackendRuntimeFamily;
+  runtimeCandidates: BackendRuntimeFamily[];
   framework: string;
   confidence: string;
   supportTier: string;
@@ -279,8 +281,13 @@ async function hasHealthEndpoint(projectPath: string): Promise<boolean> {
     'src/liveness.ts',
     'src/readiness.ts',
     'src/ping.ts',
+    'app/controllers/health_controller.rb',
+    'app/controllers/health_check_controller.rb',
+    'config/initializers/health_check.rb',
   ];
-  return hasAnyPath(projectPath, candidatePaths);
+  if (await hasAnyPath(projectPath, candidatePaths)) return true;
+  const routes = await readText(path.join(projectPath, 'config', 'routes.rb'));
+  return /(?:health|readiness|liveness|readiness_check|health_check)/iu.test(routes);
 }
 
 async function hasEnvironmentContractIntent(
@@ -365,9 +372,13 @@ async function analyzeProject(
     projectMetadataCandidates(projectPath, 'project.json')
   );
   const detection = detectBackendFrameworkFromProject(projectPath, projectJson);
-  const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  const detectedRuntimeCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
   const runtime =
-    detection.runtime === 'unknown' ? runtimeCandidates[0] || 'unknown' : detection.runtime;
+    detection.runtime === 'unknown' ? detectedRuntimeCandidates[0] || 'unknown' : detection.runtime;
+  const runtimeCandidates = [
+    runtime,
+    ...detectedRuntimeCandidates.filter((candidate) => candidate !== runtime),
+  ];
   const projectKind = await inferWorkspaceProjectKind(projectPath, projectJson, {
     runtime,
     framework: detection.key,
@@ -508,6 +519,7 @@ async function analyzeProject(
     path: projectPath,
     relativePath,
     runtime,
+    runtimeCandidates,
     framework: detection.key,
     confidence: detection.confidence,
     supportTier: detection.supportTier,
@@ -726,7 +738,9 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
   const findingSummary = summarizeFindings(findings);
   const runtimes: Record<string, number> = {};
   for (const project of projects) {
-    runtimes[project.runtime] = (runtimes[project.runtime] || 0) + 1;
+    for (const runtime of project.runtimeCandidates) {
+      runtimes[runtime] = (runtimes[runtime] || 0) + 1;
+    }
   }
 
   const projectScore =

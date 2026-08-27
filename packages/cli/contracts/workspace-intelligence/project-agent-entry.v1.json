@@ -66,6 +66,9 @@
       "properties": {
         "projectContext": { "const": ".workspai/reports/project-context-agent.json" },
         "projectGrounding": { "const": ".workspai/PROJECT-GROUNDING.md" },
+        "projectKnowledgeGraph": {
+          "const": ".workspai/reports/workspace-knowledge-graph.json"
+        },
         "goalIndex": { "const": "workspace:.workspai/goals/index.json" },
         "workspaceIndex": { "const": "workspace:.workspai/reports/INDEX.json" },
         "workspaceContext": {

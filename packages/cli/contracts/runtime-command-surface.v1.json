@@ -3505,6 +3505,14 @@
           "description": "Limit the operation to a bounded scope such as project:<name>."
         },
         {
+          "flag": "--plan",
+          "description": "Resolve lifecycle commands without executing project code."
+        },
+        {
+          "flag": "--runtime",
+          "description": "Limit lifecycle planning or execution to one detected runtime family."
+        },
+        {
           "flag": "--affected",
           "description": "Run only projects affected by the selected Git change."
         },
@@ -3550,6 +3558,7 @@
       ],
       "artifact": ".workspai/reports/workspace-run-last.json",
       "examples": [
+        "workspai workspace run test --scope project:api --plan --runtime ruby --json",
         "workspai workspace run test --affected --blast-radius --strict",
         "workspai workspace run build --parallel --max-workers 4 --json"
       ]
