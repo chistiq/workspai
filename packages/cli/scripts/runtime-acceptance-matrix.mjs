@@ -610,7 +610,7 @@ function runGlobalCommandScenarios(runDirectory) {
 
   for (const flag of ['--version', '-v']) {
     runScenario({
-      id: `global.${flag.replace(/^-+/, '')}`,
+      id: `global.flag.${flag.replace(/^-+/, '')}`,
       scope: 'global',
       args: [flag],
       cwd: globalScenarioCwd,
@@ -628,7 +628,7 @@ function runGlobalCommandScenarios(runDirectory) {
   });
 
   for (const { id, command } of [
-    { id: 'version', command: ['version'] },
+    { id: 'command.version', command: ['version'] },
     { id: 'commands', command: ['commands'] },
     { id: 'list', command: ['list'] },
     { id: 'info.fastapi-standard', command: ['info', 'fastapi.standard'] },

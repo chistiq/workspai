@@ -33,4 +33,30 @@ describe('CLI pipe output', () => {
     expect(parsed.schemaVersion).toBe('rapidkit-version-v1');
     expect(parsed.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
   }, 30000);
+
+  it.each([
+    { args: ['version'], json: false },
+    { args: ['version', '--json'], json: true },
+  ])('flushes positional $args version output when stdout is piped', ({ args, json }) => {
+    const cliPath = ensureDistBuilt('CLI positional version pipe output');
+    const result = spawnSync(process.execPath, [cliPath, ...args], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: cliEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.signal).toBeNull();
+    expect(result.stderr).toBe('');
+    expect(result.stdout.trim()).not.toBe('');
+    if (json) {
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        schemaVersion: 'rapidkit-version-v1',
+      });
+    } else {
+      expect(result.stdout.trim()).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+    }
+  });
 });

@@ -6787,6 +6787,7 @@ export async function shouldForwardToCore(args: string[]): Promise<boolean> {
     first === '--help' ||
     first === '-h' ||
     first === 'help' ||
+    first === 'version' ||
     first === '--version' ||
     first === '-V' ||
     first === '-v'
@@ -12753,6 +12754,9 @@ export async function bootstrapCli(): Promise<void> {
   const shouldRenderCustomRootHelp =
     preArgs.length === 0 ||
     (preArgs.length === 1 && (preFirst === '--help' || preFirst === '-h' || preFirst === 'help'));
+  const isPositionalVersionInvocation =
+    preFirst === 'version' &&
+    preArgs.slice(1).every((arg) => arg === '--json' || arg === '--no-color');
 
   if (isWorkspaceActionHelpRequest(preArgs)) {
     await writeStdoutAndExit(`${renderWorkspaceActionHelp(preArgs[1])}\n`);
@@ -12765,7 +12769,8 @@ export async function bootstrapCli(): Promise<void> {
   }
 
   if (
-    preArgs.some((arg) => arg === '--version' || arg === '-V' || arg === '-v') &&
+    (isPositionalVersionInvocation ||
+      preArgs.some((arg) => arg === '--version' || arg === '-V' || arg === '-v')) &&
     !preArgs.some((arg) => arg === '--help' || arg === '-h' || arg === 'help')
   ) {
     if (preArgs.includes('--json')) {

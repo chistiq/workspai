@@ -52,6 +52,13 @@ describe('coreForwarding', () => {
 });
 
 describe('shouldForwardToCore module lifecycle dry-run boundary', () => {
+  it('keeps positional version requests on the npm wrapper', async () => {
+    const index = await import('../index.js');
+
+    await expect(index.shouldForwardToCore(['version'])).resolves.toBe(false);
+    await expect(index.shouldForwardToCore(['version', '--json'])).resolves.toBe(false);
+  });
+
   it('forwards core module lifecycle commands even with --dry-run', async () => {
     const index = await import('../index.js');
 
