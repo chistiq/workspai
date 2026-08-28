@@ -1903,9 +1903,9 @@ async function writePortableSkillFile(input: {
 }): Promise<'written' | 'skipped'> {
   if (!input.write) return 'skipped';
   const absolutePath = path.join(input.workspacePath, input.relativePath);
-  await assertSafeAgentOutputPath(input.workspacePath, absolutePath);
-  if (await fsExtra.pathExists(absolutePath)) {
-    const existing = await fsExtra.readFile(absolutePath, 'utf8');
+  const safeAbsolutePath = await assertSafeAgentOutputPath(input.workspacePath, absolutePath);
+  if (await fsExtra.pathExists(safeAbsolutePath)) {
+    const existing = await fsExtra.readFile(safeAbsolutePath, 'utf8');
     const isManaged =
       existing.includes(WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER) ||
       existing.includes('<!-- WORKSPAI:GENERATED-PORTABLE-SKILL -->') ||
@@ -1914,8 +1914,8 @@ async function writePortableSkillFile(input: {
         existing.includes('workspace agent-sync --write --refresh-context'));
     if (!isManaged) return 'skipped';
   }
-  await fsExtra.ensureDir(path.dirname(absolutePath));
-  await fsExtra.writeFile(absolutePath, input.content, 'utf8');
+  await fsExtra.ensureDir(path.dirname(safeAbsolutePath));
+  await fsExtra.writeFile(safeAbsolutePath, input.content, 'utf8');
   return 'written';
 }
 
@@ -1966,8 +1966,9 @@ async function writeImportedAgentAdapter(input: {
 async function assertSafeAgentOutputPath(
   workspacePathInput: string,
   absolutePathInput: string
-): Promise<void> {
+): Promise<string> {
   const workspacePath = path.resolve(workspacePathInput);
+  const canonicalWorkspacePath = await fsExtra.realpath(workspacePath).catch(() => workspacePath);
   const absolutePath = path.resolve(absolutePathInput);
   const relativePath = path.relative(workspacePath, absolutePath);
   if (
@@ -1986,7 +1987,7 @@ async function assertSafeAgentOutputPath(
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
     });
-    if (!stat) return;
+    if (!stat) return path.join(current, ...segments.slice(index + 1));
     const isTarget = index === segments.length - 1;
     if (stat.isSymbolicLink()) {
       if (isTarget) {
@@ -1995,7 +1996,7 @@ async function assertSafeAgentOutputPath(
         );
       }
       const resolved = await fsExtra.realpath(current);
-      const resolvedRelative = path.relative(workspacePath, resolved);
+      const resolvedRelative = path.relative(canonicalWorkspacePath, resolved);
       const remainsInsideWorkspace =
         resolvedRelative !== '..' &&
         !resolvedRelative.startsWith(`..${path.sep}`) &&
@@ -2013,6 +2014,7 @@ async function assertSafeAgentOutputPath(
       throw new Error(`Agent output path is blocked by authored repository state: ${relativePath}`);
     }
   }
+  return current;
 }
 
 export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget[] | undefined {

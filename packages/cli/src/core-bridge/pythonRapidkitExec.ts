@@ -215,6 +215,43 @@ function bridgeRapidkitCli(venvDir: string): string {
   return getVenvRapidkitPath(venvDir);
 }
 
+async function probeBridgeVenvHealth(venvDir: string): Promise<{
+  healthy: boolean;
+  details: string;
+}> {
+  const probes: Array<{ cmd: string; args: string[] }> = [];
+  const cli = bridgeRapidkitCli(venvDir);
+  if (await fsExtra.pathExists(cli)) {
+    probes.push({ cmd: cli, args: ['--version', '--json'] });
+  }
+  probes.push({
+    cmd: bridgePython(venvDir),
+    args: ['-m', 'rapidkit', '--version', '--json'],
+  });
+
+  const failures: string[] = [];
+  for (const probe of probes) {
+    try {
+      const result = await execa(probe.cmd, probe.args, {
+        reject: false,
+        stdio: 'pipe',
+        timeout: 30_000,
+      });
+      if (result.exitCode === 0 && (await isCoreJsonVersion(result.stdout))) {
+        return { healthy: true, details: '' };
+      }
+      const output = [result.stdout, result.stderr]
+        .map((value) => (value ?? '').toString().trim())
+        .filter(Boolean)
+        .join('\n');
+      failures.push(output || `${probe.cmd} exited with ${String(result.exitCode)}`);
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  return { healthy: false, details: failures.join('\n') };
+}
+
 async function findUserLocalRapidkitRunner(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env
@@ -1261,12 +1298,8 @@ async function ensureBridgeVenvLocked(pythonCmd: PythonCommand): Promise<string>
     if (!(await fsExtra.pathExists(py))) continue;
 
     try {
-      const probeResult = await execa(py, ['-m', 'rapidkit', '--version', '--json'], {
-        reject: false,
-        stdio: 'pipe',
-        timeout: 15_000,
-      });
-      if (probeResult.exitCode === 0 && (await isCoreJsonVersion(probeResult.stdout))) {
+      const health = await probeBridgeVenvHealth(venvDir);
+      if (health.healthy) {
         return py;
       }
       await fsExtra.remove(venvDir);
@@ -1282,7 +1315,6 @@ async function ensureBridgeVenvLocked(pythonCmd: PythonCommand): Promise<string>
     // Keep bootstrap noise out of stdout/stderr as much as possible.
     // Even if pip emits notices, we prefer them on stderr (and avoid them entirely when possible).
     PIP_DISABLE_PIP_VERSION_CHECK: '1',
-    PIP_NO_PYTHON_VERSION_WARNING: '1',
   };
 
   const retryCount = Math.max(0, Number(process.env.RAPIDKIT_BRIDGE_PIP_RETRY ?? '2'));
@@ -1397,20 +1429,13 @@ async function ensureBridgeVenvLocked(pythonCmd: PythonCommand): Promise<string>
       const msg = err instanceof Error ? err.message : String(err);
       throw new BridgeError('BRIDGE_PIP_INSTALL_FAILED', msg);
     }
-    const health = await execa(vpy, ['-m', 'rapidkit', '--version', '--json'], {
-      reject: false,
-      stdio: 'pipe',
-      timeout: 30_000,
-    });
-    if (health.exitCode !== 0 || !(await isCoreJsonVersion(health.stdout))) {
-      const details = [health.stdout, health.stderr]
-        .map((value) => (value ?? '').toString().trim())
-        .filter(Boolean)
-        .join('\n');
+    const health = await probeBridgeVenvHealth(venvDir);
+    if (!health.healthy) {
       await fsExtra.remove(venvDir);
       throw new BridgeError(
         'BRIDGE_VENV_HEALTH_FAILED',
-        details || 'rapidkit --version --json did not return the expected Core version contract.'
+        health.details ||
+          'rapidkit --version --json did not return the expected Core version contract.'
       );
     }
     return vpy;
@@ -1917,6 +1942,7 @@ export const __test__ = {
   pythonCommandCandidates,
   pickSystemPython,
   ensureBridgeVenv,
+  probeBridgeVenvHealth,
   ensureBridgeVenvFromCandidates,
   parseCoreCommandsFromHelp,
   tryRapidkit,

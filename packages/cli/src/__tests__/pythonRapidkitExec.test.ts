@@ -202,6 +202,37 @@ rapidkit deploy
   });
 
   describe('ensureBridgeVenv', () => {
+    it('accepts the distribution console entrypoint when no rapidkit module exists', async () => {
+      mockFs.pathExists.mockResolvedValue(true);
+      mockExeca.mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+        stderr: '',
+      });
+
+      const health = await bridge.__test__.probeBridgeVenvHealth('/tmp/workspai-core');
+
+      expect(health.healthy).toBe(true);
+      expect(mockExeca).toHaveBeenCalledTimes(1);
+      expect(mockExeca.mock.calls[0][1]).toEqual(['--version', '--json']);
+    });
+
+    it('falls back to module execution for older Core distributions', async () => {
+      mockFs.pathExists.mockResolvedValue(true);
+      mockExeca
+        .mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'broken entrypoint' })
+        .mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version: '0.5.0' }),
+          stderr: '',
+        });
+
+      const health = await bridge.__test__.probeBridgeVenvHealth('/tmp/workspai-core');
+
+      expect(health.healthy).toBe(true);
+      expect(mockExeca.mock.calls[1][1]).toEqual(['-m', 'rapidkit', '--version', '--json']);
+    });
+
     it('returns existing python if venv already exists', async () => {
       // Mock that venv python already exists
       mockFs.pathExists.mockResolvedValue(true);

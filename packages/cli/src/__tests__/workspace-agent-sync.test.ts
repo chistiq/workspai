@@ -502,14 +502,22 @@ describe('workspace agent sync', () => {
   });
 
   it('supports a repository-local .agents/skills mirror symlink', async (context) => {
-    const workspacePath = await makeWorkspace();
-    const sharedSkillsPath = path.join(workspacePath, '.claude', 'skills');
-    await fsExtra.ensureDir(path.join(workspacePath, '.agents'));
+    const canonicalWorkspacePath = await makeWorkspace();
+    const workspacePath = `${canonicalWorkspacePath}-alias`;
+    try {
+      await fsExtra.symlink(canonicalWorkspacePath, workspacePath, 'dir');
+      tempDirs.push(workspacePath);
+    } catch {
+      context.skip();
+      return;
+    }
+    const sharedSkillsPath = path.join(canonicalWorkspacePath, '.claude', 'skills');
+    await fsExtra.ensureDir(path.join(canonicalWorkspacePath, '.agents'));
     await fsExtra.ensureDir(sharedSkillsPath);
     try {
       await fsExtra.symlink(
         path.join('..', '.claude', 'skills'),
-        path.join(workspacePath, '.agents', 'skills'),
+        path.join(canonicalWorkspacePath, '.agents', 'skills'),
         'dir'
       );
     } catch {

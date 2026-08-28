@@ -1465,8 +1465,9 @@ async function writeAtomic(filePath: string, contents: string): Promise<void> {
 async function assertSafeProjectAgentOutputPath(
   projectPathInput: string,
   outputPathInput: string
-): Promise<void> {
+): Promise<string> {
   const projectPath = path.resolve(projectPathInput);
+  const canonicalProjectPath = await fsp.realpath(projectPath).catch(() => projectPath);
   const outputPath = path.resolve(outputPathInput);
   const relativePath = path.relative(projectPath, outputPath);
   if (
@@ -1485,14 +1486,14 @@ async function assertSafeProjectAgentOutputPath(
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
     });
-    if (!stat) return;
+    if (!stat) return path.join(current, ...segments.slice(index + 1));
     const isTarget = index === segments.length - 1;
     if (stat.isSymbolicLink()) {
       if (isTarget) {
         throw new Error(`Project agent output is blocked by authored state: ${relativePath}`);
       }
       const resolved = await fsp.realpath(current);
-      const resolvedRelative = path.relative(projectPath, resolved);
+      const resolvedRelative = path.relative(canonicalProjectPath, resolved);
       const resolvedStat = await fsp.stat(resolved);
       if (
         resolvedRelative === '..' ||
@@ -1509,6 +1510,7 @@ async function assertSafeProjectAgentOutputPath(
       throw new Error(`Project agent output is blocked by authored state: ${relativePath}`);
     }
   }
+  return current;
 }
 
 export async function resolveProjectPortableSkillTransactionPaths(input: {
@@ -1543,8 +1545,7 @@ export async function resolveProjectPortableSkillTransactionPaths(input: {
   const paths: string[] = [];
   for (const relativePath of relativePaths) {
     const absolutePath = path.join(input.projectPath, relativePath);
-    await assertSafeProjectAgentOutputPath(input.projectPath, absolutePath);
-    paths.push(absolutePath);
+    paths.push(await assertSafeProjectAgentOutputPath(input.projectPath, absolutePath));
   }
   return paths;
 }
@@ -1628,8 +1629,11 @@ async function reconcileProjectPortableSkills(input: {
   if (input.mode === 'managed' && input.context) {
     for (const entry of desired) {
       const absolutePath = path.join(input.projectPath, entry.relativePath);
-      await assertSafeProjectAgentOutputPath(input.projectPath, absolutePath);
-      const existing = await fsp.readFile(absolutePath, 'utf8').catch((error) => {
+      const safeAbsolutePath = await assertSafeProjectAgentOutputPath(
+        input.projectPath,
+        absolutePath
+      );
+      const existing = await fsp.readFile(safeAbsolutePath, 'utf8').catch((error) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
         throw error;
       });
@@ -1639,7 +1643,7 @@ async function reconcileProjectPortableSkills(input: {
         continue;
       }
       const markdown = projectPortableSkillMarkdown(input.context, entry.skill);
-      if (markdown !== existing) await writeAtomic(absolutePath, markdown);
+      if (markdown !== existing) await writeAtomic(safeAbsolutePath, markdown);
       availableFiles.push(entry.relativePath);
       writtenFiles.push(entry.relativePath);
     }
@@ -1654,10 +1658,13 @@ async function reconcileProjectPortableSkills(input: {
     const relativePath = `.agents/skills/${entry.name}/SKILL.md`;
     if (input.mode === 'managed' && desiredPaths.has(relativePath)) continue;
     const absolutePath = path.join(input.projectPath, relativePath);
-    await assertSafeProjectAgentOutputPath(input.projectPath, absolutePath);
-    const existing = await fsp.readFile(absolutePath, 'utf8').catch(() => '');
+    const safeAbsolutePath = await assertSafeProjectAgentOutputPath(
+      input.projectPath,
+      absolutePath
+    );
+    const existing = await fsp.readFile(safeAbsolutePath, 'utf8').catch(() => '');
     if (!existing.includes(WORKSPAI_PROJECT_SKILL_MARKER)) continue;
-    await fsp.rm(path.dirname(absolutePath), { recursive: true, force: true });
+    await fsp.rm(path.dirname(safeAbsolutePath), { recursive: true, force: true });
   }
   return { availableFiles, writtenFiles, authoredCollisions };
 }

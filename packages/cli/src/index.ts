@@ -232,6 +232,7 @@ import {
   createLifecycleTransaction,
   recoverActiveLifecycleTransactions,
 } from './utils/lifecycle-transaction.js';
+import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   resolveLegacyWorkspaceArtifactPath,
   resolveWorkspaceArtifactPath,
@@ -890,17 +891,32 @@ async function beginProjectLifecycleTransaction(
   }
 
   try {
+    const capturedFiles = new Set<string>();
+    const projectPath = options.projectPath;
     for (const filePath of files) {
-      const isProjectAgentsPath =
-        options.projectPath && filePath === path.join(options.projectPath, 'AGENTS.md');
-      const stat = isProjectAgentsPath
+      const isProjectAgentEntryPath =
+        projectPath &&
+        (filePath === path.join(projectPath, 'AGENTS.md') ||
+          PROJECT_AGENT_ADAPTER_ENTRY_FILES.some(
+            (entryPath) => filePath === path.join(projectPath, entryPath)
+          ));
+      const stat = isProjectAgentEntryPath
         ? await fsExtra.lstat(filePath).catch((error) => {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
             throw error;
           })
         : null;
-      if (stat?.isSymbolicLink()) continue;
-      await transaction.captureFile(filePath);
+      let capturePath = filePath;
+      if (stat?.isSymbolicLink() && projectPath) {
+        const resolved = await resolveRepositoryLocalSymlinkFile(projectPath, filePath);
+        // Unsafe links are rejected later by the project grounding writer. Do not
+        // make the lifecycle journal follow or capture them first.
+        if (!resolved) continue;
+        capturePath = resolved;
+      }
+      if (capturedFiles.has(capturePath)) continue;
+      await transaction.captureFile(capturePath);
+      capturedFiles.add(capturePath);
     }
     if (options.ownedDestination) {
       await transaction.captureOwnedTree(options.ownedDestination);
