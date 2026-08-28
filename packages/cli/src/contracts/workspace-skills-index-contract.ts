@@ -14,11 +14,26 @@ export type WorkspaceSkillsIndexEntry = {
   title: string;
 };
 
+export type WorkspaceOperationalSkillDecision = {
+  skillId: string;
+  title: string;
+  status: 'generated' | 'suppressed';
+  confidence: 'high' | 'medium';
+  reasons: string[];
+  signals: string[];
+  scopedProjects: string[];
+};
+
 export type WorkspaceSkillsIndex = {
   schemaVersion: typeof WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION;
   generatedAt: string;
   inputsHash: string;
   skills: WorkspaceSkillsIndexEntry[];
+  selection?: {
+    generatedCount: number;
+    suppressedCount: number;
+    decisions: WorkspaceOperationalSkillDecision[];
+  };
 };
 
 export { WORKSPACE_SKILLS_INDEX_PATH };
@@ -27,6 +42,7 @@ export function buildWorkspaceSkillsIndex(input: {
   generatedAt: string;
   skills: WorkspaceOperationalSkillRecord[];
   inputsHash?: string;
+  decisions?: WorkspaceOperationalSkillDecision[];
 }): WorkspaceSkillsIndex {
   const sorted = [...input.skills].sort((a, b) => a.skillId.localeCompare(b.skillId));
   const inputsHash =
@@ -34,7 +50,11 @@ export function buildWorkspaceSkillsIndex(input: {
     computeInputsHash({
       skillIds: sorted.map((skill) => skill.skillId),
       paths: sorted.map((skill) => skill.canonicalPath),
+      decisions: input.decisions ?? [],
     });
+  const decisions = input.decisions
+    ? [...input.decisions].sort((left, right) => left.skillId.localeCompare(right.skillId))
+    : undefined;
   return {
     schemaVersion: WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION,
     generatedAt: input.generatedAt,
@@ -45,6 +65,16 @@ export function buildWorkspaceSkillsIndex(input: {
       schemaVersion: skill.schemaVersion,
       title: skill.title,
     })),
+    ...(decisions
+      ? {
+          selection: {
+            generatedCount: decisions.filter((decision) => decision.status === 'generated').length,
+            suppressedCount: decisions.filter((decision) => decision.status === 'suppressed')
+              .length,
+            decisions,
+          },
+        }
+      : {}),
   };
 }
 
@@ -53,9 +83,19 @@ export function isWorkspaceSkillsIndex(value: unknown): value is WorkspaceSkills
     return false;
   }
   const record = value as Record<string, unknown>;
+  const selection = record.selection;
+  const selectionIsValid =
+    selection === undefined ||
+    (selection !== null &&
+      typeof selection === 'object' &&
+      !Array.isArray(selection) &&
+      typeof (selection as Record<string, unknown>).generatedCount === 'number' &&
+      typeof (selection as Record<string, unknown>).suppressedCount === 'number' &&
+      Array.isArray((selection as Record<string, unknown>).decisions));
   return (
     record.schemaVersion === WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION &&
     typeof record.generatedAt === 'string' &&
-    Array.isArray(record.skills)
+    Array.isArray(record.skills) &&
+    selectionIsValid
   );
 }

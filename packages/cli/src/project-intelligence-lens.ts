@@ -46,12 +46,19 @@ import {
   type AgentEntryHostCoverage,
   type AgentEntryHostId,
 } from './project-agent-entry.js';
+import type {
+  WorkspaceSkillsIndex,
+  WorkspaceSkillsIndexEntry,
+} from './contracts/workspace-skills-index-contract.js';
 
 export const PROJECT_CONTEXT_AGENT_SCHEMA_VERSION =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectContextAgent.schemaVersion;
 export const PROJECT_GROUNDING_MODE_VALUES = ['managed', 'local', 'off'] as const;
 export const WORKSPAI_PROJECT_GROUNDING_START = '<!-- WORKSPAI:PROJECT-GROUNDING:START -->';
 export const WORKSPAI_PROJECT_GROUNDING_END = '<!-- WORKSPAI:PROJECT-GROUNDING:END -->';
+export const WORKSPAI_PROJECT_SKILL_MARKER = '<!-- WORKSPAI:GENERATED-PROJECT-SKILL -->' as const;
+export const PROJECT_PORTABLE_GROUNDING_SKILL_PATH =
+  '.agents/skills/workspai-grounding/SKILL.md' as const;
 
 export type ProjectGroundingMode = (typeof PROJECT_GROUNDING_MODE_VALUES)[number];
 
@@ -63,7 +70,7 @@ export interface ProjectContextAgent {
     profile?: string;
     relationship: ProjectWorkspaceRelationship;
     contract: `workspace:${(typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['workspaceContract']}`;
-    projectKnowledgeGraph: (typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph'];
+    projectKnowledgeGraph: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['projectKnowledgeGraphReference'];
     model: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['model']}`;
     knowledgeGraph: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['knowledgeGraph']}`;
     index: `workspace:${(typeof WORKSPACE_INTELLIGENCE_ARTIFACTS)['agentIndex']}`;
@@ -118,6 +125,7 @@ export interface ProjectContextAgent {
       lifecycleStageCount: number;
       runtimeCoverage: string[];
     };
+    projection: ProjectLensProjection;
     relatedProjects: string[];
     freshness: {
       model: 'fresh' | 'stale' | 'unknown' | 'missing';
@@ -218,6 +226,19 @@ export interface ProjectLensEntity {
   label: string;
   attributes: Record<string, WorkspaceKnowledgeAttribute>;
   proofIds: string[];
+}
+
+export interface ProjectLensProjection {
+  mode: 'stratified-byte-bounded';
+  maxEntities: number;
+  byteBudget: number;
+  selectedBytes: number;
+  eligibleCount: number;
+  selectedCount: number;
+  omittedCount: number;
+  selectedByKind: Record<string, number>;
+  omittedByKind: Record<string, number>;
+  continuationCommand: string;
 }
 
 export interface ProjectLensRelation {
@@ -408,37 +429,73 @@ const PROJECT_LENS_ENTITY_KIND_ORDER: WorkspaceKnowledgeEntity['kind'][] = [
   'symbol',
 ];
 
-function boundedProjectLensEntities(
+const PROJECT_LENS_MAX_ENTITIES = 48;
+const PROJECT_LENS_ENTITY_BYTE_BUDGET = 12 * 1024;
+
+export function selectBoundedProjectLensEntities(
   entities: WorkspaceKnowledgeEntity[],
-  limit = 160
-): WorkspaceKnowledgeEntity[] {
+  limit = PROJECT_LENS_MAX_ENTITIES,
+  byteBudget = PROJECT_LENS_ENTITY_BYTE_BUDGET
+): {
+  entities: WorkspaceKnowledgeEntity[];
+  selectedBytes: number;
+  selectedByKind: Record<string, number>;
+  omittedByKind: Record<string, number>;
+} {
   const perKindLimits: Partial<Record<WorkspaceKnowledgeEntity['kind'], number>> = {
-    language: 32,
-    api: 32,
-    service: 32,
-    endpoint: 32,
-    schema: 32,
-    protocol: 32,
-    'runtime-unit': 32,
-    'lifecycle-stage': 32,
-    file: 8,
-    module: 8,
-    symbol: 8,
+    language: 12,
+    api: 8,
+    service: 8,
+    endpoint: 8,
+    schema: 8,
+    protocol: 8,
+    'runtime-unit': 12,
+    'lifecycle-stage': 12,
+    file: 4,
+    module: 4,
+    symbol: 4,
   };
-  const selected: WorkspaceKnowledgeEntity[] = [];
+  const candidatesByKind = new Map<WorkspaceKnowledgeEntity['kind'], WorkspaceKnowledgeEntity[]>();
+  const allByKind: Record<string, number> = {};
+  for (const entity of entities) increment(allByKind, entity.kind);
   for (const kind of PROJECT_LENS_ENTITY_KIND_ORDER) {
-    const candidates = entities
-      .filter((entity) => entity.kind === kind)
-      .sort(
-        (left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id)
-      )
-      .slice(0, perKindLimits[kind] ?? 32);
-    for (const entity of candidates) {
-      if (selected.length >= limit) return selected;
-      selected.push(entity);
-    }
+    candidatesByKind.set(
+      kind,
+      entities
+        .filter((entity) => entity.kind === kind)
+        .sort(
+          (left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id)
+        )
+        .slice(0, perKindLimits[kind] ?? 6)
+    );
   }
-  return selected;
+  const selected: WorkspaceKnowledgeEntity[] = [];
+  const selectedByKind: Record<string, number> = {};
+  let selectedBytes = 0;
+  let round = 0;
+  let madeProgress = true;
+  while (selected.length < limit && madeProgress) {
+    madeProgress = false;
+    for (const kind of PROJECT_LENS_ENTITY_KIND_ORDER) {
+      const entity = candidatesByKind.get(kind)?.[round];
+      if (!entity) continue;
+      const entityBytes = Buffer.byteLength(JSON.stringify(entity));
+      if (selectedBytes + entityBytes > byteBudget) continue;
+      selected.push(entity);
+      selectedBytes += entityBytes;
+      increment(selectedByKind, kind);
+      madeProgress = true;
+      if (selected.length >= limit) break;
+    }
+    round += 1;
+  }
+  const omittedByKind = Object.fromEntries(
+    Object.entries(allByKind)
+      .map(([kind, count]) => [kind, count - (selectedByKind[kind] ?? 0)] as const)
+      .filter(([, count]) => count > 0)
+      .sort(([left], [right]) => left.localeCompare(right))
+  );
+  return { entities: selected, selectedBytes, selectedByKind, omittedByKind };
 }
 
 function relatedGraphProjection(
@@ -452,6 +509,7 @@ function relatedGraphProjection(
   relationsByKind: Record<string, number>;
   languages: ProjectContextAgent['intelligence']['languages'];
   semantic: ProjectContextAgent['intelligence']['semantic'];
+  projection: Omit<ProjectLensProjection, 'continuationCommand'>;
   relatedProjects: string[];
   proofArtifacts: string[];
   entities: WorkspaceKnowledgeEntity[];
@@ -476,6 +534,17 @@ function relatedGraphProjection(
         runtimeUnitCount: 0,
         lifecycleStageCount: 0,
         runtimeCoverage: [],
+      },
+      projection: {
+        mode: 'stratified-byte-bounded',
+        maxEntities: PROJECT_LENS_MAX_ENTITIES,
+        byteBudget: PROJECT_LENS_ENTITY_BYTE_BUDGET,
+        selectedBytes: 0,
+        eligibleCount: 0,
+        selectedCount: 0,
+        omittedCount: 0,
+        selectedByKind: {},
+        omittedByKind: {},
       },
       relatedProjects: [],
       proofArtifacts: [],
@@ -610,7 +679,8 @@ function relatedGraphProjection(
     .sort((left, right) =>
       `${left.project}:${left.kind}`.localeCompare(`${right.project}:${right.kind}`)
     );
-  const projectedEntities = boundedProjectLensEntities(entities);
+  const projectedEntitySelection = selectBoundedProjectLensEntities(entities);
+  const projectedEntities = projectedEntitySelection.entities;
   const runtimeUnits = entities.filter((entity) => entity.kind === 'runtime-unit');
   const projectedEntityIds = new Set(projectedEntities.map((entity) => entity.id));
   const projectedRelations = [...relations]
@@ -623,7 +693,7 @@ function relatedGraphProjection(
       );
       return rightPriority - leftPriority || left.id.localeCompare(right.id);
     })
-    .slice(0, 128);
+    .slice(0, 16);
   const projectedProofIds = new Set([
     ...projectedEntities.flatMap((entity) => entity.proofIds),
     ...projectedRelations.flatMap((relation) => relation.proofIds),
@@ -631,7 +701,7 @@ function relatedGraphProjection(
   const projectedProofs = proofs
     .filter((proof) => projectedProofIds.has(proof.id))
     .sort((left, right) => left.id.localeCompare(right.id))
-    .slice(0, 128);
+    .slice(0, 16);
   return {
     entityCount: entities.length,
     relationCount: relations.length,
@@ -657,10 +727,25 @@ function relatedGraphProjection(
         ),
       ].sort(),
     },
+    projection: {
+      mode: 'stratified-byte-bounded',
+      maxEntities: PROJECT_LENS_MAX_ENTITIES,
+      byteBudget: PROJECT_LENS_ENTITY_BYTE_BUDGET,
+      selectedBytes: projectedEntitySelection.selectedBytes,
+      eligibleCount: entities.length,
+      selectedCount: projectedEntities.length,
+      omittedCount: Math.max(0, entities.length - projectedEntities.length),
+      selectedByKind: Object.fromEntries(
+        Object.entries(projectedEntitySelection.selectedByKind).sort(([left], [right]) =>
+          left.localeCompare(right)
+        )
+      ),
+      omittedByKind: projectedEntitySelection.omittedByKind,
+    },
     relatedProjects,
     proofArtifacts: [...new Set(projectedProofs.map((proof) => proof.artifact))]
       .sort()
-      .slice(0, 128),
+      .slice(0, 24),
     entities: projectedEntities,
     relations: projectedRelations,
     proofs: projectedProofs,
@@ -719,7 +804,7 @@ function projectLensSurfaces(
     entities
       .filter((entity) => kinds.includes(entity.kind))
       .map((entity) => projectLensEntity(entity, workspacePath, projectPath))
-      .slice(0, 32);
+      .slice(0, 4);
   const ports: ProjectLensPort[] = [];
   for (const entity of entities) {
     for (const [attribute, value] of Object.entries(entity.attributes)) {
@@ -730,9 +815,9 @@ function projectLensSurfaces(
         attribute,
         value: portableKnowledgeValue(value, workspacePath, projectPath),
       });
-      if (ports.length >= 32) break;
+      if (ports.length >= 8) break;
     }
-    if (ports.length >= 32) break;
+    if (ports.length >= 8) break;
   }
   return {
     services: byKinds('service'),
@@ -996,7 +1081,7 @@ export async function buildProjectContextAgent(
         : {}),
       relationship,
       contract: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract}`,
-      projectKnowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      projectKnowledgeGraph: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference,
       model: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`,
       knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`,
       index: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`,
@@ -1054,6 +1139,10 @@ export async function buildProjectContextAgent(
       relationsByKind: graphProjection.relationsByKind,
       languages: graphProjection.languages,
       semantic: graphProjection.semantic,
+      projection: {
+        ...graphProjection.projection,
+        continuationCommand: `workspai workspace graph search <task-query> --scope project:${projectName} --limit 12 --json`,
+      },
       relatedProjects: graphProjection.relatedProjects,
       freshness: {
         model: modelFreshness,
@@ -1094,8 +1183,6 @@ export async function buildProjectContextAgent(
         'AGENTS.md',
         'workspace:.workspai/goals/index.json',
         `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalPackLastRun}`,
-        'workspace:.workspai/reports/INDEX.json',
-        'workspace:.workspai/reports/workspace-context-agent.json',
         'workspace:.workspai/reports/workspace-skills-index.json',
         `command:workspai workspace graph search <task-query> --scope project:${projectName} --limit 12 --json`,
       ],
@@ -1149,8 +1236,6 @@ export async function buildProjectContextAgent(
         'command:workspai agent bootstrap --for-agent generic --strict --json',
         'command:workspai project workspace status --json',
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
-        'workspace:.workspai/reports/INDEX.json',
-        'workspace:.workspai/reports/workspace-context-agent.json',
         'workspace:.workspai/reports/workspace-skills-index.json',
         `command:workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
       ],
@@ -1224,7 +1309,7 @@ commands launched here resolve the machine-local workspace automatically.
 Do not begin broad repository discovery, architecture claims, planning, or mutation
 until this sequence is complete:
 
-1. Read \`.workspai/agent-entry.v1.json\` to discover the portable protocol.
+1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\` to discover the portable protocol.
 2. Run \`workspai agent bootstrap --for-agent generic --strict --json\`.
 3. Follow the receipt's \`requiredReadOrder\` exactly.
 4. Read \`.workspai/reports/project-context-agent.json\`.
@@ -1262,12 +1347,12 @@ entry gate; Workspai preserves rather than replaces them.
 
 ## Knowledge Graph routing
 
-- Project-owned graph: \`${context.workspace.projectKnowledgeGraph}\`. This is the
-  durable project projection and the direct graph artifact for project-local consumers.
+- Project graph reference: \`${context.workspace.projectKnowledgeGraph}\`. It integrity-binds
+  this project to its exact canonical projection without duplicating the full graph.
 - Workspace aggregate: \`${context.workspace.knowledgeGraph}\`. Resolve it through the
   workspace binding only for cross-project or workspace-wide consumption.
-- Default agent path: use the bounded graph-search command below; load either complete
-  graph artifact only when the task explicitly requires full graph interchange.
+- Default agent path: use the bounded graph-search command below; resolve the canonical
+  graph only when the task explicitly requires full graph interchange.
 
 ## Project
 
@@ -1313,11 +1398,11 @@ function buildProjectAgentsSection(context: ProjectContextAgent): string {
 
 - Project: \`${context.project.name}\`
 - Workspace identity: \`${context.workspace.name}\` (logical name, not a filesystem path)
-- Entry contract: \`.workspai/agent-entry.v1.json\`
+- Entry contract: \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`
 
 Before broad repository discovery, architecture claims, planning, or mutation:
 
-1. Read \`.workspai/agent-entry.v1.json\`.
+1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`.
 2. Run \`workspai agent bootstrap --for-agent generic --strict --json\`.
 3. Follow the receipt's \`requiredReadOrder\` exactly.
 4. If a Goal is active, read its immutable Goal Pack and handoff before acting.
@@ -1375,6 +1460,206 @@ async function writeAtomic(filePath: string, contents: string): Promise<void> {
   } finally {
     await fsp.rm(temporaryPath, { force: true }).catch(() => undefined);
   }
+}
+
+async function assertSafeProjectAgentOutputPath(
+  projectPathInput: string,
+  outputPathInput: string
+): Promise<void> {
+  const projectPath = path.resolve(projectPathInput);
+  const outputPath = path.resolve(outputPathInput);
+  const relativePath = path.relative(projectPath, outputPath);
+  if (
+    !relativePath ||
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error('Project agent output path must remain inside the project.');
+  }
+  const segments = relativePath.split(path.sep);
+  let current = projectPath;
+  for (const [index, segment] of segments.entries()) {
+    current = path.join(current, segment);
+    const stat = await fsp.lstat(current).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat) return;
+    const isTarget = index === segments.length - 1;
+    if (stat.isSymbolicLink()) {
+      if (isTarget) {
+        throw new Error(`Project agent output is blocked by authored state: ${relativePath}`);
+      }
+      const resolved = await fsp.realpath(current);
+      const resolvedRelative = path.relative(projectPath, resolved);
+      const resolvedStat = await fsp.stat(resolved);
+      if (
+        resolvedRelative === '..' ||
+        resolvedRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(resolvedRelative) ||
+        !resolvedStat.isDirectory()
+      ) {
+        throw new Error(`Project agent output is blocked by authored state: ${relativePath}`);
+      }
+      current = resolved;
+      continue;
+    }
+    if (isTarget ? !stat.isFile() : !stat.isDirectory()) {
+      throw new Error(`Project agent output is blocked by authored state: ${relativePath}`);
+    }
+  }
+}
+
+export async function resolveProjectPortableSkillTransactionPaths(input: {
+  workspacePath: string;
+  projectPath: string;
+}): Promise<string[]> {
+  const skillsRoot = path.join(input.projectPath, '.agents', 'skills');
+  try {
+    await assertSafeProjectAgentOutputPath(
+      input.projectPath,
+      path.join(skillsRoot, 'workspai-grounding', 'SKILL.md')
+    );
+  } catch {
+    return [];
+  }
+  const index = await readJsonIfPresent<WorkspaceSkillsIndex>(
+    path.join(input.workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex)
+  );
+  const relativePaths = new Set([
+    PROJECT_PORTABLE_GROUNDING_SKILL_PATH,
+    ...(index?.skills ?? []).map((skill) => `.agents/skills/${skill.skillId}/SKILL.md`),
+  ]);
+  const entries = await fsp.readdir(skillsRoot, { withFileTypes: true }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  });
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name.startsWith('workspai-')) {
+      relativePaths.add(`.agents/skills/${entry.name}/SKILL.md`);
+    }
+  }
+  const paths: string[] = [];
+  for (const relativePath of relativePaths) {
+    const absolutePath = path.join(input.projectPath, relativePath);
+    await assertSafeProjectAgentOutputPath(input.projectPath, absolutePath);
+    paths.push(absolutePath);
+  }
+  return paths;
+}
+
+function projectPortableSkillMarkdown(
+  context: ProjectContextAgent,
+  skill?: WorkspaceSkillsIndexEntry
+): string {
+  const skillId = skill?.skillId ?? 'workspai-grounding';
+  const title = skill?.title ?? 'Workspai project grounding';
+  const canonicalSkill = skill ? `workspace:${skill.path}` : null;
+  return [
+    '---',
+    `name: ${skillId}`,
+    `description: ${JSON.stringify(`${title} through the Workspai project intelligence contract`)}`,
+    '---',
+    '',
+    WORKSPAI_PROJECT_SKILL_MARKER,
+    '',
+    `# ${title}`,
+    '',
+    `This is a portable project entry for \`${context.project.name}\`. It contains no machine-local workspace path.`,
+    '',
+    '## Workflow',
+    '',
+    `1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`.`,
+    '2. Run `workspai agent bootstrap --for-agent generic --strict --json`.',
+    '3. Continue only when the receipt permits it and follow its bounded `requiredReadOrder`.',
+    ...(canonicalSkill
+      ? [
+          `4. Resolve and follow the canonical Skill \`${canonicalSkill}\` listed in \`workspace:.workspai/reports/workspace-skills-index.json\`.`,
+          `5. Query the graph with \`workspai workspace graph search <task-query> --scope project:${context.project.name} --limit 12 --json\` before broad source inspection.`,
+        ]
+      : [
+          '4. Load only the matching canonical Skill from `workspace:.workspai/reports/workspace-skills-index.json`.',
+          `5. Query the graph with \`workspai workspace graph search <task-query> --scope project:${context.project.name} --limit 12 --json\` before broad source inspection.`,
+        ]),
+    '',
+    'Repository-authored instructions and live source remain authoritative for exact implementation.',
+    '',
+  ].join('\n');
+}
+
+async function reconcileProjectPortableSkills(input: {
+  workspacePath: string;
+  projectPath: string;
+  mode: ProjectGroundingMode;
+  context?: ProjectContextAgent;
+}): Promise<{
+  availableFiles: string[];
+  writtenFiles: string[];
+  authoredCollisions: string[];
+  reason?: string;
+}> {
+  const skillsRoot = path.join(input.projectPath, '.agents', 'skills');
+  const index = await readJsonIfPresent<WorkspaceSkillsIndex>(
+    path.join(input.workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex)
+  );
+  const desired = input.context
+    ? [
+        { relativePath: PROJECT_PORTABLE_GROUNDING_SKILL_PATH, skill: undefined },
+        ...(index?.skills ?? []).map((skill) => ({
+          relativePath: `.agents/skills/${skill.skillId}/SKILL.md`,
+          skill,
+        })),
+      ]
+    : [];
+  const desiredPaths = new Set(desired.map((entry) => entry.relativePath));
+  const availableFiles: string[] = [];
+  const writtenFiles: string[] = [];
+  const authoredCollisions: string[] = [];
+  try {
+    await assertSafeProjectAgentOutputPath(
+      input.projectPath,
+      path.join(skillsRoot, 'workspai-grounding', 'SKILL.md')
+    );
+  } catch (error) {
+    return { availableFiles, writtenFiles, authoredCollisions, reason: String(error) };
+  }
+
+  if (input.mode === 'managed' && input.context) {
+    for (const entry of desired) {
+      const absolutePath = path.join(input.projectPath, entry.relativePath);
+      await assertSafeProjectAgentOutputPath(input.projectPath, absolutePath);
+      const existing = await fsp.readFile(absolutePath, 'utf8').catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+        throw error;
+      });
+      if (existing && !existing.includes(WORKSPAI_PROJECT_SKILL_MARKER)) {
+        availableFiles.push(entry.relativePath);
+        authoredCollisions.push(entry.relativePath);
+        continue;
+      }
+      const markdown = projectPortableSkillMarkdown(input.context, entry.skill);
+      if (markdown !== existing) await writeAtomic(absolutePath, markdown);
+      availableFiles.push(entry.relativePath);
+      writtenFiles.push(entry.relativePath);
+    }
+  }
+
+  const entries = await fsp.readdir(skillsRoot, { withFileTypes: true }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith('workspai-')) continue;
+    const relativePath = `.agents/skills/${entry.name}/SKILL.md`;
+    if (input.mode === 'managed' && desiredPaths.has(relativePath)) continue;
+    const absolutePath = path.join(input.projectPath, relativePath);
+    await assertSafeProjectAgentOutputPath(input.projectPath, absolutePath);
+    const existing = await fsp.readFile(absolutePath, 'utf8').catch(() => '');
+    if (!existing.includes(WORKSPAI_PROJECT_SKILL_MARKER)) continue;
+    await fsp.rm(path.dirname(absolutePath), { recursive: true, force: true });
+  }
+  return { availableFiles, writtenFiles, authoredCollisions };
 }
 
 async function isAuthoredTrackedDeletion(projectPath: string, fileName: string): Promise<boolean> {
@@ -1548,7 +1833,7 @@ the imported instructions or replace repository-authored source rules.`;
 
 Before broad repository discovery, architecture claims, planning, or mutation:
 
-1. Read \`.workspai/agent-entry.v1.json\`.
+1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`.
 2. Run \`workspai agent bootstrap --for-agent ${input.adapter.host} --strict --json\`.
 3. Follow \`requiredReadOrder\`, any active Goal handoff, bounded Graph queries, and returned proof paths.
 
@@ -1640,6 +1925,9 @@ async function reconcileProjectAgentAdapter(input: {
 function hostCoverage(input: {
   mode: ProjectGroundingMode;
   agentsAvailable: boolean;
+  portableSkillsAvailable: boolean;
+  portableGroundingAuthoredCollision: boolean;
+  portableSkillsReason?: string;
   adapters: Map<ProjectAgentAdapter['host'], { path?: string; reason?: string }>;
 }): AgentEntryHostCoverage[] {
   const portableGrounding: AgentEntryHostCoverage = {
@@ -1660,12 +1948,38 @@ function hostCoverage(input: {
   const agentsCoverage = agentsHosts.map<AgentEntryHostCoverage>((id) => ({
     id,
     discovery: 'native',
-    entryFiles: ['AGENTS.md'],
-    status: input.agentsAvailable ? 'ready' : 'blocked',
-    managed: input.mode === 'managed' && input.agentsAvailable,
+    entryFiles: [
+      'AGENTS.md',
+      ...(['codex', 'kimi', 'grok'].includes(id) && input.portableSkillsAvailable
+        ? [PROJECT_PORTABLE_GROUNDING_SKILL_PATH]
+        : []),
+    ],
+    status: !input.agentsAvailable
+      ? 'blocked'
+      : ['codex', 'kimi', 'grok'].includes(id) && !input.portableSkillsAvailable
+        ? 'blocked'
+        : ['codex', 'kimi', 'grok'].includes(id) && input.portableGroundingAuthoredCollision
+          ? 'degraded'
+          : 'ready',
+    managed:
+      input.mode === 'managed' &&
+      input.agentsAvailable &&
+      (!['codex', 'kimi', 'grok'].includes(id) ||
+        (input.portableSkillsAvailable && !input.portableGroundingAuthoredCollision)),
     ...(!input.agentsAvailable
       ? { reason: 'AGENTS.md could not be managed without overriding authored repository state.' }
-      : {}),
+      : ['codex', 'kimi', 'grok'].includes(id) && !input.portableSkillsAvailable
+        ? {
+            reason:
+              input.portableSkillsReason ??
+              'The provider-neutral project Skill projection could not be generated safely.',
+          }
+        : ['codex', 'kimi', 'grok'].includes(id) && input.portableGroundingAuthoredCollision
+          ? {
+              reason:
+                'An authored Skill occupies the Workspai grounding path; it was preserved and AGENTS.md remains the fallback entry.',
+            }
+          : {}),
   }));
   const adapterCoverage = PROJECT_AGENT_ADAPTERS.map<AgentEntryHostCoverage>((adapter) => {
     const result = input.adapters.get(adapter.host);
@@ -1762,6 +2076,7 @@ export async function syncProjectIntelligenceLens(
     });
     await reconcileGroundingIgnores(projectPath, mode);
     await reconcileProjectAgents(projectPath, mode);
+    await reconcileProjectPortableSkills({ workspacePath, projectPath, mode });
     await Promise.all(
       PROJECT_AGENT_ADAPTERS.map((adapter) =>
         reconcileProjectAgentAdapter({
@@ -1778,6 +2093,10 @@ export async function syncProjectIntelligenceLens(
       }),
       fsp.rm(path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH), { force: true }),
       fsp.rm(path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH), { force: true }),
+      fsp.rm(
+        path.join(projectPath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference),
+        { force: true }
+      ),
     ]);
     return {
       mode,
@@ -1811,9 +2130,22 @@ export async function syncProjectIntelligenceLens(
       })
     );
   }
+  const portableSkills = await reconcileProjectPortableSkills({
+    workspacePath,
+    projectPath,
+    mode,
+    context,
+  });
   const coverage = hostCoverage({
     mode,
     agentsAvailable: Boolean(agentsPath),
+    portableSkillsAvailable: portableSkills.availableFiles.includes(
+      PROJECT_PORTABLE_GROUNDING_SKILL_PATH
+    ),
+    portableGroundingAuthoredCollision: portableSkills.authoredCollisions.includes(
+      PROJECT_PORTABLE_GROUNDING_SKILL_PATH
+    ),
+    ...(portableSkills.reason ? { portableSkillsReason: portableSkills.reason } : {}),
     adapters: adapterResults,
   });
   const contextPath = path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH);
@@ -1833,6 +2165,7 @@ export async function syncProjectIntelligenceLens(
   for (const result of adapterResults.values()) {
     if (result.path) writtenFiles.push(result.path);
   }
+  writtenFiles.push(...portableSkills.writtenFiles);
   return {
     mode,
     projectPath,

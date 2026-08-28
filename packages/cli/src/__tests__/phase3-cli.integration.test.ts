@@ -7,6 +7,7 @@ import path from 'path';
 import { ensureDistBuilt } from './helpers/dist';
 
 const PROCESS_INTEGRATION_TIMEOUT_MS = process.platform === 'win32' ? 120_000 : 20_000;
+const ADOPT_PROCESS_INTEGRATION_TIMEOUT_MS = process.platform === 'win32' ? 120_000 : 60_000;
 
 function cliEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -223,7 +224,7 @@ describe('Phase 3 commands - CLI process integration', () => {
         fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       }
     },
-    60_000
+    ADOPT_PROCESS_INTEGRATION_TIMEOUT_MS
   );
 
   it.each([
@@ -278,7 +279,7 @@ describe('Phase 3 commands - CLI process integration', () => {
         fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       }
     },
-    60_000
+    ADOPT_PROCESS_INTEGRATION_TIMEOUT_MS
   );
 
   it('lists registered workspaces via workspace list', () => {

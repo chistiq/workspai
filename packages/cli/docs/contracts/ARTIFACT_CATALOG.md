@@ -25,14 +25,15 @@ exclude the canonical marker.
 These paths are relative to each registered project root, not the workspace
 root:
 
-| Artifact                                           | Writer                                                                            | Schema / format                | Portability and reader purpose                                                        |
-| -------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------- |
-| `.workspai/workspace-link.local.json`              | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1`    | Machine-local absolute binding; always gitignored and never an agent evidence payload |
-| `.workspai/agent-entry.v1.json`                    | Project lens reconciliation and `workspace agent-sync --write`                    | `workspai.agent-entry.v1`      | Portable host-discovery, canonical read-order, authority, and integrity contract      |
-| `.workspai/reports/project-context-agent.json`     | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`     | Portable bounded model/graph/proof projection for project-local agents                |
-| `.workspai/reports/workspace-knowledge-graph.json` | Workspace Model publication                                                       | `workspace-knowledge-graph.v1` | Project-owned graph projection; exactness is verified by agent bootstrap              |
-| `.workspai/PROJECT-GROUNDING.md`                   | Project lens reconciliation                                                       | Markdown                       | Portable human/agent entry guide with path-free workspace references                  |
-| `AGENTS.md` managed section                        | Project lens reconciliation in `managed` mode                                     | Managed Markdown block         | Preserves user content and routes compatible agents to project/workspace evidence     |
+| Artifact                                                   | Writer                                                                            | Schema / format                        | Portability and reader purpose                                                         |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------- |
+| `.workspai/workspace-link.local.json`                      | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1`            | Machine-local absolute binding; always gitignored and never an agent evidence payload  |
+| `.workspai/agent-entry.v1.json`                            | Project lens reconciliation and `workspace agent-sync --write`                    | `workspai.agent-entry.v1`              | Portable host-discovery, canonical read-order, authority, and integrity contract       |
+| `.workspai/reports/project-context-agent.json`             | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`             | Portable bounded model/graph/proof projection for project-local agents                 |
+| `.workspai/reports/project-knowledge-graph-reference.json` | Workspace Model publication                                                       | `project-knowledge-graph-reference.v1` | Small portable reference whose projection hash is verified against the canonical graph |
+| `.workspai/PROJECT-GROUNDING.md`                           | Project lens reconciliation                                                       | Markdown                               | Portable human/agent entry guide with path-free workspace references                   |
+| `.agents/skills/workspai-*/SKILL.md`                       | Project lens reconciliation                                                       | Agent Skill                            | Project-native wrappers that resolve canonical workspace playbooks without local paths |
+| `AGENTS.md` managed section                                | Project lens reconciliation in `managed` mode                                     | Managed Markdown block                 | Preserves user content and routes compatible agents to project/workspace evidence      |
 
 The project link is validated against the canonical workspace contract and a
 SHA-256 binding over workspace identity, project identity, portable relative
@@ -41,8 +42,10 @@ absolute paths before writing. `managed`, `local`, and `off` grounding modes
 control portable project surfaces and converge by removing stale managed
 sections and ignore rules during transitions; they never make the
 machine-local link publishable. The context is bounded but not count-only: it
-includes topology, API/deployment/test surfaces, blockers, portable proofs,
-and model/graph freshness for the selected project.
+includes compact topology, representative API/deployment/test surfaces,
+blockers, portable proof locators, and model/graph freshness for the selected
+project. Complete graph evidence is retrieved through bounded search instead
+of duplicated into every project.
 
 `agent bootstrap --json` and `project agent-entry verify --json` emit a
 non-persisted `workspai.agent-bootstrap-receipt.v1` payload. The receipt proves
@@ -50,9 +53,9 @@ the selected host route, contract validity, integrity, persisted and live
 freshness, and active Goal bindings without exposing the machine-local link.
 Its top-level status covers agent grounding only; project-environment and
 release readiness are emitted as separate dimensions so consumers cannot treat
-successful grounding as release approval. The receipt exposes distinct
-`projectKnowledgeGraph` and workspace-prefixed graph references and blocks when
-the local artifact is not the exact current project projection.
+successful grounding as release approval. The receipt exposes distinct project
+reference and workspace graph paths and blocks when the project reference hash
+is not the exact current canonical projection.
 
 ## Naming conventions
 
@@ -129,7 +132,8 @@ Entries beginning with `reports/` are relative to `.workspai/`; paths such as
 | Command                                         | Artifact                                                                                                                     | Schema                                 | Contract file                                                                |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
 | `workspace model --write`                       | `workspace-model.json`                                                                                                       | `workspace-model.v1`                   | `contracts/workspace-intelligence/workspace-model.v1.json`                   |
-| `workspace model --write`                       | `workspace-knowledge-graph.json` (workspace aggregate and project-local scoped artifacts)                                    | `workspace-knowledge-graph.v1`         | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json`         |
+| `workspace model --write`                       | `workspace-knowledge-graph.json` (canonical workspace aggregate)                                                             | `workspace-knowledge-graph.v1`         | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json`         |
+| `workspace model --write`                       | Project-local `.workspai/reports/project-knowledge-graph-reference.json`                                                     | `project-knowledge-graph-reference.v1` | `contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json` |
 | `workspace snapshot`                            | `workspace-model-snapshot.json`                                                                                              | `workspace-model-snapshot.v1`          | `contracts/workspace-intelligence/workspace-model-snapshot.v1.json`          |
 | `workspace diff`                                | `workspace-model-diff-last-run.json`                                                                                         | `workspace-model-diff.v1`              | `contracts/workspace-intelligence/workspace-model-diff.v1.json`              |
 | `workspace impact --from <diff>`                | `workspace-impact-last-run.json`                                                                                             | `workspace-impact.v1`                  | `contracts/workspace-intelligence/workspace-impact.v1.json`                  |
@@ -158,16 +162,15 @@ status/exit coherence, hard-failure skip propagation, and the aggregate verdict.
 See [Unified Workspace Intelligence Runner](../workspace-intelligence-runner.md)
 for the normative user and integration semantics.
 
-`workspace-model.json`, the workspace `workspace-knowledge-graph.json`
-aggregate, and each registered project's project-local
-`.workspai/reports/workspace-knowledge-graph.json` are published under one
-workspace lock as a rollback-capable multi-root artifact transaction.
-Individual file replacement is atomic, and a partial set failure restores every
-preimage. A project-local graph contains that project's complete owned graph
-surface plus only directly connected boundary entities; it does not duplicate
-another project's complete graph. When a project and workspace share one root,
-the aggregate is written once and is also the project-local artifact. The model
-is canonical; every graph is derived and cannot mutate it during the run.
+`workspace-model.json`, the canonical workspace `workspace-knowledge-graph.json`,
+and each registered project's compact
+`.workspai/reports/project-knowledge-graph-reference.json` are published under
+one workspace lock as a rollback-capable multi-root artifact transaction.
+Individual replacement is atomic, and a partial set failure restores every
+preimage. Each reference integrity-binds the exact project projection and points
+to the canonical aggregate through a portable `workspace:` URI, avoiding graph
+duplication in every linked repository. The model remains canonical and the
+graph remains derived.
 The graph contract fixes `source.kind` to `workspace-model`,
 `source.artifact` to `.workspai/reports/workspace-model.json`, and `source.hash`
 to the model's stable structural SHA-256. Current-state consumers must reject a
@@ -444,8 +447,9 @@ canonical file. Legacy files remain readable during the compatibility window.
 2. **Workspace Intelligence chain:** run `workspace intelligence run --for-agent generic --strict --json` to preserve Model → Diff → Impact → Doctor + Contract Verify + Analyze → Readiness → Verify → Context → Agent Sync → Explain. `pipeline` is the broader governance/release orchestrator and `autopilot` is a separate release surface; neither redefines the canonical chain. Use `pipeline-last-run.json` only for the pipeline orchestration summary.
 3. **Do not** use `workspace.json.projects` (removed in schema 1.0).
 4. Prefer `schemaVersion` constants in each artifact; legacy `v1` on readiness is accepted when reading old reports.
-5. **Agent retrieval:** start with `AGENTS.md` and `.workspai/reports/INDEX.json`, then use `workspace graph search <query> --limit <n> --json` or MCP `searchWorkspaceGraph` for question-sized facts. Use `--scope project:<name>` when the task has one registered project boundary, inspect `budget.omitted` before assuming the result is complete, and follow returned proof paths to source evidence. Read the full context, model, or graph only when the bounded result is insufficient.
+5. **Agent retrieval:** inside an adopted project, start with `.workspai/agent-entry.v1.json` (or the host projection that routes to it), then read `.workspai/reports/project-context-agent.json`; its `intelligence.projection` states exactly how much representative graph data was bounded. At workspace scope, start with `AGENTS.md` and `.workspai/reports/INDEX.json`. In either scope, use `workspace graph search <query> --limit <n> --json` or MCP `searchWorkspaceGraph` for question-sized facts. Use `--scope project:<name>` for one registered project, inspect `budget.omitted` before assuming completeness, and follow proof paths to source evidence. Read the full context, model, or graph only when the bounded result is insufficient.
 6. **Agent customization state:** use `.workspai/reports/agent-customization-pack.json` to inspect generated surfaces and drift; regenerate with `workspace agent-sync --write --refresh-context --preset enterprise`.
+7. **Operational Skill selection:** use `.workspai/reports/workspace-skills-index.json`. Its `selection.decisions` distinguishes evidence-backed generated Skills from suppressed candidates and records scoped projects and supporting signals. A missing specialized Skill means the current canonical evidence did not prove that capability; it is not permission to assume one.
 
 ## Agent customization files (repo hooks)
 
@@ -456,32 +460,34 @@ failure, all touched files are restored; an interrupted transaction is recovered
 before the next agent-sync. `agent-customization-pack.json` is written last and
 serves as the completed-generation marker.
 
-| Path                                                                    | Consumer                                                       |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `AGENTS.md`                                                             | Copilot, Cursor, Claude Code, Codex, Grok (open standard)      |
-| `.github/copilot-instructions.md`                                       | GitHub Copilot / VS Code Chat                                  |
-| `.github/instructions/workspai-workspace.instructions.md`               | Copilot workspace scope and command discipline                 |
-| `.github/instructions/workspai-evidence.instructions.md`                | Copilot scoped `.workspai/**` and compatibility evidence rules |
-| `.github/prompts/workspai-diagnose.prompt.md`                           | Copilot prompt library                                         |
-| `.github/prompts/workspai-repair.prompt.md`                             | Copilot repair workflow prompt                                 |
-| `.github/prompts/workspai-release-readiness.prompt.md`                  | Copilot release readiness workflow prompt                      |
-| `.github/prompts/workspai-project-onboard.prompt.md`                    | Copilot project onboarding workflow prompt                     |
-| `.github/prompts/workspai-adopt-project.prompt.md`                      | Copilot adopt/import workflow prompt                           |
-| `.github/skills/workspai-grounding/SKILL.md`                            | Copilot skills                                                 |
-| `.github/skills/workspai-workspace-intelligence/SKILL.md`               | Enterprise Workspace Intelligence skill                        |
-| `.github/skills/workspai-workspace-intelligence/resources/mcp-tools.md` | MCP tool and evidence-retrieval reference                      |
-| `.github/agents/workspai-advisor.agent.md`                              | Read-only workspace advisor agent                              |
-| `.github/agents/workspai-repair.agent.md`                               | Blocker repair agent                                           |
-| `.github/agents/workspai-release.agent.md`                              | Release safety agent                                           |
-| `.github/agents/workspai-project-onboarder.agent.md`                    | Project onboarding agent                                       |
-| `.cursor/rules/workspai-grounding.mdc`                                  | Cursor always-on rule                                          |
-| `CLAUDE.md`                                                             | Claude Code (imports `@AGENTS.md`)                             |
-| `.claude/rules/workspai-evidence.md`                                    | Claude Code scoped evidence rule                               |
-| `.claude/rules/rapidkit-evidence.md`                                    | Legacy compatibility alias pointing to the canonical rule      |
-| `.workspai/AGENT-GROUNDING.md`                                          | Tool-agnostic operator doc                                     |
-| `.workspai/reports/agent-customization-pack.json`                       | Versioned output inventory, target matrix, drift state         |
-| `.workspai/reports/workspai-mcp-design.json`                            | Read-mostly MCP-ready design manifest                          |
-| `.vscode/workspai-agent-hooks.json`                                     | Optional advisory VS Code agent hooks (`--experimental-hooks`) |
+| Path                                                                    | Consumer                                                                                               |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `AGENTS.md`                                                             | Copilot, Cursor, Claude Code, Codex, Grok (open standard)                                              |
+| `.agents/skills/workspai-grounding/SKILL.md`                            | Provider-neutral Agent Skills grounding                                                                |
+| `.agents/skills/workspai-*/SKILL.md`                                    | Generated workspace operational skills                                                                 |
+| `.github/copilot-instructions.md`                                       | GitHub Copilot / VS Code Chat                                                                          |
+| `.github/instructions/workspai-workspace.instructions.md`               | Copilot workspace scope and command discipline                                                         |
+| `.github/instructions/workspai-evidence.instructions.md`                | Copilot scoped `.workspai/**` and compatibility evidence rules                                         |
+| `.github/prompts/workspai-diagnose.prompt.md`                           | Copilot prompt library                                                                                 |
+| `.github/prompts/workspai-repair.prompt.md`                             | Copilot repair workflow prompt                                                                         |
+| `.github/prompts/workspai-release-readiness.prompt.md`                  | Copilot release readiness workflow prompt                                                              |
+| `.github/prompts/workspai-project-onboard.prompt.md`                    | Copilot project onboarding workflow prompt                                                             |
+| `.github/prompts/workspai-adopt-project.prompt.md`                      | Copilot adopt/import workflow prompt                                                                   |
+| `.github/skills/workspai-grounding/SKILL.md`                            | Copilot skills                                                                                         |
+| `.github/skills/workspai-workspace-intelligence/SKILL.md`               | Enterprise Workspace Intelligence skill                                                                |
+| `.github/skills/workspai-workspace-intelligence/resources/mcp-tools.md` | MCP tool and evidence-retrieval reference                                                              |
+| `.github/agents/workspai-advisor.agent.md`                              | Read-only workspace advisor agent                                                                      |
+| `.github/agents/workspai-repair.agent.md`                               | Blocker repair agent                                                                                   |
+| `.github/agents/workspai-release.agent.md`                              | Release safety agent                                                                                   |
+| `.github/agents/workspai-project-onboarder.agent.md`                    | Project onboarding agent                                                                               |
+| `.cursor/rules/workspai-grounding.mdc`                                  | Cursor always-on rule                                                                                  |
+| `CLAUDE.md`                                                             | Claude Code (imports `@AGENTS.md`)                                                                     |
+| `.claude/rules/workspai-evidence.md`                                    | Claude Code scoped evidence rule                                                                       |
+| `.claude/rules/rapidkit-evidence.md`                                    | Legacy compatibility alias pointing to the canonical rule                                              |
+| `.workspai/AGENT-GROUNDING.md`                                          | Tool-agnostic operator doc                                                                             |
+| `.workspai/reports/agent-customization-pack.json`                       | Versioned output inventory, target matrix, drift state                                                 |
+| `.workspai/reports/workspai-mcp-design.json`                            | Implemented read-mostly MCP runtime manifest, served/planned tool inventory, and protocol capabilities |
+| `.vscode/workspai-agent-hooks.json`                                     | Optional advisory VS Code agent hooks (`--experimental-hooks`)                                         |
 
 Some `rapidkit-*` prompt, skill, Cursor, MCP-design, and hook paths remain available for older consumers during the rebrand window. New consumers should use the `workspai-*` paths first.
 

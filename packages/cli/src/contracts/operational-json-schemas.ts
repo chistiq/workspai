@@ -208,14 +208,49 @@ export function buildOperationalJsonSchemas(): Record<string, JsonSchema> {
     ),
     'workspace-intelligence/mcp-design.v1.json': objectSchema(
       versions.mcpDesign,
-      ['generatedAt', 'workspaceRoot', 'status', 'mode', 'safety', 'candidateTools'],
+      [
+        'generatedAt',
+        'workspaceRoot',
+        'status',
+        'mode',
+        'runtime',
+        'safety',
+        'candidateTools',
+        'plannedTools',
+      ],
       {
         generatedAt: { type: 'string', format: 'date-time' },
         workspaceRoot: { type: 'string', minLength: 1 },
-        status: { const: 'design-only' },
+        status: { const: 'implemented' },
         mode: { const: 'read-mostly' },
+        runtime: {
+          type: 'object',
+          required: [
+            'command',
+            'transport',
+            'lifecycle',
+            'supportedProtocolVersions',
+            'structuredContent',
+            'toolExecutionErrors',
+          ],
+          properties: {
+            command: { type: 'string', minLength: 1 },
+            transport: { const: 'stdio-jsonrpc' },
+            lifecycle: { const: 'dual-era' },
+            supportedProtocolVersions: {
+              type: 'array',
+              items: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' },
+              uniqueItems: true,
+              minItems: 1,
+            },
+            structuredContent: { const: true },
+            toolExecutionErrors: { const: true },
+          },
+          additionalProperties: false,
+        },
         safety: { type: 'object' },
         candidateTools: { type: 'array', items: { type: 'object' } },
+        plannedTools: { type: 'array', items: { type: 'object' } },
       }
     ),
     'workspace-intelligence/agent-hooks.v1.json': objectSchema(

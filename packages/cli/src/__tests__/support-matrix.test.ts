@@ -24,6 +24,7 @@ describe('support matrix', () => {
     expect(getFrameworkSupportTier('springboot')).toBe('extended');
     expect(getFrameworkSupportTier('dotnet')).toBe('extended');
     expect(getFrameworkSupportTier('laravel')).toBe('extended');
+    expect(getFrameworkSupportTier('cpp')).toBe('observed');
     expect(getFrameworkSupportTier('unknown')).toBe('observed');
   });
 

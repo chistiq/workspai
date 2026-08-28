@@ -18,7 +18,10 @@ import {
 import type { ProjectContextAgent } from './project-intelligence-lens.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
-import { projectWorkspaceKnowledgeGraph } from './workspace-knowledge-graph-projection.js';
+import {
+  projectWorkspaceKnowledgeGraph,
+  type ProjectKnowledgeGraphReference,
+} from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson } from './workspace-model-hash.js';
 
 export const PROJECT_AGENT_ENTRY_SCHEMA_VERSION =
@@ -84,7 +87,7 @@ export interface ProjectAgentEntryManifest {
   canonical: {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
     projectGrounding: '.workspai/PROJECT-GROUNDING.md';
-    projectKnowledgeGraph: typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
+    projectKnowledgeGraph: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
     goalIndex: `workspace:${typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
@@ -158,7 +161,7 @@ export interface AgentBootstrapReceipt {
   };
   canonicalEvidence: {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
-    projectKnowledgeGraph: typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
+    projectKnowledgeGraph: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
     workspaceModel: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`;
@@ -259,7 +262,7 @@ export function buildProjectAgentEntryManifest(input: {
     canonical: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
       projectGrounding: '.workspai/PROJECT-GROUNDING.md',
-      projectKnowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      projectKnowledgeGraph: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference,
       goalIndex: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
@@ -279,8 +282,6 @@ export function buildProjectAgentEntryManifest(input: {
         'command:workspai project workspace status --json',
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
         `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`,
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`,
         `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`,
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
         'source:targeted-live-files',
@@ -517,37 +518,42 @@ export async function buildAgentBootstrapReceipt(input: {
       : `Canonical evidence failed contract validation: ${invalidCanonical.join(', ')}.`
   );
 
-  const projectGraphRelativePath = WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
+  const projectGraphRelativePath = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
   const projectGraphPath = path.join(projectPath, projectGraphRelativePath);
   let projectGraphStatus: AgentEntryCheckStatus = 'failed';
-  let projectGraphMessage = 'The project-owned Knowledge Graph is missing.';
+  let projectGraphMessage = 'The project Knowledge Graph reference is missing.';
   if (fs.existsSync(projectGraphPath) && canonicalGraph) {
     try {
-      const projectGraph = JSON.parse(await fsp.readFile(projectGraphPath, 'utf8'));
+      const projectGraphReference = JSON.parse(
+        await fsp.readFile(projectGraphPath, 'utf8')
+      ) as ProjectKnowledgeGraphReference;
       assertWorkspaceArtifactContract(
         projectGraphRelativePath,
-        projectGraph,
+        projectGraphReference,
         projectGraphRelativePath
       );
-      const samePhysicalArtifact = path.resolve(projectPath) === path.resolve(workspacePath);
-      const expectedGraph = samePhysicalArtifact
-        ? canonicalGraph
-        : projectWorkspaceKnowledgeGraph(
-            canonicalGraph as unknown as WorkspaceKnowledgeGraph,
-            context.project.name
-          );
-      if (hashCanonicalJson(projectGraph) === hashCanonicalJson(expectedGraph)) {
+      const expectedGraph = projectWorkspaceKnowledgeGraph(
+        canonicalGraph as unknown as WorkspaceKnowledgeGraph,
+        context.project.name
+      );
+      const { integrity: _integrity, ...referencePayload } = projectGraphReference;
+      const canonicalSource = canonicalGraph.source as Record<string, unknown> | undefined;
+      const validReference =
+        projectGraphReference.project.name === context.project.name &&
+        projectGraphReference.canonical.sourceHash === canonicalSource?.hash &&
+        projectGraphReference.canonical.projectionHash === hashCanonicalJson(expectedGraph) &&
+        projectGraphReference.integrity.payloadHash === hashCanonicalJson(referencePayload);
+      if (validReference) {
         projectGraphStatus = 'passed';
-        projectGraphMessage = samePhysicalArtifact
-          ? 'The co-located project resolves the validated workspace aggregate without path ambiguity.'
-          : 'The project-owned Knowledge Graph is the exact current projection of canonical workspace evidence.';
+        projectGraphMessage =
+          'The project reference integrity-binds the exact current projection of canonical workspace evidence.';
       } else {
         projectGraphMessage =
-          'The project-owned Knowledge Graph is stale, mismatched, or not the canonical project projection.';
+          'The project Knowledge Graph reference is stale or does not match the canonical project projection.';
       }
     } catch {
       projectGraphMessage =
-        'The project-owned Knowledge Graph failed schema or projection validation.';
+        'The project Knowledge Graph reference failed schema or integrity validation.';
     }
   }
   check(
@@ -786,7 +792,7 @@ export async function buildAgentBootstrapReceipt(input: {
     },
     canonicalEvidence: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
-      projectKnowledgeGraph: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      projectKnowledgeGraph: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
       workspaceModel: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}` as const,

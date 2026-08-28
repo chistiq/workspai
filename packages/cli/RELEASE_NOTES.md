@@ -5,7 +5,48 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.65.0 (August 24, 2026)
+## Latest Release: v0.66.0 (August 28, 2026)
+
+### Evidence-Driven Agent Operations and Portable Project Graphs
+
+Workspai 0.66.0 turns adopted repositories into more precise, portable, and
+operational agent environments. Each project receives its own verified Graph
+projection and only the Skills its evidence can justify, while the canonical
+workspace retains the complete aggregate Model and Graph for cross-project
+reasoning.
+
+**What's New:**
+
+- Project-owned Graph artifacts with exact freshness, integrity, rollback, and
+  workspace-aggregate references across linked and nested projects.
+- Evidence-driven operational Skills that explain why they exist, expose
+  bounded commands and Graph queries, and suppress irrelevant workflows.
+- Adaptive, stratified project lenses that preserve high-value architecture
+  evidence without letting large API or symbol surfaces dominate context.
+- Modern and legacy MCP interoperability with structured content, stable
+  schemas, explicit protocol errors, and proof-backed Graph retrieval.
+- Broader polyglot lifecycle and framework discovery plus hardened concurrent,
+  cross-platform adoption, caching, qualification, and runtime diagnostics.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, and agent-entry contracts remain supported. New project Graph
+references, Skill decisions, MCP fields, and evidence summaries are additive.
+No public command is removed.
+
+**Publication status:** Released August 28, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.66.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.66.0/packages/cli/releases/RELEASE_NOTES_v0.66.0.md)
+
+---
+
+## v0.65.0 (August 24, 2026)
 
 ### Evidence-Bound Project Intelligence and Repair Qualification
 

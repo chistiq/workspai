@@ -19,11 +19,16 @@ import {
 } from './contracts/workspace-operational-skill-contract.js';
 import {
   buildWorkspaceSkillsIndex,
+  type WorkspaceOperationalSkillDecision,
   type WorkspaceSkillsIndex,
 } from './contracts/workspace-skills-index-contract.js';
 import { computeInputsHash } from './contracts/freshness-metadata-contract.js';
 import type { WorkspaceAgentContext } from './workspace-context.js';
 import type { WorkspaceModel } from './workspace-model.js';
+import type {
+  WorkspaceKnowledgeEntity,
+  WorkspaceKnowledgeGraph,
+} from './contracts/workspace-knowledge-graph-contract.js';
 import type { WorkspaceContract } from './utils/workspace-contract.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
@@ -46,6 +51,12 @@ type SkillTemplate = {
   objective: string;
   steps: string[];
   scopedProjects?: string[];
+  applicability: 'workspace' | 'api' | 'schema' | 'dependency' | 'contract' | 'derived';
+};
+
+export type WorkspaceOperationalSkillsPlan = {
+  skills: WorkspaceOperationalSkillRecord[];
+  decisions: WorkspaceOperationalSkillDecision[];
 };
 
 const SKILL_TEMPLATES: SkillTemplate[] = [
@@ -62,6 +73,7 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
       'Map the failure to workspace vs project scope; cite exit codes and blocker messages.',
       'Propose the smallest safe fix (config, env, dependency) with explicit verification commands.',
     ],
+    applicability: 'api',
   },
   {
     skillId: 'workspai-release-readiness',
@@ -75,6 +87,7 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
       'List blocking gates first; never claim ready without cited report fields.',
       'Provide one safe next command and a verification checklist.',
     ],
+    applicability: 'workspace',
   },
   {
     skillId: 'workspai-safe-schema-migration',
@@ -84,9 +97,10 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
     steps: [
       'Identify affected projects from workspace model and dependency graph.',
       'Run or review impact/verify evidence for transitive dependents.',
-      'Require project-scoped test/build commands before promoting the migration.',
+      'Run a registered project-scoped test/build command when available; otherwise resolve the repository-authored validation command from cited manifests before promoting the migration.',
       'Document rollback and verification signals.',
     ],
+    applicability: 'schema',
   },
   {
     skillId: 'workspai-dependency-upgrade',
@@ -96,9 +110,10 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
     steps: [
       'Scope the upgrade to the owning project from workspace model.',
       'Check transitive dependents via workspace graph / impact reports.',
-      'Prefer workspace run test/build for affected projects.',
+      'Use registered test/build commands for affected projects; when none are registered, resolve repository-authored commands from cited manifests instead of inventing one.',
       'Re-run `workspace verify` after evidence refresh.',
     ],
+    applicability: 'dependency',
   },
   {
     skillId: 'workspai-rename-contract',
@@ -111,6 +126,7 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
       'Update contract file and regenerate workspace model.',
       'Verify contract gate and integration tests for consumers.',
     ],
+    applicability: 'contract',
   },
 ];
 
@@ -124,6 +140,9 @@ function buildSkillMarkdown(input: {
   scopedProjects: string[];
   verificationCommands: string[];
   contractSummary?: string;
+  decision: WorkspaceOperationalSkillDecision;
+  projectEvidence: string[];
+  retrievalCommands: string[];
 }): string {
   const lines = [
     '---',
@@ -149,6 +168,27 @@ function buildSkillMarkdown(input: {
     '',
     ...CORE_REQUIRED_REPORTS.map((report) => `- \`${report}\``),
     '',
+    '## Why this skill exists here',
+    '',
+    `Applicability: **${input.decision.confidence} confidence**.`,
+    '',
+    ...input.decision.reasons.map((reason) => `- ${reason}`),
+    ...(input.decision.signals.length > 0
+      ? ['', 'Evidence signals:', '', ...input.decision.signals.map((signal) => `- \`${signal}\``)]
+      : []),
+    '',
+    '## Project-aware execution boundary',
+    '',
+    ...input.projectEvidence,
+    '',
+    ...(input.retrievalCommands.length > 0
+      ? [
+          '## Scoped retrieval commands',
+          '',
+          ...input.retrievalCommands.map((command) => `- \`${command}\``),
+          '',
+        ]
+      : []),
     '## Procedure',
     '',
     ...input.template.steps.map((step, index) => `${index + 1}. ${step}`),
@@ -225,6 +265,7 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
         'Run only the affected project validation first, then verify the workspace when the change crosses a contract boundary.',
       ],
       scopedProjects: [...projects].sort(),
+      applicability: 'derived',
     });
   }
 
@@ -245,6 +286,7 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
         'Validate each affected runtime with its registered project command.',
         'Run workspace impact and canonical verification before declaring the change complete.',
       ],
+      applicability: 'derived',
     });
   }
 
@@ -265,6 +307,7 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
         'Run the scoped test command, then the exact producer and canonical verification.',
       ],
       scopedProjects: testProjects,
+      applicability: 'derived',
     });
   }
 
@@ -291,33 +334,306 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
         'Validate the affected project first, then refresh the exact evidence producer and verify the workspace.',
       ],
       scopedProjects: deliveryProjects,
+      applicability: 'derived',
     });
   }
 
   return templates;
 }
 
-function collectVerificationCommands(context: WorkspaceAgentContext | null): string[] {
+function collectVerificationCommands(
+  context: WorkspaceAgentContext | null,
+  scopedProjects: string[]
+): string[] {
   if (!context?.safeCommands?.length) {
     return [
       displayRapidkitCommand('workspace verify --json'),
       displayRapidkitCommand('doctor workspace --json'),
     ];
   }
-  return context.safeCommands.slice(0, 8).map((entry) => entry.display);
+  const scope = new Set(scopedProjects);
+  return context.safeCommands
+    .filter((entry) => entry.scope === 'workspace' || (entry.project && scope.has(entry.project)))
+    .slice(0, 8)
+    .map((entry) => entry.display);
 }
 
-function summarizeContract(contract: WorkspaceContract | null): string | undefined {
+function summarizeContract(
+  contract: WorkspaceContract | null,
+  scopedProjects: string[]
+): string | undefined {
   if (!contract?.projects?.length) {
     return undefined;
   }
-  const lines = contract.projects.slice(0, 12).map((project) => {
-    const owns = project.contracts?.owns?.join(', ') || 'none';
-    const publishes = project.contracts?.publishes?.join(', ') || 'none';
-    const consumes = project.contracts?.consumes?.join(', ') || 'none';
-    return `- **${project.slug}**: owns \`${owns}\`; publishes \`${publishes}\`; consumes \`${consumes}\``;
-  });
-  return lines.join('\n');
+  const scope = new Set(scopedProjects);
+  const lines = contract.projects
+    .filter((project) => scope.has(project.slug))
+    .filter(
+      (project) =>
+        (project.contracts?.owns?.length ?? 0) > 0 ||
+        (project.contracts?.publishes?.length ?? 0) > 0 ||
+        (project.contracts?.consumes?.length ?? 0) > 0 ||
+        (project.contracts?.apis?.length ?? 0) > 0
+    )
+    .slice(0, 12)
+    .map((project) => {
+      const owns = project.contracts?.owns?.join(', ') || 'none';
+      const publishes = project.contracts?.publishes?.join(', ') || 'none';
+      const consumes = project.contracts?.consumes?.join(', ') || 'none';
+      return `- **${project.slug}**: owns \`${owns}\`; publishes \`${publishes}\`; consumes \`${consumes}\``;
+    });
+  return lines.length > 0 ? lines.join('\n') : undefined;
+}
+
+const DEPENDENCY_MANIFEST_PATTERN =
+  /(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|pyproject\.toml|poetry\.lock|requirements[^/]*\.txt|Pipfile(?:\.lock)?|uv\.lock|Cargo\.toml|Cargo\.lock|go\.mod|go\.sum|pom\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|Gemfile(?:\.lock)?|composer\.(?:json|lock)|mix\.exs|deps\.edn|project\.clj|[^/]+\.(?:csproj|fsproj|vbproj)|Directory\.Packages\.props)$/i;
+const API_ARTIFACT_PATTERN =
+  /(?:^|\/)(?:openapi|swagger|asyncapi)\.(?:json|ya?ml)$|(?:^|\/)(?:routes?|controllers?|endpoints?|proto)(?:\/|\.)/i;
+const SCHEMA_ARTIFACT_PATTERN =
+  /(?:^|\/)(?:migrations?|database|db|prisma)(?:\/|\.)|(?:^|\/)schema\.(?:sql|prisma)$/i;
+
+function entityArtifact(entity: WorkspaceKnowledgeEntity): string | null {
+  const artifact = entity.attributes.artifact;
+  return typeof artifact === 'string' && artifact.trim() ? artifact.trim() : null;
+}
+
+function entityHasNetworkPort(entity: WorkspaceKnowledgeEntity): boolean {
+  const ports = entity.attributes.ports;
+  return Array.isArray(ports) && ports.length > 0;
+}
+
+function projectGraphEntities(
+  graph: WorkspaceKnowledgeGraph | null,
+  projectName: string
+): WorkspaceKnowledgeEntity[] {
+  return graph?.entities.filter((entity) => entity.projectId === projectName) ?? [];
+}
+
+function uniqueBounded(values: Iterable<string>, limit = 12): string[] {
+  return [...new Set([...values].map((value) => value.trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, limit);
+}
+
+function uniqueSorted(values: Iterable<string>): string[] {
+  return [...new Set([...values].map((value) => value.trim()).filter(Boolean))].sort(
+    (left, right) => left.localeCompare(right)
+  );
+}
+
+function selectTemplateProjects(input: {
+  template: SkillTemplate;
+  model: WorkspaceModel;
+  contract: WorkspaceContract | null;
+  graph: WorkspaceKnowledgeGraph | null;
+}): {
+  projects: string[];
+  reasons: string[];
+  signals: string[];
+  confidence: 'high' | 'medium';
+  applicable: boolean;
+} {
+  if (input.template.scopedProjects) {
+    return {
+      projects: [...input.template.scopedProjects].sort(),
+      reasons: ['The canonical workspace model directly derived this capability.'],
+      signals: uniqueBounded(
+        input.template.scopedProjects.map(
+          (project) => `model:project:${project}:${input.template.skillId}`
+        )
+      ),
+      confidence: 'high',
+      applicable: true,
+    };
+  }
+
+  if (input.template.applicability === 'workspace') {
+    return {
+      projects: input.model.projects.map((project) => project.name).sort(),
+      reasons: ['Workspace-level release and verification gates are always available.'],
+      signals: ['model:workspace', `model:project-count:${input.model.projects.length}`],
+      confidence: 'high',
+      applicable: true,
+    };
+  }
+
+  const projects: string[] = [];
+  const signals: string[] = [];
+  const reasons = new Set<string>();
+  for (const project of input.model.projects) {
+    const entities = projectGraphEntities(input.graph, project.name);
+    const artifacts = uniqueSorted([
+      ...project.importantFiles,
+      ...entities.map(entityArtifact).filter((value): value is string => Boolean(value)),
+    ]);
+    const contractProject = input.contract?.projects.find(
+      (candidate) => candidate.slug === project.name
+    );
+    let applicable = false;
+
+    switch (input.template.applicability) {
+      case 'dependency': {
+        const manifests = artifacts.filter((artifact) =>
+          DEPENDENCY_MANIFEST_PATTERN.test(artifact)
+        );
+        const packages = entities.filter((entity) => entity.kind === 'package');
+        applicable = manifests.length > 0 || packages.length > 0;
+        signals.push(
+          ...manifests.map((artifact) => `artifact:${artifact}`),
+          ...packages.slice(0, 4).map((entity) => `graph:package:${entity.label}`)
+        );
+        if (applicable) reasons.add('Dependency manifests or package entities were observed.');
+        break;
+      }
+      case 'api': {
+        const apiEntities = entities.filter(
+          (entity) =>
+            entity.kind === 'api' ||
+            entity.kind === 'endpoint' ||
+            (entity.kind === 'service' && entityHasNetworkPort(entity))
+        );
+        const apiArtifacts = artifacts.filter((artifact) => API_ARTIFACT_PATTERN.test(artifact));
+        const contractApis = contractProject?.contracts?.apis ?? [];
+        const contractPorts = (contractProject?.ports ?? []).filter((port) =>
+          ['http', 'https', 'grpc'].includes(port.protocol)
+        );
+        applicable =
+          apiEntities.length > 0 ||
+          apiArtifacts.length > 0 ||
+          contractApis.length > 0 ||
+          contractPorts.length > 0;
+        signals.push(
+          ...apiEntities.slice(0, 4).map((entity) => `graph:${entity.kind}:${entity.label}`),
+          ...apiArtifacts.map((artifact) => `artifact:${artifact}`),
+          ...contractApis.map((api) => `contract:api:${api.name}:${api.basePath}`),
+          ...contractPorts.map((port) => `contract:port:${port.name}:${port.protocol}:${port.port}`)
+        );
+        if (applicable)
+          reasons.add('An API, endpoint, routed artifact, or network contract was observed.');
+        break;
+      }
+      case 'schema': {
+        const schemaEntities = entities.filter((entity) => {
+          if (entity.kind === 'database') return true;
+          if (entity.kind !== 'schema') return false;
+          const semanticText = `${entity.label} ${JSON.stringify(entity.attributes)}`;
+          return /database|migration|sql|prisma|orm/i.test(semanticText);
+        });
+        const schemaArtifacts = artifacts.filter((artifact) =>
+          SCHEMA_ARTIFACT_PATTERN.test(artifact)
+        );
+        applicable = schemaEntities.length > 0 || schemaArtifacts.length > 0;
+        signals.push(
+          ...schemaEntities.slice(0, 4).map((entity) => `graph:${entity.kind}:${entity.label}`),
+          ...schemaArtifacts.map((artifact) => `artifact:${artifact}`)
+        );
+        if (applicable) reasons.add('A database, schema, or migration artifact was observed.');
+        break;
+      }
+      case 'contract': {
+        const contractValues = contractProject
+          ? [
+              ...(contractProject.contracts?.owns ?? []),
+              ...(contractProject.contracts?.publishes ?? []),
+              ...(contractProject.contracts?.consumes ?? []),
+              ...(contractProject.contracts?.apis ?? []).map((api) => api.name),
+            ]
+          : [];
+        const contractEntities = entities.filter((entity) =>
+          ['api', 'protocol'].includes(entity.kind)
+        );
+        applicable = contractValues.length > 0 || contractEntities.length > 0;
+        signals.push(
+          ...contractValues.map((value) => `contract:${project.name}:${value}`),
+          ...contractEntities.slice(0, 6).map((entity) => `graph:${entity.kind}:${entity.label}`)
+        );
+        if (applicable)
+          reasons.add('A shared API, protocol, schema, or authored contract edge was observed.');
+        break;
+      }
+      case 'derived':
+        applicable = true;
+        break;
+    }
+    if (applicable) projects.push(project.name);
+  }
+
+  return {
+    projects: uniqueBounded(projects, input.model.projects.length),
+    reasons: [...reasons],
+    signals: uniqueBounded(signals),
+    confidence: input.graph || input.contract ? 'high' : 'medium',
+    applicable: projects.length > 0,
+  };
+}
+
+function buildProjectEvidenceLines(
+  model: WorkspaceModel,
+  scopedProjects: string[],
+  signals: string[]
+): string[] {
+  const lines: string[] = [];
+  for (const projectName of scopedProjects) {
+    const project = model.projects.find((candidate) => candidate.name === projectName);
+    if (!project) continue;
+    const lifecycleCommands = project.commands.supported.filter((command) =>
+      ['build', 'test', 'lint', 'format'].includes(command)
+    );
+    const evidenceCommands = project.commands.supported.filter((command) =>
+      ['docs', 'doctor'].includes(command)
+    );
+    const relevantArtifacts = signals
+      .filter((signal) => signal.startsWith('artifact:'))
+      .map((signal) => signal.slice('artifact:'.length))
+      .filter(
+        (artifact) => project.importantFiles.includes(artifact) || artifact.includes(project.name)
+      );
+    lines.push(
+      `- **${project.name}** — runtime \`${project.runtime}\`, framework \`${project.framework}\`, confidence \`${project.confidence}\`.`
+    );
+    lines.push(
+      lifecycleCommands.length > 0
+        ? `  Registered lifecycle commands: ${lifecycleCommands.map((command) => `\`${command}\``).join(', ')}.`
+        : '  No project-native build/test command is registered; inspect repository-authored manifests and Graph proofs before running a command.'
+    );
+    if (evidenceCommands.length > 0) {
+      lines.push(
+        `  Registered evidence commands: ${evidenceCommands.map((command) => `\`${command}\``).join(', ')}.`
+      );
+    }
+    if (relevantArtifacts.length > 0) {
+      lines.push(
+        `  Relevant artifacts: ${uniqueBounded(relevantArtifacts, 6)
+          .map((artifact) => `\`${artifact}\``)
+          .join(', ')}.`
+      );
+    }
+  }
+  return lines.length > 0
+    ? lines
+    : ['- No project boundary was proven; do not infer repository-specific commands or files.'];
+}
+
+function buildSkillRetrievalCommands(template: SkillTemplate, scopedProjects: string[]): string[] {
+  const query =
+    template.applicability === 'api'
+      ? 'api endpoint route service failure'
+      : template.applicability === 'schema'
+        ? 'database schema migration persistence'
+        : template.applicability === 'dependency'
+          ? 'package dependency manifest lockfile'
+          : template.applicability === 'contract'
+            ? 'api protocol published consumed contract'
+            : template.applicability === 'workspace'
+              ? 'release pipeline deployment verification'
+              : `${template.title.toLowerCase()} manifest command test`;
+  return scopedProjects
+    .slice(0, 8)
+    .map((project) =>
+      displayRapidkitCommand(
+        `workspace graph search "${query}" --scope project:${project} --limit 12 --json`
+      )
+    );
 }
 
 export type BuildWorkspaceOperationalSkillsInput = {
@@ -325,39 +641,75 @@ export type BuildWorkspaceOperationalSkillsInput = {
   model: WorkspaceModel;
   context?: WorkspaceAgentContext | null;
   contract?: WorkspaceContract | null;
+  graph?: WorkspaceKnowledgeGraph | null;
   generatedAt?: Date;
 };
 
-export function buildWorkspaceOperationalSkills(
+export function buildWorkspaceOperationalSkillsPlan(
   input: BuildWorkspaceOperationalSkillsInput
-): WorkspaceOperationalSkillRecord[] {
+): WorkspaceOperationalSkillsPlan {
   const workspaceName = input.model.workspace.name;
-  const verificationCommands = collectVerificationCommands(input.context ?? null);
-  const contractSummary = summarizeContract(input.contract ?? null);
+  const skills: WorkspaceOperationalSkillRecord[] = [];
+  const decisions: WorkspaceOperationalSkillDecision[] = [];
 
-  return [...SKILL_TEMPLATES, ...dynamicSkillTemplates(input.model)].map((template) => {
-    const scopedProjects =
-      template.scopedProjects ?? input.model.projects.map((project) => project.name);
+  for (const template of [...SKILL_TEMPLATES, ...dynamicSkillTemplates(input.model)]) {
+    const selection = selectTemplateProjects({
+      template,
+      model: input.model,
+      contract: input.contract ?? null,
+      graph: input.graph ?? null,
+    });
+    const decision: WorkspaceOperationalSkillDecision = {
+      skillId: template.skillId,
+      title: template.title,
+      status: selection.applicable ? 'generated' : 'suppressed',
+      confidence: selection.confidence,
+      reasons:
+        selection.reasons.length > 0
+          ? selection.reasons
+          : ['No authoritative workspace signal proves this capability is present.'],
+      signals: selection.signals,
+      scopedProjects: selection.projects,
+    };
+    decisions.push(decision);
+    if (decision.status === 'suppressed') continue;
+
+    const scopedProjects = decision.scopedProjects;
+    const verificationCommands = collectVerificationCommands(input.context ?? null, scopedProjects);
+    const contractSummary = summarizeContract(input.contract ?? null, scopedProjects);
     const markdown = buildSkillMarkdown({
       template,
       workspaceName,
       scopedProjects,
       verificationCommands,
       contractSummary,
+      decision,
+      projectEvidence: buildProjectEvidenceLines(input.model, scopedProjects, decision.signals),
+      retrievalCommands: buildSkillRetrievalCommands(template, scopedProjects),
     });
-    return buildOperationalSkillRecordShell({
-      skillId: template.skillId,
-      title: template.title,
-      triggers: template.triggers,
-      requiredReports: [...CORE_REQUIRED_REPORTS],
-      scopedProjects,
-      verificationCommands,
-      ...(isBuiltinOperationalSkillId(template.skillId)
-        ? { promptStem: OPERATIONAL_SKILL_PROMPT_STEM[template.skillId] }
-        : {}),
-      markdown,
-    });
-  });
+    skills.push(
+      buildOperationalSkillRecordShell({
+        skillId: template.skillId,
+        title: template.title,
+        triggers: template.triggers,
+        requiredReports: [...CORE_REQUIRED_REPORTS],
+        scopedProjects,
+        verificationCommands,
+        ...(isBuiltinOperationalSkillId(template.skillId)
+          ? { promptStem: OPERATIONAL_SKILL_PROMPT_STEM[template.skillId] }
+          : {}),
+        markdown,
+      })
+    );
+  }
+
+  return { skills, decisions };
+}
+
+export function buildWorkspaceOperationalSkills(
+  input: BuildWorkspaceOperationalSkillsInput
+): WorkspaceOperationalSkillRecord[] {
+  return buildWorkspaceOperationalSkillsPlan(input).skills;
 }
 
 export type WriteWorkspaceOperationalSkillsResult = {
@@ -372,6 +724,7 @@ export async function writeWorkspaceOperationalSkills(input: {
   skills: WorkspaceOperationalSkillRecord[];
   generatedAt: string;
   write: boolean;
+  decisions?: WorkspaceOperationalSkillDecision[];
 }): Promise<WriteWorkspaceOperationalSkillsResult> {
   const workspacePath = path.resolve(input.workspacePath);
   const writtenPaths: string[] = [];
@@ -381,11 +734,13 @@ export async function writeWorkspaceOperationalSkills(input: {
       path: skill.canonicalPath,
       hash: computeInputsHash({ markdown: skill.markdown }),
     })),
+    decisions: input.decisions ?? [],
   });
   const index = buildWorkspaceSkillsIndex({
     generatedAt: input.generatedAt,
     skills: input.skills,
     inputsHash,
+    decisions: input.decisions,
   });
   const activeSkillIds = new Set(input.skills.map((skill) => skill.skillId));
   const removedSkillIds: string[] = [];

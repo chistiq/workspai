@@ -390,12 +390,13 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     examples: ['workspai workspace policy get --json'],
   },
   contract: {
-    usage: 'workspai workspace contract [init|inspect|verify|graph] [--strict] [--json]',
-    summary: 'Create, inspect, verify, or project the workspace contract.',
+    usage: 'workspai workspace contract [init|inspect|sync|verify|graph] [--strict] [--json]',
+    summary: 'Create, inspect, synchronize, verify, or project the workspace contract.',
     flags: ['--workspace', '--json', '--output', '--force', '--strict'],
-    subactions: ['init', 'inspect', 'verify', 'graph'],
+    subactions: ['init', 'inspect', 'sync', 'verify', 'graph'],
     artifact: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
     examples: [
+      'workspai workspace contract sync --strict --json',
       'workspai workspace contract verify --strict --json',
       'workspai workspace contract graph --json',
     ],

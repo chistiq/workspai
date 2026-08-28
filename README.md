@@ -70,15 +70,18 @@ your-workspace/                         # canonical system boundary
 ├── AGENTS.md · CLAUDE.md · GEMINI.md · QWEN.md
 ├── .cursor/ · .claude/ · .github/ · .agents/ # host-native projections
 ├── nova-api/
+│   ├── .agents/skills/workspai-*/SKILL.md # portable project Skill wrappers
 │   └── .workspai/
 │       ├── agent-entry.v1.json         # canonical project entry
 │       ├── workspace-link.local.json   # machine-local binding
-│       └── reports/project-context-agent.json
+│       └── reports/
+│           ├── project-context-agent.json
+│           └── project-knowledge-graph-reference.json
 └── summit-web/                         # same project-level boundary
 ```
 
 Your agent starts with the project's `agent-entry.v1.json`, resolves the canonical
-workspace, and then reads compact workspace context before retrieving task-scoped
+workspace, and then reads compact project context before retrieving task-scoped
 Graph evidence or targeted source.
 
 ![Workspai CLI adopting and analyzing the gRPC repository](packages/cli/docs/workspai-grpc-readme-cli.gif)

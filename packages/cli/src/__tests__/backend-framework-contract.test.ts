@@ -325,6 +325,28 @@ describe('backend-framework-contract', () => {
     ]);
   });
 
+  it('promotes a homogeneous manifest-free monorepo to its nested runtime', async () => {
+    const monorepo = await createTempProject('nested-python-monorepo');
+    await fs.outputFile(
+      path.join(monorepo, 'libs', 'core', 'pyproject.toml'),
+      '[project]\nname = "core"\n'
+    );
+    await fs.outputFile(
+      path.join(monorepo, 'libs', 'plugins', 'pyproject.toml'),
+      '[project]\nname = "plugins"\n'
+    );
+
+    expect(detectRuntimeCandidatesFromProject(monorepo)).toEqual([]);
+    expect(detectNestedRuntimeCandidatesFromProject(monorepo)).toEqual(['python']);
+    expect(detectBackendFrameworkFromProject(monorepo)).toMatchObject({
+      key: 'python',
+      runtime: 'python',
+      importStack: 'unknown',
+      confidence: 'medium',
+      source: 'runtime',
+    });
+  });
+
   it('keeps a supplemental Bun tool runner distinct from the Node project runtime', async () => {
     const monorepo = await createTempProject('node-bun-tool-runner');
     await fs.outputJson(path.join(monorepo, 'package.json'), {
@@ -414,6 +436,22 @@ describe('backend-framework-contract', () => {
       runtime: 'go',
       confidence: 'high',
       source: 'manifest',
+    });
+  });
+
+  it('detects a gemspec-only Ruby library boundary', async () => {
+    const project = await createTempProject('ruby-gem');
+    await fs.writeFile(
+      path.join(project, 'example.gemspec'),
+      'Gem::Specification.new { |spec| spec.name = "example" }\n'
+    );
+
+    expect(detectRuntimeCandidatesFromProject(project)).toEqual(['ruby']);
+    expect(detectBackendFrameworkFromProject(project)).toMatchObject({
+      key: 'ruby',
+      runtime: 'ruby',
+      confidence: 'medium',
+      source: 'marker',
     });
   });
 

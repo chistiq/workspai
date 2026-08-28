@@ -17,8 +17,10 @@ import {
 } from '../project-workspace-link.js';
 import {
   buildProjectContextAgent,
+  selectBoundedProjectLensEntities,
   syncProjectIntelligenceLens,
 } from '../project-intelligence-lens.js';
+import type { WorkspaceKnowledgeEntity } from '../contracts/workspace-knowledge-graph-contract.js';
 import {
   buildAgentBootstrapReceipt,
   PROJECT_AGENT_ENTRY_RELATIVE_PATH,
@@ -31,6 +33,26 @@ import { normalizeRegistryPath } from '../utils/registry-path.js';
 import { resolveRepositoryLocalSymlinkFile } from '../utils/repository-local-symlink.js';
 
 const cleanup: string[] = [];
+
+function lensEntity(
+  kind: WorkspaceKnowledgeEntity['kind'],
+  index: number
+): WorkspaceKnowledgeEntity {
+  return {
+    id: `${kind}:${index}`,
+    kind,
+    label: `${kind}-${index.toString().padStart(2, '0')}`,
+    projectId: 'web',
+    identity: {
+      key: `${kind}:${index}`,
+      scope: 'project',
+      aliases: [],
+      fingerprint: index.toString(16).padStart(64, '0'),
+    },
+    attributes: {},
+    proofIds: [],
+  };
+}
 
 async function fixture(input: { workspaceName?: string; projectName?: string } = {}) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'workspai-project-link-'));
@@ -89,6 +111,38 @@ afterEach(async () => {
 });
 
 describe('project workspace binding', () => {
+  it('stratifies the bounded project lens so late architectural kinds cannot starve', () => {
+    const kinds: WorkspaceKnowledgeEntity['kind'][] = [
+      'language',
+      'service',
+      'api',
+      'endpoint',
+      'schema',
+      'protocol',
+      'runtime-unit',
+      'lifecycle-stage',
+      'deployment',
+      'test-suite',
+      'decision',
+    ];
+    const entities = kinds.flatMap((kind) =>
+      Array.from({ length: 8 }, (_, index) => lensEntity(kind, index))
+    );
+
+    const projection = selectBoundedProjectLensEntities(entities);
+    const selectedKinds = new Set(projection.entities.map((entity) => entity.kind));
+
+    expect(projection.entities.length).toBeLessThanOrEqual(48);
+    expect(projection.selectedBytes).toBeLessThanOrEqual(12 * 1024);
+    expect(selectedKinds).toEqual(new Set(kinds));
+    expect(projection.omittedByKind).toMatchObject({
+      service: expect.any(Number),
+      deployment: expect.any(Number),
+      'test-suite': expect.any(Number),
+      decision: expect.any(Number),
+    });
+  });
+
   it('uses the newest canonical Doctor evidence in the portable project lens', async () => {
     const { workspacePath, projectPath } = await fixture();
     const reportsPath = path.join(workspacePath, '.workspai', 'reports');
@@ -558,6 +612,7 @@ describe('project workspace binding', () => {
     expect(result.writtenFiles).toEqual(
       expect.arrayContaining([
         PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+        '.agents/skills/workspai-grounding/SKILL.md',
         'CLAUDE.md',
         'GEMINI.md',
         'QWEN.md',
@@ -570,6 +625,10 @@ describe('project workspace binding', () => {
     });
     expect(JSON.stringify(context)).not.toContain(workspacePath);
     expect(JSON.stringify(context)).not.toContain(projectPath);
+    expect(Buffer.byteLength(JSON.stringify(context))).toBeLessThan(32 * 1024);
+    expect(context.agentRouting.requiredReadOrder).not.toContain(
+      'workspace:.workspai/reports/workspace-context-agent.json'
+    );
     expect(context.intelligence).toMatchObject({
       entityCount: 107,
       relationCount: 1,
@@ -657,6 +716,13 @@ describe('project workspace binding', () => {
     );
     expect(agents).not.toContain('<!-- RAPIDKIT:AGENT-GROUNDING:START -->');
     expect(fs.existsSync(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))).toBe(true);
+    const portableSkill = await fsp.readFile(
+      path.join(projectPath, '.agents/skills/workspai-grounding/SKILL.md'),
+      'utf8'
+    );
+    expect(portableSkill).toContain('WORKSPAI:GENERATED-PROJECT-SKILL');
+    expect(portableSkill).toContain('workspai agent bootstrap --for-agent generic');
+    expect(portableSkill).not.toContain(workspacePath);
     const entry = JSON.parse(
       await fsp.readFile(path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH), 'utf8')
     ) as {
@@ -693,7 +759,11 @@ describe('project workspace binding', () => {
     expect(entry.hosts).toHaveLength(11);
     expect(entry.hosts).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'codex', status: 'ready', entryFiles: ['AGENTS.md'] }),
+        expect.objectContaining({
+          id: 'codex',
+          status: 'ready',
+          entryFiles: ['AGENTS.md', '.agents/skills/workspai-grounding/SKILL.md'],
+        }),
         expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
         expect.objectContaining({ id: 'gemini', status: 'ready', entryFiles: ['GEMINI.md'] }),
         expect.objectContaining({ id: 'qwen', status: 'ready', entryFiles: ['QWEN.md'] }),
@@ -959,7 +1029,11 @@ describe('project workspace binding', () => {
     expect(rules).not.toContain('@AGENTS.md');
     expect(first.hostCoverage).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'codex', status: 'ready', entryFiles: ['AGENTS.md'] }),
+        expect.objectContaining({
+          id: 'codex',
+          status: 'ready',
+          entryFiles: ['AGENTS.md', '.agents/skills/workspai-grounding/SKILL.md'],
+        }),
         expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
       ])
     );
@@ -1081,6 +1155,97 @@ describe('project workspace binding', () => {
           id: 'amazon-q',
           status: 'blocked',
           reason: expect.stringContaining('unsafe repository-authored parent'),
+        }),
+      ])
+    );
+  });
+
+  it('preserves an authored project Skill even when it uses a Workspai name', async () => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'authored-project-skill-workspace',
+    });
+    const skillPath = path.join(projectPath, '.agents', 'skills', 'workspai-grounding', 'SKILL.md');
+    const authored = '---\nname: workspai-grounding\n---\n\n# Team-owned workflow\n';
+    await fsp.mkdir(path.dirname(skillPath), { recursive: true });
+    await fsp.writeFile(skillPath, authored);
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(await fsp.readFile(skillPath, 'utf8')).toBe(authored);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'codex',
+          status: 'degraded',
+          reason: expect.stringContaining('authored Skill'),
+        }),
+      ])
+    );
+  });
+
+  it('supports a repository-local .agents/skills mirror without escaping the project', async (context) => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'project-skill-mirror-workspace',
+    });
+    const sharedSkills = path.join(projectPath, '.claude', 'skills');
+    await fsp.mkdir(path.join(projectPath, '.agents'), { recursive: true });
+    await fsp.mkdir(sharedSkills, { recursive: true });
+    try {
+      await fsp.symlink(
+        path.join('..', '.claude', 'skills'),
+        path.join(projectPath, '.agents', 'skills'),
+        'dir'
+      );
+    } catch {
+      context.skip();
+      return;
+    }
+
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(fs.existsSync(path.join(sharedSkills, 'workspai-grounding', 'SKILL.md'))).toBe(true);
+  });
+
+  it('blocks a project .agents symlink that leaves the repository', async (context) => {
+    const { root, workspacePath, projectPath } = await fixture({
+      workspaceName: 'project-skill-escape-workspace',
+    });
+    const outsidePath = path.join(root, 'outside-agent-skills');
+    await fsp.mkdir(outsidePath, { recursive: true });
+    try {
+      await fsp.symlink(outsidePath, path.join(projectPath, '.agents'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(await fsp.readdir(outsidePath)).toEqual([]);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'codex',
+          status: 'blocked',
+          reason: expect.stringContaining('blocked by authored state'),
         }),
       ])
     );

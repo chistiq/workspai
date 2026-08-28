@@ -125,6 +125,21 @@ describe('Workspace Repair capability contract', () => {
     }
   });
 
+  it('recognizes the XML solution format as a root-owned dotnet boundary', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-dotnet-slnx-')
+    );
+    roots.push(workspacePath);
+    await fsExtra.outputFile(path.join(workspacePath, 'sdk', 'Sdk.slnx'), '<Solution />\n');
+
+    const report = await inspectWorkspaceRepairCapabilities({
+      workspacePath,
+      projectPath: 'sdk',
+    });
+
+    expect(report.inspection?.detectedAdapters).toEqual(['dotnet']);
+  });
+
   it('reports every adapter in a genuinely multi-runtime project instead of selecting the first', async () => {
     const workspacePath = await fsExtra.mkdtemp(
       path.join(os.tmpdir(), 'workspai-repair-polyglot-')

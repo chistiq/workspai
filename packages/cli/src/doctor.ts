@@ -1410,7 +1410,15 @@ function buildPythonDependencyInstallFixCommand(input: {
 
 async function findPythonProjectSetupScript(projectPath: string): Promise<string | undefined> {
   const candidates = isWindowsPlatform()
-    ? ['script/setup.cmd', 'script/setup.ps1', 'scripts/setup.cmd', 'scripts/setup.ps1']
+    ? [
+        'script/setup.cmd',
+        'script/setup.ps1',
+        'scripts/setup.cmd',
+        'scripts/setup.ps1',
+        'script/setup',
+        'scripts/setup',
+        'bin/setup',
+      ]
     : ['script/setup', 'scripts/setup', 'bin/setup'];
   for (const candidate of candidates) {
     if (await fsExtra.pathExists(path.join(projectPath, candidate))) return candidate;

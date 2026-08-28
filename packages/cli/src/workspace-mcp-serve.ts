@@ -75,133 +75,182 @@ type JsonRpcRequest = {
 
 type McpTool = {
   name: string;
+  title: string;
   description: string;
   inputSchema: {
     type: 'object';
     properties: Record<string, unknown>;
     required?: string[];
+    additionalProperties: false;
+  };
+  outputSchema: Record<string, unknown>;
+  annotations: {
+    readOnlyHint: true;
+    destructiveHint: false;
+    idempotentHint: true;
+    openWorldHint: false;
   };
 };
 
-const READ_TOOLS: McpTool[] = [
-  {
-    name: 'getWorkspaceModel',
-    description: 'Read workspace-model.json',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'getWorkspaceKnowledgeGraph',
-    description: 'Read the current proof-backed workspace knowledge graph artifact',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'getWorkspaceEvaluation',
-    description:
-      'Read the live or finalized provenance-aware model usage and verified-outcome report',
-    inputSchema: {
+const TOOL_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    data: true,
+    error: {
       type: 'object',
       properties: {
-        live: {
-          type: 'boolean',
-          description: 'Read the live report instead of the finalized last-run report',
+        code: { type: 'string' },
+        message: { type: 'string' },
+      },
+      required: ['code', 'message'],
+      additionalProperties: false,
+    },
+  },
+  oneOf: [{ required: ['data'] }, { required: ['error'] }],
+  additionalProperties: false,
+} as const;
+
+const READ_TOOL_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+
+const READ_TOOLS: McpTool[] = (
+  [
+    {
+      name: 'getWorkspaceModel',
+      description: 'Read workspace-model.json',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'getWorkspaceKnowledgeGraph',
+      description: 'Read the current proof-backed workspace knowledge graph artifact',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'getWorkspaceEvaluation',
+      description:
+        'Read the live or finalized provenance-aware model usage and verified-outcome report',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          live: {
+            type: 'boolean',
+            description: 'Read the live report instead of the finalized last-run report',
+          },
         },
       },
     },
-  },
-  {
-    name: 'queryWorkspaceEntities',
-    description: 'List workspace knowledge entities, optionally filtered by kind',
-    inputSchema: {
-      type: 'object',
-      properties: { kind: { type: 'string', description: 'Optional entity kind' } },
-    },
-  },
-  {
-    name: 'searchWorkspaceGraph',
-    description: 'Return bounded, proof-carrying workspace context matching a text query',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Text, path, symbol, service, or concept to find' },
-        kind: { type: 'string', description: 'Optional entity kind filter' },
-        projectId: { type: 'string', description: 'Optional canonical project id filter' },
-        limit: { type: 'integer', minimum: 1, maximum: 100, default: 12 },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'getWorkspaceGraphEvidence',
-    description: 'Resolve portable evidence for a knowledge graph entity or relation',
-    inputSchema: {
-      type: 'object',
-      properties: { query: { type: 'string' } },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'findWorkspaceGraphPath',
-    description: 'Find a shortest proof-carrying path between two workspace entities',
-    inputSchema: {
-      type: 'object',
-      properties: { from: { type: 'string' }, to: { type: 'string' } },
-      required: ['from', 'to'],
-    },
-  },
-  {
-    name: 'getEvidenceIndex',
-    description: 'Read agent reports INDEX.json',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'getBlockers',
-    description: 'Aggregate blocking reasons from verify, explain, and contract-verify reports',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'getSafeCommands',
-    description: 'Read safe commands from workspace-context-agent.json',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'getProjectContext',
-    description: 'Read scoped project context from workspace-context-agent.json',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        project: { type: 'string', description: 'Optional project name; defaults to active scope' },
+    {
+      name: 'queryWorkspaceEntities',
+      description: 'List workspace knowledge entities, optionally filtered by kind',
+      inputSchema: {
+        type: 'object',
+        properties: { kind: { type: 'string', description: 'Optional entity kind' } },
       },
     },
-  },
-  {
-    name: 'getArtifact',
-    description: 'Read one workspace-relative artifact path',
-    inputSchema: {
-      type: 'object',
-      properties: { relativePath: { type: 'string' } },
-      required: ['relativePath'],
+    {
+      name: 'searchWorkspaceGraph',
+      description: 'Return bounded, proof-carrying workspace context matching a text query',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Text, path, symbol, service, or concept to find' },
+          kind: { type: 'string', description: 'Optional entity kind filter' },
+          projectId: { type: 'string', description: 'Optional canonical project id filter' },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 12 },
+        },
+        required: ['query'],
+      },
     },
-  },
-  {
-    name: 'listOperationalSkills',
-    description: 'Read workspace-skills-index.json',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'getWorkspaceExplain',
-    description: 'Build or read workspace explain report',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        target: {
-          type: 'string',
-          description:
-            'release-blocked | project:<name> | blocker:<id> | trace:<diffRef> | <project>',
+    {
+      name: 'getWorkspaceGraphEvidence',
+      description: 'Resolve portable evidence for a knowledge graph entity or relation',
+      inputSchema: {
+        type: 'object',
+        properties: { query: { type: 'string' } },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'findWorkspaceGraphPath',
+      description: 'Find a shortest proof-carrying path between two workspace entities',
+      inputSchema: {
+        type: 'object',
+        properties: { from: { type: 'string' }, to: { type: 'string' } },
+        required: ['from', 'to'],
+      },
+    },
+    {
+      name: 'getEvidenceIndex',
+      description: 'Read agent reports INDEX.json',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'getBlockers',
+      description: 'Aggregate blocking reasons from verify, explain, and contract-verify reports',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'getSafeCommands',
+      description: 'Read safe commands from workspace-context-agent.json',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'getProjectContext',
+      description: 'Read scoped project context from workspace-context-agent.json',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          project: {
+            type: 'string',
+            description: 'Optional project name; defaults to active scope',
+          },
         },
       },
     },
-  },
-];
+    {
+      name: 'getArtifact',
+      description: 'Read one workspace-relative artifact path',
+      inputSchema: {
+        type: 'object',
+        properties: { relativePath: { type: 'string' } },
+        required: ['relativePath'],
+      },
+    },
+    {
+      name: 'listOperationalSkills',
+      description: 'Read workspace-skills-index.json',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'getWorkspaceExplain',
+      description: 'Build or read workspace explain report',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          target: {
+            type: 'string',
+            description:
+              'release-blocked | project:<name> | blocker:<id> | trace:<diffRef> | <project>',
+          },
+        },
+      },
+    },
+  ] as Array<{
+    name: string;
+    description: string;
+    inputSchema: Omit<McpTool['inputSchema'], 'additionalProperties'>;
+  }>
+).map((tool) => ({
+  ...tool,
+  title: tool.name.replace(/([a-z])([A-Z])/g, '$1 $2'),
+  inputSchema: { ...tool.inputSchema, additionalProperties: false as const },
+  outputSchema: TOOL_OUTPUT_SCHEMA,
+  annotations: READ_TOOL_ANNOTATIONS,
+}));
 
 function isSafeRelativePath(relativePath: string): boolean {
   const normalized = relativePath.trim().replace(/\\/g, '/');
@@ -429,18 +478,97 @@ async function invokeTool(
   }
 }
 
-function writeResponse(id: number | string | null | undefined, result: unknown): void {
-  process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: id ?? null, result })}\n`);
+const MCP_MODERN_PROTOCOL_VERSION = '2026-07-28';
+const MCP_LEGACY_PROTOCOL_VERSIONS = [
+  '2024-11-05',
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25',
+] as const;
+const MCP_SERVER_INFO = { name: 'workspai-workspace-mcp', version: '1.0.0' } as const;
+
+function requestProtocolVersion(request: JsonRpcRequest): string | undefined {
+  const metadata = request.params?._meta;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  const version = (metadata as Record<string, unknown>)['io.modelcontextprotocol/protocolVersion'];
+  return typeof version === 'string' ? version : undefined;
 }
 
-function writeError(id: number | string | null | undefined, message: string): void {
+function modernResult(result: unknown, modern: boolean): unknown {
+  if (!modern || !result || typeof result !== 'object' || Array.isArray(result)) return result;
+  return {
+    ...(result as Record<string, unknown>),
+    _meta: {
+      ...(((result as Record<string, unknown>)._meta as Record<string, unknown> | undefined) ?? {}),
+      'io.modelcontextprotocol/serverInfo': MCP_SERVER_INFO,
+    },
+  };
+}
+
+function writeResponse(
+  id: number | string | null | undefined,
+  result: unknown,
+  modern = false
+): void {
+  process.stdout.write(
+    `${JSON.stringify({ jsonrpc: '2.0', id: id ?? null, result: modernResult(result, modern) })}\n`
+  );
+}
+
+function writeError(id: number | string | null | undefined, message: string, code = -32000): void {
   process.stdout.write(
     `${JSON.stringify({
       jsonrpc: '2.0',
       id: id ?? null,
-      error: { code: -32000, message },
+      error: { code, message },
     })}\n`
   );
+}
+
+function toolResult(data: unknown): Record<string, unknown> {
+  const structuredContent = { data };
+  return {
+    content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
+    structuredContent,
+    isError: false,
+  };
+}
+
+function toolError(code: string, message: string): Record<string, unknown> {
+  const structuredContent = { error: { code, message } };
+  return {
+    content: [{ type: 'text', text: message }],
+    structuredContent,
+    isError: true,
+  };
+}
+
+function validateToolArguments(tool: McpTool, args: Record<string, unknown>): string | null {
+  for (const required of tool.inputSchema.required ?? []) {
+    if (!(required in args)) return `Missing required argument: ${required}`;
+  }
+  for (const [key, value] of Object.entries(args)) {
+    const property = tool.inputSchema.properties[key] as Record<string, unknown> | undefined;
+    if (!property) return `Unknown argument for ${tool.name}: ${key}`;
+    if (property.type === 'string' && typeof value !== 'string') {
+      return `Argument ${key} must be a string`;
+    }
+    if (property.type === 'boolean' && typeof value !== 'boolean') {
+      return `Argument ${key} must be a boolean`;
+    }
+    if (property.type === 'integer' && (!Number.isInteger(value) || typeof value !== 'number')) {
+      return `Argument ${key} must be an integer`;
+    }
+    if (typeof value === 'number') {
+      if (typeof property.minimum === 'number' && value < property.minimum) {
+        return `Argument ${key} must be at least ${property.minimum}`;
+      }
+      if (typeof property.maximum === 'number' && value > property.maximum) {
+        return `Argument ${key} must be at most ${property.maximum}`;
+      }
+    }
+  }
+  return null;
 }
 
 export async function runWorkspaceMcpServe(input: { workspacePath: string }): Promise<void> {
@@ -456,16 +584,38 @@ export async function runWorkspaceMcpServe(input: { workspacePath: string }): Pr
     try {
       request = JSON.parse(trimmed) as JsonRpcRequest;
     } catch {
-      writeError(null, 'Invalid JSON-RPC request');
+      writeError(null, 'Invalid JSON-RPC request', -32700);
       continue;
     }
     const { id, method, params } = request;
+    const modern = requestProtocolVersion(request) === MCP_MODERN_PROTOCOL_VERSION;
     try {
+      if (method === 'server/discover') {
+        writeResponse(
+          id,
+          {
+            resultType: 'complete',
+            supportedVersions: [MCP_MODERN_PROTOCOL_VERSION],
+            capabilities: { tools: { listChanged: false } },
+            instructions:
+              'Use bounded Workspai graph search before requesting complete workspace artifacts.',
+          },
+          true
+        );
+        continue;
+      }
       if (method === 'initialize') {
+        const requestedVersion =
+          typeof params?.protocolVersion === 'string' ? params.protocolVersion : undefined;
+        const protocolVersion = MCP_LEGACY_PROTOCOL_VERSIONS.includes(
+          requestedVersion as (typeof MCP_LEGACY_PROTOCOL_VERSIONS)[number]
+        )
+          ? requestedVersion
+          : MCP_LEGACY_PROTOCOL_VERSIONS.at(-1);
         writeResponse(id, {
-          protocolVersion: '2024-11-05',
-          capabilities: { tools: {} },
-          serverInfo: { name: 'workspai-workspace-mcp', version: '0.1.0' },
+          protocolVersion,
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: MCP_SERVER_INFO,
         });
         continue;
       }
@@ -473,29 +623,69 @@ export async function runWorkspaceMcpServe(input: { workspacePath: string }): Pr
         continue;
       }
       if (method === 'tools/list') {
-        writeResponse(id, {
-          tools: READ_TOOLS.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          })),
-        });
+        writeResponse(
+          id,
+          {
+            tools: READ_TOOLS.map((tool) => ({
+              name: tool.name,
+              title: tool.title,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              outputSchema: tool.outputSchema,
+              annotations: tool.annotations,
+            })),
+          },
+          modern
+        );
         continue;
       }
       if (method === 'tools/call') {
         const toolName = String(params?.name ?? '');
+        const tool = READ_TOOLS.find((candidate) => candidate.name === toolName);
+        if (!tool) {
+          writeError(id, `Unknown tool: ${toolName}`, -32602);
+          continue;
+        }
+        if (
+          params?.arguments !== undefined &&
+          (!params.arguments ||
+            typeof params.arguments !== 'object' ||
+            Array.isArray(params.arguments))
+        ) {
+          writeError(id, 'Tool arguments must be an object', -32602);
+          continue;
+        }
         const toolArgs =
           params?.arguments && typeof params.arguments === 'object'
             ? (params.arguments as Record<string, unknown>)
             : {};
-        const content = await invokeTool(workspacePath, toolName, toolArgs);
-        writeResponse(id, {
-          content: [{ type: 'text', text: JSON.stringify(content, null, 2) }],
-          isError: content == null,
-        });
+        const validationError = validateToolArguments(tool, toolArgs);
+        if (validationError) {
+          writeResponse(id, toolError('invalid_arguments', validationError), modern);
+          continue;
+        }
+        try {
+          const content = await invokeTool(workspacePath, toolName, toolArgs);
+          writeResponse(
+            id,
+            content == null
+              ? toolError('artifact_not_found', `${toolName} returned no current workspace data`)
+              : toolResult(content),
+            modern
+          );
+        } catch (error) {
+          writeResponse(
+            id,
+            toolError(
+              'tool_execution_failed',
+              error instanceof Error ? error.message : String(error)
+            ),
+            modern
+          );
+        }
         continue;
       }
-      writeError(id, `Unsupported method: ${method ?? 'unknown'}`);
+      writeError(id, `Unsupported method: ${method ?? 'unknown'}`, -32601);
     } catch (error) {
       writeError(id, error instanceof Error ? error.message : String(error));
     }

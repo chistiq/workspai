@@ -88,7 +88,7 @@ versioned archive operation result instead.
 
 Workspace creation publishes the initial contract, canonical model, Knowledge
 Graph, structural baseline, context, report index, profile-aware `README.md`,
-`AGENTS.md`, operational skills, and supported IDE/agent surfaces—even before
+`AGENTS.md`, applicable operational skills, and supported IDE/agent surfaces—even before
 the first project exists. The README's Workspai-managed section shows the
 current profile, project count, canonical intelligence loop, and consumer entry
 points while preserving user-authored content. Successful project creation,
@@ -96,6 +96,14 @@ adoption, import, workspace connection, and workspace import refresh those same
 projections in the background. The structural baseline is created once and
 preserved; current model, graph, diff, impact, context, README, and project
 grounding move forward with workspace membership.
+
+Operational Skill generation is evidence-driven. Release readiness remains
+available at workspace scope, while API, schema, dependency, contract, runtime,
+test, delivery, and polyglot playbooks are emitted only for matching projects.
+`.workspai/reports/workspace-skills-index.json` records both generated and
+suppressed candidates, including the signals behind each decision. This keeps
+agent discovery useful without claiming capabilities the repository does not
+have.
 
 Doctor, Analyze, Readiness, and Verify remain explicit checks because they may
 run project tools or enforce release policy. Use `workspace intelligence run`
@@ -122,20 +130,29 @@ Workspai returns a specific error for an invalid explicit workspace, malformed
 or stale link, ambiguous registration, or an unlinked project. It never picks
 one workspace silently when ownership is ambiguous.
 
-The project receives four distinct surfaces:
+The project receives seven complementary surfaces. They are different views of
+one canonical workspace binding, not seven copies of the model or graph:
 
-| File                                           | Purpose                                                                        | Portable              |
-| ---------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
-| `.workspai/workspace-link.local.json`          | Machine-local canonical workspace binding                                      | No; always gitignored |
-| `.workspai/agent-entry.v1.json`                | Versioned host coverage, read order, authority boundaries, and integrity proof | Yes                   |
-| `.workspai/reports/project-context-agent.json` | Bounded project view of model, graph, proofs, diagnostics, and safe commands   | Yes                   |
-| `.workspai/PROJECT-GROUNDING.md`               | Human- and agent-readable project entry guide                                  | Yes                   |
-| `AGENTS.md` and host adapters                  | Route supported hosts to the same canonical-first bootstrap                    | Yes                   |
+| File                                                       | Purpose                                                                        | Portable              |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
+| `.workspai/workspace-link.local.json`                      | Machine-local canonical workspace binding                                      | No; always gitignored |
+| `.workspai/agent-entry.v1.json`                            | Versioned host coverage, read order, authority boundaries, and integrity proof | Yes                   |
+| `.workspai/reports/project-context-agent.json`             | Bounded project view of model, graph, proofs, diagnostics, and safe commands   | Yes                   |
+| `.workspai/reports/project-knowledge-graph-reference.json` | Integrity-bound locator for the canonical project graph projection             | Yes                   |
+| `.workspai/PROJECT-GROUNDING.md`                           | Human- and agent-readable project entry guide                                  | Yes                   |
+| `.agents/skills/workspai-*/SKILL.md`                       | Native project Skill wrappers for canonical workspace playbooks                | Yes                   |
+| `AGENTS.md` and host adapters                              | Route supported hosts to the same canonical-first bootstrap                    | Yes                   |
 
 The bounded context includes project identity and commands, dependencies and
 dependents, related API/deployment/test surfaces, current project findings,
 portable proof locators, and model/graph freshness. It deliberately references
 rather than duplicates workspace-wide evidence.
+
+Representative graph entities are selected with a stratified round-robin
+budget, so a large early-sorted kind cannot hide later architectural kinds.
+`intelligence.projection` records the entity and byte budgets, selected and
+omitted counts per kind, and the scoped graph-search command for retrieving
+anything outside the lens. Aggregate counts in the lens remain exhaustive.
 
 Use `--project-grounding managed` (default) to publish all portable surfaces,
 `local` to keep the project lens and grounding gitignored without managing

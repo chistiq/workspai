@@ -9,6 +9,8 @@ import {
   canonicalQualificationWorkspaceName,
   createQualificationCommandRecord,
   isQualificationCommandAccepted,
+  qualificationPrimaryRuntime,
+  repairAdaptersForQualificationBoundary,
 } from './qualification-publication-safety.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -306,8 +308,8 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     timeoutMs: 60_000,
   });
   const detectedRepairAdapters = scopedRepairCapabilities.json?.inspection?.detectedAdapters;
-  const primaryRuntime = adoptedProject?.runtimeCandidates?.[0] ?? null;
-  const primaryRepairAdapters = repairAdaptersForRuntime(primaryRuntime);
+  const primaryRuntime = qualificationPrimaryRuntime(adoptedProject);
+  const primaryRepairAdapters = repairAdaptersForQualificationBoundary(primaryRuntime, projectPath);
   project.assertions.push(
     assertion(
       'repair.runtime-adapter-detection',
@@ -650,27 +652,6 @@ function hasValidCoverageMeasurementPreflight(goalPack) {
     measurement?.runtime === null &&
     Array.isArray(measurement?.runtimeChoices) &&
     measurement.runtimeChoices.length > 1
-  );
-}
-
-function repairAdaptersForRuntime(runtime) {
-  const normalized = typeof runtime === 'string' ? runtime.trim().toLowerCase() : '';
-  return (
-    {
-      node: ['node'],
-      python: ['python'],
-      go: ['go'],
-      rust: ['rust'],
-      php: ['php-composer'],
-      ruby: ['ruby-bundler'],
-      elixir: ['elixir-mix'],
-      deno: ['deno'],
-      dotnet: ['dotnet'],
-      java: ['jvm-maven', 'jvm-gradle'],
-      kotlin: ['jvm-maven', 'jvm-gradle'],
-      clojure: ['clojure'],
-      scala: ['scala-sbt'],
-    }[normalized] ?? []
   );
 }
 

@@ -1910,6 +1910,32 @@
       ]
     },
     {
+      "artifactPath": ".workspai/reports/project-knowledge-graph-reference.json",
+      "schemaVersion": "project-knowledge-graph-reference.v1",
+      "contractPath": "contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json",
+      "producerCommands": [
+        [
+          "adopt"
+        ],
+        [
+          "import"
+        ],
+        [
+          "workspace",
+          "model"
+        ],
+        [
+          "workspace",
+          "sync"
+        ],
+        [
+          "workspace",
+          "intelligence",
+          "run"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/agent-entry.v1.json",
       "schemaVersion": "workspai.agent-entry.v1",
       "contractPath": "contracts/workspace-intelligence/project-agent-entry.v1.json",
@@ -3221,8 +3247,8 @@
     },
     {
       "id": "contract",
-      "usage": "workspai workspace contract [init|inspect|verify|graph] [--strict] [--json]",
-      "summary": "Create, inspect, verify, or project the workspace contract.",
+      "usage": "workspai workspace contract [init|inspect|sync|verify|graph] [--strict] [--json]",
+      "summary": "Create, inspect, synchronize, verify, or project the workspace contract.",
       "options": [
         {
           "flag": "--workspace",
@@ -3248,11 +3274,13 @@
       "subactions": [
         "init",
         "inspect",
+        "sync",
         "verify",
         "graph"
       ],
       "artifact": ".workspai/workspace.contract.json",
       "examples": [
+        "workspai workspace contract sync --strict --json",
         "workspai workspace contract verify --strict --json",
         "workspai workspace contract graph --json"
       ]

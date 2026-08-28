@@ -236,11 +236,11 @@ export function resolveProjectCommandCapabilities(
 
   for (const command of UNIVERSAL_COMMANDS) {
     commandMap[command] = capability(command, {
-      owner: command === 'project' ? 'core' : 'npm',
+      owner: 'npm',
       status: 'supported',
       reason:
         command === 'project'
-          ? 'Project detection is a Core contract; workspace project lifecycle remains npm-owned.'
+          ? 'The npm CLI owns the project command surface and delegates only Core-specific detection operations.'
           : command === 'help'
             ? 'Help is available for every Workspai project through the npm CLI.'
             : 'Universal command available across Workspai project types.',

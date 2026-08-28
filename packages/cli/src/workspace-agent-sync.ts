@@ -3,7 +3,7 @@ import fsExtra from 'fs-extra';
 
 import {
   buildOperationalSkillsCatalogSection,
-  buildWorkspaceOperationalSkills,
+  buildWorkspaceOperationalSkillsPlan,
   hydrateOperationalPrompts,
   WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER,
   writeWorkspaceOperationalSkills,
@@ -73,6 +73,8 @@ import {
 } from './utils/lifecycle-transaction.js';
 import { readWorkspaceContract } from './utils/workspace-contract.js';
 import { firstExistingWorkspaceArtifactPath } from './utils/artifact-path-compat.js';
+import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
+import { assertWorkspaceKnowledgeGraphSourceBinding } from './workspace-knowledge-graph.js';
 import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   buildWorkspaceModel,
@@ -560,6 +562,16 @@ function targetEnabledForCopilot(selected: Set<AgentGroundingTarget>): boolean {
   return targetEnabled(selected, 'copilot') || targetEnabled(selected, 'vscode');
 }
 
+function portableAgentSkillsEnabled(selected: Set<AgentGroundingTarget>): boolean {
+  return (
+    targetEnabled(selected, 'agents') ||
+    targetEnabled(selected, 'codex') ||
+    targetEnabled(selected, 'kimi') ||
+    targetEnabled(selected, 'grok') ||
+    targetEnabled(selected, 'orca')
+  );
+}
+
 function projectHostSelected(selected: Set<AgentGroundingTarget>, host: AgentEntryHostId): boolean {
   if (host === 'generic') return targetEnabled(selected, 'agents');
   if (host === 'copilot') return targetEnabledForCopilot(selected);
@@ -643,7 +655,7 @@ function inferOutputTargets(relativePath: string): AgentGroundingTarget[] {
   if (relativePath === '.windsurfrules' || relativePath.startsWith('.windsurf/'))
     return ['windsurf'];
   if (relativePath.startsWith('.grok/')) return ['grok'];
-  if (relativePath.startsWith('.agents/')) return ['codex', 'kimi', 'grok', 'orca'];
+  if (relativePath.startsWith('.agents/')) return ['agents', 'codex', 'kimi', 'grok', 'orca'];
   if (relativePath === 'AGENTS.md' || relativePath.startsWith('.rapidkit/')) {
     return [
       'agents',
@@ -719,6 +731,31 @@ async function resolveModelForAgentSync(
     workspacePath,
     includeEvidence: true,
   });
+}
+
+async function resolveGraphForOperationalSkills(
+  workspacePath: string,
+  model: WorkspaceModel
+): Promise<WorkspaceKnowledgeGraph | null> {
+  const graphPath = await firstExistingWorkspaceArtifactPath(
+    workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+  );
+  if (!graphPath) return null;
+  try {
+    const raw = (await fsExtra.readJson(graphPath)) as Record<string, unknown>;
+    assertWorkspaceArtifactContract(
+      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      raw,
+      graphPath
+    );
+    const graph = raw as WorkspaceKnowledgeGraph;
+    if (graph.proofs.some((proof) => proof.freshness === 'stale')) return null;
+    assertWorkspaceKnowledgeGraphSourceBinding(graph, model);
+    return graph;
+  } catch {
+    return null;
+  }
 }
 
 function isSafeWorkspaceRelativePath(relativePath: string): boolean {
@@ -1503,7 +1540,7 @@ function buildMcpToolsResource(): string {
     lines: [
       'Workspai MCP is a read-mostly bridge over contract-validated workspace artifacts.',
       '',
-      'Candidate read tools:',
+      'Served read tools:',
       `- \`getWorkspaceModel\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}\`.`,
       `- \`getWorkspaceKnowledgeGraph\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}\`.`,
       `- \`getWorkspaceEvaluation\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.evaluationLastRun}\` (or the live evaluation when requested).`,
@@ -1518,9 +1555,11 @@ function buildMcpToolsResource(): string {
       '- `getArtifact` — read one explicit artifact path inside the workspace root.',
       `- \`listOperationalSkills\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}\`.`,
       '- `getWorkspaceExplain` — read/build workspace explain for release-blocked or project scope.',
-      '- `refreshWorkspaceIntelligence` — explicit user-approved refresh command only.',
       '',
-      'Write or repair tools require explicit approval boundaries and are intentionally not part of the first read-mostly design.',
+      'Planned, not served:',
+      '- `refreshWorkspaceIntelligence` — requires an explicit approval boundary before it can become an MCP write tool.',
+      '',
+      'The server supports legacy initialize-era clients and the 2026-07-28 stateless discovery era. Tool results include text plus structured content; actionable execution failures are returned as tool errors.',
     ],
   });
 }
@@ -1531,8 +1570,22 @@ function buildMcpDesignManifest(input: { workspaceRef: string; generatedAt: stri
       schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaiMcpDesign.schemaVersion,
       generatedAt: input.generatedAt,
       workspaceRoot: input.workspaceRef,
-      status: 'design-only',
+      status: 'implemented',
       mode: 'read-mostly',
+      runtime: {
+        command: displayRapidkitCommand('workspace mcp serve'),
+        transport: 'stdio-jsonrpc',
+        lifecycle: 'dual-era',
+        supportedProtocolVersions: [
+          '2024-11-05',
+          '2025-03-26',
+          '2025-06-18',
+          '2025-11-25',
+          '2026-07-28',
+        ],
+        structuredContent: true,
+        toolExecutionErrors: true,
+      },
       safety: {
         writeToolsEnabled: false,
         approvalRequiredForRefresh: true,
@@ -1623,11 +1676,14 @@ function buildMcpDesignManifest(input: { workspaceRef: string; generatedAt: stri
           ],
           mutates: false,
         },
+      ],
+      plannedTools: [
         {
           name: 'refreshWorkspaceIntelligence',
           command: displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
           mutates: true,
           approvalRequired: true,
+          availability: 'not-served',
         },
       ],
     },
@@ -1765,6 +1821,8 @@ function buildPortableGroundingSkill(input: {
     'description: Load Workspai workspace intelligence reports before diagnosing or changing code',
     '---',
     '',
+    '<!-- WORKSPAI:GENERATED-PORTABLE-SKILL -->',
+    '',
     '# Workspai grounding',
     '',
     'Use when the user asks about workspace health, release gates, doctor/pipeline failures, or project structure.',
@@ -1837,6 +1895,30 @@ async function writeTextFile(
   return 'written';
 }
 
+async function writePortableSkillFile(input: {
+  workspacePath: string;
+  relativePath: string;
+  content: string;
+  write: boolean;
+}): Promise<'written' | 'skipped'> {
+  if (!input.write) return 'skipped';
+  const absolutePath = path.join(input.workspacePath, input.relativePath);
+  await assertSafeAgentOutputPath(input.workspacePath, absolutePath);
+  if (await fsExtra.pathExists(absolutePath)) {
+    const existing = await fsExtra.readFile(absolutePath, 'utf8');
+    const isManaged =
+      existing.includes(WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER) ||
+      existing.includes('<!-- WORKSPAI:GENERATED-PORTABLE-SKILL -->') ||
+      (existing.includes('name: workspai-grounding') &&
+        existing.includes('# Workspai grounding') &&
+        existing.includes('workspace agent-sync --write --refresh-context'));
+    if (!isManaged) return 'skipped';
+  }
+  await fsExtra.ensureDir(path.dirname(absolutePath));
+  await fsExtra.writeFile(absolutePath, input.content, 'utf8');
+  return 'written';
+}
+
 async function writeManagedMarkdownFile(input: {
   workspacePath: string;
   absolutePath: string;
@@ -1906,7 +1988,28 @@ async function assertSafeAgentOutputPath(
     });
     if (!stat) return;
     const isTarget = index === segments.length - 1;
-    if (stat.isSymbolicLink() || (isTarget ? !stat.isFile() : !stat.isDirectory())) {
+    if (stat.isSymbolicLink()) {
+      if (isTarget) {
+        throw new Error(
+          `Agent output path is blocked by authored repository state: ${relativePath}`
+        );
+      }
+      const resolved = await fsExtra.realpath(current);
+      const resolvedRelative = path.relative(workspacePath, resolved);
+      const remainsInsideWorkspace =
+        resolvedRelative !== '..' &&
+        !resolvedRelative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(resolvedRelative);
+      const resolvedStat = await fsExtra.stat(resolved);
+      if (!remainsInsideWorkspace || !resolvedStat.isDirectory()) {
+        throw new Error(
+          `Agent output path is blocked by authored repository state: ${relativePath}`
+        );
+      }
+      current = resolved;
+      continue;
+    }
+    if (isTarget ? !stat.isFile() : !stat.isDirectory()) {
       throw new Error(`Agent output path is blocked by authored repository state: ${relativePath}`);
     }
   }
@@ -2048,32 +2151,50 @@ async function syncWorkspaceAgentGroundingUnsafe(
   } catch {
     contract = null;
   }
-  const operationalSkills = buildWorkspaceOperationalSkills({
+  const graph = await resolveGraphForOperationalSkills(workspacePath, model);
+  const operationalSkillPlan = buildWorkspaceOperationalSkillsPlan({
     workspacePath,
     model,
     context,
     contract,
+    graph,
     generatedAt: now,
   });
+  const operationalSkills = operationalSkillPlan.skills;
   const skillsWrite = await writeWorkspaceOperationalSkills({
     workspacePath,
     skills: operationalSkills,
     generatedAt: now.toISOString(),
     write,
+    decisions: operationalSkillPlan.decisions,
   });
   for (const skill of skillsWrite.skills) {
     record(write ? 'written' : 'skipped', skill.canonicalPath);
     for (const portable of portableOperationalSkillPaths(skill.skillId)) {
-      if (!targetEnabled(selectedTargets, portable.target)) continue;
+      if (
+        portable.target === 'agents'
+          ? !portableAgentSkillsEnabled(selectedTargets)
+          : !targetEnabled(selectedTargets, portable.target)
+      )
+        continue;
       record(
-        await writeTextFile(path.join(workspacePath, portable.path), skill.markdown, write),
+        await writePortableSkillFile({
+          workspacePath,
+          relativePath: portable.path,
+          content: skill.markdown,
+          write,
+        }),
         portable.path
       );
     }
   }
   for (const skillId of skillsWrite.removedSkillIds) {
     for (const portable of portableOperationalSkillPaths(skillId)) {
-      if (!targetEnabled(selectedTargets, portable.target) || !write) continue;
+      const enabled =
+        portable.target === 'agents'
+          ? portableAgentSkillsEnabled(selectedTargets)
+          : targetEnabled(selectedTargets, portable.target);
+      if (!enabled || !write) continue;
       await removeManagedPortableOperationalSkill(workspacePath, portable.path);
     }
   }
@@ -2261,13 +2382,14 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
   }
 
-  if (targetEnabled(selectedTargets, 'codex')) {
+  if (portableAgentSkillsEnabled(selectedTargets)) {
     record(
-      await writeTextFile(
-        path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH),
-        buildPortableGroundingSkill({ index, context, model }),
-        write
-      ),
+      await writePortableSkillFile({
+        workspacePath,
+        relativePath: WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+        content: buildPortableGroundingSkill({ index, context, model }),
+        write,
+      }),
       WORKSPAI_AGENTS_GROUNDING_SKILL_PATH
     );
   }

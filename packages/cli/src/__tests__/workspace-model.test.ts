@@ -11,8 +11,12 @@ import {
   writeWorkspaceModel,
 } from '../workspace-model.js';
 import { buildWorkspaceModelSnapshot } from '../workspace-intelligence.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
-import { hashWorkspaceModel } from '../workspace-model-hash.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
+import { projectWorkspaceKnowledgeGraph } from '../workspace-knowledge-graph-projection.js';
+import { hashCanonicalJson, hashWorkspaceModel } from '../workspace-model-hash.js';
 
 describe('workspace intelligence model', () => {
   const tempDirs: string[] = [];
@@ -925,7 +929,7 @@ describe('workspace intelligence model', () => {
     });
   });
 
-  it('publishes project-owned graph shards and keeps the workspace graph aggregated', async () => {
+  it('publishes integrity-bound project graph references and keeps one aggregate graph', async () => {
     const workspacePath = await makeTempDir('rk-model-project-graphs-');
     await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
       name: 'commerce-platform',
@@ -967,61 +971,36 @@ describe('workspace intelligence model', () => {
     ).toBe(true);
 
     for (const projectName of ['api', 'web']) {
-      const projectGraphPath = path.join(
+      const projectGraphReferencePath = path.join(
         workspacePath,
         projectName,
-        WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
       );
-      const projectGraph = await fsExtra.readJson(projectGraphPath);
-      const foreignProject = projectName === 'api' ? 'web' : 'api';
+      const reference = await fsExtra.readJson(projectGraphReferencePath);
+      const projection = projectWorkspaceKnowledgeGraph(aggregate, projectName);
+      expect(reference).toMatchObject({
+        schemaVersion: 'project-knowledge-graph-reference.v1',
+        project: { name: projectName },
+        canonical: {
+          graph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+          sourceHash: aggregate.source.hash,
+          projectionHash: hashCanonicalJson(projection),
+        },
+        summary: {
+          entityCount: projection.entities.length,
+          relationCount: projection.relations.length,
+          proofCount: projection.proofs.length,
+        },
+      });
       expect(
-        projectGraph.entities.some(
-          (entity: { projectId?: string }) => entity.projectId === projectName
+        await fsExtra.pathExists(
+          path.join(workspacePath, projectName, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
         )
-      ).toBe(true);
-      expect(projectGraph.source.hash).toBe(aggregate.source.hash);
-      expect(projectGraph.quality.entityCount).toBe(projectGraph.entities.length);
-      expect(projectGraph.quality.relationCount).toBe(projectGraph.relations.length);
-      expect(projectGraph.quality.proofCount).toBe(projectGraph.proofs.length);
-      expect(projectGraph.quality.providerSuccessRatio).toBe(
-        aggregate.quality.providerSuccessRatio
-      );
-      expect(projectGraph.quality.bindingCoverage).toBeDefined();
-
-      const entityIds = new Set(projectGraph.entities.map((entity: { id: string }) => entity.id));
-      const ownedEntityIds = new Set(
-        projectGraph.entities
-          .filter((entity: { projectId?: string }) => entity.projectId === projectName)
-          .map((entity: { id: string }) => entity.id)
-      );
-      const foreignEntities = projectGraph.entities.filter(
-        (entity: { projectId?: string }) => entity.projectId === foreignProject
-      );
-      expect(
-        foreignEntities.every((entity: { id: string }) =>
-          projectGraph.relations.some(
-            (relation: { from: string; to: string }) =>
-              (relation.from === entity.id && ownedEntityIds.has(relation.to)) ||
-              (relation.to === entity.id && ownedEntityIds.has(relation.from))
-          )
-        )
-      ).toBe(true);
-      const proofIds = new Set(projectGraph.proofs.map((proof: { id: string }) => proof.id));
-      expect(
-        projectGraph.relations.every(
-          (relation: { from: string; to: string }) =>
-            entityIds.has(relation.from) && entityIds.has(relation.to)
-        )
-      ).toBe(true);
-      expect(
-        [...projectGraph.entities, ...projectGraph.relations].every(
-          (entry: { proofIds: string[] }) => entry.proofIds.every((id) => proofIds.has(id))
-        )
-      ).toBe(true);
+      ).toBe(false);
     }
   });
 
-  it('publishes a project graph beside an external sibling project', async () => {
+  it('publishes a graph reference beside an external sibling project', async () => {
     const fixtureRoot = await makeTempDir('rk-model-external-project-');
     const workspacePath = path.join(fixtureRoot, 'workspace');
     const originalProjectPath = path.join(workspacePath, 'grpc');
@@ -1051,15 +1030,20 @@ describe('workspace intelligence model', () => {
 
     await writeWorkspaceModel(model, workspacePath);
 
-    const projectGraph = await fsExtra.readJson(
-      path.join(externalProjectPath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+    const projectGraphReference = await fsExtra.readJson(
+      path.join(
+        externalProjectPath,
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+      )
     );
-    expect(projectGraph.entities).toEqual(
-      expect.arrayContaining([expect.objectContaining({ projectId: model.projects[0].name })])
-    );
+    expect(projectGraphReference.project.name).toBe(model.projects[0].name);
     expect(
       await fsExtra.pathExists(
-        path.join(workspacePath, 'grpc', WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+        path.join(
+          workspacePath,
+          'grpc',
+          WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+        )
       )
     ).toBe(false);
   });
@@ -1115,7 +1099,11 @@ describe('workspace intelligence model', () => {
       path.join(workspacePath, WORKSPACE_MODEL_REPORT_PATH),
       path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph),
       ...['api', 'web'].map((projectName) =>
-        path.join(workspacePath, projectName, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+        path.join(
+          workspacePath,
+          projectName,
+          WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+        )
       ),
     ];
     const preimages = await Promise.all(

@@ -30,6 +30,7 @@ import {
   hasWorkspaceRootMarkers,
   PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
   PROJECT_GROUNDING_RELATIVE_PATH,
+  PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
   projectMetadataCandidates,
   projectMetadataPath,
@@ -124,6 +125,7 @@ function buildAdoptProjectEffects(mode: ProjectGroundingMode): AdoptProjectEffec
             PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
             PROJECT_GROUNDING_RELATIVE_PATH,
             PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+            PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH,
           ]),
     ],
     repositoryControlFiles: [
@@ -139,6 +141,12 @@ function buildAdoptProjectEffects(mode: ProjectGroundingMode): AdoptProjectEffec
               action: 'reconcile' as const,
               condition:
                 'managed grounding is enabled and the path is a regular file; authored deletions and symbolic links are preserved',
+            },
+            {
+              path: '.agents/skills/workspai-*/SKILL.md',
+              action: 'reconcile' as const,
+              condition:
+                'managed provider-neutral Skill discovery is enabled; authored collisions and unsafe symbolic links are preserved',
             },
             ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((adapterPath) => ({
               path: adapterPath,
@@ -538,6 +546,7 @@ export async function adoptProjectIntoWorkspace(
     profile: workspaceProfile,
     runtimes: await collectWorkspaceProfileRuntimes(workspacePath, {
       additionalRuntimes: runtimeCandidates,
+      excludeProjectPath: projectPath,
     }),
     mode: profilePolicyMode,
   });

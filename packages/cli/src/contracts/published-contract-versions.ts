@@ -101,6 +101,8 @@ export function getPublishedContractVersions() {
     projectWorkspaceResolution: PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION,
     projectContextAgent:
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectContextAgent.schemaVersion,
+    projectKnowledgeGraphReference:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectKnowledgeGraphReference.schemaVersion,
     projectAgentEntry: PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
     agentBootstrapReceipt: AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
     doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
@@ -211,6 +213,8 @@ export function getPublishedContractCatalog() {
     projectWorkspaceLink: 'contracts/project-workspace-link.v1.json',
     projectWorkspaceResolution: 'contracts/project-workspace-resolution.v1.json',
     projectContextAgent: 'contracts/workspace-intelligence/project-context-agent.v1.json',
+    projectKnowledgeGraphReference:
+      'contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json',
     projectAgentEntry: 'contracts/workspace-intelligence/project-agent-entry.v1.json',
     agentBootstrapReceipt: 'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
     doctorProjectEvidence: 'contracts/doctor-project-evidence.v1.json',

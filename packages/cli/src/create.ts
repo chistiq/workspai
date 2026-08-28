@@ -1148,6 +1148,8 @@ interface CreateProjectOptions {
   profile?: string;
   /** Parent directory for workspace creation. Defaults to process.cwd(). */
   parentDirectory?: string;
+  /** Defer the standalone workspace receipt when creation is one step in a larger command. */
+  suppressReceipt?: boolean;
 }
 
 export async function createProject(
@@ -1169,6 +1171,7 @@ export async function createProject(
     installMethod: providedInstallMethod,
     profile,
     parentDirectory,
+    suppressReceipt = false,
   } = options;
 
   // Default to 'rapidkit' directory
@@ -1421,12 +1424,14 @@ export async function createProject(
         );
       }
 
-      printWorkspaceCreationReceipt({
-        workspaceName: name,
-        workspacePath: projectPath,
-        profile: resolvedProfile,
-        projectCount: onboarding?.projectCount ?? 0,
-      });
+      if (!suppressReceipt) {
+        printWorkspaceCreationReceipt({
+          workspaceName: name,
+          workspacePath: projectPath,
+          profile: resolvedProfile,
+          projectCount: onboarding?.projectCount ?? 0,
+        });
+      }
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
       return rollbackLifecycleTransaction(transaction, _err);
@@ -1475,14 +1480,16 @@ export async function createProject(
         );
       }
 
-      printWorkspaceCreationReceipt({
-        workspaceName: name,
-        workspacePath: projectPath,
-        profile: resolvedProfile,
-        projectCount: onboarding?.projectCount ?? 0,
-        pythonEngine: 'skipped',
-        note: 'Install the optional Python engine later only when a Python-backed kit needs it.',
-      });
+      if (!suppressReceipt) {
+        printWorkspaceCreationReceipt({
+          workspaceName: name,
+          workspacePath: projectPath,
+          profile: resolvedProfile,
+          projectCount: onboarding?.projectCount ?? 0,
+          pythonEngine: 'skipped',
+          note: 'Install the optional Python engine later only when a Python-backed kit needs it.',
+        });
+      }
       return;
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
@@ -1605,13 +1612,15 @@ export async function createProject(
                 );
               }
 
-              printWorkspaceCreationReceipt({
-                workspaceName: name,
-                workspacePath: projectPath,
-                profile: fallback,
-                projectCount: onboarding?.projectCount ?? 0,
-                note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
-              });
+              if (!suppressReceipt) {
+                printWorkspaceCreationReceipt({
+                  workspaceName: name,
+                  workspacePath: projectPath,
+                  profile: fallback,
+                  projectCount: onboarding?.projectCount ?? 0,
+                  note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
+                });
+              }
               return; // Exit successfully with fallback profile
             } catch (_err) {
               spinner2.fail('Failed to create workspace');
@@ -1661,13 +1670,15 @@ export async function createProject(
               );
             }
 
-            printWorkspaceCreationReceipt({
-              workspaceName: name,
-              workspacePath: projectPath,
-              profile: fallback,
-              projectCount: onboarding?.projectCount ?? 0,
-              note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
-            });
+            if (!suppressReceipt) {
+              printWorkspaceCreationReceipt({
+                workspaceName: name,
+                workspacePath: projectPath,
+                profile: fallback,
+                projectCount: onboarding?.projectCount ?? 0,
+                note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
+              });
+            }
             return; // Exit successfully
           } catch (_err) {
             spinner2.fail('Failed to create workspace');
@@ -1847,15 +1858,17 @@ export async function createProject(
       );
     }
 
-    printWorkspaceCreationReceipt({
-      workspaceName: name,
-      workspacePath: projectPath,
-      profile: resolvedProfile,
-      projectCount: onboarding?.projectCount ?? 0,
-      pythonEngine: 'installed',
-      pythonVersion: pythonAnswers.pythonVersion,
-      installMethod: pythonAnswers.installMethod,
-    });
+    if (!suppressReceipt) {
+      printWorkspaceCreationReceipt({
+        workspaceName: name,
+        workspacePath: projectPath,
+        profile: resolvedProfile,
+        projectCount: onboarding?.projectCount ?? 0,
+        pythonEngine: 'installed',
+        pythonVersion: pythonAnswers.pythonVersion,
+        installMethod: pythonAnswers.installMethod,
+      });
+    }
   } catch (_error) {
     spinner.fail('Failed to create Workspai environment');
     return rollbackLifecycleTransaction(transaction, _error);

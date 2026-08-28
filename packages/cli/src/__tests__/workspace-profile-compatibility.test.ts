@@ -156,6 +156,33 @@ describe('workspace profile compatibility', () => {
     expect(result.runtimes).toEqual(['node', 'rust', 'cpp']);
   });
 
+  it('excludes stale registry runtime when a linked project is being re-observed', async () => {
+    const workspacePath = await makeTempDir('workspace-profile-readopt-');
+    const projectPath = await makeTempDir('workspace-profile-readopt-project-');
+    await fsExtra.ensureDir(path.join(workspacePath, '.workspai'));
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai', 'imported-projects.json'), {
+      version: 1,
+      updatedAt: '2026-08-28T00:00:00.000Z',
+      projects: [
+        {
+          name: 'sdk',
+          path: projectPath,
+          stack: 'unknown',
+          runtime: 'unknown',
+          confidence: 'low',
+          importedAt: '2026-08-28T00:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(
+      collectWorkspaceProfileRuntimes(workspacePath, {
+        additionalRuntimes: ['python'],
+        excludeProjectPath: projectPath,
+      })
+    ).resolves.toEqual(['python']);
+  });
+
   it('blocks observed runtimes against single-runtime profiles in strict mode', () => {
     const result = resolveWorkspaceProfileProjectCompatibility({
       profile: 'node-only',

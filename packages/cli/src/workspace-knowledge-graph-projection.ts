@@ -9,6 +9,8 @@ import type {
   WorkspaceKnowledgeRelation,
 } from './contracts/workspace-knowledge-graph-contract.js';
 import type { WorkspaceModelProject } from './workspace-model.js';
+import { hashCanonicalJson } from './workspace-model-hash.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS } from './contracts/workspace-intelligence-runtime-registry.js';
 import {
   calculateWorkspaceKnowledgeBindingCoverage,
   countWorkspaceKnowledgeUnknowns,
@@ -173,6 +175,64 @@ export function projectWorkspaceKnowledgeGraph(
       secretValuesEmitted: false,
     },
     diagnostics,
+  };
+}
+
+export const PROJECT_KNOWLEDGE_GRAPH_REFERENCE_SCHEMA_VERSION =
+  WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectKnowledgeGraphReference.schemaVersion;
+
+export interface ProjectKnowledgeGraphReference {
+  schemaVersion: typeof PROJECT_KNOWLEDGE_GRAPH_REFERENCE_SCHEMA_VERSION;
+  generatedAt: string;
+  project: { name: string };
+  canonical: {
+    graph: 'workspace:.workspai/reports/workspace-knowledge-graph.json';
+    boundedQuery: string;
+    sourceHash: string;
+    projectionHash: string;
+  };
+  summary: {
+    entityCount: number;
+    relationCount: number;
+    proofCount: number;
+  };
+  integrity: {
+    algorithm: 'sha256';
+    payloadHash: string;
+    portable: true;
+    absolutePathsEmitted: false;
+  };
+}
+
+export function buildProjectKnowledgeGraphReference(
+  graph: WorkspaceKnowledgeGraph,
+  projectName: string
+): ProjectKnowledgeGraphReference {
+  const projection = projectWorkspaceKnowledgeGraph(graph, projectName);
+  const payload = {
+    schemaVersion: PROJECT_KNOWLEDGE_GRAPH_REFERENCE_SCHEMA_VERSION,
+    generatedAt: graph.generatedAt,
+    project: { name: projectName },
+    canonical: {
+      graph: 'workspace:.workspai/reports/workspace-knowledge-graph.json' as const,
+      boundedQuery: `workspai workspace graph search <task-query> --scope project:${projectName} --limit 12 --json`,
+      sourceHash: graph.source.hash,
+      projectionHash: hashCanonicalJson(projection),
+    },
+    summary: {
+      entityCount: projection.entities.length,
+      relationCount: projection.relations.length,
+      proofCount: projection.proofs.length,
+    },
+  };
+  return {
+    ...payload,
+    integrity: {
+      algorithm: 'sha256',
+      payloadHash: hashCanonicalJson(payload),
+      portable: true,
+      absolutePathsEmitted: false,
+    },
   };
 }
 

@@ -794,9 +794,18 @@ export function isWorkspaiManagedLinkedProjectMetadata(
   projectJsonData: Record<string, unknown> | null | undefined
 ): boolean {
   const adoption = projectJsonData?.adoption;
-  if (!adoption || typeof adoption !== 'object' || Array.isArray(adoption)) return false;
-  const value = adoption as Record<string, unknown>;
-  return value.managed_by === 'workspai' && value.mode === 'linked';
+  if (adoption && typeof adoption === 'object' && !Array.isArray(adoption)) {
+    const value = adoption as Record<string, unknown>;
+    if (value.managed_by === 'workspai' && value.mode === 'linked') return true;
+  }
+
+  const imported = projectJsonData?.import;
+  return (
+    imported !== null &&
+    typeof imported === 'object' &&
+    !Array.isArray(imported) &&
+    (imported as Record<string, unknown>).managed_by === 'workspai'
+  );
 }
 
 function detectNodeBackendFromProject(projectPath: string): BackendFrameworkDetection {
@@ -955,13 +964,16 @@ function detectPhpBackendFromProject(projectPath: string): BackendFrameworkDetec
 
 function detectRubyBackendFromProject(projectPath: string): BackendFrameworkDetection {
   const gemfile = readTextIfExists(path.join(projectPath, 'Gemfile'));
+  const gemspec = findFilesWithSuffix(projectPath, '.gemspec', 0)
+    .map((filePath) => readTextIfExists(filePath))
+    .join('\n');
   if (gemfile.includes("gem 'rails'") || gemfile.includes('gem "rails"')) {
     return buildDetection('rails', 'high', 'manifest');
   }
   if (gemfile.includes("gem 'sinatra'") || gemfile.includes('gem "sinatra"')) {
     return buildDetection('sinatra', 'high', 'manifest');
   }
-  if (gemfile.trim()) {
+  if (gemfile.trim() || gemspec.trim()) {
     return buildDetection('ruby', 'medium', 'marker');
   }
 
@@ -1048,7 +1060,11 @@ export function detectRuntimeCandidatesFromProject(projectPath: string): Backend
     push('dotnet');
   }
   if (fs.existsSync(path.join(projectPath, 'package.json'))) push('node');
-  if (fs.existsSync(path.join(projectPath, 'Gemfile'))) push('ruby');
+  if (
+    fs.existsSync(path.join(projectPath, 'Gemfile')) ||
+    hasFileWithSuffix(projectPath, '.gemspec', 0)
+  )
+    push('ruby');
   if (
     fs.existsSync(path.join(projectPath, 'pyproject.toml')) ||
     fs.existsSync(path.join(projectPath, 'setup.py')) ||
@@ -1132,7 +1148,7 @@ export function detectNestedRuntimeCandidatesFromProject(
   if (hasName('composer.json')) push('php');
   if (hasSuffix('.csproj', '.sln')) push('dotnet');
   if (hasName('package.json')) push('node');
-  if (hasName('Gemfile')) push('ruby');
+  if (hasName('Gemfile') || hasSuffix('.gemspec')) push('ruby');
   if (hasName('pyproject.toml', 'setup.py', 'requirements.txt', 'requirements.in')) push('python');
   if (hasName('deps.edn', 'project.clj')) push('clojure');
   if (hasName('build.sbt')) push('scala');
@@ -1197,7 +1213,7 @@ export function detectBackendFrameworkFromProject(
   const hasRootRuntimeOwner = rootEntries.some(
     (entry) =>
       entry.isFile() &&
-      (directManifestNames.has(entry.name) || /\.(?:csproj|sln)$/iu.test(entry.name))
+      (directManifestNames.has(entry.name) || /\.(?:csproj|slnx?|gemspec)$/iu.test(entry.name))
   );
   // A manifest-free composite container has no source-backed way to choose one
   // nested runtime as primary. Preserve the previous managed observation only
@@ -1248,6 +1264,19 @@ export function detectBackendFrameworkFromProject(
   }
 
   const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  const nestedRuntimeCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
+  // A manifest-free monorepo root can still have an unambiguous runtime owner
+  // when every bounded child manifest belongs to the same runtime family.
+  // Preserve `unknown` for genuinely polyglot containers; do not erase a
+  // homogeneous Python/Go/etc. workspace merely because its manifests live in
+  // packages below the repository root.
+  if (runtimeCandidates.length === 0 && nestedRuntimeCandidates.length === 1) {
+    return buildDetection(
+      normalizeBackendPlatformKey(nestedRuntimeCandidates[0]),
+      'medium',
+      'runtime'
+    );
+  }
   const rootCmake = readTextIfExists(path.join(projectPath, 'CMakeLists.txt'));
   const rootMeson = readTextIfExists(path.join(projectPath, 'meson.build'));
   const rootCargo = readTextIfExists(path.join(projectPath, 'Cargo.toml'));

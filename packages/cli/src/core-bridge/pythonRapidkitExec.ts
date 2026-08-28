@@ -18,6 +18,7 @@ import {
   LEGACY_RAPIDKIT_WORKSPACE_MARKER,
   WORKSPAI_WORKSPACE_MARKER,
 } from '../utils/workspace-paths.js';
+import { withInterprocessLock } from '../utils/interprocess-lock.js';
 
 export type PythonCommand = string;
 
@@ -106,6 +107,8 @@ type BridgeErrorCode =
   | 'BRIDGE_PIP_BOOTSTRAP_FAILED'
   | 'BRIDGE_PIP_UPGRADE_FAILED'
   | 'BRIDGE_PIP_INSTALL_FAILED'
+  | 'BRIDGE_VENV_HEALTH_FAILED'
+  | 'BRIDGE_VENV_LOCK_FAILED'
   | 'BRIDGE_VENV_BOOTSTRAP_FAILED';
 
 class BridgeError extends Error {
@@ -153,6 +156,18 @@ function formatBridgeError(err: unknown): string {
         return (
           'Workspai could not install rapidkit-core in the bridge virtual environment.\n' +
           'Check your network/proxy, or install manually with: pipx install rapidkit-core.\n' +
+          `Details: ${err.message}`
+        );
+      case 'BRIDGE_VENV_LOCK_FAILED':
+        return (
+          'Workspai could not acquire the shared Python bridge bootstrap lock.\n' +
+          'Another Workspai process may still be preparing the environment; retry after it completes.\n' +
+          `Details: ${err.message}`
+        );
+      case 'BRIDGE_VENV_HEALTH_FAILED':
+        return (
+          'Workspai created the Python bridge environment, but its Core runtime health check failed.\n' +
+          'The incomplete bridge was discarded so the next run can rebuild it safely.\n' +
           `Details: ${err.message}`
         );
       default:
@@ -1207,6 +1222,30 @@ async function checkRapidkitCoreVersionCompatible(): Promise<RapidkitCoreVersion
 
 async function ensureBridgeVenv(pythonCmd: PythonCommand): Promise<string> {
   const desiredDir = bridgeVenvDir();
+  const timeoutMs = Math.max(
+    60_000,
+    Number(process.env.RAPIDKIT_BRIDGE_LOCK_TIMEOUT_MS ?? 10 * 60_000)
+  );
+  const staleMs = Math.max(
+    timeoutMs + 60_000,
+    Number(process.env.RAPIDKIT_BRIDGE_LOCK_STALE_MS ?? 15 * 60_000)
+  );
+
+  try {
+    return await withInterprocessLock(
+      `${desiredDir}.lock`,
+      () => ensureBridgeVenvLocked(pythonCmd),
+      { timeoutMs, staleMs, purpose: 'python-core-bridge-bootstrap' }
+    );
+  } catch (error) {
+    if (error instanceof BridgeError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new BridgeError('BRIDGE_VENV_LOCK_FAILED', message);
+  }
+}
+
+async function ensureBridgeVenvLocked(pythonCmd: PythonCommand): Promise<string> {
+  const desiredDir = bridgeVenvDir();
   const legacyDir = legacyBridgeVenvDir();
   const spec = coreInstallTarget();
   const candidates = [desiredDir];
@@ -1222,16 +1261,12 @@ async function ensureBridgeVenv(pythonCmd: PythonCommand): Promise<string> {
     if (!(await fsExtra.pathExists(py))) continue;
 
     try {
-      const probeResult = await execa(
-        py,
-        ['-c', "import importlib.util; print(1 if importlib.util.find_spec('rapidkit') else 0)"],
-        {
-          reject: false,
-          stdio: 'pipe',
-          timeout: 2000,
-        }
-      );
-      if (probeResult.exitCode === 0 && (probeResult.stdout ?? '').toString().trim() === '1') {
+      const probeResult = await execa(py, ['-m', 'rapidkit', '--version', '--json'], {
+        reject: false,
+        stdio: 'pipe',
+        timeout: 15_000,
+      });
+      if (probeResult.exitCode === 0 && (await isCoreJsonVersion(probeResult.stdout))) {
         return py;
       }
       await fsExtra.remove(venvDir);
@@ -1361,6 +1396,22 @@ async function ensureBridgeVenv(pythonCmd: PythonCommand): Promise<string> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new BridgeError('BRIDGE_PIP_INSTALL_FAILED', msg);
+    }
+    const health = await execa(vpy, ['-m', 'rapidkit', '--version', '--json'], {
+      reject: false,
+      stdio: 'pipe',
+      timeout: 30_000,
+    });
+    if (health.exitCode !== 0 || !(await isCoreJsonVersion(health.stdout))) {
+      const details = [health.stdout, health.stderr]
+        .map((value) => (value ?? '').toString().trim())
+        .filter(Boolean)
+        .join('\n');
+      await fsExtra.remove(venvDir);
+      throw new BridgeError(
+        'BRIDGE_VENV_HEALTH_FAILED',
+        details || 'rapidkit --version --json did not return the expected Core version contract.'
+      );
     }
     return vpy;
   } catch (e) {

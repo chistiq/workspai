@@ -230,6 +230,34 @@ describe('workspace-snapshot lifecycle', () => {
     ).rejects.toThrow('Archived project not found');
   });
 
+  it('explains the lifecycle boundary for a registered external project', async () => {
+    const externalPath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-linked-project-'));
+    try {
+      await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'imported-projects.json'), {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        projects: [
+          {
+            name: 'linked-sdk',
+            path: externalPath,
+            relativePath: 'external/linked-sdk',
+            stack: 'unknown',
+            confidence: 'low',
+            source: 'adopted-local',
+            relationship: 'adopted',
+            importedAt: new Date().toISOString(),
+          },
+        ],
+      });
+
+      await expect(
+        archiveWorkspaceProject({ workspacePath, project: 'linked-sdk', dryRun: true })
+      ).rejects.toThrow(/linked external project.*Only managed projects/s);
+    } finally {
+      await fsExtra.remove(externalPath);
+    }
+  });
+
   it('refuses reserved archive manifest collisions without moving project data', async () => {
     await fsExtra.outputFile(
       path.join(workspacePath, 'orders', 'workspai-archive.json', 'sentinel.txt'),

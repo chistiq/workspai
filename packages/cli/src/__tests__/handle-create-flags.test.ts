@@ -84,6 +84,31 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(output).not.toContain('Usage: rapidkit create project');
   });
 
+  it('maps explicit --skip-install to the core scaffold-only contract', async () => {
+    vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
+    const runSpy = vi.spyOn(coreExec, 'runCoreRapidkit').mockResolvedValue(1 as any);
+
+    const code = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'nestjs.standard',
+      'api',
+      '--skip-install',
+    ]);
+
+    expect(code).toBe(1);
+    expect(runSpy).toHaveBeenCalledWith(
+      expect.arrayContaining(['create', 'project', 'nestjs.standard', 'api', '--skip-essentials']),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          RAPIDKIT_SKIP_LOCKS: '1',
+          RAPIDKIT_GENERATE_LOCKS: '0',
+        }),
+      })
+    );
+    expect(runSpy.mock.calls[0][0]).not.toContain('--skip-install');
+  });
+
   it('preserves Python-core --output while filtering wrapper-only create project flags', async () => {
     const registerSpy = vi.spyOn(create, 'registerWorkspaceAtPath').mockResolvedValue();
     const resolveSpy = vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
@@ -115,6 +140,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
       'demo',
       '--output',
       'services',
+      '--skip-essentials',
     ]);
   });
 

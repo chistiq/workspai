@@ -14,6 +14,7 @@ import {
 } from '../workspace-model-cache.js';
 
 const execFileAsync = promisify(execFile);
+const gitExecutable = process.env.GIT_EXECUTABLE || 'git';
 
 let workspacePath: string;
 
@@ -72,11 +73,69 @@ describe('workspace model cache (1.15)', () => {
     expect(second.cache).toBe('miss');
   });
 
+  it('invalidates the cache when a suffix-based ecosystem manifest is added', async () => {
+    await buildWorkspaceModelCached({ workspacePath, cache: true });
+    expect((await buildWorkspaceModelCached({ workspacePath, cache: true })).cache).toBe('hit');
+
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'api.gemspec'),
+      'Gem::Specification.new { |spec| spec.name = "api" }\n'
+    );
+
+    expect((await buildWorkspaceModelCached({ workspacePath, cache: true })).cache).toBe('miss');
+  });
+
   it('invalidates the cache when a project is added', async () => {
     await buildWorkspaceModelCached({ workspacePath, cache: true });
     await writeProject('worker', { name: 'worker', version: '1.0.0' });
     const next = await buildWorkspaceModelCached({ workspacePath, cache: true });
     expect(next.cache).toBe('miss');
+  });
+
+  it('tracks a project declared only by an external workspace contract path', async () => {
+    const externalRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-external-cache-'));
+    try {
+      await fsExtra.writeJson(path.join(externalRoot, 'package.json'), {
+        name: 'external-api',
+        version: '1.0.0',
+      });
+      await fsExtra.writeJson(path.join(workspacePath, '.rapidkit', 'workspace.contract.json'), {
+        schemaVersion: 1,
+        kind: 'rapidkit.workspace.contract',
+        generatedAt: '2026-08-28T00:00:00.000Z',
+        workspace: { name: 'cache-fixture' },
+        projects: [
+          {
+            slug: 'external-api',
+            relativePath: '../external-api',
+            externalPath: externalRoot,
+            modules: [],
+            ports: [],
+            contracts: {
+              owns: [],
+              apis: [],
+              publishes: [],
+              consumes: [],
+              dependsOn: [],
+              env: [],
+            },
+          },
+        ],
+      });
+
+      const first = await buildWorkspaceModelCached({ workspacePath, cache: true });
+      expect(first.cache).toBe('miss');
+      expect(first.model.projects.some((project) => project.name === 'external-api')).toBe(true);
+      expect((await buildWorkspaceModelCached({ workspacePath, cache: true })).cache).toBe('hit');
+
+      await fsExtra.writeJson(path.join(externalRoot, 'package.json'), {
+        name: 'external-api',
+        version: '2.0.0',
+      });
+      expect((await buildWorkspaceModelCached({ workspacePath, cache: true })).cache).toBe('miss');
+    } finally {
+      await fsExtra.remove(externalRoot);
+    }
   });
 
   it('rebuilds a legacy cache that lacks the canonical projectTopology field', async () => {
@@ -106,15 +165,15 @@ describe('workspace model cache (1.15)', () => {
 
   it('uses Git content identity while detecting dirty and untracked polyglot source', async () => {
     await fsExtra.outputFile(path.join(workspacePath, 'api', 'app.rb'), 'class App; end\n');
-    await execFileAsync('/usr/bin/git', ['init'], { cwd: workspacePath });
-    await execFileAsync('/usr/bin/git', ['config', 'user.email', 'tests@workspai.dev'], {
+    await execFileAsync(gitExecutable, ['init'], { cwd: workspacePath });
+    await execFileAsync(gitExecutable, ['config', 'user.email', 'tests@workspai.dev'], {
       cwd: workspacePath,
     });
-    await execFileAsync('/usr/bin/git', ['config', 'user.name', 'Workspai Tests'], {
+    await execFileAsync(gitExecutable, ['config', 'user.name', 'Workspai Tests'], {
       cwd: workspacePath,
     });
-    await execFileAsync('/usr/bin/git', ['add', '.'], { cwd: workspacePath });
-    await execFileAsync('/usr/bin/git', ['commit', '-m', 'fixture'], { cwd: workspacePath });
+    await execFileAsync(gitExecutable, ['add', '.'], { cwd: workspacePath });
+    await execFileAsync(gitExecutable, ['commit', '-m', 'fixture'], { cwd: workspacePath });
 
     const initial = await computeProjectSignatures(workspacePath, [
       path.join(workspacePath, 'api'),

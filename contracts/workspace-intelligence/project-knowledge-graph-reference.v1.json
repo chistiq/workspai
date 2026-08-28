@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/project-knowledge-graph-reference.v1.json",
+  "title": "Workspai Project Knowledge Graph Reference",
+  "description": "Portable, integrity-bound project reference to the canonical workspace Knowledge Graph.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "project", "canonical", "summary", "integrity"],
+  "properties": {
+    "schemaVersion": { "const": "project-knowledge-graph-reference.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": { "name": { "type": "string", "minLength": 1 } }
+    },
+    "canonical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph", "boundedQuery", "sourceHash", "projectionHash"],
+      "properties": {
+        "graph": { "const": "workspace:.workspai/reports/workspace-knowledge-graph.json" },
+        "boundedQuery": { "type": "string", "minLength": 1 },
+        "sourceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "projectionHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityCount", "relationCount", "proofCount"],
+      "properties": {
+        "entityCount": { "type": "integer", "minimum": 0 },
+        "relationCount": { "type": "integer", "minimum": 0 },
+        "proofCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "payloadHash", "portable", "absolutePathsEmitted"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "payloadHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "portable": { "const": true },
+        "absolutePathsEmitted": { "const": false }
+      }
+    }
+  }
+}

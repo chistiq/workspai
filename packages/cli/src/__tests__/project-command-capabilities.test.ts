@@ -40,6 +40,17 @@ afterEach(async () => {
 });
 
 describe('project command capabilities', () => {
+  it('reports the npm wrapper as owner of the project command surface', async () => {
+    const projectRoot = await createProject({ runtime: 'python', framework: 'fastapi' });
+    const capabilities = resolveProjectCommandCapabilities(projectRoot);
+
+    expect(capabilities.commandMap.project).toMatchObject({
+      owner: 'npm',
+      status: 'supported',
+    });
+    expect(capabilities.commandMap.project.reason).toContain('delegates only Core-specific');
+  });
+
   it('keeps Core module/template commands available for Core-backed Python projects', async () => {
     const projectRoot = await createProject({
       kit_name: 'fastapi.standard',

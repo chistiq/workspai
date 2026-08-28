@@ -7,7 +7,11 @@ import { spawnSync } from 'node:child_process';
 import {
   assertQualificationReportIsPublicationSafe,
   createQualificationCommandRecord,
+  hasGovernedQualificationOutcome,
   isQualificationCommandAccepted,
+  qualificationCommandAllowsGovernedBlock,
+  selectQualificationLifecycleProjectId,
+  selectQualificationProjectId,
 } from './qualification-publication-safety.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -21,6 +25,8 @@ if (!workspacePath || !fs.existsSync(path.join(workspacePath, '.workspai-workspa
 
 const outputRoot = path.join(path.dirname(reportPath), 'enterprise-qualification-artifacts');
 fs.mkdirSync(outputRoot, { recursive: true });
+const startedAt = new Date();
+const snapshotName = `enterprise-qualification-${startedAt.toISOString().replace(/[^0-9]/g, '')}`;
 const modelSnapshot = '.workspai/reports/workspace-model-snapshot.json';
 const diffArtifact = '.workspai/reports/workspace-model-diff-last-run.json';
 const impactArtifact = '.workspai/reports/workspace-impact-last-run.json';
@@ -28,10 +34,31 @@ const archivePath = path.join(outputRoot, 'workspace.tar.gz');
 const persistedGraph = readJson(
   path.join(workspacePath, '.workspai', 'reports', 'workspace-knowledge-graph.json')
 );
-const evidenceEntityId =
-  persistedGraph?.entities?.find(
-    (entity) => entity?.kind === 'project' && entity?.projectId === 'vscode'
-  )?.id ?? 'vscode';
+const workspaceContract = readJson(
+  path.join(workspacePath, '.workspai', 'workspace.contract.json')
+);
+const workspaceModel = readJson(
+  path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
+);
+const importedRegistry = readJson(path.join(workspacePath, '.workspai', 'imported-projects.json'));
+const graphProject = persistedGraph?.entities?.find((entity) => entity?.kind === 'project');
+const EVIDENCE_ENTITY_PLACEHOLDER = '__WORKSPAI_PROJECT_ENTITY__';
+const projectId = selectQualificationProjectId({
+  graph: persistedGraph,
+  contract: workspaceContract,
+  model: workspaceModel,
+  importedRegistry,
+});
+const lifecycleProjectId = selectQualificationLifecycleProjectId({
+  workspacePath,
+  contract: workspaceContract,
+  model: workspaceModel,
+  importedRegistry,
+});
+const evidenceEntityId = firstNonEmptyString(
+  graphProject?.id,
+  projectId ? EVIDENCE_ENTITY_PLACEHOLDER : null
+);
 const commands = [
   ['commands'],
   ['workspace', 'list'],
@@ -48,6 +75,7 @@ const commands = [
   ['workspace', 'verify', '--from-impact', impactArtifact],
   ['workspace', 'trace', '--from', diffArtifact, '--write'],
   ['workspace', 'contract', 'inspect'],
+  ['workspace', 'contract', 'sync', '--strict'],
   ['workspace', 'contract', 'verify', '--strict'],
   [
     'workspace',
@@ -63,10 +91,12 @@ const commands = [
     '--output',
     path.join(outputRoot, 'workspace-knowledge-graph.json'),
   ],
-  ['workspace', 'graph', 'explain', 'vscode'],
+  ...(projectId ? [['workspace', 'graph', 'explain', projectId]] : []),
   ['workspace', 'graph', 'entities', 'project', '--limit', '20'],
   ['workspace', 'graph', 'search', 'language binding core dependency', '--limit', '20'],
-  ['workspace', 'graph', 'evidence', evidenceEntityId, '--limit', '20'],
+  ...(evidenceEntityId
+    ? [['workspace', 'graph', 'evidence', evidenceEntityId, '--limit', '20']]
+    : []),
   ['workspace', 'graph', 'benchmark', 'language binding core dependency', '--limit', '20'],
   ...['dot', 'mermaid', 'jsonld', 'graphml', 'gexf'].map((format) => [
     'workspace',
@@ -91,15 +121,18 @@ const commands = [
   ['workspace', 'archive', 'inspect', archivePath],
   ['workspace', 'archive', 'verify', archivePath],
   ['workspace', 'archive', 'doctor', archivePath],
-  ['snapshot', 'create', 'enterprise-qualification', '--workspace', workspacePath],
+  ['snapshot', 'create', snapshotName, '--workspace', workspacePath],
   ['snapshot', 'list', '--workspace', workspacePath],
-  ['snapshot', 'inspect', 'enterprise-qualification', '--workspace', workspacePath],
-  ['snapshot', 'restore', 'enterprise-qualification', '--workspace', workspacePath, '--dry-run'],
-  ['project', 'archive', 'vscode', '--workspace', workspacePath, '--dry-run'],
-  ['project', 'delete', 'vscode', '--workspace', workspacePath, '--dry-run'],
+  ['snapshot', 'inspect', snapshotName, '--workspace', workspacePath],
+  ['snapshot', 'restore', snapshotName, '--workspace', workspacePath, '--dry-run'],
+  ...(lifecycleProjectId
+    ? [
+        ['project', 'archive', lifecycleProjectId, '--workspace', workspacePath, '--dry-run'],
+        ['project', 'delete', lifecycleProjectId, '--workspace', workspacePath, '--dry-run'],
+      ]
+    : []),
 ];
 
-const startedAt = new Date();
 const report = {
   schemaVersion: 'workspai.enterprise-workspace-qualification.v1',
   generatedAt: startedAt.toISOString(),
@@ -115,10 +148,16 @@ const report = {
     destructiveOperations: 'dry-run-only',
     agentWrites: 'dry-run-only',
   },
+  coverage: {
+    projectLifecycle: lifecycleProjectId ? 'dry-run' : 'skipped-no-managed-project',
+  },
   commands: [],
 };
 
-for (const [commandIndex, argv] of commands.entries()) {
+for (const [commandIndex, commandTemplate] of commands.entries()) {
+  const argv = commandTemplate.map((part) =>
+    part === EVIDENCE_ENTITY_PLACEHOLDER ? resolveGeneratedProjectEntityId() : part
+  );
   const invocation = [...argv, '--json'];
   const started = Date.now();
   const result = spawnSync(args.cli ?? 'workspai', invocation, {
@@ -132,6 +171,14 @@ for (const [commandIndex, argv] of commands.entries()) {
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? '';
   const parsed = parseJson(stdout);
+  const governedCommand = qualificationCommandAllowsGovernedBlock(argv);
+  const acceptedExitCodes = governedCommand ? [0, 1, 2] : [0];
+  const processAccepted = isQualificationCommandAccepted({
+    result,
+    acceptedExitCodes,
+    parsed,
+  });
+  const governedOutcome = result.status === 0 || hasGovernedQualificationOutcome(parsed);
   report.commands.push({
     ...createQualificationCommandRecord({
       id: `command-${String(commandIndex + 1).padStart(3, '0')}`,
@@ -139,11 +186,13 @@ for (const [commandIndex, argv] of commands.entries()) {
       parsed,
       startedAt: started,
     }),
-    accepted: isQualificationCommandAccepted({
-      result,
-      acceptedExitCodes: [0, 1, 2],
-      parsed,
-    }),
+    acceptanceClass:
+      processAccepted && result.status === 0
+        ? 'succeeded'
+        : processAccepted && governedOutcome
+          ? 'governed-block'
+          : 'failed',
+    accepted: processAccepted && governedOutcome,
   });
   writeReport();
 }
@@ -181,6 +230,24 @@ function readJson(filePath) {
   } catch {
     return null;
   }
+}
+
+function firstNonEmptyString(...values) {
+  return values.find((value) => typeof value === 'string' && value.trim().length > 0) ?? null;
+}
+
+function resolveGeneratedProjectEntityId() {
+  const graph = readJson(path.join(outputRoot, 'workspace-knowledge-graph.json')) ?? persistedGraph;
+  const entity = graph?.entities?.find(
+    (candidate) =>
+      candidate?.kind === 'project' && (!projectId || candidate?.projectId === projectId)
+  );
+  if (!entity?.id) {
+    fail(
+      `The generated knowledge graph has no project entity for ${projectId ?? 'this workspace'}.`
+    );
+  }
+  return entity.id;
 }
 
 function writeReport() {

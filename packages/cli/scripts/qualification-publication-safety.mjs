@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { existsSync, readdirSync } from 'node:fs';
 
 const RESERVED_PROJECT_NAMES = new Set([
   'build',
@@ -70,6 +71,136 @@ export function isQualificationCommandAccepted({
   );
 }
 
+export function qualificationCommandAllowsGovernedBlock(argv) {
+  const command = argv
+    .filter((part) => !String(part).startsWith('-'))
+    .slice(0, 3)
+    .join(' ');
+  return (
+    command.startsWith('doctor workspace') ||
+    command === 'analyze' ||
+    command === 'readiness' ||
+    command.startsWith('workspace verify') ||
+    command.startsWith('workspace why') ||
+    command.startsWith('workspace remediation-plan')
+  );
+}
+
+export function hasGovernedQualificationOutcome(value) {
+  if (Array.isArray(value)) return value.some(hasGovernedQualificationOutcome);
+  if (!value || typeof value !== 'object') return false;
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      ['status', 'verdict', 'readiness', 'result'].includes(key) &&
+      typeof entry === 'string' &&
+      ['blocked', 'not-ready', 'not_ready', 'needs-attention', 'needs_attention'].includes(
+        entry.toLowerCase()
+      )
+    ) {
+      return true;
+    }
+    if (hasGovernedQualificationOutcome(entry)) return true;
+  }
+  return false;
+}
+
+export function selectQualificationProjectId({ graph, contract, model, importedRegistry }) {
+  const graphProject = graph?.entities?.find((entity) => entity?.kind === 'project');
+  return (
+    [
+      graphProject?.projectId,
+      contract?.projects?.[0]?.slug,
+      model?.projects?.[0]?.name,
+      importedRegistry?.projects?.[0]?.name,
+    ].find((value) => typeof value === 'string' && value.trim().length > 0) ?? null
+  );
+}
+
+export function selectQualificationLifecycleProjectId({
+  workspacePath,
+  contract,
+  model,
+  importedRegistry,
+  pathExists = existsSync,
+}) {
+  const isManagedPath = (candidate) => {
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) return false;
+    const resolved = path.resolve(workspacePath, candidate);
+    const relative = path.relative(path.resolve(workspacePath), resolved);
+    return (
+      relative.length > 0 &&
+      !relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative) &&
+      pathExists(resolved)
+    );
+  };
+  const contractProject = contract?.projects?.find(
+    (project) => !project?.externalPath && isManagedPath(project?.relativePath)
+  );
+  if (typeof contractProject?.slug === 'string' && contractProject.slug.trim()) {
+    return contractProject.slug;
+  }
+  const registryProject = importedRegistry?.projects?.find((project) => {
+    if (typeof project?.path !== 'string') return false;
+    const resolved = path.resolve(project.path);
+    const relative = path.relative(path.resolve(workspacePath), resolved);
+    return (
+      relative.length > 0 &&
+      !relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative) &&
+      pathExists(resolved)
+    );
+  });
+  if (typeof registryProject?.name === 'string' && registryProject.name.trim()) {
+    return registryProject.name;
+  }
+  const modelProject = model?.projects?.find((project) => isManagedPath(project?.path));
+  return typeof modelProject?.name === 'string' && modelProject.name.trim()
+    ? modelProject.name
+    : null;
+}
+
+export function qualificationPrimaryRuntime(project) {
+  const runtime = typeof project?.runtime === 'string' ? project.runtime.trim().toLowerCase() : '';
+  return runtime && runtime !== 'unknown' ? runtime : null;
+}
+
+export function repairAdaptersForQualificationBoundary(runtime, projectPath) {
+  const normalized = typeof runtime === 'string' ? runtime.trim().toLowerCase() : '';
+  const exists = (...names) => names.some((name) => existsSync(path.join(projectPath, name)));
+  const rootFiles = (() => {
+    try {
+      return readdirSync(projectPath);
+    } catch {
+      return [];
+    }
+  })();
+  if (normalized === 'node' && exists('package.json')) return ['node'];
+  if (normalized === 'python' && exists('pyproject.toml', 'requirements.txt')) return ['python'];
+  if (normalized === 'go' && exists('go.mod')) return ['go'];
+  if (normalized === 'rust' && exists('Cargo.toml')) return ['rust'];
+  if (normalized === 'php' && exists('composer.json')) return ['php-composer'];
+  if (normalized === 'ruby' && exists('Gemfile')) return ['ruby-bundler'];
+  if (normalized === 'elixir' && exists('mix.exs')) return ['elixir-mix'];
+  if (normalized === 'deno' && exists('deno.json', 'deno.jsonc')) return ['deno'];
+  if (
+    normalized === 'dotnet' &&
+    rootFiles.some((file) => /\.(?:cs|fs|vb)proj$|\.slnx?$/iu.test(file))
+  )
+    return ['dotnet'];
+  if (['java', 'kotlin'].includes(normalized)) {
+    return [
+      ...(exists('pom.xml') ? ['jvm-maven'] : []),
+      ...(exists('build.gradle', 'build.gradle.kts') ? ['jvm-gradle'] : []),
+    ];
+  }
+  if (normalized === 'clojure' && exists('deps.edn', 'project.clj')) return ['clojure'];
+  if (normalized === 'scala' && exists('build.sbt')) return ['scala-sbt'];
+  return [];
+}
+
 /**
  * Convert an arbitrary repository identifier into a collision-resistant name
  * accepted by the public workspace/project naming contract. Repository names
@@ -87,9 +218,10 @@ export function canonicalQualificationWorkspaceName(value) {
     .replace(/^[^a-z]+/gu, '')
     .replace(/[-_]{2,}/gu, '-')
     .replace(/^[-_]+|[-_]+$/gu, '');
-  const base = normalized.length >= 2 && !RESERVED_PROJECT_NAMES.has(normalized)
-    ? normalized
-    : `workspace-${normalized || 'repository'}`;
+  const base =
+    normalized.length >= 2 && !RESERVED_PROJECT_NAMES.has(normalized)
+      ? normalized
+      : `workspace-${normalized || 'repository'}`;
   const changed = base !== source;
   const truncated = base.length > 196;
   if (!changed && !truncated) return base;

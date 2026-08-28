@@ -1,6 +1,8 @@
+import crypto from 'node:crypto';
 import fsExtra from 'fs-extra';
 import * as path from 'path';
 import { workspaceMetadataCandidates, workspaceMetadataPath } from './utils/workspace-paths.js';
+import { withInterprocessLock } from './utils/interprocess-lock.js';
 
 import type {
   BackendConfidence,
@@ -36,7 +38,7 @@ async function writeRegistryFileAtomic(
   payload: ImportedProjectsRegistryFile
 ): Promise<void> {
   await fsExtra.ensureDir(path.dirname(filePath));
-  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.${crypto.randomUUID()}.tmp`;
   try {
     await fsExtra.writeJSON(temporaryPath, payload, { spaces: 2 });
     await fsExtra.move(temporaryPath, filePath, { overwrite: true });
@@ -106,29 +108,27 @@ export async function upsertImportedProjectsRegistry(
     return;
   }
 
-  const existing = await readImportedProjectsRegistry(workspacePath);
-  const byPath = new Map<string, ImportedProjectRegistryEntry>();
-
-  for (const item of existing) {
-    byPath.set(item.path, item);
-  }
-
-  for (const item of entries) {
-    byPath.set(item.path, item);
-  }
-
-  const projects = Array.from(byPath.values())
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((item) => ({ ...item }));
-
-  const payload: ImportedProjectsRegistryFile = {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    projects,
-  };
-
   const filePath = registryFilePath(workspacePath);
-  await writeRegistryFileAtomic(filePath, payload);
+  await withInterprocessLock(
+    `${filePath}.lock`,
+    async () => {
+      const existing = await readImportedProjectsRegistry(workspacePath);
+      const byPath = new Map<string, ImportedProjectRegistryEntry>();
+
+      for (const item of existing) byPath.set(item.path, item);
+      for (const item of entries) byPath.set(item.path, item);
+
+      const projects = Array.from(byPath.values())
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((item) => ({ ...item }));
+      await writeRegistryFileAtomic(filePath, {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        projects,
+      });
+    },
+    { timeoutMs: 30_000, staleMs: 60_000, purpose: 'imported-projects-registry-upsert' }
+  );
 }
 
 export async function removeImportedProjectsRegistryEntries(
@@ -139,16 +139,19 @@ export async function removeImportedProjectsRegistryEntries(
     return;
   }
 
-  const existing = await readImportedProjectsRegistry(workspacePath);
-  const blockedPaths = new Set(projectPaths.map((item) => path.resolve(item)));
-  const projects = existing.filter((item) => !blockedPaths.has(path.resolve(item.path)));
-
-  const payload: ImportedProjectsRegistryFile = {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    projects,
-  };
-
   const filePath = registryFilePath(workspacePath);
-  await writeRegistryFileAtomic(filePath, payload);
+  await withInterprocessLock(
+    `${filePath}.lock`,
+    async () => {
+      const existing = await readImportedProjectsRegistry(workspacePath);
+      const blockedPaths = new Set(projectPaths.map((item) => path.resolve(item)));
+      const projects = existing.filter((item) => !blockedPaths.has(path.resolve(item.path)));
+      await writeRegistryFileAtomic(filePath, {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        projects,
+      });
+    },
+    { timeoutMs: 30_000, staleMs: 60_000, purpose: 'imported-projects-registry-remove' }
+  );
 }

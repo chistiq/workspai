@@ -61,6 +61,7 @@ import {
   isWrapperLifecycleCommand,
 } from './utils/cli-lifecycle-contract.js';
 import { findRapidkitProjectRoot } from './utils/project-command-capabilities.js';
+import { missingShellActivationDiagnostic } from './utils/shell-activation-diagnostics.js';
 import { canonicalizeProjectMetadata } from './utils/project-metadata.js';
 import {
   ProjectWorkspaceResolutionError,
@@ -74,7 +75,11 @@ import {
   withGovernanceRunMetadata,
 } from './utils/governance-report-metadata.js';
 import { hasNpmRuntimeExecutor } from './utils/runtime-executors.js';
-import type { AgentBootstrapReceipt } from './project-agent-entry.js';
+import {
+  PROJECT_AGENT_ADAPTER_ENTRY_FILES,
+  PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  type AgentBootstrapReceipt,
+} from './project-agent-entry.js';
 import type { WorkspaceConsumerArtifactSyncResult } from './utils/workspace-onboarding.js';
 
 export { PROJECT_COMMANDS_CORE_FALLBACK } from './utils/cli-lifecycle-contract.js';
@@ -152,7 +157,10 @@ import {
   captureAdoptProjectRollbackSnapshot,
   type AdoptProjectRollbackSnapshot,
 } from './adopt-project.js';
-import type { ProjectGroundingMode } from './project-intelligence-lens.js';
+import {
+  resolveProjectPortableSkillTransactionPaths,
+  type ProjectGroundingMode,
+} from './project-intelligence-lens.js';
 import {
   assertProjectWorkspaceResolutionContract,
   type ProjectWorkspaceResolutionContract,
@@ -194,6 +202,7 @@ import {
   MANAGED_DEFAULT_WORKSPACE_LABEL,
   PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
   PROJECT_GROUNDING_RELATIVE_PATH,
+  PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
   findExistingWorkspacePath,
   getCanonicalWorkspacesDirectory,
@@ -865,6 +874,17 @@ async function beginProjectLifecycleTransaction(
     files.add(path.join(options.projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH));
     files.add(path.join(options.projectPath, PROJECT_GROUNDING_RELATIVE_PATH));
     files.add(path.join(options.projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH));
+    files.add(path.join(options.projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH));
+    files.add(path.join(options.projectPath, PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH));
+    for (const adapterPath of PROJECT_AGENT_ADAPTER_ENTRY_FILES) {
+      files.add(path.join(options.projectPath, adapterPath));
+    }
+    for (const skillPath of await resolveProjectPortableSkillTransactionPaths({
+      workspacePath,
+      projectPath: options.projectPath,
+    })) {
+      files.add(skillPath);
+    }
     files.add(path.join(options.projectPath, 'AGENTS.md'));
     files.add(path.join(options.projectPath, '.gitignore'));
   }
@@ -1778,11 +1798,15 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       });
 
       // Map wrapper flags to Python-core/environment equivalents when forwarding.
-      // NOTE: --skip-essentials controls core module injection and is conceptually
-      // different from dependency/lock behavior; do not auto-map from workspace mode.
+      // An explicit --skip-install promises a scaffold-only operation, so it must
+      // suppress both dependency/lock work and the core's post-scaffold modules.
+      // Workspace fast mode alone still defers only dependency/lock work.
       const forwardedArgs = [...filteredArgs];
       const workspacePathForCreate = findWorkspaceUp(process.cwd());
       const explicitSkipInstallRequested = args.includes('--skip-install');
+      if (explicitSkipInstallRequested && !forwardedArgs.includes('--skip-essentials')) {
+        forwardedArgs.push('--skip-essentials');
+      }
       const skipLockGenerationRequested = explicitSkipInstallRequested || !!workspacePathForCreate;
 
       const createEnv = skipLockGenerationRequested
@@ -3068,6 +3092,13 @@ export async function handleImportCommand(
         )
       );
     }
+    if (createdDefaultWorkspace) {
+      console.log(
+        chalk.green(
+          `✓ Workspace ready · 1 registered project · model + graph + agent grounding sealed`
+        )
+      );
+    }
 
     console.log(chalk.green(`✔ Imported project: ${importedProject.name}`));
     console.log(chalk.gray(`   Workspace: ${workspacePath}`));
@@ -3397,6 +3428,13 @@ export async function handleAdoptCommand(
       console.log(
         chalk.yellow(
           `ℹ Adopted outside a workspace, so Workspai used the default workspace: ${workspacePath}`
+        )
+      );
+    }
+    if (createdDefaultWorkspace && options.dryRun !== true) {
+      console.log(
+        chalk.green(
+          `✓ Workspace ready · 1 registered project · model + graph + agent grounding sealed`
         )
       );
     }
@@ -3741,6 +3779,7 @@ async function ensureManagedDefaultImportWorkspace(options: { silent?: boolean }
         skipGit: true,
         yes: true,
         userConfig: await loadUserConfig(),
+        suppressReceipt: true,
       });
     } finally {
       if (options.silent) {
@@ -7443,7 +7482,7 @@ program
     const candidate = findActivationCandidate(cwd);
     // If we didn't find either context.json or an activation candidate, bail
     if (!ctxFile && !candidate) {
-      console.log(chalk.yellow('No Workspai project found in this directory'));
+      console.log(chalk.yellow(missingShellActivationDiagnostic(cwd)));
       process.exit(1);
     }
 
@@ -11102,13 +11141,15 @@ See the command reference for action-specific required inputs and output artifac
       const {
         buildWorkspaceContractGraph,
         readWorkspaceContract,
+        syncWorkspaceContract,
         verifyWorkspaceContract,
         writeWorkspaceContract,
         WORKSPACE_CONTRACT_PATH,
       } = await import('./utils/workspace-contract.js');
       const contractAction = subaction || 'inspect';
       const requestedOutput = workspaceOutputPath();
-      const contractPath = contractAction === 'graph' ? undefined : requestedOutput;
+      const contractPath =
+        contractAction === 'graph' || contractAction === 'sync' ? undefined : requestedOutput;
 
       try {
         if (contractAction === 'init') {
@@ -11136,6 +11177,22 @@ See the command reference for action-specific required inputs and output artifac
           console.log(chalk.gray(`   Workspace: ${result.contract.workspace.name}`));
           console.log(chalk.gray(`   Projects: ${result.contract.projects.length}`));
           console.log(chalk.gray(`   Schema: v${result.contract.schemaVersion}`));
+          return;
+        }
+
+        if (contractAction === 'sync') {
+          const result = await syncWorkspaceContract({
+            workspacePath,
+            strict: actionOptions.strict === true || hasRawFlag('--strict'),
+          });
+          if (actionOptions.json) {
+            console.log(JSON.stringify(result, null, 2));
+            return;
+          }
+          console.log(chalk.green(`✔ Workspace contract synchronized: ${result.contractPath}`));
+          console.log(chalk.gray(`   Projects: ${result.contract.projects.length}`));
+          console.log(chalk.gray(`   Added: ${result.addedProjects.join(', ') || 'none'}`));
+          console.log(chalk.gray(`   Updated: ${result.updatedProjects.join(', ') || 'none'}`));
           return;
         }
 
@@ -11269,7 +11326,7 @@ See the command reference for action-specific required inputs and output artifac
         console.log(chalk.red(`❌ Unknown workspace contract action: ${contractAction}`));
         console.log(
           chalk.white(
-            `   npx workspai workspace contract init|inspect|verify|graph [--output ${WORKSPACE_CONTRACT_PATH}]`
+            `   npx workspai workspace contract init|inspect|sync|verify|graph [--output ${WORKSPACE_CONTRACT_PATH}]`
           )
         );
         process.exit(1);

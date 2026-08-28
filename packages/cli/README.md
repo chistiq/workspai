@@ -64,10 +64,13 @@ your-workspace/                         # canonical system boundary
 ├── AGENTS.md · CLAUDE.md · GEMINI.md · QWEN.md
 ├── .cursor/ · .claude/ · .github/ · .agents/ # host-native projections
 ├── nova-api/
+│   ├── .agents/skills/workspai-*/SKILL.md # portable project Skill wrappers
 │   └── .workspai/
 │       ├── agent-entry.v1.json         # canonical project entry
 │       ├── workspace-link.local.json   # machine-local binding
-│       └── reports/project-context-agent.json
+│       └── reports/
+│           ├── project-context-agent.json
+│           └── project-knowledge-graph-reference.json
 └── summit-web/                         # same project-level boundary
 ```
 

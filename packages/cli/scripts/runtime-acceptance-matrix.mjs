@@ -399,6 +399,14 @@ async function main() {
   });
 
   runScenario({
+    id: 'workspace.contract.sync',
+    scope: 'contract',
+    args: ['workspace', 'contract', 'sync', '--strict', '--json'],
+    cwd: workspacePath,
+    expect: 'passJson',
+  });
+
+  runScenario({
     id: 'workspace.contract.verify',
     scope: 'contract',
     args: ['workspace', 'contract', 'verify', '--strict', '--json'],

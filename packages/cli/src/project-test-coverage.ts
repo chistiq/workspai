@@ -14,6 +14,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
+import { detectBackendFrameworkFromProject } from './utils/backend-framework-contract.js';
 
 export const PROJECT_TEST_COVERAGE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectTestCoverage.schemaVersion;
@@ -185,8 +186,12 @@ async function findProjectRoot(startPath: string): Promise<string> {
     const hasProjectMetadata =
       (await fsExtra.pathExists(path.join(current, '.workspai', 'project.json'))) ||
       (await fsExtra.pathExists(path.join(current, '.rapidkit', 'project.json')));
+    const hasRubyGemspec = (await fsExtra.readdir(current).catch(() => [] as string[])).some(
+      (entry) => entry.toLowerCase().endsWith('.gemspec')
+    );
     if (
       hasProjectMetadata ||
+      hasRubyGemspec ||
       (
         await Promise.all(
           PROJECT_MARKERS.map((candidate) => fsExtra.pathExists(path.join(current, candidate)))
@@ -202,52 +207,7 @@ async function findProjectRoot(startPath: string): Promise<string> {
 }
 
 async function detectRuntime(projectPath: string): Promise<ProjectCoverageRuntime> {
-  if (await fsExtra.pathExists(path.join(projectPath, 'deno.json'))) return 'deno';
-  if (await fsExtra.pathExists(path.join(projectPath, 'deno.jsonc'))) return 'deno';
-  if (await fsExtra.pathExists(path.join(projectPath, 'bun.lock'))) return 'bun';
-  if (await fsExtra.pathExists(path.join(projectPath, 'bun.lockb'))) return 'bun';
-  if (await fsExtra.pathExists(path.join(projectPath, 'package.json'))) return 'node';
-  if (
-    (await fsExtra.pathExists(path.join(projectPath, 'pyproject.toml'))) ||
-    (await fsExtra.pathExists(path.join(projectPath, 'requirements.txt')))
-  )
-    return 'python';
-  if (await fsExtra.pathExists(path.join(projectPath, 'go.mod'))) return 'go';
-  const hasJvmBuild =
-    (await fsExtra.pathExists(path.join(projectPath, 'pom.xml'))) ||
-    (await fsExtra.pathExists(path.join(projectPath, 'build.gradle'))) ||
-    (await fsExtra.pathExists(path.join(projectPath, 'build.gradle.kts')));
-  if (
-    hasJvmBuild &&
-    (
-      await findFiles(
-        projectPath,
-        (name) =>
-          name.endsWith('.kt') ||
-          (name.endsWith('.kts') && name !== 'build.gradle.kts' && name !== 'settings.gradle.kts'),
-        4
-      )
-    ).length > 0
-  )
-    return 'kotlin';
-  if (hasJvmBuild) return 'java';
-  if (await fsExtra.pathExists(path.join(projectPath, 'Cargo.toml'))) return 'rust';
-  if (await fsExtra.pathExists(path.join(projectPath, 'composer.json'))) return 'php';
-  if (await fsExtra.pathExists(path.join(projectPath, 'Gemfile'))) return 'ruby';
-  if (await fsExtra.pathExists(path.join(projectPath, 'mix.exs'))) return 'elixir';
-  if (
-    (await fsExtra.pathExists(path.join(projectPath, 'deps.edn'))) ||
-    (await fsExtra.pathExists(path.join(projectPath, 'project.clj')))
-  )
-    return 'clojure';
-  if (await fsExtra.pathExists(path.join(projectPath, 'build.sbt'))) return 'scala';
-  if (await fsExtra.pathExists(path.join(projectPath, 'CMakeLists.txt'))) {
-    const sources = await findFiles(projectPath, (name) => /\.(c|cc|cpp|cxx)$/.test(name), 3);
-    return sources.some((file) => /\.(cc|cpp|cxx)$/.test(file)) ? 'cpp' : 'c';
-  }
-  if ((await findFiles(projectPath, (name) => /\.(sln|csproj)$/.test(name), 2)).length > 0)
-    return 'dotnet';
-  return 'unknown';
+  return detectBackendFrameworkFromProject(projectPath).runtime;
 }
 
 async function findFiles(

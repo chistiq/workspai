@@ -66,7 +66,8 @@ import {
   writeWorkspaceArtifactJsonSetAcrossRoots,
 } from './utils/artifact-path-compat.js';
 import {
-  projectWorkspaceKnowledgeGraph,
+  buildProjectKnowledgeGraphReference,
+  type ProjectKnowledgeGraphReference,
   workspaceModelProjectRoot,
 } from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
@@ -1367,14 +1368,7 @@ export function buildWorkspaceModelFacts(model: WorkspaceModel, now: Date): Work
   return facts;
 }
 
-export async function buildWorkspaceModel(
-  input: BuildWorkspaceModelOptions
-): Promise<WorkspaceModel> {
-  const workspacePath = path.resolve(input.workspacePath);
-  const includeAbsolutePaths = input.includeAbsolutePaths === true;
-  const includeEvidence = input.includeEvidence === true;
-  const observableScanDepth = resolveObservableScanDepth(input.observableScanDepth);
-  const now = input.now ?? new Date();
+async function discoverWorkspaceModelInputs(workspacePath: string, observableScanDepth: number) {
   const [
     marker,
     workspaceJson,
@@ -1394,7 +1388,7 @@ export async function buildWorkspaceModel(
   const contractProjectPaths = new Map<string, WorkspaceContract['projects'][number]>();
   for (const project of workspaceContract?.projects ?? []) {
     const projectPath = project.externalPath
-      ? path.resolve(project.externalPath)
+      ? path.resolve(workspacePath, project.externalPath)
       : path.resolve(workspacePath, project.relativePath);
     contractProjectPaths.set(projectPath, project);
   }
@@ -1406,6 +1400,19 @@ export async function buildWorkspaceModel(
       path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
     ),
   ]);
+  return { marker, workspaceJson, workspaceContract, contractProjectPaths, projectPaths };
+}
+
+export async function buildWorkspaceModel(
+  input: BuildWorkspaceModelOptions
+): Promise<WorkspaceModel> {
+  const workspacePath = path.resolve(input.workspacePath);
+  const includeAbsolutePaths = input.includeAbsolutePaths === true;
+  const includeEvidence = input.includeEvidence === true;
+  const observableScanDepth = resolveObservableScanDepth(input.observableScanDepth);
+  const now = input.now ?? new Date();
+  const { marker, workspaceJson, workspaceContract, contractProjectPaths, projectPaths } =
+    await discoverWorkspaceModelInputs(workspacePath, observableScanDepth);
   const reuseProjectModels = input.reuseProjectModels;
   const projects = await Promise.all(
     projectPaths.map((projectPath) => {
@@ -1602,21 +1609,10 @@ export async function buildWorkspaceModelCached(
   const observableScanDepth = resolveObservableScanDepth(input.observableScanDepth);
   const cliVersion = getRapidkitCliVersion();
 
-  const [marker, workspaceJson, importedProjects, rapidkitProjectPaths, observableProjectPaths] =
-    await Promise.all([
-      readWorkspaceMarker(workspacePath),
-      readWorkspaceJson(workspacePath),
-      readImportedProjectsRegistry(workspacePath),
-      discoverWorkspaceProjects(workspacePath, { descendIntoMatchedProjects: false }),
-      discoverObservableProjectRoots(workspacePath, observableScanDepth),
-    ]);
-  const projectPaths = collectUniquePaths([
-    ...rapidkitProjectPaths,
-    ...observableProjectPaths,
-    ...importedProjects.map((project) =>
-      path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
-    ),
-  ]);
+  const { marker, workspaceJson, projectPaths } = await discoverWorkspaceModelInputs(
+    workspacePath,
+    observableScanDepth
+  );
 
   const inputsHash = await computeModelInputsHash({
     workspacePath,
@@ -1707,21 +1703,10 @@ export async function buildWorkspaceModelIncremental(
   const cliVersion = getRapidkitCliVersion();
   const now = input.now ?? new Date();
 
-  const [marker, workspaceJson, importedProjects, rapidkitProjectPaths, observableProjectPaths] =
-    await Promise.all([
-      readWorkspaceMarker(workspacePath),
-      readWorkspaceJson(workspacePath),
-      readImportedProjectsRegistry(workspacePath),
-      discoverWorkspaceProjects(workspacePath, { descendIntoMatchedProjects: false }),
-      discoverObservableProjectRoots(workspacePath, observableScanDepth),
-    ]);
-  const projectPaths = collectUniquePaths([
-    ...rapidkitProjectPaths,
-    ...observableProjectPaths,
-    ...importedProjects.map((project) =>
-      path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
-    ),
-  ]);
+  const { marker, workspaceJson, projectPaths } = await discoverWorkspaceModelInputs(
+    workspacePath,
+    observableScanDepth
+  );
 
   const cached = await readWorkspaceModelCache(workspacePath);
   const buildFull = async (): Promise<{ model: WorkspaceModel; mode: 'full' }> => {
@@ -1990,13 +1975,10 @@ export async function writeWorkspaceModel(
     },
     previousGraph,
   });
-  const workspacePhysicalRoot = await fsExtra
-    .realpath(workspacePath)
-    .catch(() => path.resolve(workspacePath));
   const projectGraphArtifacts: Array<{
     rootPath: string;
-    relativePath: typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
-    payload: WorkspaceKnowledgeGraph;
+    relativePath: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
+    payload: ProjectKnowledgeGraphReference;
   }> = [];
   const projectIdsByPhysicalRoot = new Map<string, string>();
   for (const project of model.projects) {
@@ -2004,7 +1986,6 @@ export async function writeWorkspaceModel(
     const projectStat = await fsExtra.stat(projectRoot).catch(() => null);
     if (!projectStat?.isDirectory()) continue;
     const projectPhysicalRoot = await fsExtra.realpath(projectRoot);
-    if (projectPhysicalRoot === workspacePhysicalRoot) continue;
     const existingProjectId = projectIdsByPhysicalRoot.get(projectPhysicalRoot);
     if (existingProjectId) {
       throw new Error(
@@ -2014,8 +1995,8 @@ export async function writeWorkspaceModel(
     projectIdsByPhysicalRoot.set(projectPhysicalRoot, project.name);
     projectGraphArtifacts.push({
       rootPath: projectRoot,
-      relativePath: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
-      payload: projectWorkspaceKnowledgeGraph(knowledgeGraph, project.name),
+      relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference,
+      payload: buildProjectKnowledgeGraphReference(knowledgeGraph, project.name),
     });
   }
   const publishedPaths = await writeWorkspaceArtifactJsonSetAcrossRoots(
@@ -2035,5 +2016,15 @@ export async function writeWorkspaceModel(
       ...projectGraphArtifacts,
     ]
   );
+  for (const artifact of projectGraphArtifacts) {
+    const legacyPath = path.join(
+      artifact.rootPath,
+      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+    );
+    const legacy = await fsExtra.readJson(legacyPath).catch(() => null);
+    if (legacy?.schemaVersion === WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.knowledgeGraph) {
+      await fsExtra.remove(legacyPath).catch(() => undefined);
+    }
+  }
   return publishedPaths[1];
 }

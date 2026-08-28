@@ -66,6 +66,17 @@ npm run test:real-world:enterprise -- \
   --report "$QUALIFICATION_ROOT/enterprise-command-surface.json"
 ```
 
+The enterprise harness resolves a real project from the graph, workspace
+contract, model, or imported-project registry. It never assumes a fixture
+project name. Snapshot names are unique per run, so the harness can be repeated
+against the same isolated workspace without creating a false lifecycle failure.
+Graph queries may target either managed or linked projects. Project archive and
+delete dry runs use a separate lifecycle target and are emitted only for a
+managed project physically contained by the workspace. When a workspace has
+only linked external projects, the report records
+`coverage.projectLifecycle: skipped-no-managed-project`; it does not misreport
+that safety boundary as a command failure.
+
 ## Safety and interpretation
 
 - Reference repositories are cloned locally with `git clone --shared`; no
@@ -82,13 +93,18 @@ npm run test:real-world:enterprise -- \
 - Dependency installation, project build/test/start/init, infrastructure
   mutation, publication, and model network calls are not permitted.
 - Agent customization and destructive project operations are dry-run only.
+- Runtime candidates describe observed nested composition; the authoritative
+  project runtime controls repair-adapter assertions. An aggregate boundary with
+  runtime `unknown` therefore follows the governed manual-repair path instead of
+  promoting its first nested runtime candidate.
 - Goal qualification publishes one system-understanding Goal inside the
   isolated test workspace, validates its lifecycle binding, and previews
   runtime-specific coverage and release-readiness goals without executing
   project tests or mutating project source.
-- Exit codes `1` and `2` may be valid domain outcomes when their documented JSON
-  contracts parse successfully; unexpected process, timeout, buffer, or schema
-  failures fail qualification.
+- Exit codes `1` and `2` are accepted only for commands whose contract explicitly
+  permits a governed block and only when the JSON payload contains a recognized
+  blocked/not-ready outcome. Graph lookup, project lifecycle, process, timeout,
+  buffer, malformed JSON, and schema failures fail qualification.
 - A real repository warning remains evidence, not a CLI defect. Fix the CLI only
   when detection, classification, contract, portability, or command semantics
   are wrong.

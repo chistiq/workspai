@@ -291,15 +291,14 @@ are suitable for IDE dashboards and conform to
 `workspace-intelligence-evaluation.v1`.
 
 `workspace model --write` also materializes the derived, contract-validated
-knowledge graph as the complete workspace aggregate at
-`<workspace>/.workspai/reports/workspace-knowledge-graph.json` and as a scoped,
-project-owned artifact at the same relative path inside every registered
-project. The unified intelligence runner treats the aggregate and its project
-shards as one atomic Model-stage revision, so CI, IDE adapters, agent grounding,
-and MCP cannot observe a partially published graph set. Agent contexts identify
-both the project-owned artifact and the workspace aggregate, while keeping
-bounded search as the default retrieval path instead of copying either complete
-graph into every prompt. MCP exposes
+knowledge graph once at
+`<workspace>/.workspai/reports/workspace-knowledge-graph.json`. Every registered
+project receives a compact, integrity-bound
+`.workspai/reports/project-knowledge-graph-reference.json` that names the exact
+project projection and canonical `workspace:` URI. The unified intelligence
+runner publishes the aggregate and references as one atomic Model-stage
+revision, so CI, IDE adapters, agent grounding, and MCP cannot observe a partial
+set. Bounded graph search remains the default retrieval path. MCP exposes
 `getWorkspaceKnowledgeGraph`, `searchWorkspaceGraph`, `queryWorkspaceEntities`,
 `getWorkspaceGraphEvidence`, and `findWorkspaceGraphPath`.
 

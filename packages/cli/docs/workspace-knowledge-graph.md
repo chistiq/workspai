@@ -416,25 +416,22 @@ into a false “complete” claim.
 
 ## Outputs and consumers
 
-`workspace model --write` publishes the canonical model, the complete workspace
-aggregate, and one project-owned scoped graph for every registered project as
-one locked, rollback-capable multi-root artifact set:
+`workspace model --write` publishes the canonical model, one complete workspace
+aggregate, and one compact integrity-bound reference for every registered
+project as one locked, rollback-capable multi-root artifact set:
 
 ```text
 <workspace>/.workspai/reports/workspace-model.json
 <workspace>/.workspai/reports/workspace-knowledge-graph.json
-<project>/.workspai/reports/workspace-knowledge-graph.json
+<project>/.workspai/reports/project-knowledge-graph-reference.json
 ```
 
-The workspace artifact aggregates all registered project graphs and preserves
-cross-project relations for workspace-level Graph, Doctor, Context, Goal, and
-MCP consumers. Each project artifact contains the complete project-owned entity
-and evidence surface plus directly connected shared or foreign boundary
-entities required to keep its relations resolvable. It never copies the full
-graph of another project. Nested and external projects follow the same rule. If
-the project root and workspace root are identical, the aggregate is written
-once and serves both scopes. Any failure restores the model, aggregate, and all
-project graph preimages together.
+The workspace artifact preserves all registered projects and cross-project
+relations for Graph, Doctor, Context, Goal, and MCP consumers. Each project
+reference carries source and projection hashes, summary counts, a bounded query,
+and a portable canonical URI; it does not duplicate graph entities or proofs.
+Nested and external projects follow the same rule. Any publication failure
+restores the model, aggregate, and all project reference preimages together.
 
 The Knowledge Graph is consumed by:
 
@@ -456,12 +453,12 @@ The Knowledge Graph is consumed by:
   topology, rich graph, and quality summary in one response.
 
 The complete graph is an interchange artifact, not a prompt. Agents should
-start with `INDEX.json`, use bounded search, then retrieve evidence or a path
-for the selected result. Generated `project-context-agent.json`,
-`agent-entry.v1.json`, and bootstrap receipts expose the project-owned graph
-separately from the `workspace:` aggregate. Bootstrap schema-validates the
-local graph and compares it with a fresh projection of the aggregate before it
-allows architecture claims.
+start with compact project context, use bounded search, then retrieve evidence
+or a path for the selected result. Generated `project-context-agent.json`,
+`agent-entry.v1.json`, and bootstrap receipts expose a small project graph
+reference separately from the `workspace:` aggregate. Bootstrap schema-validates
+the reference and compares its projection hash with a fresh projection of the
+aggregate before it allows architecture claims. The complete graph is stored once.
 
 ### Interchange and visualization
 
@@ -526,7 +523,11 @@ hashes. Query indexes are cached per immutable graph object; replacing the graph
 is the in-memory invalidation boundary. Across CLI processes, compatible
 persisted read queries validate the live Git/Merkle fingerprint before reuse.
 `workspace model --cache` and `--incremental` avoid unnecessary model/project
-work when inputs are unchanged.
+work when inputs are unchanged. Full, cached, and incremental builds use the
+same project-discovery contract, including adopted/imported projects and
+projects declared only through a workspace contract `externalPath`. Manifest
+or source changes under an external project therefore invalidate the same
+signatures as equivalent in-workspace projects.
 
 Use full graph export for interchange or offline analysis. Use bounded search
 for interactive agents. The latter keeps response size proportional to the

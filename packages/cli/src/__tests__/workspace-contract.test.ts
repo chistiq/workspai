@@ -82,6 +82,68 @@ describe('workspace contract registry', () => {
     });
   });
 
+  it('refreshes Workspai-managed imported runtime identity from current manifests', async () => {
+    const workspacePath = await makeTempDir('rk-contract-import-refresh-');
+    const projectPath = path.join(workspacePath, 'ruby-tools');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'ruby-tools.gemspec'),
+      'Gem::Specification.new'
+    );
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      runtime: 'unknown',
+      framework: 'unknown',
+      kit: 'imported.unknown',
+      kit_name: 'imported.unknown',
+      import: { managed_by: 'workspai', source_type: 'local-folder' },
+    });
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'ruby-tools',
+        path: projectPath,
+        relativePath: 'ruby-tools',
+        relationship: 'imported',
+        source: 'local-folder',
+        stack: 'unknown',
+        runtime: 'unknown',
+        framework: 'unknown',
+        frameworkDisplayName: 'Unknown',
+        supportTier: 'observed',
+        moduleSupport: false,
+        confidence: 'low',
+        importedAt: '2026-08-28T00:00:00.000Z',
+      },
+    ]);
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-08-28T00:00:00.000Z',
+      workspace: { name: 'refresh-ws' },
+      projects: [
+        {
+          slug: 'ruby-tools',
+          relativePath: 'ruby-tools',
+          source: 'local-folder',
+          relationship: 'imported',
+          runtime: 'unknown',
+          framework: 'unknown',
+          kit: 'imported.unknown',
+          modules: [],
+          ports: [],
+          contracts: { owns: [], apis: [], publishes: [], consumes: [], dependsOn: [], env: [] },
+        },
+      ],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+
+    expect(result.updatedProjects).toContain('ruby-tools');
+    expect(result.contract.projects[0]).toMatchObject({
+      runtime: 'ruby',
+      framework: 'ruby',
+      kit: 'imported.ruby',
+    });
+  });
+
   it('excludes archived metadata and deduplicates stale imported copies of local projects', async () => {
     const workspacePath = await makeTempDir('rk-contract-archive-filter-');
     const externalCopy = await makeTempDir('rk-contract-external-copy-');

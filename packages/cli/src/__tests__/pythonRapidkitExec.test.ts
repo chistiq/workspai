@@ -208,7 +208,7 @@ rapidkit deploy
       // Mock probe check: rapidkit is installed in venv
       mockExeca.mockResolvedValueOnce({
         exitCode: 0,
-        stdout: '1',
+        stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
         stderr: '',
       } as any);
 
@@ -250,7 +250,13 @@ rapidkit deploy
         // pip check succeeds
         .mockResolvedValueOnce({ exitCode: 0, stdout: 'pip 24', stderr: '' })
         // core install succeeds
-        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' });
+        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
+        // installed Core passes the executable health contract
+        .mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+          stderr: '',
+        });
 
       const py = await bridge.__test__.ensureBridgeVenvFromCandidates();
       expect(py).toContain('python');
@@ -271,7 +277,12 @@ rapidkit deploy
         .mockResolvedValueOnce({ exitCode: 0, stdout: 'Python 3.12', stderr: '' })
         .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
         .mockResolvedValueOnce({ exitCode: 0, stdout: 'pip 24', stderr: '' })
-        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' });
+        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
+        .mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+          stderr: '',
+        });
 
       await bridge.__test__.ensureBridgeVenvFromCandidates();
 
@@ -659,17 +670,13 @@ describe('getCoreTopLevelCommands', () => {
     expect(res.has('list')).toBe(true);
   });
 
-  it('parses commands from --help output', async () => {
-    mockExeca.mockResolvedValue({
-      exitCode: 0,
-      stdout: `
+  it('parses commands from --help output', () => {
+    const help = `
 Commands:
   list
   run
-`,
-    });
-
-    const res = await bridge.getCoreTopLevelCommands();
+`;
+    const res = bridge.__test__.parseCoreCommandsFromHelp(help);
     expect(res.has('list')).toBe(true);
     expect(res.has('run')).toBe(true);
   });
@@ -708,20 +715,15 @@ Commands:
     expect(res.size).toBeGreaterThan(0);
   });
 
-  it('handles multiple command formats', async () => {
-    mockFs.pathExists.mockResolvedValue(false);
-    mockExeca.mockResolvedValue({
-      exitCode: 0,
-      stdout: `
+  it('handles multiple command formats', () => {
+    const help = `
 rapidkit create
 rapidkit deploy
 Commands:
   list
   run
-`,
-    });
-
-    const res = await bridge.getCoreTopLevelCommands();
+`;
+    const res = bridge.__test__.parseCoreCommandsFromHelp(help);
     expect(res.has('create')).toBe(true);
     expect(res.has('deploy')).toBe(true);
     expect(res.has('list')).toBe(true);

@@ -396,7 +396,22 @@ describe('workspace agent sync', () => {
       path.join(workspacePath, WORKSPAI_MCP_DESIGN_REPORT_PATH)
     );
     expect(mcpDesign.mode).toBe('read-mostly');
+    expect(mcpDesign.status).toBe('implemented');
+    expect(mcpDesign.runtime).toMatchObject({
+      command: 'npx workspai workspace mcp serve',
+      lifecycle: 'dual-era',
+      structuredContent: true,
+    });
     expect(mcpDesign.safety.writeToolsEnabled).toBe(false);
+    expect(mcpDesign.candidateTools.map((tool: { name: string }) => tool.name)).not.toContain(
+      'refreshWorkspaceIntelligence'
+    );
+    expect(mcpDesign.plannedTools).toEqual([
+      expect.objectContaining({
+        name: 'refreshWorkspaceIntelligence',
+        availability: 'not-served',
+      }),
+    ]);
   });
 
   it('supports a VS Code target dry run without writing files', async () => {
@@ -421,6 +436,97 @@ describe('workspace agent sync', () => {
     expect(
       await fsExtra.pathExists(path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH))
     ).toBe(false);
+  });
+
+  it.each(['agents', 'codex', 'kimi', 'grok', 'orca'] as const)(
+    'projects provider-neutral skills for the %s target',
+    async (target) => {
+      const workspacePath = await makeWorkspace();
+      const result = await syncWorkspaceAgentGrounding({
+        workspacePath,
+        write: true,
+        targets: [target],
+      });
+
+      expect(result.writtenFiles).toContain(WORKSPAI_AGENTS_GROUNDING_SKILL_PATH);
+      expect(result.writtenFiles).toContain('.agents/skills/workspai-release-readiness/SKILL.md');
+      expect(
+        await fsExtra.readFile(
+          path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH),
+          'utf8'
+        )
+      ).toContain('WORKSPAI:GENERATED-PORTABLE-SKILL');
+    }
+  );
+
+  it('preserves an authored provider-neutral Skill with a Workspai-owned name', async () => {
+    const workspacePath = await makeWorkspace();
+    const skillPath = path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH);
+    const authored = '---\nname: workspai-grounding\n---\n\n# Team-authored grounding\n';
+    await fsExtra.outputFile(skillPath, authored);
+
+    const result = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      targets: ['agents'],
+    });
+
+    expect(await fsExtra.readFile(skillPath, 'utf8')).toBe(authored);
+    expect(result.pack?.outputInventory).toContainEqual(
+      expect.objectContaining({
+        path: WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+        status: 'skipped',
+      })
+    );
+  });
+
+  it('refuses to project portable skills through an authored .agents symlink', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const outsidePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-agents-outside-'));
+    tempDirs.push(outsidePath);
+    try {
+      await fsExtra.symlink(outsidePath, path.join(workspacePath, '.agents'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    await expect(
+      syncWorkspaceAgentGrounding({
+        workspacePath,
+        write: true,
+        targets: ['agents'],
+      })
+    ).rejects.toThrow(/blocked by authored repository state/);
+    expect(await fsExtra.readdir(outsidePath)).toEqual([]);
+  });
+
+  it('supports a repository-local .agents/skills mirror symlink', async (context) => {
+    const workspacePath = await makeWorkspace();
+    const sharedSkillsPath = path.join(workspacePath, '.claude', 'skills');
+    await fsExtra.ensureDir(path.join(workspacePath, '.agents'));
+    await fsExtra.ensureDir(sharedSkillsPath);
+    try {
+      await fsExtra.symlink(
+        path.join('..', '.claude', 'skills'),
+        path.join(workspacePath, '.agents', 'skills'),
+        'dir'
+      );
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncWorkspaceAgentGrounding({
+      workspacePath,
+      write: true,
+      targets: ['agents'],
+    });
+
+    expect(result.writtenFiles).toContain(WORKSPAI_AGENTS_GROUNDING_SKILL_PATH);
+    expect(
+      await fsExtra.pathExists(path.join(sharedSkillsPath, 'workspai-grounding', 'SKILL.md'))
+    ).toBe(true);
   });
 
   it('plans advisory VS Code hooks only when explicitly requested', async () => {

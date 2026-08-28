@@ -481,7 +481,7 @@ export async function readWorkspaceManifestProfile(
 
 export async function collectWorkspaceProfileRuntimes(
   workspacePath: string,
-  options: { additionalRuntimes?: Iterable<unknown> } = {}
+  options: { additionalRuntimes?: Iterable<unknown>; excludeProjectPath?: string } = {}
 ): Promise<WorkspaceProfileRuntime[]> {
   const runtimes = new Set<WorkspaceProfileRuntime>();
   const projectPaths: string[] = [];
@@ -532,6 +532,12 @@ export async function collectWorkspaceProfileRuntimes(
   }
 
   for (const projectPath of projectPaths) {
+    if (
+      options.excludeProjectPath &&
+      path.resolve(projectPath) === path.resolve(options.excludeProjectPath)
+    ) {
+      continue;
+    }
     const projectJson = readRapidkitProjectJson(projectPath);
     runtimes.add(
       normalizeWorkspaceProfileRuntime(
@@ -541,6 +547,12 @@ export async function collectWorkspaceProfileRuntimes(
   }
 
   for (const project of await readImportedProjectsRegistry(workspacePath)) {
+    if (
+      options.excludeProjectPath &&
+      path.resolve(project.path) === path.resolve(options.excludeProjectPath)
+    ) {
+      continue;
+    }
     runtimes.add(normalizeWorkspaceProfileRuntime(project.runtime));
   }
 

@@ -1862,7 +1862,7 @@ async function detectWorkspaceRepairAdapterIds(
   if (await exists('Gemfile')) detected.push('ruby-bundler');
   if (await exists('mix.exs')) detected.push('elixir-mix');
   if ((await exists('deno.json')) || (await exists('deno.jsonc'))) detected.push('deno');
-  if (entries.some((file) => /\.(?:cs|fs|vb)proj$|\.sln$/i.test(file))) detected.push('dotnet');
+  if (entries.some((file) => /\.(?:cs|fs|vb)proj$|\.slnx?$/i.test(file))) detected.push('dotnet');
   if (await exists('pom.xml')) detected.push('jvm-maven');
   if ((await exists('build.gradle.kts')) || (await exists('build.gradle')))
     detected.push('jvm-gradle');

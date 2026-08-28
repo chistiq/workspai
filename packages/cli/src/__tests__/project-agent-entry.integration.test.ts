@@ -184,7 +184,7 @@ describe('canonical-first project agent entry', () => {
       activeGoal: { present: false, appliesToProject: false, status: 'none' },
       canonicalEvidence: {
         projectContext: '.workspai/reports/project-context-agent.json',
-        projectKnowledgeGraph: '.workspai/reports/workspace-knowledge-graph.json',
+        projectKnowledgeGraph: '.workspai/reports/project-knowledge-graph-reference.json',
         workspaceIndex: 'workspace:.workspai/reports/INDEX.json',
         workspaceContext: 'workspace:.workspai/reports/workspace-context-agent.json',
         workspaceModel: 'workspace:.workspai/reports/workspace-model.json',
@@ -224,22 +224,22 @@ describe('canonical-first project agent entry', () => {
       path.join(projectPath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectAgentEntry)
     );
     expect(projectContext.workspace).toMatchObject({
-      projectKnowledgeGraph: '.workspai/reports/workspace-knowledge-graph.json',
+      projectKnowledgeGraph: '.workspai/reports/project-knowledge-graph-reference.json',
       model: 'workspace:.workspai/reports/workspace-model.json',
       knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
     });
     expect(agentEntry.canonical).toMatchObject({
-      projectKnowledgeGraph: '.workspai/reports/workspace-knowledge-graph.json',
+      projectKnowledgeGraph: '.workspai/reports/project-knowledge-graph-reference.json',
       workspaceModel: 'workspace:.workspai/reports/workspace-model.json',
       knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
     });
 
     const projectGraphPath = path.join(
       projectPath,
-      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
     );
     const mismatchedProjectGraph = await fsExtra.readJson(projectGraphPath);
-    mismatchedProjectGraph.quality.entityCount += 1;
+    mismatchedProjectGraph.canonical.projectionHash = '0'.repeat(64);
     await fsExtra.outputJson(projectGraphPath, mismatchedProjectGraph);
     const mismatchedReceipt = await buildAgentBootstrapReceipt({
       startPath: projectPath,

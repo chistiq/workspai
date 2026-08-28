@@ -5,7 +5,10 @@ import { existsSync } from 'fs';
 
 import fsExtra from 'fs-extra';
 
-import { removeImportedProjectsRegistryEntries } from './imported-projects-registry.js';
+import {
+  readImportedProjectsRegistry,
+  removeImportedProjectsRegistryEntries,
+} from './imported-projects-registry.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { discoverWorkspaceProjects } from './utils/workspace-discovery.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
@@ -1048,6 +1051,23 @@ async function resolveProjectPath(workspacePath: string, projectRef: string): Pr
   });
 
   if (matches.length === 0) {
+    const registeredProjects = await readImportedProjectsRegistry(workspacePath);
+    const registeredMatch = registeredProjects.find((project) => {
+      const relativePath = project.relativePath?.replace(/\\/g, '/');
+      return (
+        project.name === normalizedRef ||
+        relativePath === normalizedRef.replace(/\\/g, '/') ||
+        path.resolve(project.path) === path.resolve(normalizedRef)
+      );
+    });
+    if (
+      registeredMatch &&
+      !path.resolve(registeredMatch.path).startsWith(`${path.resolve(workspacePath)}${path.sep}`)
+    ) {
+      throw new Error(
+        `Project ${projectRef} is a linked external project and cannot be archived or deleted by workspace lifecycle commands. Only managed projects contained by the workspace support archive/delete; manage the external source or its workspace registration explicitly.`
+      );
+    }
     throw new Error(`Project not found in workspace: ${projectRef}`);
   }
   if (matches.length > 1) {

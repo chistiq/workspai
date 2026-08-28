@@ -134,6 +134,18 @@ export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
       ['workspace', 'agent-sync', '--write'],
     ],
   },
+  projectKnowledgeGraphReference: {
+    artifactPath: '.workspai/reports/project-knowledge-graph-reference.json',
+    schemaVersion: 'project-knowledge-graph-reference.v1',
+    contractPath: 'contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json',
+    producerCommands: [
+      ['adopt'],
+      ['import'],
+      ['workspace', 'model'],
+      ['workspace', 'sync'],
+      ['workspace', 'intelligence', 'run'],
+    ],
+  },
   projectAgentEntry: {
     artifactPath: '.workspai/agent-entry.v1.json',
     schemaVersion: 'workspai.agent-entry.v1',

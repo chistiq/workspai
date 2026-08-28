@@ -45,7 +45,9 @@ export { WORKSPACE_MODEL_PRODUCER_REVISION } from './contracts/workspace-model-c
 export const MODEL_INPUT_MANIFEST_FILES = [
   'package.json',
   'pyproject.toml',
+  'setup.py',
   'requirements.txt',
+  'requirements.in',
   'go.mod',
   'go.sum',
   'pom.xml',
@@ -54,12 +56,36 @@ export const MODEL_INPUT_MANIFEST_FILES = [
   'Cargo.toml',
   'composer.json',
   'Gemfile',
+  'Gemfile.lock',
+  'mix.exs',
+  'mix.lock',
+  'deno.json',
+  'deno.jsonc',
+  'deno.lock',
+  'bun.lock',
+  'bun.lockb',
+  'bunfig.toml',
+  '.bunfig.toml',
+  'deps.edn',
+  'project.clj',
+  'build.sbt',
+  'CMakeLists.txt',
+  'meson.build',
   'workspai.project.json',
   '.workspai/project.json',
   '.workspai/context.json',
   'rapidkit.project.json',
   '.rapidkit/project.json',
   '.rapidkit/context.json',
+] as const;
+
+const MODEL_INPUT_ROOT_MANIFEST_SUFFIXES = [
+  '.csproj',
+  '.fsproj',
+  '.vbproj',
+  '.sln',
+  '.slnx',
+  '.gemspec',
 ] as const;
 
 export type WorkspaceModelCacheEnvelope = {
@@ -246,6 +272,22 @@ async function fileSignature(filePath: string): Promise<string | null> {
   }
 }
 
+async function projectManifestSignatures(projectDir: string): Promise<Record<string, string>> {
+  const manifests: Record<string, string> = {};
+  for (const manifest of MODEL_INPUT_MANIFEST_FILES) {
+    const signature = await fileSignature(path.join(projectDir, manifest));
+    if (signature) manifests[manifest] = signature;
+  }
+  const rootFiles = await fsExtra.readdir(projectDir).catch(() => [] as string[]);
+  for (const file of rootFiles.sort((left, right) => left.localeCompare(right))) {
+    if (!MODEL_INPUT_ROOT_MANIFEST_SUFFIXES.some((suffix) => file.toLowerCase().endsWith(suffix)))
+      continue;
+    const signature = await fileSignature(path.join(projectDir, file));
+    if (signature) manifests[file] = signature;
+  }
+  return manifests;
+}
+
 /**
  * Lightweight per-project signature: manifest content hashes plus a source
  * fingerprint (sorted relative path + size + mtime for scannable files). This
@@ -253,13 +295,7 @@ async function fileSignature(filePath: string): Promise<string | null> {
  * incremental builder (1.16) knows exactly which projects' edges to re-infer.
  */
 async function projectSignature(projectDir: string): Promise<string> {
-  const manifests: Record<string, string> = {};
-  for (const manifest of MODEL_INPUT_MANIFEST_FILES) {
-    const signature = await fileSignature(path.join(projectDir, manifest));
-    if (signature) {
-      manifests[manifest] = signature;
-    }
-  }
+  const manifests = await projectManifestSignatures(projectDir);
 
   const gitSourceEntries = await gitProjectSourceFingerprint(projectDir);
   const sourceEntries: string[] = gitSourceEntries ?? [];
@@ -356,13 +392,7 @@ export async function computeModelInputsHash(input: ModelInputsSignatureInput): 
 
   const projectSignatures: Array<{ project: string; manifests: Record<string, string> }> = [];
   for (const project of relativeProjects) {
-    const manifests: Record<string, string> = {};
-    for (const manifest of MODEL_INPUT_MANIFEST_FILES) {
-      const signature = await fileSignature(path.join(workspacePath, project, manifest));
-      if (signature) {
-        manifests[manifest] = signature;
-      }
-    }
+    const manifests = await projectManifestSignatures(path.join(workspacePath, project));
     projectSignatures.push({ project, manifests });
   }
 

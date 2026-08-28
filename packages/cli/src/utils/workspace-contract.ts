@@ -35,6 +35,10 @@ import {
 } from '../contracts/workspace-dependency-graph-contract.js';
 import type { WorkspaceKnowledgeGraph } from '../contracts/workspace-knowledge-graph-contract.js';
 import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
+import {
+  detectBackendFrameworkFromProject,
+  isWorkspaiManagedLinkedProjectMetadata,
+} from './backend-framework-contract.js';
 
 export const WORKSPACE_CONTRACT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
 export const WORKSPACE_CONTRACT_VERIFY_REPORT_PATH =
@@ -460,7 +464,7 @@ function mergeProjectContract(
   // and refresh derived runtime identity on the first re-adopt as well.
   const refreshAdoptedPorts =
     discovered.source === 'adopted-local' && existing?.source !== undefined;
-  const refreshAdoptedMetadata = refreshAdoptedPorts;
+  const refreshManagedMetadata = discovered.source !== undefined && existing?.source !== undefined;
   const selectedPorts =
     nonServiceExtension && discoveredPorts.length === 0
       ? []
@@ -515,11 +519,11 @@ function mergeProjectContract(
     externalPath: preserveExistingIdentity
       ? existing?.externalPath || discovered.externalPath
       : discovered.externalPath,
-    runtime: refreshAdoptedMetadata ? discovered.runtime : existing?.runtime || discovered.runtime,
-    framework: refreshAdoptedMetadata
+    runtime: refreshManagedMetadata ? discovered.runtime : existing?.runtime || discovered.runtime,
+    framework: refreshManagedMetadata
       ? discovered.framework
       : existing?.framework || discovered.framework,
-    kit: refreshAdoptedMetadata ? discovered.kit : existing?.kit || discovered.kit,
+    kit: refreshManagedMetadata ? discovered.kit : existing?.kit || discovered.kit,
     modules: existing?.modules?.length ? existing.modules : discovered.modules,
     ports,
     contracts: {
@@ -591,12 +595,26 @@ export async function buildWorkspaceContract(input: {
       ? `external/${contractSlug}`
       : discoveredRelativePath || contractSlug;
     const payload = (await fsExtra.readJson(projectJsonPath)) as Record<string, unknown>;
-    const kit =
+    const metadataKit =
       (typeof payload.kit_name === 'string' && payload.kit_name) ||
       (typeof payload.kit === 'string' && payload.kit) ||
       undefined;
-    const framework =
-      (typeof payload.framework === 'string' && payload.framework) || projectKindFromKit(kit);
+    const managedMetadata = isWorkspaiManagedLinkedProjectMetadata(payload);
+    const liveDetection = managedMetadata
+      ? detectBackendFrameworkFromProject(projectPath, payload)
+      : undefined;
+    const hasLiveDetection = liveDetection !== undefined && liveDetection.key !== 'unknown';
+    const runtime = hasLiveDetection
+      ? liveDetection.runtime
+      : typeof payload.runtime === 'string'
+        ? payload.runtime
+        : undefined;
+    const framework = hasLiveDetection
+      ? liveDetection.key
+      : (typeof payload.framework === 'string' && payload.framework) ||
+        projectKindFromKit(metadataKit);
+    const kitPrefix = registryEntry?.relationship === 'adopted' ? 'adopted' : 'imported';
+    const kit = hasLiveDetection ? `${kitPrefix}.${liveDetection.key}` : metadataKit;
 
     projects.push({
       slug: registryEntry?.name || relativePath || path.basename(projectPath),
@@ -604,7 +622,7 @@ export async function buildWorkspaceContract(input: {
       source: registryEntry?.source ?? 'workspace',
       relationship: registryEntry?.relationship,
       externalPath: isExternalProject ? projectPath : undefined,
-      runtime: typeof payload.runtime === 'string' ? payload.runtime : undefined,
+      runtime,
       framework,
       kit,
       modules: normalizeStringArray(payload.modules),
