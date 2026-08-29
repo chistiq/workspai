@@ -14,6 +14,12 @@ const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_STALE_MS = 15 * 60_000;
 const DEFAULT_RETRY_DELAY_MS = 75;
 
+// Avoid making callers in this process contend through the filesystem. This is
+// especially important on Windows, where removing a lock directory and
+// immediately recreating it from another asynchronous caller can transiently
+// fail with EPERM even after the removal promise has resolved.
+const inProcessLockTails = new Map<string, Promise<void>>();
+
 type LockOwner = {
   token: string;
   pid: number;
@@ -48,13 +54,39 @@ async function reclaimIfStale(lockDirectory: string, staleMs: number): Promise<v
   }
 }
 
+async function acquireInProcessLock(lockDirectory: string): Promise<() => void> {
+  const previous = inProcessLockTails.get(lockDirectory) ?? Promise.resolve();
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const tail = previous.then(
+    () => gate,
+    () => gate
+  );
+  inProcessLockTails.set(lockDirectory, tail);
+  await previous.catch(() => undefined);
+
+  return () => {
+    releaseGate();
+    if (inProcessLockTails.get(lockDirectory) === tail) {
+      inProcessLockTails.delete(lockDirectory);
+    }
+  };
+}
+
+function isRetryableAcquisitionError(code: string | undefined): boolean {
+  if (code === 'EEXIST') return true;
+  return process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY');
+}
+
 /**
  * Serialize a read-modify-write or bootstrap operation across both asynchronous
  * callers and OS processes. A directory is the lock primitive because mkdir is
  * atomic on every filesystem supported by Node. The heartbeat prevents a slow,
  * healthy owner from being mistaken for a crashed process.
  */
-export async function withInterprocessLock<T>(
+async function withFilesystemLock<T>(
   lockDirectory: string,
   operation: () => Promise<T>,
   options: InterprocessLockOptions = {}
@@ -76,11 +108,9 @@ export async function withInterprocessLock<T>(
   while (true) {
     try {
       await fsExtra.mkdir(resolvedLock);
-      await fsExtra.writeJson(path.join(resolvedLock, 'owner.json'), owner, { spaces: 2 });
-      break;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST') throw error;
+      if (!isRetryableAcquisitionError(code)) throw error;
       await reclaimIfStale(resolvedLock, staleMs);
       if (Date.now() - startedAt >= timeoutMs) {
         const currentOwner = await readOwner(resolvedLock);
@@ -89,6 +119,15 @@ export async function withInterprocessLock<T>(
       }
       const jitter = Math.floor(Math.random() * Math.max(10, retryDelayMs));
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs + jitter));
+      continue;
+    }
+
+    try {
+      await fsExtra.writeJson(path.join(resolvedLock, 'owner.json'), owner, { spaces: 2 });
+      break;
+    } catch (error) {
+      await fsExtra.remove(resolvedLock).catch(() => undefined);
+      throw error;
     }
   }
 
@@ -107,5 +146,19 @@ export async function withInterprocessLock<T>(
     if (currentOwner?.token === token) {
       await fsExtra.remove(resolvedLock).catch(() => undefined);
     }
+  }
+}
+
+export async function withInterprocessLock<T>(
+  lockDirectory: string,
+  operation: () => Promise<T>,
+  options: InterprocessLockOptions = {}
+): Promise<T> {
+  const resolvedLock = path.resolve(lockDirectory);
+  const releaseInProcessLock = await acquireInProcessLock(resolvedLock);
+  try {
+    return await withFilesystemLock(resolvedLock, operation, options);
+  } finally {
+    releaseInProcessLock();
   }
 }
