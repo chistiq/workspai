@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "workspai.proof-carrying-change-implementation-plan.v1",
+  "status": "architecture-preparation",
+  "branch": "feat/proof-carrying-change",
+  "runtimeImplemented": false,
+  "packageDecision": {
+    "newPackage": false,
+    "compositionOwner": "workspai-cli",
+    "transactionOwner": "@workspai/decisions",
+    "graphOwner": "@workspai/graph",
+    "modelOwner": "@workspai/model",
+    "intentOwner": "goal-pack",
+    "verificationOwner": "domain-verifier"
+  },
+  "candidateCommands": [
+    "change begin",
+    "change predict",
+    "change status",
+    "change verify",
+    "change explain",
+    "change abort"
+  ],
+  "reusedContracts": [
+    "workspai.goal-pack.v1",
+    "workspai.goal-index.v1",
+    "workspace-knowledge-graph-change-overlay.v1",
+    "workspace-impact.v1",
+    "workspace-explain.v1",
+    "workspace-verify.v1"
+  ],
+  "candidateContracts": [
+    "workspai.architecture-change-lease.v1",
+    "workspai.predicted-architecture-change.v1",
+    "workspai.architecture-surprise-report.v1",
+    "workspai.proof-carrying-change-capsule.v1"
+  ],
+  "deferredContracts": ["workspai.semantic-change-conflict.v1"],
+  "stages": [
+    {
+      "id": "PC0",
+      "name": "ownership-and-inventory",
+      "status": "prepared",
+      "exit": "Maintainer approves ownership, reuse map, threat boundary and no-new-package decision."
+    },
+    {
+      "id": "PC1",
+      "name": "contract-lock",
+      "status": "pending",
+      "exit": "Schemas, types, validators, fixtures, artifacts and compatibility rules are locked."
+    },
+    {
+      "id": "PC2",
+      "name": "pure-lease-and-comparison-kernel",
+      "status": "pending",
+      "exit": "Generation guard, prediction comparison and capsule validation pass without CLI globals."
+    },
+    {
+      "id": "PC3",
+      "name": "explicit-prediction-mvp",
+      "status": "pending",
+      "exit": "Begin, predict, status, verify, explain and abort pass JSON and process integration tests."
+    },
+    {
+      "id": "PC4",
+      "name": "decisions-and-effect-integration",
+      "status": "pending",
+      "exit": "All effects and resume behavior use one Decisions transaction and ledger."
+    },
+    {
+      "id": "PC5",
+      "name": "semantic-concurrency",
+      "status": "pending",
+      "exit": "Proof-backed overlap and honest unknown/disjoint semantics pass multi-change fixtures."
+    },
+    {
+      "id": "PC6",
+      "name": "consumer-integration",
+      "status": "pending",
+      "exit": "CLI, CI, MCP and extension consume one capsule contract without semantic forks."
+    },
+    {
+      "id": "PC7",
+      "name": "enterprise-hardening",
+      "status": "pending",
+      "exit": "Cross-platform, adversarial, crash, concurrency, scale, privacy and release gates pass."
+    }
+  ],
+  "prohibitedShortcuts": [
+    "new transaction or graph truth owner",
+    "automatic stale lease renewal",
+    "prediction as corroborating evidence",
+    "fidelity score as commit or release authority",
+    "history as causal ledger",
+    "automatic command execution from capability metadata",
+    "semantic disjointness inferred from missing graph coverage"
+  ]
+}
