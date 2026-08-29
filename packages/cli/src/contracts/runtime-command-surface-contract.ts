@@ -337,6 +337,8 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   goal: 'Compile a plain-language engineering intent into a scope-bound, evidence-pinned Goal Pack and portable agent handoff without mutating source.',
   'workspace graph':
     'Query or export the evidence-backed workspace graph derived from the canonical model.',
+  'workspace graph benchmark-suite --write':
+    'Run the fixed multi-scenario retrieval suite, preserve estimate-versus-measurement provenance, and publish the benchmark artifact.',
   'workspace watch': 'Observe relevant workspace changes and publish versioned watch events.',
   'workspace remediation-plan':
     'Generate a structured remediation plan from current workspace evidence.',
@@ -399,6 +401,24 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
   Record<string, Omit<RuntimeCommandDocumentation, 'invocation' | 'summary'>>
 > = {
+  live: {
+    canonicalArgv: ['live', '--once', '--json', '--projection', 'board'],
+    output: {
+      defaultFormat: 'human-or-json',
+      modes: [
+        {
+          selector: '--once --json --projection monitor',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: '--once --json --projection board',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+      ],
+    },
+  },
   'workspace feedback': {
     canonicalArgv: ['workspace', 'feedback', 'record', '--json'],
     input: {
@@ -453,6 +473,11 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
         },
         {
           selector: 'benchmark <query> --limit <count> --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: 'benchmark-suite agent-core.v1 --write --json',
           format: 'json',
           mediaType: 'application/json',
         },

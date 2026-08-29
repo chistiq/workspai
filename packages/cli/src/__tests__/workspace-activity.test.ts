@@ -24,11 +24,18 @@ import {
   reconcileActivityProcessLiveness,
 } from '../activity/activity-monitor.js';
 import { resolveActivityScope } from '../activity/activity-scope.js';
-import { buildActivityBoardModel } from '../activity/activity-board.js';
+import {
+  WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION,
+  buildActivityBoardModel,
+} from '../activity/activity-board.js';
 import { renderActivityTerminal } from '../activity/activity-terminal.js';
 import { renderActivityCaptureSvg, writeActivityCapture } from '../activity/activity-capture.js';
 import { resolveCliActivityBlueprint } from '../activity/cli-activity-blueprints.js';
-import { activitySnapshotComparisonKey, renderActivityScreenDiff } from '../live-command.js';
+import {
+  activitySnapshotComparisonKey,
+  projectLiveJsonOutput,
+  renderActivityScreenDiff,
+} from '../live-command.js';
 
 describe('workspace activity runtime', () => {
   let projectPath: string;
@@ -188,6 +195,7 @@ describe('workspace activity runtime', () => {
 
     const snapshot = readActivitySnapshot({ targetPath: projectPath });
     const board = buildActivityBoardModel(snapshot);
+    expect(board.schemaVersion).toBe(WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION);
     expect(board.runs[0]?.nodes.map((node) => node.id)).toEqual(['resolve', 'execute', 'publish']);
     expect(board.runs[0]?.edges).toMatchObject([
       { id: 'resolve->execute', status: 'running', inferred: false },
@@ -634,6 +642,43 @@ describe('workspace activity runtime', () => {
       expect(validate(event), JSON.stringify(validate.errors)).toBe(true);
       expect(event.schemaVersion).toBe(WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION);
     }
+
+    const snapshotSchema = JSON.parse(
+      fs.readFileSync(
+        path.resolve(process.cwd(), 'contracts', 'workspace-activity-monitor-snapshot.v1.json'),
+        'utf8'
+      )
+    );
+    const boardSchema = JSON.parse(
+      fs.readFileSync(
+        path.resolve(process.cwd(), 'contracts', 'workspace-activity-board.v1.json'),
+        'utf8'
+      )
+    );
+    const fleetSchema = JSON.parse(
+      fs.readFileSync(
+        path.resolve(process.cwd(), 'contracts', 'workspace-activity-monitor-fleet.v1.json'),
+        'utf8'
+      )
+    );
+    const projectionAjv = new Ajv2020({ allErrors: true, strict: false });
+    addFormats(projectionAjv);
+    projectionAjv.addSchema(snapshotSchema);
+    const validateSnapshot = projectionAjv.getSchema(snapshotSchema.$id)!;
+    const board = projectLiveJsonOutput(snapshot, { projection: 'board', maxRuns: 6 });
+    const validateBoard = projectionAjv.compile(boardSchema);
+    const validateFleet = projectionAjv.compile(fleetSchema);
+    expect(validateSnapshot(snapshot), JSON.stringify(validateSnapshot.errors)).toBe(true);
+    expect(validateBoard(board), JSON.stringify(validateBoard.errors)).toBe(true);
+    expect(
+      validateFleet({
+        schemaVersion: 'workspace-activity-monitor-fleet.v1',
+        generatedAt: snapshot.generatedAt,
+        scopes: [snapshot],
+        diagnostics: [],
+      }),
+      JSON.stringify(validateFleet.errors)
+    ).toBe(true);
   });
 
   it('ignores generated timestamps when comparing global non-TTY snapshots', () => {

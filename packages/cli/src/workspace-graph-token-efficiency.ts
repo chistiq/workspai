@@ -51,6 +51,8 @@ export type WorkspaceGraphTokenEfficiencyReport = {
   };
 };
 
+export type WorkspaceGraphCorpusMetrics = WorkspaceGraphTokenEfficiencyReport['corpus'];
+
 function estimatedTokens(characters: number): number {
   return Math.ceil(characters / CHARS_PER_ESTIMATED_TOKEN);
 }
@@ -120,6 +122,7 @@ export async function buildWorkspaceGraphTokenEfficiencyReport(input: {
   projectId?: string;
   limit?: number;
   now?: Date;
+  corpus?: WorkspaceGraphCorpusMetrics;
 }): Promise<WorkspaceGraphTokenEfficiencyReport> {
   const workspacePath = path.resolve(input.workspacePath);
   const payload = searchKnowledgeGraph(input.graph, {
@@ -129,27 +132,36 @@ export async function buildWorkspaceGraphTokenEfficiencyReport(input: {
     limit: input.limit,
     projection: 'agent',
   });
-  const artifacts = [...new Set(input.graph.proofs.map((proof) => proof.artifact))].sort();
-  const unreadableArtifacts: string[] = [];
-  const externalRoots = await externalArtifactRoots(workspacePath);
-  let characterCount = 0;
-  let artifactCount = 0;
-  for (const artifact of artifacts) {
-    const absolutePath = safeArtifactPath(workspacePath, artifact, externalRoots);
-    if (!absolutePath) {
-      unreadableArtifacts.push(artifact);
-      continue;
+  let corpus = input.corpus;
+  if (!corpus) {
+    const artifacts = [...new Set(input.graph.proofs.map((proof) => proof.artifact))].sort();
+    const unreadableArtifacts: string[] = [];
+    const externalRoots = await externalArtifactRoots(workspacePath);
+    let characterCount = 0;
+    let artifactCount = 0;
+    for (const artifact of artifacts) {
+      const absolutePath = safeArtifactPath(workspacePath, artifact, externalRoots);
+      if (!absolutePath) {
+        unreadableArtifacts.push(artifact);
+        continue;
+      }
+      try {
+        const content = await fsExtra.readFile(absolutePath, 'utf8');
+        characterCount += content.length;
+        artifactCount += 1;
+      } catch {
+        unreadableArtifacts.push(artifact);
+      }
     }
-    try {
-      const content = await fsExtra.readFile(absolutePath, 'utf8');
-      characterCount += content.length;
-      artifactCount += 1;
-    } catch {
-      unreadableArtifacts.push(artifact);
-    }
+    corpus = {
+      artifactCount,
+      characterCount,
+      estimatedTokens: estimatedTokens(characterCount),
+      unreadableArtifacts,
+    };
   }
   const retrievalCharacters = JSON.stringify(payload).length;
-  const corpusTokens = estimatedTokens(characterCount);
+  const corpusTokens = corpus.estimatedTokens;
   const retrievalTokens = estimatedTokens(retrievalCharacters);
   const avoided = Math.max(0, corpusTokens - retrievalTokens);
   return {
@@ -172,12 +184,7 @@ export async function buildWorkspaceGraphTokenEfficiencyReport(input: {
       claimBoundary:
         'Measures retrieval payload reduction against readable proof-source text; it does not claim equivalent answer quality or model-specific billing savings.',
     },
-    corpus: {
-      artifactCount,
-      characterCount,
-      estimatedTokens: corpusTokens,
-      unreadableArtifacts,
-    },
+    corpus,
     retrieval: {
       matchCount: payload.entities.length,
       characterCount: retrievalCharacters,

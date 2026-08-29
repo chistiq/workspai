@@ -1,7 +1,8 @@
 name: "Feature request"
 description: "Propose an improvement or new capability"
 title: "[Feature]: "
-labels: ["type: feature", "needs-triage"]
+type: "Feature"
+labels: ["needs-triage"]
 body:
   - type: markdown
     attributes:
@@ -33,3 +34,5 @@ body:
     attributes:
       label: Expected impact
       description: Who benefits and how?
+    validations:
+      required: true

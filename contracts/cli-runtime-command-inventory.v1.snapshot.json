@@ -762,6 +762,10 @@
           "attributeName": "json"
         },
         {
+          "flags": "--projection <projection>",
+          "attributeName": "projection"
+        },
+        {
           "flags": "--refresh-ms <milliseconds>",
           "attributeName": "refreshMs"
         },

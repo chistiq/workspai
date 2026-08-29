@@ -562,8 +562,27 @@
       "invocation": "live",
       "summary": "Render the versioned cross-terminal execution graph for Workspai runs in the current project or workspace.",
       "canonicalArgv": [
-        "live"
-      ]
+        "live",
+        "--once",
+        "--json",
+        "--projection",
+        "board"
+      ],
+      "output": {
+        "defaultFormat": "human-or-json",
+        "modes": [
+          {
+            "selector": "--once --json --projection monitor",
+            "format": "json",
+            "mediaType": "application/json"
+          },
+          {
+            "selector": "--once --json --projection board",
+            "format": "json",
+            "mediaType": "application/json"
+          }
+        ]
+      }
     },
     {
       "invocation": "merge",
@@ -1178,6 +1197,11 @@
             "mediaType": "application/json"
           },
           {
+            "selector": "benchmark-suite agent-core.v1 --write --json",
+            "format": "json",
+            "mediaType": "application/json"
+          },
+          {
             "selector": "emit --json",
             "format": "json",
             "mediaType": "application/json"
@@ -1234,6 +1258,16 @@
           }
         ]
       }
+    },
+    {
+      "invocation": "workspace graph benchmark-suite --write",
+      "summary": "Run the fixed multi-scenario retrieval suite, preserve estimate-versus-measurement provenance, and publish the benchmark artifact.",
+      "canonicalArgv": [
+        "workspace",
+        "graph",
+        "benchmark-suite",
+        "--write"
+      ]
     },
     {
       "invocation": "workspace hydrate",
@@ -2220,6 +2254,19 @@
       ]
     },
     {
+      "artifactPath": ".workspai/reports/workspace-intelligence-benchmark-last-run.json",
+      "schemaVersion": "workspace-intelligence-benchmark.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json",
+      "producerCommands": [
+        [
+          "workspace",
+          "graph",
+          "benchmark-suite",
+          "--write"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/reports/rapidkit-mcp-design.json",
       "schemaVersion": "workspai-mcp-design.v1",
       "contractPath": "contracts/workspace-intelligence/mcp-design.v1.json",
@@ -2751,6 +2798,10 @@
         {
           "flag": "--scope",
           "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
         }
       ],
       "subactions": [
@@ -2762,6 +2813,7 @@
         "path",
         "overlay",
         "benchmark",
+        "benchmark-suite",
         "dot",
         "mermaid",
         "jsonld",
@@ -2772,6 +2824,7 @@
       "examples": [
         "workspai workspace graph search \"authentication endpoint\" --kind endpoint --limit 12 --json",
         "workspai workspace graph evidence \"GET /users\" --json",
+        "workspai workspace graph benchmark-suite agent-core.v1 --write --json",
         "workspai workspace graph mermaid"
       ]
     },

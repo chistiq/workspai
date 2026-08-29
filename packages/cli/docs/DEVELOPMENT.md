@@ -64,6 +64,25 @@ npm run test:scenarios:full
 npm run test:runtime-matrix:full
 ```
 
+### Pre-push gate cache
+
+The local pre-push workflow content-addresses the runtime contract matrix and
+official-generator dry-run smoke. A successful result is reused for up to 24
+hours only when the built CLI, relevant contracts/templates/scripts, package
+metadata, lockfile, platform, architecture, Node version and command are
+unchanged. Failed runs are never cached. CI always executes both gates fresh.
+
+```bash
+# Force every cached pre-push gate to execute again.
+WORKSPAI_PREPUSH_CACHE=0 git push
+
+# Override the local TTL in milliseconds (zero disables reuse).
+WORKSPAI_PREPUSH_CACHE_TTL_MS=0 git push
+```
+
+Cache records live under `node_modules/.cache/workspai-prepush-gates` and are
+disposable. Other pre-push checks remain uncached.
+
 ## Manual smoke
 
 ```bash

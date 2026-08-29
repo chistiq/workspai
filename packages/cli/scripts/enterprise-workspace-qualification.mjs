@@ -41,6 +41,12 @@ const workspaceModel = readJson(
   path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
 );
 const importedRegistry = readJson(path.join(workspacePath, '.workspai', 'imported-projects.json'));
+const projectPath = resolveQualificationProjectPath({
+  requestedProject: args.project,
+  workspaceContract,
+  workspaceModel,
+  importedRegistry,
+});
 const graphProject = persistedGraph?.entities?.find((entity) => entity?.kind === 'project');
 const EVIDENCE_ENTITY_PLACEHOLDER = '__WORKSPAI_PROJECT_ENTITY__';
 const projectId = selectQualificationProjectId({
@@ -98,6 +104,7 @@ const commands = [
     ? [['workspace', 'graph', 'evidence', evidenceEntityId, '--limit', '20']]
     : []),
   ['workspace', 'graph', 'benchmark', 'language binding core dependency', '--limit', '20'],
+  ['workspace', 'graph', 'benchmark-suite', 'agent-core.v1', '--limit', '20', '--write'],
   ...['dot', 'mermaid', 'jsonld', 'graphml', 'gexf'].map((format) => [
     'workspace',
     'graph',
@@ -106,6 +113,19 @@ const commands = [
     path.join(outputRoot, `graph.${format}`),
   ]),
   ['workspace', 'watch', '--once'],
+  ['live', '--once', '--projection', 'monitor'],
+  ['live', '--once', '--projection', 'board'],
+  {
+    argv: [
+      'live',
+      '--capture',
+      path.join(outputRoot, 'live-board-linkedin.svg'),
+      '--capture-preset',
+      'linkedin',
+    ],
+    cwd: workspacePath,
+    expectJson: false,
+  },
   ['workspace', 'context', '--for-agent', 'generic', '--write', '--no-agent-sync'],
   ['workspace', 'agent-sync', '--for-agent', 'codex', '--dry-run'],
   ['workspace', 'agent-sync', '--for-agent', 'copilot', '--dry-run'],
@@ -115,6 +135,7 @@ const commands = [
   ['workspace', 'remediation-plan', '--ci', '--write'],
   ['workspace', 'repair', 'capabilities'],
   ['workspace', 'repair', 'list'],
+  ['workspace', 'intelligence', 'run', '--for-agent', 'generic', '--strict'],
   ['workspace', 'policy', 'show'],
   ['workspace', 'share', '--output', path.join(outputRoot, 'workspace-share.json')],
   ['workspace', 'export', '--output', archivePath],
@@ -129,6 +150,43 @@ const commands = [
     ? [
         ['project', 'archive', lifecycleProjectId, '--workspace', workspacePath, '--dry-run'],
         ['project', 'delete', lifecycleProjectId, '--workspace', workspacePath, '--dry-run'],
+      ]
+    : []),
+  ...(projectPath
+    ? [
+        {
+          argv: ['project', 'workspace', 'status', '--project', projectPath],
+          cwd: projectPath,
+        },
+        {
+          argv: ['doctor', 'project', '--fresh', '--json', 'summary'],
+          cwd: projectPath,
+        },
+        {
+          argv: [
+            'agent',
+            'bootstrap',
+            '--project',
+            projectPath,
+            '--for-agent',
+            'generic',
+            '--strict',
+          ],
+          cwd: projectPath,
+        },
+        {
+          argv: [
+            'project',
+            'agent-entry',
+            'verify',
+            '--project',
+            projectPath,
+            '--for-agent',
+            'all',
+            '--strict',
+          ],
+          cwd: projectPath,
+        },
       ]
     : []),
 ];
@@ -150,18 +208,24 @@ const report = {
   },
   coverage: {
     projectLifecycle: lifecycleProjectId ? 'dry-run' : 'skipped-no-managed-project',
+    projectConsumers: projectPath ? 'verified' : 'skipped-no-project-path',
+    liveCapture: 'verified',
   },
   commands: [],
 };
 
 for (const [commandIndex, commandTemplate] of commands.entries()) {
-  const argv = commandTemplate.map((part) =>
+  const commandSpec = Array.isArray(commandTemplate)
+    ? { argv: commandTemplate, cwd: workspacePath }
+    : commandTemplate;
+  const argv = commandSpec.argv.map((part) =>
     part === EVIDENCE_ENTITY_PLACEHOLDER ? resolveGeneratedProjectEntityId() : part
   );
-  const invocation = [...argv, '--json'];
+  const expectJson = commandSpec.expectJson !== false;
+  const invocation = !expectJson || argv.includes('--json') ? argv : [...argv, '--json'];
   const started = Date.now();
   const result = spawnSync(args.cli ?? 'workspai', invocation, {
-    cwd: workspacePath,
+    cwd: commandSpec.cwd,
     encoding: 'utf8',
     env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
     timeout: 900_000,
@@ -177,6 +241,7 @@ for (const [commandIndex, commandTemplate] of commands.entries()) {
     result,
     acceptedExitCodes,
     parsed,
+    expectJson,
   });
   const governedOutcome = result.status === 0 || hasGovernedQualificationOutcome(parsed);
   report.commands.push({
@@ -234,6 +299,31 @@ function readJson(filePath) {
 
 function firstNonEmptyString(...values) {
   return values.find((value) => typeof value === 'string' && value.trim().length > 0) ?? null;
+}
+
+function resolveQualificationProjectPath({
+  requestedProject,
+  workspaceContract,
+  workspaceModel,
+  importedRegistry,
+}) {
+  const candidates = [
+    requestedProject,
+    importedRegistry?.projects?.[0]?.path,
+    workspaceContract?.projects?.[0]?.externalPath,
+    workspaceModel?.projects?.[0]?.path,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) continue;
+    const resolved = path.resolve(candidate);
+    if (
+      fs.existsSync(path.join(resolved, '.workspai', 'project.json')) &&
+      fs.statSync(resolved).isDirectory()
+    ) {
+      return resolved;
+    }
+  }
+  return null;
 }
 
 function resolveGeneratedProjectEntityId() {

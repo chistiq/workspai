@@ -1821,14 +1821,14 @@ async function findUnsafeAdapterParent(
 function projectAgentAdapterBody(input: {
   adapter: ProjectAgentAdapter;
   agentsAvailable: boolean;
+  importAlreadyPresent?: boolean;
 }): string {
   const imported = input.agentsAvailable
     ? input.adapter.importFromAgents
     : input.adapter.importFromGrounding;
   if (imported) {
-    return `${imported}
-
-# Workspai host binding · ${input.adapter.host}
+    const importPrefix = input.importAlreadyPresent ? '' : `${imported}\n\n`;
+    return `${importPrefix}# Workspai host binding · ${input.adapter.host}
 
 The imported Workspai entry gate is mandatory. Validate this host with
 \`workspai agent bootstrap --for-agent ${input.adapter.host} --strict --json\`, then follow
@@ -1911,11 +1911,16 @@ async function reconcileProjectAgentAdapter(input: {
     .replace(managedBlockPattern(WORKSPAI_AGENT_ENTRY_START, WORKSPAI_AGENT_ENTRY_END), '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  const importAlreadyPresent = Boolean(
+    input.agentsAvailable &&
+    input.adapter.importFromAgents &&
+    withoutManaged.split(/\r?\n/u).some((line) => line.trim() === input.adapter.importFromAgents)
+  );
   const updated =
     input.mode === 'managed'
       ? [
           withoutManaged,
-          `${WORKSPAI_AGENT_ENTRY_START}\n${projectAgentAdapterBody(input).trim()}\n${WORKSPAI_AGENT_ENTRY_END}`,
+          `${WORKSPAI_AGENT_ENTRY_START}\n${projectAgentAdapterBody({ ...input, importAlreadyPresent }).trim()}\n${WORKSPAI_AGENT_ENTRY_END}`,
         ]
           .filter(Boolean)
           .join('\n\n')

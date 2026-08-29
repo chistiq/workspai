@@ -78,8 +78,10 @@ export function qualificationCommandAllowsGovernedBlock(argv) {
     .join(' ');
   return (
     command.startsWith('doctor workspace') ||
+    command.startsWith('doctor project') ||
     command === 'analyze' ||
     command === 'readiness' ||
+    command.startsWith('workspace intelligence run') ||
     command.startsWith('workspace verify') ||
     command.startsWith('workspace why') ||
     command.startsWith('workspace remediation-plan')

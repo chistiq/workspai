@@ -6911,6 +6911,11 @@ program
   .option('--run <runId>', 'Show only one activity run')
   .option('--once', 'Render one snapshot and exit')
   .option('--json', 'Emit monitor snapshots as JSON')
+  .addOption(
+    new Option('--projection <projection>', 'JSON projection: monitor or renderer-neutral board')
+      .choices(['monitor', 'board'])
+      .default('monitor')
+  )
   .option('--refresh-ms <milliseconds>', 'Live refresh interval (100-5000ms)', '250')
   .option('--max-runs <count>', 'Maximum runs rendered in the terminal', '6')
   .option('--max-scopes <count>', 'Maximum local scopes discovered by --global', '12')
@@ -6935,6 +6940,7 @@ program
         run?: string;
         once?: boolean;
         json?: boolean;
+        projection?: 'monitor' | 'board';
         refreshMs?: string;
         maxRuns?: string;
         classic?: boolean;
@@ -6968,6 +6974,14 @@ program
       if (!Number.isFinite(replaySpeed) || replaySpeed < 0.25 || replaySpeed > 64) {
         throw new Error('--replay-speed must be a number from 0.25 to 64.');
       }
+      if (options.projection === 'board' && options.json !== true) {
+        throw new Error('--projection board requires --json.');
+      }
+      if (options.projection === 'board' && options.capture) {
+        throw new Error(
+          '--projection board cannot be combined with --capture; capture already uses the Activity Board internally.'
+        );
+      }
       if (options.global === true && target) {
         throw new Error('A target path cannot be combined with --global.');
       }
@@ -6989,6 +7003,7 @@ program
         runId: options.run,
         once: options.once === true,
         json: options.json === true,
+        projection: options.projection ?? 'monitor',
         refreshMs,
         maxRuns,
         classic: options.classic === true,
@@ -10281,6 +10296,7 @@ See the command reference for action-specific required inputs and output artifac
         'entities',
         'search',
         'benchmark',
+        'benchmark-suite',
         'evidence',
         'path',
         'overlay',
@@ -10308,7 +10324,14 @@ See the command reference for action-specific required inputs and output artifac
         }
         process.exit(2);
       }
-      const persistedReadModes = new Set(['benchmark', 'entities', 'evidence', 'path', 'search']);
+      const persistedReadModes = new Set([
+        'benchmark',
+        'benchmark-suite',
+        'entities',
+        'evidence',
+        'path',
+        'search',
+      ]);
       const forceGraphRefresh =
         actionOptions.refreshGraph === true || hasRawFlag('--refresh-graph');
       const snapshot =
@@ -10593,6 +10616,84 @@ See the command reference for action-specific required inputs and output artifac
         for (const entity of entities) {
           console.log(chalk.gray(`   • ${entity.kind}: ${entity.label} [${entity.id}]`));
         }
+        return;
+      }
+
+      if (mode === 'benchmark-suite') {
+        const suiteId = (key || 'agent-core.v1').trim();
+        const {
+          WORKSPACE_INTELLIGENCE_BENCHMARK_REPORT_PATH,
+          WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES,
+          buildWorkspaceIntelligenceBenchmark,
+          writeWorkspaceIntelligenceBenchmark,
+        } = await import('./workspace-intelligence-benchmark.js');
+        if (!(suiteId in WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES)) {
+          console.log(chalk.red(`❌ Unknown benchmark suite: ${suiteId}`));
+          console.log(
+            chalk.gray(
+              `   Supported: ${Object.keys(WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES).join(', ')}`
+            )
+          );
+          process.exit(2);
+        }
+        const limitValue = Number.parseInt(
+          actionOptions.limit ?? rawFlagValue('--limit') ?? '12',
+          10
+        );
+        if (!Number.isFinite(limitValue) || limitValue < 1 || limitValue > 100) {
+          console.log(chalk.red('❌ --limit must be an integer between 1 and 100.'));
+          process.exit(1);
+        }
+        const knowledgeGraph = await buildKnowledgeGraph();
+        const report = await buildWorkspaceIntelligenceBenchmark({
+          workspacePath,
+          graph: knowledgeGraph,
+          suite: suiteId as keyof typeof WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES,
+          limit: limitValue,
+          ...(actionOptions.from ? { baselineEvaluationPath: actionOptions.from } : {}),
+        });
+        const writeRequested =
+          actionOptions.write === true || hasRawFlag('--write') || Boolean(workspaceOutputPath());
+        const outputPath = writeRequested
+          ? await writeWorkspaceIntelligenceBenchmark(
+              workspacePath,
+              report,
+              workspaceOutputPath() ?? WORKSPACE_INTELLIGENCE_BENCHMARK_REPORT_PATH
+            )
+          : undefined;
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationSuccess('workspace graph benchmark-suite', report, outputPath),
+              null,
+              2
+            )
+          );
+          return;
+        }
+        console.log(chalk.green(`✔ Workspace Intelligence benchmark: ${report.suite.title}`));
+        console.log(
+          chalk.gray(
+            `   Scenarios: ${report.retrievalSummary.matchedScenarioCount}/${report.retrievalSummary.scenarioCount} matched · ${report.retrievalSummary.status}`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Median estimated retrieval: ${report.retrievalSummary.medianRetrievalEstimatedTokens} tokens · p95 ${report.retrievalSummary.p95RetrievalEstimatedTokens}`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Median estimated payload reduction: ${report.retrievalSummary.medianEstimatedReductionPercent}%`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Model evaluation: ${report.evaluation.availability} (${report.evaluation.provenance})`
+          )
+        );
+        console.log(chalk.yellow(`   ${report.methodology.claimBoundary}`));
+        if (outputPath) console.log(chalk.gray(`   Written: ${outputPath}`));
         return;
       }
 

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/workspace-activity-monitor-fleet.v1.json",
+  "title": "Workspai Activity Monitor Fleet Snapshot",
+  "description": "A deterministic aggregate of bounded local activity monitor snapshots.",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "scopes", "diagnostics"],
+  "properties": {
+    "schemaVersion": { "const": "workspace-activity-monitor-fleet.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "scopes": {
+      "type": "array",
+      "items": { "$ref": "workspace-activity-monitor-snapshot.v1.json" }
+    },
+    "diagnostics": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

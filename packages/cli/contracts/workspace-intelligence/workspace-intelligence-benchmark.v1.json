@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-intelligence-benchmark.v1.json",
+  "title": "Workspai Workspace Intelligence Benchmark",
+  "description": "A deterministic multi-scenario retrieval benchmark with an optional, separately classified evaluation measurement. Estimated retrieval reduction is never represented as measured model savings.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "workspace",
+    "suite",
+    "graph",
+    "methodology",
+    "corpus",
+    "scenarios",
+    "retrievalSummary",
+    "evaluation"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspace-intelligence-benchmark.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "workspace": {
+      "type": "object",
+      "required": ["name", "path"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "suite": {
+      "type": "object",
+      "required": ["id", "version", "title"],
+      "properties": {
+        "id": { "const": "agent-core.v1" },
+        "version": { "const": 1 },
+        "title": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "graph": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "sourceArtifact",
+        "sourceHash",
+        "entityCount",
+        "relationCount",
+        "proofCount"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "workspace-knowledge-graph.v1" },
+        "sourceArtifact": { "type": "string", "minLength": 1 },
+        "sourceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "entityCount": { "type": "integer", "minimum": 0 },
+        "relationCount": { "type": "integer", "minimum": 0 },
+        "proofCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "methodology": {
+      "type": "object",
+      "required": [
+        "id",
+        "charsPerEstimatedToken",
+        "deterministic",
+        "networkRequired",
+        "scenarioTargetPolicy",
+        "claimBoundary"
+      ],
+      "properties": {
+        "id": { "const": "multi-scenario-bounded-retrieval.v1" },
+        "charsPerEstimatedToken": { "const": 4 },
+        "deterministic": { "const": true },
+        "networkRequired": { "const": false },
+        "scenarioTargetPolicy": { "const": "evidence-backed-representative.v1" },
+        "claimBoundary": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "corpus": { "$ref": "#/$defs/corpus" },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/scenario" }
+    },
+    "retrievalSummary": {
+      "type": "object",
+      "required": [
+        "provenance",
+        "scenarioCount",
+        "matchedScenarioCount",
+        "medianRetrievalEstimatedTokens",
+        "p95RetrievalEstimatedTokens",
+        "medianEstimatedReductionPercent",
+        "status"
+      ],
+      "properties": {
+        "provenance": { "const": "estimated" },
+        "scenarioCount": { "type": "integer", "minimum": 1 },
+        "matchedScenarioCount": { "type": "integer", "minimum": 0 },
+        "medianRetrievalEstimatedTokens": { "type": "integer", "minimum": 0 },
+        "p95RetrievalEstimatedTokens": { "type": "integer", "minimum": 0 },
+        "medianEstimatedReductionPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "status": { "enum": ["passed", "partial", "unavailable"] }
+      },
+      "additionalProperties": false
+    },
+    "evaluation": {
+      "type": "object",
+      "required": [
+        "availability",
+        "provenance",
+        "trustedMeasuredReductionPercent",
+        "claimBoundary"
+      ],
+      "properties": {
+        "availability": { "enum": ["available", "unavailable"] },
+        "provenance": { "enum": ["measured", "mixed", "estimated", "unavailable"] },
+        "current": { "$ref": "#/$defs/currentEvaluation" },
+        "comparison": { "$ref": "workspace-intelligence-evaluation-comparison.v1.json" },
+        "trustedMeasuredReductionPercent": { "type": ["number", "null"] },
+        "claimBoundary": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "corpus": {
+      "type": "object",
+      "required": ["artifactCount", "characterCount", "estimatedTokens", "unreadableArtifacts"],
+      "properties": {
+        "artifactCount": { "type": "integer", "minimum": 0 },
+        "characterCount": { "type": "integer", "minimum": 0 },
+        "estimatedTokens": { "type": "integer", "minimum": 0 },
+        "unreadableArtifacts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "scenario": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "query",
+        "queryOrigin",
+        "targetEntityId",
+        "targetKind",
+        "targetRetrieved",
+        "result",
+        "matchCount",
+        "truncated",
+        "retrievalCharacterCount",
+        "retrievalEstimatedTokens",
+        "estimatedTokensAvoided",
+        "estimatedReductionPercent"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "query": { "type": "string", "minLength": 1 },
+        "queryOrigin": { "const": "graph-derived" },
+        "targetEntityId": { "type": "string", "minLength": 1 },
+        "targetKind": { "type": "string", "minLength": 1 },
+        "targetRetrieved": { "type": "boolean" },
+        "result": { "enum": ["matched", "empty"] },
+        "matchCount": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "truncated": { "type": "boolean" },
+        "retrievalCharacterCount": { "type": "integer", "minimum": 0 },
+        "retrievalEstimatedTokens": { "type": "integer", "minimum": 0 },
+        "estimatedTokensAvoided": { "type": "integer", "minimum": 0 },
+        "estimatedReductionPercent": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "currentEvaluation": {
+      "type": "object",
+      "required": ["runId", "taskId", "strategy", "status", "summary"],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "taskId": { "type": "string", "minLength": 1 },
+        "strategy": {
+          "enum": ["full-corpus", "grep", "vector", "graph", "workspace-intelligence", "custom"]
+        },
+        "status": { "enum": ["live", "completed", "aborted"] },
+        "summary": { "$ref": "workspace-intelligence-evaluation.v1.json#/properties/summary" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

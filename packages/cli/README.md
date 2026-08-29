@@ -22,24 +22,24 @@ Two commands. Your project gains a bounded, evidence-backed system view:
 
 ### Before vs After
 
-| Before Workspai | After Workspai |
-| --- | --- |
-| Agent scans thousands of files for context | Agent starts from bounded entry and context artifacts |
-| No dependency map between services | Searchable graph with source-level proof |
-| Broken test blocks release, no one knows why | Doctor localizes the blocker and next target |
-| Every AI session starts from scratch | Sessions resume from durable evidence |
+| Before Workspai                              | After Workspai                                        |
+| -------------------------------------------- | ----------------------------------------------------- |
+| Agent scans thousands of files for context   | Agent starts from bounded entry and context artifacts |
+| No dependency map between services           | Searchable graph with source-level proof              |
+| Broken test blocks release, no one knows why | Doctor localizes the blocker and next target          |
+| Every AI session starts from scratch         | Sessions resume from durable evidence                 |
 
 Here is what you get:
 
-| What it produces | Why it matters |
-| --- | --- |
-| **Workspace Model** | A canonical inventory of registered projects, detected runtimes, frameworks, and proven dependencies |
-| **Knowledge Graph** | Searchable relationships between projects, backed by source-level proof |
-| **Health & Readiness** | Doctor checks, verification gates, and release posture based on evidence, not guesses |
-| **Agent Context** | Bounded, focused instructions so AI tools read what they need, not the entire repo |
-| **Agent Rules** | Ready-to-use grounding for Cursor, Copilot, Claude, Codex, Gemini, and more |
-| **Agent Skills** | Runtime-, polyglot-, test-, and delivery-aware operational playbooks, with portable `SKILL.md` projections where the host supports Agent Skills |
-| **MCP Server** | Versioned read-oriented tools for querying evidence, graph, blockers, and context live |
+| What it produces       | Why it matters                                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace Model**    | A canonical inventory of registered projects, detected runtimes, frameworks, and proven dependencies                                            |
+| **Knowledge Graph**    | Searchable relationships between projects, backed by source-level proof                                                                         |
+| **Health & Readiness** | Doctor checks, verification gates, and release posture based on evidence, not guesses                                                           |
+| **Agent Context**      | Bounded, focused instructions so AI tools read what they need, not the entire repo                                                              |
+| **Agent Rules**        | Ready-to-use grounding for Cursor, Copilot, Claude, Codex, Gemini, and more                                                                     |
+| **Agent Skills**       | Runtime-, polyglot-, test-, and delivery-aware operational playbooks, with portable `SKILL.md` projections where the host supports Agent Skills |
+| **MCP Server**         | Versioned read-oriented tools for querying evidence, graph, blockers, and context live                                                          |
 
 `generic` is the safe default when you do not yet know which agent will use the
 project: Workspai builds one portable context and prepares discovery adapters
@@ -182,13 +182,13 @@ a machine-readable decision and can use `--scope` and `--runtime`.
 Everything shown in the [output tree above](#what-the-output-looks-like) is
 generated in one run. The key files for each audience:
 
-| Audience | What to read |
-| --- | --- |
-| **AI agent** | `agent-entry.v1.json` (project) → `workspace-context-agent.json` (workspace) |
-| **Developer** | Terminal summary, or `workspace-explain-last-run.json` for diagnosis |
-| **CI / automation** | `workspace-verify-last-run.json` (exit code 0 = pass, 2 = blocked) |
-| **MCP client** | `workspace mcp serve` (versioned read-oriented tools over JSON-RPC) |
-| **IDE extension** | Same artifacts + watch events |
+| Audience            | What to read                                                                 |
+| ------------------- | ---------------------------------------------------------------------------- |
+| **AI agent**        | `agent-entry.v1.json` (project) → `workspace-context-agent.json` (workspace) |
+| **Developer**       | Terminal summary, or `workspace-explain-last-run.json` for diagnosis         |
+| **CI / automation** | `workspace-verify-last-run.json` (exit code 0 = pass, 2 = blocked)           |
+| **MCP client**      | `workspace mcp serve` (versioned read-oriented tools over JSON-RPC)          |
+| **IDE extension**   | Same artifacts + watch events                                                |
 
 An agent can prove that it entered through governed evidence before scanning
 the repository:
@@ -273,6 +273,8 @@ explicitly unproven.
 | Check the current project                  | `npx workspai doctor project`                                                    |
 | Check the whole workspace                  | `npx workspai doctor workspace`                                                  |
 | Refresh Model and Graph                    | `npx workspai workspace model --write --json`                                    |
+| Watch command activity as a portable board | `npx workspai live --once --json --projection board`                             |
+| Benchmark bounded agent retrieval          | `npx workspai workspace graph benchmark-suite agent-core.v1 --write --json`      |
 | Ask a focused architecture question        | `npx workspai workspace graph search "authentication service" --limit 12 --json` |
 | Verify current evidence                    | `npx workspai workspace verify --strict --json`                                  |
 | Inspect a governed repair before execution | `npx workspai workspace repair capabilities --json`                              |

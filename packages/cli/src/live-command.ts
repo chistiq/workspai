@@ -12,6 +12,7 @@ import {
   activityBoardHasMotion,
   activityBoardVisibleRunIds,
   buildActivityBoardModel,
+  type ActivityBoardModel,
 } from './activity/activity-board.js';
 import {
   renderActivityTerminal,
@@ -28,6 +29,7 @@ export type LiveCommandOptions = {
   runId?: string;
   once?: boolean;
   json?: boolean;
+  projection?: 'monitor' | 'board';
   refreshMs?: number;
   maxRuns?: number;
   classic?: boolean;
@@ -44,6 +46,17 @@ export type LiveCommandOptions = {
   replayRunId?: string;
   replaySpeed?: number;
 };
+
+export function projectLiveJsonOutput(
+  snapshot: ActivityMonitorView,
+  options: Pick<LiveCommandOptions, 'projection' | 'runId' | 'maxRuns'> = {}
+): ActivityMonitorView | ActivityBoardModel {
+  if (options.projection !== 'board') return snapshot;
+  return buildActivityBoardModel(snapshot, {
+    selectedRunId: options.runId,
+    maxRuns: Math.max(1, Math.min(50, options.maxRuns ?? 6)),
+  });
+}
 
 type LiveInteractionState = {
   selectedRunId?: string;
@@ -212,7 +225,7 @@ async function runActivityReplay(input: {
   ) {
     process.stdout.write(
       input.options.json
-        ? `${JSON.stringify(finalSnapshot, null, 2)}\n`
+        ? `${JSON.stringify(projectLiveJsonOutput(finalSnapshot, input.options), null, 2)}\n`
         : `${renderActivityTerminal(finalSnapshot, {
             width: process.stdout.columns,
             height: process.stdout.rows,
@@ -378,8 +391,11 @@ export async function runLiveCommand(options: LiveCommandOptions): Promise<Activ
   }
 
   if (options.once) {
-    if (options.json) process.stdout.write(`${JSON.stringify(snapshot, null, 2)}\n`);
-    else process.stdout.write(`${renderActivityTerminal(snapshot, renderOptions())}\n`);
+    if (options.json) {
+      process.stdout.write(
+        `${JSON.stringify(projectLiveJsonOutput(snapshot, options), null, 2)}\n`
+      );
+    } else process.stdout.write(`${renderActivityTerminal(snapshot, renderOptions())}\n`);
     return snapshot;
   }
 
@@ -444,7 +460,7 @@ export async function runLiveCommand(options: LiveCommandOptions): Promise<Activ
         interaction.dirty = false;
         frame += 1;
       } else {
-        const serialized = JSON.stringify(snapshot);
+        const serialized = JSON.stringify(projectLiveJsonOutput(snapshot, options));
         const semanticSnapshot = activitySnapshotComparisonKey(snapshot);
         if (semanticSnapshot !== previousJson) {
           process.stdout.write(

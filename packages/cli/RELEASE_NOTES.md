@@ -5,6 +5,47 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Latest Release: v0.67.0 (August 29, 2026)
+
+### Live Workspace Operations and Measurable Agent Efficiency
+
+Workspai 0.67.0 publishes stable Live activity projections and a deterministic,
+provenance-aware benchmark for bounded agent retrieval. It also strengthens
+natural-language Graph relevance, evidence-derived Skill explanations, provider
+adapter reconciliation, and repeatable real-repository qualification.
+
+**What's New:**
+
+- Versioned monitor, fleet, and Board activity contracts for terminal, IDE,
+  dashboard, automation, and social-capture consumers.
+- A five-scenario `agent-core.v1` Graph benchmark with explicit estimated,
+  measured, mixed, and unavailable token provenance.
+- Qualifier-aware natural-language search that prevents generic architecture
+  terms from outranking exact project subjects.
+- Evidence-consistent polyglot Skills and duplicate-free reconciliation of
+  repository-authored agent imports.
+- A 58-command enterprise qualification gate validated on the 12-runtime
+  OpenTelemetry Demo architecture, including Live SVG capture and all project
+  consumer entry points.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, repair, Skill, project-entry, and Live behaviors remain supported.
+The activity projection and benchmark contracts are additive. No public command
+is removed.
+
+**Publication status:** Released August 29, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.67.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.67.0/packages/cli/releases/RELEASE_NOTES_v0.67.0.md)
+
+---
+
 ## Latest Release: v0.66.0 (August 28, 2026)
 
 ### Evidence-Driven Agent Operations and Portable Project Graphs

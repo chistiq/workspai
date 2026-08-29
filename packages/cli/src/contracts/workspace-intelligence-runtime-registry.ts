@@ -302,6 +302,12 @@ export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
     contractPath: 'contracts/workspace-intelligence/mcp-design.v1.json',
     producerCommands: [['workspace', 'agent-sync', '--write']],
   },
+  workspaceIntelligenceBenchmark: {
+    artifactPath: '.workspai/reports/workspace-intelligence-benchmark-last-run.json',
+    schemaVersion: 'workspace-intelligence-benchmark.v1',
+    contractPath: 'contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json',
+    producerCommands: [['workspace', 'graph', 'benchmark-suite', '--write']],
+  },
   legacyMcpDesign: {
     artifactPath: '.workspai/reports/rapidkit-mcp-design.json',
     schemaVersion: 'workspai-mcp-design.v1',

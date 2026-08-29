@@ -19,6 +19,16 @@ import {
 describe('qualification report publication safety', () => {
   it('accepts non-zero exits only for explicit commands with governed outcomes', () => {
     expect(qualificationCommandAllowsGovernedBlock(['doctor', 'workspace', '--json'])).toBe(true);
+    expect(qualificationCommandAllowsGovernedBlock(['doctor', 'project', '--json'])).toBe(true);
+    expect(
+      qualificationCommandAllowsGovernedBlock([
+        'workspace',
+        'intelligence',
+        'run',
+        '--strict',
+        '--json',
+      ])
+    ).toBe(true);
     expect(qualificationCommandAllowsGovernedBlock(['workspace', 'verify', '--json'])).toBe(true);
     expect(
       qualificationCommandAllowsGovernedBlock(['workspace', 'graph', 'explain', 'missing'])

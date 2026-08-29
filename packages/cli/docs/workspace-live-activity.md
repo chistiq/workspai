@@ -26,6 +26,7 @@ workspai live --global --max-scopes 20 --max-runs 20
 workspai live --run <run-id>
 workspai live --once
 workspai live --once --json
+workspai live --once --json --projection board
 workspai live --refresh-ms 500 --max-runs 10
 workspai live --no-motion --no-color
 workspai live --ascii
@@ -42,6 +43,12 @@ diagnostics and tests. Without a TTY, `--json` emits a new snapshot only when
 projected activity changes. `--global` discovers bounded machine-local activity
 channels and produces one fleet view across projects and workspaces; it cannot
 be combined with `target`.
+
+JSON defaults to the backward-compatible monitor projection. Use
+`--projection board` for the public `workspace-activity-board.v1` projection
+consumed by IDE, browser, dashboard and capture adapters. It contains bounded
+runs, nodes, edges, selection, counters and diagnostics; consumers must not
+infer verification success from activity state.
 
 `--capture` writes an atomic, deterministic SVG from the same Activity Board
 Model used by the terminal and exits. Captures are redacted by default: local
@@ -114,7 +121,7 @@ The implementation intentionally keeps this pipeline renderer-independent:
 ```text
 workspace-activity-event.v1
   -> deterministic monitor snapshot
-  -> Activity Board Model (runs, nodes, edges, selection, counters)
+  -> workspace-activity-board.v1 (runs, nodes, edges, selection, counters)
   -> terminal + deterministic SVG adapters today / web and IDE adapters later
 ```
 
@@ -153,6 +160,9 @@ Every NDJSON line conforms to:
 
 ```text
 contracts/workspace-activity-event.v1.json
+contracts/workspace-activity-monitor-snapshot.v1.json
+contracts/workspace-activity-monitor-fleet.v1.json
+contracts/workspace-activity-board.v1.json
 ```
 
 The stream contains run, block, attempt, origin, declared-edge, operation,

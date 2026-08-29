@@ -634,6 +634,46 @@ function projectOverviewScore(entity: WorkspaceKnowledgeEntity): number {
   return priorities[entity.kind] ?? 0;
 }
 
+const ARCHITECTURE_INTENT_QUERY_TERMS = new Set([
+  'language',
+  'languages',
+  'binding',
+  'bindings',
+  'bridge',
+  'bridges',
+  'dependency',
+  'dependencies',
+  'depends',
+  'core',
+  'runtime',
+  'owner',
+  'owners',
+  'ownership',
+  'maintainer',
+  'ci',
+  'pipeline',
+  'pipelines',
+  'workflow',
+  'deploy',
+  'deployment',
+  'infrastructure',
+  'container',
+  'doc',
+  'docs',
+  'document',
+  'documentation',
+  'service',
+  'services',
+  'api',
+  'rpc',
+  'schema',
+  'schemas',
+  'message',
+  'protobuf',
+  'proto',
+  'contract',
+]);
+
 function architectureIntentScore(
   entity: WorkspaceKnowledgeEntity,
   terms: ReadonlySet<string>
@@ -738,6 +778,7 @@ export function searchKnowledgeGraph(
   const terms = meaningfulTerms.length > 0 ? meaningfulTerms : contentTerms;
   const languages = requestedLanguages(terms);
   const termSet = new Set(terms);
+  const qualifierTerms = terms.filter((term) => !ARCHITECTURE_INTENT_QUERY_TERMS.has(term));
   const broadArchitectureIntent = hasBroadArchitectureIntent(termSet);
   const defaultMinimumTermMatches =
     terms.length <= 1 ? terms.length : Math.min(2, Math.ceil(terms.length / 3));
@@ -785,7 +826,15 @@ export function searchKnowledgeGraph(
       const matchedTerms = matchedSearchTerms(document, terms);
       const language = entityLanguage(document.entity);
       const languageBoost = language && languages.has(language) ? 400 : 0;
-      const intentScore = architectureIntentScore(document.entity, termSet);
+      const rawIntentScore = architectureIntentScore(document.entity, termSet);
+      // Intent boosts identify the requested entity class, but a generic word
+      // such as "schema" must not outrank an entity matching the caller's
+      // distinguishing phrase (for example "telemetry schema").
+      const intentScore =
+        qualifierTerms.length === 0 ||
+        qualifierTerms.some((term) => documentMatchesTerm(document, term))
+          ? rawIntentScore
+          : 0;
       return {
         entity: document.entity,
         matchedTerms,

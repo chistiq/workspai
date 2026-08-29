@@ -97,6 +97,8 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `infra-plan.v1.json`, `private-product-manifest.v1.json`, and `product-factory-plan.v1.json` — infrastructure and product planning payloads
 - `workspace-model-cache.v1.json`, `workspace-watch-event.v1.json`, `doctor-project-scan.v2.json`, and `doctor-workspace-cache.v2.json` — cache/watch/diagnostic support contracts
 - `workspace-activity-event.v1.json` — local-first run/block/operation/touch stream consumed by `workspai live`; observational only, never Evidence/Decision authority
+- `workspace-activity-monitor-snapshot.v1.json` and `workspace-activity-monitor-fleet.v1.json` — deterministic local and bounded fleet projections
+- `workspace-activity-board.v1.json` — renderer-neutral bounded Live projection for terminal, SVG, IDE and web consumers
 
 Workspace intelligence (`../../contracts/workspace-intelligence/`):
 
@@ -108,6 +110,7 @@ Workspace intelligence (`../../contracts/workspace-intelligence/`):
 - `workspace-knowledge-graph-change-overlay.v1.json` — proposed/change-set facts and relations without mutating the base graph
 - `workspace-knowledge-search.v1.json` — bounded ranked retrieval for CLI, MCP, IDE, and agent consumers
 - `workspace-graph-token-efficiency.v1.json` — reproducible corpus-versus-retrieval payload measurement
+- `workspace-intelligence-benchmark.v1.json` — fixed multi-scenario retrieval benchmark with separately classified measured evaluation evidence
 - `model-usage-event.v1.json` — privacy-bounded model, tool, milestone, and verified-outcome events with explicit measurement provenance
 - `workspace-intelligence-evaluation.v1.json` — live/final token, cost, latency, activity, and verified-outcome evaluation
 - `workspace-intelligence-evaluation-comparison.v1.json` — task-aligned comparison of two completed evaluation strategies

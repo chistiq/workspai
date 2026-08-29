@@ -19,6 +19,10 @@ import {
 import type { WorkspaceDependencyGraph } from '../contracts/workspace-dependency-graph-contract.js';
 import { buildWorkspaceKnowledgeGraphChangeOverlay } from '../workspace-knowledge-graph-change-overlay.js';
 import { buildWorkspaceGraphTokenEfficiencyReport } from '../workspace-graph-token-efficiency.js';
+import {
+  buildWorkspaceIntelligenceBenchmark,
+  writeWorkspaceIntelligenceBenchmark,
+} from '../workspace-intelligence-benchmark.js';
 import type { WorkspaceContract } from '../utils/workspace-contract.js';
 import { buildWorkspaceModel } from '../workspace-model.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
@@ -1773,6 +1777,56 @@ describe('workspace knowledge graph', () => {
     expect(result.entities.some((entity) => entity.id === 'synthetic-generic-service')).toBe(false);
   });
 
+  it('does not let a generic schema intent outrank a matching authored document', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-generic-schema',
+        kind: 'schema',
+        label: 'AddItemRequest',
+        projectId: 'api',
+        identity: {
+          key: 'protobuf-message:api:AddItemRequest',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'generic-schema',
+        },
+        attributes: { specification: 'protobuf' },
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-telemetry-schema-document',
+        kind: 'document',
+        label: 'OpenTelemetry Demo Telemetry Schema',
+        projectId: 'api',
+        identity: {
+          key: 'document:api:telemetry-schema-readme',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'telemetry-schema-document',
+        },
+        attributes: { artifact: 'telemetry-schema/README.md' },
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'Where is the telemetry schema defined?',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('synthetic-telemetry-schema-document');
+  });
+
   it('normalizes common engineering terms before ranking bounded evidence', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -2530,6 +2584,63 @@ describe('workspace knowledge graph', () => {
     expect(report.corpus.characterCount).toBeGreaterThan(report.retrieval.characterCount);
     expect(report.savings.reductionPercent).toBeGreaterThan(0);
     expect(report.methodology.claimBoundary).toMatch(/does not claim.*billing savings/i);
+  });
+
+  it('runs a deterministic multi-scenario benchmark without presenting estimates as measured usage', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [
+        { id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' },
+        { id: 'web', path: 'web', runtime: 'python', framework: 'fastapi' },
+      ],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const report = await buildWorkspaceIntelligenceBenchmark({
+      workspacePath: root,
+      graph,
+      suite: 'agent-core.v1',
+      limit: 3,
+      now: NOW,
+    });
+
+    expect(report).toMatchObject({
+      schemaVersion: 'workspace-intelligence-benchmark.v1',
+      generatedAt: NOW.toISOString(),
+      suite: { id: 'agent-core.v1', version: 1 },
+      methodology: { deterministic: true, networkRequired: false },
+      retrievalSummary: {
+        provenance: 'estimated',
+        scenarioCount: 5,
+        matchedScenarioCount: 5,
+        status: 'passed',
+      },
+      evaluation: {
+        availability: 'unavailable',
+        provenance: 'unavailable',
+        trustedMeasuredReductionPercent: null,
+      },
+    });
+    expect(report.scenarios.map((scenario) => scenario.id)).toEqual([
+      'architecture',
+      'ownership',
+      'interfaces',
+      'change-safety',
+      'delivery',
+    ]);
+    expect(report.scenarios.every((scenario) => scenario.queryOrigin === 'graph-derived')).toBe(
+      true
+    );
+    expect(report.scenarios.every((scenario) => scenario.targetEntityId.length > 0)).toBe(true);
+    expect(report.scenarios.every((scenario) => scenario.targetRetrieved)).toBe(true);
+    expect(report.methodology.claimBoundary).toMatch(/do not establish.*billing savings/i);
+    const outputPath = await writeWorkspaceIntelligenceBenchmark(root, report);
+    expect(await fsExtra.readJson(outputPath)).toEqual(report);
   });
 
   it('reads portable external proof artifacts through the workspace contract', async () => {

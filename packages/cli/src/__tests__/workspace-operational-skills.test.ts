@@ -202,6 +202,19 @@ describe('workspace operational skills (Phase 4.A)', () => {
     ).toContain(
       'for a composite secondary boundary, inspect its manifest and Graph proofs instead of assuming the primary adapter covers it'
     );
+    const polyglotDecision = buildWorkspaceOperationalSkillsPlan({
+      workspacePath,
+      model,
+    }).decisions.find((decision) => decision.skillId === 'workspai-polyglot-change-validation');
+    expect(polyglotDecision).toMatchObject({
+      status: 'generated',
+      confidence: 'high',
+      reasons: ['The canonical workspace model directly derived this capability.'],
+      scopedProjects: ['runtime-platform'],
+    });
+    expect(polyglotDecision?.signals).toContain(
+      'model:project:runtime-platform:workspai-polyglot-change-validation'
+    );
   });
 
   it('reconciles only stale Workspai-generated skills and preserves authored files', async () => {

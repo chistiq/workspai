@@ -331,6 +331,21 @@
       "contractPath": "contracts/workspace-activity-event.v1.json",
       "publication": "json-schema"
     },
+    "workspaceActivityMonitorSnapshot": {
+      "schemaVersion": "workspace-activity-monitor-snapshot.v1",
+      "contractPath": "contracts/workspace-activity-monitor-snapshot.v1.json",
+      "publication": "capability-contract"
+    },
+    "workspaceActivityMonitorFleet": {
+      "schemaVersion": "workspace-activity-monitor-fleet.v1",
+      "contractPath": "contracts/workspace-activity-monitor-fleet.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceActivityBoard": {
+      "schemaVersion": "workspace-activity-board.v1",
+      "contractPath": "contracts/workspace-activity-board.v1.json",
+      "publication": "json-schema"
+    },
     "freshnessMetadata": {
       "schemaVersion": "rapidkit-freshness-metadata-v1",
       "contractPath": null,
@@ -394,6 +409,11 @@
     "workspaceGraphTokenEfficiency": {
       "schemaVersion": "workspace-graph-token-efficiency.v1",
       "contractPath": "contracts/workspace-intelligence/workspace-graph-token-efficiency.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceIntelligenceBenchmark": {
+      "schemaVersion": "workspace-intelligence-benchmark.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json",
       "publication": "json-schema"
     },
     "modelUsageEvent": {

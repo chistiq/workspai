@@ -20,6 +20,11 @@ import { pruneActivityJournalDirectory } from './activity-retention.js';
 const ACTIVITY_JOURNAL_HEAD_BYTES = 64 * 1_024;
 const ACTIVITY_JOURNAL_TAIL_BYTES = 1_024 * 1_024;
 
+export const WORKSPACE_ACTIVITY_MONITOR_SNAPSHOT_SCHEMA_VERSION =
+  'workspace-activity-monitor-snapshot.v1' as const;
+export const WORKSPACE_ACTIVITY_MONITOR_FLEET_SCHEMA_VERSION =
+  'workspace-activity-monitor-fleet.v1' as const;
+
 export type ActivityBlockView = {
   id: string;
   label: string;
@@ -73,7 +78,7 @@ export type ActivityRunView = {
 };
 
 export type ActivityMonitorSnapshot = {
-  schemaVersion: 'workspace-activity-monitor-snapshot.v1';
+  schemaVersion: typeof WORKSPACE_ACTIVITY_MONITOR_SNAPSHOT_SCHEMA_VERSION;
   generatedAt: string;
   scope: ResolvedActivityScope['scope'];
   runs: ActivityRunView[];
@@ -81,7 +86,7 @@ export type ActivityMonitorSnapshot = {
 };
 
 export type ActivityFleetSnapshot = {
-  schemaVersion: 'workspace-activity-monitor-fleet.v1';
+  schemaVersion: typeof WORKSPACE_ACTIVITY_MONITOR_FLEET_SCHEMA_VERSION;
   generatedAt: string;
   scopes: ActivityMonitorSnapshot[];
   diagnostics: string[];
@@ -398,7 +403,7 @@ export function projectActivitySnapshot(input: {
   }
 
   return {
-    schemaVersion: 'workspace-activity-monitor-snapshot.v1',
+    schemaVersion: WORKSPACE_ACTIVITY_MONITOR_SNAPSHOT_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     scope: input.resolvedScope.scope,
     runs: [...runs.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
@@ -585,7 +590,7 @@ export function readActivityFleetSnapshot(
     )
     .slice(0, maxScopes);
   return {
-    schemaVersion: 'workspace-activity-monitor-fleet.v1',
+    schemaVersion: WORKSPACE_ACTIVITY_MONITOR_FLEET_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     scopes,
     diagnostics,

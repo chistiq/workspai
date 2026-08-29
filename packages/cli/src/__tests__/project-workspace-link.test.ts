@@ -1039,6 +1039,30 @@ describe('project workspace binding', () => {
     );
   });
 
+  it('does not duplicate an authored Claude import of AGENTS.md', async () => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'authored-claude-import-workspace',
+    });
+    await fsp.writeFile(
+      path.join(projectPath, 'CLAUDE.md'),
+      '# Repository Claude rules\n\n@AGENTS.md\n'
+    );
+
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    const claude = await fsp.readFile(path.join(projectPath, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('# Repository Claude rules');
+    expect(claude.match(/^@AGENTS\.md$/gmu)).toHaveLength(1);
+    expect(claude).toContain(WORKSPAI_AGENT_ENTRY_START);
+    expect(claude).toContain('Workspai host binding · claude');
+  });
+
   it('removes a legacy Claude self-import when CLAUDE.md aliases AGENTS.md', async (context) => {
     const { workspacePath, projectPath } = await fixture({
       workspaceName: 'claude-agents-alias-workspace',

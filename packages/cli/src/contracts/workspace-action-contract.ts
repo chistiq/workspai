@@ -336,6 +336,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
       '--include-evidence',
       '--scan-depth',
       '--scope',
+      '--write',
     ],
     subactions: [
       'emit',
@@ -346,6 +347,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
       'path',
       'overlay',
       'benchmark',
+      'benchmark-suite',
       'dot',
       'mermaid',
       'jsonld',
@@ -355,6 +357,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     examples: [
       'workspai workspace graph search "authentication endpoint" --kind endpoint --limit 12 --json',
       'workspai workspace graph evidence "GET /users" --json',
+      'workspai workspace graph benchmark-suite agent-core.v1 --write --json',
       'workspai workspace graph mermaid',
     ],
   },

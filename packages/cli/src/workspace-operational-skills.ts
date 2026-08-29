@@ -286,6 +286,7 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
         'Validate each affected runtime with its registered project command.',
         'Run workspace impact and canonical verification before declaring the change complete.',
       ],
+      scopedProjects: uniqueSorted([...projectsByRuntime.values()].flat()),
       applicability: 'derived',
     });
   }

@@ -9,6 +9,8 @@ import type { WorkspaceActivityStatus } from './activity-contract.js';
 
 const ACTIVE_STATUSES = new Set<WorkspaceActivityStatus>(['planned', 'running']);
 
+export const WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION = 'workspace-activity-board.v1' as const;
+
 export type ActivityBoardNode = ActivityBlockView & {
   root: boolean;
 };
@@ -30,6 +32,7 @@ export type ActivityBoardRun = {
 };
 
 export type ActivityBoardModel = {
+  schemaVersion: typeof WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION;
   scopeLabel: string;
   generatedAt: string;
   activeRunCount: number;
@@ -163,6 +166,7 @@ export function buildActivityBoardModel(
     visibleRuns[0]?.run.runId;
 
   return {
+    schemaVersion: WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION,
     scopeLabel: global ? 'Global activity' : (scopes[0]?.scope.label ?? 'activity'),
     generatedAt: snapshot.generatedAt,
     activeRunCount: allRuns.filter((run) => run.active).length,

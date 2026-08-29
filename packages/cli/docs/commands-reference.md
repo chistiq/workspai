@@ -7,6 +7,7 @@ workspai live [target]
 workspai live --global [--max-scopes <count>]
 workspai live --run <run-id>
 workspai live --once --json
+workspai live --once --json --projection monitor|board
 workspai live --no-motion --no-color
 workspai live --ascii|--accessible|--classic
 workspai live --capture <file.svg> [--capture-preset github|linkedin|x|square|wide]
@@ -22,6 +23,10 @@ Inspector, a deduplicated multi-workspace Fleet Cockpit, deterministic
 redacted-by-default SVG capture, durable replay, responsive compaction and
 changed-row rendering. Use `--accessible` for stable screen-reader output or
 `--classic` for the compatibility line view.
+`--projection board` exposes the same bounded renderer-neutral run/node/edge
+model used by the terminal and SVG adapters, so IDE and web consumers do not
+need to reconstruct topology from raw events. The default `monitor` projection
+is backward compatible.
 See [Workspai Live Activity](./workspace-live-activity.md).
 
 Human-readable CLI syntax for the Workspai CLI. The machine-complete command,
@@ -268,13 +273,24 @@ that retrieval payload with the readable proof-indexed corpus using a labelled
 `characters / 4` estimate. It measures payload reduction only; it does not
 assert equivalent answer quality or model-specific billing savings.
 
+`workspace graph benchmark-suite agent-core.v1 --write --json` runs five fixed,
+repository-neutral scenarios covering architecture, ownership, interfaces,
+change safety, and delivery. It reads the proof corpus once, reports median and
+p95 bounded retrieval sizes, and writes
+`.workspai/reports/workspace-intelligence-benchmark-last-run.json`. If a
+finalized `workspace eval` report exists, its usage and verified outcome are
+attached under a separate provenance classification. Pass `--from
+<baseline-evaluation>` only for a task-aligned comparison. A measured reduction
+is emitted only when both runs use measured token sources and have comparable
+verified outcomes. See [Workspace Intelligence Benchmark](./workspace-intelligence-benchmark.md).
+
 Add `--scope project:<name>` to retrieve project-owned facts plus
 workspace-level shared entities proven to be connected to that project. The
 `search` mode also accepts `--kind <entity-kind>` so agents can retrieve a
 precise semantic surface such as `runtime-unit`, `endpoint`, or `owner`. The
 agent projection reports explicit omission budgets for relations, related
 entities, proofs, aliases, attributes, and proof references. Read-oriented
-`search`, `entities`, `evidence`, `path`, and `benchmark` modes reuse the
+`search`, `entities`, `evidence`, `path`, `benchmark`, and `benchmark-suite` modes reuse the
 persisted graph only when its model binding, proofs, project scopes, and live
 Git/Merkle input fingerprint still match. `--refresh-graph` bypasses that
 compatible snapshot and rebuilds from current sources.

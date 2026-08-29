@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/workspace-activity-board.v1.json",
+  "title": "Workspai Renderer-Neutral Activity Board",
+  "description": "A bounded renderer-neutral projection for IDE, web, terminal, SVG and capture consumers. It preserves observed run data without becoming verification evidence.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "scopeLabel",
+    "generatedAt",
+    "activeRunCount",
+    "healthyRunCount",
+    "warningRunCount",
+    "failedRunCount",
+    "runs",
+    "diagnostics",
+    "global",
+    "scopeCount"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspace-activity-board.v1" },
+    "scopeLabel": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "activeRunCount": { "type": "integer", "minimum": 0 },
+    "healthyRunCount": { "type": "integer", "minimum": 0 },
+    "warningRunCount": { "type": "integer", "minimum": 0 },
+    "failedRunCount": { "type": "integer", "minimum": 0 },
+    "selectedRunId": { "type": "string", "minLength": 1 },
+    "runs": { "type": "array", "items": { "$ref": "#/$defs/boardRun" } },
+    "diagnostics": { "type": "array", "items": { "type": "string" } },
+    "global": { "type": "boolean" },
+    "scopeCount": { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "boardRun": {
+      "type": "object",
+      "required": [
+        "run",
+        "commandLabel",
+        "active",
+        "nodes",
+        "edges",
+        "activeBlockCount",
+        "warningCount",
+        "scope",
+        "locationLabel"
+      ],
+      "properties": {
+        "run": { "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/run" },
+        "commandLabel": { "type": "string", "minLength": 1 },
+        "active": { "type": "boolean" },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "status", "order", "updatedAt", "attempts", "root"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "status": { "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/status" },
+              "order": { "type": "number" },
+              "parentId": { "type": "string", "minLength": 1 },
+              "progress": { "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/progress" },
+              "durationMs": { "type": "number", "minimum": 0 },
+              "layoutHint": { "enum": ["source", "process", "gate", "sink"] },
+              "group": { "type": "string", "minLength": 1 },
+              "updatedAt": { "type": "string", "format": "date-time" },
+              "attempt": { "type": "integer", "minimum": 1 },
+              "attempts": {
+                "type": "array",
+                "items": { "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/attempt" }
+              },
+              "root": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "fromBlockId",
+              "toBlockId",
+              "kind",
+              "status",
+              "order",
+              "updatedAt",
+              "inferred"
+            ],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "fromBlockId": { "type": "string", "minLength": 1 },
+              "toBlockId": { "type": "string", "minLength": 1 },
+              "kind": { "enum": ["sequence", "parallel", "gate", "handoff"] },
+              "status": { "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/status" },
+              "order": { "type": "number" },
+              "updatedAt": { "type": "string", "format": "date-time" },
+              "inferred": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "activeBlockCount": { "type": "integer", "minimum": 0 },
+        "warningCount": { "type": "integer", "minimum": 0 },
+        "scope": { "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/scope" },
+        "locationLabel": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

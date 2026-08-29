@@ -18,6 +18,7 @@ import {
 } from '../../workspace-intelligence.js';
 import { WORKSPACE_MODEL_SCHEMA_VERSION } from '../../workspace-model.js';
 import { WORKSPACE_VERIFY_SCHEMA_VERSION } from '../../workspace-verify.js';
+import { WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION } from '../../workspace-intelligence-benchmark.js';
 import {
   AGENT_CUSTOMIZATION_PACK_SCHEMA,
   AGENT_REPORTS_INDEX_SCHEMA,
@@ -48,6 +49,10 @@ const WORKSPACE_INTELLIGENCE_CONTRACTS = [
   {
     fileName: 'workspace-impact.v1.json',
     schemaVersion: WORKSPACE_IMPACT_SCHEMA_VERSION,
+  },
+  {
+    fileName: 'workspace-intelligence-benchmark.v1.json',
+    schemaVersion: WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION,
   },
   {
     fileName: 'workspace-context.v1.json',

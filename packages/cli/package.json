@@ -1,6 +1,6 @@
 {
   "name": "workspai",
-  "version": "0.66.0",
+  "version": "0.67.0",
   "type": "module",
   "description": "Open-source workspace intelligence CLI for software systems: create, adopt, govern, verify, and align polyglot workspaces for humans, CI, IDEs, and AI agents.",
   "keywords": [
@@ -116,6 +116,7 @@
     "test:scenarios:docker": "bash scripts/scenario-matrix.sh",
     "test:runtime-matrix": "node scripts/runtime-acceptance-matrix.mjs",
     "test:runtime-contract": "node scripts/runtime-acceptance-matrix.mjs --contract-only",
+    "prepush:test:runtime-contract": "node scripts/run-cached-prepush-gate.mjs runtime-contract",
     "test:runtime-matrix:full": "node scripts/runtime-acceptance-matrix.mjs --full",
     "test:real-world": "node scripts/real-world-qualification.mjs",
     "test:real-world:enterprise": "node scripts/enterprise-workspace-qualification.mjs",
@@ -141,6 +142,7 @@
     "smoke:frontend-generators:network": "tsup && node scripts/smoke-frontend-generators.mjs --execute",
     "smoke:official-generators": "tsup && node scripts/smoke-official-generators.mjs",
     "smoke:official-generators:no-build": "node scripts/smoke-official-generators.mjs",
+    "prepush:smoke:official-generators": "node scripts/run-cached-prepush-gate.mjs official-generators-contract",
     "smoke:official-generators:network": "tsup && node scripts/smoke-official-generators.mjs --execute",
     "check:generator-smoke-coverage": "node scripts/check-generator-smoke-coverage.mjs",
     "sync:contracts": "node scripts/sync-contracts.mjs",
@@ -151,7 +153,7 @@
     "size-check:no-build": "size-limit",
     "bench": "npx tsx scripts/benchmarks.ts",
     "quality": "corepack npm run check:package-manager && corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm test && corepack npm run size-check && corepack npm run check:workspace-intelligence-runtime && corepack npm run check:workspace-intelligence-adversarial && corepack npm run check:doctor-capabilities && corepack npm run test:runtime-contract && corepack npm run security && corepack npm run validate:docs && corepack npm run check:generator-smoke-coverage && corepack npm run smoke:official-generators && corepack npm run check:contracts && corepack npm run check:shared-contracts && corepack npm run check:parity-snapshot && corepack npm run check:agent-customization-drift",
-    "quality:push": "corepack npm run check:package-manager && corepack npm run check:windows-registry && corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm run build && corepack npm run test:no-build && corepack npm run size-check:no-build && corepack npm run check:workspace-intelligence-runtime && corepack npm run check:workspace-intelligence-adversarial && corepack npm run check:doctor-capabilities && corepack npm run test:runtime-contract && corepack npm run validate:docs && corepack npm run check:generator-smoke-coverage && corepack npm run smoke:official-generators:no-build && corepack npm run contracts:check:local && corepack npm run validate:contracts:tests",
+    "quality:push": "corepack npm run check:package-manager && corepack npm run check:windows-registry && corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm run build && corepack npm run test:no-build && corepack npm run size-check:no-build && corepack npm run check:workspace-intelligence-runtime && corepack npm run check:workspace-intelligence-adversarial && corepack npm run check:doctor-capabilities && corepack npm run prepush:test:runtime-contract && corepack npm run validate:docs && corepack npm run check:generator-smoke-coverage && corepack npm run prepush:smoke:official-generators && corepack npm run contracts:check:local && corepack npm run validate:contracts:tests",
     "act-matrix": "act -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-22.04 -P macos-latest=ghcr.io/catthehacker/ubuntu:act-22.04 -P windows-latest=ghcr.io/catthehacker/ubuntu:act-22.04 --pull=false -j build-test-matrix",
     "release:dry": "bash scripts/release.sh --no-publish --yes --allow-dirty",
     "release:patch": "bash scripts/release.sh patch",

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-08-29
+
+### Added
+
+- Added versioned Live monitor snapshot, fleet, and renderer-neutral Board JSON
+  contracts, including `live --once --json --projection board`.
+- Added `workspace graph benchmark-suite agent-core.v1 --write --json` with five
+  deterministic engineering scenarios, retrieval percentiles, exact-target
+  coverage, baseline comparison, and explicit token-measurement provenance.
+- Added Live monitor, Board, social SVG capture, benchmark-suite, canonical
+  Intelligence loop, and project consumer verification to the enterprise
+  real-repository qualification matrix.
+
+### Changed
+
+- Made natural-language Graph ranking require generic architecture intent boosts
+  to retain a distinguishing query term when one is present.
+- Made generated polyglot Skills retain the exact canonical model signal and
+  scoped projects that justified their generation.
+- Made the enterprise qualification runner classify strict Intelligence results
+  as governed outcomes, preserve Doctor summary mode, support typed non-JSON
+  commands, and verify adopted-project consumer entry points.
+- Added content-addressed caching for repeat pre-push runtime-contract and
+  official-generator dry-run gates while retaining fail-closed invalidation.
+
+### Fixed
+
+- Prevented a generic schema, service, or pipeline boost from outranking an
+  authored artifact that matches the user's complete project-specific subject.
+- Prevented project provider adapters from duplicating an existing authored
+  `AGENTS.md` import while preserving the Workspai-managed host binding.
+- Prevented generated high-confidence polyglot Skill decisions from carrying an
+  empty signal list or a contradictory unsupported-capability explanation.
+
 ## [0.66.0] - 2026-08-28
 
 ### Added

@@ -217,7 +217,7 @@ describe('CLI Entry Point', () => {
 
       const graph = await execa('node', [CLI_PATH, 'workspace', 'graph', '--help']);
       expect(graph.stdout).toContain(
-        'emit | explain | entities | search | evidence | path | overlay | benchmark | dot | mermaid | jsonld | graphml | gexf'
+        'emit | explain | entities | search | evidence | path | overlay | benchmark | benchmark-suite | dot | mermaid | jsonld | graphml | gexf'
       );
       expect(graph.stdout).toContain('workspai workspace graph [mode] [query|from] [to] [--json]');
     });

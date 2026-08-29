@@ -76,6 +76,12 @@ import {
   PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
 } from '../project-agent-entry.js';
 import { WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION } from '../activity/activity-contract.js';
+import {
+  WORKSPACE_ACTIVITY_MONITOR_FLEET_SCHEMA_VERSION,
+  WORKSPACE_ACTIVITY_MONITOR_SNAPSHOT_SCHEMA_VERSION,
+} from '../activity/activity-monitor.js';
+import { WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION } from '../activity/activity-board.js';
+import { WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION } from '../workspace-intelligence-benchmark.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -127,6 +133,9 @@ export function getPublishedContractVersions() {
     workspaceIntelligenceArtifacts: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
     cliLogEvent: CLI_LOG_EVENT_SCHEMA_VERSION,
     workspaceActivityEvent: WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION,
+    workspaceActivityMonitorSnapshot: WORKSPACE_ACTIVITY_MONITOR_SNAPSHOT_SCHEMA_VERSION,
+    workspaceActivityMonitorFleet: WORKSPACE_ACTIVITY_MONITOR_FLEET_SCHEMA_VERSION,
+    workspaceActivityBoard: WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION,
     freshnessMetadata: FRESHNESS_METADATA_SCHEMA_VERSION,
     factFreshness: FACT_FRESHNESS_SCHEMA_VERSION,
     blockerResolution: BLOCKER_RESOLUTION_SCHEMA_VERSION,
@@ -140,6 +149,7 @@ export function getPublishedContractVersions() {
     workspaceKnowledgeGraphChangeOverlay: WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION,
     workspaceKnowledgeSearch: WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION,
     workspaceGraphTokenEfficiency: WORKSPACE_GRAPH_TOKEN_EFFICIENCY_SCHEMA_VERSION,
+    workspaceIntelligenceBenchmark: WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION,
     modelUsageEvent: MODEL_USAGE_EVENT_SCHEMA_VERSION,
     workspaceIntelligenceEvaluation: WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
     workspaceIntelligenceEvaluationComparison:
@@ -238,6 +248,9 @@ export function getPublishedContractCatalog() {
     workspaceIntelligenceArtifacts: null,
     cliLogEvent: 'contracts/cli-log-event.v1.json',
     workspaceActivityEvent: 'contracts/workspace-activity-event.v1.json',
+    workspaceActivityMonitorSnapshot: 'contracts/workspace-activity-monitor-snapshot.v1.json',
+    workspaceActivityMonitorFleet: 'contracts/workspace-activity-monitor-fleet.v1.json',
+    workspaceActivityBoard: 'contracts/workspace-activity-board.v1.json',
     freshnessMetadata: null,
     factFreshness: 'contracts/workspace-intelligence/fact-freshness.v1.json',
     blockerResolution: 'contracts/workspace-intelligence/blocker-resolution.v1.json',
@@ -253,6 +266,8 @@ export function getPublishedContractCatalog() {
     workspaceKnowledgeSearch: 'contracts/workspace-intelligence/workspace-knowledge-search.v1.json',
     workspaceGraphTokenEfficiency:
       'contracts/workspace-intelligence/workspace-graph-token-efficiency.v1.json',
+    workspaceIntelligenceBenchmark:
+      'contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json',
     modelUsageEvent: 'contracts/workspace-intelligence/model-usage-event.v1.json',
     workspaceIntelligenceEvaluation:
       'contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json',

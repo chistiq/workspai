@@ -533,6 +533,7 @@ describe('workspace intelligence chain contract', () => {
     expect(contract.auxiliaryCapabilities.map((capability) => capability.id)).toEqual([
       'graph',
       'evaluation',
+      'activity',
       'watch',
       'mcp',
     ]);

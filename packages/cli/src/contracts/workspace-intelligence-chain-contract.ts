@@ -112,7 +112,7 @@ export type WorkspaceIntelligenceChainContract = {
     rule: string;
   };
   auxiliaryCapabilities: Array<{
-    id: 'graph' | 'evaluation' | 'watch' | 'mcp';
+    id: 'graph' | 'evaluation' | 'activity' | 'watch' | 'mcp';
     commands: string[];
     reads: string[];
     produces?: string[];
@@ -670,6 +670,7 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
           'workspace graph path',
           'workspace graph search',
           'workspace graph benchmark',
+          'workspace graph benchmark-suite',
           'workspace graph overlay',
           'workspace graph dot',
           'workspace graph mermaid',
@@ -678,6 +679,7 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
           'workspace graph gexf',
         ],
         reads: [artifacts.model, artifacts.knowledgeGraph],
+        produces: [WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceIntelligenceBenchmark],
         role: 'Query the proof-backed graph derived from the canonical workspace model.',
         chainStep: false,
       },
@@ -693,6 +695,13 @@ export function buildWorkspaceIntelligenceChainContract(): WorkspaceIntelligence
         reads: [artifacts.evaluationLive, artifacts.evaluationLastRun],
         produces: [artifacts.evaluationLive, artifacts.evaluationLastRun],
         role: 'Measure model usage, activity, cost provenance, and verified outcomes without storing prompt or response bodies.',
+        chainStep: false,
+      },
+      {
+        id: 'activity',
+        commands: ['live', 'live --json --projection monitor', 'live --json --projection board'],
+        reads: ['local workspace activity journals'],
+        role: 'Project observational command activity into versioned monitor and renderer-neutral board contracts without treating activity as verification evidence.',
         chainStep: false,
       },
       {
