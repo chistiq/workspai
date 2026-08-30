@@ -269,12 +269,13 @@
     },
     "commands": {
       "type": "object",
-      "required": ["refreshEvidence", "inspectGraph", "proposeRepair"],
+      "required": ["refreshEvidence", "inspectGraph", "beginChange", "proposeRepair"],
       "properties": {
         "refreshEvidence": {
           "const": "workspai workspace intelligence run --for-agent generic --strict --json"
         },
         "inspectGraph": { "type": "string", "pattern": "^workspai workspace graph search " },
+        "beginChange": { "type": "string", "pattern": "^workspai change begin --goal [^ ]+ --json$" },
         "planVerifiedGoal": { "type": "string", "pattern": "^workspai workspace goal plan " },
         "proposeRepair": {
           "const": "workspai workspace repair propose --file <proposal.json> --json"

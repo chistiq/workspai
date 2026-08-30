@@ -410,7 +410,13 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
     return null;
   }
   return {
-    id: `${runtime}:${relativeRoot}:${relativeManifest}`,
+    // Keep the runtime-unit identity canonical: `root` already carries the
+    // project-relative directory, so appending the full project-relative
+    // manifest duplicated every nested path (for example
+    // `rust:native/rust:native/rust/Cargo.toml`). The basename is sufficient
+    // within the runtime/root boundary and remains stable across linked and
+    // snapshotted workspace layouts.
+    id: `${runtime}:${relativeRoot}:${path.basename(relativeManifest)}`,
     runtime,
     ecosystem,
     role,

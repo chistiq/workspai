@@ -763,6 +763,10 @@ function upsertGoalIndex(index: GoalIndex, goal: GoalPack, updatedAt: string): G
     ...(existing?.repairTransactionIds
       ? { repairTransactionIds: existing.repairTransactionIds }
       : {}),
+    ...(existing?.changeTransactionId ? { changeTransactionId: existing.changeTransactionId } : {}),
+    ...(existing?.changeTransactionIds
+      ? { changeTransactionIds: existing.changeTransactionIds }
+      : {}),
     ...(existing?.verificationReceipt ? { verificationReceipt: existing.verificationReceipt } : {}),
   };
   return {

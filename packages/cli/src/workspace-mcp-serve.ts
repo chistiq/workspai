@@ -34,6 +34,11 @@ import {
   queryKnowledgePath,
   searchKnowledgeGraph,
 } from './workspace-knowledge-graph-query.js';
+import {
+  inspectProofCarryingChange,
+  listProofCarryingChanges,
+  validateProofCarryingChangeCapsule,
+} from './proof-carrying-change.js';
 
 const AGENT_REPORTS_INDEX_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex;
 const ARTIFACT_SCHEMA_CONTRACT_BY_PATH = new Map<string, string>(
@@ -237,6 +242,36 @@ const READ_TOOLS: McpTool[] = (
               'release-blocked | project:<name> | blocker:<id> | trace:<diffRef> | <project>',
           },
         },
+      },
+    },
+    {
+      name: 'listProofCarryingChanges',
+      description:
+        'List proof-carrying changes with lifecycle, assurance, blockers, and integrity state',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'getProofCarryingChange',
+      description:
+        'Read the ledger-derived state and architecture-aware assurance capsule for one change',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          changeId: { type: 'string', description: 'Canonical proof-carrying change id' },
+        },
+        required: ['changeId'],
+      },
+    },
+    {
+      name: 'validateProofCarryingChange',
+      description:
+        'Replay and validate one proof-carrying capsule and all hash-bound evidence references',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          changeId: { type: 'string', description: 'Canonical proof-carrying change id' },
+        },
+        required: ['changeId'],
       },
     },
   ] as Array<{
@@ -473,6 +508,19 @@ async function invokeTool(
       }
       return buildWorkspaceExplain({ workspacePath, target });
     }
+    case 'listProofCarryingChanges':
+      return listProofCarryingChanges({ workspacePath });
+    case 'getProofCarryingChange':
+      return inspectProofCarryingChange({
+        workspacePath,
+        changeId: String(args.changeId ?? '').trim(),
+        operation: 'status',
+      });
+    case 'validateProofCarryingChange':
+      return validateProofCarryingChangeCapsule({
+        workspacePath,
+        changeId: String(args.changeId ?? '').trim(),
+      });
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

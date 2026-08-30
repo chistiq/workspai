@@ -83,6 +83,10 @@ describe('polyglot lifecycle plan', () => {
       'gradle:.',
       'cargo:native',
     ]);
+    expect(plan.units.map((unit) => unit.id)).toEqual([
+      'java:.:build.gradle',
+      'rust:native:Cargo.toml',
+    ]);
     expect(plan.units[0]?.stages[0]?.command).toBe('./gradlew dependencies');
   });
 

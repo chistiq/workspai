@@ -42,6 +42,7 @@ import { registerConfigCommands } from './commands/config.js';
 import { registerAICommands } from './commands/ai.js';
 import { registerProductCommands } from './commands/product.js';
 import { registerInfraCommands } from './commands/infra.js';
+import { registerChangeCommands } from './commands/change.js';
 import { getRuntimeAdapter } from './runtime-adapters/index.js';
 import type { CommandResult } from './runtime-adapters/types.js';
 import { Cache } from './utils/cache.js';
@@ -7392,6 +7393,7 @@ program
 
 // Register AI commands
 registerAICommands(program);
+registerChangeCommands(program);
 
 // Register Product Factory commands
 registerProductCommands(program);
@@ -12979,7 +12981,10 @@ export async function bootstrapCli(): Promise<void> {
   } else if (shouldParseNpmOnlyDirectly || shouldKeepNpmOwnedCommandLocal) {
     program
       .parseAsync()
-      .then(() => exitAfterOutputFlush(0))
+      .then(() => {
+        const requestedExitCode = Number(process.exitCode ?? 0);
+        return exitAfterOutputFlush(Number.isInteger(requestedExitCode) ? requestedExitCode : 1);
+      })
       .catch((error) => {
         const detail =
           shouldDebugWorkspaiArgs() && error instanceof Error && error.stack

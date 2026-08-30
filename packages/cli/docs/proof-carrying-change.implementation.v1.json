@@ -1,24 +1,31 @@
 {
   "schemaVersion": "workspai.proof-carrying-change-implementation-plan.v1",
-  "status": "architecture-preparation",
-  "branch": "feat/proof-carrying-change",
-  "runtimeImplemented": false,
+  "status": "released",
+  "release": "0.69.0",
+  "runtimeImplemented": true,
   "packageDecision": {
     "newPackage": false,
     "compositionOwner": "workspai-cli",
-    "transactionOwner": "@workspai/decisions",
-    "graphOwner": "@workspai/graph",
-    "modelOwner": "@workspai/model",
+    "transactionOwner": "extraction-safe Decisions kernel",
+    "graphOwner": "workspace-knowledge-graph",
+    "modelOwner": "workspace-model",
     "intentOwner": "goal-pack",
     "verificationOwner": "domain-verifier"
   },
-  "candidateCommands": [
+  "publicCommands": [
     "change begin",
+    "change list",
     "change predict",
+    "change authorize",
+    "change resume",
+    "change effect record",
+    "change verification record",
     "change status",
     "change verify",
     "change explain",
-    "change abort"
+    "change abort",
+    "change capsule validate",
+    "change capsule export"
   ],
   "reusedContracts": [
     "workspai.goal-pack.v1",
@@ -28,60 +35,74 @@
     "workspace-explain.v1",
     "workspace-verify.v1"
   ],
-  "candidateContracts": [
+  "implementedContracts": [
+    "workspai.decision-event.v1",
+    "workspai.decision-transaction.v1",
+    "workspai.decision-checkpoint.v1",
     "workspai.architecture-change-lease.v1",
     "workspai.predicted-architecture-change.v1",
     "workspai.architecture-surprise-report.v1",
-    "workspai.proof-carrying-change-capsule.v1"
+    "workspai.proof-carrying-change-capsule.v1",
+    "workspai.change-operation-result.v1",
+    "workspai.proof-carrying-change-list.v1",
+    "workspai.proof-carrying-change-capsule-validation.v1",
+    "workspai.proof-carrying-change-capsule-export.v1"
   ],
   "deferredContracts": ["workspai.semantic-change-conflict.v1"],
+  "consumerStatus": {
+    "cli": "complete",
+    "ciJsonGate": "complete",
+    "mcpReadTools": "complete",
+    "extensionReadProjection": "implemented-awaiting-pcc-cli-release",
+    "extensionStudioMutationAdapter": "deferred-until-pcc-cli-release"
+  },
   "stages": [
     {
       "id": "PC0",
       "name": "ownership-and-inventory",
-      "status": "prepared",
+      "status": "complete",
       "exit": "Maintainer approves ownership, reuse map, threat boundary and no-new-package decision."
     },
     {
       "id": "PC1",
       "name": "contract-lock",
-      "status": "pending",
+      "status": "complete",
       "exit": "Schemas, types, validators, fixtures, artifacts and compatibility rules are locked."
     },
     {
       "id": "PC2",
       "name": "pure-lease-and-comparison-kernel",
-      "status": "pending",
+      "status": "complete",
       "exit": "Generation guard, prediction comparison and capsule validation pass without CLI globals."
     },
     {
       "id": "PC3",
       "name": "explicit-prediction-mvp",
-      "status": "pending",
+      "status": "complete",
       "exit": "Begin, predict, status, verify, explain and abort pass JSON and process integration tests."
     },
     {
       "id": "PC4",
       "name": "decisions-and-effect-integration",
-      "status": "pending",
+      "status": "complete",
       "exit": "All effects and resume behavior use one Decisions transaction and ledger."
     },
     {
       "id": "PC5",
       "name": "semantic-concurrency",
-      "status": "pending",
+      "status": "deferred",
       "exit": "Proof-backed overlap and honest unknown/disjoint semantics pass multi-change fixtures."
     },
     {
       "id": "PC6",
       "name": "consumer-integration",
-      "status": "pending",
+      "status": "in-progress",
       "exit": "CLI, CI, MCP and extension consume one capsule contract without semantic forks."
     },
     {
       "id": "PC7",
       "name": "enterprise-hardening",
-      "status": "pending",
+      "status": "in-progress",
       "exit": "Cross-platform, adversarial, crash, concurrency, scale, privacy and release gates pass."
     }
   ],

@@ -440,6 +440,10 @@ const SEARCH_TOKEN_CANONICAL_FORMS = new Map<string, string>([
   ['config', 'configuration'],
   ['configs', 'configuration'],
   ['dependencies', 'dependency'],
+  ['connected', 'connect'],
+  ['connecting', 'connect'],
+  ['connection', 'connect'],
+  ['connections', 'connect'],
   ['diagnostics', 'diagnostic'],
   ['reliable', 'reliability'],
   ['tested', 'test'],
@@ -676,6 +680,47 @@ const ARCHITECTURE_INTENT_QUERY_TERMS = new Set([
   'contract',
 ]);
 
+// These words describe a relationship or a broad software surface rather than
+// the named subject of a query. Keep them searchable, but do not let a result
+// matching only these terms consume a bounded retrieval slot when the graph
+// contains evidence for a distinguishing subject such as a product, subsystem,
+// protocol, or domain name.
+const GENERIC_RELATION_QUERY_TERMS = new Set([
+  'app',
+  'application',
+  'applications',
+  'call',
+  'calls',
+  'code',
+  'communicate',
+  'communication',
+  'connect',
+  'define',
+  'defined',
+  'expose',
+  'exposed',
+  'handle',
+  'handled',
+  'implement',
+  'implementation',
+  'integrate',
+  'integration',
+  'interact',
+  'interaction',
+  'project',
+  'provide',
+  'provided',
+  'system',
+  'use',
+  'used',
+  'uses',
+  'using',
+]);
+
+function isGenericQueryTerm(term: string): boolean {
+  return ARCHITECTURE_INTENT_QUERY_TERMS.has(term) || GENERIC_RELATION_QUERY_TERMS.has(term);
+}
+
 function architectureIntentScore(
   entity: WorkspaceKnowledgeEntity,
   terms: ReadonlySet<string>
@@ -780,7 +825,7 @@ export function searchKnowledgeGraph(
   const terms = meaningfulTerms.length > 0 ? meaningfulTerms : contentTerms;
   const languages = requestedLanguages(terms);
   const termSet = new Set(terms);
-  const qualifierTerms = terms.filter((term) => !ARCHITECTURE_INTENT_QUERY_TERMS.has(term));
+  const qualifierTerms = terms.filter((term) => !isGenericQueryTerm(term));
   const broadArchitectureIntent = hasBroadArchitectureIntent(termSet);
   const defaultMinimumTermMatches =
     terms.length <= 1 ? terms.length : Math.min(2, Math.ceil(terms.length / 3));
@@ -823,9 +868,13 @@ export function searchKnowledgeGraph(
       return [term, Math.log((documents.length + 1) / (documentFrequency + 1)) + 1] as const;
     })
   );
+  const hasQualifierEvidence = qualifierTerms.some((term) =>
+    documents.some((document) => documentMatchesTerm(document, term))
+  );
   const ranked = documents
     .map((document) => {
       const matchedTerms = matchedSearchTerms(document, terms);
+      const matchedQualifiers = matchedSearchTerms(document, qualifierTerms);
       const language = entityLanguage(document.entity);
       const languageBoost = language && languages.has(language) ? 400 : 0;
       const rawIntentScore = architectureIntentScore(document.entity, termSet);
@@ -840,10 +889,12 @@ export function searchKnowledgeGraph(
       return {
         entity: document.entity,
         matchedTerms,
+        matchedQualifiers,
         intentScore,
         score: scopeOnlyQuery
           ? projectOverviewScore(document.entity)
           : searchScore(document, query, terms, inverseDocumentFrequency) +
+            matchedQualifiers * 300 +
             languageBoost +
             intentScore,
       };
@@ -854,6 +905,7 @@ export function searchKnowledgeGraph(
         (languages.size === 0 || language === null || languages.has(language)) &&
         (query.length === 0 ||
           (entry.score > 0 &&
+            (!hasQualifierEvidence || qualifierTerms.length === 0 || entry.matchedQualifiers > 0) &&
             (scopeOnlyQuery ||
               entry.matchedTerms >= minimumTermMatches ||
               (entry.intentScore > 0 && (broadArchitectureIntent || terms.length <= 2)))))

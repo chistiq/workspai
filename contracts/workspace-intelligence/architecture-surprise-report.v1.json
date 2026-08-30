@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/architecture-surprise-report.v1.json",
+  "title": "Workspai Architecture Surprise Report",
+  "type": "object",
+  "required": ["schemaVersion", "changeId", "generatedAt", "prediction", "actual", "matched", "unpredicted", "missing", "summary"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.architecture-surprise-report.v1" },
+    "changeId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "prediction": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/artifactReference" }, { "type": "null" }] },
+    "actual": { "$ref": "decision-event.v1.json#/$defs/artifactReference" },
+    "matched": { "$ref": "#/$defs/operations" },
+    "unpredicted": { "$ref": "#/$defs/operations" },
+    "missing": { "$ref": "#/$defs/operations" },
+    "summary": {
+      "type": "object",
+      "required": ["predicted", "actual", "matched", "unpredicted", "missing", "verdict"],
+      "properties": {
+        "predicted": { "type": "integer", "minimum": 0 },
+        "actual": { "type": "integer", "minimum": 0 },
+        "matched": { "type": "integer", "minimum": 0 },
+        "unpredicted": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 },
+        "verdict": { "enum": ["exact", "within-expectation", "surprising", "no-prediction"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["operation", "targetKind", "targetId"],
+        "properties": {
+          "operation": { "type": "string", "minLength": 1 },
+          "targetKind": { "type": "string", "minLength": 1 },
+          "targetId": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

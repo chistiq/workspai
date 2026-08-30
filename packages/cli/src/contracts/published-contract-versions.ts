@@ -82,6 +82,21 @@ import {
 } from '../activity/activity-monitor.js';
 import { WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION } from '../activity/activity-board.js';
 import { WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION } from '../workspace-intelligence-benchmark.js';
+import {
+  DECISION_CHECKPOINT_SCHEMA_VERSION,
+  DECISION_EVENT_SCHEMA_VERSION,
+  DECISION_TRANSACTION_SCHEMA_VERSION,
+} from '../decisions/decision-contract.js';
+import {
+  ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION,
+  ARCHITECTURE_SURPRISE_REPORT_SCHEMA_VERSION,
+  CHANGE_OPERATION_RESULT_SCHEMA_VERSION,
+  PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_CAPSULE_EXPORT_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_LIST_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_CAPSULE_VALIDATION_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_CAPSULE_SCHEMA_VERSION,
+} from './proof-carrying-change-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -128,6 +143,17 @@ export function getPublishedContractVersions() {
     goalPlanResult: GOAL_PLAN_RESULT_SCHEMA_VERSION,
     goalIndex: GOAL_INDEX_SCHEMA_VERSION,
     goalLifecycleResult: GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
+    decisionEvent: DECISION_EVENT_SCHEMA_VERSION,
+    decisionTransaction: DECISION_TRANSACTION_SCHEMA_VERSION,
+    decisionCheckpoint: DECISION_CHECKPOINT_SCHEMA_VERSION,
+    changeOperationResult: CHANGE_OPERATION_RESULT_SCHEMA_VERSION,
+    architectureChangeLease: ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION,
+    predictedArchitectureChange: PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION,
+    architectureSurpriseReport: ARCHITECTURE_SURPRISE_REPORT_SCHEMA_VERSION,
+    proofCarryingChangeCapsule: PROOF_CARRYING_CHANGE_CAPSULE_SCHEMA_VERSION,
+    proofCarryingChangeList: PROOF_CARRYING_CHANGE_LIST_SCHEMA_VERSION,
+    proofCarryingChangeCapsuleValidation: PROOF_CARRYING_CHANGE_CAPSULE_VALIDATION_SCHEMA_VERSION,
+    proofCarryingChangeCapsuleExport: PROOF_CARRYING_CHANGE_CAPSULE_EXPORT_SCHEMA_VERSION,
     workspaceIntelligenceArchitecture: WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION,
     workspaceIntelligenceChain: WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION,
     workspaceIntelligenceArtifacts: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
@@ -243,6 +269,22 @@ export function getPublishedContractCatalog() {
     goalPlanResult: 'contracts/workspace-intelligence/goal-plan-result.v1.json',
     goalIndex: 'contracts/workspace-intelligence/goal-index.v1.json',
     goalLifecycleResult: 'contracts/workspace-intelligence/goal-lifecycle-result.v1.json',
+    decisionEvent: 'contracts/workspace-intelligence/decision-event.v1.json',
+    decisionTransaction: 'contracts/workspace-intelligence/decision-transaction.v1.json',
+    decisionCheckpoint: 'contracts/workspace-intelligence/decision-checkpoint.v1.json',
+    changeOperationResult: 'contracts/workspace-intelligence/change-operation-result.v1.json',
+    architectureChangeLease: 'contracts/workspace-intelligence/architecture-change-lease.v1.json',
+    predictedArchitectureChange:
+      'contracts/workspace-intelligence/predicted-architecture-change.v1.json',
+    architectureSurpriseReport:
+      'contracts/workspace-intelligence/architecture-surprise-report.v1.json',
+    proofCarryingChangeCapsule:
+      'contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json',
+    proofCarryingChangeList: 'contracts/workspace-intelligence/proof-carrying-change-list.v1.json',
+    proofCarryingChangeCapsuleValidation:
+      'contracts/workspace-intelligence/proof-carrying-change-capsule-validation.v1.json',
+    proofCarryingChangeCapsuleExport:
+      'contracts/workspace-intelligence/proof-carrying-change-capsule-export.v1.json',
     workspaceIntelligenceArchitecture: 'contracts/workspace-intelligence-architecture.v1.json',
     workspaceIntelligenceChain: 'contracts/workspace-intelligence-chain.v1.json',
     workspaceIntelligenceArtifacts: null,

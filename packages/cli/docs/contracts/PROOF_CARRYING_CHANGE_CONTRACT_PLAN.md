@@ -1,122 +1,65 @@
-# Proof-Carrying Change Contract Plan
+# Proof-Carrying Change contracts
 
-Status: pre-contract design; none of the candidate contracts below are released
+Status: released v1 CLI and read-only MCP contracts; extension mutation adapter pending
 
-## Reuse before invention
+## Published contracts
 
-| Need | Existing owner/contract | Decision |
-| --- | --- | --- |
-| Intent and success criteria | `workspai.goal-pack.v1` | Reference; do not copy or redefine. |
-| Active goal discovery | `workspai.goal-index.v1` | Reference lifecycle links only. |
-| Base/head graph delta | `workspace-knowledge-graph-change-overlay.v1` | Reuse unchanged for actual overlay. |
-| Graph/Model identity | existing Graph/Model artifact schemas | Reference labeled schema, generation, fingerprint and digest. |
-| Workspace verification | `workspace-verify.v1` | Reference exact result and target generation. |
-| Effect/event/ledger lifecycle | WIS Decision candidate and `@workspai/decisions` plan | Reuse owner semantics; no CLI-local observed-effect contract. |
-| Impact/explain | existing workspace impact/explain contracts | Reference outputs with limitations. |
-| Historical summary | workspace history | Add a capsule reference only after the capsule contract stabilizes; history is not the ledger. |
+| Schema                                                 | Owner           | Purpose                                             |
+| ------------------------------------------------------ | --------------- | --------------------------------------------------- |
+| `workspai.decision-event.v1`                           | Decisions       | Digest-linked causal event.                         |
+| `workspai.decision-transaction.v1`                     | Decisions       | Replay-derived transaction projection.              |
+| `workspai.decision-checkpoint.v1`                      | Decisions       | Event-head and projection integrity checkpoint.     |
+| `workspai.architecture-change-lease.v1`                | PCC composition | Goal and architecture generation guard.             |
+| `workspai.predicted-architecture-change.v1`            | PCC composition | Explicit noncanonical expected delta.               |
+| `workspace-knowledge-graph-change-overlay.v1`          | Graph           | Actual base-to-head architecture delta.             |
+| `workspai.architecture-surprise-report.v1`             | PCC composition | Predicted-versus-observed comparison.               |
+| `workspai.proof-carrying-change-capsule.v1`            | PCC composition | Portable closure, assurance, and uncertainty index. |
+| `workspai.change-operation-result.v1`                  | PCC composition | Stable machine result shared by lifecycle commands. |
+| `workspai.proof-carrying-change-list.v1`               | PCC composition | Read-only discovery for IDE, CI, and automation.    |
+| `workspai.proof-carrying-change-capsule-validation.v1` | PCC composition | Explicit integrity validation verdict.              |
+| `workspai.proof-carrying-change-capsule-export.v1`     | PCC composition | Validated portable export receipt.                  |
 
-## Candidate new contracts
+The schemas live in `contracts/workspace-intelligence/` and are advertised by
+the published contract catalog and runtime command surface.
 
-Names are reserved for design discussion only. They must not enter published
-contract registries before schema/type/validator/fixture lock.
+## Reuse map
 
-### `workspai.architecture-change-lease.v1`
+- `workspai.goal-pack.v1`: immutable intent, scope, and success criteria.
+- `workspai.goal-index.v1`: active Goal and bounded PCC transaction links.
+- `workspace-model.v1`: structural baseline and post-effect system identity.
+- `workspace-knowledge-graph.v1`: architecture facts and proofs.
+- `workspace-knowledge-graph-change-overlay.v1`: actual change semantics.
+- `workspace-verify.v1`: canonical workspace verification evidence.
 
-Portable projection of the Decision Transaction base guard:
+## Semantic validation beyond JSON Schema
 
-- change/transaction/goal identity;
-- workspace and project scope;
-- labeled Git/content/Graph/Model/contract/policy/evidence generations;
-- captured freshness, coverage and claim limitations;
-- renewal command and `current | stale | rebase-required | unsupported` result.
+JSON shape is necessary but insufficient. The runtime additionally verifies:
 
-It contains no exclusive lock claim and no mutable effect history.
+1. contiguous event sequence and one transaction ID;
+2. previous-event and event-content digests;
+3. legal state transitions;
+4. explicit effect-class authorization;
+5. unique effect receipt IDs and idempotency keys;
+6. exact effect-head binding for verification receipts;
+7. current Model/Graph target identity;
+8. successful receipt coverage for changed Graph proof artifacts;
+9. latest passing receipt for every immutable Goal criterion;
+10. capsule, lease, decision-head, baseline-cache, and referenced-artifact integrity.
 
-### `workspai.predicted-architecture-change.v1`
+## Compatibility rules
 
-Non-canonical proposed overlay:
+- v1 fields do not grant authority beyond their named owner.
+- Prediction remains ineligible as proof in every consumer.
+- A capsule is an index, not a duplicate Goal, Graph, ledger, or verifier.
+- Missing, stale, uncertain, failed, and unsupported are distinct outcomes.
+- Unknown event kinds or fields fail closed under v1 schemas.
+- Consumers must use command discovery and the published catalog rather than
+  guessing artifact paths.
+- Consumers must use `change list --json` rather than inferring recency or
+  lifecycle state from directory order.
 
-- lease and base generation reference;
-- provider/profile/input identity;
-- expected entity/relation/contract/project/artifact sets;
-- expected impact and required verification;
-- confidence, unsupported zones and assumptions;
-- deterministic prediction digest.
+## Deferred contract
 
-Graph must review/admit the portable overlay shape because Graph owns relation
-and overlay semantics.
-
-### `workspai.architecture-surprise-report.v1`
-
-Derived comparison result:
-
-- prediction and actual-overlay references;
-- matched, unexpected and missing sets;
-- missed consumers, scope escapes and verification omissions;
-- comparison coverage, unknowns and limitations;
-- algorithm/profile version, drivers, weights and optional fidelity score;
-- allowed and prohibited claims.
-
-This is analytical evidence, not transaction authorization or Graph truth.
-
-### `workspai.proof-carrying-change-capsule.v1`
-
-Portable closure/index:
-
-- intent/lease/transaction/prediction/actual/verification references and digests;
-- exact owner generations and compatibility envelope;
-- final owner verdicts plus remaining unknown/unverified claims;
-- derived change phase and capsule integrity digest;
-- redaction, retention and renewal metadata.
-
-The capsule validates references and closure; it does not embed a second Goal,
-Decision ledger, Graph, Model or verification result.
-
-### Later candidate: `workspai.semantic-change-conflict.v1`
-
-Graph-derived overlap between two change leases, including shared entities,
-contracts, impact paths, proof coverage and `overlap | disjoint | unknown`.
-Defer until two-change fixtures prove stable semantics. Never infer disjointness
-from missing graph data.
-
-## Contract invariants
-
-1. One authoritative owner per field and generation.
-2. Every reference includes schema/profile, logical artifact identity and digest.
-3. Hash kinds are labeled; structural Graph identity, artifact digest, Git
-   identity and Goal fingerprint are never substituted.
-4. Unknown, unsupported, stale, partial and conflicting remain distinct.
-5. Prediction cannot be cited as proof of actual change.
-6. Capsule and surprise report cannot corroborate their own source artifacts.
-7. Timestamps are excluded from deterministic content identity where declared.
-8. Absolute paths, secrets, raw prompts and unbounded output are prohibited.
-9. Additive compatibility cannot silently broaden authority or allowed claims.
-
-## Required fixtures before command registration
-
-- minimal valid capsule with explicit prediction;
-- maximal polyglot/multi-project capsule;
-- stale lease and changed policy generation;
-- dirty/untracked baseline and post-begin human edit;
-- partial/unsupported Graph provider coverage;
-- predicted/actual name collision and relation-kind mismatch;
-- missed consumer and scope escape;
-- no textual conflict with proof-backed semantic overlap;
-- uncertain effect and interrupted resume;
-- failed/expired/wrong-target verification;
-- tampered ledger/reference/digest and path traversal;
-- previous-version and unknown-field round trip;
-- Linux/macOS/Windows path/case/symlink corpus.
-
-## Registration sequence
-
-```text
-ownership approval
-  -> JSON schemas
-  -> generated TypeScript bindings and structural validators
-  -> semantic validators and fixtures
-  -> artifact registry and compatibility registry
-  -> pure direct API tests
-  -> CLI command registration and help/JSON/process tests
-  -> MCP/IDE consumers after CLI stability
-```
+`workspai.semantic-change-conflict.v1` remains deferred until proof-backed
+two-change overlap can distinguish `overlap`, `disjoint`, and `unknown` without
+inferring absence from incomplete Graph coverage.

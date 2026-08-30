@@ -5,7 +5,49 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.68.0 (August 29, 2026)
+## Latest Release: v0.69.0 (August 30, 2026)
+
+### Proof-Carrying Changes and Tamper-Evident Agent Assurance
+
+Workspai 0.69.0 gives source-changing agents a verifiable path from Goal-bound
+intent to a sealed change capsule. The runtime pins the exact architecture
+baseline, separates prediction from proof, authorizes bounded effects, records
+what actually happened, re-observes the Graph, and requires independent
+verification before it can claim closure.
+
+**What's New:**
+
+- A complete `workspai change` lifecycle for begin, discovery, prediction,
+  authorization, receipts, verification, explanation, resume, abort, validation,
+  and portable export.
+- A digest-linked Decisions ledger with deterministic replay, checkpoints,
+  optimistic concurrency, durable blocked states, and tamper detection.
+- Exact predicted-versus-actual Graph overlays and surprise reports that never
+  promote model prediction into verification evidence.
+- Versioned capsule, operation, list, validation, and export contracts shared by
+  CLI, CI, IDE, agent grounding, Live correlation, and read-only MCP consumers.
+- Safer linked-project evidence, more precise Graph retrieval, canonical nested
+  runtime identities, and authored project names in Fleet and Live reports.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, Repair, Skill, project-entry, and Live contracts remain supported.
+PCC and Decisions contracts are additive, Graph overlay changes retain their v1
+shape, and no public command is removed.
+
+**Publication status:** Released August 30, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.69.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.69.0/packages/cli/releases/RELEASE_NOTES_v0.69.0.md)
+
+---
+
+## v0.68.0 (August 29, 2026)
 
 ### Revision-Bound Live Evidence and Governed Agent Recovery
 

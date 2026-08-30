@@ -159,10 +159,21 @@ describe('workspace-run', { timeout: 30_000 }, () => {
 
     expect(report.summary.selectedCount).toBe(1);
     expect(report.options).toMatchObject({ planOnly: true, runtime: null });
+    expect(report.projects[0]?.projectName).toBe('linked-sdk');
     expect(report.projects[0]?.runtimeExecutions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ runtime: 'go', command: 'go test ./...', status: 'planned' }),
-        expect.objectContaining({ runtime: 'node', command: 'npm run test', status: 'planned' }),
+        expect.objectContaining({
+          unitId: 'go:go:go.mod',
+          runtime: 'go',
+          command: 'go test ./...',
+          status: 'planned',
+        }),
+        expect.objectContaining({
+          unitId: 'node:node:package.json',
+          runtime: 'node',
+          command: 'npm run test',
+          status: 'planned',
+        }),
       ])
     );
     expect(execaMock).not.toHaveBeenCalled();

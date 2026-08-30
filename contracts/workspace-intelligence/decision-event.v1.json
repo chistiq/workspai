@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/decision-event.v1.json",
+  "title": "Workspai Decision Event",
+  "type": "object",
+  "required": ["schemaVersion", "transactionId", "sequence", "kind", "occurredAt", "actor", "previousEventDigest", "payload", "digest"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.decision-event.v1" },
+    "transactionId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "kind": { "enum": ["created", "scope-bound", "evidence-attached", "plan-attached", "authorized", "effect-requested", "effect-recorded", "effect-uncertain", "verification-started", "verification-recorded", "human-required", "blocked", "resumed", "committed", "rejected", "aborted", "superseded"] },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["human", "agent", "cli", "ci", "extension"] },
+        "id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "previousEventDigest": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+    "payload": { "$ref": "#/$defs/payload" },
+    "digest": { "$ref": "#/$defs/sha256" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "digest": {
+      "type": "object",
+      "required": ["algorithm", "semantics", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "semantics": { "enum": ["canonical-json-v1", "raw-bytes-v1", "workspace-model-structural-v1"] },
+        "value": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "artifactReference": {
+      "type": "object",
+      "required": ["role", "artifact", "schemaVersion", "digest"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "artifact": { "type": "string", "minLength": 1 },
+        "schemaVersion": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "required": ["kind", "projects"],
+      "properties": {
+        "kind": { "enum": ["workspace", "project", "project-set"] },
+        "projects": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "authorization": {
+      "type": "object",
+      "required": ["grantedBy", "grant", "effectClasses"],
+      "properties": {
+        "grantedBy": { "type": "string", "minLength": 1 },
+        "grant": { "enum": ["bounded-effects", "verification-only"] },
+        "effectClasses": { "type": "array", "items": { "enum": ["filesystem", "command", "configuration", "dependency", "external"] }, "minItems": 1, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "effectReceipt": {
+      "type": "object",
+      "required": ["id", "effectClass", "status", "summary", "artifacts", "observedAt", "idempotencyKey"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "effectClass": { "enum": ["filesystem", "command", "configuration", "dependency", "external"] },
+        "status": { "enum": ["succeeded", "failed", "uncertain"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifactReference" } },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "idempotencyKey": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "verificationReceipt": {
+      "type": "object",
+      "required": ["id", "criterionId", "status", "summary", "target", "artifacts", "observedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "criterionId": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "inconclusive"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "target": {
+          "type": "object",
+          "required": ["modelHash", "graphHash", "effectHeadDigest"],
+          "properties": {
+            "modelHash": { "$ref": "#/$defs/sha256" },
+            "graphHash": { "$ref": "#/$defs/sha256" },
+            "effectHeadDigest": { "$ref": "#/$defs/sha256" }
+          },
+          "additionalProperties": false
+        },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifactReference" } },
+        "observedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "blocker": {
+      "type": "object",
+      "required": ["code", "actionable"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "actionable": { "type": "boolean" },
+        "details": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "payload": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "scope": { "$ref": "#/$defs/scope" },
+        "references": { "type": "array", "items": { "$ref": "#/$defs/artifactReference" } },
+        "authorization": { "$ref": "#/$defs/authorization" },
+        "effect": { "$ref": "#/$defs/effectReceipt" },
+        "verification": { "$ref": "#/$defs/verificationReceipt" },
+        "blocker": { "$ref": "#/$defs/blocker" },
+        "resumeTo": { "enum": ["authorized", "executing", "verifying"] },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

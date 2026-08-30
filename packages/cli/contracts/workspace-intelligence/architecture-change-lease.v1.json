@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/architecture-change-lease.v1.json",
+  "title": "Workspai Architecture Change Lease",
+  "type": "object",
+  "required": ["schemaVersion", "changeId", "goalId", "createdAt", "workspace", "scope", "baseline", "generation", "semantics", "privateMaterialization"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.architecture-change-lease.v1" },
+    "changeId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "goalId": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "workspace": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1 } }, "additionalProperties": false },
+    "scope": { "$ref": "decision-event.v1.json#/$defs/scope" },
+    "baseline": {
+      "type": "object",
+      "required": ["model", "graph"],
+      "properties": {
+        "model": { "$ref": "decision-event.v1.json#/$defs/artifactReference" },
+        "graph": {
+          "type": "object",
+          "required": ["role", "artifact", "schemaVersion", "digest", "inputHash"],
+          "properties": {
+            "role": { "type": "string", "minLength": 1 },
+            "artifact": { "type": "string", "minLength": 1 },
+            "schemaVersion": { "type": "string", "minLength": 1 },
+            "digest": { "$ref": "decision-event.v1.json#/$defs/digest" },
+            "inputHash": { "$ref": "decision-event.v1.json#/$defs/sha256" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "generation": { "$ref": "decision-event.v1.json#/$defs/sha256" },
+    "semantics": { "const": "optimistic-generation-guard" },
+    "privateMaterialization": {
+      "type": "object",
+      "required": ["artifact", "role", "portable", "authoritative", "digest"],
+      "properties": {
+        "artifact": { "type": "string", "minLength": 1 },
+        "role": { "const": "hash-bound-baseline-cache" },
+        "portable": { "const": false },
+        "authoritative": { "const": false },
+        "digest": { "$ref": "decision-event.v1.json#/$defs/digest" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

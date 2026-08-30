@@ -1,197 +1,202 @@
 # Proof-Carrying Change
 
-Status: architecture preparation on `feat/proof-carrying-change`; runtime not implemented
+Status: released in Workspai CLI v0.69.0
 
-Working product line:
+> Every change carries its intent, pinned architecture baseline, predicted
+> impact, authorized effects, actual architecture delta, independent
+> verification, and remaining uncertainty.
 
-> Every change carries its intent, predicted architecture impact, observed
-> effects, actual architecture delta, verification and remaining uncertainty.
+Proof-Carrying Change (PCC) is a product composition, not a second Graph or
+transaction system. Goal Pack owns intent and acceptance criteria. The
+extraction-safe Decisions kernel owns lifecycle, causal ordering, authorization,
+effect receipts, verification receipts, resume, and the tamper-evident ledger.
+Model and Graph own architecture truth. Workspace Verify and domain verifiers
+own verdicts. The CLI composes references to those owners into one capsule.
 
-## Decision: product composition, not a new package
+## Quickstart
 
-Proof-Carrying Change is a CLI product capability composed from existing
-authoritative domains. It does not introduce `@workspai/change` or
-`@workspai/architecture-transaction`.
-
-| Concern | Authoritative owner | Proof-Carrying Change responsibility |
-| --- | --- | --- |
-| Intent, scope and acceptance criteria | Goal Pack | Reference the immutable goal and its fingerprint. |
-| Transaction identity, generation guards, effects, receipts, resume and ledger | Decisions | Present one change-oriented projection over the same transaction. |
-| Facts, relations, proof, overlays and semantic overlap | Graph | Request predicted/actual overlays and conflict queries. |
-| Stable system snapshot and capabilities | Model | Pin and reference the exact baseline generation. |
-| Impact and required verification | Impact / owning domain | Preserve results and limitations; do not recompute them. |
-| Verification verdict and evidence | Verify / domain verifier | Admit exact receipts against the post-change target. |
-| Product orchestration and UX | Workspai CLI | Resolve context, invoke owners, write the capsule index and render status. |
-| Agent/MCP/IDE rendering | Agents / MCP / extension | Consume the same artifacts without changing their meaning. |
-
-Creating another transaction package would duplicate Decisions lifecycle and
-ledger authority. Creating another graph package would duplicate overlay and
-semantic relation authority. The CLI is the correct composition point.
-
-## User outcome
-
-An agent or developer can begin a scoped change against an exact architecture
-generation, state the expected architecture delta, perform work through normal
-tools, and finish with a portable capsule that another process can validate
-without trusting chat history.
-
-Candidate command surface (not yet registered):
+Start from a current adopted project or workspace:
 
 ```bash
-workspai change begin --goal "rename order.created to order.placed" \
-  --scope project:orders --json
-workspai change predict --change <change-id> --from patch.diff --json
-workspai change status --change <change-id> --json
+# 1. Create an immutable Goal Pack.
+workspai goal "Improve retry behavior without breaking clients" --json
+
+# 2. Pin that Goal and the exact Model/Graph/input generation.
+workspai change begin --json
+
+# Discover resumable and sealed changes without scanning directories.
+workspai change list --json
+
+# 3. Optionally attach an explicit prediction. It is never proof.
+workspai change predict --change <change-id> --file prediction.json --json
+
+# 4. A human grants only the effect classes required by the change.
+workspai change authorize --change <change-id> \
+  --effects filesystem,command --granted-by maintainer --json
+
+# 5. An agent, extension, or CLI tool records every observed effect.
+workspai change effect record --change <change-id> \
+  --file effect-receipt.json --json
+
+# 6. Rebuild/re-observe architecture and run independent verification.
 workspai change verify --change <change-id> --strict --json
-workspai change explain --change <change-id> --json
-workspai change abort --change <change-id> --reason "superseded" --json
+
+# 7. Validate or export the sealed manifest.
+workspai change capsule validate --change <change-id> --json
+workspai change capsule export --change <change-id> \
+  --output .workspai/exports/<change-id>.json --json
 ```
 
-No command is added until its contract, failure states, help, JSON behavior and
-process integration tests are ready. Documentation must not advertise this
-candidate surface as released.
+For Goals with additional release, security, or coverage criteria, `change
+verify` first records canonical Workspace Verify and the actual Graph overlay.
+The owning domain/CI adapter can then admit an exact-generation receipt:
 
-## Architecture flow
-
-```text
-Goal Pack + resolved Context
-  -> begin Decision Transaction
-  -> pin Graph/Model/content/contract/policy/evidence generations
-  -> Architecture Lease projection
-  -> predicted non-canonical Graph overlay
-  -> admitted file/command/external effects and receipts
-  -> rebuild/re-observe canonical owners
-  -> actual Graph overlay from pinned base to observed head
-  -> compare prediction, actual delta, scope and required verification
-  -> admit verification receipts
-  -> Proof-Carrying Change Capsule projection
+```bash
+workspai change verification record --change <change-id> \
+  --file verification-receipt.json --json
 ```
 
-### Architecture Lease
+If a transaction is blocked, it remains durable. A human may resume it into an
+explicit state; history is never erased:
 
-The lease is an optimistic generation guard and user-facing projection over one
-Decision Transaction. It does not lock Git, files, Graph or other agents. It
-pins labeled identities for:
+```bash
+workspai change resume --change <change-id> --to authorized \
+  --reason "Add receipts for observed generated files" --json
+```
 
-- workspace/project scope and Goal Pack fingerprint;
-- Git/content identity and dirty/untracked state classification;
-- Model and Graph schema, generation and artifact digest;
-- contract, policy and evidence generations;
-- capability/claim envelope and known unsupported areas.
+## Ownership and invariants
 
-Before effect admission and final verification, owners are resolved again. A
-changed relevant generation yields `rebase-required`; it never silently renews
-the baseline. Unrelated changes may be admitted only when Graph/Context can
-prove disjointness under the active comparison profile. Unknown is not disjoint.
+| Concern                          | Owner                              | PCC behavior                                                                |
+| -------------------------------- | ---------------------------------- | --------------------------------------------------------------------------- |
+| Intent, scope, success criteria  | Goal Pack                          | References the immutable Goal and criterion IDs.                            |
+| State, ledger, effects, receipts | Decisions kernel                   | Uses one digest-linked event stream and derived projection.                 |
+| Architecture baseline and delta  | Model / Graph                      | Pins exact hashes and reuses `workspace-knowledge-graph-change-overlay.v1`. |
+| Verification                     | Workspace Verify / domain verifier | Admits only receipts bound to the current Model, Graph, and effect head.    |
+| Product view                     | CLI / IDE / CI                     | Consumes the same capsule without redefining truth.                         |
 
-### Prediction
+The runtime enforces these rules:
 
-Prediction is a proposed, non-canonical overlay. It may be authored explicitly
-or derived from an isolated patch simulation when that provider exists. It must
-declare provider/profile version, inputs, confidence, unsupported facts and
-expected additions/removals/changes for entities, relations, contracts,
-projects, artifacts and required verification.
+- prediction is `nonCanonical: true` and `proofEligible: false`;
+- authorization names allowed effect classes before receipts are admitted;
+- receipt idempotency keys cannot be reused;
+- verification binds the exact current Model, Graph, and effect-head digest;
+- observed changed artifacts must be covered by successful effect receipts;
+- a changed Graph with no effect receipt blocks verification;
+- every required Goal criterion needs a latest passing receipt before commit;
+- failed or uncertain effects block the transaction;
+- terminal transactions cannot accept later events;
+- optimistic compare-and-append prevents concurrent history forks;
+- capsule validation replays the event chain and checks local reference digests.
 
-A prediction never mutates canonical Graph/Model state and cannot corroborate
-its own eventual result.
+## Architecture lease
 
-### Observed effects
+`change begin` requires a fresh Goal Pack and a current canonical Graph. It
+creates `workspai.architecture-change-lease.v1`, binding Goal ID, workspace,
+scope, structural Model hash, canonical Graph hash, live Graph input
+fingerprint, and a derived generation ID.
 
-There is no new `observed-effect` truth store. File, command and external effects
-are Decision Events and Effect Receipts. The change directory stores references
-and content digests or a bounded projection, not a second causal ledger.
+Before prediction or authorization, the generation must still match. The lease
+is an optimistic guard, not a filesystem or Git lock.
 
-### Actual overlay and surprise analysis
+Because the canonical Graph path is renewed in place, begin also writes a
+private, non-authoritative, hash-bound baseline materialization. It exists only
+to derive the later base-to-head overlay. The capsule cites the canonical
+baseline identity, not the cache as architecture truth.
 
-After normal Graph/Model renewal, the existing
-`workspace-knowledge-graph-change-overlay.v1` compares the pinned base and
-observed head. A derived surprise report compares predicted versus actual sets:
+## Typed receipts
 
-- unexpected actual changes;
-- predicted changes not observed;
-- missed impacted consumers;
-- scope escapes;
-- verification omissions;
-- stale or incomparable owner generations;
-- unsupported/unknown comparison zones.
+An effect receipt includes an ID, effect class, result, summary, observation
+time, idempotency key, optional command argv, and artifact references. Artifact
+references use labeled digest semantics:
 
-`architectureFidelity` is a profile-versioned analytical score. Its report must
-expose drivers, denominators, weights, missing inputs and comparability limits.
-It cannot authorize commit/release or rank agents across different profiles,
-repositories or evidence coverage.
+- `canonical-json-v1` for JSON evidence;
+- `raw-bytes-v1` for source or command-output files;
+- `workspace-model-structural-v1` for canonical Model identity.
 
-### Semantic concurrency
-
-Active changes may be compared through Graph impact cones. Shared entities,
-contracts or proof-backed relations can produce `semantic-overlap` even when Git
-reports no textual conflict. MVP output is advisory unless the workspace policy
-explicitly promotes a supported conflict class to a transaction precondition.
-Unknown graph coverage cannot produce `no-conflict`.
+Verification receipts add a Goal criterion ID and an exact target. Domain
+receipts are admitted only after `change verify` has re-observed the Graph and
+recorded passing Workspace Verify evidence.
 
 ## Artifact layout
 
 ```text
+.workspai/decisions/<change-id>/
+  events.jsonl              # authoritative causal ledger
+  transaction.json          # replay-derived projection
+  checkpoint.json           # generation and head integrity checkpoint
+
 .workspai/changes/<change-id>/
   lease.json
-  predicted-overlay.json
+  predicted-overlay.json    # optional, noncanonical
   actual-overlay.json
-  verification.json
   architecture-surprises.json
   capsule.json
+  private/baseline-graph.json
 ```
 
-`capsule.json` is the portable hash-index and summary. Goal Pack, Decision
-ledger/events/effect receipts, Graph/Model artifacts and verification evidence
-remain owned at their canonical locations and are referenced by logical path,
-schema version, generation and digest. The capsule never copies secrets, raw
-prompts, unrestricted command output or absolute machine paths.
+`capsule.json` is a portable hash-index and assurance summary. It does not copy
+the Goal, event ledger, Model, Graph, or verification reports. Absolute paths,
+secrets, prompts, and unbounded command output are not capsule content.
+Use the schema-validated `change list --json` projection for IDE and automation
+discovery; filesystem directory order is never lifecycle truth.
 
-## Derived product phase
+Every CLI operation also emits a Live activity observation correlated by the
+change ID, and every PCC artifact write flows through the shared artifact
+publisher. Live remains execution telemetry rather than verification proof;
+the capsule references Decision, Graph, effect, and verifier evidence instead
+of upgrading an observed activity event into an assurance claim.
 
-The UI may render `draft`, `prediction-required`, `ready-for-effects`,
-`rebase-required`, `verifying`, `verified`, `blocked` or `aborted`. These are a
-deterministic projection of Goal, Decision, generation and verification owner
-states—not a second mutable state machine.
+Read-only MCP consumers receive the same ledger-derived projections through
+`listProofCarryingChanges`, `getProofCarryingChange`, and
+`validateProofCarryingChange`. No PCC mutation tool is exposed over MCP; effect
+authorization and execution remain behind explicit CLI or IDE approval
+boundaries.
 
-## Safety and failure rules
+CI can fail closed on capsule integrity and assurance without parsing terminal
+text:
 
-- stale baseline fails closed before effect admission and verification;
-- unsupported prediction is explicit and may continue only under policy;
-- interrupted or uncertain effects resume through the same Decision Transaction;
-- capsule publication is atomic and cannot precede owner artifact validation;
-- missing verification remains unverified, never inferred from exit code/text;
-- rollback/compensation is a new authorized effect and does not erase history;
-- prediction and capsule artifacts cannot re-enter Graph as independent proof;
-- concurrent writers use Decisions compare-and-append plus artifact locks;
-- source paths are relative and containment-checked across symlinks/platforms.
+```bash
+workspai change capsule validate --change "$CHANGE_ID" --json
+workspai change status --change "$CHANGE_ID" --json
+```
 
-## MVP boundary
+An invalid capsule exits non-zero. Policy automation should additionally
+require `capsule.status == "sealed"` when a sealed change is a merge or release
+condition.
 
-The first useful slice is intentionally narrow:
+## Decision states
 
-1. begin from an existing/new Goal Pack and pin current generations;
-2. accept an explicit predicted overlay (no AI requirement);
-3. detect stale base before verification;
-4. build actual overlay with the existing Graph overlay engine;
-5. emit explainable surprise analysis without a marketing score claim;
-6. admit existing workspace verification evidence;
-7. publish and independently validate a capsule.
+The Decisions owner derives these states from events:
 
-Daemon coordination, immutable historical Graph query, automated patch
-simulation, multi-agent enforcement, PR checks, MCP tools and leaderboards are
-later stages. They are not prerequisites for the honest MVP.
+```text
+draft -> scoped -> evidence-ready -> authorized -> executing -> verifying
+                                  \-> blocked/awaiting-human -> resumed
+                                                    verifying -> committed
+any nonterminal state -> aborted/rejected/superseded
+```
 
-## Entry gates for implementation
+The product-facing capsule reports `open`, `blocked`, `verified`, `sealed`, or
+`aborted`. A sealed capsule means all immutable Goal criteria have passing
+post-effect receipts. It does not mean unsupported external claims became true.
 
-- accept the ownership and no-new-package decision;
-- lock candidate contract names and reuse map;
-- inventory current Goal/Graph/Impact/Verify/repair transaction fields;
-- choose the Decisions integration epoch without creating a temporary second ledger;
-- define fixtures for stale base, partial graph, scope escape, semantic overlap,
-  uncertain effect, failed verification and successful capsule validation;
-- approve security/privacy and performance budgets;
-- implement each stage with schema/type/validator/tests/docs in the same change.
+## Prediction versus observation
 
-See [Proof-Carrying Change contract plan](./contracts/PROOF_CARRYING_CHANGE_CONTRACT_PLAN.md)
-and the machine-readable
-[implementation manifest](./proof-carrying-change.implementation.v1.json).
+The prediction lists expected add/remove/change operations for entities,
+relations, proofs, or artifacts. `change verify` derives the actual overlay from
+the pinned Graph and fresh canonical head, then emits matched operations,
+unpredicted actual operations, predicted operations not observed, and an honest
+`exact`, `within-expectation`, `surprising`, or `no-prediction` verdict.
+
+Surprise analysis is explanatory evidence. It is not self-corroborating proof
+and cannot replace verification.
+
+## Deferred work
+
+The next layer is IDE timeline/Graph overlay and Repair/Studio transaction
+adapters. Rich hosted PR annotations remain separate from the machine-readable
+CI gate above. Semantic multi-change overlap, immutable historical Graph
+queries, isolated patch simulation, and remote attestation remain separate
+follow-up capabilities. No current command claims those behaviors.
+
+See the [contract reference](./contracts/PROOF_CARRYING_CHANGE_CONTRACT_PLAN.md)
+and [implementation manifest](./proof-carrying-change.implementation.v1.json).

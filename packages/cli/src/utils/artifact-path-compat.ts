@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { copyFile, link, open } from 'node:fs/promises';
 import fsExtra from 'fs-extra';
 import { assertWorkspaceArtifactContract } from '../contracts/artifact-contract-registry.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 import { toLegacyRapidkitArtifactPath, toWorkspaiArtifactPath } from './workspace-paths.js';
 
 function assertWorkspaceContainedPath(workspacePath: string, relativePath: string): string {
@@ -22,6 +23,125 @@ function assertWorkspaceContainedPath(workspacePath: string, relativePath: strin
 
 export function resolveWorkspaceArtifactPath(workspacePath: string, relativePath: string): string {
   return assertWorkspaceContainedPath(workspacePath, toWorkspaiArtifactPath(relativePath));
+}
+
+/**
+ * Resolve an existing artifact only after its real path and filesystem kind
+ * have been proven to remain inside the canonical workspace root.
+ */
+export async function resolveContainedWorkspaceArtifactPath(
+  workspacePath: string,
+  relativePath: string,
+  kind: 'file' | 'directory' = 'file'
+): Promise<string | null> {
+  const root = path.resolve(workspacePath);
+  const target = resolveWorkspaceArtifactPath(root, relativePath);
+  if (!(await fsExtra.pathExists(root)) || !(await fsExtra.pathExists(target))) {
+    return null;
+  }
+  const [realRoot, realTarget, stat] = await Promise.all([
+    fsExtra.realpath(root),
+    fsExtra.realpath(target),
+    fsExtra.stat(target),
+  ]);
+  const relative = path.relative(realRoot, realTarget);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`Workspace artifact resolves outside workspace root: ${relativePath}`);
+  }
+  const expectedKind = kind === 'file' ? stat.isFile() : stat.isDirectory();
+  if (!expectedKind) {
+    throw new Error(`Workspace artifact is not a regular ${kind}: ${relativePath}`);
+  }
+  return realTarget;
+}
+
+/**
+ * Resolve a portable evidence path from either the workspace itself or one of
+ * the adopted external project roots explicitly declared by the canonical
+ * workspace contract. External paths never come from the caller: the logical
+ * `external/<project>/...` prefix is mapped through `relativePath` and the
+ * contract-owned absolute root, then realpath containment and regular-file
+ * checks are applied before the path is returned.
+ */
+export async function resolvePortableWorkspaceEvidencePath(
+  workspacePath: string,
+  artifact: string
+): Promise<string | null> {
+  const normalizedArtifact = artifact.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalizedArtifact || path.isAbsolute(normalizedArtifact)) return null;
+
+  const local = await resolveContainedWorkspaceArtifactPath(workspacePath, normalizedArtifact);
+  if (local) return local;
+
+  const canonicalContractPath = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
+  for (const relativeContractPath of [
+    canonicalContractPath,
+    toLegacyRapidkitArtifactPath(canonicalContractPath),
+  ]) {
+    const contractPath = await resolveContainedWorkspaceArtifactPath(
+      workspacePath,
+      relativeContractPath
+    );
+    if (!contractPath) continue;
+    let projects: Array<{ relativePath?: unknown; externalPath?: unknown }> = [];
+    try {
+      const contract = (await fsExtra.readJson(contractPath)) as {
+        projects?: Array<{ relativePath?: unknown; externalPath?: unknown }>;
+      };
+      projects = contract.projects ?? [];
+    } catch {
+      return null;
+    }
+
+    const candidates = projects
+      .filter(
+        (project): project is { relativePath: string; externalPath: string } =>
+          typeof project.relativePath === 'string' &&
+          typeof project.externalPath === 'string' &&
+          path.isAbsolute(project.externalPath)
+      )
+      .map((project) => ({
+        prefix: project.relativePath.replace(/\\/g, '/').replace(/\/$/, ''),
+        root: path.resolve(project.externalPath),
+      }))
+      .filter(({ prefix }) => normalizedArtifact.startsWith(`${prefix}/`))
+      .sort((left, right) => right.prefix.length - left.prefix.length);
+
+    for (const candidate of candidates) {
+      const relativeArtifact = normalizedArtifact.slice(candidate.prefix.length + 1);
+      const target = path.resolve(candidate.root, relativeArtifact);
+      const lexicalRelative = path.relative(candidate.root, target);
+      if (
+        !lexicalRelative ||
+        lexicalRelative === '..' ||
+        lexicalRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(lexicalRelative) ||
+        !(await fsExtra.pathExists(candidate.root)) ||
+        !(await fsExtra.pathExists(target))
+      ) {
+        continue;
+      }
+      const [realRoot, realTarget, stat] = await Promise.all([
+        fsExtra.realpath(candidate.root),
+        fsExtra.realpath(target),
+        fsExtra.stat(target),
+      ]);
+      const realRelative = path.relative(realRoot, realTarget);
+      if (
+        realRelative === '..' ||
+        realRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(realRelative)
+      ) {
+        throw new Error(`External evidence resolves outside its contracted root: ${artifact}`);
+      }
+      if (!stat.isFile()) {
+        throw new Error(`External evidence is not a regular file: ${artifact}`);
+      }
+      return realTarget;
+    }
+    return null;
+  }
+  return null;
 }
 
 export function resolveLegacyWorkspaceArtifactPath(

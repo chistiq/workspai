@@ -180,6 +180,7 @@ export type GoalPack = {
   commands: {
     refreshEvidence: 'workspai workspace intelligence run --for-agent generic --strict --json';
     inspectGraph: string;
+    beginChange: string;
     planVerifiedGoal?: string;
     proposeRepair: 'workspai workspace repair propose --file <proposal.json> --json';
   };
@@ -248,6 +249,8 @@ export type GoalIndexEntry = {
   verifiedGoalId?: string;
   repairTransactionId?: string;
   repairTransactionIds?: string[];
+  changeTransactionId?: string;
+  changeTransactionIds?: string[];
   verificationReceipt?: {
     verifiedGoalId: string;
     attempt: number;
@@ -330,6 +333,16 @@ export function assertGoalIndexSemantics(index: GoalIndex): void {
           entry.repairTransactionIds.at(-1) !== entry.repairTransactionId)
       ) {
         throw new Error(`Goal index repair transaction history is inconsistent: ${entry.id}`);
+      }
+    }
+    if (entry.changeTransactionIds) {
+      if (
+        entry.changeTransactionIds.length > 25 ||
+        new Set(entry.changeTransactionIds).size !== entry.changeTransactionIds.length ||
+        (entry.changeTransactionId &&
+          entry.changeTransactionIds.at(-1) !== entry.changeTransactionId)
+      ) {
+        throw new Error(`Goal index change transaction history is inconsistent: ${entry.id}`);
       }
     }
     if (
