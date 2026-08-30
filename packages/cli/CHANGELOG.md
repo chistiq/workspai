@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-08-30
+
+### Added
+
+- Added the Proof-Carrying Change lifecycle, including Goal-bound architecture
+  leases, noncanonical predictions, bounded effect authorization, typed effect
+  and verification receipts, fresh Graph observation, surprise reports, and
+  validated portable capsules.
+- Added an extraction-safe Decisions kernel with digest-linked events,
+  replay-derived transaction projections, optimistic concurrency guards,
+  checkpoints, durable blocked states, explicit resume, and evidence-preserving
+  abort behavior.
+- Added the `change begin`, `list`, `predict`, `authorize`, `resume`, `effect
+  record`, `verification record`, `status`, `explain`, `verify`, `abort`, and
+  `capsule validate|export` command surfaces with versioned JSON contracts.
+- Added read-only MCP discovery, inspection, and validation tools for
+  Proof-Carrying Changes without exposing mutation or authorization over MCP.
+
+### Changed
+
+- Made Goal lifecycle verification accept a current sealed change capsule as a
+  sanctioned architecture transition while preserving existing Repair and
+  verified-Goal paths.
+- Made generated agent grounding require a Goal-bound change before source
+  mutation and distinguish prediction, observed effects, and independent proof.
+- Made Graph change overlays report only artifacts backed by actual proof
+  deltas, preventing unchanged shared manifests from appearing as mutations.
+- Made polyglot runtime-unit identities canonical for nested manifests and made
+  Workspace Run preserve the authored project name in Fleet and Live evidence.
+
+### Fixed
+
+- Prevented generic relationship words such as `connect`, `application`, and
+  `integration` from displacing the named subject of a bounded Graph query.
+- Prevented capsule evidence from escaping the workspace or a contract-declared
+  linked project through absolute paths, symlinks, or non-file targets.
+- Preserved the real command exit code when the npm-owned CLI path completes,
+  allowing CI and automation to fail closed on PCC and other command errors.
+
 ## [0.68.0] - 2026-08-29
 
 ### Added

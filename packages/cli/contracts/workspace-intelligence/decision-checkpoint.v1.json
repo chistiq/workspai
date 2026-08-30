@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/decision-checkpoint.v1.json",
+  "title": "Workspai Decision Checkpoint",
+  "type": "object",
+  "required": ["schemaVersion", "transactionId", "generatedAt", "generation", "eventCount", "eventHeadDigest", "state", "transactionDigest"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.decision-checkpoint.v1" },
+    "transactionId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "generation": { "type": "integer", "minimum": 1 },
+    "eventCount": { "type": "integer", "minimum": 1 },
+    "eventHeadDigest": { "$ref": "decision-event.v1.json#/$defs/sha256" },
+    "state": { "enum": ["draft", "scoped", "evidence-ready", "authorized", "executing", "verifying", "awaiting-human", "blocked", "committed", "rejected", "aborted", "superseded"] },
+    "transactionDigest": { "$ref": "decision-event.v1.json#/$defs/sha256" }
+  },
+  "additionalProperties": false
+}

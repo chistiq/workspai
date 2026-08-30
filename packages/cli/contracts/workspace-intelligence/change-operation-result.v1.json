@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/change-operation-result.v1.json",
+  "title": "Workspai Change Operation Result",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "operation",
+    "changeId",
+    "state",
+    "capsule",
+    "artifacts",
+    "nextActions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspai.change-operation-result.v1" },
+    "operation": {
+      "enum": [
+        "begin",
+        "predict",
+        "authorize",
+        "resume",
+        "effect-record",
+        "verification-record",
+        "status",
+        "verify",
+        "explain",
+        "abort",
+        "capsule-validate",
+        "capsule-export"
+      ]
+    },
+    "changeId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "state": { "type": "string", "minLength": 1 },
+    "capsule": { "$ref": "proof-carrying-change-capsule.v1.json" },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "null"] }
+    },
+    "nextActions": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "additionalProperties": false
+}

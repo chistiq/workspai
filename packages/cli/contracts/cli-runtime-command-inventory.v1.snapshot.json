@@ -284,6 +284,464 @@
     },
     {
       "path": [
+        "change"
+      ],
+      "command": "change",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Create and verify tamper-evident, architecture-aware change capsules",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "abort"
+      ],
+      "command": "abort",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Terminate an open change without deleting evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--reason <text>",
+          "attributeName": "reason"
+        },
+        {
+          "flags": "--actor <identity>",
+          "attributeName": "actor"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "authorize"
+      ],
+      "command": "authorize",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Grant bounded effect capabilities",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--effects <classes>",
+          "attributeName": "effects"
+        },
+        {
+          "flags": "--granted-by <identity>",
+          "attributeName": "grantedBy"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "begin"
+      ],
+      "command": "begin",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Pin an active Goal and architecture baseline",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--goal <goal-id>",
+          "attributeName": "goal"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "capsule"
+      ],
+      "command": "capsule",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Validate or export a change capsule",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "capsule",
+        "export"
+      ],
+      "command": "export",
+      "parent": "change capsule",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Export a validated portable capsule manifest",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--output <path>",
+          "attributeName": "output"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "capsule",
+        "validate"
+      ],
+      "command": "validate",
+      "parent": "change capsule",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Validate capsule and referenced local evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "effect"
+      ],
+      "command": "effect",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Record typed observed effects",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "effect",
+        "record"
+      ],
+      "command": "record",
+      "parent": "change effect",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Append an idempotent effect receipt",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--file <receipt.json>",
+          "attributeName": "file"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "explain"
+      ],
+      "command": "explain",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Explain proof, uncertainty, and next actions",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "list"
+      ],
+      "command": "list",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "List discoverable change capsules and integrity",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "predict"
+      ],
+      "command": "predict",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Attach a noncanonical architecture prediction",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--file <prediction.json>",
+          "attributeName": "file"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "resume"
+      ],
+      "command": "resume",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Resume a blocked transaction with human intent",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--to <state>",
+          "attributeName": "to"
+        },
+        {
+          "flags": "--reason <text>",
+          "attributeName": "reason"
+        },
+        {
+          "flags": "--actor <identity>",
+          "attributeName": "actor"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "status"
+      ],
+      "command": "status",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Inspect the derived transaction and assurance state",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "verification"
+      ],
+      "command": "verification",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Record independent Goal-criterion verification",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "verification",
+        "record"
+      ],
+      "command": "record",
+      "parent": "change verification",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Append an exact-generation verification receipt",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--file <receipt.json>",
+          "attributeName": "file"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "verify"
+      ],
+      "command": "verify",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Re-observe architecture and verify exact effects",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--no-refresh",
+          "attributeName": "refresh"
+        }
+      ]
+    },
+    {
+      "path": [
         "commands"
       ],
       "command": "commands",
@@ -1816,6 +2274,7 @@
     "autopilot",
     "bootstrap",
     "cache",
+    "change",
     "commands",
     "config",
     "create",

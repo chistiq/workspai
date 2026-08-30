@@ -171,6 +171,61 @@
       "contractPath": "contracts/workspace-intelligence/goal-lifecycle-result.v1.json",
       "publication": "json-schema"
     },
+    "decisionEvent": {
+      "schemaVersion": "workspai.decision-event.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-event.v1.json",
+      "publication": "json-schema"
+    },
+    "decisionTransaction": {
+      "schemaVersion": "workspai.decision-transaction.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-transaction.v1.json",
+      "publication": "json-schema"
+    },
+    "decisionCheckpoint": {
+      "schemaVersion": "workspai.decision-checkpoint.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-checkpoint.v1.json",
+      "publication": "json-schema"
+    },
+    "changeOperationResult": {
+      "schemaVersion": "workspai.change-operation-result.v1",
+      "contractPath": "contracts/workspace-intelligence/change-operation-result.v1.json",
+      "publication": "json-schema"
+    },
+    "architectureChangeLease": {
+      "schemaVersion": "workspai.architecture-change-lease.v1",
+      "contractPath": "contracts/workspace-intelligence/architecture-change-lease.v1.json",
+      "publication": "json-schema"
+    },
+    "predictedArchitectureChange": {
+      "schemaVersion": "workspai.predicted-architecture-change.v1",
+      "contractPath": "contracts/workspace-intelligence/predicted-architecture-change.v1.json",
+      "publication": "json-schema"
+    },
+    "architectureSurpriseReport": {
+      "schemaVersion": "workspai.architecture-surprise-report.v1",
+      "contractPath": "contracts/workspace-intelligence/architecture-surprise-report.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeCapsule": {
+      "schemaVersion": "workspai.proof-carrying-change-capsule.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeList": {
+      "schemaVersion": "workspai.proof-carrying-change-list.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-list.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeCapsuleValidation": {
+      "schemaVersion": "workspai.proof-carrying-change-capsule-validation.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-capsule-validation.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeCapsuleExport": {
+      "schemaVersion": "workspai.proof-carrying-change-capsule-export.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-capsule-export.v1.json",
+      "publication": "json-schema"
+    },
     "workspaceIntelligenceArchitecture": {
       "schemaVersion": "workspai-workspace-intelligence-architecture-v1",
       "contractPath": "contracts/workspace-intelligence-architecture.v1.json",

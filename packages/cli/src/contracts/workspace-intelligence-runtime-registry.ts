@@ -11,6 +11,17 @@ import {
   DOCTOR_CAPABILITIES_SCHEMA_VERSION,
   DOCTOR_VALIDATION_SCHEMA_VERSION,
 } from './doctor-capabilities-contract.js';
+import {
+  DECISION_CHECKPOINT_SCHEMA_VERSION,
+  DECISION_TRANSACTION_SCHEMA_VERSION,
+} from '../decisions/decision-contract.js';
+import {
+  ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION,
+  ARCHITECTURE_SURPRISE_REPORT_SCHEMA_VERSION,
+  PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_CAPSULE_SCHEMA_VERSION,
+} from './proof-carrying-change-contract.js';
+import { WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION } from './workspace-knowledge-graph-change-overlay-contract.js';
 
 export const WORKSPACE_INTELLIGENCE_ARTIFACTS = {
   model: '.workspai/reports/workspace-model.json',
@@ -106,6 +117,49 @@ export type WorkspaceSupplementalArtifactContract = {
  * this table directly; producer paths must never be re-declared elsewhere.
  */
 export const WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS = {
+  decisionTransaction: {
+    artifactPath: '.workspai/decisions/change-id/transaction.json',
+    schemaVersion: DECISION_TRANSACTION_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/decision-transaction.v1.json',
+    producerCommands: [['change']],
+  },
+  decisionCheckpoint: {
+    artifactPath: '.workspai/decisions/change-id/checkpoint.json',
+    schemaVersion: DECISION_CHECKPOINT_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/decision-checkpoint.v1.json',
+    producerCommands: [['change']],
+  },
+  architectureChangeLease: {
+    artifactPath: '.workspai/changes/change-id/lease.json',
+    schemaVersion: ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/architecture-change-lease.v1.json',
+    producerCommands: [['change', 'begin']],
+  },
+  predictedArchitectureChange: {
+    artifactPath: '.workspai/changes/change-id/predicted-overlay.json',
+    schemaVersion: PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/predicted-architecture-change.v1.json',
+    producerCommands: [['change', 'predict']],
+  },
+  actualArchitectureChange: {
+    artifactPath: '.workspai/changes/change-id/actual-overlay.json',
+    schemaVersion: WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION,
+    contractPath:
+      'contracts/workspace-intelligence/workspace-knowledge-graph-change-overlay.v1.json',
+    producerCommands: [['change', 'verify']],
+  },
+  architectureSurpriseReport: {
+    artifactPath: '.workspai/changes/change-id/architecture-surprises.json',
+    schemaVersion: ARCHITECTURE_SURPRISE_REPORT_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/architecture-surprise-report.v1.json',
+    producerCommands: [['change', 'verify']],
+  },
+  proofCarryingChangeCapsule: {
+    artifactPath: '.workspai/changes/change-id/capsule.json',
+    schemaVersion: PROOF_CARRYING_CHANGE_CAPSULE_SCHEMA_VERSION,
+    contractPath: 'contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json',
+    producerCommands: [['change']],
+  },
   goalIndex: {
     artifactPath: '.workspai/goals/index.json',
     schemaVersion: 'workspai.goal-index.v1',

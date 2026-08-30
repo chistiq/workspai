@@ -64,6 +64,17 @@ npx workspai readiness [--workspace <path>] [--json] [--strict] [--skip-verify]
 npx workspai autopilot release [--mode <audit|safe-fix|enforce>] [--json] [--output <file>] [--since <ref>] [--parallel] [--max-workers <n>]
 npx workspai goal <intent> [--workspace <path>] [--scope <workspace|project:name|projects:a,b>] [--runtime <runtime>] [--for-agent <generic|claude|codex>] [--max-attempts <1-25>] [--refresh] [--dry-run] [--json]
 npx workspai goal <--status [goal-id]|--list|--activate <goal-id>|--cancel <goal-id>|--prepare <goal-id>|--verify <goal-id>> [--workspace <path>] [--no-run] [--json]
+npx workspai change begin [--goal <goal-id>] [--workspace <path>] [--json]
+npx workspai change list [--workspace <path>] [--json]
+npx workspai change predict --change <change-id> --file <prediction.json> [--workspace <path>] [--json]
+npx workspai change authorize --change <change-id> --effects <classes> [--granted-by <identity>] [--workspace <path>] [--json]
+npx workspai change effect record --change <change-id> --file <effect-receipt.json> [--workspace <path>] [--json]
+npx workspai change verify --change <change-id> [--strict] [--no-refresh] [--workspace <path>] [--json]
+npx workspai change verification record --change <change-id> --file <verification-receipt.json> [--workspace <path>] [--json]
+npx workspai change <status|explain> --change <change-id> [--workspace <path>] [--json]
+npx workspai change resume --change <change-id> --to <authorized|executing|verifying> --reason <text> [--actor <identity>] [--json]
+npx workspai change abort --change <change-id> --reason <text> [--actor <identity>] [--json]
+npx workspai change capsule <validate|export> --change <change-id> [--output <path>] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
 ```
 
@@ -209,6 +220,18 @@ portable agent handoff, and active-goal index. Use `goal --status`, `--list`,
 claim verification. Lifecycle operations are mutually exclusive, cannot be
 combined with an intent or planning-only flags, and `--no-run` is valid only
 with `--verify`. See [Goal Packs](./goal-packs.md).
+
+`change` turns an active Goal into a Proof-Carrying Change. `list` is the
+versioned discovery surface for open, blocked, sealed, aborted, and invalid
+capsules. `begin` pins the
+exact Model, Graph, and live-input generation. `predict` is explicitly
+noncanonical and never counts as proof. A human uses `authorize` to grant
+bounded effect classes; agents and tools then append typed, idempotent effect
+receipts. `verify` re-observes the canonical Graph, derives the actual overlay,
+reports prediction surprises, and records Workspace Verify against the exact
+post-effect generation. Additional Goal-domain receipts enter through
+`verification record`. Only complete, passing criteria can seal a capsule. See
+[Proof-Carrying Change](./proof-carrying-change.md).
 
 Coverage Goals are runtime-bound. Interactive terminals select from the
 canonical Workspace Model when the chosen scope has multiple runtimes;

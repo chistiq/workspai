@@ -1505,12 +1505,18 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   const executionRows = new Map<string, ProjectExecutionResult>();
   for (const projectPath of projectPaths) {
     const relativePath = normalizePathForMatch(path.relative(workspacePath, projectPath));
+    const declaredProjectName = await readProjectDeclaredName(projectPath);
     const insideScope = scopedProjectPaths.includes(projectPath);
     const selected = insideScope && affectedProjects.has(projectPath);
     executionRows.set(projectPath, {
       path: projectPath,
       relativePath,
-      projectName: path.basename(relativePath) || path.basename(projectPath),
+      // Linked and snapshot-qualified projects often have transport-specific
+      // folder names. Preserve the authored/adopted identity in fleet evidence
+      // so Live, IDE, CI, and repair consumers do not expose `project-001` or a
+      // cache directory as the project name.
+      projectName:
+        declaredProjectName ?? (path.basename(relativePath) || path.basename(projectPath)),
       selected,
       affected: selected,
       status: 'skipped',

@@ -1724,6 +1724,59 @@ describe('workspace knowledge graph', () => {
     ).toBe(0);
   });
 
+  it('keeps named subjects ahead of generic relationship matches', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-generic-application-connection',
+        kind: 'file',
+        label: 'application/connection.ts',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:application/connection.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'generic-application-connection',
+        },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-zephyr-gate-bridge',
+        kind: 'module',
+        label: 'ZephyrGate connection bridge',
+        projectId: 'api',
+        identity: {
+          key: 'module:api:zephyr-gate-bridge',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'zephyr-gate-bridge',
+        },
+        attributes: {},
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'How does ZephyrGate connect to the application?',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('synthetic-zephyr-gate-bridge');
+    expect(
+      result.entities.some((entity) => entity.id === 'synthetic-generic-application-connection')
+    ).toBe(false);
+  });
+
   it('does not let a generic service intent outrank multi-term repository evidence', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -2962,6 +3015,42 @@ describe('workspace knowledge graph', () => {
       )
     );
     expect(validate(overlay), JSON.stringify(validate.errors)).toBe(true);
+  });
+
+  it('does not report unchanged manifests when a shared dependency gains a new proof', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-overlay-shared-proof-')
+    );
+    tempDirs.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, 'packages', 'existing', 'package.json'), {
+      name: '@example/existing',
+      dependencies: { zod: '^4.0.0' },
+    });
+    const input = {
+      workspacePath,
+      workspace: { name: 'shared-proof' },
+      projects: [{ id: 'platform', path: '.', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      source: modelSource(),
+    } as const;
+    const base = await buildWorkspaceKnowledgeGraph({ ...input, now: NOW });
+
+    await fsExtra.outputJson(path.join(workspacePath, 'packages', 'z-added', 'package.json'), {
+      name: '@example/added',
+      dependencies: { zod: '^4.0.0' },
+    });
+    const head = await buildWorkspaceKnowledgeGraph({
+      ...input,
+      now: new Date('2026-07-21T12:01:00.000Z'),
+    });
+    const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(base, head, NOW);
+
+    expect(overlay.changedArtifacts).toEqual(['platform/packages/z-added/package.json']);
+    expect(
+      overlay.entities.changed.some(
+        (change) => change.after?.label === 'zod' && change.changedFields.includes('proofIds')
+      )
+    ).toBe(true);
   });
 
   it('reuses unchanged project scopes while rescanning the changed project', async () => {

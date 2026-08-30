@@ -67,24 +67,31 @@ is not the exact current canonical projection.
 
 ## Governance evidence loop
 
-| Command                              | Primary artifact                                            | Schema version                              | JSON Schema                                                             |
-| ------------------------------------ | ----------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
-| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`              | `contracts/doctor-workspace-evidence.v1.json`                           |
-| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`                | `contracts/doctor-project-evidence.v1.json`                             |
-| `project coverage`                   | `.workspai/reports/project-test-coverage-last-run.json`     | `workspai.project-test-coverage.v1`         | `contracts/project-test-coverage.v1.json`                               |
-| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`                | `contracts/doctor-remediation-plan.v2.json`                             |
-| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1`             | `contracts/workspace-intelligence/doctor-fix-result.v1.json`            |
-| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`              | `contracts/artifact-remediation-plan.v1.json`                           |
-| `workspace repair *`                 | `.workspai/reports/workspace-repair-last-run.json`          | `workspai.workspace-repair-transaction.v1`  | `contracts/workspace-intelligence/workspace-repair-transaction.v1.json` |
-| `workspace repair capabilities`      | CLI capability output                                       | `workspai.workspace-repair-capabilities.v1` | `contracts/workspace-repair-capabilities.v1.json`                       |
-| `goal <intent>`                      | `.workspai/reports/goal-pack-last-run.json`                 | `workspai.goal-pack.v1`                     | `contracts/workspace-intelligence/goal-pack.v1.json`                    |
-| `goal <intent>` / lifecycle options  | `.workspai/goals/index.json`                                | `workspai.goal-index.v1`                    | `contracts/workspace-intelligence/goal-index.v1.json`                   |
-| `goal --status/--list/... --json`    | stdout                                                      | `workspai.goal-lifecycle-result.v1`         | `contracts/workspace-intelligence/goal-lifecycle-result.v1.json`        |
-| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`                       | `contracts/analyze-last-run.v1.json`                                    |
-| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`                      | `contracts/release-readiness.v1.json`                                   |
-| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`                      | `contracts/pipeline-last-run.v1.json`                                   |
-| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`                      | `contracts/autopilot-release.v1.json`                                   |
-|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)                       | `contracts/autopilot-release.v1.json`                                   |
+| Command                              | Primary artifact                                            | Schema version                                | JSON Schema                                                                         |
+| ------------------------------------ | ----------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`                | `contracts/doctor-workspace-evidence.v1.json`                                       |
+| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`                  | `contracts/doctor-project-evidence.v1.json`                                         |
+| `project coverage`                   | `.workspai/reports/project-test-coverage-last-run.json`     | `workspai.project-test-coverage.v1`           | `contracts/project-test-coverage.v1.json`                                           |
+| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`                  | `contracts/doctor-remediation-plan.v2.json`                                         |
+| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1`               | `contracts/workspace-intelligence/doctor-fix-result.v1.json`                        |
+| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`                | `contracts/artifact-remediation-plan.v1.json`                                       |
+| `workspace repair *`                 | `.workspai/reports/workspace-repair-last-run.json`          | `workspai.workspace-repair-transaction.v1`    | `contracts/workspace-intelligence/workspace-repair-transaction.v1.json`             |
+| `workspace repair capabilities`      | CLI capability output                                       | `workspai.workspace-repair-capabilities.v1`   | `contracts/workspace-repair-capabilities.v1.json`                                   |
+| `goal <intent>`                      | `.workspai/reports/goal-pack-last-run.json`                 | `workspai.goal-pack.v1`                       | `contracts/workspace-intelligence/goal-pack.v1.json`                                |
+| `goal <intent>` / lifecycle options  | `.workspai/goals/index.json`                                | `workspai.goal-index.v1`                      | `contracts/workspace-intelligence/goal-index.v1.json`                               |
+| `goal --status/--list/... --json`    | stdout                                                      | `workspai.goal-lifecycle-result.v1`           | `contracts/workspace-intelligence/goal-lifecycle-result.v1.json`                    |
+| `change begin`                       | `.workspai/changes/<change-id>/lease.json`                  | `workspai.architecture-change-lease.v1`       | `contracts/workspace-intelligence/architecture-change-lease.v1.json`                |
+| `change *`                           | `.workspai/decisions/<change-id>/transaction.json`          | `workspai.decision-transaction.v1`            | `contracts/workspace-intelligence/decision-transaction.v1.json`                     |
+| `change *`                           | `.workspai/decisions/<change-id>/checkpoint.json`           | `workspai.decision-checkpoint.v1`             | `contracts/workspace-intelligence/decision-checkpoint.v1.json`                      |
+| `change predict`                     | `.workspai/changes/<change-id>/predicted-overlay.json`      | `workspai.predicted-architecture-change.v1`   | `contracts/workspace-intelligence/predicted-architecture-change.v1.json`            |
+| `change verify`                      | `.workspai/changes/<change-id>/actual-overlay.json`         | `workspace-knowledge-graph-change-overlay.v1` | `contracts/workspace-intelligence/workspace-knowledge-graph-change-overlay.v1.json` |
+| `change verify`                      | `.workspai/changes/<change-id>/architecture-surprises.json` | `workspai.architecture-surprise-report.v1`    | `contracts/workspace-intelligence/architecture-surprise-report.v1.json`             |
+| `change *`                           | `.workspai/changes/<change-id>/capsule.json`                | `workspai.proof-carrying-change-capsule.v1`   | `contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json`            |
+| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`                         | `contracts/analyze-last-run.v1.json`                                                |
+| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`                        | `contracts/release-readiness.v1.json`                                               |
+| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`                        | `contracts/pipeline-last-run.v1.json`                                               |
+| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`                        | `contracts/autopilot-release.v1.json`                                               |
+|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)                         | `contracts/autopilot-release.v1.json`                                               |
 
 Side/cache (not gates): `.workspai/reports/doctor-workspace-cache.json` (`doctor-workspace-cache-v2`).
 
@@ -95,6 +102,18 @@ verification gates. Only CLI-owned verified-goal and Repair Engine evidence may
 authorize mutation or claim completion.
 The sibling `.workspai/goals/index.json` is the canonical active-goal discovery
 and lifecycle registry; consumers must not infer activity from directory order.
+
+Proof-Carrying Change uses the append-only JSONL event stream at
+`.workspai/decisions/<change-id>/events.jsonl` as authority. The transaction and
+checkpoint are replay-derived projections, while the capsule composes intent,
+baseline, typed effects, re-observed architecture, independent verification,
+and remaining uncertainty. The private
+`.workspai/changes/<change-id>/private/baseline-graph.json` materialization is a
+hash-bound local cache used to calculate the actual delta after the canonical
+Graph advances; it is non-authoritative and must not be treated as a portable
+consumer artifact. `change list --json` is the stable discovery surface for
+IDEs and automation, so consumers must not infer the active or latest change
+from directory order.
 
 Doctor Studio handoff:
 `doctor-remediation-plan-v2` (`contracts/doctor-remediation-plan.v2.json`) is emitted in JSON

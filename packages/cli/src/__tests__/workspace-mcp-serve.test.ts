@@ -45,9 +45,32 @@ describe('workspace mcp serve (4.19)', () => {
         'searchWorkspaceGraph',
         'getWorkspaceGraphEvidence',
         'findWorkspaceGraphPath',
+        'listProofCarryingChanges',
+        'getProofCarryingChange',
+        'validateProofCarryingChange',
       ])
     );
     expect(names).not.toContain('refreshWorkspaceIntelligence');
+  });
+
+  it('exposes proof-carrying changes through read-only contract tools', async () => {
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'mcp-pcc-test',
+    });
+
+    await expect(
+      invokeMcpToolForTest(workspacePath, 'listProofCarryingChanges')
+    ).resolves.toMatchObject({
+      schemaVersion: 'workspai.proof-carrying-change-list.v1',
+      workspace: { name: 'mcp-pcc-test' },
+      changes: [],
+      summary: { total: 0, invalid: 0 },
+    });
+    await expect(
+      invokeMcpToolForTest(workspacePath, 'getProofCarryingChange', {
+        changeId: 'change-missing1',
+      })
+    ).rejects.toThrow(/missing or unsupported/i);
   });
 
   it('serves the same contract-validated evaluation artifact used by IDE dashboards', async () => {

@@ -34,6 +34,7 @@ These commands are implemented and orchestrated by Workspai CLI:
 - `commands`
 - `create`
 - `goal`
+- `change`
 - `agent`
 - `project`
 - `live`
@@ -53,6 +54,22 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `config remove-api-key`
 - `config set-api-key`
 - `config show`
+- `change begin`
+- `change list`
+- `change predict`
+- `change authorize`
+- `change resume`
+- `change effect`
+- `change effect record`
+- `change verification`
+- `change verification record`
+- `change status`
+- `change explain`
+- `change verify`
+- `change abort`
+- `change capsule`
+- `change capsule validate`
+- `change capsule export`
 - `infra down`
 - `infra plan`
 - `infra status`

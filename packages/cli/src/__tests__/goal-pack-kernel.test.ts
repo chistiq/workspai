@@ -255,7 +255,21 @@ describe('goal pack pure kernel', () => {
     expect(handoff.guardrails).toContainEqual(
       expect.stringContaining('final outcome acceptance requires evidence review')
     );
-    expect(handoff.workflow.at(-1)).toMatchObject({ order: 6, owner: 'agent' });
+    expect(handoff.workflow).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          order: 3,
+          owner: 'workspai-cli',
+          instruction: expect.stringContaining('workspai change begin'),
+        }),
+        expect.objectContaining({
+          order: 5,
+          owner: 'human',
+          instruction: expect.stringContaining('Authorize explicit effect classes'),
+        }),
+      ])
+    );
+    expect(handoff.workflow.at(-1)).toMatchObject({ order: 8, owner: 'agent' });
   });
 
   it('distinguishes domain memory features from runtime memory performance', () => {

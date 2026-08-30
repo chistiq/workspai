@@ -126,23 +126,39 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
       ? currentGraphInputHash === goal.sourceBinding.graph.inputHash
       : currentGraphHash === goal.sourceBinding.graph.hash);
   if (!originalBindingMatches) {
+    const changeTransactionIds =
+      entry.changeTransactionIds ?? (entry.changeTransactionId ? [entry.changeTransactionId] : []);
+    const { assertSealedProofCarryingChangeCurrent } = await import('./proof-carrying-change.js');
+    let sanctioned = false;
+    for (const changeId of [...changeTransactionIds].reverse()) {
+      const binding = await assertSealedProofCarryingChangeCurrent({
+        workspacePath,
+        changeId,
+        goalId: entry.id,
+      }).catch(() => undefined);
+      if (binding?.modelHash === currentModelHash && binding.graphHash === currentGraphHash) {
+        sanctioned = true;
+        break;
+      }
+    }
     const transactionIds =
       entry.repairTransactionIds ?? (entry.repairTransactionId ? [entry.repairTransactionId] : []);
     const { assertClosedGoalRepairTransactionCurrent } =
       await import('./workspace-repair-engine.js');
-    let sanctioned = false;
-    for (const transactionId of [...transactionIds].reverse()) {
-      const binding = await assertClosedGoalRepairTransactionCurrent({
-        workspacePath,
-        transactionId,
-        goalId: entry.id,
-      }).catch(() => undefined);
-      if (
-        binding?.modelHash === currentModelHash &&
-        binding.graphInputHash === currentGraphInputHash
-      ) {
-        sanctioned = true;
-        break;
+    if (!sanctioned) {
+      for (const transactionId of [...transactionIds].reverse()) {
+        const binding = await assertClosedGoalRepairTransactionCurrent({
+          workspacePath,
+          transactionId,
+          goalId: entry.id,
+        }).catch(() => undefined);
+        if (
+          binding?.modelHash === currentModelHash &&
+          binding.graphInputHash === currentGraphInputHash
+        ) {
+          sanctioned = true;
+          break;
+        }
       }
     }
     if (!sanctioned && entry.verificationReceipt && entry.verifiedGoalId) {
@@ -496,6 +512,59 @@ export async function linkGoalRepairTransaction(input: {
         ...existing,
         repairTransactionId: input.transactionId,
         repairTransactionIds: nextRepairTransactionIds,
+        updatedAt: new Date().toISOString(),
+      };
+      const index: GoalIndex = {
+        ...current,
+        generatedAt: updated.updatedAt,
+        goals: current.goals.map((entry) => (entry.id === input.goalId ? updated : entry)),
+      };
+      assertJsonSchemaContract(index, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
+      assertGoalIndexSemantics(index);
+      await writeWorkspaceArtifactJsonSet(input.workspacePath, GOAL_INDEX_PATH, [
+        { relativePath: GOAL_INDEX_PATH, payload: index },
+      ]);
+      return updated;
+    }
+  );
+}
+
+export async function linkGoalChangeTransaction(input: {
+  workspacePath: string;
+  goalId: string;
+  changeId: string;
+}): Promise<GoalIndexEntry> {
+  const inspected = await inspectGoalLifecycle({
+    workspacePath: input.workspacePath,
+    goalId: input.goalId,
+  });
+  if (!inspected.active || inspected.index.activeGoalId !== input.goalId) {
+    throw new Error(`Proof-carrying change Goal is not the active workspace Goal: ${input.goalId}`);
+  }
+  if (!inspected.goalPack) {
+    throw new Error(`Proof-carrying change Goal Pack is unavailable: ${input.goalId}`);
+  }
+  const maxAttempts = inspected.goalPack.policy.maxAttempts;
+  return withWorkspaceArtifactLock(
+    input.workspacePath,
+    '.workspai/goals/index-lifecycle',
+    async () => {
+      const current = await readIndex(input.workspacePath);
+      const existing = current.goals.find((entry) => entry.id === input.goalId);
+      if (!existing) throw new Error(`Goal is not registered in this workspace: ${input.goalId}`);
+      const ids =
+        existing.changeTransactionIds ??
+        (existing.changeTransactionId ? [existing.changeTransactionId] : []);
+      if (!ids.includes(input.changeId) && ids.length >= maxAttempts) {
+        throw new Error(
+          `Goal ${input.goalId} exhausted its proof-carrying change budget (${maxAttempts}).`
+        );
+      }
+      const nextIds = ids.includes(input.changeId) ? ids : [...ids, input.changeId];
+      const updated: GoalIndexEntry = {
+        ...existing,
+        changeTransactionId: input.changeId,
+        changeTransactionIds: nextIds,
         updatedAt: new Date().toISOString(),
       };
       const index: GoalIndex = {

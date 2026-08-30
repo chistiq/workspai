@@ -177,6 +177,24 @@ a machine-readable decision and can use `--scope` and `--runtime`.
 
 [Learn how Goal Packs work](docs/goal-packs.md)
 
+## Make every agent change carry proof
+
+For source-changing work, begin a Goal-bound change before mutation:
+
+```bash
+npx workspai change begin --json
+npx workspai change list --json
+npx workspai change authorize --change <change-id> --effects filesystem,command --json
+# The agent or extension records typed effects, then Workspai re-observes the Graph.
+npx workspai change verify --change <change-id> --strict --json
+npx workspai change capsule validate --change <change-id> --json
+```
+
+The resulting capsule binds intent, baseline architecture, authorization,
+observed effects, predicted-versus-actual Graph changes, verification receipts,
+and remaining uncertainty. Prediction can guide work but can never prove its
+own result. [Learn how Proof-Carrying Change works](docs/proof-carrying-change.md).
+
 ## What happens after the first run
 
 Everything shown in the [output tree above](#what-the-output-looks-like) is
@@ -262,24 +280,25 @@ explicitly unproven.
 
 ## Everyday workflows
 
-| Goal                                       | Command                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| Use guided setup                           | `npx workspai create`                                                            |
-| Link a project without moving it           | `npx workspai adopt .`                                                           |
-| Turn an outcome into governed work         | `npx workspai goal "Raise test coverage to 85%"`                                 |
-| Ground an agent before source discovery    | `npx workspai agent bootstrap --for-agent codex --strict --json`                 |
-| Audit every agent entry adapter            | `npx workspai project agent-entry verify --for-agent all --strict --json`        |
-| Copy or clone a project into a workspace   | `npx workspai import <path-or-git-url> --workspace <path>`                       |
-| Check the current project                  | `npx workspai doctor project`                                                    |
-| Check the whole workspace                  | `npx workspai doctor workspace`                                                  |
-| Refresh Model and Graph                    | `npx workspai workspace model --write --json`                                    |
-| Watch command activity as a portable board | `npx workspai live --once --json --projection board`                             |
-| Benchmark bounded agent retrieval          | `npx workspai workspace graph benchmark-suite agent-core.v1 --write --json`      |
-| Ask a focused architecture question        | `npx workspai workspace graph search "authentication service" --limit 12 --json` |
-| Verify current evidence                    | `npx workspai workspace verify --strict --json`                                  |
-| Inspect a governed repair before execution | `npx workspai workspace repair capabilities --json`                              |
-| Refresh agent and IDE context              | `npx workspai workspace agent-sync --write --preset enterprise --json`           |
-| Start MCP server for workspace queries     | `npx workspai workspace mcp serve`                                               |
+| Goal                                        | Command                                                                          |
+| ------------------------------------------- | -------------------------------------------------------------------------------- |
+| Use guided setup                            | `npx workspai create`                                                            |
+| Link a project without moving it            | `npx workspai adopt .`                                                           |
+| Turn an outcome into governed work          | `npx workspai goal "Raise test coverage to 85%"`                                 |
+| Prove an agent change from intent to verify | `npx workspai change begin --json`                                               |
+| Ground an agent before source discovery     | `npx workspai agent bootstrap --for-agent codex --strict --json`                 |
+| Audit every agent entry adapter             | `npx workspai project agent-entry verify --for-agent all --strict --json`        |
+| Copy or clone a project into a workspace    | `npx workspai import <path-or-git-url> --workspace <path>`                       |
+| Check the current project                   | `npx workspai doctor project`                                                    |
+| Check the whole workspace                   | `npx workspai doctor workspace`                                                  |
+| Refresh Model and Graph                     | `npx workspai workspace model --write --json`                                    |
+| Watch command activity as a portable board  | `npx workspai live --once --json --projection board`                             |
+| Benchmark bounded agent retrieval           | `npx workspai workspace graph benchmark-suite agent-core.v1 --write --json`      |
+| Ask a focused architecture question         | `npx workspai workspace graph search "authentication service" --limit 12 --json` |
+| Verify current evidence                     | `npx workspai workspace verify --strict --json`                                  |
+| Inspect a governed repair before execution  | `npx workspai workspace repair capabilities --json`                              |
+| Refresh agent and IDE context               | `npx workspai workspace agent-sync --write --preset enterprise --json`           |
+| Start MCP server for workspace queries      | `npx workspai workspace mcp serve`                                               |
 
 For every command and flag, use the
 [Command Reference](docs/commands-reference.md).
@@ -323,6 +342,7 @@ modules; Workspai remains the workspace-level CLI.
 | Plan, approve, execute, or roll back a repair | [Workspace Repair Engine](docs/workspace-repair-engine.md)                                     |
 | Set a release, security, or coverage outcome  | [Verified engineering goals](docs/workspace-intelligence-runner.md#verified-engineering-goals) |
 | Compile plain language into a governed plan   | [Goal Packs](docs/goal-packs.md)                                                               |
+| Prove what an agent changed and why           | [Proof-Carrying Change](docs/proof-carrying-change.md)                                         |
 | Ground an agent in canonical project evidence | [Canonical-first agent entry](docs/agent-entry.md)                                             |
 | Integrate CI                                  | [CI workflows](docs/ci-workflows.md)                                                           |
 | Find generated files and schemas              | [Artifact Catalog](docs/contracts/ARTIFACT_CATALOG.md)                                         |
