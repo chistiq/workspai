@@ -5,6 +5,46 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Latest Release: v0.68.0 (August 29, 2026)
+
+### Revision-Bound Live Evidence and Governed Agent Recovery
+
+Workspai 0.68.0 connects observed execution with canonical workspace evidence
+through bounded, typed references that preserve revision identity without
+turning activity into verification authority. It also strengthens linked-project
+repair planning for CLI, IDE, and agent consumers.
+
+**What's New:**
+
+- Typed Live evidence bindings for artifacts, projects, Graph entities,
+  relations, and proofs across event, monitor, and Board projections.
+- Exact `graphSourceHash` identity on bounded Graph search results for
+  revision-safe IDE overlays and agent correlation.
+- Conservative artifact-to-stage attribution that refuses to fabricate a link
+  during concurrent or ambiguous execution.
+- Deterministic validation, deduplication, ordering, and bounded propagation of
+  evidence references through the Live projection pipeline.
+- Workspace-scoped Repair actions remain available when their blocker evidence
+  identifies an affected linked project.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, Repair, Skill, project-entry, and Live contracts remain supported.
+All new evidence-binding and Graph revision fields are additive and optional for
+older producers. No public command is removed.
+
+**Publication status:** Released August 29, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.68.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.68.0/packages/cli/releases/RELEASE_NOTES_v0.68.0.md)
+
+---
+
 ## Latest Release: v0.67.0 (August 29, 2026)
 
 ### Live Workspace Operations and Measurable Agent Efficiency

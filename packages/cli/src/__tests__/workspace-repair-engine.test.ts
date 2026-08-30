@@ -89,6 +89,37 @@ afterEach(async () => {
 });
 
 describe('Workspace Repair Engine', () => {
+  it('keeps workspace-owned repair actions when a linked project target is supplied', async () => {
+    const { workspacePath } = await workspaceFixture();
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-run-last.json'),
+      {
+        schemaVersion: 'workspace-run-evidence-v1',
+        generatedAt: '2026-08-29T12:00:00.000Z',
+        workspacePath,
+        latestStage: 'test',
+        stages: {
+          test: {
+            stage: 'test',
+            generatedAt: '2026-08-29T12:00:00.000Z',
+            workspacePath,
+            projects: [{ project: 'grpc', status: 'failed' }],
+          },
+        },
+      }
+    );
+
+    const planned = await planWorkspaceRepair({
+      workspacePath,
+      cardId: 'workspaceRun',
+      projectName: 'grpc',
+    });
+
+    expect(planned.target.actionIds).toEqual(['workspaceRun.refresh.1']);
+    expect(planned.state).toBe('decision-required');
+    expect(planned.decision?.reason).not.toContain('No governed remediation action matches');
+  });
+
   it('plans and executes one portable causal target for a registered external project', async () => {
     const { workspacePath } = await workspaceFixture();
     const externalProject = await fsExtra.mkdtemp(

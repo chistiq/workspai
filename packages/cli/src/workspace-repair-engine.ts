@@ -2744,7 +2744,13 @@ export async function planWorkspaceRepair(
   });
   const candidatePool = sourcePlan.actions
     .filter((action) => action.cardId === input.cardId)
-    .filter((action) => !input.projectName || action.projectName === input.projectName)
+    // Workspace-scoped cards may still identify the affected linked project
+    // in their evidence. Keep workspace-owned actions eligible while using
+    // projectName only to disambiguate actions that are actually project-owned.
+    .filter(
+      (action) =>
+        !input.projectName || !action.projectName || action.projectName === input.projectName
+    )
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
   const candidates = input.actionId
     ? candidatePool.filter((action) => action.id === input.actionId)

@@ -6,6 +6,7 @@ import {
   WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION,
   type EmitWorkspaceActivityEventInput,
   type WorkspaceActivityBlueprint,
+  type WorkspaceActivityEvidenceBinding,
   type WorkspaceActivityEvent,
   type WorkspaceActivityStatus,
 } from './activity-contract.js';
@@ -195,6 +196,17 @@ function appendEvent(input: EmitWorkspaceActivityEventInput): WorkspaceActivityE
           },
         }
       : {}),
+    ...(input.evidenceBindings
+      ? {
+          evidenceBindings: input.evidenceBindings.slice(0, 100).map((binding) => ({
+            ...binding,
+            ref: sanitizeString(binding.ref),
+            ...(binding.graphSourceHash
+              ? { graphSourceHash: sanitizeString(binding.graphSourceHash) }
+              : {}),
+          })),
+        }
+      : {}),
     ...(input.attributes ? { attributes: sanitizeAttributes(input.attributes) } : {}),
   };
   const serialized = `${JSON.stringify(event)}\n`;
@@ -294,6 +306,7 @@ export function initializeActivityRun(input: {
           layoutHint: node.layoutHint,
           group: node.group,
         },
+        ...(node.evidenceBindings ? { evidenceBindings: node.evidenceBindings } : {}),
       });
     }
     for (const edge of input.blueprint?.edges ?? []) {
@@ -338,6 +351,7 @@ export function emitActivityBlock(input: {
   component?: string;
   progress?: WorkspaceActivityEvent['progress'];
   attributes?: Record<string, unknown>;
+  evidenceBindings?: WorkspaceActivityEvidenceBinding[];
 }): WorkspaceActivityEvent | null {
   const kind =
     input.status === 'planned'
@@ -363,6 +377,7 @@ export function emitActivityBlock(input: {
     message: input.message,
     ...(input.progress ? { progress: input.progress } : {}),
     ...(input.attributes ? { attributes: input.attributes } : {}),
+    ...(input.evidenceBindings ? { evidenceBindings: input.evidenceBindings } : {}),
   });
 }
 
@@ -372,6 +387,7 @@ export async function withActivitySpan<T>(
     message: string;
     component?: string;
     attributes?: Record<string, unknown>;
+    evidenceBindings?: WorkspaceActivityEvidenceBinding[];
   },
   operation: () => Promise<T>
 ): Promise<T> {
@@ -382,6 +398,7 @@ export async function withActivitySpan<T>(
     message: input.message,
     component: input.component,
     attributes: input.attributes,
+    evidenceBindings: input.evidenceBindings,
   });
   try {
     const result = await operation();
@@ -393,6 +410,7 @@ export async function withActivitySpan<T>(
       message: input.message,
       durationMs: Date.now() - startedAt,
       attributes: input.attributes,
+      ...(input.evidenceBindings ? { evidenceBindings: input.evidenceBindings } : {}),
     });
     return result;
   } catch (error) {
@@ -404,6 +422,7 @@ export async function withActivitySpan<T>(
       message: error instanceof Error ? error.message : input.message,
       durationMs: Date.now() - startedAt,
       attributes: { ...(input.attributes ?? {}), error },
+      ...(input.evidenceBindings ? { evidenceBindings: input.evidenceBindings } : {}),
     });
     throw error;
   }
@@ -413,6 +432,7 @@ export function emitActivityArtifact(input: {
   workspacePath: string;
   relativePath: string;
   operation?: string;
+  blockId?: string;
 }): WorkspaceActivityEvent | null {
   const locator = activeRun
     ? toActivityLocator(
@@ -420,17 +440,32 @@ export function emitActivityArtifact(input: {
         path.resolve(input.workspacePath, input.relativePath)
       )
     : input.relativePath.replaceAll('\\', '/');
+  const activeStageIds = activeRun
+    ? [...activeRun.blockStatuses.entries()]
+        .filter(([blockId, status]) => blockId !== activeRun?.rootBlockId && status === 'running')
+        .map(([blockId]) => blockId)
+    : [];
+  const blockId = input.blockId ?? (activeStageIds.length === 1 ? activeStageIds[0] : undefined);
   return appendEvent({
     kind: 'artifact.published',
     status: 'succeeded',
     component: 'artifact-store',
     message: `Published ${locator}`,
+    ...(blockId ? { blockId } : {}),
     target: {
       kind: 'artifact',
       locator,
       operation: input.operation ?? 'publish',
       provenance: 'authoritative',
     },
+    evidenceBindings: [
+      {
+        kind: 'artifact',
+        ref: locator,
+        role: 'output',
+        provenance: 'authoritative',
+      },
+    ],
   });
 }
 

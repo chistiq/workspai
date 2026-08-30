@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-08-29
+
+### Added
+
+- Added bounded, typed evidence bindings to Live activity events, monitor
+  snapshots, and Board projections for artifacts, projects, Graph entities,
+  Graph relations, and proofs.
+- Added the canonical Graph source hash to bounded Knowledge Graph search
+  results so IDE and agent consumers can correlate identities with the exact
+  revision that authored them.
+
+### Changed
+
+- Made authoritative artifact publication automatically emit an output evidence
+  binding while attributing it to a stage only when the producer supplies the
+  stage or exactly one non-root stage is active.
+- Made activity projection validate, deduplicate, deterministically order, and
+  bound evidence bindings without promoting observational activity into
+  verification evidence.
+- Made workspace repair planning preserve workspace-owned actions when a linked
+  project is selected, while still using project identity to disambiguate
+  project-owned actions.
+
+### Fixed
+
+- Prevented concurrent or ambiguous activity stages from receiving fabricated
+  artifact-to-stage correlations.
+- Prevented Graph identities returned by bounded search from being overlaid on
+  a different canonical Graph revision.
+- Prevented a workspace-scoped repair action from disappearing solely because
+  its blocker evidence identifies an affected linked project.
+
 ## [0.67.0] - 2026-08-29
 
 ### Added

@@ -82,6 +82,7 @@ A simplified response looks like this:
 ```json
 {
   "schemaVersion": "workspace-knowledge-search.v1",
+  "graphSourceHash": "<canonical-model-structural-sha256>",
   "query": "billing database",
   "projectId": "billing",
   "totalMatches": 23,

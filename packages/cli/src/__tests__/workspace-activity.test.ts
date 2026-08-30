@@ -99,6 +99,61 @@ describe('workspace activity runtime', () => {
     expect(fs.existsSync(path.join(projectPath, '.workspai'))).toBe(false);
   });
 
+  it('projects provenance-backed artifact bindings without inventing an ambiguous stage link', () => {
+    initializeActivityRun({
+      runId: 'run-evidence-binding-12345678',
+      command: ['workspace', 'intelligence', 'run'],
+      cwd: projectPath,
+      rapidkitVersion: '0.67.0',
+      blueprint: {
+        id: 'test.evidence-binding',
+        version: 1,
+        nodes: [
+          { id: 'command.intelligence', label: 'Intelligence', order: 0 },
+          { id: 'model', label: 'Model', order: 1, parentId: 'command.intelligence' },
+          { id: 'context', label: 'Context', order: 2, parentId: 'command.intelligence' },
+        ],
+      },
+    });
+    emitActivityBlock({ blockId: 'model', status: 'running', message: 'Build model' });
+    emitActivityArtifact({
+      workspacePath: projectPath,
+      relativePath: '.workspai/reports/workspace-model.json',
+    });
+    emitActivityBlock({ blockId: 'context', status: 'running', message: 'Build context' });
+    emitActivityArtifact({
+      workspacePath: projectPath,
+      relativePath: '.workspai/reports/project-context-agent.json',
+    });
+
+    const events = readActivityEvents({ targetPath: projectPath }).events;
+    const artifacts = events.filter((event) => event.kind === 'artifact.published');
+    expect(artifacts[0]).toMatchObject({
+      blockId: 'model',
+      evidenceBindings: [
+        {
+          kind: 'artifact',
+          ref: '.workspai/reports/workspace-model.json',
+          role: 'output',
+          provenance: 'authoritative',
+        },
+      ],
+    });
+    expect(artifacts[1]?.blockId).toBeUndefined();
+
+    const snapshot = readActivitySnapshot({ targetPath: projectPath });
+    expect(snapshot.runs[0]?.evidenceBindings.map((binding) => binding.ref)).toEqual([
+      '.workspai/reports/project-context-agent.json',
+      '.workspai/reports/workspace-model.json',
+    ]);
+    expect(
+      snapshot.runs[0]?.blocks.find((block) => block.id === 'model')?.evidenceBindings
+    ).toMatchObject([{ ref: '.workspai/reports/workspace-model.json' }]);
+    expect(
+      snapshot.runs[0]?.blocks.find((block) => block.id === 'context')?.evidenceBindings
+    ).toEqual([]);
+  });
+
   it('redacts sensitive command arguments before journaling', () => {
     initializeActivityRun({
       runId: 'run-redaction-12345678',

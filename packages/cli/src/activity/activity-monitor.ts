@@ -6,6 +6,7 @@ import {
   WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION,
   WORKSPACE_ACTIVITY_STATUSES,
   type WorkspaceActivityEvent,
+  type WorkspaceActivityEvidenceBinding,
   type WorkspaceActivityOrigin,
   type WorkspaceActivityScope,
   type WorkspaceActivityStatus,
@@ -38,6 +39,7 @@ export type ActivityBlockView = {
   updatedAt: string;
   attempt?: number;
   attempts: ActivityBlockAttemptView[];
+  evidenceBindings: WorkspaceActivityEvidenceBinding[];
 };
 
 export type ActivityBlockAttemptView = {
@@ -75,6 +77,7 @@ export type ActivityRunView = {
   touches: Array<{ locator: string; operation?: string; at: string }>;
   artifacts: Array<{ locator: string; at: string }>;
   warnings: string[];
+  evidenceBindings: WorkspaceActivityEvidenceBinding[];
 };
 
 export type ActivityMonitorSnapshot = {
@@ -93,6 +96,50 @@ export type ActivityFleetSnapshot = {
 };
 
 export type ActivityMonitorView = ActivityMonitorSnapshot | ActivityFleetSnapshot;
+
+function isEvidenceBinding(value: unknown): value is WorkspaceActivityEvidenceBinding {
+  if (!value || typeof value !== 'object') return false;
+  const binding = value as Partial<WorkspaceActivityEvidenceBinding>;
+  return (
+    ['artifact', 'graph-entity', 'graph-relation', 'proof', 'project'].includes(
+      String(binding.kind)
+    ) &&
+    typeof binding.ref === 'string' &&
+    binding.ref.length > 0 &&
+    ['input', 'output', 'verification', 'subject'].includes(String(binding.role)) &&
+    ['authoritative', 'observed'].includes(String(binding.provenance)) &&
+    (!['graph-entity', 'graph-relation', 'proof'].includes(String(binding.kind)) ||
+      (typeof binding.graphSourceHash === 'string' && binding.graphSourceHash.length > 0)) &&
+    (binding.graphSourceHash === undefined ||
+      (typeof binding.graphSourceHash === 'string' && binding.graphSourceHash.length > 0))
+  );
+}
+
+function mergeEvidenceBindings(
+  current: readonly WorkspaceActivityEvidenceBinding[],
+  next: readonly WorkspaceActivityEvidenceBinding[] | undefined
+): WorkspaceActivityEvidenceBinding[] {
+  const merged = new Map<string, WorkspaceActivityEvidenceBinding>();
+  for (const binding of [...current, ...(next ?? [])]) {
+    if (!isEvidenceBinding(binding)) continue;
+    const key = [
+      binding.kind,
+      binding.ref,
+      binding.role,
+      binding.provenance,
+      binding.graphSourceHash ?? '',
+    ].join('\u0000');
+    merged.set(key, binding);
+  }
+  return [...merged.values()]
+    .sort(
+      (left, right) =>
+        left.kind.localeCompare(right.kind) ||
+        left.ref.localeCompare(right.ref) ||
+        left.role.localeCompare(right.role)
+    )
+    .slice(0, 100);
+}
 
 function isActivityEvent(value: unknown): value is WorkspaceActivityEvent {
   if (!value || typeof value !== 'object') return false;
@@ -116,6 +163,8 @@ function isActivityEvent(value: unknown): value is WorkspaceActivityEvent {
       (typeof event.origin.id === 'string' &&
         typeof event.origin.label === 'string' &&
         ['project', 'workspace-root'].includes(event.origin.kind))) &&
+    (event.evidenceBindings === undefined ||
+      (Array.isArray(event.evidenceBindings) && event.evidenceBindings.every(isEvidenceBinding))) &&
     typeof event.message === 'string'
   );
 }
@@ -254,12 +303,14 @@ export function projectActivitySnapshot(input: {
         touches: [],
         artifacts: [],
         warnings: [],
+        evidenceBindings: [],
       };
       runs.set(event.runId, run);
       blockMaps.set(event.runId, new Map());
       edgeMaps.set(event.runId, new Map());
     }
     run.updatedAt = event.timestamp;
+    run.evidenceBindings = mergeEvidenceBindings(run.evidenceBindings, event.evidenceBindings);
 
     if (event.kind.startsWith('run.')) {
       run.status = event.status;
@@ -350,7 +401,23 @@ export function projectActivitySnapshot(input: {
             ? { attempt: previous.attempt }
             : {}),
         attempts,
+        evidenceBindings: mergeEvidenceBindings(
+          previous?.evidenceBindings ?? [],
+          event.evidenceBindings
+        ),
       });
+    }
+
+    if (event.blockId && event.evidenceBindings?.length && !event.kind.startsWith('block.')) {
+      const blocks = blockMaps.get(event.runId) as Map<string, ActivityBlockView>;
+      const block = blocks.get(event.blockId);
+      if (block) {
+        blocks.set(event.blockId, {
+          ...block,
+          evidenceBindings: mergeEvidenceBindings(block.evidenceBindings, event.evidenceBindings),
+          updatedAt: event.timestamp,
+        });
+      }
     }
 
     if (event.kind === 'edge.declared' && event.edge) {

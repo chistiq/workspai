@@ -1922,6 +1922,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
     emitActivityArtifact({
       workspacePath,
       relativePath: WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH,
+      blockId: 'workspace.run.publish',
     });
   } catch (error) {
     emitActivityBlock({

@@ -376,6 +376,7 @@ describe('workspace knowledge graph', () => {
     const result = searchKnowledgeGraph(graph, { query: 'health endpoint', limit: 2 });
 
     expect(result.schemaVersion).toBe('workspace-knowledge-search.v1');
+    expect(result.graphSourceHash).toBe(graph.source.hash);
     expect(result.entities.length).toBeLessThanOrEqual(2);
     expect(result.entities.some((entity) => /health/i.test(entity.label))).toBe(true);
     expect(result.proofs.length).toBeGreaterThan(0);

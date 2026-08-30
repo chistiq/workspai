@@ -50,6 +50,19 @@ consumed by IDE, browser, dashboard and capture adapters. It contains bounded
 runs, nodes, edges, selection, counters and diagnostics; consumers must not
 infer verification success from activity state.
 
+Board runs and stages may also expose bounded `evidenceBindings`. Each binding
+declares a typed reference (`artifact`, `graph-entity`, `graph-relation`,
+`proof`, or `project`), its role, and authoritative/observed provenance. Graph
+identities can carry the exact `graphSourceHash` needed for revision-safe
+overlays. Artifact publications receive authoritative output bindings
+automatically. They are attributed to a stage only when the producer names the
+stage or exactly one non-root stage is active; concurrent/ambiguous execution
+never receives a guessed link.
+
+Bindings are navigation and correlation references, not verification claims.
+An IDE must resolve the artifact and validate its contract, integrity and
+freshness before presenting a verified outcome or drawing a Graph edge.
+
 `--capture` writes an atomic, deterministic SVG from the same Activity Board
 Model used by the terminal and exits. Captures are redacted by default: local
 scope, project, run and command-argument details are replaced while semantic
@@ -119,7 +132,7 @@ readers and captured output. `--classic` preserves the compatibility renderer.
 The implementation intentionally keeps this pipeline renderer-independent:
 
 ```text
-workspace-activity-event.v1
+workspace-activity-event.v1 (optional provenance-backed evidence bindings)
   -> deterministic monitor snapshot
   -> workspace-activity-board.v1 (runs, nodes, edges, selection, counters)
   -> terminal + deterministic SVG adapters today / web and IDE adapters later
@@ -166,9 +179,10 @@ contracts/workspace-activity-board.v1.json
 ```
 
 The stream contains run, block, attempt, origin, declared-edge, operation,
-touch, artifact and warning data. Blueprint edges are explicit `sequence`, `parallel`, `gate` or
-`handoff` relations; older journals without declared edges receive a
-deterministic sequential projection for compatibility.
+touch, artifact, evidence-binding and warning data. Blueprint edges are
+explicit `sequence`, `parallel`, `gate` or `handoff` relations; older journals
+without declared edges or evidence bindings receive a deterministic compatible
+projection without fabricated links.
 Stable semantic block IDs describe architecture stages rather than source line
 numbers or function names.
 

@@ -71,6 +71,12 @@
                 "type": "array",
                 "items": { "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/attempt" }
               },
+              "evidenceBindings": {
+                "type": "array",
+                "items": {
+                  "$ref": "workspace-activity-monitor-snapshot.v1.json#/$defs/evidenceBinding"
+                }
+              },
               "root": { "type": "boolean" }
             },
             "additionalProperties": false

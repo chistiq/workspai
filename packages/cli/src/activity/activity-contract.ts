@@ -54,6 +54,30 @@ export type WorkspaceActivityOrigin = {
   label: string;
 };
 
+/**
+ * A portable reference from observed execution to canonical workspace evidence.
+ *
+ * Bindings never promote activity into verification evidence. Consumers must
+ * still resolve and validate the referenced artifact or Graph revision before
+ * making an architectural or release claim.
+ */
+type WorkspaceActivityEvidenceBindingBase = {
+  ref: string;
+  role: 'input' | 'output' | 'verification' | 'subject';
+  provenance: 'authoritative' | 'observed';
+};
+
+export type WorkspaceActivityEvidenceBinding =
+  | (WorkspaceActivityEvidenceBindingBase & {
+      kind: 'artifact' | 'project';
+      graphSourceHash?: string;
+    })
+  | (WorkspaceActivityEvidenceBindingBase & {
+      kind: 'graph-entity' | 'graph-relation' | 'proof';
+      /** Exact Graph revision that gives this identity meaning. */
+      graphSourceHash: string;
+    });
+
 export type WorkspaceActivityBlueprintNode = {
   id: string;
   label: string;
@@ -61,6 +85,7 @@ export type WorkspaceActivityBlueprintNode = {
   order: number;
   layoutHint?: 'source' | 'process' | 'gate' | 'sink';
   group?: string;
+  evidenceBindings?: WorkspaceActivityEvidenceBinding[];
 };
 
 export type WorkspaceActivityBlueprintEdge = {
@@ -120,6 +145,7 @@ export type WorkspaceActivityEvent = {
     operation?: string;
     provenance?: 'authoritative' | 'observed' | 'inferred';
   };
+  evidenceBindings?: WorkspaceActivityEvidenceBinding[];
   attributes?: Record<string, unknown>;
 };
 

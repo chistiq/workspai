@@ -115,6 +115,11 @@
       },
       "additionalProperties": false
     },
+    "evidenceBindings": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/evidenceBinding" }
+    },
     "edge": {
       "type": "object",
       "required": ["id", "fromBlockId", "toBlockId", "kind"],
@@ -128,5 +133,30 @@
     },
     "attributes": { "type": "object", "additionalProperties": true }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "evidenceBinding": {
+      "type": "object",
+      "required": ["kind", "ref", "role", "provenance"],
+      "properties": {
+        "kind": { "enum": ["artifact", "graph-entity", "graph-relation", "proof", "project"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["input", "output", "verification", "subject"] },
+        "provenance": { "enum": ["authoritative", "observed"] },
+        "graphSourceHash": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": { "enum": ["graph-entity", "graph-relation", "proof"] }
+            },
+            "required": ["kind"]
+          },
+          "then": { "required": ["graphSourceHash"] }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
 }

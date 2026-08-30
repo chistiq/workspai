@@ -98,7 +98,7 @@ Published under `../../contracts/` (not duplicated in this folder):
 - `workspace-model-cache.v1.json`, `workspace-watch-event.v1.json`, `doctor-project-scan.v2.json`, and `doctor-workspace-cache.v2.json` — cache/watch/diagnostic support contracts
 - `workspace-activity-event.v1.json` — local-first run/block/operation/touch stream consumed by `workspai live`; observational only, never Evidence/Decision authority
 - `workspace-activity-monitor-snapshot.v1.json` and `workspace-activity-monitor-fleet.v1.json` — deterministic local and bounded fleet projections
-- `workspace-activity-board.v1.json` — renderer-neutral bounded Live projection for terminal, SVG, IDE and web consumers
+- `workspace-activity-board.v1.json` — renderer-neutral bounded Live projection for terminal, SVG, IDE and web consumers, with optional provenance-backed references to canonical artifacts and revision-bound Graph evidence
 
 Workspace intelligence (`../../contracts/workspace-intelligence/`):
 

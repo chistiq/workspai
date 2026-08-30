@@ -267,6 +267,8 @@ export type WorkspaceKnowledgeSearchBudget = {
 
 export type WorkspaceKnowledgeSearchResult = {
   schemaVersion: typeof WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION;
+  /** Exact canonical Graph source revision for safe identity correlation. */
+  graphSourceHash?: string;
   query: string;
   kind: string | null;
   projectId?: string;
@@ -953,6 +955,7 @@ export function searchKnowledgeGraph(
     .sort((a, b) => a.id.localeCompare(b.id));
   return {
     schemaVersion: WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION,
+    graphSourceHash: graph.source.hash,
     query: options.query,
     kind: options.kind ?? null,
     ...(options.projectId ? { projectId: options.projectId } : {}),

@@ -266,7 +266,9 @@ they never write facts back into the authorizing model during the same run.
 
 `workspace graph search <query> --limit <n> --json` returns bounded entities,
 one-hop relations, related entity summaries, and portable proofs instead of the
-complete graph. Ranking is deterministic and offline: it removes natural-language
+complete graph. New responses also expose `graphSourceHash`, allowing IDE and
+agent activity consumers to correlate returned entity/proof IDs only with the
+exact Graph revision that authored them. Ranking is deterministic and offline: it removes natural-language
 stopwords, weights rarer graph terms more strongly, and prefers exact labels and
 identities. `workspace graph benchmark <query> --limit <n> --json` compares
 that retrieval payload with the readable proof-indexed corpus using a labelled

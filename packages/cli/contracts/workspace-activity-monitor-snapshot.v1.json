@@ -72,6 +72,29 @@
       },
       "additionalProperties": false
     },
+    "evidenceBinding": {
+      "type": "object",
+      "required": ["kind", "ref", "role", "provenance"],
+      "properties": {
+        "kind": { "enum": ["artifact", "graph-entity", "graph-relation", "proof", "project"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["input", "output", "verification", "subject"] },
+        "provenance": { "enum": ["authoritative", "observed"] },
+        "graphSourceHash": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": { "enum": ["graph-entity", "graph-relation", "proof"] }
+            },
+            "required": ["kind"]
+          },
+          "then": { "required": ["graphSourceHash"] }
+        }
+      ],
+      "additionalProperties": false
+    },
     "block": {
       "type": "object",
       "required": ["id", "label", "status", "order", "updatedAt", "attempts"],
@@ -87,7 +110,12 @@
         "group": { "type": "string", "minLength": 1 },
         "updatedAt": { "type": "string", "format": "date-time" },
         "attempt": { "type": "integer", "minimum": 1 },
-        "attempts": { "type": "array", "items": { "$ref": "#/$defs/attempt" } }
+        "attempts": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },
+        "evidenceBindings": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/evidenceBinding" }
+        }
       },
       "additionalProperties": false
     },
@@ -153,7 +181,12 @@
         "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
         "touches": { "type": "array", "items": { "$ref": "#/$defs/touch" } },
         "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
-        "warnings": { "type": "array", "items": { "type": "string" } }
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "evidenceBindings": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/evidenceBinding" }
+        }
       },
       "additionalProperties": false
     }
