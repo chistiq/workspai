@@ -2,6 +2,7 @@
   "schemaVersion": "workspai.proof-carrying-change-implementation-plan.v1",
   "status": "released",
   "release": "0.69.0",
+  "hardeningRelease": "0.70.0",
   "runtimeImplemented": true,
   "packageDecision": {
     "newPackage": false,
@@ -53,8 +54,8 @@
     "cli": "complete",
     "ciJsonGate": "complete",
     "mcpReadTools": "complete",
-    "extensionReadProjection": "implemented-awaiting-pcc-cli-release",
-    "extensionStudioMutationAdapter": "deferred-until-pcc-cli-release"
+    "extensionReadProjection": "implemented-cli-contract-ready",
+    "extensionStudioMutationAdapter": "implemented-cli-contract-ready"
   },
   "stages": [
     {

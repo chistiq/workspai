@@ -61,6 +61,16 @@ export type DecisionArtifactReference = {
   };
 };
 
+export type DecisionDeletedArtifactReference = {
+  artifact: string;
+  observedAt: string;
+  digest: {
+    algorithm: 'sha256';
+    semantics: 'deletion-tombstone-v1';
+    value: string;
+  };
+};
+
 export type DecisionEffectReceipt = {
   id: string;
   effectClass: 'filesystem' | 'command' | 'configuration' | 'dependency' | 'external';
@@ -68,6 +78,7 @@ export type DecisionEffectReceipt = {
   summary: string;
   command?: string[];
   artifacts: DecisionArtifactReference[];
+  deletedArtifacts?: DecisionDeletedArtifactReference[];
   observedAt: string;
   idempotencyKey: string;
 };

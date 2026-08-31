@@ -9,6 +9,12 @@ useful contribution.
 
 ## Choose a Contribution Path
 
+If you arrived through the Chistiq contributor program, begin with the
+[Contribution Hub](../../.github/CONTRIBUTING.md). It routes code, testing,
+Graph, documentation, product, runtime, and CI contributors to a bounded first
+task. Community chat is optional support; the GitHub issue remains the source
+of scope, ownership, and acceptance criteria.
+
 | You want to                    | Start here                                                                                                    |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | Fix a bug                      | Open or claim a bug issue, add a failing regression test, then make the smallest correct fix                  |
@@ -26,6 +32,20 @@ Look for
 [`good first issue`](https://github.com/chistiq/workspai/labels/good%20first%20issue)
 and [`help wanted`](https://github.com/chistiq/workspai/labels/help%20wanted)
 labels.
+
+After making a change, ask the repository for the validation plan that matches
+the files you touched:
+
+```bash
+corepack npm run contributor:plan
+corepack npm run contributor:plan -- --json
+```
+
+The planner is read-only. It discovers staged, unstaged, and untracked files,
+classifies the contribution paths, and prints the required commands without
+running them. This keeps a documentation-only contribution lightweight while
+still requiring contract, runtime, dependency, or workflow gates when those
+boundaries change.
 
 ## Before You Start
 

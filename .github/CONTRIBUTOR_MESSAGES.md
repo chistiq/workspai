@@ -1,50 +1,84 @@
 # Contributor Message Templates
 
-## 1) Official onboarding (after accepted contributor)
+These templates move applicants toward one first contribution. The
+[Contribution Hub](CONTRIBUTING.md) is the primary link. Community chat is
+optional support and must not replace an issue with explicit scope and
+acceptance criteria.
+
+## Applicant Invitation
 
 Hi [Name],
 
-Welcome officially to Workspai.
+Thanks for applying to the Chistiq Open Source Contributor Program. We would
+love to have you contribute to Workspai.
 
-To help you get started smoothly, here are a few recommended first steps:
+Start here: https://github.com/chistiq/workspai/blob/main/.github/CONTRIBUTING.md
 
-- Review the project README and contribution guidelines
-- Explore open issues and choose one that matches your interests or experience level
-- Comment on the issue before starting work so maintainers can support and align with you
+Choose the path that matches your skills, then comment on one issue with the
+small outcome you want to own. If you share your preferred area, we can point
+you to a bounded first task.
 
-If you have ideas, improvements, or questions, feel free to open a discussion anytime; contributor feedback is an important part of Workspai's evolution.
+For questions, use the relevant issue or GitHub Discussions. Community chat is
+also available when you receive the current invite.
 
-We’re excited to collaborate with you and look forward to your first contribution.
-
-Best regards,
-The Workspai Team
-
-## 2) After first pull request (motivation message)
+## Skill-Routed Invitation
 
 Hi [Name],
 
-Thank you for your first contribution to Workspai.
+Thanks for applying to the Chistiq Open Source Contributor Program. Your
+experience with [skill/area] looks relevant to Workspai's [contribution path].
 
-We really appreciate the time and effort you’ve invested. Contributions like yours help improve the ecosystem for developers worldwide.
+Start here: https://github.com/chistiq/workspai/blob/main/.github/CONTRIBUTING.md
 
-Our maintainers will review your pull request shortly. If any feedback or adjustments are suggested, please consider them part of our collaborative development process.
+A good first direction for you is [issue or bounded task]. Please read it and
+comment with the small outcome you want to own before starting. We will confirm
+the scope, relevant files, and acceptance evidence in the issue.
 
-Great start — we’re happy to have you contributing with us!
-
-Best regards,
-The Workspai Team
-
-## 3) Active contributor retention message
+## Follow-Up After Three to Five Days
 
 Hi [Name],
 
-We wanted to take a moment to thank you for your continued contributions to Workspai.
+Checking in on your Workspai contributor application. If you are still
+interested, reply with one preference: code, testing, Graph/AI context,
+documentation, product/UX, runtime, or CI. We can then point you to a bounded
+first contribution that matches your background.
 
-Your involvement is helping shape the future of the project, and we truly value your consistency and collaboration within the community.
+Start here: https://github.com/chistiq/workspai/blob/main/.github/CONTRIBUTING.md
 
-As you continue contributing, you’re welcome to participate in architectural discussions, propose improvements, or take ownership of areas that interest you.
+## First Pull Request
 
-We're glad to have you as part of the Workspai ecosystem.
+Hi [Name],
 
-Best regards,
-The Workspai Team
+Thank you for your first Workspai pull request. A maintainer will review the
+scope, behavior, evidence, and validation results. Review feedback is part of
+the collaboration and may ask you to keep the change smaller or add a closer
+regression test.
+
+You can generate the expected validation plan at any time with:
+
+`corepack npm run contributor:plan`
+
+Please list any check you could not run and why.
+
+## First Merged Pull Request
+
+Hi [Name],
+
+Your first Workspai contribution has been merged. Thank you for shipping a
+focused, reviewed improvement.
+
+If you would like to continue, choose another bounded task from the
+Contribution Hub or tell us which area you want to deepen. You do not need to
+take ownership of a complete architecture epic to make meaningful progress.
+
+## Active Contributor Milestone
+
+Hi [Name],
+
+Thank you for your continued contributions to Workspai. Your repeated,
+reviewable improvements are helping strengthen the project.
+
+You are welcome to propose a larger outcome, help refine starter tasks, review
+fixtures and documentation, or take ownership of a clearly bounded area. Please
+keep architecture and public-contract changes evidence-backed and aligned in an
+issue or discussion before implementation.

@@ -25,6 +25,8 @@ jobs:
 
             A maintainer will review the scope and labels. If you would like to work on this issue yourself, leave a comment and we’ll help you find the relevant contracts, code, and tests.
 
+            New contributor? Start with the Contribution Hub: https://github.com/chistiq/workspai/blob/main/.github/CONTRIBUTING.md
+
             Glad to have you here.
           pr_message: |
             Hi @${{ github.actor }},
@@ -33,7 +35,9 @@ jobs:
 
             We really appreciate the time and effort you’ve invested. Contributions like yours help improve the ecosystem for developers worldwide.
 
-            Our maintainers will review your pull request shortly. If any feedback or adjustments are suggested, please consider them part of our collaborative development process.
+            Our maintainers will review the scope, behavior, evidence, and validation results. Review feedback may ask you to keep the change smaller or add a closer regression test.
+
+            Generate the validation plan for the files you changed with `corepack npm run contributor:plan`, and list any check you could not run and why.
 
             Great start — we’re happy to have you contributing with us!
 

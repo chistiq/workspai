@@ -42,9 +42,12 @@ JSON shape is necessary but insufficient. The runtime additionally verifies:
 5. unique effect receipt IDs and idempotency keys;
 6. exact effect-head binding for verification receipts;
 7. current Model/Graph target identity;
-8. successful receipt coverage for changed Graph proof artifacts;
-9. latest passing receipt for every immutable Goal criterion;
-10. capsule, lease, decision-head, baseline-cache, and referenced-artifact integrity.
+8. successful receipt or validated deletion-tombstone coverage for changed
+   Graph proof artifacts;
+9. deletion paths remain absent and contained by the workspace or an explicit
+   linked-project contract;
+10. latest passing receipt for every immutable Goal criterion;
+11. capsule, lease, decision-head, baseline-cache, and referenced-artifact integrity.
 
 ## Compatibility rules
 

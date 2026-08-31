@@ -1,4 +1,7 @@
-import type { DecisionArtifactReference } from '../decisions/decision-contract.js';
+import type {
+  DecisionArtifactReference,
+  DecisionDeletedArtifactReference,
+} from '../decisions/decision-contract.js';
 import type { WorkspaceKnowledgeGraphChangeOverlay } from './workspace-knowledge-graph-change-overlay-contract.js';
 
 export const ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION =
@@ -103,6 +106,7 @@ export type ProofCarryingChangeCapsule = {
   actualOverlay: DecisionArtifactReference | null;
   surpriseReport: DecisionArtifactReference | null;
   effects: DecisionArtifactReference[];
+  deletedArtifacts?: DecisionDeletedArtifactReference[];
   verification: DecisionArtifactReference[];
   assurances: Array<{
     id:

@@ -552,6 +552,24 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     timeoutMs: 600_000,
   });
 
+  const liveBoard = run(project, {
+    id: 'workspace.live-board',
+    cwd: workspacePath,
+    argv: ['live', '--once', '--projection', 'board', '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 120_000,
+  });
+  project.assertions.push(
+    assertion(
+      'live.activity-contract',
+      liveBoard.json?.schemaVersion === 'workspace-activity-board.v1' &&
+        liveBoard.json?.scopeCount >= 1 &&
+        Array.isArray(liveBoard.json?.runs) &&
+        liveBoard.json.runs.length > 0,
+      'The isolated qualification must retain renderer-neutral Live activity for observed CLI runs.'
+    )
+  );
+
   const commandFailures = project.commands.filter((command) => !command.accepted);
   const assertionFailures = project.assertions.filter((item) => !item.passed);
   project.status =
@@ -593,6 +611,7 @@ function run(project, spec) {
     env: {
       ...process.env,
       WORKSPAI_STATE_DIR: isolatedStateDirectory,
+      WORKSPAI_ACTIVITY_STATE_DIR: path.join(isolatedStateDirectory, 'activity'),
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },

@@ -379,6 +379,9 @@ async function analyzeProject(
     runtime,
     ...detectedRuntimeCandidates.filter((candidate) => candidate !== runtime),
   ];
+  const isMultiRuntimeAggregate =
+    detection.key === 'unknown' &&
+    new Set(runtimeCandidates.filter((candidate) => candidate !== 'unknown')).size > 1;
   const projectKind = await inferWorkspaceProjectKind(projectPath, projectJson, {
     runtime,
     framework: detection.key,
@@ -415,12 +418,18 @@ async function analyzeProject(
   if (detection.key === 'unknown') {
     findings.push(
       finding(
-        'project.stack.unknown',
-        'fail',
+        isMultiRuntimeAggregate ? 'project.stack.aggregate' : 'project.stack.unknown',
+        isMultiRuntimeAggregate ? 'info' : 'fail',
         target,
-        'Project stack is unknown',
-        'Workspai cannot confidently classify this backend project.',
-        'Add .workspai/project.json metadata or import the project with `workspai import`.'
+        isMultiRuntimeAggregate
+          ? 'Multi-runtime aggregate boundary detected'
+          : 'Project stack is unknown',
+        isMultiRuntimeAggregate
+          ? `Workspai detected multiple runtimes (${runtimeCandidates.join(', ')}) and intentionally did not promote one nested framework as the aggregate project identity.`
+          : 'Workspai cannot confidently classify this backend project.',
+        isMultiRuntimeAggregate
+          ? 'Adopt independently operated nested projects when they need separate lifecycle, ownership, or release evidence.'
+          : 'Add .workspai/project.json metadata or import the project with `workspai import`.'
       )
     );
   }

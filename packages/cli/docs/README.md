@@ -83,7 +83,7 @@ or use `import` to copy or clone one into the workspace.
 | Bring an existing repository under governance      | [Workspace operations](./workspace-operations.md#import-and-adoption)                       | Source stays in place with `adopt`, or is copied/cloned with `import`    |
 | Run the complete intelligence loop                 | [Unified runner](./workspace-intelligence-runner.md)                                        | One ordered run report with durable stage evidence                       |
 | Turn plain language into governed work             | [Goal Packs](./goal-packs.md)                                                               | A scope-bound, evidence-pinned plan and portable agent handoff           |
-| Prove what an agent changed and why                 | [Proof-Carrying Change](./proof-carrying-change.md)                                         | A Goal-bound, effect-receipted, independently verified change capsule    |
+| Prove what an agent changed and why                | [Proof-Carrying Change](./proof-carrying-change.md)                                         | A Goal-bound, effect-receipted, independently verified change capsule    |
 | Ground an agent before broad source discovery      | [Canonical-first agent entry](./agent-entry.md)                                             | A portable receipt for host discovery, evidence integrity, and freshness |
 | Repair a blocker through an approved transaction   | [Workspace Repair Engine](./workspace-repair-engine.md)                                     | Checkpointed execution, validation, canonical verify, and safe rollback  |
 | Set a release, security, or coverage outcome       | [Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals) | A durable success contract with a current evidence-backed verdict        |
@@ -94,6 +94,7 @@ or use `import` to copy or clone one into the workspace.
 | Find the writer, schema, or path for an output     | [Artifact Catalog](./contracts/ARTIFACT_CATALOG.md)                                         | One canonical source instead of path guessing                            |
 | Understand Workspai terminology                    | [Glossary](./GLOSSARY.md)                                                                   | Shared meanings for model, graph, evidence, gate, and artifacts          |
 | Review or change the main product README           | [README content contract](./README_CONTENT_CONTRACT.md)                                     | Stable narrative, claim boundaries, and machine-enforced drift rules     |
+| Choose a first contribution path                   | [Contribution Hub](../../../.github/CONTRIBUTING.md)                                        | One bounded task, support route, and file-aware validation plan          |
 | Contribute to the CLI                              | [Development](./DEVELOPMENT.md)                                                             | Local build, test, contract, and documentation gates                     |
 
 There are two different AI-facing features. Workspace Intelligence is
@@ -103,31 +104,31 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 
 ## User documentation
 
-| Document                                                                                       | Description                                                                                                        |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| [creating-workspaces-and-projects.md](./creating-workspaces-and-projects.md)                   | Plain-language guide to every workspace and project creation scenario                                              |
-| [commands-reference.md](./commands-reference.md)                                               | Full CLI syntax, profiles, and policy keys                                                                         |
-| [workspace-operations.md](./workspace-operations.md)                                           | Import, adopt, snapshots, archives, contracts, infra                                                               |
-| [workspace-run.md](./workspace-run.md)                                                         | Polyglot fleet orchestration (`workspace run`)                                                                     |
-| [workspace-intelligence-runner.md](./workspace-intelligence-runner.md)                         | Canonical unified runner, execution envelope, report schema, exit codes, failure propagation, and CI consumption   |
-| [workspace-repair-engine.md](./workspace-repair-engine.md)                                     | CLI-owned plan, approval, checkpoint, execution, verification, decision, and rollback state machine                |
-| [goal-packs.md](./goal-packs.md)                                                               | Plain-language intent compilation, scope/evidence binding, agent handoff, and mutation boundary                    |
+| Document                                                                                       | Description                                                                                                         |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| [creating-workspaces-and-projects.md](./creating-workspaces-and-projects.md)                   | Plain-language guide to every workspace and project creation scenario                                               |
+| [commands-reference.md](./commands-reference.md)                                               | Full CLI syntax, profiles, and policy keys                                                                          |
+| [workspace-operations.md](./workspace-operations.md)                                           | Import, adopt, snapshots, archives, contracts, infra                                                                |
+| [workspace-run.md](./workspace-run.md)                                                         | Polyglot fleet orchestration (`workspace run`)                                                                      |
+| [workspace-intelligence-runner.md](./workspace-intelligence-runner.md)                         | Canonical unified runner, execution envelope, report schema, exit codes, failure propagation, and CI consumption    |
+| [workspace-repair-engine.md](./workspace-repair-engine.md)                                     | CLI-owned plan, approval, checkpoint, execution, verification, decision, and rollback state machine                 |
+| [goal-packs.md](./goal-packs.md)                                                               | Plain-language intent compilation, scope/evidence binding, agent handoff, and mutation boundary                     |
 | [proof-carrying-change.md](./proof-carrying-change.md)                                         | Generation-pinned Decisions ledger, predicted-vs-actual Graph delta, receipts, verification, and capsule validation |
-| [agent-entry.md](./agent-entry.md)                                                             | Host-native discovery, canonical evidence preflight, receipt status, privacy, and consumer integration             |
-| [workspace-knowledge-graph.md](./workspace-knowledge-graph.md)                                 | Two-minute graph quickstart, proof model, AI/MCP consumption, performance, and honest token-efficiency measurement |
-| [graph-benchmark-methodology.md](./graph-benchmark-methodology.md)                             | Reproducible payload-reduction benchmark, formulas, claim boundaries, and publication rules                        |
-| [workspace-intelligence-evaluation.md](./workspace-intelligence-evaluation.md)                 | Provider usage, cost provenance, verified outcomes, comparison, and extension consumption                          |
-| [workspace-intelligence-benchmark.md](./workspace-intelligence-benchmark.md)                   | Fixed multi-scenario retrieval metrics, measured evaluation attachment, and publication-safe claim boundaries      |
-| [GLOSSARY.md](./GLOSSARY.md)                                                                   | Plain-language definitions for workspace, model, graph, evidence, gates, and AI integrations                       |
-| [README_CONTENT_CONTRACT.md](./README_CONTENT_CONTRACT.md)                                     | Required root README journey, architecture statements, claim policy, and drift guard                               |
-| [create-planner-capabilities.md](./create-planner-capabilities.md)                             | Native create, official, and existing lanes                                                                        |
-| [../contracts/project-entry-capability.v1.json](../contracts/project-entry-capability.v1.json) | Contract: any readable project can enter through adopt/import when it can be registered                            |
-| [from-code-to-shared-understanding.md](./from-code-to-shared-understanding.md)                 | GitHub-rendered Workspace Intelligence diagram                                                                     |
-| [OPEN_SOURCE_USER_SCENARIOS.md](./OPEN_SOURCE_USER_SCENARIOS.md)                               | Role-based workflows (junior → enterprise)                                                                         |
-| [doctor-command.md](./doctor-command.md)                                                       | Doctor scopes, CI exit codes, JSON evidence                                                                        |
-| [config-file-guide.md](./config-file-guide.md)                                                 | User config file (`~/.workspairc.json`, `workspai.config.*`, with legacy fallbacks)                                |
-| [WORKSPACE_MARKER_SPEC.md](./WORKSPACE_MARKER_SPEC.md)                                         | Workspace marker format                                                                                            |
-| [PACKAGE_MANAGER_POLICY.md](./PACKAGE_MANAGER_POLICY.md)                                       | npm-only policy for this repository                                                                                |
+| [agent-entry.md](./agent-entry.md)                                                             | Host-native discovery, canonical evidence preflight, receipt status, privacy, and consumer integration              |
+| [workspace-knowledge-graph.md](./workspace-knowledge-graph.md)                                 | Two-minute graph quickstart, proof model, AI/MCP consumption, performance, and honest token-efficiency measurement  |
+| [graph-benchmark-methodology.md](./graph-benchmark-methodology.md)                             | Reproducible payload-reduction benchmark, formulas, claim boundaries, and publication rules                         |
+| [workspace-intelligence-evaluation.md](./workspace-intelligence-evaluation.md)                 | Provider usage, cost provenance, verified outcomes, comparison, and extension consumption                           |
+| [workspace-intelligence-benchmark.md](./workspace-intelligence-benchmark.md)                   | Fixed multi-scenario retrieval metrics, measured evaluation attachment, and publication-safe claim boundaries       |
+| [GLOSSARY.md](./GLOSSARY.md)                                                                   | Plain-language definitions for workspace, model, graph, evidence, gates, and AI integrations                        |
+| [README_CONTENT_CONTRACT.md](./README_CONTENT_CONTRACT.md)                                     | Required root README journey, architecture statements, claim policy, and drift guard                                |
+| [create-planner-capabilities.md](./create-planner-capabilities.md)                             | Native create, official, and existing lanes                                                                         |
+| [../contracts/project-entry-capability.v1.json](../contracts/project-entry-capability.v1.json) | Contract: any readable project can enter through adopt/import when it can be registered                             |
+| [from-code-to-shared-understanding.md](./from-code-to-shared-understanding.md)                 | GitHub-rendered Workspace Intelligence diagram                                                                      |
+| [OPEN_SOURCE_USER_SCENARIOS.md](./OPEN_SOURCE_USER_SCENARIOS.md)                               | Role-based workflows (junior → enterprise)                                                                          |
+| [doctor-command.md](./doctor-command.md)                                                       | Doctor scopes, CI exit codes, JSON evidence                                                                         |
+| [config-file-guide.md](./config-file-guide.md)                                                 | User config file (`~/.workspairc.json`, `workspai.config.*`, with legacy fallbacks)                                 |
+| [WORKSPACE_MARKER_SPEC.md](./WORKSPACE_MARKER_SPEC.md)                                         | Workspace marker format                                                                                             |
+| [PACKAGE_MANAGER_POLICY.md](./PACKAGE_MANAGER_POLICY.md)                                       | npm-only policy for this repository                                                                                 |
 
 **Common tasks**
 
@@ -181,13 +182,14 @@ npm run contracts:validate
 
 ## Contributor documentation
 
-| Document                                         | Description                               |
-| ------------------------------------------------ | ----------------------------------------- |
-| [DEVELOPMENT.md](./DEVELOPMENT.md)               | Local dev, testing, debugging             |
-| [SETUP.md](./SETUP.md)                           | Build gates, smoke flows, release hygiene |
-| [ci-workflows.md](./ci-workflows.md)             | GitHub Actions workflow map               |
-| [OPTIMIZATION_GUIDE.md](./OPTIMIZATION_GUIDE.md) | Performance and improvement notes         |
-| [UTILITIES.md](./UTILITIES.md)                   | Internal cache and metrics helpers        |
+| Document                                             | Description                                        |
+| ---------------------------------------------------- | -------------------------------------------------- |
+| [Contribution Hub](../../../.github/CONTRIBUTING.md) | First-task routes, support, and validation planner |
+| [DEVELOPMENT.md](./DEVELOPMENT.md)                   | Local dev, testing, debugging                      |
+| [SETUP.md](./SETUP.md)                               | Build gates, smoke flows, release hygiene          |
+| [ci-workflows.md](./ci-workflows.md)                 | GitHub Actions workflow map                        |
+| [OPTIMIZATION_GUIDE.md](./OPTIMIZATION_GUIDE.md)     | Performance and improvement notes                  |
+| [UTILITIES.md](./UTILITIES.md)                       | Internal cache and metrics helpers                 |
 
 Also see [../CONTRIBUTING.md](../CONTRIBUTING.md) and [../CHANGELOG.md](../CHANGELOG.md).
 

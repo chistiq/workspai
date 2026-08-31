@@ -47,6 +47,25 @@
       },
       "additionalProperties": false
     },
+    "deletedArtifactReference": {
+      "type": "object",
+      "required": ["artifact", "observedAt", "digest"],
+      "properties": {
+        "artifact": { "type": "string", "minLength": 1 },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "digest": {
+          "type": "object",
+          "required": ["algorithm", "semantics", "value"],
+          "properties": {
+            "algorithm": { "const": "sha256" },
+            "semantics": { "const": "deletion-tombstone-v1" },
+            "value": { "$ref": "#/$defs/sha256" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "scope": {
       "type": "object",
       "required": ["kind", "projects"],
@@ -76,6 +95,7 @@
         "summary": { "type": "string", "minLength": 1 },
         "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
         "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifactReference" } },
+        "deletedArtifacts": { "type": "array", "items": { "$ref": "#/$defs/deletedArtifactReference" }, "uniqueItems": true },
         "observedAt": { "type": "string", "format": "date-time" },
         "idempotencyKey": { "type": "string", "minLength": 1 }
       },

@@ -159,10 +159,18 @@ describe('npm publish contract', () => {
   });
 
   it('keeps npm-only contributor enforcement out of consumer install lifecycles', () => {
+    const rootPackage = JSON.parse(
+      fs.readFileSync(path.join(monorepoRoot, 'package.json'), 'utf8')
+    ) as { scripts?: Record<string, string> };
+
     expect(packageJson.scripts?.preinstall).toBeUndefined();
     expect(packageJson.scripts?.['check:package-manager']).toBe(
       'node scripts/enforce-package-manager.cjs'
     );
+    expect(packageJson.scripts?.['contributor:plan']).toBeUndefined();
+    expect(rootPackage.scripts?.['contributor:plan']).toBe('node scripts/contributor-plan.mjs');
+    expect(fs.existsSync(path.join(monorepoRoot, 'scripts/contributor-plan.mjs'))).toBe(true);
+    expect(isPublishedByFiles('scripts/contributor-plan.mjs')).toBe(false);
     expect(packageJson.scripts?.validate).toContain('run check:package-manager');
     expect(packageJson.scripts?.quality).toContain('run check:package-manager');
 

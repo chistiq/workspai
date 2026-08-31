@@ -9,6 +9,8 @@ Please make sure:
 - [ ] Documentation was updated when behavior changed
 - [ ] Changes are focused and backward-compatible (or clearly documented)
 
+Generate the file-aware validation plan with `corepack npm run contributor:plan`.
+
 ### What changed
 
 Describe your change in 2-5 bullets.

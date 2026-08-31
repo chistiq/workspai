@@ -1,6 +1,7 @@
 # Proof-Carrying Change
 
-Status: released in Workspai CLI v0.69.0
+Status: released in Workspai CLI v0.69.0; deletion-tombstone and overlapping
+artifact-identity hardening released in v0.70.0.
 
 > Every change carries its intent, pinned architecture baseline, predicted
 > impact, authorized effects, actual architecture delta, independent
@@ -81,6 +82,8 @@ The runtime enforces these rules:
 - receipt idempotency keys cannot be reused;
 - verification binds the exact current Model, Graph, and effect-head digest;
 - observed changed artifacts must be covered by successful effect receipts;
+- removed artifacts must be covered by validated deletion tombstones rather
+  than references to files that no longer exist;
 - a changed Graph with no effect receipt blocks verification;
 - every required Goal criterion needs a latest passing receipt before commit;
 - failed or uncertain effects block the transaction;
@@ -106,12 +109,44 @@ baseline identity, not the cache as architecture truth.
 ## Typed receipts
 
 An effect receipt includes an ID, effect class, result, summary, observation
-time, idempotency key, optional command argv, and artifact references. Artifact
-references use labeled digest semantics:
+time, idempotency key, optional command argv, present artifact references, and
+optional deleted-artifact tombstones. Artifact references use labeled digest
+semantics:
 
 - `canonical-json-v1` for JSON evidence;
 - `raw-bytes-v1` for source or command-output files;
 - `workspace-model-structural-v1` for canonical Model identity.
+
+A deletion is not represented by a fake file digest. CLI and IDE consumers may
+submit the compact input below; the CLI normalizes it into a
+`deletion-tombstone-v1` reference before the event enters the ledger:
+
+```json
+{
+  "id": "remove-obsolete-retry",
+  "effectClass": "filesystem",
+  "status": "succeeded",
+  "summary": "Removed the obsolete retry implementation.",
+  "artifacts": [],
+  "deletedArtifacts": [{ "artifact": "api/src/obsolete-retry.ts" }],
+  "observedAt": "2026-08-31T12:00:00.000Z",
+  "idempotencyKey": "remove-obsolete-retry-v1"
+}
+```
+
+Admission proves that each deleted path is absent and remains inside the
+workspace or an explicitly contracted linked-project root. Verification then
+requires the fresh Graph overlay to report the same removal. Recreating the
+path invalidates capsule validation. A tombstone intentionally carries no
+unverifiable claim about the deleted bytes; the pinned baseline Graph owns the
+pre-change architecture identity.
+
+When adopted scopes overlap, one physical source file can have both an
+aggregate-project Graph label and a nested-project Graph label. Effect coverage
+resolves those portable labels through the workspace contract and treats them
+as one mutation only when they map to the same contained filesystem target. It
+never requires duplicate receipts for one physical effect, and it never uses
+label similarity as proof of equivalence.
 
 Verification receipts add a Goal criterion ID and an exact target. Domain
 receipts are admitted only after `change verify` has re-observed the Graph and
@@ -192,11 +227,10 @@ and cannot replace verification.
 
 ## Deferred work
 
-The next layer is IDE timeline/Graph overlay and Repair/Studio transaction
-adapters. Rich hosted PR annotations remain separate from the machine-readable
-CI gate above. Semantic multi-change overlap, immutable historical Graph
-queries, isolated patch simulation, and remote attestation remain separate
-follow-up capabilities. No current command claims those behaviors.
+Rich hosted PR annotations remain separate from the machine-readable CI gate
+above. Semantic multi-change overlap, immutable historical Graph queries,
+isolated patch simulation, and remote attestation remain separate follow-up
+capabilities. No current command claims those behaviors.
 
 See the [contract reference](./contracts/PROOF_CARRYING_CHANGE_CONTRACT_PLAN.md)
 and [implementation manifest](./proof-carrying-change.implementation.v1.json).

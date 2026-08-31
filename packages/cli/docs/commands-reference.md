@@ -227,7 +227,10 @@ capsules. `begin` pins the
 exact Model, Graph, and live-input generation. `predict` is explicitly
 noncanonical and never counts as proof. A human uses `authorize` to grant
 bounded effect classes; agents and tools then append typed, idempotent effect
-receipts. `verify` re-observes the canonical Graph, derives the actual overlay,
+receipts. Removed paths use `deletedArtifacts: [{ "artifact": "..." }]`; the
+CLI emits a governed tombstone only after proving the path is absent and
+contained by the workspace or linked-project contract. `verify` re-observes
+the canonical Graph, derives the actual overlay,
 reports prediction surprises, and records Workspace Verify against the exact
 post-effect generation. Additional Goal-domain receipts enter through
 `verification record`. Only complete, passing criteria can seal a capsule. See

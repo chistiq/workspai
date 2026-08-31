@@ -30,6 +30,7 @@
     "actualOverlay": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/artifactReference" }, { "type": "null" }] },
     "surpriseReport": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/artifactReference" }, { "type": "null" }] },
     "effects": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/artifactReference" } },
+    "deletedArtifacts": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/deletedArtifactReference" }, "uniqueItems": true },
     "verification": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/artifactReference" } },
     "assurances": {
       "type": "array",

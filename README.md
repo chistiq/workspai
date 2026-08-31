@@ -287,7 +287,8 @@ npm test
 ```
 
 Read the [Development Guide](packages/cli/docs/DEVELOPMENT.md),
-[Contributing Guide](packages/cli/CONTRIBUTING.md), and
+[Contribution Hub](.github/CONTRIBUTING.md),
+[complete Contributing Guide](packages/cli/CONTRIBUTING.md), and
 [README content contract](packages/cli/docs/README_CONTENT_CONTRACT.md).
 
 ## Community
@@ -296,6 +297,7 @@ Workspai is an open-source project by [Chistiq](https://chistiq.com/), the
 intelligence infrastructure company behind RapidKit and Workspai.
 
 - [Issues](https://github.com/chistiq/workspai/issues)
+- [Start contributing](.github/CONTRIBUTING.md)
 - [Discussions](https://github.com/chistiq/workspai/discussions)
 - [Security policy](packages/cli/docs/SECURITY.md)
 - [Changelog](packages/cli/CHANGELOG.md)

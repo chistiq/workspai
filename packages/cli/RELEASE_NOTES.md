@@ -5,7 +5,47 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.69.0 (August 30, 2026)
+## Latest Release: v0.70.0 (August 31, 2026)
+
+### Deletion-Aware Change Assurance and Contributor-Ready Qualification
+
+Workspai 0.70.0 makes deleted artifacts first-class Proof-Carrying Change
+evidence, reconciles overlapping Graph labels without duplicate effect
+receipts, strengthens nested polyglot readiness decisions, and gives
+contributors a bounded route from task selection to file-aware validation.
+
+**What's New:**
+
+- Deterministic deletion tombstones that remain valid only while the governed
+  artifact is absent and invalidate a capsule if it reappears.
+- Safe physical-identity reconciliation for aggregate and nested Graph labels
+  that refer to one contained source artifact.
+- Scope-aware Goal readiness and explicit multi-runtime aggregate analysis that
+  prevent unrelated evidence from becoming a false blocker.
+- A 23-command isolated real-repository qualification including Model, Graph,
+  Doctor, agent grounding, verification, exports, and Live Board activity.
+- A Contribution Hub and read-only `contributor:plan` repository tool for
+  bounded applicant routing and file-aware validation.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, Repair, Skill, project-entry, Live, Decisions, and PCC contracts
+remain supported. Deletion references are additive and optional. No public
+command is removed.
+
+**Publication status:** Released August 31, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.70.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.70.0/packages/cli/releases/RELEASE_NOTES_v0.70.0.md)
+
+---
+
+## v0.69.0 (August 30, 2026)
 
 ### Proof-Carrying Changes and Tamper-Evident Agent Assurance
 

@@ -719,13 +719,18 @@ export async function buildAgentBootstrapReceipt(input: {
         } else {
           goalRecoveryActions.push('workspai goal --status --json');
         }
+        const blocksCurrentProject = !activeGoal.present || activeGoal.appliesToProject;
         check(
           'active-goal',
-          'failed',
+          blocksCurrentProject ? 'failed' : 'warning',
           stale
-            ? 'The selected Goal Pack is present but stale; regenerate it against current canonical evidence before acting.'
+            ? blocksCurrentProject
+              ? 'The selected Goal Pack is present but stale; regenerate it against current canonical evidence before acting.'
+              : 'The selected Goal Pack is stale, but it does not apply to this project; current project evidence remains usable while the Goal is refreshed for its own scope.'
             : activeGoal.present
-              ? 'The selected Goal Pack is present but its canonical binding or handoff is invalid.'
+              ? blocksCurrentProject
+                ? 'The selected Goal Pack is present but its canonical binding or handoff is invalid.'
+                : 'The selected Goal Pack has an invalid canonical binding, but it does not apply to this project; current project evidence remains usable while the Goal is repaired for its own scope.'
               : 'The Goal index could not be validated.'
         );
       }
@@ -733,12 +738,22 @@ export async function buildAgentBootstrapReceipt(input: {
     check('active-goal', 'passed', 'No Goal index is present for this workspace.');
   }
 
-  const evidenceStatus: AgentEntryHostStatus = checks.some((item) => item.status === 'failed')
+  const architectureChecks = checks.filter((item) => item.id !== 'active-goal');
+  const architectureEvidenceStatus: AgentEntryHostStatus = architectureChecks.some(
+    (item) => item.status === 'failed'
+  )
     ? 'blocked'
-    : checks.some((item) => item.status === 'warning')
+    : architectureChecks.some((item) => item.status === 'warning')
       ? 'degraded'
       : 'ready';
-  const status = mergedStatus([runtimeHostStatus, evidenceStatus]);
+  const goalStatus: AgentEntryHostStatus = checks.some(
+    (item) => item.id === 'active-goal' && item.status === 'failed'
+  )
+    ? 'blocked'
+    : checks.some((item) => item.id === 'active-goal' && item.status === 'warning')
+      ? 'degraded'
+      : 'ready';
+  const status = mergedStatus([runtimeHostStatus, architectureEvidenceStatus, goalStatus]);
   const projectEnvironment = context.blockers.some((blocker) => blocker.severity === 'error')
     ? ('blocked' as const)
     : context.blockers.length > 0
@@ -763,7 +778,7 @@ export async function buildAgentBootstrapReceipt(input: {
     statusScope: 'agent-grounding' as const,
     readiness: {
       agentGrounding: status,
-      architectureEvidence: evidenceStatus,
+      architectureEvidence: architectureEvidenceStatus,
       projectEnvironment,
       release: releaseReadiness,
     },
@@ -810,7 +825,9 @@ export async function buildAgentBootstrapReceipt(input: {
     requiredReadOrder,
     claims: {
       architecture:
-        status === 'ready' ? ('allowed-with-citations' as const) : ('prohibited' as const),
+        architectureEvidenceStatus === 'ready'
+          ? ('allowed-with-citations' as const)
+          : ('prohibited' as const),
       sourceInspection: 'bounded-and-targeted' as const,
       sourceMutation: 'governed-cli-transaction-only' as const,
       verification: 'cli-evidence-only' as const,

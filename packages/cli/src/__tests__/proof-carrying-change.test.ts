@@ -9,10 +9,14 @@ import {
   abortProofCarryingChange,
   authorizeProofCarryingChange,
   beginProofCarryingChange,
+  createDeletedArtifactReference,
+  findUncoveredEffectArtifacts,
   listProofCarryingChanges,
+  recordProofCarryingChangeEffect,
   recordProofCarryingChangePrediction,
   resumeProofCarryingChange,
   validatePredictedArchitectureChangeInput,
+  validateEffectReceiptInput,
   validateProofCarryingChangeCapsule,
   verifyProofCarryingChange,
 } from '../proof-carrying-change.js';
@@ -84,6 +88,64 @@ afterEach(async () => {
 });
 
 describe('proof-carrying change composition', () => {
+  it('covers overlapping Graph aliases with one receipt for the same physical artifact', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-pcc-overlap-'));
+    roots.push(root);
+    const workspacePath = path.join(root, 'workspace');
+    const sourcePath = path.join(root, 'source');
+    const nestedPath = path.join(sourcePath, 'python');
+    await fsExtra.ensureDir(path.join(nestedPath, 'src'));
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-08-29T00:00:00.000Z',
+      workspace: { name: 'platform', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'platform',
+          relativePath: 'external/platform',
+          externalPath: sourcePath,
+        },
+        {
+          slug: 'platform-python',
+          relativePath: 'external/platform-python',
+          externalPath: nestedPath,
+        },
+      ],
+    });
+
+    const uncovered = await findUncoveredEffectArtifacts({
+      workspacePath,
+      changedArtifacts: [
+        'external/platform/python/src/obsolete.py',
+        'external/platform-python/src/obsolete.py',
+      ],
+      receiptedArtifacts: ['external/platform-python/src/obsolete.py'],
+    });
+
+    expect(uncovered).toEqual([]);
+  });
+
+  it('normalizes compact deleted-artifact input into a typed tombstone', () => {
+    const receipt = validateEffectReceiptInput({
+      id: 'delete-obsolete-source',
+      effectClass: 'filesystem',
+      status: 'succeeded',
+      summary: 'Removed obsolete source.',
+      artifacts: [],
+      deletedArtifacts: [{ artifact: './api/src/obsolete.ts' }],
+      observedAt: '2026-08-29T00:01:00.000Z',
+      idempotencyKey: 'delete-obsolete-source-v1',
+    });
+    expect(receipt.deletedArtifacts).toEqual([
+      expect.objectContaining({
+        artifact: 'api/src/obsolete.ts',
+        observedAt: '2026-08-29T00:01:00.000Z',
+        digest: expect.objectContaining({ semantics: 'deletion-tombstone-v1' }),
+      }),
+    ]);
+  });
+
   it('pins Goal and architecture identity, keeps prediction noncanonical, and preserves an aborted audit trail', async () => {
     const { workspacePath, projectPath } = await fixture();
     const planned = await planGoalPack({
@@ -367,6 +429,116 @@ describe('proof-carrying change composition', () => {
     expect(listed.summary.invalid).toBe(1);
     expect(listed.changes.find((item) => item.changeId === begun.changeId)).toMatchObject({
       valid: false,
+    });
+  });
+
+  it('records a deletion tombstone, covers the fresh Graph removal, and detects resurrection', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const sourcePath = path.join(projectPath, 'src', 'retry-backoff.ts');
+    const sourceBytes = await fsExtra.readFile(sourcePath);
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Remove the obsolete retry backoff implementation',
+    });
+    const begun = await beginProofCarryingChange({
+      workspacePath,
+      goalId: planned.goalPack.id,
+    });
+    await authorizeProofCarryingChange({
+      workspacePath,
+      changeId: begun.changeId,
+      effectClasses: ['filesystem'],
+      grantedBy: 'maintainer',
+    });
+    const deletedArtifact = createDeletedArtifactReference({
+      artifact: 'api/src/retry-backoff.ts',
+      observedAt: '2026-08-29T00:01:00.000Z',
+    });
+
+    await expect(
+      recordProofCarryingChangeEffect({
+        workspacePath,
+        changeId: begun.changeId,
+        receipt: {
+          id: 'delete-retry-backoff',
+          effectClass: 'filesystem',
+          status: 'succeeded',
+          summary: 'Removed the obsolete retry implementation.',
+          artifacts: [],
+          deletedArtifacts: [deletedArtifact],
+          observedAt: '2026-08-29T00:01:00.000Z',
+          idempotencyKey: 'delete-retry-backoff-v1',
+        },
+      })
+    ).rejects.toThrow(/artifact is present/i);
+
+    await fsExtra.remove(sourcePath);
+    await expect(
+      recordProofCarryingChangeEffect({
+        workspacePath,
+        changeId: begun.changeId,
+        receipt: {
+          id: 'delete-retry-backoff-tampered',
+          effectClass: 'filesystem',
+          status: 'succeeded',
+          summary: 'Attempted to record a tampered deletion tombstone.',
+          artifacts: [],
+          deletedArtifacts: [
+            {
+              ...deletedArtifact,
+              digest: { ...deletedArtifact.digest, value: '0'.repeat(64) },
+            },
+          ],
+          observedAt: '2026-08-29T00:01:00.000Z',
+          idempotencyKey: 'delete-retry-backoff-tampered-v1',
+        },
+      })
+    ).rejects.toThrow(/invalid tombstone/i);
+
+    const recorded = await recordProofCarryingChangeEffect({
+      workspacePath,
+      changeId: begun.changeId,
+      receipt: {
+        id: 'delete-retry-backoff',
+        effectClass: 'filesystem',
+        status: 'succeeded',
+        summary: 'Removed the obsolete retry implementation.',
+        artifacts: [],
+        deletedArtifacts: [deletedArtifact],
+        observedAt: '2026-08-29T00:01:00.000Z',
+        idempotencyKey: 'delete-retry-backoff-v1',
+      },
+    });
+    expect(recorded.capsule.deletedArtifacts).toEqual([deletedArtifact]);
+
+    const postEffectModel = await buildWorkspaceModel({
+      workspacePath,
+      includeAbsolutePaths: true,
+      now: new Date('2026-08-29T00:02:00.000Z'),
+    });
+    await writeWorkspaceModel(postEffectModel, workspacePath);
+    const verified = await verifyProofCarryingChange({
+      workspacePath,
+      changeId: begun.changeId,
+      refresh: false,
+    });
+    const actualOverlay = await fsExtra.readJson(
+      path.join(workspacePath, verified.capsule.actualOverlay?.artifact ?? '')
+    );
+    expect(actualOverlay.changedArtifacts).toContain('api/src/retry-backoff.ts');
+    expect(verified.capsule.remainingUncertainty).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/Uncovered artifacts:/)])
+    );
+    await expect(
+      validateProofCarryingChangeCapsule({ workspacePath, changeId: begun.changeId })
+    ).resolves.toMatchObject({ valid: true });
+
+    await fsExtra.outputFile(sourcePath, sourceBytes);
+    await expect(
+      validateProofCarryingChangeCapsule({ workspacePath, changeId: begun.changeId })
+    ).resolves.toMatchObject({
+      valid: false,
+      errors: expect.arrayContaining([expect.stringMatching(/exists again/)]),
     });
   });
 });

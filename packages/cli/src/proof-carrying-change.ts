@@ -31,6 +31,7 @@ import {
 import { WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS } from './contracts/workspace-intelligence-runtime-registry.js';
 import type {
   DecisionArtifactReference,
+  DecisionDeletedArtifactReference,
   DecisionEffectReceipt,
   DecisionTransaction,
   DecisionVerificationReceipt,
@@ -47,6 +48,7 @@ import { inspectGoalLifecycle, linkGoalChangeTransaction } from './goal-lifecycl
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import {
   resolveContainedWorkspaceArtifactPath,
+  resolvePortableWorkspaceEvidenceCandidatePath,
   resolvePortableWorkspaceEvidencePath,
   writeWorkspaceArtifactJson,
   writeWorkspaceArtifactJsonSet,
@@ -72,6 +74,7 @@ type ChangePaths = {
 };
 
 const kernelPorts = { digestCanonical: hashCanonicalJson };
+const DELETED_ARTIFACT_TOMBSTONE_SCHEMA_VERSION = 'workspai.deleted-artifact-tombstone.v1' as const;
 
 function assertChangeId(changeId: string): string {
   const normalized = changeId.trim();
@@ -158,6 +161,53 @@ async function artifactDigestMatches(
       ? hashWorkspaceModel(payload)
       : hashCanonicalJson(payload);
   return digest === artifact.digest.value;
+}
+
+function deletedArtifactDigest(artifact: string): string {
+  return hashCanonicalJson({
+    schemaVersion: DELETED_ARTIFACT_TOMBSTONE_SCHEMA_VERSION,
+    artifact: normalizedArtifactIdentity(artifact),
+    deleted: true,
+  });
+}
+
+export function createDeletedArtifactReference(input: {
+  artifact: string;
+  observedAt?: string;
+}): DecisionDeletedArtifactReference {
+  const artifact = normalizedArtifactIdentity(input.artifact);
+  if (!artifact || artifact === '.' || artifact === '..' || artifact.startsWith('../')) {
+    throw new Error(
+      `Deleted artifact identity must be a contained relative path: ${input.artifact}`
+    );
+  }
+  return {
+    artifact,
+    observedAt: input.observedAt ?? new Date().toISOString(),
+    digest: {
+      algorithm: 'sha256',
+      semantics: 'deletion-tombstone-v1',
+      value: deletedArtifactDigest(artifact),
+    },
+  };
+}
+
+async function deletedArtifactReferenceMatches(
+  workspacePath: string,
+  deletedArtifact: DecisionDeletedArtifactReference
+): Promise<boolean> {
+  if (
+    deletedArtifact.digest.algorithm !== 'sha256' ||
+    deletedArtifact.digest.semantics !== 'deletion-tombstone-v1' ||
+    deletedArtifact.digest.value !== deletedArtifactDigest(deletedArtifact.artifact)
+  ) {
+    return false;
+  }
+  const candidate = await resolvePortableWorkspaceEvidenceCandidatePath(
+    workspacePath,
+    deletedArtifact.artifact
+  );
+  return candidate !== null && !(await fsExtra.pathExists(candidate));
 }
 
 async function requireLease(
@@ -386,6 +436,9 @@ async function buildCapsule(input: {
     value: hashCanonicalJson(input.record.transaction),
   });
   const effects = input.record.transaction.effects.flatMap((effect) => effect.artifacts);
+  const deletedArtifacts = input.record.transaction.effects.flatMap(
+    (effect) => effect.deletedArtifacts ?? []
+  );
   const verification = input.record.transaction.verifications.flatMap(
     (receipt) => receipt.artifacts
   );
@@ -484,6 +537,7 @@ async function buildCapsule(input: {
     actualOverlay,
     surpriseReport,
     effects,
+    deletedArtifacts,
     verification,
     assurances,
     remainingUncertainty: [...new Set(remainingUncertainty)],
@@ -910,9 +964,31 @@ export async function recordProofCarryingChangeEffect(input: {
   actorId?: string;
 }): Promise<ChangeOperationResult> {
   const { lease, record: initial } = await loadChange(input.workspacePath, input.changeId);
+  const liveArtifacts = new Set(
+    input.receipt.artifacts.map((artifact) => normalizedArtifactIdentity(artifact.artifact))
+  );
+  const deletedArtifacts = (input.receipt.deletedArtifacts ?? []).map((artifact) =>
+    normalizedArtifactIdentity(artifact.artifact)
+  );
+  if (new Set(deletedArtifacts).size !== deletedArtifacts.length) {
+    throw new Error('Effect receipt contains duplicate deleted-artifact identities.');
+  }
+  if (deletedArtifacts.some((artifact) => liveArtifacts.has(artifact))) {
+    throw new Error('An effect artifact cannot be both present and deleted in one receipt.');
+  }
+  if (deletedArtifacts.length > 0 && input.receipt.status !== 'succeeded') {
+    throw new Error('Only a succeeded effect may carry deleted-artifact tombstones.');
+  }
   for (const artifact of input.receipt.artifacts) {
     if (!(await artifactDigestMatches(input.workspacePath, artifact))) {
       throw new Error(`Effect artifact is missing or corrupt: ${artifact.artifact}`);
+    }
+  }
+  for (const deletedArtifact of input.receipt.deletedArtifacts ?? []) {
+    if (!(await deletedArtifactReferenceMatches(input.workspacePath, deletedArtifact))) {
+      throw new Error(
+        `Deleted effect artifact is present, outside the governed scope, or has an invalid tombstone: ${deletedArtifact.artifact}`
+      );
     }
   }
   const record = await append(
@@ -1084,6 +1160,48 @@ function normalizedArtifactIdentity(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
+function filesystemArtifactIdentity(value: string): string {
+  const normalized = path.normalize(path.resolve(value));
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+/**
+ * Match Graph artifact identities to observed effects by both portable label
+ * and canonical filesystem target. Overlapping adopted project scopes may
+ * project one physical file under multiple Graph labels; they must not require
+ * duplicate effect receipts for the same mutation.
+ */
+export async function findUncoveredEffectArtifacts(input: {
+  workspacePath: string;
+  changedArtifacts: string[];
+  receiptedArtifacts: string[];
+}): Promise<string[]> {
+  const receiptedIdentities = new Set(input.receiptedArtifacts.map(normalizedArtifactIdentity));
+  const receiptedFilesystemIdentities = new Set<string>();
+  for (const artifact of receiptedIdentities) {
+    const candidate = await resolvePortableWorkspaceEvidenceCandidatePath(
+      input.workspacePath,
+      artifact
+    );
+    if (candidate) receiptedFilesystemIdentities.add(filesystemArtifactIdentity(candidate));
+  }
+
+  const uncovered: string[] = [];
+  for (const artifact of input.changedArtifacts) {
+    const identity = normalizedArtifactIdentity(artifact);
+    if (receiptedIdentities.has(identity)) continue;
+    const candidate = await resolvePortableWorkspaceEvidenceCandidatePath(
+      input.workspacePath,
+      identity
+    );
+    if (candidate && receiptedFilesystemIdentities.has(filesystemArtifactIdentity(candidate))) {
+      continue;
+    }
+    uncovered.push(artifact);
+  }
+  return uncovered;
+}
+
 export async function verifyProofCarryingChange(input: {
   workspacePath: string;
   changeId: string;
@@ -1183,15 +1301,17 @@ export async function verifyProofCarryingChange(input: {
       ],
     });
   }
-  const receiptedArtifacts = new Set(
-    record.transaction.effects
-      .filter((effect) => effect.status === 'succeeded')
-      .flatMap((effect) => effect.artifacts)
-      .map((artifact) => normalizedArtifactIdentity(artifact.artifact))
-  );
-  const uncoveredArtifacts = overlay.changedArtifacts.filter(
-    (artifact) => !receiptedArtifacts.has(normalizedArtifactIdentity(artifact))
-  );
+  const receiptedArtifacts = record.transaction.effects
+    .filter((effect) => effect.status === 'succeeded')
+    .flatMap((effect) => [
+      ...effect.artifacts.map((artifact) => artifact.artifact),
+      ...(effect.deletedArtifacts ?? []).map((artifact) => artifact.artifact),
+    ]);
+  const uncoveredArtifacts = await findUncoveredEffectArtifacts({
+    workspacePath,
+    changedArtifacts: overlay.changedArtifacts,
+    receiptedArtifacts,
+  });
   if (uncoveredArtifacts.length > 0) {
     record = await append(
       workspacePath,
@@ -1520,6 +1640,13 @@ export async function validateProofCarryingChangeCapsule(input: {
       errors.push(`Referenced artifact is missing or corrupt: ${artifact.artifact}`);
     }
   }
+  for (const deletedArtifact of capsule.deletedArtifacts ?? []) {
+    if (!(await deletedArtifactReferenceMatches(input.workspacePath, deletedArtifact))) {
+      errors.push(
+        `Deleted artifact tombstone is invalid or the artifact exists again: ${deletedArtifact.artifact}`
+      );
+    }
+  }
   const validation: CapsuleValidation = {
     schemaVersion: PROOF_CARRYING_CHANGE_CAPSULE_VALIDATION_SCHEMA_VERSION,
     changeId: input.changeId,
@@ -1633,7 +1760,38 @@ export function validateEffectReceiptInput(value: unknown): DecisionEffectReceip
   ) {
     throw new Error('Effect receipt is missing required typed fields.');
   }
-  return candidate as DecisionEffectReceipt;
+  if (
+    candidate.deletedArtifacts !== undefined &&
+    (!Array.isArray(candidate.deletedArtifacts) ||
+      candidate.deletedArtifacts.some(
+        (artifact) =>
+          !artifact ||
+          typeof artifact.artifact !== 'string' ||
+          (artifact.observedAt !== undefined && typeof artifact.observedAt !== 'string') ||
+          (artifact.digest !== undefined &&
+            (artifact.digest.algorithm !== 'sha256' ||
+              artifact.digest.semantics !== 'deletion-tombstone-v1' ||
+              typeof artifact.digest.value !== 'string'))
+      ))
+  ) {
+    throw new Error('Effect receipt contains an invalid deleted-artifact tombstone.');
+  }
+  const receipt = candidate as DecisionEffectReceipt;
+  return {
+    ...receipt,
+    ...(receipt.deletedArtifacts
+      ? {
+          deletedArtifacts: receipt.deletedArtifacts.map((artifact) =>
+            artifact.digest
+              ? artifact
+              : createDeletedArtifactReference({
+                  artifact: artifact.artifact,
+                  observedAt: artifact.observedAt ?? receipt.observedAt,
+                })
+          ),
+        }
+      : {}),
+  };
 }
 
 export function validateVerificationReceiptInput(value: unknown): DecisionVerificationReceipt {

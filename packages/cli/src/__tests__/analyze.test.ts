@@ -66,6 +66,46 @@ describe('analyze command', () => {
     expect(report.findings.map((finding) => finding.id)).not.toContain('project.health.missing');
   });
 
+  it('treats a multi-runtime aggregate boundary as observed architecture, not an unknown-stack blocker', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'sdk-platform');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'go'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'python'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({
+        name: 'sdk-platform',
+        kind: 'platform',
+        runtime: 'unknown',
+        framework: 'unknown',
+        adoption: { managed_by: 'workspai', mode: 'linked' },
+      })
+    );
+    await fs.writeFile(path.join(projectDir, 'go', 'go.mod'), 'module example.test/sdk\n');
+    await fs.writeFile(
+      path.join(projectDir, 'python', 'pyproject.toml'),
+      '[project]\nname = "sdk-platform"\n'
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0]).toMatchObject({
+      framework: 'unknown',
+      runtimeCandidates: ['go', 'python'],
+    });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({ id: 'project.stack.aggregate', severity: 'info' })
+    );
+    expect(report.findings.map((item) => item.id)).not.toContain('project.stack.unknown');
+    expect(report.summary.verdict).not.toBe('blocked');
+  });
+
   it('recognizes nested tests and avoids deployment findings for package workspaces', async () => {
     const workspaceDir = await createTempDir();
     const projectDir = path.join(workspaceDir, 'polyglot-library');

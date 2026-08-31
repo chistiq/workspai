@@ -5,8 +5,9 @@ remain the release gates. Real-world qualification complements them by running
 the installed CLI against explicitly selected reference repositories through
 local, network-free Git snapshots
 without installing dependencies or executing project lifecycle commands.
-Every isolated workspace also receives a private `WORKSPAI_STATE_DIR` beneath
-`--run-root`; qualification cannot read or update the user's canonical registry,
+Every isolated workspace also receives private `WORKSPAI_STATE_DIR` and
+`WORKSPAI_ACTIVITY_STATE_DIR` roots beneath `--run-root`; qualification cannot
+read or update the user's canonical registry, activity journals, transaction
 journals, or legacy registry mirror.
 
 ## Isolated and cumulative layouts
@@ -96,7 +97,9 @@ that safety boundary as a command failure.
 - Runtime candidates describe observed nested composition; the authoritative
   project runtime controls repair-adapter assertions. An aggregate boundary with
   runtime `unknown` therefore follows the governed manual-repair path instead of
-  promoting its first nested runtime candidate.
+  promoting its first nested runtime candidate. Analyze reports a confirmed
+  multi-runtime aggregate as informational architecture rather than an
+  unknown-stack blocker.
 - Goal qualification publishes one system-understanding Goal inside the
   isolated test workspace, validates its lifecycle binding, and previews
   runtime-specific coverage and release-readiness goals without executing
@@ -110,6 +113,8 @@ that safety boundary as a command failure.
   are wrong.
 - Full graphs belong in `--output` artifacts. Agents and IDEs consume bounded
   `search`, `entities`, `evidence`, and `path` results.
+- Every qualification also reads the renderer-neutral Live Board projection
+  from its isolated activity state and requires at least one observed CLI run.
 
 These suites are explicit and opt-in because they require local reference
 repositories. They do not replace cross-platform CI fixtures or release gates.

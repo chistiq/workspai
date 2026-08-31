@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-08-31
+
+### Added
+
+- Added typed deletion tombstones to PCC effect receipts and capsules so
+  deleted artifacts remain independently checkable and artifact resurrection
+  invalidates prior assurance.
+- Added a repository Contribution Hub, skill-routed applicant and lifecycle
+  messages, and a read-only `contributor:plan` that derives validation gates
+  from changed files without entering the published CLI package.
+- Added Live Board activity validation to the isolated 23-command real-world
+  qualification gate.
+
+### Changed
+
+- Made PCC effect coverage reconcile overlapping aggregate and nested Graph
+  labels through their contained physical target instead of requiring
+  duplicate receipts for one mutation.
+- Made Analyze report a deliberate multi-runtime aggregate boundary as
+  informational rather than failing it as an unknown backend stack.
+- Made agent bootstrap keep architecture evidence independent from an unrelated
+  stale or invalid Goal while retaining a degraded Goal advisory.
+- Updated contributor welcome, pull-request, merge, follow-up, issue, and
+  validation guidance around bounded tasks and GitHub-owned acceptance criteria.
+
+### Fixed
+
+- Prevented a successful deletion from becoming unverifiable merely because
+  the deleted file cannot provide an ordinary live-file digest.
+- Prevented a recreated deleted artifact from passing capsule validation.
+- Prevented a stale Goal scoped to one project from rolling back valid adoption
+  or prohibiting architecture claims for an unrelated nested project.
+- Prevented isolated qualification Activity state from escaping its disposable
+  run root or producing an empty Live Board.
+
 ## [0.69.0] - 2026-08-30
 
 ### Added
@@ -20,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkpoints, durable blocked states, explicit resume, and evidence-preserving
   abort behavior.
 - Added the `change begin`, `list`, `predict`, `authorize`, `resume`, `effect
-  record`, `verification record`, `status`, `explain`, `verify`, `abort`, and
+record`, `verification record`, `status`, `explain`, `verify`, `abort`, and
   `capsule validate|export` command surfaces with versioned JSON contracts.
 - Added read-only MCP discovery, inspection, and validation tools for
   Proof-Carrying Changes without exposing mutation or authorization over MCP.

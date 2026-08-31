@@ -144,6 +144,111 @@ export async function resolvePortableWorkspaceEvidencePath(
   return null;
 }
 
+async function resolveContainedCandidatePath(
+  rootPath: string,
+  relativePath: string,
+  escapeMessage: string
+): Promise<string | null> {
+  const root = path.resolve(rootPath);
+  const target = path.resolve(root, relativePath);
+  const lexicalRelative = path.relative(root, target);
+  if (
+    !lexicalRelative ||
+    lexicalRelative === '..' ||
+    lexicalRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(lexicalRelative) ||
+    !(await fsExtra.pathExists(root))
+  ) {
+    return null;
+  }
+
+  const realRoot = await fsExtra.realpath(root);
+  let existingAncestor = target;
+  while (!(await fsExtra.pathExists(existingAncestor))) {
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) return null;
+    existingAncestor = parent;
+  }
+  const realAncestor = await fsExtra.realpath(existingAncestor);
+  const realRelative = path.relative(realRoot, realAncestor);
+  if (
+    realRelative === '..' ||
+    realRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(realRelative)
+  ) {
+    throw new Error(escapeMessage);
+  }
+  return target;
+}
+
+/**
+ * Resolve a portable evidence identity whose target may no longer exist.
+ * The nearest existing ancestor is realpath-checked, so a missing leaf cannot
+ * use an authored symlink parent to escape the workspace or contracted project.
+ */
+export async function resolvePortableWorkspaceEvidenceCandidatePath(
+  workspacePath: string,
+  artifact: string
+): Promise<string | null> {
+  const normalizedArtifact = artifact.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalizedArtifact || path.isAbsolute(normalizedArtifact)) return null;
+
+  const canonicalContractPath = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
+  for (const relativeContractPath of [
+    canonicalContractPath,
+    toLegacyRapidkitArtifactPath(canonicalContractPath),
+  ]) {
+    const contractPath = await resolveContainedWorkspaceArtifactPath(
+      workspacePath,
+      relativeContractPath
+    );
+    if (!contractPath) continue;
+    let projects: Array<{ relativePath?: unknown; externalPath?: unknown }> = [];
+    try {
+      const contract = (await fsExtra.readJson(contractPath)) as {
+        projects?: Array<{ relativePath?: unknown; externalPath?: unknown }>;
+      };
+      projects = contract.projects ?? [];
+    } catch {
+      return null;
+    }
+
+    const candidates = projects
+      .filter(
+        (project): project is { relativePath: string; externalPath: string } =>
+          typeof project.relativePath === 'string' &&
+          typeof project.externalPath === 'string' &&
+          path.isAbsolute(project.externalPath)
+      )
+      .map((project) => ({
+        prefix: project.relativePath.replace(/\\/g, '/').replace(/\/$/, ''),
+        root: path.resolve(project.externalPath),
+      }))
+      .filter(({ prefix }) => normalizedArtifact.startsWith(`${prefix}/`))
+      .sort((left, right) => right.prefix.length - left.prefix.length);
+
+    if (candidates.length > 0) {
+      for (const candidate of candidates) {
+        const relativeArtifact = normalizedArtifact.slice(candidate.prefix.length + 1);
+        const resolved = await resolveContainedCandidatePath(
+          candidate.root,
+          relativeArtifact,
+          `External evidence candidate resolves outside its contracted root: ${artifact}`
+        );
+        if (resolved) return resolved;
+      }
+      return null;
+    }
+    break;
+  }
+
+  return resolveContainedCandidatePath(
+    workspacePath,
+    normalizedArtifact,
+    `Workspace evidence candidate resolves outside workspace root: ${artifact}`
+  );
+}
+
 export function resolveLegacyWorkspaceArtifactPath(
   workspacePath: string,
   relativePath: string
