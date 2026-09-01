@@ -13,6 +13,9 @@
 
 ## Workspace Intelligence for software systems
 
+Workspai is an open-source CLI that gives people and AI tools one governed view
+of the software system they are changing.
+
 ```bash
 npx workspai adopt .
 npx workspai workspace intelligence run --for-agent generic
@@ -47,36 +50,23 @@ for every supported host, without duplicating the Model or Graph.
 
 ### What the output looks like
 
-After a single run, the canonical workspace stores governed artifacts under
-`.workspai/`. Each linked project keeps only its local entry contract, scoped
-lens, and workspace binding under its own `.workspai/` directory:
+The canonical workspace owns the Model, Graph, context, evidence index, and
+Skills. Each linked project keeps only its portable entry, scoped context, and
+workspace binding:
 
 ```text
-your-workspace/                         # canonical system boundary
+your-workspace/
 ├── .workspai/
-│   ├── workspace.contract.json         # registered projects and declarations
-│   ├── reports/
-│   │   ├── workspace-model.json        # canonical system model
-│   │   ├── workspace-knowledge-graph.json # derived proof-backed graph
-│   │   ├── workspace-context-agent.json   # bounded consumer context
-│   │   └── INDEX.json                  # evidence inventory and read order
-│   └── skills/                         # detected operational playbooks
-├── AGENTS.md · CLAUDE.md · GEMINI.md · QWEN.md
-├── .cursor/ · .claude/ · .github/ · .agents/ # host-native projections
-├── nova-api/
-│   ├── .agents/skills/workspai-*/SKILL.md # portable project Skill wrappers
-│   └── .workspai/
-│       ├── agent-entry.v1.json         # canonical project entry
-│       ├── workspace-link.local.json   # machine-local binding
-│       └── reports/
-│           ├── project-context-agent.json
-│           └── project-knowledge-graph-reference.json
-└── summit-web/                         # same project-level boundary
+│   ├── reports/                       # Model, Graph, verification, context
+│   └── skills/                        # evidence-derived playbooks
+├── AGENTS.md · .codex/ · .cursor/ · .claude/ · .github/ · .agents/
+└── project/.workspai/
+    ├── agent-entry.v1.json            # portable project entry
+    └── workspace-link.local.json      # machine-local binding
 ```
 
-Your agent starts with `agent-entry.v1.json`, compact workspace context, and the Skills
-index; it then retrieves only task-scoped Graph evidence and targeted source. No broad
-scan or complete Graph load is needed for ordinary work.
+Your agent starts with `agent-entry.v1.json`, compact workspace context, and the
+Skills index; it then retrieves task-scoped Graph evidence and targeted source.
 
 ![Workspai CLI adopting and analyzing the gRPC repository](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
 
@@ -84,18 +74,6 @@ scan or complete Graph load is needed for ordinary work.
 [See what you get](#what-happens-after-the-first-run) ·
 [How it works](#how-workspace-intelligence-works) ·
 [Documentation](docs/README.md)
-
-## Why Workspai
-
-Workspai is an open-source CLI that brings related software projects together,
-so people and AI tools can understand and work with the same system.
-
-- **See the whole system:** registered projects and proven relationships in one model.
-- **Ask with proof:** trace answers back to their evidence record and source location.
-- **Change safely:** know impact before you commit, verify after, and give AI agents
-  only the context they need.
-
-![From Code to Shared Understanding](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png)
 
 ## Start in two minutes
 
@@ -135,14 +113,8 @@ Choose whether to create a workspace, scaffold a project, or add existing
 software. Project starters are grouped as Backend, Frontend, Desktop, and
 Extension.
 
-Global installation is optional:
-
-```bash
-npm install -g workspai
-workspai --help
-```
-
-`wspai` is an optional short alias for the same CLI.
+Global installation is optional: `npm install -g workspai`. `wspai` is a short
+alias for the same CLI.
 
 ## Give your agent a goal, not an open-ended prompt
 
@@ -150,10 +122,7 @@ Describe the outcome in plain language from the adopted project:
 
 ```bash
 npx workspai goal "Raise test coverage to 85%" --for-agent generic
-# In a polyglot scope, choose interactively or bind a canonical runtime:
 npx workspai goal "Raise test coverage to 85%" --runtime cpp --for-agent generic
-# Or pursue feature, defect, refactor, performance, documentation, or
-# system-understanding outcomes in the same governed flow.
 npx workspai goal "Add retry with exponential backoff" --for-agent generic
 ```
 
@@ -173,8 +142,6 @@ Multi-project scope and polyglot runtime choices are explicit. Interactive
 users get bounded choices from the canonical Workspace Model; automation gets
 a machine-readable decision and can use `--scope` and `--runtime`.
 
-![Workspai turns a plain-language objective into a governed Goal Pack](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-goal-readme-cli.gif)
-
 [Learn how Goal Packs work](docs/goal-packs.md)
 
 ## Make every agent change carry proof
@@ -183,9 +150,8 @@ For source-changing work, begin a Goal-bound change before mutation:
 
 ```bash
 npx workspai change begin --json
-npx workspai change list --json
 npx workspai change authorize --change <change-id> --effects filesystem,command --json
-# The agent or extension records typed effects, then Workspai re-observes the Graph.
+npx workspai change effect record --change <change-id> --file effect-receipt.json --json
 npx workspai change verify --change <change-id> --strict --json
 npx workspai change capsule validate --change <change-id> --json
 ```
@@ -195,10 +161,11 @@ observed effects, predicted-versus-actual Graph changes, verification receipts,
 and remaining uncertainty. Prediction can guide work but can never prove its
 own result. [Learn how Proof-Carrying Change works](docs/proof-carrying-change.md).
 
+![Workspai creates a Goal-bound Proof-Carrying Change before source mutation](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif)
+
 ## What happens after the first run
 
-Everything shown in the [output tree above](#what-the-output-looks-like) is
-generated in one run. The key files for each audience:
+The key outputs for each audience are:
 
 | Audience            | What to read                                                                 |
 | ------------------- | ---------------------------------------------------------------------------- |
@@ -280,25 +247,24 @@ explicitly unproven.
 
 ## Everyday workflows
 
-| Goal                                        | Command                                                                          |
-| ------------------------------------------- | -------------------------------------------------------------------------------- |
-| Use guided setup                            | `npx workspai create`                                                            |
-| Link a project without moving it            | `npx workspai adopt .`                                                           |
-| Turn an outcome into governed work          | `npx workspai goal "Raise test coverage to 85%"`                                 |
-| Prove an agent change from intent to verify | `npx workspai change begin --json`                                               |
-| Ground an agent before source discovery     | `npx workspai agent bootstrap --for-agent codex --strict --json`                 |
-| Audit every agent entry adapter             | `npx workspai project agent-entry verify --for-agent all --strict --json`        |
-| Copy or clone a project into a workspace    | `npx workspai import <path-or-git-url> --workspace <path>`                       |
-| Check the current project                   | `npx workspai doctor project`                                                    |
-| Check the whole workspace                   | `npx workspai doctor workspace`                                                  |
-| Refresh Model and Graph                     | `npx workspai workspace model --write --json`                                    |
-| Watch command activity as a portable board  | `npx workspai live --once --json --projection board`                             |
-| Benchmark bounded agent retrieval           | `npx workspai workspace graph benchmark-suite agent-core.v1 --write --json`      |
-| Ask a focused architecture question         | `npx workspai workspace graph search "authentication service" --limit 12 --json` |
-| Verify current evidence                     | `npx workspai workspace verify --strict --json`                                  |
-| Inspect a governed repair before execution  | `npx workspai workspace repair capabilities --json`                              |
-| Refresh agent and IDE context               | `npx workspai workspace agent-sync --write --preset enterprise --json`           |
-| Start MCP server for workspace queries      | `npx workspai workspace mcp serve`                                               |
+| Goal                                        | Command                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Use guided setup                            | `npx workspai create`                                                                            |
+| Link a project without moving it            | `npx workspai adopt .`                                                                           |
+| Initialize workspace and project dependencies | `npx workspai init`                                                                              |
+| Refresh the complete system view            | `npx workspai workspace intelligence run --for-agent generic --strict --json`                    |
+| Turn an outcome into governed work          | `npx workspai goal "Raise test coverage to 85%"`                                                 |
+| Prove an agent change from intent to verify | `npx workspai change begin --json`                                                               |
+| Ground an agent before source discovery     | `npx workspai agent bootstrap --for-agent generic --strict --json`                               |
+| Copy or clone a project into a workspace    | `npx workspai import <path-or-git-url> --workspace <path>`                                       |
+| Diagnose project or workspace health        | `npx workspai doctor project` / `npx workspai doctor workspace`                                 |
+| Observe CLI and Studio activity             | `npx workspai live --once --json --projection board`                                             |
+| Ask a focused architecture question         | `npx workspai workspace graph search "authentication service" --limit 12 --json`                 |
+| Verify current evidence                     | `npx workspai workspace verify --strict --json`                                                  |
+| Inspect a governed repair before execution  | `npx workspai workspace repair capabilities --json`                                              |
+| Refresh agent and IDE context               | `npx workspai workspace agent-sync --write --preset enterprise --json`                           |
+| Run the broader release gate                | `npx workspai pipeline --strict --json`                                                          |
+| Start MCP server for workspace queries      | `npx workspai workspace mcp serve`                                                               |
 
 For every command and flag, use the
 [Command Reference](docs/commands-reference.md).
@@ -312,7 +278,7 @@ Workspai exposes the same governed data through several stable surfaces:
 - versioned artifacts under `.workspai/reports/`;
 - focused context and instructions for AI agents;
 - MCP server with versioned read-oriented workspace tools (`workspace mcp serve`);
-- watch events and reports for IDEs and dashboards;
+- Live activity projections and reports for IDEs and dashboards;
 - JSON, JSON-LD, Mermaid, DOT, GraphML, and GEXF graph exports.
 
 The [Workspai VS Code extension](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
@@ -339,11 +305,14 @@ modules; Workspai remains the workspace-level CLI.
 | Create, adopt, import, or connect software    | [Creating workspaces and projects](docs/creating-workspaces-and-projects.md)                   |
 | Query Graph and inspect proof                 | [Workspace Knowledge Graph](docs/workspace-knowledge-graph.md)                                 |
 | Understand the exact decision loop            | [Workspace Intelligence runner](docs/workspace-intelligence-runner.md)                         |
+| Run dependency, test, and build stages         | [Workspace Run](docs/workspace-run.md)                                                         |
+| Observe CLI and Studio activity                | [Workspai Live](docs/workspace-live-activity.md)                                               |
 | Plan, approve, execute, or roll back a repair | [Workspace Repair Engine](docs/workspace-repair-engine.md)                                     |
 | Set a release, security, or coverage outcome  | [Verified engineering goals](docs/workspace-intelligence-runner.md#verified-engineering-goals) |
 | Compile plain language into a governed plan   | [Goal Packs](docs/goal-packs.md)                                                               |
 | Prove what an agent changed and why           | [Proof-Carrying Change](docs/proof-carrying-change.md)                                         |
 | Ground an agent in canonical project evidence | [Canonical-first agent entry](docs/agent-entry.md)                                             |
+| Measure bounded retrieval and model usage      | [Evaluation](docs/workspace-intelligence-evaluation.md) and [benchmark](docs/workspace-intelligence-benchmark.md) |
 | Integrate CI                                  | [CI workflows](docs/ci-workflows.md)                                                           |
 | Find generated files and schemas              | [Artifact Catalog](docs/contracts/ARTIFACT_CATALOG.md)                                         |
 | Browse all documentation                      | [Documentation index](docs/README.md)                                                          |
@@ -363,12 +332,6 @@ modules; Workspai remains the workspace-level CLI.
 Workspai is developed in the open by
 [Chistiq](https://chistiq.com/), the intelligence infrastructure company behind
 RapidKit and Workspai.
-
-```bash
-npm ci
-npm run build
-npm test
-```
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), the
 [Development Guide](docs/DEVELOPMENT.md), and the

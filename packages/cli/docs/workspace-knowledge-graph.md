@@ -203,8 +203,12 @@ canonical per-project storage boundary.
 
 Workspai-generated agent entry projections are downstream consumers and are
 excluded from Graph inventory and Git diff hashing. Regenerating `AGENTS.md`,
-adapter entry files, or the Amazon Q entry rule therefore cannot invalidate the
-Graph that produced them or become circular architecture evidence.
+adapter entry files, GitHub agent definitions, or the Amazon Q entry rule
+therefore cannot invalidate the Graph that produced them or become circular
+architecture evidence. The reserved `.workspai-workspace` marker is excluded
+for the same ownership reason: its extension/CLI usage telemetry and other
+operational metadata describe Workspai activity, not source architecture. Real
+repository and workspace source changes remain part of the live fingerprint.
 
 ## Pick the command by question
 

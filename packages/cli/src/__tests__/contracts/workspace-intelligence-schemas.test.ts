@@ -168,4 +168,22 @@ describe('workspace intelligence schema contracts', () => {
       expect.arrayContaining(['git.file.changed', 'git.untracked', 'git.deleted'])
     );
   });
+
+  it('keeps Goal lifecycle projections compatible with Repair and PCC transaction bindings', () => {
+    const schema = readSchema('goal-lifecycle-result.v1.json');
+    const definitions = schema.$defs as Record<string, Record<string, unknown>>;
+    const goalEntry = definitions.goalEntry;
+    const properties = goalEntry.properties as Record<string, Record<string, unknown>>;
+
+    expect(Object.keys(properties)).toEqual(
+      expect.arrayContaining([
+        'repairTransactionId',
+        'repairTransactionIds',
+        'changeTransactionId',
+        'changeTransactionIds',
+      ])
+    );
+    expect(properties.changeTransactionId.pattern).toBe('^change-[a-z0-9][a-z0-9-]{7,95}$');
+    expect(properties.changeTransactionIds.maxItems).toBe(25);
+  });
 });

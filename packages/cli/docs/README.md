@@ -21,8 +21,8 @@ npx workspai adopt .
 # Step 2: Build the full workspace intelligence
 npx workspai workspace intelligence run --for-agent generic --strict --json
 
-# Step 3: Check what agents will see
-cat .workspai/reports/workspace-context-agent.json | head -30
+# Step 3: Validate the canonical agent entry
+npx workspai agent bootstrap --for-agent generic --strict --json
 ```
 
 That is it. Your project now has:
@@ -86,6 +86,7 @@ or use `import` to copy or clone one into the workspace.
 | Prove what an agent changed and why                | [Proof-Carrying Change](./proof-carrying-change.md)                                         | A Goal-bound, effect-receipted, independently verified change capsule    |
 | Ground an agent before broad source discovery      | [Canonical-first agent entry](./agent-entry.md)                                             | A portable receipt for host discovery, evidence integrity, and freshness |
 | Repair a blocker through an approved transaction   | [Workspace Repair Engine](./workspace-repair-engine.md)                                     | Checkpointed execution, validation, canonical verify, and safe rollback  |
+| Observe current CLI and Studio activity            | [Workspai Live](./workspace-live-activity.md)                                               | One bounded activity projection for terminal, IDE, replay, and capture   |
 | Set a release, security, or coverage outcome       | [Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals) | A durable success contract with a current evidence-backed verdict        |
 | Ask an architecture or dependency question         | [Workspace Knowledge Graph](./workspace-knowledge-graph.md)                                 | A bounded answer with proof references rather than the whole graph       |
 | Measure agent token, cost, and outcome efficiency  | [Workspace Intelligence Evaluation](./workspace-intelligence-evaluation.md)                 | A live, provenance-aware report suitable for CLI, IDE, and CI            |
@@ -110,6 +111,7 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 | [commands-reference.md](./commands-reference.md)                                               | Full CLI syntax, profiles, and policy keys                                                                          |
 | [workspace-operations.md](./workspace-operations.md)                                           | Import, adopt, snapshots, archives, contracts, infra                                                                |
 | [workspace-run.md](./workspace-run.md)                                                         | Polyglot fleet orchestration (`workspace run`)                                                                      |
+| [workspace-live-activity.md](./workspace-live-activity.md)                                     | Unified CLI/Studio activity, Board projection, replay, accessibility, and SVG capture                              |
 | [workspace-intelligence-runner.md](./workspace-intelligence-runner.md)                         | Canonical unified runner, execution envelope, report schema, exit codes, failure propagation, and CI consumption    |
 | [workspace-repair-engine.md](./workspace-repair-engine.md)                                     | CLI-owned plan, approval, checkpoint, execution, verification, decision, and rollback state machine                 |
 | [goal-packs.md](./goal-packs.md)                                                               | Plain-language intent compilation, scope/evidence binding, agent handoff, and mutation boundary                     |
@@ -122,6 +124,7 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 | [GLOSSARY.md](./GLOSSARY.md)                                                                   | Plain-language definitions for workspace, model, graph, evidence, gates, and AI integrations                        |
 | [README_CONTENT_CONTRACT.md](./README_CONTENT_CONTRACT.md)                                     | Required root README journey, architecture statements, claim policy, and drift guard                                |
 | [create-planner-capabilities.md](./create-planner-capabilities.md)                             | Native create, official, and existing lanes                                                                         |
+| [native-kit-baselines.md](./native-kit-baselines.md)                                           | Owned Go, Java, .NET, and Rust generator baselines, upgrade policy, and validation contract                         |
 | [../contracts/project-entry-capability.v1.json](../contracts/project-entry-capability.v1.json) | Contract: any readable project can enter through adopt/import when it can be registered                             |
 | [from-code-to-shared-understanding.md](./from-code-to-shared-understanding.md)                 | GitHub-rendered Workspace Intelligence diagram                                                                      |
 | [OPEN_SOURCE_USER_SCENARIOS.md](./OPEN_SOURCE_USER_SCENARIOS.md)                               | Role-based workflows (junior → enterprise)                                                                          |

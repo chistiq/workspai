@@ -206,16 +206,50 @@ describe('workspace knowledge graph snapshot', () => {
       path.join(root, '.amazonq', 'rules', 'workspai-agent-entry.md'),
       'Read AGENTS.md first.\n'
     );
+    await fsExtra.outputFile(
+      path.join(root, '.github', 'agents', 'workspai-repair.agent.md'),
+      'Generated repair agent.\n'
+    );
 
     await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
       status: 'hit',
     });
 
     await fsExtra.outputFile(path.join(root, 'AGENTS.md'), 'Regenerated entry\n');
+    await fsExtra.outputFile(
+      path.join(root, '.github', 'agents', 'workspai-repair.agent.md'),
+      'Regenerated repair agent.\n'
+    );
     await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
       status: 'hit',
     });
   });
+
+  it.each([
+    ['filesystem-backed', false],
+    ['Git-backed', true],
+  ] as const)(
+    'does not let runtime-owned workspace metadata invalidate a %s graph',
+    async (_strategy, git) => {
+      const { root } = await fixture({ git });
+      const marker = path.join(root, '.workspai-workspace');
+      await fsExtra.outputJson(marker, {
+        signature: 'RAPIDKIT_WORKSPACE',
+        metadata: { custom: { workspaiTelemetry: { commandUsage: { first: 1 } } } },
+      });
+      await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
+        status: 'hit',
+      });
+
+      await fsExtra.outputJson(marker, {
+        signature: 'RAPIDKIT_WORKSPACE',
+        metadata: { custom: { workspaiTelemetry: { commandUsage: { first: 1, second: 1 } } } },
+      });
+      await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
+        status: 'hit',
+      });
+    }
+  );
 
   it.runIf(process.platform !== 'win32')(
     'keeps the Git strategy when the workspace path is a logical alias of the physical worktree',

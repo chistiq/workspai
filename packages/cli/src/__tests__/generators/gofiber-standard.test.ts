@@ -12,7 +12,7 @@ vi.mock('execa', async (importOriginal) => {
     execa: vi.fn().mockImplementation((cmd: string, _args: string[], _opts: unknown) => {
       if (cmd === 'go') {
         return Promise.resolve({
-          stdout: 'go version go1.24.0 linux/amd64',
+          stdout: 'go version go1.26.0 linux/amd64',
           stderr: '',
           exitCode: 0,
         });
@@ -117,6 +117,7 @@ describe('generateGoFiberKit', () => {
         '.env.example',
         '.gitignore',
         '.github/workflows/ci.yml',
+        '.github/dependabot.yml',
         'README.md',
         '.workspai/project.json',
         '.workspai/context.json',
@@ -164,12 +165,12 @@ describe('generateGoFiberKit', () => {
       expect(goMod).toContain('module my-api');
     });
 
-    it('should use go 1.24 by default', async () => {
+    it('should use the supported Go 1.26 baseline by default', async () => {
       const projectPath = path.join(testDir, 'fiber-go-version');
       await generateGoFiberKit(projectPath, { project_name: 'fiber-go-version', skipGit: true });
 
       const goMod = await fs.readFile(path.join(projectPath, 'go.mod'), 'utf8');
-      expect(goMod).toContain('go 1.24');
+      expect(goMod).toContain('go 1.26');
     });
 
     it('should use port 3000 by default', async () => {
@@ -261,7 +262,7 @@ describe('generateGoFiberKit', () => {
 
       const goMod = await fs.readFile(path.join(projectPath, 'go.mod'), 'utf8');
       expect(goMod).toContain('module myapp');
-      expect(goMod).toContain('github.com/gofiber/fiber');
+      expect(goMod).toContain('github.com/gofiber/fiber/v2 v2.52.15');
     });
 
     it('should generate main.go with correct package', async () => {
@@ -325,6 +326,11 @@ describe('generateGoFiberKit', () => {
         'utf8'
       );
       expect(workflow).toContain('go');
+      expect(workflow).toContain('actions/setup-go@v7');
+      expect(workflow).toContain('golangci/golangci-lint-action@v9');
+      expect(workflow).toContain('version: v2.12.2');
+      expect(workflow).toContain('permissions:\n  contents: read');
+      expect(workflow).not.toContain('version: latest');
     });
 
     it('should generate .golangci.yml linter config', async () => {
@@ -332,8 +338,9 @@ describe('generateGoFiberKit', () => {
       await generateGoFiberKit(projectPath, { project_name: 'fiber-lint', skipGit: true });
 
       const lint = await fs.readFile(path.join(projectPath, '.golangci.yml'), 'utf8');
-      expect(lint).toBeDefined();
-      expect(lint.length).toBeGreaterThan(0);
+      expect(lint).toContain('version: "2"');
+      expect(lint).toContain('formatters:');
+      expect(lint).not.toContain('linters-settings:');
     });
 
     it('should generate .air.toml for hot reload', async () => {
@@ -472,7 +479,7 @@ describe('generateGoFiberKit', () => {
       mockedExeca.mockImplementation((cmd: string, args: string[]) => {
         if (cmd === 'git') return Promise.reject(new Error('git not found'));
         if (cmd === 'go' && args?.[0] === 'version') {
-          return Promise.resolve({ stdout: 'go version go1.24', stderr: '', exitCode: 0 } as any);
+          return Promise.resolve({ stdout: 'go version go1.26', stderr: '', exitCode: 0 } as any);
         }
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
       });

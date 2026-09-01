@@ -1,34 +1,5 @@
 # Commands Reference
 
-## Live cross-terminal activity
-
-```bash
-workspai live [target]
-workspai live --global [--max-scopes <count>]
-workspai live --run <run-id>
-workspai live --once --json
-workspai live --once --json --projection monitor|board
-workspai live --no-motion --no-color
-workspai live --ascii|--accessible|--classic
-workspai live --capture <file.svg> [--capture-preset github|linkedin|x|square|wide]
-workspai live --replay <run-id> [--replay-speed <0.25..64>]
-```
-
-`workspai live` observes versioned run/block/activity journals emitted by every
-Workspai CLI command in the same project or workspace. It works without
-`adopt`; adoption adds workspace correlation and cross-project intelligence.
-Its default TTY surface is a bounded interactive Flow Board with live block and
-edge state, durable per-block retry attempts, semantic phase rails, an adaptive
-Inspector, a deduplicated multi-workspace Fleet Cockpit, deterministic
-redacted-by-default SVG capture, durable replay, responsive compaction and
-changed-row rendering. Use `--accessible` for stable screen-reader output or
-`--classic` for the compatibility line view.
-`--projection board` exposes the same bounded renderer-neutral run/node/edge
-model used by the terminal and SVG adapters, so IDE and web consumers do not
-need to reconstruct topology from raw events. The default `monitor` projection
-is backward compatible.
-See [Workspai Live Activity](./workspace-live-activity.md).
-
 Human-readable CLI syntax for the Workspai CLI. The machine-complete command,
 argument, option, alias, ownership, and integrity inventory is available through
 `workspai commands --json` and
@@ -51,6 +22,38 @@ project`, and a complete ownership-grouped command map. Scoped help carries
 exact flags and examples. `commands --json` remains the machine-complete
 inventory used to prevent the human map from drifting.
 
+## Start with the core loop
+
+```bash
+npx workspai adopt .
+npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai goal "Describe the required outcome" --for-agent generic
+npx workspai agent bootstrap --for-agent generic --strict --json
+```
+
+For source-changing work, continue through `change begin`, bounded
+authorization, effect receipts, independent verification, and capsule
+validation. For exact syntax, see the lifecycle section below.
+
+## Live cross-terminal activity
+
+```bash
+workspai live [target]
+workspai live --global [--max-scopes <count>]
+workspai live --run <run-id>
+workspai live --once --json --projection monitor|board
+workspai live --ascii|--accessible|--classic
+workspai live --capture <file.svg> [--capture-preset github|linkedin|x|square|wide]
+workspai live --replay <run-id> [--replay-speed <0.25..64>]
+```
+
+`workspai live` observes versioned activity emitted by CLI and Studio without
+changing command outcomes or upgrading telemetry into verification proof. The
+default TTY is an interactive Flow Board; the `board` JSON projection is the
+shared renderer-neutral surface for IDE, web, replay, and capture consumers.
+Use `--accessible` for stable screen-reader output and `--classic` for the
+compatibility view. See [Workspai Live Activity](./workspace-live-activity.md).
+
 ## Workspace lifecycle
 
 ```bash
@@ -71,10 +74,12 @@ npx workspai change authorize --change <change-id> --effects <classes> [--grante
 npx workspai change effect record --change <change-id> --file <effect-receipt.json> [--workspace <path>] [--json]
 npx workspai change verify --change <change-id> [--strict] [--no-refresh] [--workspace <path>] [--json]
 npx workspai change verification record --change <change-id> --file <verification-receipt.json> [--workspace <path>] [--json]
-npx workspai change <status|explain> --change <change-id> [--workspace <path>] [--json]
+npx workspai change status --change <change-id> [--workspace <path>] [--json]
+npx workspai change explain --change <change-id> [--workspace <path>] [--json]
 npx workspai change resume --change <change-id> --to <authorized|executing|verifying> --reason <text> [--actor <identity>] [--json]
 npx workspai change abort --change <change-id> --reason <text> [--actor <identity>] [--json]
-npx workspai change capsule <validate|export> --change <change-id> [--output <path>] [--json]
+npx workspai change capsule validate --change <change-id> [--workspace <path>] [--json]
+npx workspai change capsule export --change <change-id> --output <path> [--workspace <path>] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
 ```
 
@@ -135,7 +140,7 @@ npx workspai workspace snapshot [--workspace <path>] [--json] [--include-paths] 
 npx workspai workspace diff --from <snapshot-or-model|git[:ref]> [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace impact --from <workspace-diff-report> [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace verify [--from-impact <file>] [--workspace <path>] [--scope project:<name>] [--strict] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--kind <entity-kind>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--graph-inventory-limit <count>] [--graph-semantic-budget <count>] [--graph-deep-budget <count>] [--graph-source-budget <count>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
+npx workspai workspace graph [emit|explain|search|benchmark|benchmark-suite|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--kind <entity-kind>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--graph-inventory-limit <count>] [--graph-semantic-budget <count>] [--graph-deep-budget <count>] [--graph-source-budget <count>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace eval [init <task> [strategy]|record|status|report|compare --from <report>] [--workspace <path>] [--output <file>] [--json]
 npx workspai workspace watch [--workspace <path>] [--json] [--graph-stream] [--once] [--scan-depth <count>]
 npx workspai workspace explain <target> [--workspace <path>] [--json] [--write]

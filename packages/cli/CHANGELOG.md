@@ -5,7 +5,38 @@ All notable changes to Workspai CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.71.0] - 2026-08-31
+
+### Added
+
+- Added one executable baseline registry for the npm-owned Go Fiber, Go Gin,
+  Spring Boot, .NET Web API, and Rust Axum generators.
+- Added generated Dependabot coverage for native package ecosystems and GitHub
+  Actions, plus pinned toolchains and non-root runtime containers.
+
+### Changed
+
+- Updated owned native kits to reviewed Go 1.26, Spring Boot 3.5, Java 21,
+  .NET 10 LTS, Rust 1.98, edition 2024, and current compatible framework and
+  test dependencies.
+- Made cold workspace initialization stream the executor that actually ran and
+  use bounded runtime-aware budgets while preserving explicit timeout policy.
+- Extended Goal lifecycle projections with their canonical Repair and PCC
+  transaction links.
+- Simplified the primary onboarding documentation around the complete
+  adopt-to-verify loop, restored Live and Workspace Run discovery, and made the
+  command reference explicit for PCC inspection/export and Graph benchmark
+  suites.
+
+### Fixed
+
+- Prevented runtime-owned `.workspai-workspace` telemetry from invalidating the
+  canonical Graph, immutable Goal binding, or PCC lease before an approved
+  effect executes.
+- Prevented generated GitHub agent definitions from becoming circular Graph
+  inputs while preserving freshness for real repository source changes.
+- Prevented an expected missing system Poetry executable from becoming stale
+  blocker evidence when a project-local Poetry bootstrap is available.
 
 ## [0.70.0] - 2026-08-31
 

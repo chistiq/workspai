@@ -28,6 +28,7 @@ import {
   toPascalCase,
   writeGeneratorFile,
 } from './go-kit-common.js';
+import { buildNativeKitDependabotYml, NATIVE_KIT_BASELINES } from './native-kit-baselines.js';
 
 export interface GoFiberVariables {
   project_name: string;
@@ -107,9 +108,9 @@ function goMod(v: Required<GoFiberVariables>): string {
 go ${v.go_version}
 
 require (
-	github.com/gofiber/fiber/v2 v2.52.5
-	github.com/swaggo/fiber-swagger v1.3.0
-	github.com/swaggo/swag v1.16.3
+	github.com/gofiber/fiber/v2 ${NATIVE_KIT_BASELINES.go.fiber}
+	github.com/swaggo/fiber-swagger ${NATIVE_KIT_BASELINES.go.fiberSwagger}
+	github.com/swaggo/swag ${NATIVE_KIT_BASELINES.go.swag}
 )
 `;
 }
@@ -344,7 +345,7 @@ func TestReadiness(t *testing.T) {
 
 function dockerfile(): string {
   return `# ── Build stage ────────────────────────────────────────────────────────
-FROM golang:1.24-alpine AS builder
+FROM golang:${NATIVE_KIT_BASELINES.go.version}-alpine AS builder
 
 # Build-time version injection
 ARG VERSION=dev
@@ -362,7 +363,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \\
 
 # ── Runtime stage ───────────────────────────────────────────────────────
 # alpine includes busybox wget required for the HEALTHCHECK below.
-FROM alpine:3.21
+FROM alpine:${NATIVE_KIT_BASELINES.go.alpine}
 
 RUN addgroup -S app && adduser -S -G app app
 COPY --from=builder /app/server /server
@@ -471,16 +472,19 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@${NATIVE_KIT_BASELINES.actions.checkout}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@${NATIVE_KIT_BASELINES.actions.setupGo}
         with:
           go-version: "${v.go_version}"
           cache: true
@@ -495,7 +499,7 @@ jobs:
         run: go test ./... -race -coverprofile=coverage.out
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@${NATIVE_KIT_BASELINES.actions.uploadArtifact}
         with:
           name: coverage
           path: coverage.out
@@ -505,18 +509,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@${NATIVE_KIT_BASELINES.actions.checkout}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@${NATIVE_KIT_BASELINES.actions.setupGo}
         with:
           go-version: "${v.go_version}"
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@${NATIVE_KIT_BASELINES.actions.golangciLint}
         with:
-          version: latest
+          version: ${NATIVE_KIT_BASELINES.go.golangciLint}
 `;
 }
 
@@ -1539,19 +1543,19 @@ tmp_dir = "tmp"
 }
 
 function golangciYml(modulePath: string): string {
-  return `run:
+  return `version: "2"
+
+run:
   timeout: 5m
 
 linters:
+  default: standard
   enable:
     - bodyclose
     - durationcheck
     - errcheck
     - errname
     - errorlint
-    - gci
-    - goimports
-    - gosimple
     - govet
     - ineffassign
     - misspell
@@ -1562,29 +1566,36 @@ linters:
     - unconvert
     - unused
     - wrapcheck
+  settings:
+    govet:
+      enable:
+        - shadow
+    wrapcheck:
+      ignore-package-globs:
+        - "${modulePath}/*"
+  exclusions:
+    rules:
+      - path: _test\\.go
+        linters:
+          - errcheck
+          - wrapcheck
 
-linters-settings:
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(${modulePath})
-  goimports:
-    local-prefixes: "${modulePath}"
-  govet:
-    enable:
-      - shadow
-  wrapcheck:
-    ignorePackageGlobs:
-      - "${modulePath}/*"
+formatters:
+  enable:
+    - gci
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(${modulePath})
+    goimports:
+      local-prefixes:
+        - "${modulePath}"
 
 issues:
   max-same-issues: 5
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - wrapcheck
 `;
 }
 
@@ -1653,7 +1664,7 @@ export async function generateGoFiberKit(
     } catch {
       console.log(
         chalk.yellow(
-          '\n⚠  Go not found in PATH — project will be scaffolded, but `go mod tidy` requires Go 1.21+'
+          `\n⚠  Go not found in PATH — project will be scaffolded, but this baseline requires Go ${DEFAULT_GO_VERSION}+`
         )
       );
       console.log(chalk.gray('   Install: https://go.dev/dl/\n'));
@@ -1697,6 +1708,7 @@ export async function generateGoFiberKit(
       w('.env.example', envExample(v)),
       w('.gitignore', gitignore()),
       w('.github/workflows/ci.yml', githubWorkflow(v)),
+      w('.github/dependabot.yml', buildNativeKitDependabotYml('gomod')),
       w('README.md', readmeMd(v)),
       w('.workspai/project.json', projectJson(v, rapidkitVersion)),
       w('.workspai/context.json', contextJson()),

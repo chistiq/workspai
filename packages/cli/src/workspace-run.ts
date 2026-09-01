@@ -637,7 +637,7 @@ async function shouldEnforceWorkspaceRunGates(
   return match[1] === 'true';
 }
 
-function resolveWorkspaceRunStageTimeoutMs(stage: string): number {
+export function resolveWorkspaceRunStageTimeoutMs(stage: string, runtime: RuntimeFamily): number {
   const raw = process.env.RAPIDKIT_WORKSPACE_RUN_STAGE_TIMEOUT_MS;
   if (raw) {
     const parsed = Number.parseInt(raw, 10);
@@ -645,7 +645,21 @@ function resolveWorkspaceRunStageTimeoutMs(stage: string): number {
       return parsed;
     }
   }
-  return stage === 'init' ? 120_000 : 90_000;
+  if (stage !== 'init') {
+    return 90_000;
+  }
+
+  // Cold dependency materialization includes package-manager bootstrap,
+  // resolver work, downloads, and native builds. One universal two-minute
+  // budget turns valid first runs into false timeouts, especially for Python,
+  // JVM, .NET, and Rust projects.
+  if (runtime === 'python' || runtime === 'java' || runtime === 'jvm-generic') {
+    return 600_000;
+  }
+  if (runtime === 'dotnet' || runtime === 'rust') {
+    return 600_000;
+  }
+  return 300_000;
 }
 
 function parseDirectLocalWrapperCommand(command: string): { file: string; args: string[] } | null {
@@ -817,7 +831,12 @@ async function runStartupSmoke(input: {
   };
 }
 
-async function runRapidkitSelfCommand(args: string[], cwd: string, timeoutMs?: number) {
+async function runRapidkitSelfCommand(
+  args: string[],
+  cwd: string,
+  timeoutMs?: number,
+  streamOutput = false
+) {
   const entrypoint = process.argv[1];
   if (!entrypoint) {
     return {
@@ -828,15 +847,21 @@ async function runRapidkitSelfCommand(args: string[], cwd: string, timeoutMs?: n
   }
 
   try {
-    const result = await execa(process.execPath, [entrypoint, ...args], {
+    const subprocess = execa(process.execPath, [entrypoint, ...args], {
       cwd,
       reject: false,
       timeout: timeoutMs,
+      forceKillAfterDelay: 1000,
       env: {
         ...process.env,
         RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
       },
     });
+    if (streamOutput) {
+      subprocess.stdout?.on('data', (chunk) => process.stdout.write(chunk));
+      subprocess.stderr?.on('data', (chunk) => process.stderr.write(chunk));
+    }
+    const result = await subprocess;
 
     return {
       exitCode: Number(result.exitCode ?? 1),
@@ -1037,7 +1062,8 @@ async function executeStageCommand(
   framework?: string,
   commandOverrides?: Record<string, string>,
   environmentCommandVariants?: EnvironmentVariant,
-  environment?: 'dev' | 'staging' | 'prod'
+  environment?: 'dev' | 'staging' | 'prod',
+  streamOutput = false
 ): Promise<{
   exitCode: number;
   command: string;
@@ -1127,7 +1153,7 @@ async function executeStageCommand(
   let stderr = '';
   let errorCategory: ErrorCategory | undefined;
   let healthStatus: { healthy: boolean; reason?: string } | undefined;
-  const timeoutMs = resolveWorkspaceRunStageTimeoutMs(stage);
+  const timeoutMs = resolveWorkspaceRunStageTimeoutMs(stage, runtime);
   const startedAt = Date.now();
 
   try {
@@ -1144,7 +1170,7 @@ async function executeStageCommand(
         : useRapidkitWrapper
           ? stage === 'init' && isVitestRuntime()
             ? await runRapidkitInitInProcess(projectPath)
-            : await runRapidkitSelfCommand([stage], projectPath, timeoutMs)
+            : await runRapidkitSelfCommand([stage], projectPath, timeoutMs, streamOutput)
           : await (async () => {
               const directWrapper = parseDirectLocalWrapperCommand(finalCommand);
               return directWrapper
@@ -1627,7 +1653,8 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
             detected.framework,
             { [options.stage]: stage.command },
             detected.environmentCommandVariants,
-            detected.environment
+            detected.environment,
+            !options.json
           );
           execution.durationMs = Date.now() - unitStarted;
           execution.exitCode = result.exitCode;
@@ -1732,7 +1759,8 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         framework,
         commandOverrides,
         environmentCommandVariants,
-        environment
+        environment,
+        !options.json
       );
       row.executionCommand = execResult.command;
       row.errorCategory = execResult.errorCategory;
@@ -1740,6 +1768,16 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       row.failureDiagnostic = execResult.failureDiagnostic;
       row.durationMs = Date.now() - started;
       row.exitCode = execResult.exitCode;
+      const primaryRuntimeExecution = row.runtimeExecutions?.[0];
+      if (primaryRuntimeExecution) {
+        primaryRuntimeExecution.command = execResult.command;
+        primaryRuntimeExecution.status = execResult.exitCode === 0 ? 'passed' : 'failed';
+        primaryRuntimeExecution.exitCode = execResult.exitCode;
+        primaryRuntimeExecution.durationMs = row.durationMs;
+        primaryRuntimeExecution.reason = execResult.message;
+        primaryRuntimeExecution.errorCategory = execResult.errorCategory;
+        primaryRuntimeExecution.failureDiagnostic = execResult.failureDiagnostic;
+      }
 
       if (execResult.exitCode === 0) {
         row.status = 'passed';

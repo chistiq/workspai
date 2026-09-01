@@ -88,6 +88,51 @@ afterEach(async () => {
 });
 
 describe('proof-carrying change composition', () => {
+  it('keeps a Goal lease valid when Workspai operational telemetry changes before PCC begins', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Warm project dependencies through an approved command',
+    });
+
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'platform',
+      profile: 'polyglot',
+      metadata: {
+        custom: {
+          workspaiTelemetry: {
+            commandUsage: { 'workspai.studio.action_executed': 1 },
+            recentEvents: [
+              {
+                command: 'workspai.studio.action_executed',
+                at: '2026-08-29T00:01:00.000Z',
+              },
+            ],
+          },
+        },
+      },
+    });
+    await fsExtra.outputFile(
+      path.join(workspacePath, '.github', 'agents', 'workspai-repair.agent.md'),
+      'Generated repair agent projection.\n'
+    );
+
+    await expect(
+      beginProofCarryingChange({
+        workspacePath,
+        goalId: planned.goalPack.id,
+      })
+    ).resolves.toMatchObject({
+      state: 'evidence-ready',
+      capsule: {
+        assurances: expect.arrayContaining([
+          expect.objectContaining({ id: 'baseline-pinned', status: 'passed' }),
+        ]),
+      },
+    });
+  });
+
   it('covers overlapping Graph aliases with one receipt for the same physical artifact', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-pcc-overlap-'));
     roots.push(root);

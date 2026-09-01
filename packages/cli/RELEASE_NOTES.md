@@ -5,7 +5,54 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.70.0 (August 31, 2026)
+## Latest Release: v0.71.0 (August 31, 2026)
+
+### Governed Startup and Enterprise Native Kit Baselines
+
+Workspai 0.71.0 keeps governed Goal and Proof-Carrying Change startup stable
+across runtime-owned observation, makes cold polyglot initialization observable
+and runtime-aware, and promotes every npm-owned native generator onto one
+reviewed enterprise baseline.
+
+**What's New:**
+
+- The `.workspai-workspace` operational marker no longer participates in Graph
+  input identity.
+- Generated GitHub agent definitions remain downstream consumers rather than
+  circular Graph inputs.
+- Git, non-Git, and Goal-to-PCC regressions prove that runtime observation does
+  not create a false `live-input-mismatch` while real source changes remain
+  freshness-sensitive.
+- Goal lifecycle results preserve their canonical Repair and PCC transaction
+  links instead of rejecting a valid activated Goal as an unknown schema shape.
+- Workspace `init` reports the command that actually ran, streams progress, and
+  applies bounded runtime-aware cold-start budgets rather than a universal
+  two-minute timeout.
+- Go Fiber, Go Gin, Spring Boot, .NET Web API, and Rust Axum kits now consume a
+  centralized, tested runtime and dependency baseline instead of drifting
+  independently.
+- Generated native projects include pinned CI toolchains, non-root containers,
+  Dependabot coverage, health tests, and ecosystem-appropriate security or
+  supply-chain gates.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, and agent contracts remain supported. No command, flag,
+schema, or artifact path is removed.
+
+**Publication status:** Released August 31, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.71.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.71.0/packages/cli/releases/RELEASE_NOTES_v0.71.0.md)
+
+---
+
+## v0.70.0 (August 31, 2026)
 
 ### Deletion-Aware Change Assurance and Contributor-Ready Qualification
 

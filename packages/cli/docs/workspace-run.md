@@ -47,6 +47,22 @@ The authoritative scaffold/import/lifecycle tiers are in
 Inspect one project's effective surface with
 `npx workspai project commands --json` before orchestration.
 
+## Cold initialization and progress
+
+Dependency initialization uses a longer bounded budget than ordinary test or
+build stages. Python, JVM, .NET, and Rust cold starts receive up to ten minutes;
+other runtimes receive up to five. An explicit
+`RAPIDKIT_WORKSPACE_RUN_STAGE_TIMEOUT_MS` value always takes precedence.
+
+Human-readable runs stream child progress so a slow package restore does not
+look frozen. JSON mode keeps stdout machine-readable. The final report records
+the command that actually ran, status, exit code, duration, diagnostic, and
+runtime unit instead of repeating only the planned command.
+
+Full workspace `init` continues after a project failure so one run reports every
+missing runtime or failed dependency bootstrap. Each failure remains explicit,
+and the overall run still fails when any project fails.
+
 ## Enterprise configuration
 
 Override stage commands per project via `.workspai/context.json`:

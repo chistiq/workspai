@@ -12,10 +12,11 @@ import { execa } from 'execa';
 import { getVersion } from '../update-checker.js';
 import { buildCleanGitEnv, isInsideExistingGitWorktree } from '../utils/git-worktree.js';
 import { toPascalCase, writeGeneratorFile } from './go-kit-common.js';
+import { buildNativeKitDependabotYml, NATIVE_KIT_BASELINES } from './native-kit-baselines.js';
 
-export const DEFAULT_JAVA_VERSION = '21';
-export const DEFAULT_SPRING_BOOT_VERSION = '3.5.0';
-export const DEFAULT_SPRINGDOC_VERSION = '2.8.9';
+export const DEFAULT_JAVA_VERSION = NATIVE_KIT_BASELINES.springBoot.java;
+export const DEFAULT_SPRING_BOOT_VERSION = NATIVE_KIT_BASELINES.springBoot.version;
+export const DEFAULT_SPRINGDOC_VERSION = NATIVE_KIT_BASELINES.springBoot.springdoc;
 
 export interface SpringBootVariables {
   project_name: string;
@@ -175,7 +176,7 @@ function pomXml(v: Required<SpringBootVariables>): string {
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.6.3</version>
                 <executions>
                     <execution>
                         <id>enforce-java-and-maven</id>
@@ -198,7 +199,7 @@ function pomXml(v: Required<SpringBootVariables>): string {
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
                 <artifactId>spotless-maven-plugin</artifactId>
-                <version>2.43.0</version>
+                <version>3.9.0</version>
                 <configuration>
                     <java>
                         <googleJavaFormat version="1.23.0" />
@@ -210,7 +211,7 @@ function pomXml(v: Required<SpringBootVariables>): string {
             <plugin>
                 <groupId>org.cyclonedx</groupId>
                 <artifactId>cyclonedx-maven-plugin</artifactId>
-                <version>2.8.1</version>
+                <version>2.9.3</version>
                 <executions>
                     <execution>
                         <phase>verify</phase>
@@ -223,7 +224,7 @@ function pomXml(v: Required<SpringBootVariables>): string {
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
-                <version>10.0.4</version>
+                <version>12.2.2</version>
                 <configuration>
                     <format>HTML</format>
                     <failBuildOnCVSS>9</failBuildOnCVSS>
@@ -484,12 +485,12 @@ function envExample(v: Required<SpringBootVariables>): string {
   return `PORT=${v.port}
 SPRING_PROFILES_ACTIVE=local
 API_BASE_PATH=/api/v1
-JAVA_OPTS=-Xms256m -Xmx512m
+JAVA_TOOL_OPTIONS=-Xms256m -Xmx512m
 `;
 }
 
 function dockerfile(v: Required<SpringBootVariables>): string {
-  return `FROM maven:3.9.9-eclipse-temurin-${v.java_version} AS build
+  return `FROM maven:${NATIVE_KIT_BASELINES.springBoot.maven}-eclipse-temurin-${v.java_version} AS build
 WORKDIR /workspace
 
 COPY pom.xml ./
@@ -502,11 +503,14 @@ FROM eclipse-temurin:${v.java_version}-jre
 WORKDIR /app
 
 COPY --from=build /workspace/target/*.jar /app/app.jar
+RUN useradd --system --uid 10001 --create-home workspai \
+    && chown -R 10001:0 /app
 
 EXPOSE ${v.port}
-ENV JAVA_OPTS=""
+ENV JAVA_TOOL_OPTIONS=""
+USER 10001
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 `;
 }
 
@@ -571,6 +575,9 @@ function githubWorkflow(v: Required<SpringBootVariables>): string {
     '    branches: [main]',
     '  pull_request:',
     '',
+    'permissions:',
+    '  contents: read',
+    '',
     'jobs:',
     '  build-test-e2e:',
     `    runs-on: ${'${{ matrix.os }}'}`,
@@ -578,10 +585,10 @@ function githubWorkflow(v: Required<SpringBootVariables>): string {
     '      fail-fast: false',
     '      matrix:',
     '        os: [ubuntu-latest, windows-latest]',
-    `        java: ['${v.java_version}', '22']`,
+    `        java: ['${v.java_version}', '${NATIVE_KIT_BASELINES.springBoot.compatibilityJava}']`,
     '    steps:',
-    '      - uses: actions/checkout@v4',
-    '      - uses: actions/setup-java@v4',
+    `      - uses: actions/checkout@${NATIVE_KIT_BASELINES.actions.checkout}`,
+    `      - uses: actions/setup-java@${NATIVE_KIT_BASELINES.actions.setupJava}`,
     '        with:',
     '          distribution: temurin',
     `          java-version: ${'${{ matrix.java }}'}`,
@@ -590,7 +597,7 @@ function githubWorkflow(v: Required<SpringBootVariables>): string {
     "        if: runner.os != 'Windows'",
     '        run: |',
     '          if [ ! -f mvnw ]; then',
-    '            mvn -N wrapper:wrapper -Dmaven=3.9.9',
+    `            mvn -N wrapper:wrapper -Dmaven=${NATIVE_KIT_BASELINES.springBoot.maven}`,
     '            chmod +x mvnw',
     '          fi',
     '      - name: Generate Maven Wrapper (Windows)',
@@ -598,7 +605,7 @@ function githubWorkflow(v: Required<SpringBootVariables>): string {
     '        shell: pwsh',
     '        run: |',
     "          if (-not (Test-Path 'mvnw.cmd')) {",
-    '            mvn -N wrapper:wrapper -Dmaven=3.9.9',
+    `            mvn -N wrapper:wrapper -Dmaven=${NATIVE_KIT_BASELINES.springBoot.maven}`,
     '          }',
     '      - name: Verify (Unix)',
     "        if: runner.os != 'Windows'",
@@ -620,14 +627,14 @@ function githubWorkflow(v: Required<SpringBootVariables>): string {
     '        run: .\\mvnw.cmd -B -DskipTests org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=9',
     '      - name: Upload SCA report',
     '        if: always()',
-    '        uses: actions/upload-artifact@v4',
+    `        uses: actions/upload-artifact@${NATIVE_KIT_BASELINES.actions.uploadArtifact}`,
     '        with:',
     `          name: dependency-check-report-${'${{ matrix.os }}'}-${'${{ matrix.java }}'}`,
     '          path: target/dependency-check-report.html',
     '          if-no-files-found: ignore',
     '      - name: Upload SBOM',
     '        if: always()',
-    '        uses: actions/upload-artifact@v4',
+    `        uses: actions/upload-artifact@${NATIVE_KIT_BASELINES.actions.uploadArtifact}`,
     '        with:',
     `          name: sbom-${'${{ matrix.os }}'}-${'${{ matrix.java }}'}`,
     '          path: target/bom.xml',
@@ -889,8 +896,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(SystemInfoController.class)
@@ -900,7 +907,7 @@ class SystemInfoControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private SystemInfoService systemInfoService;
 
     @Test
@@ -954,10 +961,14 @@ class ServiceRuntimeE2ETest {
 
 async function ensureMavenWrapper(projectPath: string): Promise<boolean> {
   try {
-    await execa('mvn', ['-N', 'wrapper:wrapper', '-Dmaven=3.9.9'], {
-      cwd: projectPath,
-      timeout: 120_000,
-    });
+    await execa(
+      'mvn',
+      ['-N', 'wrapper:wrapper', `-Dmaven=${NATIVE_KIT_BASELINES.springBoot.maven}`],
+      {
+        cwd: projectPath,
+        timeout: 120_000,
+      }
+    );
 
     const mvnw = path.join(projectPath, 'mvnw');
     if (
@@ -1042,6 +1053,7 @@ export async function generateSpringBootKit(
       w('Dockerfile', dockerfile(v)),
       w('docker-compose.yml', dockerCompose(v)),
       w('.github/workflows/ci.yml', githubWorkflow(v)),
+      w('.github/dependabot.yml', buildNativeKitDependabotYml('maven')),
       w('README.md', readmeMd(v)),
       w('src/main/resources/application.yml', applicationYaml(v)),
       w('src/test/resources/application.yml', applicationTestYaml()),

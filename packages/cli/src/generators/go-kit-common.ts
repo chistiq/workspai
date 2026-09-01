@@ -1,11 +1,12 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import { NATIVE_KIT_BASELINES } from './native-kit-baselines.js';
 
-export const DEFAULT_GO_VERSION = '1.24';
+export const DEFAULT_GO_VERSION = NATIVE_KIT_BASELINES.go.version;
 
 // Pin dev tools to stable versions for reproducible project bootstraps.
-export const GO_AIR_INSTALL_TARGET = 'github.com/air-verse/air@v1.52.3';
-export const GO_SWAG_INSTALL_TARGET = 'github.com/swaggo/swag/cmd/swag@v1.16.3';
+export const GO_AIR_INSTALL_TARGET = `github.com/air-verse/air@${NATIVE_KIT_BASELINES.go.air}`;
+export const GO_SWAG_INSTALL_TARGET = `github.com/swaggo/swag/cmd/swag@${NATIVE_KIT_BASELINES.go.swag}`;
 
 const GO_SWAG_GEN_ARGS =
   'main.go -d cmd/server,internal/handlers,internal/apierr -o docs --parseDependency';

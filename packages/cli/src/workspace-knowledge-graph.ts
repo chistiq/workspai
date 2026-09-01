@@ -268,12 +268,22 @@ const GENERATED_AGENT_PROJECTION_BASENAMES = new Set([
   'QWEN.md',
 ]);
 
+/**
+ * Runtime-owned workspace metadata changes as IDE and CLI activity is
+ * observed. It is an operational control surface, not repository
+ * architecture. Including it in the Graph input fingerprint would let
+ * telemetry emitted after Goal creation invalidate the Goal/PCC lease before
+ * the first approved effect can run.
+ */
+const WORKSPAI_OPERATIONAL_PROJECTION_BASENAMES = new Set(['.workspai-workspace']);
+
 const GENERATED_AGENT_PROJECTION_PATTERNS = [
   /(?:^|\/)\.agents\/skills\/workspai-[^/]+\//u,
   /(?:^|\/)\.amazonq\/rules\/workspai-[^/]+\.md$/u,
   /(?:^|\/)\.claude\/(?:rules|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
   /(?:^|\/)\.cursor\/(?:rules|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
   /(?:^|\/)\.grok\/(?:rules|skills)\/workspai-[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.github\/agents\/workspai-[^/]+\.agent\.md$/u,
   /(?:^|\/)\.github\/(?:instructions|prompts|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
   /(?:^|\/)\.github\/copilot-instructions\.md$/u,
   /(?:^|\/)\.windsurf\/rules\/workspai-[^/]+\.md$/u,
@@ -281,10 +291,11 @@ const GENERATED_AGENT_PROJECTION_PATTERNS = [
   /(?:^|\/)\.vscode\/(?:workspai|rapidkit)-agent-hooks\.json$/u,
 ];
 
-function isGeneratedAgentProjection(root: string, candidate: string): boolean {
+function isManagedArchitectureProjection(root: string, candidate: string): boolean {
   const relative = toPosix(path.relative(root, candidate));
   return (
     GENERATED_AGENT_PROJECTION_BASENAMES.has(path.posix.basename(relative)) ||
+    WORKSPAI_OPERATIONAL_PROJECTION_BASENAMES.has(path.posix.basename(relative)) ||
     GENERATED_AGENT_PROJECTION_PATTERNS.some((pattern) => pattern.test(relative))
   );
 }
@@ -1182,7 +1193,7 @@ async function listFiles(
           queue.push(candidate);
         }
       } else if (entry.isFile()) {
-        if (!isGeneratedAgentProjection(root, candidate)) files.push(candidate);
+        if (!isManagedArchitectureProjection(root, candidate)) files.push(candidate);
       }
     }
   }
@@ -1236,6 +1247,9 @@ function gitInventoryPathspecs(): string[] {
     ...[...GENERATED_AGENT_PROJECTION_BASENAMES]
       .sort((left, right) => left.localeCompare(right))
       .map((file) => `:(exclude,glob)**/${file}`),
+    ...[...WORKSPAI_OPERATIONAL_PROJECTION_BASENAMES]
+      .sort((left, right) => left.localeCompare(right))
+      .map((file) => `:(exclude,glob)**/${file}`),
     ':(exclude,glob)**/.agents/skills/workspai-*/**',
     ':(exclude,glob)**/.amazonq/rules/workspai-*.md',
     ':(exclude,glob)**/.claude/rules/workspai-*.md',
@@ -1246,6 +1260,7 @@ function gitInventoryPathspecs(): string[] {
     ':(exclude,glob)**/.cursor/skills/workspai-*/**',
     ':(exclude,glob)**/.grok/rules/workspai-*.md',
     ':(exclude,glob)**/.grok/skills/workspai-*/**',
+    ':(exclude,glob)**/.github/agents/workspai-*.agent.md',
     ':(exclude,glob)**/.github/copilot-instructions.md',
     ':(exclude,glob)**/.github/instructions/workspai-*.md',
     ':(exclude,glob)**/.github/instructions/rapidkit-*.md',
@@ -1322,7 +1337,7 @@ async function gitProjectFileInventory(
     );
     const allFiles = verifiedPaths
       .map((relative) => path.resolve(root, ...relative.split('/').filter(Boolean)))
-      .filter((candidate) => !isGeneratedAgentProjection(root, candidate))
+      .filter((candidate) => !isManagedArchitectureProjection(root, candidate))
       .filter(
         (candidate) =>
           !excludedRoots.some(
@@ -1582,7 +1597,7 @@ async function persistedGitFingerprintMatches(input: {
             excludedRoots.some(
               (root) => absolutePath === root || absolutePath.startsWith(`${root}${path.sep}`)
             ) ||
-            isGeneratedAgentProjection(input.root, absolutePath)
+            isManagedArchitectureProjection(input.root, absolutePath)
           ) {
             return null;
           }

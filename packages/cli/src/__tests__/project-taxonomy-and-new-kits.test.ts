@@ -488,6 +488,16 @@ describe('project taxonomy and expanded kit families', () => {
       kit: 'rust.axum',
     });
     expect(await inferWorkspaceProjectKind(project, metadata)).toBe('backend');
+    expect(await fsExtra.readFile(path.join(project, 'Cargo.toml'), 'utf8')).toContain(
+      'edition = "2024"'
+    );
+    expect(await fsExtra.readFile(path.join(project, 'Cargo.toml'), 'utf8')).toContain(
+      'axum = "0.8.9"'
+    );
+    expect(await fsExtra.readFile(path.join(project, 'rust-toolchain.toml'), 'utf8')).toContain(
+      'channel = "1.98.0"'
+    );
+    expect(await fsExtra.pathExists(path.join(project, '.github', 'dependabot.yml'))).toBe(true);
     expect(listAvailableRuntimeLifecycleCommands(project, 'rust', 'axum')).toEqual([
       'init',
       'dev',

@@ -44,11 +44,23 @@ const requiredSnippets = [
 
 const errors = [];
 
+const cliReadmeLineCount = readme.split(/\r?\n/u).length - 1;
+const repositoryReadmeLineCount = repositoryReadme.split(/\r?\n/u).length - 1;
+if (cliReadmeLineCount > 350) {
+  errors.push(`CLI README exceeds its 350-line product-entry budget: ${cliReadmeLineCount}`);
+}
+if (repositoryReadmeLineCount > 250) {
+  errors.push(
+    `Repository README exceeds its 250-line product-entry budget: ${repositoryReadmeLineCount}`
+  );
+}
+
 const requiredCliReadmeHeadings = [
   '## Give your AI agent the system, not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start in two minutes',
   '## Give your agent a goal, not an open-ended prompt',
+  '## Make every agent change carry proof',
   '## What happens after the first run',
   '## How Workspace Intelligence works',
   '## Everyday workflows',
@@ -83,6 +95,9 @@ for (const semantic of [
   'npx workspai goal "Raise test coverage to 85%" --for-agent generic',
   'The agent gets a focused objective, not permission to scan or change everything.',
   'does not edit source or claim that the outcome is complete.',
+  'npx workspai change effect record --change <change-id> --file effect-receipt.json --json',
+  'Prediction can guide work but can never prove its own result.',
+  'Live activity projections and reports for IDEs and dashboards',
   'A blocked result is useful evidence, not a crashed command.',
   'do not require an AI API key',
 ]) {
@@ -105,6 +120,7 @@ const requiredGraphArchitectureCommands = [
   'workspace graph path',
   'workspace graph search',
   'workspace graph benchmark',
+  'workspace graph benchmark-suite',
   'workspace graph overlay',
   'workspace graph dot',
   'workspace graph mermaid',
@@ -216,8 +232,7 @@ const requiredRepositoryReadmeHeadings = [
   '## Give your AI agent the system, not just the repository',
   '## Workspace Intelligence for software systems',
   '## Start with your software',
-  '## Give your agent a goal, not an open-ended prompt',
-  '## What Workspai gives you',
+  '## From intent to a verified change',
   '## How it works',
   '## One foundation, many consumers',
   '## Go deeper',
@@ -245,11 +260,11 @@ for (const semantic of [
   'The Workspace Model is the canonical source of truth.',
   'derived, revision-bound representation',
   'not “these projects are independent.”',
-  'not a list of missing',
   'README_CONTENT_CONTRACT.md',
-  'npx workspai goal "Raise test coverage to 85%" --for-agent generic',
-  'The agent gets a focused objective, not permission to scan or change everything.',
-  'does not edit source or claim that the outcome is complete.',
+  'npx workspai goal "Add retry with exponential backoff" --for-agent generic',
+  'It prepares governed work; it does not edit source or claim completion.',
+  'Intent → baseline → authorization → effects → verification → sealed capsule',
+  'Live views observe CLI and Studio activity without turning telemetry into proof.',
 ]) {
   if (!normalizedRepositoryReadme.includes(semantic)) {
     errors.push(`Repository README is missing required product truth: ${semantic}`);

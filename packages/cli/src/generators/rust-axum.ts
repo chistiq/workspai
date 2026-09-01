@@ -14,6 +14,7 @@ import { execa } from 'execa';
 import { getVersion } from '../update-checker.js';
 import { buildCleanGitEnv, isInsideExistingGitWorktree } from '../utils/git-worktree.js';
 import { writeGeneratorFile } from './go-kit-common.js';
+import { buildNativeKitDependabotYml, NATIVE_KIT_BASELINES } from './native-kit-baselines.js';
 
 export const DEFAULT_AXUM_PORT = '3000';
 
@@ -40,11 +41,12 @@ function cargoToml(name: string, description: string): string {
   return `[package]
 name = "${name}"
 version = "0.1.0"
-edition = "2021"
+edition = "${NATIVE_KIT_BASELINES.rust.edition}"
+rust-version = "${NATIVE_KIT_BASELINES.rust.toolchain}"
 description = "${description.replace(/["\r\n]/g, ' ')}"
 
 [dependencies]
-axum = "0.8"
+axum = "${NATIVE_KIT_BASELINES.rust.axum}"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 tower-http = { version = "0.6", features = ["trace"] }
@@ -116,7 +118,7 @@ mod tests {
 }
 
 function dockerfile(name: string): string {
-  return `FROM rust:1-bookworm AS builder
+  return `FROM rust:${NATIVE_KIT_BASELINES.rust.toolchain}-bookworm AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
@@ -143,11 +145,11 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@${NATIVE_KIT_BASELINES.actions.checkout}
+      - uses: dtolnay/rust-toolchain@${NATIVE_KIT_BASELINES.rust.toolchain}
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@${NATIVE_KIT_BASELINES.actions.rustCache}
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all-targets --all-features
@@ -221,6 +223,10 @@ export async function generateRustAxumKit(
 
   await fs.mkdir(projectPath, { recursive: true });
   await writeGeneratorFile(path.join(projectPath, 'Cargo.toml'), cargoToml(name, description));
+  await writeGeneratorFile(
+    path.join(projectPath, 'rust-toolchain.toml'),
+    `[toolchain]\nchannel = "${NATIVE_KIT_BASELINES.rust.toolchain}"\nprofile = "minimal"\ncomponents = ["clippy", "rustfmt"]\n`
+  );
   await writeGeneratorFile(path.join(projectPath, 'src', 'main.rs'), mainRs(port));
   await writeGeneratorFile(path.join(projectPath, '.env.example'), `PORT=${port}\nRUST_LOG=info\n`);
   await writeGeneratorFile(path.join(projectPath, '.gitignore'), '/target\n.env\n');
@@ -229,6 +235,10 @@ export async function generateRustAxumKit(
   await writeGeneratorFile(
     path.join(projectPath, '.github', 'workflows', 'ci.yml'),
     githubWorkflow()
+  );
+  await writeGeneratorFile(
+    path.join(projectPath, '.github', 'dependabot.yml'),
+    buildNativeKitDependabotYml('cargo')
   );
   await writeGeneratorFile(path.join(projectPath, 'rapidkit'), launcherShell());
   await writeGeneratorFile(path.join(projectPath, 'rapidkit.cmd'), launcherCmd());
@@ -286,6 +296,25 @@ export async function generateRustAxumKit(
 
   if (process.platform !== 'win32') {
     await fs.chmod(path.join(projectPath, 'rapidkit'), 0o755);
+  }
+
+  if (!(variables.skipInstall ?? false)) {
+    try {
+      await execa('cargo', ['generate-lockfile'], {
+        cwd: projectPath,
+        timeout: 120_000,
+      });
+      await execa('cargo', ['fetch', '--locked'], {
+        cwd: projectPath,
+        timeout: 120_000,
+      });
+    } catch {
+      console.log(
+        chalk.yellow(
+          `⚠  Cargo dependency warm-up skipped; install Rust ${NATIVE_KIT_BASELINES.rust.toolchain} and run npx workspai init.`
+        )
+      );
+    }
   }
   await maybeInitGit(projectPath, variables.skipGit ?? false);
 

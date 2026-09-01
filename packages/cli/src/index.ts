@@ -461,6 +461,18 @@ export async function commandAvailable(command: string, cwd: string): Promise<bo
   return code === 0;
 }
 
+async function commandAvailableQuiet(command: string, cwd: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(command, ['--version'], {
+      cwd,
+      stdio: 'ignore',
+      env: buildDelegationEnvForInit(),
+    });
+    child.once('error', () => resolve(false));
+    child.once('close', (code) => resolve(code === 0));
+  });
+}
+
 type InferredRuntime = 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php' | null;
 
 export async function inferRuntimeByFiles(targetPath: string): Promise<InferredRuntime> {
@@ -594,19 +606,30 @@ export async function ensurePythonProjectUsesLocalVenv(
     if (venvCode !== 0) return venvCode;
   }
 
-  const hasPoetry = (await runCommand('poetry', ['--version'], projectPath)) === 0;
-  if (!hasPoetry) {
+  const localPoetry =
+    process.platform === 'win32'
+      ? path.join(projectPath, '.venv', 'Scripts', 'poetry.exe')
+      : path.join(projectPath, '.venv', 'bin', 'poetry');
+  const systemPoetryAvailable = dependencies.runCommand
+    ? (await runCommand('poetry', ['--version'], projectPath)) === 0
+    : await commandAvailableQuiet('poetry', projectPath);
+  const poetryCommand = (await fsExtra.pathExists(localPoetry))
+    ? localPoetry
+    : systemPoetryAvailable
+      ? 'poetry'
+      : null;
+  if (!poetryCommand) {
     return 0;
   }
 
   const configCode = await runCommand(
-    'poetry',
+    poetryCommand,
     ['config', 'virtualenvs.in-project', 'true', '--local'],
     projectPath
   );
   if (configCode !== 0) return configCode;
 
-  const envUseCode = await runCommand('poetry', ['env', 'use', localVenvPython], projectPath);
+  const envUseCode = await runCommand(poetryCommand, ['env', 'use', localVenvPython], projectPath);
   if (envUseCode !== 0) return envUseCode;
 
   return 0;
@@ -6353,7 +6376,9 @@ export async function handleInitCommand(args: string[]): Promise<number> {
           affected: false,
           blastRadius: false,
           parallel: false,
-          continueOnError: false,
+          // Full workspace init is an inventory operation as well as an
+          // installer: collect every unavailable runtime in one report.
+          continueOnError: true,
           strict: false,
           json: false,
           enforceGates: false,

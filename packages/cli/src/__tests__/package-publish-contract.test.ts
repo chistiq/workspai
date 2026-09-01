@@ -313,8 +313,12 @@ describe('npm publish contract', () => {
       ...readme.matchAll(/!\[[^\]]+\]\((https:\/\/raw\.githubusercontent\.com\/[^)]+)\)/g),
     ].map((match) => match[1]);
 
-    expect(rawImageUrls).toContain(
-      'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png'
+    expect(rawImageUrls).toEqual(
+      expect.arrayContaining([
+        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif',
+        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif',
+        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspace-graph.gif',
+      ])
     );
     expect(packageJson.repository?.url).toBe('git+https://github.com/chistiq/workspai.git');
     expect(packageJson.author).toBe('Chistiq');

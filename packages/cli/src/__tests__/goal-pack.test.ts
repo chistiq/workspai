@@ -9,6 +9,7 @@ import { planGoalPack } from '../goal-pack.js';
 import {
   buildGoalLifecycleResult,
   inspectGoalLifecycle,
+  linkGoalChangeTransaction,
   prepareGoalVerification,
   transitionGoalLifecycle,
   verifyGoalLifecycle,
@@ -477,6 +478,39 @@ describe('goal pack workspace adapter', () => {
     expect(inspected.index.goals.find((goal) => goal.id === first.goalPack.id)?.lifecycle).toBe(
       'planned'
     );
+  });
+
+  it('publishes lifecycle results after PCC links the active Goal transaction', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Repair the active workspace blocker',
+    });
+    await linkGoalChangeTransaction({
+      workspacePath,
+      goalId: planned.goalPack.id,
+      changeId: 'change-12345678',
+    });
+
+    const inspected = await inspectGoalLifecycle({
+      workspacePath,
+      goalId: planned.goalPack.id,
+    });
+    expect(() =>
+      buildGoalLifecycleResult({
+        operation: 'status',
+        activeGoalId: inspected.index.activeGoalId,
+        goal: inspected.active,
+        goals: inspected.index.goals,
+        goalPack: inspected.goalPack,
+        verifiedGoalId: null,
+        verification: null,
+      })
+    ).not.toThrow();
+    expect(inspected.active).toMatchObject({
+      changeTransactionId: 'change-12345678',
+      changeTransactionIds: ['change-12345678'],
+    });
   });
 
   it('does not replace an active Goal with a plan that still needs confirmation', async () => {

@@ -12,7 +12,7 @@ vi.mock('execa', () => {
 });
 
 import { execa } from 'execa';
-import { runWorkspaceStage } from '../workspace-run';
+import { resolveWorkspaceRunStageTimeoutMs, runWorkspaceStage } from '../workspace-run';
 
 async function createProject(workspacePath: string, relPath: string) {
   const projectPath = path.join(workspacePath, relPath);
@@ -63,6 +63,20 @@ describe('workspace-run', { timeout: 30_000 }, () => {
   });
 
   // ─── existing tests ────────────────────────────────────────────────────────
+
+  it('uses runtime-aware cold-init budgets while preserving an explicit override', () => {
+    expect(resolveWorkspaceRunStageTimeoutMs('init', 'python')).toBe(600_000);
+    expect(resolveWorkspaceRunStageTimeoutMs('init', 'dotnet')).toBe(600_000);
+    expect(resolveWorkspaceRunStageTimeoutMs('init', 'node')).toBe(300_000);
+    expect(resolveWorkspaceRunStageTimeoutMs('test', 'python')).toBe(90_000);
+
+    process.env.RAPIDKIT_WORKSPACE_RUN_STAGE_TIMEOUT_MS = '4567';
+    try {
+      expect(resolveWorkspaceRunStageTimeoutMs('init', 'python')).toBe(4567);
+    } finally {
+      delete process.env.RAPIDKIT_WORKSPACE_RUN_STAGE_TIMEOUT_MS;
+    }
+  });
 
   it('runs only affected projects when --affected is enabled', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
@@ -1171,6 +1185,16 @@ describe('workspace-run', { timeout: 30_000 }, () => {
 
     expect(dotnetReport?.status).toBe('failed');
     expect(nodeReport?.status).toBe('passed');
+    expect(dotnetReport?.runtimeExecutions?.[0]).toMatchObject({
+      command: 'rapidkit init',
+      status: 'failed',
+      exitCode: 127,
+    });
+    expect(nodeReport?.runtimeExecutions?.[0]).toMatchObject({
+      command: 'rapidkit init',
+      status: 'passed',
+      exitCode: 0,
+    });
     expect(report.summary.failed).toBe(1);
     expect(report.summary.passed).toBe(1);
     expect(report.summary.skipped).toBe(0);
