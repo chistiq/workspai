@@ -814,10 +814,23 @@ function detectNodeBackendFromProject(projectPath: string): BackendFrameworkDete
     return buildDetection('unknown', 'low', 'unknown');
   }
 
-  const dependencies = {
-    ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
-  };
+  const declaredDependencies =
+    (packageJson.dependencies as Record<string, unknown> | undefined) ?? {};
+  const developmentDependencies =
+    (packageJson.devDependencies as Record<string, unknown> | undefined) ?? {};
+  const isPrivateWorkspaceRoot =
+    packageJson.private === true &&
+    (Array.isArray(packageJson.workspaces) ||
+      (packageJson.workspaces !== null && typeof packageJson.workspaces === 'object') ||
+      fs.existsSync(path.join(projectPath, 'pnpm-workspace.yaml')));
+  // Private workspace roots commonly install application frameworks only to
+  // build fixtures, examples, or the framework itself. A devDependency there
+  // is tooling evidence, not proof that the monorepo root is that application
+  // framework. Production dependencies and explicit lifecycle scripts remain
+  // valid ownership signals.
+  const dependencies = isPrivateWorkspaceRoot
+    ? declaredDependencies
+    : { ...declaredDependencies, ...developmentDependencies };
   const scripts = ((packageJson.scripts as Record<string, unknown> | undefined) ?? {}) as Record<
     string,
     unknown

@@ -1777,6 +1777,78 @@ describe('workspace knowledge graph', () => {
     ).toBe(false);
   });
 
+  it('prefers authored source over compiled copies unless generated output is requested', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-authored-router',
+        kind: 'file',
+        label: 'src/server/router/request-routing.ts',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:src/server/router/request-routing.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'authored-router',
+        },
+        attributes: { artifact: 'src/server/router/request-routing.ts' },
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-compiled-router',
+        kind: 'file',
+        label: 'src/compiled/router/server-request-routing.development.js',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:src/compiled/router/server-request-routing.development.js',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'compiled-router',
+        },
+        attributes: { artifact: 'src/compiled/router/server-request-routing.development.js' },
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-fixture-router',
+        kind: 'file',
+        label: 'tests/__fixtures__/server-request-routing.development.ts',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:tests/__fixtures__/server-request-routing.development.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'fixture-router',
+        },
+        attributes: { artifact: 'tests/__fixtures__/server-request-routing.development.ts' },
+        proofIds: [],
+      }
+    );
+
+    expect(
+      searchKnowledgeGraph(graph, {
+        query: 'development server request routing',
+        projectId: 'api',
+        limit: 5,
+      }).entities[0]?.id
+    ).toBe('synthetic-authored-router');
+    expect(
+      searchKnowledgeGraph(graph, {
+        query: 'compiled server request routing',
+        projectId: 'api',
+        limit: 5,
+      }).entities[0]?.id
+    ).toBe('synthetic-compiled-router');
+  });
+
   it('does not let a generic service intent outrank multi-term repository evidence', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -3207,6 +3279,58 @@ describe('workspace knowledge graph', () => {
     ).toMatchObject({ status: 'skipped', version: '1.4.0' });
   });
 
+  it('uses full scans for overlapping project boundaries so unchanged child artifacts stay stable', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-overlapping-project-graph-')
+    );
+    tempDirs.push(workspacePath);
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'root.ts'),
+      "export const rootValue = 'before';\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'child', 'main.ts'),
+      "export const childValue = 'stable';\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'child', 'Dockerfile'),
+      'FROM node:22-alpine\n'
+    );
+    const options = {
+      workspacePath,
+      workspace: { name: 'overlapping-projects' },
+      projects: [
+        { id: 'root', path: 'repo', runtime: 'node', framework: 'node' },
+        { id: 'child', path: 'repo/child', runtime: 'node', framework: 'node' },
+      ],
+      projectTopology: topology(),
+      source: modelSource(),
+    };
+    const base = await buildWorkspaceKnowledgeGraph({ ...options, now: NOW });
+
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'root.ts'),
+      "export const rootValue = 'after';\n"
+    );
+    const head = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:01:00.000Z'),
+      previousGraph: base,
+    });
+    const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(base, head, NOW);
+
+    expect(
+      head.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({
+      status: 'skipped',
+      diagnostics: [expect.stringContaining('Overlapping project boundaries')],
+    });
+    expect(overlay.changedArtifacts).toContain('repo/root.ts');
+    expect(overlay.changedArtifacts.some((artifact) => artifact.endsWith('Dockerfile'))).toBe(
+      false
+    );
+  });
+
   it('supports entity, evidence and shortest proof-path queries', async () => {
     const workspacePath = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -3242,6 +3366,60 @@ describe('workspace knowledge graph', () => {
     expect(pathResult.found).toBe(true);
     expect(pathResult.hops.map((hop) => hop.kind)).toEqual(['depends-on', 'exposes', 'contains']);
     expect(pathResult.proofs.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('uses project scope to resolve otherwise ambiguous evidence and path targets', () => {
+    const shared = {
+      kind: 'symbol' as const,
+      label: 'Charge',
+      attributes: {},
+      proofIds: [],
+    };
+    const graph = {
+      schemaVersion: 'workspace-knowledge-graph.v1' as const,
+      generatedAt: NOW,
+      workspace: { name: 'platform' },
+      source: modelSource(),
+      entities: [
+        {
+          ...shared,
+          id: 'symbol:a:charge',
+          projectId: 'a',
+          identity: {
+            key: 'symbol:a:charge',
+            scope: 'project' as const,
+            aliases: [],
+            fingerprint: 'a',
+          },
+        },
+        {
+          ...shared,
+          id: 'symbol:b:charge',
+          projectId: 'b',
+          identity: {
+            key: 'symbol:b:charge',
+            scope: 'project' as const,
+            aliases: [],
+            fingerprint: 'b',
+          },
+        },
+      ],
+      relations: [],
+      proofs: [],
+      diagnostics: [],
+      summary: { entityCount: 2, relationCount: 0, proofCount: 0, byKind: { symbol: 2 } },
+    };
+
+    expect(queryKnowledgeEvidence(graph, 'Charge').found).toBe(false);
+    expect(queryKnowledgeEvidence(graph, 'Charge', 'a')).toMatchObject({
+      found: true,
+      target: { id: 'symbol:a:charge' },
+    });
+    expect(queryKnowledgePath(graph, 'Charge', 'Charge', 'b')).toMatchObject({
+      found: true,
+      resolvedFrom: 'symbol:b:charge',
+      resolvedTo: 'symbol:b:charge',
+    });
   });
 
   it('binds dynamic and configuration-driven API registration without fabricating endpoint handlers', async () => {

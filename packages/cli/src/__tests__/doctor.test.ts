@@ -3087,6 +3087,61 @@ describe('Doctor Command', () => {
     }
   });
 
+  it('does not apply frontend application repairs to a framework platform workspace', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-framework-'));
+    await fsExtra.outputJSON(path.join(tempRoot, 'package.json'), {
+      name: 'framework-platform',
+      private: true,
+      workspaces: ['packages/*'],
+      scripts: {
+        build: 'turbo build',
+        'framework-smoke': 'next dev',
+      },
+      devDependencies: { next: '^16.0.0', turbo: '^2.0.0' },
+    });
+    await fsExtra.outputFile(path.join(tempRoot, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    await fsExtra.outputFile(
+      path.join(tempRoot, 'Cargo.toml'),
+      '[workspace]\nmembers=["crates/core"]\n'
+    );
+    await fsExtra.outputFile(
+      path.join(tempRoot, 'crates', 'core', 'Cargo.toml'),
+      '[package]\nname="core"\nversion="0.1.0"\n'
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.project.projectArchetype).toBe('monorepo');
+      for (const probeId of [
+        'frontend-framework-config',
+        'frontend-source-tree',
+        'frontend-script-dev',
+        'frontend-script-build',
+        'frontend-script-test',
+        'frontend-script-lint',
+      ]) {
+        expect(
+          payload.project.probes.find((probe: { id?: string }) => probe.id === probeId)
+        ).toMatchObject({ status: 'pass', applicability: 'not-applicable' });
+      }
+      expect(payload.project.fixCommands).not.toContainEqual(
+        expect.stringContaining('npm pkg set')
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
   it('uses nested runtime manifests for an adopted polyglot SDK boundary', async () => {
     const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-sdk-'));
     const projectPath = path.join(tempRoot, 'polyglot-sdk');

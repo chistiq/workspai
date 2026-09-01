@@ -35,6 +35,19 @@ family. Vendored trees, build outputs, fixtures, and nested test fixture package
 manifests are excluded from lifecycle discovery so orchestration does not turn
 sample inputs into install targets.
 
+Workspace ownership is resolved before commands are selected. An npm
+`workspaces` declaration, `pnpm-workspace.yaml`, or Cargo `[workspace]` owns
+matching member manifests and their explicit exclusions. Workspai therefore
+runs the owning install or fetch command once instead of scheduling the same
+dependency materialization for every member. Metadata-only packages and nested
+eval, benchmark, integration, test-data, and fixture inputs are not promoted to
+standalone lifecycle units without executable lifecycle evidence.
+
+Registered project boundaries take precedence over aggregate discovery. When a
+nested directory is already an explicit workspace project, an aggregate parent
+does not execute that child's runtime unit again. `--plan --json` exposes the
+resulting ownership so operators can review the exact units before execution.
+
 Planning and `init` do not require Doctor or release-readiness evidence. Real
 `test`, `build`, and `start` runs enforce the `doctor-workspace` and `readiness`
 gates by default. A failed gate prevents project commands from starting and is

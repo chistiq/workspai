@@ -6,8 +6,15 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 import { ensureDistBuilt } from './helpers/dist.js';
+import { strictVerificationExitCode } from '../commands/change.js';
 
 describe('Proof-Carrying Change CLI process integration', () => {
+  it('fails closed when strict verification reaches a blocked state', () => {
+    expect(strictVerificationExitCode({ strict: true, state: 'blocked' })).toBe(2);
+    expect(strictVerificationExitCode({ strict: false, state: 'blocked' })).toBeUndefined();
+    expect(strictVerificationExitCode({ strict: true, state: 'committed' })).toBeUndefined();
+  });
+
   it('publishes the complete command tree and a versioned empty discovery result', () => {
     const dist = ensureDistBuilt();
     const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-change-cli-'));

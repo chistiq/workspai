@@ -206,6 +206,29 @@ async function pathExists(targetPath: string): Promise<boolean> {
   }
 }
 
+function pathIsWithin(rootPath: string, candidatePath: string): boolean {
+  const relative = path.relative(path.resolve(rootPath), path.resolve(candidatePath));
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+  );
+}
+
+function runtimeUnitBelongsToSelectedProject(input: {
+  projectPath: string;
+  unit: PolyglotRuntimeUnit;
+  selectedProjectPaths: string[];
+}): boolean {
+  const unitPath = path.resolve(input.projectPath, input.unit.root);
+  return !input.selectedProjectPaths.some((candidateProjectPath) => {
+    if (path.resolve(candidateProjectPath) === path.resolve(input.projectPath)) return false;
+    return (
+      pathIsWithin(input.projectPath, candidateProjectPath) &&
+      pathIsWithin(candidateProjectPath, unitPath)
+    );
+  });
+}
+
 async function hasAnyExistingPath(candidates: string[]): Promise<boolean> {
   for (const candidate of candidates) {
     if (await pathExists(candidate)) {
@@ -1585,6 +1608,13 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       const lifecyclePlan = buildPolyglotLifecyclePlan(projectPath);
       const runtimeFilter = options.runtime?.trim().toLowerCase();
       const plannedUnits = lifecyclePlan.units
+        .filter((unit) =>
+          runtimeUnitBelongsToSelectedProject({
+            projectPath,
+            unit,
+            selectedProjectPaths: runTargets,
+          })
+        )
         .filter((unit) => !runtimeFilter || unit.runtime === runtimeFilter)
         .map((unit) => ({
           unit,

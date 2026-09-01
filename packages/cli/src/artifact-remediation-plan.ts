@@ -19,6 +19,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
+import { executableAvailable } from './utils/executable-availability.js';
 
 export type ArtifactRemediationRisk = 'safe' | 'guarded' | 'invasive';
 export type ArtifactRemediationMode =
@@ -31,6 +32,20 @@ export type ArtifactRemediationOperation =
       command: string;
       cwd: 'workspace' | 'project';
     };
+
+export type ArtifactRemediationRequirement = {
+  kind: 'executable' | 'action';
+  id: string;
+  status: 'satisfied' | 'missing' | 'pending';
+  executable?: string;
+  actionId?: string;
+  message: string;
+};
+
+export type ArtifactRemediationRetryPolicy = {
+  sameGeneration: 'allowed' | 'forbidden';
+  resumeWhen: 'immediate' | 'dependencies-complete' | 'environment-changed';
+};
 
 export type ArtifactRemediationAction = {
   id: string;
@@ -49,6 +64,8 @@ export type ArtifactRemediationAction = {
   dependsOn?: string[];
   strategy?: DoctorRepairStrategyStage[];
   transaction?: DoctorDependencyRepairTransaction;
+  requirements?: ArtifactRemediationRequirement[];
+  retryPolicy?: ArtifactRemediationRetryPolicy;
   status: 'ready' | 'review-required' | 'blocked' | 'guidance-only';
   mode: ArtifactRemediationMode;
   risk: ArtifactRemediationRisk;
@@ -90,7 +107,14 @@ export type ArtifactRemediationPlan = {
     cardsCovered: number;
     totalActions: number;
     executableActions: number;
+    blockedActions: number;
+    guidanceActions: number;
     risk: Record<ArtifactRemediationRisk, number>;
+  };
+  execution: {
+    nextActionId: string | null;
+    eligibleActionIds: string[];
+    blockedActionIds: string[];
   };
   actions: ArtifactRemediationAction[];
 };
@@ -273,6 +297,14 @@ function governedInvocationArgs(executable: string, args: string[]): string[] {
   return args;
 }
 
+function governedWorkspaiInvocation(args: string[]): ArtifactRemediationAction['invocation'] {
+  return {
+    cwd: '.',
+    executable: 'npx',
+    args: governedInvocationArgs('npx', ['workspai', ...args]),
+  };
+}
+
 function buildCompatibilityMatrixContent(generatedAt: string): string {
   return `${JSON.stringify(
     {
@@ -380,6 +412,8 @@ function actionBase(input: {
   dependsOn?: string[];
   strategy?: DoctorRepairStrategyStage[];
   transaction?: DoctorDependencyRepairTransaction;
+  requirements?: ArtifactRemediationRequirement[];
+  retryPolicy?: ArtifactRemediationRetryPolicy;
   cwd?: ArtifactRemediationAction['cwd'];
   rollback?: ArtifactRemediationAction['rollback'];
 }): ArtifactRemediationAction {
@@ -407,6 +441,8 @@ function actionBase(input: {
     ...(input.dependsOn ? { dependsOn: input.dependsOn } : {}),
     ...(input.strategy ? { strategy: structuredClone(input.strategy) } : {}),
     ...(input.transaction ? { transaction: structuredClone(input.transaction) } : {}),
+    ...(input.requirements ? { requirements: structuredClone(input.requirements) } : {}),
+    ...(input.retryPolicy ? { retryPolicy: structuredClone(input.retryPolicy) } : {}),
     status: input.status ?? 'ready',
     mode: input.mode,
     risk: input.risk,
@@ -495,7 +531,13 @@ function doctorPlanActions(input: {
       typeof step.causalKey === 'string' && step.causalKey.trim()
         ? step.causalKey.trim()
         : undefined;
-    const executable = step.executableInCurrentEnvironment === true && Boolean(command);
+    // Preserve a typed command even when Doctor already observed that its executable is
+    // unavailable. Availability is generation-local evidence, not command intent. The
+    // executable-truth binding below must be able to see the invocation so it can emit a
+    // first-class host prerequisite instead of degrading the action to opaque guidance.
+    const executable =
+      Boolean(command) &&
+      (step.executable === true || step.executableInCurrentEnvironment === true);
     const strategy = portableDoctorStrategy({
       strategy: step.strategy,
       includeAbsolutePaths: input.includeAbsolutePaths,
@@ -1033,12 +1075,38 @@ function workspaceVerifyActions(input: {
   return actions;
 }
 
-function readinessEnvironmentActions(input: {
+const RUNTIME_EXECUTABLE_CANDIDATES: Record<string, string[]> = {
+  python: ['python3', 'python', 'py'],
+  node: ['node'],
+  go: ['go'],
+  java: ['java'],
+  dotnet: ['dotnet'],
+  rust: ['cargo'],
+  php: ['php'],
+};
+
+async function availableRuntimeExecutable(
+  runtime: string,
+  workspacePath: string,
+  toolAvailable?: (executable: string, cwd: string) => Promise<boolean>
+): Promise<string | undefined> {
+  for (const executable of RUNTIME_EXECUTABLE_CANDIDATES[runtime] ?? [runtime]) {
+    const available = toolAvailable
+      ? await toolAvailable(executable, workspacePath)
+      : await executableAvailable({ executable, cwd: workspacePath });
+    if (available) return executable;
+  }
+  return undefined;
+}
+
+async function readinessEnvironmentActions(input: {
   report: CandidateReport;
   blockers: string[];
   startOrder: number;
   ciMode: boolean;
-}): ArtifactRemediationAction[] {
+  workspacePath: string;
+  toolAvailable?: (executable: string, cwd: string) => Promise<boolean>;
+}): Promise<ArtifactRemediationAction[]> {
   const runtimes = uniqueStrings(
     input.blockers.flatMap((blocker) => {
       const match = blocker.match(
@@ -1055,10 +1123,48 @@ function readinessEnvironmentActions(input: {
   const actions: ArtifactRemediationAction[] = [];
 
   for (const runtime of runtimes) {
+    const candidates = RUNTIME_EXECUTABLE_CANDIDATES[runtime] ?? [runtime];
+    const availableExecutable = await availableRuntimeExecutable(
+      runtime,
+      input.workspacePath,
+      input.toolAvailable
+    );
+    const prerequisiteId = `environment.runtime.${runtime}`;
     const setupId = `readiness.toolchain.${runtime}.setup`;
     const blocker =
       input.blockers.find((candidate) => candidate.toLowerCase().includes(`(${runtime})`)) ??
       `The ${runtime} runtime is not pinned in the canonical workspace toolchain.`;
+    if (!availableExecutable) {
+      actions.push(
+        actionBase({
+          id: prerequisiteId,
+          artifactKind: input.report.artifactKind,
+          cardId: input.report.cardId,
+          title: `Provide the ${runtime} host runtime`,
+          order: input.startOrder + actions.length,
+          phase: 'host-prerequisite',
+          blocker: `No launchable ${runtime} runtime is available in the current environment.`,
+          summary: `Install or configure ${candidates.join(' or ')} outside Workspai, then refresh the remediation plan.`,
+          mode: 'manual-guidance',
+          risk: 'safe',
+          status: 'guidance-only',
+          verifyCommand: `npx workspai setup ${runtime} --json`,
+          requirements: [
+            {
+              kind: 'executable',
+              id: `executable:${runtime}`,
+              status: 'missing',
+              executable: candidates.join('|'),
+              message: `A launchable ${candidates.join(' or ')} executable must be visible to Workspai.`,
+            },
+          ],
+          retryPolicy: { sameGeneration: 'forbidden', resumeWhen: 'environment-changed' },
+          notes: [
+            '`workspai setup` detects and pins an existing runtime; it does not install host software.',
+          ],
+        })
+      );
+    }
     actions.push(
       actionBase({
         id: setupId,
@@ -1071,10 +1177,38 @@ function readinessEnvironmentActions(input: {
         summary: `Detect and persist the current ${runtime} runtime in the canonical workspace toolchain lock.`,
         mode: 'run-command',
         risk: 'safe',
+        status: availableExecutable ? 'ready' : 'blocked',
         command: `npx workspai setup ${runtime} --json`,
+        invocation: governedWorkspaiInvocation(['setup', runtime, '--json']),
         verifyCommand: input.ciMode
           ? 'npx workspai readiness --strict --json'
           : 'npx workspai readiness --json',
+        dependsOn: availableExecutable ? undefined : [prerequisiteId],
+        requirements: [
+          {
+            kind: 'executable',
+            id: `executable:${runtime}`,
+            status: availableExecutable ? 'satisfied' : 'missing',
+            executable: availableExecutable ?? candidates.join('|'),
+            message: availableExecutable
+              ? `Runtime prerequisite is launchable: ${availableExecutable}.`
+              : `Runtime prerequisite is unavailable: ${candidates.join(' or ')}.`,
+          },
+          ...(availableExecutable
+            ? []
+            : [
+                {
+                  kind: 'action' as const,
+                  id: `action:${prerequisiteId}`,
+                  status: 'pending' as const,
+                  actionId: prerequisiteId,
+                  message: 'The host runtime prerequisite must be resolved first.',
+                },
+              ]),
+        ],
+        retryPolicy: availableExecutable
+          ? { sameGeneration: 'allowed', resumeWhen: 'immediate' }
+          : { sameGeneration: 'forbidden', resumeWhen: 'environment-changed' },
         notes: ['Run from the workspace root so the canonical toolchain.lock is updated.'],
       })
     );
@@ -1090,11 +1224,26 @@ function readinessEnvironmentActions(input: {
         summary: 'Refresh the workspace foundation after the runtime pin is written.',
         mode: 'run-command',
         risk: 'guarded',
+        status: availableExecutable ? 'ready' : 'blocked',
         command: 'npx workspai bootstrap --ci --json',
+        invocation: governedWorkspaiInvocation(['bootstrap', '--ci', '--json']),
         verifyCommand: input.ciMode
           ? 'npx workspai readiness --strict --json'
           : 'npx workspai readiness --json',
         dependsOn: [setupId],
+        requirements: [
+          {
+            kind: 'action',
+            id: `action:${setupId}`,
+            status: 'pending',
+            actionId: setupId,
+            message: `The ${runtime} toolchain pin must complete first.`,
+          },
+        ],
+        retryPolicy: {
+          sameGeneration: availableExecutable ? 'allowed' : 'forbidden',
+          resumeWhen: availableExecutable ? 'dependencies-complete' : 'environment-changed',
+        },
       })
     );
   }
@@ -1216,6 +1365,153 @@ function genericActionForReport(input: {
   });
 }
 
+function runtimeForDependencyAction(action: ArtifactRemediationAction): string | undefined {
+  const ecosystem = action.transaction?.ecosystem.toLowerCase();
+  const executable = path.basename(action.invocation?.executable ?? '').toLowerCase();
+  const value = `${ecosystem ?? ''}:${executable}`;
+  if (/(^|:)(python|pip|pip3|poetry|uv)(:|$)/.test(value)) return 'python';
+  if (/(^|:)(node|npm|pnpm|yarn|bun)(:|$)/.test(value)) return 'node';
+  if (/(^|:)(go)(:|$)/.test(value)) return 'go';
+  if (/(^|:)(java|maven|mvn|mvnw|gradle|gradlew)(:|$)/.test(value)) return 'java';
+  if (/(^|:)(dotnet|nuget)(:|$)/.test(value)) return 'dotnet';
+  if (/(^|:)(rust|cargo|rustc)(:|$)/.test(value)) return 'rust';
+  if (/(^|:)(php|composer)(:|$)/.test(value)) return 'php';
+  return undefined;
+}
+
+function portableInvocationCwd(workspacePath: string, action: ArtifactRemediationAction): string {
+  const cwd = action.invocation?.cwd ?? workspacePath;
+  return path.isAbsolute(cwd) ? cwd : path.resolve(workspacePath, cwd);
+}
+
+function prerequisiteActionId(action: ArtifactRemediationAction, executable: string): string {
+  const runtime = runtimeForDependencyAction(action);
+  if (runtime && RUNTIME_EXECUTABLE_CANDIDATES[runtime]?.includes(path.basename(executable))) {
+    return `environment.runtime.${runtime}`;
+  }
+  const project = (action.projectName ?? 'workspace').replace(/[^a-zA-Z0-9.-]+/g, '-');
+  const tool = path.basename(executable).replace(/[^a-zA-Z0-9.-]+/g, '-');
+  return `environment.executable.${project}.${tool}`;
+}
+
+async function bindExecutableTruth(input: {
+  actions: ArtifactRemediationAction[];
+  workspacePath: string;
+  toolAvailable?: (executable: string, cwd: string) => Promise<boolean>;
+}): Promise<ArtifactRemediationAction[]> {
+  const prerequisiteActions = new Map<string, ArtifactRemediationAction>();
+  const knownActions = new Map(input.actions.map((action) => [action.id, action]));
+
+  for (const action of input.actions) {
+    if (!action.invocation || action.status === 'guidance-only') continue;
+    const cwd = portableInvocationCwd(input.workspacePath, action);
+    const available = input.toolAvailable
+      ? await input.toolAvailable(action.invocation.executable, cwd)
+      : await executableAvailable({ executable: action.invocation.executable, cwd });
+    const requirement: ArtifactRemediationRequirement = {
+      kind: 'executable',
+      id: `executable:${action.invocation.executable}`,
+      status: available ? 'satisfied' : 'missing',
+      executable: action.invocation.executable,
+      message: available
+        ? `Required executable is launchable: ${action.invocation.executable}.`
+        : `Required executable is unavailable: ${action.invocation.executable}.`,
+    };
+    action.requirements = [
+      ...(action.requirements ?? []).filter((item) => item.id !== requirement.id),
+      requirement,
+    ];
+    if (available) continue;
+
+    const prerequisiteId = prerequisiteActionId(action, action.invocation.executable);
+    if (!knownActions.has(prerequisiteId) && !prerequisiteActions.has(prerequisiteId)) {
+      prerequisiteActions.set(
+        prerequisiteId,
+        actionBase({
+          id: prerequisiteId,
+          artifactKind: action.artifactKind,
+          cardId: 'environment',
+          title: `Provide ${path.basename(action.invocation.executable)}`,
+          order: 0,
+          phase: 'host-prerequisite',
+          blocker: `The required executable ${action.invocation.executable} is unavailable.`,
+          summary:
+            'Install or configure the required executable outside Workspai, then refresh the plan.',
+          mode: 'manual-guidance',
+          risk: 'safe',
+          status: 'guidance-only',
+          verifyCommand: action.verifyCommand,
+          scope: action.scope,
+          projectName: action.projectName,
+          projectPath: action.projectPath,
+          requirements: [requirement],
+          retryPolicy: { sameGeneration: 'forbidden', resumeWhen: 'environment-changed' },
+          notes: ['The CLI does not install host runtimes or system package managers implicitly.'],
+        })
+      );
+    }
+    action.status = 'blocked';
+    action.dependsOn = uniqueStrings([...(action.dependsOn ?? []), prerequisiteId]);
+    action.requirements.push({
+      kind: 'action',
+      id: `action:${prerequisiteId}`,
+      status: 'pending',
+      actionId: prerequisiteId,
+      message: 'Resolve the executable prerequisite and generate fresh evidence first.',
+    });
+    action.retryPolicy = { sameGeneration: 'forbidden', resumeWhen: 'environment-changed' };
+    action.notes.push(
+      'This action is not eligible in the current plan generation because its executable precondition failed.'
+    );
+  }
+
+  const combined = [...prerequisiteActions.values(), ...input.actions];
+  combined.forEach((action, index) => {
+    action.order = index + 1;
+  });
+  return combined;
+}
+
+function bindRuntimeDependencyGraph(actions: ArtifactRemediationAction[]): void {
+  const ids = new Set(actions.map((action) => action.id));
+  for (const action of actions) {
+    if (!action.transaction) continue;
+    const runtime = runtimeForDependencyAction(action);
+    if (!runtime) continue;
+    const bootstrapId = `readiness.toolchain.${runtime}.bootstrap`;
+    if (!ids.has(bootstrapId)) continue;
+    action.dependsOn = uniqueStrings([...(action.dependsOn ?? []), bootstrapId]);
+    action.requirements = [
+      ...(action.requirements ?? []),
+      {
+        kind: 'action',
+        id: `action:${bootstrapId}`,
+        status: 'pending',
+        actionId: bootstrapId,
+        message: `The canonical ${runtime} workspace foundation must be reconciled first.`,
+      },
+    ];
+    if (action.status === 'ready') {
+      action.retryPolicy = { sameGeneration: 'allowed', resumeWhen: 'dependencies-complete' };
+    }
+  }
+}
+
+function planExecution(actions: ArtifactRemediationAction[]): ArtifactRemediationPlan['execution'] {
+  const eligibleActionIds = actions
+    .filter((action) => action.status === 'ready' && (action.dependsOn?.length ?? 0) === 0)
+    .map((action) => action.id);
+  const blockedActionIds = actions
+    .filter((action) => action.status === 'blocked')
+    .map((action) => action.id);
+  const guidance = actions.find((action) => action.status === 'guidance-only')?.id ?? null;
+  return {
+    nextActionId: eligibleActionIds[0] ?? guidance,
+    eligibleActionIds,
+    blockedActionIds,
+  };
+}
+
 async function readCandidateReports(workspacePath: string): Promise<CandidateReport[]> {
   const reportsDirs = [
     resolveWorkspaceArtifactPath(workspacePath, '.workspai/reports'),
@@ -1267,6 +1563,7 @@ export async function buildArtifactRemediationPlan(input: {
   workspacePath: string;
   includeAbsolutePaths?: boolean;
   ciMode?: boolean;
+  toolAvailable?: (executable: string, cwd: string) => Promise<boolean>;
 }): Promise<ArtifactRemediationPlan> {
   const workspacePath = path.resolve(input.workspacePath);
   const includeAbsolutePaths = input.includeAbsolutePaths === true;
@@ -1318,11 +1615,13 @@ export async function buildArtifactRemediationPlan(input: {
       }
     }
     if (report.artifactKind === 'readiness') {
-      const environmentActions = readinessEnvironmentActions({
+      const environmentActions = await readinessEnvironmentActions({
         report,
         blockers,
         startOrder: order,
         ciMode,
+        workspacePath,
+        toolAvailable: input.toolAvailable,
       });
       if (environmentActions.length > 0) {
         actions.push(...environmentActions);
@@ -1384,10 +1683,17 @@ export async function buildArtifactRemediationPlan(input: {
     order += 1;
   }
 
+  bindRuntimeDependencyGraph(actions);
+  const plannedActions = await bindExecutableTruth({
+    actions,
+    workspacePath,
+    toolAvailable: input.toolAvailable,
+  });
+  const execution = planExecution(plannedActions);
   const risk: Record<ArtifactRemediationRisk, number> = {
-    safe: actions.filter((action) => action.risk === 'safe').length,
-    guarded: actions.filter((action) => action.risk === 'guarded').length,
-    invasive: actions.filter((action) => action.risk === 'invasive').length,
+    safe: plannedActions.filter((action) => action.risk === 'safe').length,
+    guarded: plannedActions.filter((action) => action.risk === 'guarded').length,
+    invasive: plannedActions.filter((action) => action.risk === 'invasive').length,
   };
   return {
     schemaVersion: ARTIFACT_REMEDIATION_PLAN_SCHEMA_VERSION,
@@ -1404,12 +1710,15 @@ export async function buildArtifactRemediationPlan(input: {
     },
     summary: {
       artifactsScanned: reports.length,
-      cardsCovered: uniqueStrings(actions.map((action) => action.cardId)).length,
-      totalActions: actions.length,
-      executableActions: actions.filter((action) => action.status === 'ready').length,
+      cardsCovered: uniqueStrings(plannedActions.map((action) => action.cardId)).length,
+      totalActions: plannedActions.length,
+      executableActions: plannedActions.filter((action) => action.status === 'ready').length,
+      blockedActions: plannedActions.filter((action) => action.status === 'blocked').length,
+      guidanceActions: plannedActions.filter((action) => action.status === 'guidance-only').length,
       risk,
     },
-    actions,
+    execution,
+    actions: plannedActions,
   };
 }
 

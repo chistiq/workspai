@@ -5,6 +5,39 @@ All notable changes to Workspai CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.72.0] - 2026-09-01
+
+### Added
+
+- Added typed executable requirements, current-environment launchability,
+  blocked reasons, retry boundaries, and canonical next-action projections to
+  remediation plans.
+- Added workspace ownership discovery for npm, pnpm, and Cargo lifecycle units.
+
+### Changed
+
+- Made Doctor and Repair share one executable launchability probe across
+  supported runtimes, preventing unavailable host tools from entering an
+  executable remediation path.
+- Made workspace lifecycle planning collapse matching members under their
+  owning workspace manifest and exclude embedded eval, benchmark, test-data,
+  and fixture packages.
+- Made Graph retrieval prefer authored source and resolve exact evidence and
+  path targets inside the requested project scope.
+- Made frontend application probes explicitly not applicable to library, SDK,
+  platform, plugin, and monorepo archetypes.
+- Made strict PCC verification return the evidence-blocked exit status when
+  independent verification cannot close the change.
+
+### Fixed
+
+- Prevented aggregate projects from executing an explicitly registered nested
+  project a second time.
+- Prevented tooling-only development dependencies at private workspace roots
+  from becoming false application framework detections.
+- Prevented a missing runtime from producing repeated same-generation Repair
+  plans that cannot execute.
+
 ## [0.71.0] - 2026-08-31
 
 ### Added

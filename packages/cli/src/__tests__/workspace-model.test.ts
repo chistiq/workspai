@@ -218,6 +218,7 @@ describe('workspace intelligence model', () => {
       kind: 'backend',
       runtime: 'ruby',
       framework: 'rails',
+      kit: 'adopted.rails',
       runtimeCandidates: ['ruby', 'go', 'node'],
     });
     expect(model.identity.runtimeFamilies).toEqual(['go', 'node', 'ruby']);

@@ -101,6 +101,102 @@ describe('polyglot lifecycle plan', () => {
     expect(plan.units.map((unit) => unit.root)).toEqual(['service-a', 'service-b']);
   });
 
+  it('runs Node workspace installation at the owning root without swallowing independent packages', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-node-workspace-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputJson(path.join(root, 'package.json'), {
+      private: true,
+      packageManager: 'pnpm@10.0.0',
+      workspaces: ['packages/*'],
+      scripts: { build: 'turbo build' },
+    });
+    await fs.outputFile(path.join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    await fs.outputJson(path.join(root, 'packages', 'core', 'package.json'), {
+      name: '@example/core',
+      scripts: { build: 'tsc' },
+    });
+    await fs.outputJson(path.join(root, 'tools', 'release', 'package.json'), {
+      name: '@example/release-tool',
+      dependencies: { semver: '^7.0.0' },
+    });
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.', 'tools/release']);
+    expect(plan.units[0]?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'init', command: 'pnpm install' })
+    );
+    expect(plan.units[1]?.stages[0]?.command).toBe('npm install');
+  });
+
+  it('does not execute nested evaluation fixtures or metadata-only platform packages', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-fixture-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputJson(path.join(root, 'package.json'), {
+      private: true,
+      dependencies: { typescript: '^5.0.0' },
+    });
+    await fs.outputJson(path.join(root, 'evals', 'cases', 'migration', 'package.json'), {
+      dependencies: { next: '^16.0.0' },
+    });
+    await fs.outputJson(path.join(root, 'native', 'npm', 'linux-x64', 'package.json'), {
+      name: '@example/native-linux-x64',
+      files: ['binding.node'],
+      os: ['linux'],
+      cpu: ['x64'],
+    });
+    await fs.outputFile(
+      path.join(root, 'tests', 'fixtures', 'plugin', 'Cargo.toml'),
+      '[package]\nname="fixture-plugin"\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.']);
+  });
+
+  it('honors pnpm workspace includes and exclusions', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-pnpm-workspace-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputJson(path.join(root, 'package.json'), { private: true });
+    await fs.outputFile(
+      path.join(root, 'pnpm-workspace.yaml'),
+      "packages: ['apps/*', '!apps/standalone']\n"
+    );
+    await fs.outputJson(path.join(root, 'apps', 'web', 'package.json'), { name: 'web' });
+    await fs.outputJson(path.join(root, 'apps', 'standalone', 'package.json'), {
+      name: 'standalone',
+      dependencies: { fastify: '^5.0.0' },
+    });
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.', 'apps/standalone']);
+    expect(plan.units[0]?.stages[0]?.command).toBe('pnpm install');
+  });
+
+  it('runs Cargo workspace members through their owning workspace root', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-cargo-workspace-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'Cargo.toml'),
+      '[workspace]\ndefault-members = ["crates/standalone"]\nmembers = ["crates/*"]\nexclude = ["crates/standalone"]\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'crates', 'core', 'Cargo.toml'),
+      '[package]\nname="core"\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'crates', 'standalone', 'Cargo.toml'),
+      '[package]\nname="standalone"\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.', 'crates/standalone']);
+    expect(plan.units.every((unit) => unit.stages[0]?.command === 'cargo fetch')).toBe(true);
+  });
+
   it('models observed runtime manifests instead of dropping them from polyglot execution', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-observed-lifecycle-'));
     tempDirs.push(root);

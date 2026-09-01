@@ -19,6 +19,10 @@
   "invariants": {
     "multiAdapterProjects": true,
     "missingTools": "decision-required",
+    "missingToolSameGenerationRetry": false,
+    "missingToolResumeBoundary": "environment-change-and-fresh-plan",
+    "plannerExecutorAvailabilityProbe": "shared-launchability-check",
+    "setupInstallsHostRuntimes": false,
     "unsupportedEcosystems": "decision-required",
     "silentFallbackToModelExecution": false,
     "mutationAuthority": "cli-only",
@@ -148,7 +152,9 @@
       "everyFailureTerminates": true,
       "everyMutationIsCheckpointed": true,
       "workspaceAndProjectScopesUseTheSameEngine": true,
-      "linkedProjectsRemainBoundaryChecked": true
+      "linkedProjectsRemainBoundaryChecked": true,
+      "missingToolsBlockExecutionBeforeApproval": true,
+      "polyglotActionsDeclareIndependentExecutablePrerequisites": true
     }
   },
   "adapters": [

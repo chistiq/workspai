@@ -26,6 +26,13 @@ import { resolveProjectWorkspaceSync } from '../project-workspace-link.js';
 
 type CommonOptions = { workspace?: string; json?: boolean };
 
+export function strictVerificationExitCode(input: {
+  strict: boolean;
+  state: string;
+}): number | undefined {
+  return input.strict && input.state === 'blocked' ? 2 : undefined;
+}
+
 function workspaceFor(options: CommonOptions): string {
   const resolution = resolveProjectWorkspaceSync({
     startPath: process.cwd(),
@@ -71,10 +78,16 @@ function printResult(
 
 async function run(
   options: CommonOptions,
-  operation: () => Promise<Awaited<ReturnType<typeof inspectProofCarryingChange>>>
+  operation: () => Promise<Awaited<ReturnType<typeof inspectProofCarryingChange>>>,
+  exitCodeForResult?: (
+    result: Awaited<ReturnType<typeof inspectProofCarryingChange>>
+  ) => number | undefined
 ): Promise<void> {
   try {
-    printResult(await operation(), options.json);
+    const result = await operation();
+    printResult(result, options.json);
+    const exitCode = exitCodeForResult?.(result);
+    if (exitCode !== undefined) process.exitCode = exitCode;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (options.json) {
@@ -302,13 +315,17 @@ export function registerChangeCommands(program: Command): void {
     .option('--no-refresh', 'Use current canonical intelligence without refreshing it')
     .action(
       async (options: CommonOptions & { change: string; strict?: boolean; refresh?: boolean }) => {
-        await run(options, () =>
-          verifyProofCarryingChange({
-            workspacePath: workspaceFor(options),
-            changeId: options.change,
-            strict: options.strict,
-            refresh: options.refresh,
-          })
+        await run(
+          options,
+          () =>
+            verifyProofCarryingChange({
+              workspacePath: workspaceFor(options),
+              changeId: options.change,
+              strict: options.strict,
+              refresh: options.refresh,
+            }),
+          (result) =>
+            strictVerificationExitCode({ strict: options.strict === true, state: result.state })
         );
       }
     );

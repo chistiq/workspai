@@ -64,6 +64,7 @@ import {
 } from './utils/workspace-paths.js';
 import { readWorkspaceMarker } from './workspace-marker.js';
 import { getProbeTimeoutMs } from './utils/command-timeouts.js';
+import { executableAvailable } from './utils/executable-availability.js';
 import {
   buildDoctorFixExecutionResult,
   DOCTOR_FIX_VERIFY_RECOMMENDED,
@@ -5048,10 +5049,15 @@ function applyArchetypeApplicability(project: ProjectHealth): void {
 
   const suppressedCommands = new Set<string>();
   project.probes = (project.probes ?? []).map((probe) => {
+    const isFrontendApplicationOnly =
+      probe.id === 'frontend-framework-config' ||
+      probe.id === 'frontend-source-tree' ||
+      probe.id.startsWith('frontend-script-');
     const isDeployableOnly =
       probe.id === 'migration-surface' ||
       probe.id === 'runtime-health-surface' ||
       probe.id === 'surface-kubernetes-readiness' ||
+      isFrontendApplicationOnly ||
       probe.id.endsWith('-boot-entrypoint') ||
       (probe.id === 'runtime-security-tooling' &&
         project.probes?.some((candidate) => candidate.id === 'surface-security-hygiene')) ||
@@ -8172,6 +8178,7 @@ async function buildRemediationPlan(
   const baseSteps = dedupedSteps;
 
   let goToolchainAvailable: boolean | null = null;
+  const executableAvailability = new Map<string, boolean>();
   const steps: PlannedFixStep[] = [];
   let executableSteps = 0;
   let safe = 0;
@@ -8182,8 +8189,22 @@ async function buildRemediationPlan(
     const { project, step, command } = item;
     let executableInCurrentEnvironment = step.executable;
     let blockedReason: string | undefined;
+    const capability = item.capability ?? findRepairCapabilityForCommand(project, command);
 
-    if (step.kind === 'go-mod-tidy') {
+    if (executableInCurrentEnvironment && capability?.invocation) {
+      const cwd = capability.invocation.cwd;
+      const executable = capability.invocation.executable;
+      const key = `${cwd}\0${executable}`;
+      let available = executableAvailability.get(key);
+      if (available === undefined) {
+        available = await executableAvailable({ executable, cwd });
+        executableAvailability.set(key, available);
+      }
+      if (!available) {
+        executableInCurrentEnvironment = false;
+        blockedReason = `Required executable is unavailable: ${executable}`;
+      }
+    } else if (step.kind === 'go-mod-tidy') {
       if (goToolchainAvailable === null) {
         goToolchainAvailable = await canRunGoModTidy();
       }
@@ -8193,7 +8214,6 @@ async function buildRemediationPlan(
       }
     }
 
-    const capability = item.capability ?? findRepairCapabilityForCommand(project, command);
     const probe = item.probe ?? findProbeForRepairCapability(project, capability);
     const diagnosisFinding = probe
       ? project.diagnosis?.findings.find((finding) => finding.probeId === probe.id)

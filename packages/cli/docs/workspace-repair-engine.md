@@ -160,7 +160,10 @@ tool before the environment-creation stage runs.
   next repair target and never trigger rollback of a valid bounded repair.
 - Required executables are resolved before approval and again immediately before execution. A
   missing, broken-shebang, or changed toolchain expires approval instead of starting a partial
-  transaction. Filesystem presence alone is not launchability proof.
+  transaction. Filesystem presence alone is not launchability proof. Planning and execution use
+  the same launchability probe across every runtime adapter. A missing executable forbids retry of
+  the unchanged plan generation; install or configure it externally, refresh evidence, and create
+  a fresh plan.
 - The exact card producer is run twice: first as a no-mutation causal precondition, then after
   repair as card-local evidence. An aggregate workspace gate cannot substitute for either run.
 - A Goal-bound proposal is linked to the active Goal before execution. Closure seals the fresh
@@ -183,6 +186,11 @@ declared by their evidence so an npm finding cannot accidentally trigger an unre
 transaction. If a manifest, required executable, isolated environment, project-declared
 validation, or audit surface is unavailable, the engine returns `decision-required`; it never
 hides the gap behind a model fallback.
+
+Runtime prerequisites form an explicit dependency graph: host executable, canonical toolchain
+pin, workspace bootstrap, dependency materialization, declared test/build stages, and canonical
+verification. `workspai setup <runtime>` validates and pins an already installed host runtime; it
+does not silently install system software.
 
 The same capability contract publishes an executable qualification matrix over
 adapter, scope, failure family, and recovery path. Every failure family has one

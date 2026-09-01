@@ -41,7 +41,27 @@
         "cardsCovered": { "type": "integer", "minimum": 0 },
         "totalActions": { "type": "integer", "minimum": 0 },
         "executableActions": { "type": "integer", "minimum": 0 },
+        "blockedActions": { "type": "integer", "minimum": 0 },
+        "guidanceActions": { "type": "integer", "minimum": 0 },
         "risk": { "$ref": "#/$defs/riskSummary" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nextActionId", "eligibleActionIds", "blockedActionIds"],
+      "properties": {
+        "nextActionId": { "type": ["string", "null"] },
+        "eligibleActionIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "blockedActionIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
       }
     },
     "actions": {
@@ -330,6 +350,11 @@
           "items": { "$ref": "#/$defs/repairStrategyStage" }
         },
         "transaction": { "$ref": "#/$defs/dependencyRepairTransaction" },
+        "requirements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/actionRequirement" }
+        },
+        "retryPolicy": { "$ref": "#/$defs/retryPolicy" },
         "status": { "enum": ["ready", "review-required", "blocked", "guidance-only"] },
         "mode": {
           "enum": [
@@ -365,6 +390,30 @@
         "notes": {
           "type": "array",
           "items": { "type": "string" }
+        }
+      }
+    },
+    "actionRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "status", "message"],
+      "properties": {
+        "kind": { "enum": ["executable", "action"] },
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["satisfied", "missing", "pending"] },
+        "executable": { "type": "string", "minLength": 1 },
+        "actionId": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "retryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sameGeneration", "resumeWhen"],
+      "properties": {
+        "sameGeneration": { "enum": ["allowed", "forbidden"] },
+        "resumeWhen": {
+          "enum": ["immediate", "dependencies-complete", "environment-changed"]
         }
       }
     }

@@ -52,7 +52,10 @@ describe('artifact remediation plan', () => {
       }
     );
 
-    const plan = await buildArtifactRemediationPlan({ workspacePath });
+    const plan = await buildArtifactRemediationPlan({
+      workspacePath,
+      toolAvailable: async () => true,
+    });
     const action = plan.actions[0];
     const serialized = JSON.stringify(plan);
 
@@ -68,6 +71,67 @@ describe('artifact remediation plan', () => {
     });
     expect(serialized).not.toContain(projectPath);
     expect(serialized).not.toContain('../');
+  });
+
+  it('preserves unavailable Doctor invocations as explicit host prerequisites', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = path.join(workspacePath, 'accounting');
+    await fsExtra.ensureDir(projectPath);
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-remediation-plan-last-run.json'),
+      {
+        schemaVersion: 'doctor-remediation-plan-v2',
+        steps: [
+          {
+            id: 'accounting.dependencies',
+            projectName: 'accounting',
+            projectPath,
+            originalCommand: 'dotnet restore',
+            executable: true,
+            executableInCurrentEnvironment: false,
+            risk: 'guarded',
+            invocation: { cwd: projectPath, executable: 'dotnet', args: ['restore'] },
+            studioStatus: {
+              state: 'blocked',
+              reason: 'Required executable is unavailable: dotnet',
+            },
+          },
+        ],
+      }
+    );
+
+    const plan = await buildArtifactRemediationPlan({
+      workspacePath,
+      toolAvailable: async () => false,
+    });
+    const action = plan.actions.find((item) => item.id === 'doctor.accounting.dependencies');
+
+    expect(plan.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'environment.runtime.dotnet',
+          status: 'guidance-only',
+        }),
+      ])
+    );
+    expect(action).toMatchObject({
+      mode: 'run-command',
+      status: 'blocked',
+      command: 'dotnet restore',
+      invocation: { cwd: '.', executable: 'dotnet', args: ['restore'] },
+      dependsOn: ['environment.runtime.dotnet'],
+      retryPolicy: { sameGeneration: 'forbidden', resumeWhen: 'environment-changed' },
+    });
+    expect(action?.requirements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'executable', status: 'missing' }),
+        expect.objectContaining({
+          kind: 'action',
+          actionId: 'environment.runtime.dotnet',
+          status: 'pending',
+        }),
+      ])
+    );
   });
 
   it('builds deterministic Bootstrap compliance remediation actions for Studio', async () => {
@@ -442,6 +506,92 @@ describe('artifact remediation plan', () => {
     expect(serialized).not.toContain(projectPath);
   });
 
+  it('applies executable truth to every dependency ecosystem in a polyglot Doctor plan', async () => {
+    const workspacePath = await makeWorkspace();
+    const ecosystems = [
+      ['node', 'npm'],
+      ['python', 'poetry'],
+      ['go', 'go'],
+      ['rust', 'cargo'],
+      ['php-composer', 'composer'],
+      ['ruby-bundler', 'bundle'],
+      ['elixir-mix', 'mix'],
+      ['deno', 'deno'],
+      ['dotnet', 'dotnet'],
+      ['jvm-maven', 'mvn'],
+      ['jvm-gradle', 'gradle'],
+      ['clojure', 'clojure'],
+      ['scala-sbt', 'sbt'],
+    ] as const;
+    const projects = [];
+    for (const [ecosystem, executable] of ecosystems) {
+      const projectPath = path.join(workspacePath, ecosystem);
+      await fsExtra.ensureDir(projectPath);
+      projects.push({
+        name: ecosystem,
+        path: projectPath,
+        issues: ['Dependencies are not materialized'],
+        repairCapabilities: [
+          {
+            id: 'runtime-dependency-materialization.dependency-materialization',
+            title: `Materialize ${ecosystem} dependencies`,
+            status: 'available',
+            risk: 'guarded',
+            canAutoFix: true,
+            canEditFiles: false,
+            files: [],
+            command: `${executable} install`,
+            invocation: { cwd: projectPath, executable, args: ['install'] },
+            transaction: {
+              schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+              kind: 'dependency-materialization',
+              state: 'planned',
+              projectPath,
+              ecosystem,
+              sourceMutationRequired: false,
+              observableState: 'runtime-dependency-tree',
+              requiredStages: ['reconcile', 'test', 'build'],
+              completion: {
+                manifestLockConsistent: true,
+                installedTreePresent: true,
+                declaredTestsPass: true,
+                declaredBuildPass: true,
+                canonicalVerificationRequired: true,
+              },
+            },
+            reason: `${ecosystem} dependencies are missing.`,
+          },
+        ],
+      });
+    }
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      { projects }
+    );
+
+    const plan = await buildArtifactRemediationPlan({
+      workspacePath,
+      toolAvailable: async () => false,
+    });
+    const dependencyActions = plan.actions.filter((action) => action.transaction);
+
+    expect(dependencyActions).toHaveLength(ecosystems.length);
+    for (const action of dependencyActions) {
+      expect(action).toMatchObject({
+        status: 'blocked',
+        retryPolicy: { sameGeneration: 'forbidden', resumeWhen: 'environment-changed' },
+      });
+      expect(action.requirements).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'executable', status: 'missing' }),
+          expect.objectContaining({ kind: 'action', status: 'pending' }),
+        ])
+      );
+    }
+    expect(plan.execution.eligibleActionIds).toEqual([]);
+    expect(plan.execution.nextActionId).toMatch(/^environment\./);
+  });
+
   it('builds CI-oriented verify commands when requested', async () => {
     const workspacePath = await makeWorkspace();
     await fsExtra.writeJSON(
@@ -561,7 +711,10 @@ describe('artifact remediation plan', () => {
       }
     );
 
-    const plan = await buildArtifactRemediationPlan({ workspacePath });
+    const plan = await buildArtifactRemediationPlan({
+      workspacePath,
+      toolAvailable: async () => true,
+    });
 
     expect(plan.actions.map((action) => action.command)).toEqual([
       'npx workspai setup node --json',
@@ -571,6 +724,76 @@ describe('artifact remediation plan', () => {
     ]);
     expect(plan.actions[1].dependsOn).toEqual(['readiness.toolchain.node.setup']);
     expect(plan.actions[3].dependsOn).toEqual(['readiness.toolchain.python.setup']);
+    expect(plan.actions[0].invocation).toEqual({
+      cwd: '.',
+      executable: 'npx',
+      args: ['--no-install', 'workspai', 'setup', 'node', '--json'],
+    });
+    expect(plan.actions[1].invocation).toEqual({
+      cwd: '.',
+      executable: 'npx',
+      args: ['--no-install', 'workspai', 'bootstrap', '--ci', '--json'],
+    });
+  });
+
+  it('blocks every supported missing host runtime before setup and exposes one canonical next step', async () => {
+    const workspacePath = await makeWorkspace();
+    const runtimes = ['python', 'node', 'go', 'java', 'dotnet', 'rust', 'php'];
+    await fsExtra.writeJSON(
+      path.join(workspacePath, '.workspai', 'reports', 'release-readiness-last-run.json'),
+      {
+        schemaVersion: 'release-readiness-v1',
+        blockingReasons: [
+          `env: Project runtimes (${runtimes.join(', ')}) are not pinned in toolchain.lock`,
+        ],
+      }
+    );
+
+    const plan = await buildArtifactRemediationPlan({
+      workspacePath,
+      toolAvailable: async (executable) => executable === 'npx',
+    });
+
+    for (const runtime of runtimes) {
+      const prerequisite = plan.actions.find(
+        (action) => action.id === `environment.runtime.${runtime}`
+      );
+      const setup = plan.actions.find(
+        (action) => action.id === `readiness.toolchain.${runtime}.setup`
+      );
+      const bootstrap = plan.actions.find(
+        (action) => action.id === `readiness.toolchain.${runtime}.bootstrap`
+      );
+      expect(prerequisite).toMatchObject({
+        status: 'guidance-only',
+        retryPolicy: { sameGeneration: 'forbidden', resumeWhen: 'environment-changed' },
+      });
+      expect(setup).toMatchObject({
+        status: 'blocked',
+        dependsOn: [`environment.runtime.${runtime}`],
+        invocation: {
+          cwd: '.',
+          executable: 'npx',
+          args: ['--no-install', 'workspai', 'setup', runtime, '--json'],
+        },
+      });
+      expect(bootstrap).toMatchObject({
+        status: 'blocked',
+        dependsOn: [`readiness.toolchain.${runtime}.setup`],
+        invocation: {
+          cwd: '.',
+          executable: 'npx',
+          args: ['--no-install', 'workspai', 'bootstrap', '--ci', '--json'],
+        },
+      });
+    }
+    expect(plan.execution.eligibleActionIds).toEqual([]);
+    expect(plan.execution.nextActionId).toBe('environment.runtime.python');
+    expect(plan.summary).toMatchObject({
+      executableActions: 0,
+      blockedActions: runtimes.length * 2,
+      guidanceActions: runtimes.length,
+    });
   });
 
   it('binds aggregate pipeline reruns to their upstream remediation actions', async () => {

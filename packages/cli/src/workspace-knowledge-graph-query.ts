@@ -84,13 +84,16 @@ function queryIndex(graph: WorkspaceKnowledgeGraph): WorkspaceKnowledgeQueryInde
 
 export function resolveKnowledgeTarget(
   graph: WorkspaceKnowledgeGraph,
-  query: string
+  query: string,
+  projectId?: string
 ): WorkspaceKnowledgeResolvedTarget {
   const index = queryIndex(graph);
   const exactRelation = index.relationsById.get(query);
   if (exactRelation) return { found: true, targetType: 'relation', relation: exactRelation };
   const needle = normalized(query);
-  const matches = index.entitiesByAlias.get(needle) ?? [];
+  const matches = (index.entitiesByAlias.get(needle) ?? []).filter(
+    (entity) => !projectId || entity.projectId === projectId
+  );
   if (matches.length === 1) return { found: true, targetType: 'entity', entity: matches[0] };
   return {
     found: false,
@@ -109,9 +112,10 @@ export type WorkspaceKnowledgeEvidenceQuery = {
 
 export function queryKnowledgeEvidence(
   graph: WorkspaceKnowledgeGraph,
-  query: string
+  query: string,
+  projectId?: string
 ): WorkspaceKnowledgeEvidenceQuery {
-  const resolved = resolveKnowledgeTarget(graph, query);
+  const resolved = resolveKnowledgeTarget(graph, query, projectId);
   if (!resolved.found)
     return { query, found: false, target: null, proofs: [], candidates: resolved.candidates };
   const target = resolved.targetType === 'entity' ? resolved.entity : resolved.relation;
@@ -151,10 +155,11 @@ export type WorkspaceKnowledgePathQuery = {
 export function queryKnowledgePath(
   graph: WorkspaceKnowledgeGraph,
   fromQuery: string,
-  toQuery: string
+  toQuery: string,
+  projectId?: string
 ): WorkspaceKnowledgePathQuery {
-  const from = resolveKnowledgeTarget(graph, fromQuery);
-  const to = resolveKnowledgeTarget(graph, toQuery);
+  const from = resolveKnowledgeTarget(graph, fromQuery, projectId);
+  const to = resolveKnowledgeTarget(graph, toQuery, projectId);
   if (!from.found || from.targetType !== 'entity' || !to.found || to.targetType !== 'entity') {
     return {
       from: fromQuery,
@@ -547,6 +552,33 @@ function searchScore(
   return score;
 }
 
+function generatedOrVendoredPenalty(
+  entity: WorkspaceKnowledgeEntity,
+  terms: ReadonlySet<string>
+): number {
+  const explicitGeneratedIntent = [
+    'build',
+    'compiled',
+    'dist',
+    'generated',
+    'fixture',
+    'fixtures',
+    'testdata',
+    'target',
+    'third',
+    'vendor',
+    'vendored',
+  ].some((term) => terms.has(term));
+  if (explicitGeneratedIntent) return 0;
+  const artifact = typeof entity.attributes.artifact === 'string' ? entity.attributes.artifact : '';
+  const location = `${entity.label}/${entity.identity.key}/${artifact}`.toLowerCase();
+  return /(?:^|\/)(?:__fixtures__|__testfixtures__|build|compiled|dist|fixture|fixtures|generated|node_modules|target|testdata|third_party|vendor)(?:\/|$)/u.test(
+    location
+  )
+    ? 5_000
+    : 0;
+}
+
 function matchedSearchTerms(document: SearchDocument, terms: string[]): number {
   // Count distinct document concepts rather than query aliases that happen to
   // hit the same token. For example, camel-case expansion yields both
@@ -896,7 +928,8 @@ export function searchKnowledgeGraph(
           : searchScore(document, query, terms, inverseDocumentFrequency) +
             matchedQualifiers * 300 +
             languageBoost +
-            intentScore,
+            intentScore -
+            generatedOrVendoredPenalty(document.entity, termSet),
       };
     })
     .filter((entry) => {

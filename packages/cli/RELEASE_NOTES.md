@@ -5,7 +5,57 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.71.0 (August 31, 2026)
+## Latest Release: v0.72.0 (September 1, 2026)
+
+### Runtime-Truth Repair and Workspace-Aware Qualification
+
+Workspai 0.72.0 makes repair eligibility a proven property of the current
+environment, collapses polyglot lifecycle execution to real workspace ownership
+boundaries, and improves architecture retrieval and Doctor applicability in
+large framework monorepos.
+
+**What's New:**
+
+- Repair plans expose typed executable requirements, launchability, blocking
+  reasons, retry boundaries, and one canonical next action for CLI, Studio, and
+  agent consumers.
+- Missing host runtimes block dependent remediation steps before execution and
+  cannot trigger a same-generation retry loop.
+- Node, pnpm, and Cargo workspace manifests own their matching members, avoiding
+  duplicate install and fetch commands across a monorepo.
+- Nested registered projects are not executed again through an aggregate parent,
+  and embedded eval, benchmark, test-data, and fixture manifests are excluded
+  from lifecycle discovery.
+- Framework detection no longer promotes a private workspace root from
+  tooling-only development dependencies, while Workspai-managed linked metadata
+  is refreshed when canonical detection changes.
+- Graph retrieval resolves evidence and paths inside the requested project scope
+  and prefers authored source over compiled, generated, vendored, fixture, and
+  test-data matches unless the query explicitly requests those surfaces.
+- Doctor records frontend application-only probes as not applicable for
+  libraries, SDKs, platforms, plugins, and monorepo roots instead of proposing
+  irrelevant application repairs.
+- Strict PCC verification exits with the documented evidence-blocked status
+  when the change remains blocked.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, and agent contracts remain supported. The new remediation
+fields are additive. No public command, flag, or artifact path is removed.
+
+**Publication status:** Released September 1, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.72.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.72.0/packages/cli/releases/RELEASE_NOTES_v0.72.0.md)
+
+---
+
+## v0.71.0 (August 31, 2026)
 
 ### Governed Startup and Enterprise Native Kit Baselines
 

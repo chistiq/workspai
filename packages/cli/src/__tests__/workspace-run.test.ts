@@ -196,6 +196,53 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(projectPath);
   });
 
+  it('assigns nested runtime units to the most specific selected project boundary', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-overlap-run-model-'));
+    const rootProject = path.join(workspacePath, 'repo');
+    const childProject = path.join(rootProject, 'services', 'api');
+    await fsExtra.outputJson(path.join(rootProject, '.workspai', 'project.json'), {
+      name: 'repo',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(rootProject, 'package.json'), {
+      scripts: { build: 'node root.js' },
+    });
+    await fsExtra.outputJson(path.join(childProject, '.workspai', 'project.json'), {
+      name: 'api',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(childProject, 'package.json'), {
+      scripts: { build: 'node api.js' },
+    });
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json'),
+      {
+        projects: [
+          { name: 'repo', path: 'repo' },
+          { name: 'api', path: 'repo/services/api' },
+        ],
+      }
+    );
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      planOnly: true,
+      json: true,
+    });
+    const rootResult = report.projects.find((project) => project.projectName === 'repo');
+    const childResult = report.projects.find((project) => project.projectName === 'api');
+
+    expect(rootResult?.runtimeExecutions?.map((execution) => execution.manifest)).toEqual([
+      'package.json',
+    ]);
+    expect(childResult?.runtimeExecutions?.map((execution) => execution.manifest)).toEqual([
+      'package.json',
+    ]);
+
+    await fsExtra.remove(workspacePath);
+  });
+
   it('executes every manifest-backed runtime unit in a polyglot project', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-polyglot-run-'));
     const projectPath = path.join(workspacePath, 'sdk');

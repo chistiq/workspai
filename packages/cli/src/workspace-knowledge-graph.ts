@@ -6867,11 +6867,20 @@ export async function buildWorkspaceKnowledgeGraph(
   const previousProviderRuns = new Map(
     (options.previousGraph?.providers ?? []).map((provider) => [provider.id, provider] as const)
   );
+  const projectRoots = projects.map((project) => path.resolve(project.root));
+  const hasOverlappingProjectRoots = projectRoots.some((root, index) =>
+    projectRoots.some(
+      (candidate, candidateIndex) =>
+        candidateIndex !== index &&
+        (candidate === root || candidate.startsWith(`${root}${path.sep}`))
+    )
+  );
   const providerSetIsCompatible =
     PROVIDERS.every((provider) => previousProviderVersions.get(provider.id) === provider.version) &&
     previousProviderRuns.get('incremental-project-cache')?.version ===
       incrementalCacheProtocolVersion;
   const canReusePrevious =
+    !hasOverlappingProjectRoots &&
     options.previousGraph?.workspace.name === options.workspace.name &&
     providerSetIsCompatible &&
     currentProjectScopes.size > 0 &&
@@ -7020,7 +7029,9 @@ export async function buildWorkspaceKnowledgeGraph(
       discoveredRelations: 0,
       proofCount: 0,
       diagnostics: [
-        `No compatible unchanged project scope was reused; scanning ${projectsToScan.length}.`,
+        hasOverlappingProjectRoots
+          ? `Overlapping project boundaries require a full scan to preserve deterministic artifact ownership; scanning ${projectsToScan.length}.`
+          : `No compatible unchanged project scope was reused; scanning ${projectsToScan.length}.`,
       ],
     });
   }

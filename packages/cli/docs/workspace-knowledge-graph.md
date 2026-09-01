@@ -538,6 +538,17 @@ Use full graph export for interchange or offline analysis. Use bounded search
 for interactive agents. The latter keeps response size proportional to the
 question instead of workspace size.
 
+Interactive ranking preserves source intent. When otherwise relevant matches
+compete, authored source is preferred over compiled output, generated code,
+vendored dependencies, fixtures, and test-data. Those surfaces remain
+retrievable when the query explicitly asks for them; they are not silently
+removed from the canonical Graph.
+
+Project scope also applies while resolving exact evidence and path endpoints.
+Aliases from another project cannot make a scoped target ambiguous, and shared
+workspace entities are admitted only when the Graph proves their connection to
+the selected project.
+
 ### Runtime-generated API topology
 
 When an authored API contract is wired through framework registration or

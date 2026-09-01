@@ -301,7 +301,9 @@ complete graph. New responses also expose `graphSourceHash`, allowing IDE and
 agent activity consumers to correlate returned entity/proof IDs only with the
 exact Graph revision that authored them. Ranking is deterministic and offline: it removes natural-language
 stopwords, weights rarer graph terms more strongly, and prefers exact labels and
-identities. `workspace graph benchmark <query> --limit <n> --json` compares
+identities. Authored source ranks ahead of compiled, generated, vendored,
+fixture, and test-data matches unless the query explicitly names one of those
+surfaces. `workspace graph benchmark <query> --limit <n> --json` compares
 that retrieval payload with the readable proof-indexed corpus using a labelled
 `characters / 4` estimate. It measures payload reduction only; it does not
 assert equivalent answer quality or model-specific billing savings.
@@ -319,6 +321,9 @@ verified outcomes. See [Workspace Intelligence Benchmark](./workspace-intelligen
 
 Add `--scope project:<name>` to retrieve project-owned facts plus
 workspace-level shared entities proven to be connected to that project. The
+same scope constrains exact entity aliases used by `graph evidence` and `graph
+path`; a matching alias in another project cannot make a scoped target
+ambiguous. The
 `search` mode also accepts `--kind <entity-kind>` so agents can retrieve a
 precise semantic surface such as `runtime-unit`, `endpoint`, or `owner`. The
 agent projection reports explicit omission budgets for relations, related
@@ -383,6 +388,12 @@ scaffold for them. Existing CMake and Meson projects can also expose discovered
 lifecycle units to `workspace run`; inspect them without execution using
 `workspace run <stage> --plan`, and select one runtime family with
 `--runtime <runtime>`.
+
+For npm, pnpm, and Cargo monorepos, the owning workspace manifest represents its
+matching members as one dependency-materialization boundary. Explicitly
+registered nested projects remain independent, while aggregate parents do not
+execute them a second time. Embedded eval, benchmark, integration, test-data,
+and fixture manifests are excluded unless they expose real lifecycle evidence.
 
 Core module/template commands are intentionally narrower than runtime detection.
 RapidKit Core modules are guaranteed only for RapidKit Core module-enabled kits:
@@ -480,7 +491,10 @@ Supported keys: `mode`, `dependency_sharing_mode`, `rules.enforce_workspace_mark
 
 ## Setup and warm dependencies
 
-`setup <runtime>` validates toolchain and updates `.workspai/toolchain.lock`.
+`setup <runtime>` validates an already installed host runtime and updates
+`.workspai/toolchain.lock`. It does not install system runtimes. When the executable is missing,
+the remediation plan emits an external prerequisite and blocks setup/bootstrap until fresh
+environment evidence is available.
 
 `--warm-deps` adds optional dependency warm-up (Node lock/deps, Go modules). Warm-deps is non-fatal and reports `completed` / `failed` / `skipped`.
 

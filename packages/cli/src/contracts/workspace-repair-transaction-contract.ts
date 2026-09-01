@@ -63,15 +63,18 @@ export type WorkspaceRepairCheckpointFile = {
   backupRef?: string;
 };
 
-export type WorkspaceRepairDecision =
-  | 'approve-guarded'
-  | 'approve-invasive'
-  | 'allow-breaking'
-  | 'allow-force'
-  | 'replan'
-  | 'manual-repair'
-  | 'rollback'
-  | 'cancel';
+export const WORKSPACE_REPAIR_DECISIONS = [
+  'approve-guarded',
+  'approve-invasive',
+  'allow-breaking',
+  'allow-force',
+  'replan',
+  'manual-repair',
+  'rollback',
+  'cancel',
+] as const;
+
+export type WorkspaceRepairDecision = (typeof WORKSPACE_REPAIR_DECISIONS)[number];
 
 export type WorkspaceRepairDecisionCause = {
   kind:

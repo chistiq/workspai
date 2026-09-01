@@ -277,6 +277,24 @@ describe('backend-framework-contract', () => {
     ]);
   });
 
+  it('does not classify a private workspace root from fixture-only framework devDependencies', async () => {
+    const workspace = await createTempProject('node-workspace-tooling');
+    await fs.writeJson(path.join(workspace, 'package.json'), {
+      name: 'framework-monorepo',
+      private: true,
+      workspaces: ['packages/*'],
+      devDependencies: { express: '^5.0.0', next: 'latest' },
+      scripts: { build: 'turbo build' },
+    });
+
+    expect(detectBackendFrameworkFromProject(workspace)).toMatchObject({
+      key: 'node',
+      runtime: 'node',
+      confidence: 'medium',
+      source: 'marker',
+    });
+  });
+
   it('reports both Node and Rust runtime surfaces for a Tauri project', async () => {
     const tauriProject = await createTempProject('tauri-runtimes');
     await fs.writeJson(path.join(tauriProject, 'package.json'), {

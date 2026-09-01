@@ -132,7 +132,10 @@ handoff for governance artifacts outside Doctor: Bootstrap compliance, Analyze, 
 Pipeline, Workspace Run, Workspace Verify, and Doctor plan bridging. Consumers should ask npm for
 this plan before inventing per-card repair logic. The plan carries ordered actions, safe file
 operations where deterministic, refresh/verify commands, risk, approval state, and rollback
-strategy.
+strategy. Each action can also declare typed executable/action requirements and a retry boundary.
+The root `execution` projection identifies actions eligible in the current environment and one
+canonical next action, so IDEs do not infer readiness from array order. Missing host tools produce
+guidance plus blocked downstream actions; they are never advertised as executable.
 
 When `doctor project` runs inside a workspace, the project-local report is written beside the
 project and the workspace receives both a latest alias and a collision-safe project copy under

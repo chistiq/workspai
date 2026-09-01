@@ -5,6 +5,7 @@ import { readImportedProjectsRegistry } from './imported-projects-registry.js';
 import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
+  isWorkspaiManagedLinkedProjectMetadata,
   type BackendConfidence,
   type BackendRuntimeFamily,
   type BackendSupportTier,
@@ -689,8 +690,9 @@ async function buildProjectModel(
     : typeof projectJson?.name === 'string' && projectJson.name.trim()
       ? projectJson.name.trim()
       : path.basename(projectPath);
-  const kit =
-    typeof projectJson?.kit_name === 'string'
+  const kit = isWorkspaiManagedLinkedProjectMetadata(projectJson)
+    ? `adopted.${detection.key}`
+    : typeof projectJson?.kit_name === 'string'
       ? projectJson.kit_name
       : typeof projectJson?.kit === 'string'
         ? projectJson.kit

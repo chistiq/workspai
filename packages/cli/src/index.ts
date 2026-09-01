@@ -43,6 +43,10 @@ import { registerAICommands } from './commands/ai.js';
 import { registerProductCommands } from './commands/product.js';
 import { registerInfraCommands } from './commands/infra.js';
 import { registerChangeCommands } from './commands/change.js';
+import {
+  WORKSPACE_REPAIR_DECISIONS,
+  type WorkspaceRepairDecision,
+} from './contracts/workspace-repair-transaction-contract.js';
 import { getRuntimeAdapter } from './runtime-adapters/index.js';
 import type { CommandResult } from './runtime-adapters/types.js';
 import { Cache } from './utils/cache.js';
@@ -9145,13 +9149,7 @@ program
   .option('--approved-by <actor>', 'Local actor approving the immutable repair plan')
   .addOption(
     new Option('--decision <choice>', 'Resolve a decision-required repair transaction').choices([
-      'approve-guarded',
-      'approve-invasive',
-      'allow-breaking',
-      'allow-force',
-      'manual-repair',
-      'rollback',
-      'cancel',
+      ...WORKSPACE_REPAIR_DECISIONS,
     ])
   )
   .addOption(
@@ -9253,14 +9251,7 @@ See the command reference for action-specific required inputs and output artifac
       proposal?: string;
       transaction?: string;
       approvedBy?: string;
-      decision?:
-        | 'approve-guarded'
-        | 'approve-invasive'
-        | 'allow-breaking'
-        | 'allow-force'
-        | 'manual-repair'
-        | 'rollback'
-        | 'cancel';
+      decision?: WorkspaceRepairDecision;
       maxRisk?: 'safe' | 'guarded' | 'invasive';
       autoRollback?: boolean;
       build?: boolean;
@@ -10819,7 +10810,10 @@ See the command reference for action-specific required inputs and output artifac
         }
         const knowledgeGraph = await buildKnowledgeGraph();
         const { queryKnowledgeEvidence } = await import('./workspace-knowledge-graph-query.js');
-        const result = queryKnowledgeEvidence(knowledgeGraph, query);
+        const projectId = actionOptions.scope?.startsWith('project:')
+          ? actionOptions.scope.slice('project:'.length).trim()
+          : undefined;
+        const result = queryKnowledgeEvidence(knowledgeGraph, query, projectId);
         if (actionOptions.json) {
           console.log(JSON.stringify(result, null, 2));
         } else if (result.found) {
@@ -10857,7 +10851,10 @@ See the command reference for action-specific required inputs and output artifac
         }
         const knowledgeGraph = await buildKnowledgeGraph();
         const { queryKnowledgePath } = await import('./workspace-knowledge-graph-query.js');
-        const result = queryKnowledgePath(knowledgeGraph, from, to);
+        const projectId = actionOptions.scope?.startsWith('project:')
+          ? actionOptions.scope.slice('project:'.length).trim()
+          : undefined;
+        const result = queryKnowledgePath(knowledgeGraph, from, to, projectId);
         if (actionOptions.json) {
           console.log(JSON.stringify(result, null, 2));
         } else if (result.found) {

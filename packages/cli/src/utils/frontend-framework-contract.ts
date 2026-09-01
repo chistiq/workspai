@@ -298,11 +298,20 @@ function packageSignals(projectPath: string): {
     return { dependencies: {}, scriptText: '' };
   }
 
-  const dependencies = {
-    ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson.peerDependencies as Record<string, unknown> | undefined) ?? {}),
-  };
+  const declaredDependencies =
+    (packageJson.dependencies as Record<string, unknown> | undefined) ?? {};
+  const isPrivateWorkspaceRoot =
+    packageJson.private === true &&
+    (Array.isArray(packageJson.workspaces) ||
+      (packageJson.workspaces !== null && typeof packageJson.workspaces === 'object') ||
+      fs.existsSync(path.join(projectPath, 'pnpm-workspace.yaml')));
+  const dependencies = isPrivateWorkspaceRoot
+    ? declaredDependencies
+    : {
+        ...declaredDependencies,
+        ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
+        ...((packageJson.peerDependencies as Record<string, unknown> | undefined) ?? {}),
+      };
   const scripts = ((packageJson.scripts as Record<string, unknown> | undefined) ?? {}) as Record<
     string,
     unknown
