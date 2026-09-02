@@ -911,15 +911,26 @@ describe('Doctor Command', () => {
       expect(payload.system.python.details).toContain('no detected Python project');
       expect(payload.system.rapidkitCore).toMatchObject({ status: 'warn' });
       expect(payload.system.rapidkitCore.details).toContain('optional engine');
-      expect(payload.system.cliResolution).toMatchObject({
-        status: 'ok',
-        applicability: 'not-applicable',
-        resolutionStatus: 'not-applicable',
+      const expectedCliResolution =
+        process.platform === 'win32'
+          ? {
+              status: 'warn',
+              applicability: 'applicable',
+              resolutionStatus: 'unverified',
+            }
+          : {
+              status: 'ok',
+              applicability: 'not-applicable',
+              resolutionStatus: 'not-applicable',
+            };
+      expect(payload.system.cliResolution).toMatchObject(expectedCliResolution);
+      expect(payload.healthScore).toMatchObject({
+        errors: 0,
+        verdict: process.platform === 'win32' ? 'attention' : 'passed',
       });
-      expect(payload.healthScore).toMatchObject({ errors: 0, verdict: 'passed' });
       expect(payload.healthScore.presentation).toMatchObject({
-        diagnosticPassRatePercent: null,
-        notApplicableChecks: 6,
+        diagnosticPassRatePercent: process.platform === 'win32' ? 0 : null,
+        notApplicableChecks: process.platform === 'win32' ? 5 : 6,
       });
     } finally {
       process.chdir(originalCwd);
