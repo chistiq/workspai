@@ -4,36 +4,53 @@ run-name: Official Generator Smoke · ${{ github.event_name == 'workflow_dispatc
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "packages/cli/src/frontend-project.ts"
+      - "packages/cli/src/official-project.ts"
+      - "packages/cli/src/generators/**"
+      - "packages/cli/src/utils/create-planner-capabilities.ts"
+      - "packages/cli/src/utils/kit-registry.ts"
+      - "packages/cli/contracts/create-planner-capabilities.v1.json"
+      - "contracts/create-planner-capabilities.v1.json"
+      - "packages/cli/scripts/smoke-**-generators.mjs"
+      - "packages/cli/scripts/check-generator-smoke-coverage.mjs"
+      - "packages/cli/scripts/enterprise-package-smoke.mjs"
+      - "packages/cli/scripts/runtime-acceptance-matrix.mjs"
+      - "packages/cli/package.json"
+      - "package-lock.json"
+      - ".github/workflows/frontend-generator-smoke.yml"
+      - ".github/workflows/release-npm-manual.yml"
   pull_request:
     branches: [main, develop]
     paths:
-      - 'packages/cli/src/frontend-project.ts'
-      - 'packages/cli/src/official-project.ts'
-      - 'packages/cli/src/generators/**'
-      - 'packages/cli/src/utils/create-planner-capabilities.ts'
-      - 'packages/cli/src/utils/kit-registry.ts'
-      - 'packages/cli/contracts/create-planner-capabilities.v1.json'
-      - 'contracts/create-planner-capabilities.v1.json'
-      - 'packages/cli/scripts/smoke-**-generators.mjs'
-      - 'packages/cli/scripts/check-generator-smoke-coverage.mjs'
-      - 'packages/cli/scripts/enterprise-package-smoke.mjs'
-      - 'packages/cli/scripts/runtime-acceptance-matrix.mjs'
-      - 'packages/cli/package.json'
-      - 'package-lock.json'
-      - '.github/workflows/frontend-generator-smoke.yml'
+      - "packages/cli/src/frontend-project.ts"
+      - "packages/cli/src/official-project.ts"
+      - "packages/cli/src/generators/**"
+      - "packages/cli/src/utils/create-planner-capabilities.ts"
+      - "packages/cli/src/utils/kit-registry.ts"
+      - "packages/cli/contracts/create-planner-capabilities.v1.json"
+      - "contracts/create-planner-capabilities.v1.json"
+      - "packages/cli/scripts/smoke-**-generators.mjs"
+      - "packages/cli/scripts/check-generator-smoke-coverage.mjs"
+      - "packages/cli/scripts/enterprise-package-smoke.mjs"
+      - "packages/cli/scripts/runtime-acceptance-matrix.mjs"
+      - "packages/cli/package.json"
+      - "package-lock.json"
+      - ".github/workflows/frontend-generator-smoke.yml"
+      - ".github/workflows/release-npm-manual.yml"
   workflow_dispatch:
     inputs:
       generators:
-        description: 'Comma-separated contracted generator IDs, or empty for all'
+        description: "Comma-separated contracted generator IDs, or empty for all"
         required: false
-        default: ''
+        default: ""
       execute:
-        description: 'Run official generators instead of contract-only dry runs'
+        description: "Run official generators instead of contract-only dry runs"
         required: true
         type: boolean
         default: true
   schedule:
-    - cron: '17 9 * * 1'
+    - cron: "17 9 * * 1"
 
 permissions:
   contents: read
@@ -55,7 +72,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.15.0'
+          node-version: "24.15.0"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -128,7 +145,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.15.0'
+          node-version: "24.15.0"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -156,7 +173,7 @@ jobs:
         if: ${{ matrix.generator == 'php.laravel' }}
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: "8.4"
           extensions: fileinfo
           tools: composer
           coverage: none
@@ -175,7 +192,7 @@ jobs:
         env:
           COMPOSER_CACHE_DIR: ${{ runner.temp }}/composer-cache
           RAPIDKIT_OFFICIAL_GENERATOR_SMOKE: network
-          RAPIDKIT_OFFICIAL_GENERATOR_TIMEOUT_MS: '600000'
+          RAPIDKIT_OFFICIAL_GENERATOR_TIMEOUT_MS: "600000"
           RAPIDKIT_OFFICIAL_GENERATOR_REPORT: ${{ runner.temp }}/official-generator-smoke-report.json
           RAPIDKIT_OFFICIAL_GENERATOR_WORKSPACE_ROOT: ${{ github.workspace }}/.official-generator-smoke
         run: npm --workspace workspai run smoke:official-generators:network -- --generators "${{ matrix.generator }}"

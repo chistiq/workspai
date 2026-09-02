@@ -82,7 +82,7 @@ need design alignment and should be split into reviewable slices.
   early design exploration and general contributor help.
 - Use the community chat when a maintainer provides its current invite. Chat is
   a support layer, not the source of issue scope or acceptance criteria.
-- Report vulnerabilities through the [Security Policy](../packages/cli/docs/SECURITY.md),
+- Report vulnerabilities through the [Security Policy](../SECURITY.md),
   never through a public issue or chat.
 
 ## Complete Technical Guide

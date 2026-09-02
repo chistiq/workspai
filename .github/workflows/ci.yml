@@ -6,21 +6,41 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  phase4-fast-guard:
-    name: Phase4 Fast Guard (ubuntu)
+  changes:
+    name: Classify changes
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+      heavy: ${{ steps.filter.outputs.heavy }}
+      phase4: ${{ steps.filter.outputs.phase4 }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Detect phase4-impacting changes
-        id: changes
-        uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v4
         with:
+          predicate-quantifier: some-with-excludes
           filters: |
+            docs:
+              - '**/*.md'
+              - 'packages/cli/docs/**'
+              - '.github/ISSUE_TEMPLATE/**'
+              - '.github/assets/**'
+              - '.github/contributor-issues.v1.json'
+            heavy:
+              - '**'
+              - '!**/*.md'
+              - '!packages/cli/docs/**'
+              - '!.github/ISSUE_TEMPLATE/**'
+              - '!.github/assets/**'
+              - '!.github/contributor-issues.v1.json'
             phase4:
               - 'packages/cli/src/index.ts'
               - 'packages/cli/src/runtime-adapters/**'
@@ -31,37 +51,60 @@ jobs:
               - 'packages/cli/src/__tests__/init-scenarios.integration.test.ts'
               - 'packages/cli/src/__tests__/runtime-adapters.test.ts'
 
-      - name: Skip message (no phase4 changes)
-        if: steps.changes.outputs.phase4 != 'true'
-        run: echo "No phase4-related changes detected; skipping fast guard."
+  docs-quality:
+    name: Docs Quality (ubuntu)
+    needs: changes
+    if: needs.changes.outputs.docs == 'true' && needs.changes.outputs.heavy != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm --workspace workspai run build
+      - run: npm run check:english-text
+      - run: npm --workspace workspai run validate:docs
+
+  phase4-fast-guard:
+    name: Phase4 Fast Guard (ubuntu)
+    needs: changes
+    if: needs.changes.outputs.phase4 == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup Node.js 20
-        if: steps.changes.outputs.phase4 == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        if: steps.changes.outputs.phase4 == 'true'
         run: npm ci
 
       - name: Build project
-        if: steps.changes.outputs.phase4 == 'true'
         run: npm --workspace workspai run build
 
       - name: Run phase3 CLI integration fast guard
-        if: steps.changes.outputs.phase4 == 'true'
         env:
-          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: '1'
+          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: "1"
         run: npm --workspace workspai run test -- src/__tests__/phase3-cli.integration.test.ts
 
   build-test-matrix:
     name: Build & Test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
     runs-on: ${{ matrix.os }}
     env:
-      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: '3000'
+      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: "3000"
 
     strategy:
       fail-fast: false
@@ -87,7 +130,7 @@ jobs:
         if: runner.os != 'Windows'
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       # Install rapidkit-core (Python)
       - name: Install rapidkit-core (Python)
@@ -197,6 +240,8 @@ jobs:
 
   phase4-runtime-contracts:
     name: Phase4 Runtime Contracts (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.phase4 == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
 
@@ -212,7 +257,7 @@ jobs:
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -235,8 +280,47 @@ jobs:
 
       - name: Run Phase 4 adapter/contract regression suites
         env:
-          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: '1'
+          RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: "1"
         run: npm --workspace workspai run test -- src/__tests__/phase3-commands.test.ts src/__tests__/phase3-commands.integration.test.ts src/__tests__/phase3-cli.integration.test.ts src/__tests__/init-scenarios.integration.test.ts src/__tests__/runtime-adapters.test.ts
 
       - name: Run type check
         run: npm --workspace workspai run typecheck
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs:
+      [
+        changes,
+        docs-quality,
+        phase4-fast-guard,
+        build-test-matrix,
+        phase4-runtime-contracts,
+      ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required lanes
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          DOCS_REQUIRED: ${{ needs.changes.outputs.docs == 'true' && needs.changes.outputs.heavy != 'true' }}
+          DOCS_RESULT: ${{ needs.docs-quality.result }}
+          HEAVY_REQUIRED: ${{ needs.changes.outputs.heavy == 'true' }}
+          HEAVY_RESULT: ${{ needs.build-test-matrix.result }}
+          PHASE4_REQUIRED: ${{ needs.changes.outputs.phase4 == 'true' }}
+          PHASE4_FAST_RESULT: ${{ needs.phase4-fast-guard.result }}
+          PHASE4_MATRIX_RESULT: ${{ needs.phase4-runtime-contracts.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CHANGES_RESULT" = "success"
+          if [[ "$DOCS_REQUIRED" = "true" ]]; then
+            test "$DOCS_RESULT" = "success"
+          fi
+          if [[ "$HEAVY_REQUIRED" = "true" ]]; then
+            test "$HEAVY_RESULT" = "success"
+          fi
+          if [[ "$PHASE4_REQUIRED" = "true" ]]; then
+            test "$PHASE4_FAST_RESULT" = "success"
+            test "$PHASE4_MATRIX_RESULT" = "success"
+          fi
+          echo "Required CI lanes passed."

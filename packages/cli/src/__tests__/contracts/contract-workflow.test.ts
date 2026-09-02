@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import YAML from 'yaml';
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const monorepoRoot = path.resolve(repoRoot, '..', '..');
@@ -57,11 +58,20 @@ describe('shared contracts workflow (Wave A + B)', () => {
   it('keeps official generator drift coverage release-safe and cost bounded', () => {
     const smokeWorkflow = readMonorepo('.github/workflows/frontend-generator-smoke.yml');
     const releaseWorkflow = readMonorepo('.github/workflows/release-npm-manual.yml');
+    const parsedSmokeWorkflow = YAML.parse(smokeWorkflow);
+    const pushPaths = parsedSmokeWorkflow.on.push.paths as string[];
+    const pullRequestPaths = parsedSmokeWorkflow.on.pull_request.paths as string[];
 
     expect(smokeWorkflow).toContain('name: Official Generator Smoke');
     expect(releaseWorkflow).toContain("'Official Generator Smoke · primary'");
     expect(smokeWorkflow).toContain('cancel-in-progress: true');
-    expect(smokeWorkflow).toMatch(/push:\n\s+branches: \[main, develop\]\n\s+pull_request:/);
+    expect(parsedSmokeWorkflow.on.push.branches).toEqual(['main', 'develop']);
+    expect(parsedSmokeWorkflow.on.pull_request.branches).toEqual(['main', 'develop']);
+    expect(pushPaths).toEqual(pullRequestPaths);
+    expect(pushPaths).toContain('packages/cli/src/generators/**');
+    expect(pushPaths).toContain('packages/cli/package.json');
+    expect(pushPaths).toContain('package-lock.json');
+    expect(pushPaths).toContain('.github/workflows/release-npm-manual.yml');
     expect(smokeWorkflow).toContain('MATRIX_MODE="primary"');
     expect(smokeWorkflow).toContain('MATRIX_MODE="full"');
     expect(smokeWorkflow).toContain("github.event.inputs.generators == ''");

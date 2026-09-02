@@ -6,16 +6,45 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 
 | Workflow                 | Path                                                 | Purpose                                                                   |
 | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------- |
-| Build / test matrix      | `.github/workflows/ci.yml`                           | Build, lint, typecheck, tests, coverage, contract gates                   |
+| Build / test matrix      | `.github/workflows/ci.yml`                           | Path-aware docs or full matrix validation plus the required `CI Gate`     |
 | Workspace E2E matrix     | `.github/workflows/workspace-e2e-matrix.yml`         | Cross-OS workspace lifecycle smoke; setup `--warm-deps`; cache/mirror ops |
 | Windows bridge E2E       | `.github/workflows/windows-bridge-e2e.yml`           | Native Windows bridge and lifecycle checks                                |
 | E2E smoke                | `.github/workflows/e2e-smoke.yml`                    | Focused bridge regression smoke                                           |
 | Official generator smoke | `.github/workflows/frontend-generator-smoke.yml`     | Contract-driven official-generator drift gate                             |
-| Security                 | `.github/workflows/security.yml`                     | Security scanning and policy checks                                       |
+| Security                 | `.github/workflows/security.yml`                     | Path-aware scanning plus the always-resolved `Security Gate`              |
 | Manual npm release       | `.github/workflows/release-npm-manual.yml`           | Maintainer-only release gate and publish workflow                         |
 | Discord announcement     | `.github/workflows/discord-release-announcement.yml` | Preview and publish one idempotent product-aware release announcement     |
 | Contributor onboarding   | `.github/workflows/contributor-onboarding.yml`       | Accepted-contributor onboarding automation                                |
+| Contributor Hub          | `.github/workflows/contributor-hub.yml`              | Daily live issue-route freshness                                          |
 | Welcome                  | `.github/workflows/welcome.yml`                      | First-issue and first-contribution messages                               |
+
+## Change-aware validation
+
+`CI Gate` and `Security Gate` are the stable branch-protection checks. They
+always resolve for pushes and pull requests, while expensive work is selected
+from the changed paths:
+
+| Change surface                         | Required validation                                                    |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| Markdown and contributor-route content | One Ubuntu docs build, text guard, link/drift checks, and README smoke |
+| CLI source, contracts, or tooling      | Full build/test matrix                                                 |
+| Runtime adapter or core bridge         | Full matrix plus focused Phase 4 lanes                                 |
+| Generator implementation or contract   | Official generator smoke                                               |
+| Workspace lifecycle surface            | Cross-platform workspace E2E                                           |
+| Dependency or security surface         | npm audit, SBOM, dependency review, and CodeQL                         |
+
+Specialized workflows use identical `push` and `pull_request` path filters.
+Manual and scheduled runs remain available for full qualification and upstream
+drift detection. Workflow definitions and release-gate definitions trigger the
+lanes they govern.
+
+The `main` branch requires a pull request, one approving review, resolved
+conversations, and successful `CI Gate` and `Security Gate` checks for normal
+contributors. Repository administrators retain a bypass for release recovery
+and CI bootstrap; routine changes should still use a pull request. Force pushes
+and branch deletion remain disabled. Contributors can use GitHub's Update
+branch action when strict checks require synchronization with the latest
+`main`; merged head branches are deleted automatically.
 
 The release workflow requires the cost-bounded
 `Official Generator Smoke · primary` Linux run for the exact release SHA. A
@@ -32,13 +61,13 @@ parity checks from coupling product versions. Breaking contract removal or
 incompatible schema changes remain CLI release blockers through the canonical
 compatibility and schema-version gates.
 
-Pushes and pull requests run every contracted generator on the primary Linux
-lane. The weekly schedule and manual dispatch can run the complete Linux,
-macOS, and Windows matrix as a non-blocking compatibility and upstream-drift
-signal. npm and Composer download caches reduce repeated network work without
-caching generated projects; every smoke run still exercises the current
-upstream generator, generated artifacts, build surface, registry, and Doctor
-evidence.
+Pushes and pull requests that touch the contracted generator surface run every
+contracted generator on the primary Linux lane. The weekly schedule and manual
+dispatch can run the complete Linux, macOS, and Windows matrix as a
+compatibility and upstream-drift signal. npm and Composer download caches
+reduce repeated network work without caching generated projects; every smoke
+run still exercises the current upstream generator, generated artifacts, build
+surface, registry, and Doctor evidence.
 
 The Windows coverage lane intentionally uses bounded Vitest worker concurrency
 and platform-aware transaction timeouts. Filesystem-heavy workspace tests must

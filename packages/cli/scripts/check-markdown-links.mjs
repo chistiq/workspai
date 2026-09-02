@@ -20,6 +20,7 @@ const targets = [
   path.join(root, 'README.md'),
   ...collectMarkdownFiles(path.join(root, 'docs')),
   path.join(repositoryRoot, 'README.md'),
+  path.join(repositoryRoot, 'SECURITY.md'),
   path.join(repositoryRoot, '.github', 'CONTRIBUTING.md'),
   path.join(repositoryRoot, '.github', 'CONTRIBUTOR_MESSAGES.md'),
   path.join(repositoryRoot, '.github', 'PULL_REQUEST_TEMPLATE.md'),
