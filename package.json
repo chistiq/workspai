@@ -32,6 +32,8 @@
     "check:english-text": "node scripts/english-text-guard.mjs --all",
     "check:english-text:staged": "node scripts/english-text-guard.mjs --staged",
     "contributor:plan": "node scripts/contributor-plan.mjs",
+    "check:contributor-hub": "node scripts/check-contributor-hub.mjs",
+    "check:contributor-hub:live": "node scripts/check-contributor-hub.mjs --live",
     "check:cross-platform-lockfile": "node scripts/check-cross-platform-lockfile.mjs",
     "check": "corepack npm --workspaces --if-present run check",
     "fix": "corepack npm --workspaces --if-present run fix",

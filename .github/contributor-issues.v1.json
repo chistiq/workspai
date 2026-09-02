@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "workspai.contributor-issues.v1",
+  "repository": "chistiq/workspai",
+  "issues": [
+    {
+      "backlogId": "B014",
+      "number": 14,
+      "title": "[Feature]: Add a table-driven natural-language graph relevance corpus",
+      "labels": ["area: graph", "good first issue", "help wanted"],
+      "contributorRoute": false
+    },
+    {
+      "backlogId": "B015",
+      "number": 35,
+      "title": "[Feature]: Prove shared graph semantics across polyglot providers",
+      "labels": ["area: graph", "needs-triage"],
+      "contributorRoute": true
+    },
+    {
+      "backlogId": "B016",
+      "number": 36,
+      "title": "[Feature]: Centralize cross-platform path identity",
+      "labels": ["area: cli", "needs-triage"],
+      "contributorRoute": true
+    },
+    {
+      "backlogId": "B017",
+      "number": 37,
+      "title": "[Feature]: Prove incremental and full graph builds are equivalent",
+      "labels": ["area: graph", "needs-triage"],
+      "contributorRoute": true
+    },
+    {
+      "backlogId": "B018",
+      "number": 38,
+      "title": "[Feature]: Set resource budgets for large workspaces",
+      "labels": ["area: ci", "area: intelligence", "needs-triage"],
+      "contributorRoute": false
+    },
+    {
+      "backlogId": "B019",
+      "number": 39,
+      "title": "[Feature]: Unify the remaining strict and advisory gate decisions",
+      "labels": ["area: intelligence", "needs-triage"],
+      "contributorRoute": false
+    },
+    {
+      "backlogId": "B020",
+      "number": 40,
+      "title": "[Feature]: Complete adoption recovery and idempotency coverage",
+      "labels": ["area: adoption", "needs-triage"],
+      "contributorRoute": true
+    },
+    {
+      "backlogId": "B021",
+      "number": 41,
+      "title": "[Feature]: Run real polyglot toolchains on a schedule",
+      "labels": ["area: ci", "needs-triage"],
+      "contributorRoute": true
+    },
+    {
+      "backlogId": "B022",
+      "number": 42,
+      "title": "[Feature]: Enforce JSON, event, and exit conformance for every command",
+      "labels": ["area: cli", "needs-triage"],
+      "contributorRoute": false
+    }
+  ]
+}

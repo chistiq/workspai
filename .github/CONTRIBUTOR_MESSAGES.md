@@ -5,6 +5,12 @@ These templates move applicants toward one first contribution. The
 optional support and must not replace an issue with explicit scope and
 acceptance criteria.
 
+Before sending a batch, run `corepack npm run check:contributor-hub:live`.
+The routed queue is declared in `contributor-issues.v1.json`; keep an issue
+routed only while it is open, unassigned, and ready for a maintainer to split
+into one bounded task. Set its route to `false` as soon as it is claimed or no
+longer ready, then update the matching list in the Contribution Hub.
+
 ## Applicant Invitation
 
 Hi [Name],

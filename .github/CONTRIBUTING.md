@@ -19,24 +19,27 @@ Issue labels are discovery aids, not permission to take an entire architecture
 epic. Comment before starting. A maintainer will confirm a bounded slice with a
 clear outcome, relevant files, and acceptance evidence.
 
-## Current Candidate Starting Points
+## Current Maintainer-Routed Starting Points
 
-Confirm availability in the issue before starting:
+The following issues are parent outcomes, not complete first tasks. Confirm that
+the issue is still open and unassigned, then comment with one small slice. A
+maintainer must confirm that slice before implementation:
 
-1. [#14: natural-language Graph relevance corpus](https://github.com/chistiq/workspai/issues/14)
-   for a focused TypeScript/test contribution.
-2. [#16: cross-platform path identity](https://github.com/chistiq/workspai/issues/16)
+1. [#35: shared polyglot Graph semantics](https://github.com/chistiq/workspai/issues/35)
+   for one licensed runtime fixture or golden semantic assertion.
+2. [#36: cross-platform path identity](https://github.com/chistiq/workspai/issues/36)
    for one maintainer-approved OS fixture.
-3. [#20: adoption lifecycle consistency](https://github.com/chistiq/workspai/issues/20)
+3. [#37: incremental/full Graph equivalence](https://github.com/chistiq/workspai/issues/37)
+   for one deterministic mutation and equivalence assertion.
+4. [#40: adoption lifecycle consistency](https://github.com/chistiq/workspai/issues/40)
    for one maintainer-approved transition test.
-4. [#21: scheduled polyglot runtime matrix](https://github.com/chistiq/workspai/issues/21)
+5. [#41: scheduled polyglot runtime matrix](https://github.com/chistiq/workspai/issues/41)
    for one maintainer-approved runtime job.
-5. [#22: machine-readable CLI conformance](https://github.com/chistiq/workspai/issues/22)
-   for one maintainer-approved command row.
 
-Only #14 is intended as a complete first issue when its `good first issue`
-label is present. For #16 and #20 through #22, claim one explicit child slice,
-not the whole parent outcome.
+For a task that can be claimed without maintainer decomposition, use the live
+[`good first issue` queue](https://github.com/chistiq/workspai/issues?q=is%3Aissue+state%3Aopen+no%3Aassignee+label%3A%22good+first+issue%22).
+If that query is empty, ask for a bounded slice instead of claiming a parent
+issue. GitHub state, assignment, and labels are authoritative.
 
 ## First Contribution in Five Steps
 

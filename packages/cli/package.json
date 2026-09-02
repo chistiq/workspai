@@ -134,7 +134,7 @@
     "check:markdown-links": "node scripts/check-markdown-links.mjs",
     "check:docs-drift": "node scripts/docs-drift-guard.mjs",
     "smoke:readme": "node scripts/smoke-readme-commands.mjs",
-    "validate:docs": "corepack npm run check:markdown-links && corepack npm run check:docs-drift && corepack npm run validate:docs-examples && corepack npm run check:github-release-notes && corepack npm run check:release-announcement && corepack npm run smoke:readme",
+    "validate:docs": "corepack npm run check:markdown-links && node ../../scripts/check-contributor-hub.mjs && corepack npm run check:docs-drift && corepack npm run validate:docs-examples && corepack npm run check:github-release-notes && corepack npm run check:release-announcement && corepack npm run smoke:readme",
     "smoke:frontend-generators": "tsup && node scripts/smoke-frontend-generators.mjs",
     "smoke:frontend-generators:network": "tsup && node scripts/smoke-frontend-generators.mjs --execute",
     "smoke:official-generators": "tsup && node scripts/smoke-official-generators.mjs",
