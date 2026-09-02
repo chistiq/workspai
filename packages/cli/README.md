@@ -113,8 +113,11 @@ Choose whether to create a workspace, scaffold a project, or add existing
 software. Project starters are grouped as Backend, Frontend, Desktop, and
 Extension.
 
-Global installation is optional: `npm install -g workspai`. `wspai` is a short
-alias for the same CLI.
+```bash
+# Optional global installation
+npm install -g workspai
+workspai --version
+```
 
 ## Give your agent a goal, not an open-ended prompt
 

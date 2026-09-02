@@ -5,7 +5,48 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.72.0 (September 1, 2026)
+## Latest Release: v0.72.1 (September 1, 2026)
+
+### Script-Free Installation and Typed CLI Resolution
+
+Workspai 0.72.1 removes consumer install lifecycle hooks so npm 11 global
+installation remains clean under its secure script-authorization defaults. The
+Windows PATH precedence check now runs as typed Doctor evidence instead of
+during package installation.
+
+**What's New:**
+
+- `npm install -g workspai` no longer requests `allowScripts` authorization for
+  Workspai-owned install or prepare hooks.
+- Windows Doctor evidence distinguishes a canonical npm shim, a shadowed shim,
+  an unresolved command, and an npm prefix that could not be verified.
+- System, workspace, and project Doctor JSON expose the active PATH target,
+  ordered command candidates, npm global prefix, and bounded recovery guidance.
+- CLI resolution participates in Doctor scoring, receipts, drift comparison,
+  and human output without changing non-Windows readiness.
+- Workspace Doctor JSON now includes the Go system check consistently with its
+  evidence artifact.
+- Package publication gates reject future consumer lifecycle scripts and the
+  removed installation-only helpers.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, Doctor, and agent contracts remain supported. Doctor fields
+are additive, and no public command, flag, or artifact path is removed.
+
+**Publication status:** Released September 1, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.72.1
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.72.1/packages/cli/releases/RELEASE_NOTES_v0.72.1.md)
+
+---
+
+## v0.72.0 (September 1, 2026)
 
 ### Runtime-Truth Repair and Workspace-Aware Qualification
 

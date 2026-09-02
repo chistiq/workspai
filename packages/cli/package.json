@@ -1,6 +1,6 @@
 {
   "name": "workspai",
-  "version": "0.72.0",
+  "version": "0.72.1",
   "type": "module",
   "description": "Open-source workspace intelligence CLI for software systems: create, adopt, govern, verify, and align polyglot workspaces for humans, CI, IDEs, and AI agents.",
   "keywords": [
@@ -60,7 +60,6 @@
     "rapidkit.config.example.cjs",
     "data/modules-embeddings.json",
     "scripts/enforce-package-manager.cjs",
-    "scripts/check-cli-resolution.cjs",
     "scripts/check-agent-customization-drift.mjs",
     "scripts/enterprise-package-smoke.mjs",
     "scripts/prepack-enterprise.mjs"
@@ -70,7 +69,6 @@
     "access": "public"
   },
   "scripts": {
-    "postinstall": "node scripts/check-cli-resolution.cjs",
     "check:package-manager": "node scripts/enforce-package-manager.cjs",
     "sync-kits": "bash scripts/sync-kits.sh",
     "sync:kits": "corepack npm run sync-kits",
@@ -80,7 +78,6 @@
     "dev:local": "corepack npm run build && corepack npm link",
     "install:local": "corepack npm unlink -g workspai || true && corepack npm run build && corepack npm link",
     "uninstall:local": "corepack npm unlink -g workspai || true",
-    "prepare": "node scripts/prepare-husky.mjs",
     "test:e2e:first-install": "bash scripts/e2e-first-install.sh",
     "test:e2e:user-first-install": "bash scripts/e2e-user-first-install.sh",
     "test:prebuild": "tsup",

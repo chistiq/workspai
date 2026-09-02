@@ -105,6 +105,10 @@ import { buildDoctorDiagnosis, type DoctorDiagnosis } from './doctor/index.js';
 import { inferWorkspaceProjectKind } from './utils/project-kind.js';
 import { resolveWorkspaceRegisteredProjects } from './utils/workspace-registry-summary.js';
 import { evaluatePythonVersionConstraint } from './utils/python-version-constraint.js';
+import {
+  checkCliResolution,
+  type CliResolutionDiagnostic,
+} from './utils/cli-resolution-diagnostic.js';
 
 export const DOCTOR_WORKSPACE_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor;
 
@@ -227,6 +231,7 @@ function contextualizeDoctorSystemChecks(
     pipx: HealthCheckResult;
     go: HealthCheckResult;
     rapidkitCore: HealthCheckResult;
+    cliResolution: CliResolutionDiagnostic;
   },
   projects: ProjectHealth[]
 ): typeof checks {
@@ -563,6 +568,7 @@ interface WorkspaceHealth {
   pipx: HealthCheckResult;
   go: HealthCheckResult;
   rapidkitCore: HealthCheckResult;
+  cliResolution: CliResolutionDiagnostic;
   projects: ProjectHealth[];
   healthScore?: HealthScore;
   coreVersion?: string;
@@ -588,6 +594,7 @@ interface ProjectHealthEnvelope {
   pipx: HealthCheckResult;
   go: HealthCheckResult;
   rapidkitCore: HealthCheckResult;
+  cliResolution: CliResolutionDiagnostic;
   project: ProjectHealth;
   healthScore: HealthScore;
   evidencePath?: string;
@@ -642,7 +649,7 @@ interface DoctorDriftDelta {
   netIssueDelta: number;
   scoreDeltaPercent: number | null;
   systemStatusChanges: Array<{
-    id: 'python' | 'poetry' | 'pipx' | 'go' | 'rapidkitCore';
+    id: 'python' | 'poetry' | 'pipx' | 'go' | 'rapidkitCore' | 'cliResolution';
     from: HealthCheckResult['status'];
     to: HealthCheckResult['status'];
   }>;
@@ -711,6 +718,7 @@ type DoctorEvidenceLike = {
     pipx?: HealthCheckResult;
     go?: HealthCheckResult;
     rapidkitCore?: HealthCheckResult;
+    cliResolution?: CliResolutionDiagnostic;
   };
 };
 
@@ -1192,6 +1200,7 @@ function collectSystemStatusChanges(
     pipx: HealthCheckResult;
     go: HealthCheckResult;
     rapidkitCore: HealthCheckResult;
+    cliResolution: CliResolutionDiagnostic;
   }
 ): DoctorDriftDelta['systemStatusChanges'] {
   if (!previous?.system) {
@@ -1207,6 +1216,7 @@ function collectSystemStatusChanges(
     { id: 'pipx', current: current.pipx },
     { id: 'go', current: current.go },
     { id: 'rapidkitCore', current: current.rapidkitCore },
+    { id: 'cliResolution', current: current.cliResolution },
   ];
 
   const changes: DoctorDriftDelta['systemStatusChanges'] = [];
@@ -1295,6 +1305,7 @@ function buildWorkspaceDriftDelta(
       pipx: health.pipx,
       go: health.go,
       rapidkitCore: health.rapidkitCore,
+      cliResolution: health.cliResolution,
     }),
     regressedProjects: Array.from(regressedProjects).sort(),
     improvedProjects: Array.from(improvedProjects).sort(),
@@ -1341,6 +1352,7 @@ function buildProjectDriftDelta(
       pipx: envelope.pipx,
       go: envelope.go,
       rapidkitCore: envelope.rapidkitCore,
+      cliResolution: envelope.cliResolution,
     }),
     regressedProjects: newIssueCount > 0 ? [projectKey] : [],
     improvedProjects: resolvedIssueCount > 0 ? [projectKey] : [],
@@ -2278,6 +2290,7 @@ async function writeDoctorEvidence(
       health.pipx,
       health.go,
       health.rapidkitCore,
+      health.cliResolution,
     ]);
     const payload = withGovernanceRunMetadata(
       {
@@ -2298,6 +2311,7 @@ async function writeDoctorEvidence(
           pipx: health.pipx,
           go: health.go,
           rapidkitCore: health.rapidkitCore,
+          cliResolution: health.cliResolution,
           versions: {
             core: health.coreVersion,
             npm: health.npmVersion,
@@ -2348,16 +2362,18 @@ async function collectSystemChecks(workspacePath: string = process.cwd()): Promi
   pipx: HealthCheckResult;
   go: HealthCheckResult;
   rapidkitCore: HealthCheckResult;
+  cliResolution: CliResolutionDiagnostic;
 }> {
-  const [python, poetry, pipx, go, rapidkitCore] = await Promise.all([
+  const [python, poetry, pipx, go, rapidkitCore, cliResolution] = await Promise.all([
     checkPython(),
     checkPoetry(),
     checkPipx(),
     checkGo(),
     checkRapidKitCore(workspacePath),
+    checkCliResolution(),
   ]);
 
-  return { python, poetry, pipx, go, rapidkitCore };
+  return { python, poetry, pipx, go, rapidkitCore, cliResolution };
 }
 
 async function checkPython(): Promise<HealthCheckResult> {
@@ -5718,6 +5734,7 @@ async function getWorkspaceHealth(
     pipx: systemHealth.pipx,
     go: systemHealth.go,
     rapidkitCore: systemHealth.rapidkitCore,
+    cliResolution: systemHealth.cliResolution,
     projects: [],
     policyProfile,
   };
@@ -5779,6 +5796,7 @@ async function getWorkspaceHealth(
       pipx: health.pipx,
       go: health.go,
       rapidkitCore: health.rapidkitCore,
+      cliResolution: health.cliResolution,
     },
     health.projects
   );
@@ -5787,6 +5805,7 @@ async function getWorkspaceHealth(
   health.pipx = contextualSystemHealth.pipx;
   health.go = contextualSystemHealth.go;
   health.rapidkitCore = contextualSystemHealth.rapidkitCore;
+  health.cliResolution = contextualSystemHealth.cliResolution;
 
   await Promise.all(
     health.projects.map(async (projectHealth) => {
@@ -5802,7 +5821,14 @@ async function getWorkspaceHealth(
   );
 
   // Calculate health score
-  const healthChecks = [health.python, health.poetry, health.pipx, health.go, health.rapidkitCore];
+  const healthChecks = [
+    health.python,
+    health.poetry,
+    health.pipx,
+    health.go,
+    health.rapidkitCore,
+    health.cliResolution,
+  ];
   health.healthScore = calculateHealthScore(healthChecks, health.projects);
   health.scoreBreakdown = buildScoreBreakdown(
     [
@@ -5811,6 +5837,7 @@ async function getWorkspaceHealth(
       { id: 'system-pipx', label: 'pipx', result: health.pipx },
       { id: 'system-go', label: 'Go', result: health.go },
       { id: 'system-rapidkit-core', label: 'RapidKit Core', result: health.rapidkitCore },
+      { id: 'system-cli-resolution', label: 'CLI resolution', result: health.cliResolution },
     ],
     health.projects,
     { includeWorkspaceAggregateRules: true }
@@ -5850,7 +5877,14 @@ async function getWorkspaceHealth(
       healthScore: health.healthScore,
       freshness: health.evidenceFreshness,
       evidencePath: health.evidencePath,
-      systemChecks: [health.python, health.poetry, health.pipx, health.go, health.rapidkitCore],
+      systemChecks: [
+        health.python,
+        health.poetry,
+        health.pipx,
+        health.go,
+        health.rapidkitCore,
+        health.cliResolution,
+      ],
     })
   );
 
@@ -5939,7 +5973,14 @@ async function writeProjectDoctorEvidence(
     const probeSummary = buildDoctorProbeSummary(envelope.project);
     const counts = buildDoctorCountSummary(
       [envelope.project],
-      [envelope.python, envelope.poetry, envelope.pipx, envelope.go, envelope.rapidkitCore]
+      [
+        envelope.python,
+        envelope.poetry,
+        envelope.pipx,
+        envelope.go,
+        envelope.rapidkitCore,
+        envelope.cliResolution,
+      ]
     );
     const payload = withGovernanceRunMetadata(
       {
@@ -5958,6 +5999,7 @@ async function writeProjectDoctorEvidence(
           pipx: envelope.pipx,
           go: envelope.go,
           rapidkitCore: envelope.rapidkitCore,
+          cliResolution: envelope.cliResolution,
         },
         project: envelope.project,
         driftDelta: envelope.driftDelta,
@@ -6241,6 +6283,7 @@ async function getProjectHealthEnvelope(
       contextualSystemHealth.pipx,
       contextualSystemHealth.go,
       contextualSystemHealth.rapidkitCore,
+      contextualSystemHealth.cliResolution,
     ],
     [projectHealth]
   );
@@ -6254,6 +6297,7 @@ async function getProjectHealthEnvelope(
     pipx: contextualSystemHealth.pipx,
     go: contextualSystemHealth.go,
     rapidkitCore: contextualSystemHealth.rapidkitCore,
+    cliResolution: contextualSystemHealth.cliResolution,
     project: projectHealth,
     healthScore,
     policyProfile,
@@ -6266,6 +6310,7 @@ async function getProjectHealthEnvelope(
       { id: 'system-pipx', label: 'pipx', result: envelope.pipx },
       { id: 'system-go', label: 'Go', result: envelope.go },
       { id: 'system-rapidkit-core', label: 'RapidKit Core', result: envelope.rapidkitCore },
+      { id: 'system-cli-resolution', label: 'CLI resolution', result: envelope.cliResolution },
     ],
     [envelope.project]
   );
@@ -6311,6 +6356,7 @@ async function getProjectHealthEnvelope(
         envelope.pipx,
         envelope.go,
         envelope.rapidkitCore,
+        envelope.cliResolution,
       ],
     }),
     workspacePath && path.resolve(workspacePath) !== path.resolve(projectPath) ? [projectPath] : []
@@ -9378,6 +9424,7 @@ export async function runDoctor(
         health.pipx,
         health.go,
         health.rapidkitCore,
+        health.cliResolution,
       ]);
       const output = {
         contract: getDoctorContractMetadata(),
@@ -9398,7 +9445,9 @@ export async function runDoctor(
           python: health.python,
           poetry: health.poetry,
           pipx: health.pipx,
+          go: health.go,
           rapidkitCore: health.rapidkitCore,
+          cliResolution: health.cliResolution,
           versions: {
             core: health.coreVersion,
             npm: health.npmVersion,
@@ -9489,6 +9538,7 @@ export async function runDoctor(
       health.pipx,
       health.go,
       health.rapidkitCore,
+      health.cliResolution,
     ]);
     const headlineVerdict = health.healthScore?.verdict ?? 'passed';
     const verdictIcon =
@@ -9527,6 +9577,7 @@ export async function runDoctor(
       [health.pipx, 'pipx'],
       [health.go, 'Go'],
       [health.rapidkitCore, 'RapidKit Core'],
+      [health.cliResolution, 'CLI resolution'],
     ];
     const visibleWorkspaceSystemTools = options.verbose
       ? workspaceSystemTools
@@ -9821,7 +9872,14 @@ export async function runDoctor(
       const probeSummary = buildDoctorProbeSummary(envelope.project);
       const counts = buildDoctorCountSummary(
         [envelope.project],
-        [envelope.python, envelope.poetry, envelope.pipx, envelope.go, envelope.rapidkitCore]
+        [
+          envelope.python,
+          envelope.poetry,
+          envelope.pipx,
+          envelope.go,
+          envelope.rapidkitCore,
+          envelope.cliResolution,
+        ]
       );
       const output = {
         contract: getDoctorContractMetadata(),
@@ -9847,6 +9905,7 @@ export async function runDoctor(
           pipx: envelope.pipx,
           go: envelope.go,
           rapidkitCore: envelope.rapidkitCore,
+          cliResolution: envelope.cliResolution,
         },
         summary: {
           counts,
@@ -9954,6 +10013,7 @@ export async function runDoctor(
       [envelope.pipx, 'pipx'],
       [envelope.go, 'Go'],
       [envelope.rapidkitCore, 'RapidKit Core'],
+      [envelope.cliResolution, 'CLI resolution'],
     ];
     const visibleProjectSystemTools = options.verbose
       ? projectSystemTools
@@ -10047,7 +10107,8 @@ export async function runDoctor(
     const pipx = systemChecks.pipx;
     const go = systemChecks.go;
     const core = systemChecks.rapidkitCore;
-    const checks = [python, poetry, pipx, go, core];
+    const cliResolution = systemChecks.cliResolution;
+    const checks = [python, poetry, pipx, go, core, cliResolution];
     const healthScore = calculateHealthScore(checks, []);
     completeObservation('System', healthScore);
     const systemErrors = [python, core].filter((c) => c.status === 'error').length;
@@ -10068,6 +10129,7 @@ export async function runDoctor(
           pipx,
           go,
           rapidkitCore: core,
+          cliResolution,
         },
         summary: {
           totalChecks: checks.length,
@@ -10087,9 +10149,14 @@ export async function runDoctor(
                 verdict: healthScore.verdict,
                 counts,
                 system: Object.fromEntries(
-                  Object.entries({ python, poetry, pipx, go, rapidkitCore: core }).map(
-                    ([id, check]) => [id, { status: check.status, message: check.message }]
-                  )
+                  Object.entries({
+                    python,
+                    poetry,
+                    pipx,
+                    go,
+                    rapidkitCore: core,
+                    cliResolution,
+                  }).map(([id, check]) => [id, { status: check.status, message: check.message }])
                 ),
                 nextActions: output.nextActions,
               }
@@ -10106,6 +10173,9 @@ export async function runDoctor(
     renderHealthCheck(pipx, 'pipx');
     renderHealthCheck(go, 'Go');
     renderHealthCheck(core, 'RapidKit Core');
+    if (cliResolution.applicability !== 'not-applicable') {
+      renderHealthCheck(cliResolution, 'CLI resolution');
+    }
 
     const hasErrors = [python, core].some((c) => c.status === 'error');
 

@@ -911,10 +911,15 @@ describe('Doctor Command', () => {
       expect(payload.system.python.details).toContain('no detected Python project');
       expect(payload.system.rapidkitCore).toMatchObject({ status: 'warn' });
       expect(payload.system.rapidkitCore.details).toContain('optional engine');
+      expect(payload.system.cliResolution).toMatchObject({
+        status: 'ok',
+        applicability: 'not-applicable',
+        resolutionStatus: 'not-applicable',
+      });
       expect(payload.healthScore).toMatchObject({ errors: 0, verdict: 'passed' });
       expect(payload.healthScore.presentation).toMatchObject({
         diagnosticPassRatePercent: null,
-        notApplicableChecks: 5,
+        notApplicableChecks: 6,
       });
     } finally {
       process.chdir(originalCwd);

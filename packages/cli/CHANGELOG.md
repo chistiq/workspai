@@ -5,6 +5,20 @@ All notable changes to Workspai CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.72.1] - 2026-09-01
+
+### Changed
+
+- Moved Windows `workspai` PATH precedence diagnostics into typed Doctor
+  evidence so npm 11 can install the CLI without requesting install-script
+  authorization.
+
+### Fixed
+
+- Removed package-level `postinstall` and redundant Husky `prepare` hooks that
+  caused npm 11 to emit an `allowScripts` warning. Repository Git hooks remain
+  owned by the monorepo root and are not consumer installation behavior.
+
 ## [0.72.0] - 2026-09-01
 
 ### Added

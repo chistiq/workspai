@@ -231,9 +231,12 @@ describe('npm publish contract', () => {
     expect(packageJson.scripts?.quality).toContain('corepack npm run security');
   });
 
-  it('ships and runs a Windows CLI resolution guard on install', () => {
-    expect(packageJson.files).toContain('scripts/check-cli-resolution.cjs');
-    expect(packageJson.scripts?.postinstall).toBe('node scripts/check-cli-resolution.cjs');
+  it('keeps consumer installation free of lifecycle scripts', () => {
+    expect(packageJson.files).not.toContain('scripts/check-cli-resolution.cjs');
+    expect(packageJson.scripts).not.toHaveProperty('preinstall');
+    expect(packageJson.scripts).not.toHaveProperty('install');
+    expect(packageJson.scripts).not.toHaveProperty('postinstall');
+    expect(packageJson.scripts).not.toHaveProperty('prepare');
   });
 
   it('publishes enterprise-critical runtime assets used by create and AI surfaces', () => {

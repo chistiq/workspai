@@ -214,11 +214,15 @@ const REQUIRED_PACKAGE_FILES = [
   'templates/kits/nestjs-standard/package.json.j2',
   'workspai.config.example.cjs',
   'rapidkit.config.example.cjs',
-  'scripts/check-cli-resolution.cjs',
   'scripts/enforce-package-manager.cjs',
 ];
 
-const FORBIDDEN_PACKAGE_FILES = ['workspai.config.example.js', 'rapidkit.config.example.js'];
+const FORBIDDEN_PACKAGE_FILES = [
+  'workspai.config.example.js',
+  'rapidkit.config.example.js',
+  'scripts/check-cli-resolution.cjs',
+  'scripts/prepare-husky.mjs',
+];
 
 function isPublishedByFilesPolicy(packageJson, assetPath) {
   const files = packageJson.files ?? [];
@@ -237,6 +241,14 @@ function assertPackageFilesPolicy(requiredFiles) {
   }
   if ('rapidkit' in (packageJson.bin ?? {})) {
     fail('package.json#bin.rapidkit must stay in the legacy rapidkit package, not workspai');
+  }
+  const consumerLifecycleScripts = ['preinstall', 'install', 'postinstall', 'prepare'].filter(
+    (scriptName) => typeof packageJson.scripts?.[scriptName] === 'string'
+  );
+  if (consumerLifecycleScripts.length > 0) {
+    fail(
+      `package.json must not require consumer install-script authorization: ${consumerLifecycleScripts.join(', ')}`
+    );
   }
   for (const required of requiredFiles) {
     if (!isPublishedByFilesPolicy(packageJson, required)) {

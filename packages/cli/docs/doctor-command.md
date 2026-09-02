@@ -21,6 +21,13 @@ Checks host prerequisites:
 - pipx (optional)
 - RapidKit Core availability
 - Go (optional)
+- Windows `workspai` PATH resolution and npm-shim precedence
+
+The PATH check is reported as typed Doctor evidence instead of running during
+package installation. A normal `npm install -g workspai` therefore requires no
+install-script authorization. On Windows, a shadowed npm shim is an advisory:
+Doctor reports the active executable, the ordered matches, and the bounded
+`npx --yes workspai <command>` fallback without mutating PATH.
 
 ### 2) Workspace Check
 
