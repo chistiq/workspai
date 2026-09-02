@@ -26,13 +26,26 @@ const keep = argv.includes('--keep') || process.env.RAPIDKIT_OFFICIAL_GENERATOR_
 const timeoutMs =
   Number.parseInt(process.env.RAPIDKIT_OFFICIAL_GENERATOR_TIMEOUT_MS ?? '', 10) || 300_000;
 const selected = readListOption('--generators') ?? process.env.RAPIDKIT_OFFICIAL_GENERATORS;
+const selectedGroups = readListOption('--groups');
+const generatorGroups = selectedGroups
+  ? selectedGroups
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+  : [];
+const supportedGeneratorGroups = new Set(['all', 'frontend', 'platform']);
+const unknownGroups = generatorGroups.filter((group) => !supportedGeneratorGroups.has(group));
 const reportPath = process.env.RAPIDKIT_OFFICIAL_GENERATOR_REPORT;
 const requestedSignals = selected
   ? selected
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean)
-  : availableGenerators.map((entry) => entry.id);
+  : selectedGroups
+    ? availableGenerators
+        .filter((entry) => matchesGeneratorGroup(entry.id, generatorGroups))
+        .map((entry) => entry.id)
+    : availableGenerators.map((entry) => entry.id);
 const targets = requestedSignals.map((signal) => generatorBySignal.get(signal)).filter(Boolean);
 const unknown = requestedSignals.filter((signal) => !generatorBySignal.has(signal));
 let activeGenerator = null;
@@ -58,11 +71,15 @@ if (unknown.length > 0) {
   );
 }
 
-if (argv.includes('--list')) {
-  writeFileSync(
-    process.stdout.fd,
-    `${JSON.stringify(availableGenerators.map((entry) => entry.id).sort())}\n`
+if (unknownGroups.length > 0) {
+  fail(
+    `unknown generator impact group(s): ${unknownGroups.join(', ')}. ` +
+      `Available: ${[...supportedGeneratorGroups].join(', ')}`
   );
+}
+
+if (argv.includes('--list')) {
+  writeFileSync(process.stdout.fd, `${JSON.stringify(targets.map((entry) => entry.id).sort())}\n`);
   process.exit(0);
 }
 
@@ -175,6 +192,14 @@ try {
 function readListOption(name) {
   const index = argv.indexOf(name);
   return index === -1 ? null : (argv[index + 1] ?? '');
+}
+
+function matchesGeneratorGroup(generatorId, groups) {
+  return (
+    groups.includes('all') ||
+    (groups.includes('frontend') && generatorId.startsWith('frontend.')) ||
+    (groups.includes('platform') && !generatorId.startsWith('frontend.'))
+  );
 }
 
 function fail(message) {

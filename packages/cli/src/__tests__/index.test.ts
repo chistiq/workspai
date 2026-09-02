@@ -74,13 +74,22 @@ async function execa(
 const CLI_PATH = ensureDistBuilt('CLI entry point tests');
 let TEST_DIR: string;
 
+async function removeTestDirectory(target: string): Promise<void> {
+  await fs.rm(target, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
+}
+
 describe('CLI Entry Point', () => {
   beforeEach(async () => {
     TEST_DIR = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-cli-index-test-'));
   });
 
   afterEach(async () => {
-    await fs.remove(TEST_DIR);
+    await removeTestDirectory(TEST_DIR);
   });
 
   describe('Version and Help', () => {
@@ -731,10 +740,10 @@ describe('CLI Entry Point', () => {
           }),
         ]);
       } finally {
-        await fs.remove(workspaceRoot);
-        await fs.remove(sourceDir);
+        await removeTestDirectory(workspaceRoot);
+        await removeTestDirectory(sourceDir);
       }
-    }, 20000);
+    });
 
     it('should register the workspace before registering an adopted project', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-adopt-register-'));

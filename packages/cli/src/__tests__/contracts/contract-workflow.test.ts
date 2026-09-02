@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 
@@ -67,14 +68,30 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(smokeWorkflow).toContain('cancel-in-progress: true');
     expect(parsedSmokeWorkflow.on.push.branches).toEqual(['main', 'develop']);
     expect(parsedSmokeWorkflow.on.pull_request.branches).toEqual(['main', 'develop']);
+    expect(parsedSmokeWorkflow.permissions).toMatchObject({
+      contents: 'read',
+      'pull-requests': 'read',
+    });
+    expect(parsedSmokeWorkflow.jobs.impact.outputs).toHaveProperty('run_official');
+    expect(parsedSmokeWorkflow.jobs.impact.outputs).toHaveProperty('run_native');
+    expect(parsedSmokeWorkflow.jobs.network.needs).toEqual(['impact', 'contract']);
+    expect(parsedSmokeWorkflow.jobs.network.strategy.matrix).toBe(
+      '${{ fromJSON(needs.impact.outputs.matrix) }}'
+    );
     expect(pushPaths).toEqual(pullRequestPaths);
     expect(pushPaths).toContain('packages/cli/src/generators/**');
     expect(pushPaths).toContain('packages/cli/package.json');
     expect(pushPaths).toContain('package-lock.json');
     expect(pushPaths).toContain('.github/workflows/release-npm-manual.yml');
-    expect(smokeWorkflow).toContain('MATRIX_MODE="primary"');
-    expect(smokeWorkflow).toContain('MATRIX_MODE="full"');
-    expect(smokeWorkflow).toContain("github.event.inputs.generators == ''");
+    expect(smokeWorkflow).toContain('uses: dorny/paths-filter@v4');
+    expect(smokeWorkflow).toContain('MODE="primary"');
+    expect(smokeWorkflow).toContain('MODE="full"');
+    expect(smokeWorkflow).toContain('SELECT_ARGS=(--groups all)');
+    expect(smokeWorkflow).toContain('GROUPS+=(frontend)');
+    expect(smokeWorkflow).toContain('GROUPS+=(platform)');
+    expect(smokeWorkflow).toContain("echo 'run_official=false'");
+    expect(smokeWorkflow).toContain('needs.impact.outputs.run_official');
+    expect(smokeWorkflow).toContain('needs.impact.outputs.run_native');
     expect(smokeWorkflow).toContain('RAPIDKIT_OFFICIAL_GENERATOR_WORKSPACE_ROOT');
     expect(smokeWorkflow).toContain('Restore Composer download cache');
     expect(smokeWorkflow).toContain('extensions: fileinfo');
@@ -82,6 +99,47 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(releaseWorkflow).toContain("run.event !== 'push'");
     expect(releaseWorkflow).not.toContain('run.display_title?.endsWith');
     expect(releaseWorkflow).not.toContain("'Official Generator Smoke · full'");
+  });
+
+  it('selects official generator impact groups from the canonical contract', () => {
+    const scriptPath = path.join(repoRoot, 'scripts/smoke-official-generators.mjs');
+    const contract = JSON.parse(read('contracts/create-planner-capabilities.v1.json'));
+    const available = (
+      contract.officialCreate as Array<{
+        id: string;
+        status: string;
+        canExecuteCreate: boolean;
+      }>
+    ).filter((entry) => entry.status === 'available' && entry.canExecuteCreate === true);
+
+    const probe = (group: string): string[] => {
+      const result = spawnSync(process.execPath, [scriptPath, '--list', '--groups', group], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      });
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout) as string[];
+    };
+
+    const frontend = probe('frontend');
+    const platform = probe('platform');
+    expect(frontend.length).toBeGreaterThan(0);
+    expect(frontend.every((id) => id.startsWith('frontend.'))).toBe(true);
+    expect(platform.length).toBeGreaterThan(0);
+    expect(platform.every((id) => !id.startsWith('frontend.'))).toBe(true);
+    expect([...frontend, ...platform].sort()).toEqual(available.map((entry) => entry.id).sort());
+  });
+
+  it('keeps pull-request path classifiers read-only and functional', () => {
+    for (const workflowPath of [
+      '.github/workflows/ci.yml',
+      '.github/workflows/security.yml',
+      '.github/workflows/frontend-generator-smoke.yml',
+    ]) {
+      const workflow = YAML.parse(readMonorepo(workflowPath));
+      expect(workflow.permissions.contents).toBe('read');
+      expect(workflow.permissions['pull-requests']).toBe('read');
+    }
   });
 
   it('uses the current first-interaction input contract for contributor onboarding', () => {

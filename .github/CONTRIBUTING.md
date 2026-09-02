@@ -1,8 +1,9 @@
 # Start Contributing to Workspai
 
 You do not need to understand the entire architecture before contributing.
-Choose one path, claim one bounded task, and use the validation plan generated
-from the files you change.
+Choose one bounded path, then use the validation plan generated from the files
+you change. Existing issues must be claimed before implementation; a very small
+documentation or test correction can go directly to a focused pull request.
 
 ## Choose Your Path
 
@@ -16,8 +17,11 @@ from the files you change.
 | Runtime or CI experience         | Add one pinned fixture or platform-safe assertion under an accepted issue   | [`area: ci`](https://github.com/chistiq/workspai/issues?q=is%3Aopen+label%3A%22area%3A+ci%22)               |
 
 Issue labels are discovery aids, not permission to take an entire architecture
-epic. Comment before starting. A maintainer will confirm a bounded slice with a
-clear outcome, relevant files, and acceptance evidence.
+epic. For issue-based work, comment before starting. A maintainer must confirm
+the bounded slice for the parent outcomes listed below or whenever the issue
+explicitly requests decomposition. A typo, broken link, narrowly scoped
+documentation correction, or isolated regression test can go directly to a
+pull request when it does not claim an existing issue or change public behavior.
 
 ## Current Maintainer-Routed Starting Points
 
@@ -43,8 +47,9 @@ issue. GitHub state, assignment, and labels are authoritative.
 
 ## First Contribution in Five Steps
 
-1. Read the issue and confirm that it is still open and unassigned.
-2. Comment with the small outcome you want to own.
+1. Choose an open issue or a small direct-pull-request correction.
+2. For issue work, confirm it is open and unassigned, then comment with the
+   small outcome you want to own.
 3. Follow the [development setup](../packages/cli/CONTRIBUTING.md#development-setup).
 4. Make one focused change with the closest regression test or documentation evidence.
 5. Run `corepack npm run contributor:plan` and execute the listed checks.

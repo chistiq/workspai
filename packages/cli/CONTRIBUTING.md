@@ -13,7 +13,7 @@ If you arrived through the Chistiq contributor program, begin with the
 [Contribution Hub](../../.github/CONTRIBUTING.md). It routes code, testing,
 Graph, documentation, product, runtime, and CI contributors to a bounded first
 task. Community chat is optional support; the GitHub issue remains the source
-of scope, ownership, and acceptance criteria.
+of scope, ownership, and acceptance criteria when work is issue-based.
 
 | You want to                    | Start here                                                                                                    |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
@@ -24,7 +24,7 @@ of scope, ownership, and acceptance criteria.
 | Add or improve runtime support | Start with the runtime support and create-planner contracts, then propose the required adapters or generators |
 | Add a new CLI capability       | Discuss its user outcome, command ownership, artifacts, schemas, and consumer impact first                    |
 | Propose a new package          | Open a design discussion before creating a package directory                                                  |
-| Report a security issue        | Follow the [Security Policy](docs/SECURITY.md); do not open a public issue                                    |
+| Report a security issue        | Follow the [Security Policy](../../SECURITY.md); do not open a public issue                                   |
 
 Good first contributions usually include documentation corrections, focused
 tests, clearer diagnostics, small cross-platform fixes, and isolated bug fixes.
@@ -55,7 +55,8 @@ Use the existing GitHub templates:
 - [Feature request](https://github.com/chistiq/workspai/issues/new?template=feature_request.yml)
 - [Discussions](https://github.com/chistiq/workspai/discussions) for design questions and early proposals
 
-Open an issue or discussion before work that:
+Maintainer confirmation is required before implementing a slice of a
+maintainer-routed parent issue. Open an issue or discussion before work that:
 
 - Adds or changes a public command
 - Changes a JSON schema or canonical artifact
@@ -64,8 +65,9 @@ Open an issue or discussion before work that:
 - Introduces a dependency or package
 - Changes persisted metadata or shipped behavior
 
-Small bug fixes, tests, typo corrections, and focused documentation improvements
-can go directly to a pull request when the intent is clear.
+Small bug fixes, isolated regression tests, typo corrections, and focused
+documentation improvements can go directly to a pull request when they do not
+claim an existing issue and the intent is clear.
 
 ## Development Setup
 
@@ -339,7 +341,7 @@ with evidence, and focus reviews on the change rather than the contributor.
 
 - Ask usage and design questions in [GitHub Discussions](https://github.com/chistiq/workspai/discussions).
 - Report reproducible bugs and feature requests in [GitHub Issues](https://github.com/chistiq/workspai/issues).
-- Report vulnerabilities through the [Security Policy](docs/SECURITY.md).
+- Report vulnerabilities through the [Security Policy](../../SECURITY.md).
 
 Every focused improvement helps make Workspace Intelligence more useful and
 trustworthy for its users and consumers.

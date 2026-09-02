@@ -29,7 +29,7 @@ from the changed paths:
 | Markdown and contributor-route content | One Ubuntu docs build, text guard, link/drift checks, and README smoke |
 | CLI source, contracts, or tooling      | Full build/test matrix                                                 |
 | Runtime adapter or core bridge         | Full matrix plus focused Phase 4 lanes                                 |
-| Generator implementation or contract   | Official generator smoke                                               |
+| Generator implementation or contract   | Impact-selected official or native generator smoke                     |
 | Workspace lifecycle surface            | Cross-platform workspace E2E                                           |
 | Dependency or security surface         | npm audit, SBOM, dependency review, and CodeQL                         |
 
@@ -61,18 +61,21 @@ parity checks from coupling product versions. Breaking contract removal or
 incompatible schema changes remain CLI release blockers through the canonical
 compatibility and schema-version gates.
 
-Pushes and pull requests that touch the contracted generator surface run every
-contracted generator on the primary Linux lane. The weekly schedule and manual
-dispatch can run the complete Linux, macOS, and Windows matrix as a
-compatibility and upstream-drift signal. npm and Composer download caches
-reduce repeated network work without caching generated projects; every smoke
-run still exercises the current upstream generator, generated artifacts, build
-surface, registry, and Doctor evidence.
+Pushes and pull requests select the affected generator family from changed
+paths. Frontend changes run the frontend generators, desktop/extension/Laravel
+changes run that platform group, and native-only changes skip the unrelated
+official network matrix while retaining native artifact verification. Shared
+contracts, dependencies, smoke infrastructure, and release gates conservatively
+run every official generator. The weekly schedule and manual dispatch still run
+the complete Linux, macOS, and Windows matrix as a compatibility and
+upstream-drift signal. npm and Composer download caches reduce repeated network
+work without treating an earlier commit or calendar-day result as proof for a
+new SHA.
 
 The Windows coverage lane intentionally uses bounded Vitest worker concurrency
 and platform-aware transaction timeouts. Filesystem-heavy workspace tests must
 finish their transaction before teardown; cleanup retries transient Windows
-`EBUSY` and `ENOTEMPTY` states instead of converting one slow operation into a
+`EBUSY`, `ENOTEMPTY`, and `EPERM` states instead of converting one slow operation into a
 cascade of unrelated missing-file failures. These budgets remain finite and do
 not retry failed assertions or product operations.
 
