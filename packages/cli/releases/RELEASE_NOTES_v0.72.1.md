@@ -67,14 +67,15 @@ Doctor reports one of five explicit resolution states:
 - `canonical`: the npm global shim is the active PATH match;
 - `shadowed`: another executable precedes the npm shim;
 - `unresolved`: Windows cannot resolve `workspai` from PATH;
-- `unverified`: a command is resolvable but the npm global prefix is unknown;
+- `unverified`: PATH inspection failed or the npm global prefix is unknown;
 - `not-applicable`: the host is not Windows.
 
 The machine-readable projection can include the active path, npm global prefix,
 ordered candidates, and a recovery recommendation. A shadowed or unverifiable
 command remains an advisory rather than pretending that installation failed.
 The bounded fallback is `npx --yes workspai <command>`; Doctor never mutates the
-user's PATH.
+user's PATH. A failed `where.exe` or npm-prefix subprocess probe becomes
+unverified evidence and never aborts the rest of Doctor.
 
 ## Doctor integration
 

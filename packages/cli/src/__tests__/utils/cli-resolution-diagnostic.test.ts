@@ -74,4 +74,24 @@ describe('checkCliResolution', () => {
     expect(unresolved.resolutionStatus).toBe('unresolved');
     expect(unverified.resolutionStatus).toBe('unverified');
   });
+
+  it('degrades rejected Windows subprocess probes into evidence instead of throwing', async () => {
+    const result = await checkCliResolution({
+      platform: 'win32',
+      resolveCandidates: async () => {
+        throw new Error('where.exe unavailable');
+      },
+      resolveNpmGlobalPrefix: async () => {
+        throw new Error('npm unavailable');
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: 'warn',
+      applicability: 'applicable',
+      resolutionStatus: 'unverified',
+      candidates: [],
+    });
+    expect(result.message).toContain('could not be inspected');
+  });
 });

@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed package-level `postinstall` and redundant Husky `prepare` hooks that
   caused npm 11 to emit an `allowScripts` warning. Repository Git hooks remain
   owned by the monorepo root and are not consumer installation behavior.
+- Prevented a failed Windows `where.exe` or npm-prefix probe from rejecting the
+  entire Doctor command; probe failure now becomes explicit unverified
+  evidence.
 
 ## [0.72.0] - 2026-09-01
 

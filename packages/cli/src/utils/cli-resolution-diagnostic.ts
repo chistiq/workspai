@@ -75,10 +75,25 @@ export async function checkCliResolution(
     };
   }
 
-  const [rawCandidates, npmGlobalPrefix] = await Promise.all([
+  const [candidateProbe, prefixProbe] = await Promise.allSettled([
     (options.resolveCandidates ?? resolveWindowsCommandCandidates)(),
     (options.resolveNpmGlobalPrefix ?? resolveNpmGlobalPrefix)(),
   ]);
+  if (candidateProbe.status === 'rejected') {
+    return {
+      status: 'warn',
+      applicability: 'applicable',
+      command: 'workspai',
+      resolutionStatus: 'unverified',
+      candidates: [],
+      message: 'Windows PATH resolution could not be inspected.',
+      details:
+        'The bounded `where.exe workspai` probe failed. Retry Doctor from a standard Windows shell or use `npx --yes workspai <command>`.',
+    };
+  }
+
+  const rawCandidates = candidateProbe.value;
+  const npmGlobalPrefix = prefixProbe.status === 'fulfilled' ? prefixProbe.value : undefined;
   const candidates = [
     ...new Set(rawCandidates.map((candidate) => candidate.trim()).filter(Boolean)),
   ];
