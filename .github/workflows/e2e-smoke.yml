@@ -29,6 +29,9 @@ on:
       - ".github/workflows/release-npm-manual.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   bridge-regression:
     runs-on: ubuntu-latest

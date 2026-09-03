@@ -140,12 +140,27 @@ describe('shared contracts workflow (Wave A + B)', () => {
       expect(workflow.permissions.contents).toBe('read');
       expect(workflow.permissions['pull-requests']).toBe('read');
     }
+
+    for (const workflowPath of [
+      '.github/workflows/e2e-smoke.yml',
+      '.github/workflows/windows-bridge-e2e.yml',
+      '.github/workflows/workspace-e2e-matrix.yml',
+    ]) {
+      const workflow = YAML.parse(readMonorepo(workflowPath));
+      expect(workflow.permissions).toEqual({ contents: 'read' });
+    }
   });
 
-  it('uses the current first-interaction input contract for contributor onboarding', () => {
+  it('keeps contributor onboarding bot-free and pinned to the reviewed action', () => {
     const welcomeWorkflow = readMonorepo('.github/workflows/welcome.yml');
+    const parsedWelcomeWorkflow = YAML.parse(welcomeWorkflow);
 
-    expect(welcomeWorkflow).toContain('uses: actions/first-interaction@v3');
+    expect(welcomeWorkflow).toContain(
+      'uses: actions/first-interaction@753c925c8d1ac6fede23781875376600628d9b5d # v3.0.0'
+    );
+    expect(parsedWelcomeWorkflow.jobs['first-interaction'].if).toBe(
+      "github.event.sender.type != 'Bot'"
+    );
     expect(welcomeWorkflow).toContain('repo_token:');
     expect(welcomeWorkflow).toContain('issue_message:');
     expect(welcomeWorkflow).toContain('pr_message:');
