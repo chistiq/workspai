@@ -430,6 +430,7 @@ const PROJECT_LENS_ENTITY_KIND_ORDER: WorkspaceKnowledgeEntity['kind'][] = [
 ];
 
 const PROJECT_LENS_MAX_ENTITIES = 48;
+const PROJECT_LENS_MAX_DIAGNOSTICS = 16;
 const PROJECT_LENS_ENTITY_BYTE_BUDGET = 12 * 1024;
 
 export function selectBoundedProjectLensEntities(
@@ -1067,6 +1068,30 @@ export async function buildProjectContextAgent(
         ]
       : []),
   ];
+  const uniqueDiagnostics = [...lensDiagnostics, ...graphProjection.diagnostics].filter(
+    (diagnostic, index, diagnostics) =>
+      diagnostics.findIndex(
+        (candidate) =>
+          candidate.code === diagnostic.code && candidate.message === diagnostic.message
+      ) === index
+  );
+  const omittedDiagnosticCount = Math.max(
+    0,
+    uniqueDiagnostics.length - PROJECT_LENS_MAX_DIAGNOSTICS + 1
+  );
+  const boundedDiagnostics =
+    omittedDiagnosticCount > 0
+      ? [
+          ...uniqueDiagnostics.slice(0, PROJECT_LENS_MAX_DIAGNOSTICS - 1),
+          {
+            code: 'project.context.diagnostics-truncated',
+            severity: 'info',
+            message: `${omittedDiagnosticCount} additional diagnostic(s) remain available in the canonical Workspace Knowledge Graph.`,
+            recommendation:
+              'Inspect workspace:.workspai/reports/workspace-knowledge-graph.json for the complete diagnostic set.',
+          },
+        ]
+      : uniqueDiagnostics;
   const relationship = deriveRelationship(
     projectJson,
     options.relationship ?? contractProject?.relationship ?? 'managed'
@@ -1165,7 +1190,11 @@ export async function buildProjectContextAgent(
         })),
       },
       surfaces: projectLensSurfaces(graphProjection.entities, workspacePath, projectPath),
-      diagnostics: [...lensDiagnostics, ...graphProjection.diagnostics].map((diagnostic) => ({
+      // Keep local freshness/availability findings first, then retain a bounded
+      // deterministic projection of Graph diagnostics. The public contract is
+      // intentionally capped so large repositories cannot make agent context
+      // generation fail or grow without bound.
+      diagnostics: boundedDiagnostics.map((diagnostic) => ({
         ...diagnostic,
         message: portableText(diagnostic.message, workspacePath, projectPath),
         ...(diagnostic.recommendation

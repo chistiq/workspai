@@ -589,7 +589,11 @@ describe('project workspace binding', () => {
           portable: true,
           secretValuesEmitted: false,
         },
-        diagnostics: [],
+        diagnostics: Array.from({ length: 24 }, (_, index) => ({
+          code: `graph.large-repository-${index.toString().padStart(2, '0')}`,
+          severity: 'warning',
+          message: `Large repository diagnostic ${index}`,
+        })),
       })}\n`
     );
 
@@ -643,6 +647,14 @@ describe('project workspace binding', () => {
     expect(context.project.runtimeCandidates).toEqual(['node', 'python']);
     expect(context.intelligence.languages).toEqual({
       typescript: { fileCount: 1, symbolCount: 0, generatedFileCount: 1 },
+    });
+    expect(context.intelligence.diagnostics).toHaveLength(16);
+    expect(context.intelligence.diagnostics.at(0)?.code).toBe('graph.large-repository-00');
+    expect(context.intelligence.diagnostics.at(-1)).toMatchObject({
+      code: 'project.context.diagnostics-truncated',
+      severity: 'info',
+      message:
+        '9 additional diagnostic(s) remain available in the canonical Workspace Knowledge Graph.',
     });
     expect(context.workspace.access).toMatchObject({
       localBinding: '.workspai/workspace-link.local.json',

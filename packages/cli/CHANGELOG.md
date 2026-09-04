@@ -5,6 +5,49 @@ All notable changes to Workspai CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.73.0] - 2026-09-04
+
+### Added
+
+- Added a machine-readable contributor issue registry and a freshness gate that
+  keeps maintainer-routed work aligned with live GitHub issue state.
+- Added path-aware CI classification so documentation-only changes retain fast,
+  required validation without starting unrelated heavyweight matrices.
+
+### Changed
+
+- Made Node.js Graph queries cover authored JavaScript and TypeScript while
+  treating runtime words as scope constraints rather than relevance evidence.
+- Made natural-language Graph ranking prefer direct authored identities over
+  incidental attributes and generated artifacts, with stable handling for
+  common conversational and plural forms.
+- Made explicit Workspace, Goal, and Change scopes callable from CI, IDE, MCP,
+  and other consumers without requiring their process to enter the project
+  directory first.
+- Made official generator smoke validation reuse a proven daily primary result
+  while retaining manual, scheduled, and relevant-change execution paths.
+- Limited Project Agent Context diagnostics to its existing contract budget,
+  preserving the canonical full set and reporting how many findings remain in
+  the Workspace Knowledge Graph.
+
+### Fixed
+
+- Prevented Vitest scripts and stale managed adoption metadata from
+  misclassifying a Node.js SDK as a Vite application.
+- Prevented aggregate repositories and their registered nested projects from
+  producing artificial dependency cycles through overlapping source scans.
+- Invalidated stale Doctor project-scan evidence after framework and diagnostic
+  semantics change.
+- Prevented large repositories with more than 16 Graph diagnostics from
+  failing adoption while generating the bounded project context artifact.
+
+### Security
+
+- Updated `fast-uri` to the patched release and applied explicit least-privilege
+  permissions to remaining CI workflows.
+- Excluded bot-authored pull requests from contributor welcome messaging and
+  retained safe `pull_request_target` boundaries.
+
 ## [0.72.1] - 2026-09-01
 
 ### Changed
