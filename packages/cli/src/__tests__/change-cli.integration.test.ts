@@ -18,6 +18,7 @@ describe('Proof-Carrying Change CLI process integration', () => {
   it('publishes the complete command tree and a versioned empty discovery result', () => {
     const dist = ensureDistBuilt();
     const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-change-cli-'));
+    const callerPath = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-change-caller-'));
     try {
       fs.mkdirSync(path.join(workspacePath, '.workspai'), { recursive: true });
       fs.writeFileSync(
@@ -47,7 +48,7 @@ describe('Proof-Carrying Change CLI process integration', () => {
       const list = spawnSync(
         process.execPath,
         [dist, 'change', 'list', '--workspace', workspacePath, '--json'],
-        { cwd: workspacePath, encoding: 'utf8' }
+        { cwd: callerPath, encoding: 'utf8' }
       );
       expect(list.status).toBe(0);
       expect(JSON.parse(list.stdout)).toMatchObject({
@@ -76,6 +77,7 @@ describe('Proof-Carrying Change CLI process integration', () => {
       expect(JSON.parse(invalid.stdout)).toMatchObject({ valid: false });
     } finally {
       fs.rmSync(workspacePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      fs.rmSync(callerPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   }, 60_000);
 });

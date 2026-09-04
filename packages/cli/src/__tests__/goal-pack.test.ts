@@ -149,6 +149,26 @@ afterEach(async () => {
 });
 
 describe('goal pack workspace adapter', () => {
+  it('resolves an explicit project scope independently of the caller cwd', async () => {
+    const { workspacePath } = await fixture();
+    const unrelatedPath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-goal-caller-'));
+    roots.push(unrelatedPath);
+
+    const result = await planGoalPack({
+      startPath: unrelatedPath,
+      workspacePath,
+      scope: 'project:api',
+      intent: 'Document retry behavior without changing runtime behavior',
+      dryRun: true,
+    });
+
+    expect(result.goalPack.scope).toMatchObject({
+      kind: 'project',
+      projects: ['api'],
+      selectionSource: 'explicit',
+    });
+  });
+
   it('requires an explicit bounded scope at a multi-project workspace root', async () => {
     const { workspacePath } = await fixture();
     await addFixtureProject({ workspacePath, name: 'worker', runtime: 'python' });

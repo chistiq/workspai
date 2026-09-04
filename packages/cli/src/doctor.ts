@@ -726,7 +726,7 @@ const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
 // Bump whenever project diagnosis or executable-remediation semantics change.
 // This keeps unchanged source trees from reusing evidence produced by an older
 // Doctor policy after a CLI upgrade.
-const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v4';
+const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v5';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({

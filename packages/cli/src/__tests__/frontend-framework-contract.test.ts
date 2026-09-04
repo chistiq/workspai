@@ -181,6 +181,36 @@ describe('frontend-framework-contract', () => {
     });
   });
 
+  it('does not classify a Node library using Vitest as a Vite application', async () => {
+    const libraryProject = await createTempProject('node-library-with-vitest');
+    await fs.writeJson(path.join(libraryProject, 'package.json'), {
+      name: '@acme/sdk',
+      main: './dist/index.js',
+      scripts: {
+        build: 'tsx build.ts',
+        test: 'vitest run',
+      },
+      devDependencies: {
+        vitest: '^4.0.0',
+      },
+    });
+
+    expect(detectFrontendFrameworkFromProject(libraryProject)).toMatchObject({
+      key: 'unknown',
+    });
+    expect(detectBackendFrameworkFromProject(libraryProject)).toMatchObject({
+      key: 'node',
+      runtime: 'node',
+    });
+    expect(
+      detectFrontendFrameworkFromProject(libraryProject, {
+        framework: 'vite',
+        kit_name: 'adopted.vite',
+        adoption: { managed_by: 'workspai', mode: 'linked' },
+      })
+    ).toMatchObject({ key: 'unknown' });
+  });
+
   it('keeps frontend command capabilities governed by package.json scripts', async () => {
     const projectPath = await createTempProject('next-capabilities');
     await fs.writeJson(path.join(projectPath, 'package.json'), {

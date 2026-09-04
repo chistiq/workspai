@@ -796,7 +796,10 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
     startPath: path.resolve(options.startPath),
     explicitWorkspacePath: options.workspacePath,
     strict: true,
-    requireProjectMembership: true,
+    // An explicit scope is resolved against the canonical Workspace Model and
+    // does not depend on the caller's cwd. This is required by CI, IDE, and MCP
+    // consumers that invoke a project-scoped Goal from outside that project.
+    requireProjectMembership: !options.scope?.trim(),
   });
   if (!resolution) throw new Error('No canonical Workspai workspace could be resolved.');
   const workspacePath = path.resolve(resolution.workspacePath);

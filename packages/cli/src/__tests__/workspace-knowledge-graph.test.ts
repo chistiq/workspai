@@ -2213,6 +2213,130 @@ describe('workspace knowledge graph', () => {
     expect(result.entities.some((entity) => entity.id === 'java-client')).toBe(false);
   });
 
+  it('treats Node.js as a JavaScript and TypeScript runtime family facet', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'sdk', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'typescript-session-events',
+        kind: 'file',
+        label: 'nodejs/src/session-events.ts',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:nodejs/src/session-events.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'typescript-session-events',
+        },
+        attributes: { language: 'typescript' },
+        proofIds: [],
+      },
+      {
+        id: 'javascript-release-script',
+        kind: 'file',
+        label: 'nodejs/scripts/release.js',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:nodejs/scripts/release.js',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'javascript-release-script',
+        },
+        attributes: { language: 'javascript' },
+        proofIds: [],
+      },
+      {
+        id: 'python-session-events',
+        kind: 'file',
+        label: 'python/session-events.py',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:python/session-events.py',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'python-session-events',
+        },
+        attributes: { language: 'python' },
+        proofIds: [],
+      },
+      {
+        id: 'generated-session-event-version',
+        kind: 'file',
+        label: 'nodejs/src/session-event-version.ts',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:nodejs/src/session-event-version.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'generated-session-event-version',
+        },
+        attributes: { language: 'typescript', generated: true },
+        proofIds: [],
+      }
+    );
+
+    for (const query of [
+      'Where is session event handling implemented in the Node.js SDK?',
+      'NodeJS session event handling',
+    ]) {
+      const result = searchKnowledgeGraph(graph, {
+        query,
+        projectId: 'sdk',
+        limit: 5,
+      });
+
+      expect(result.entities[0]?.id).toBe('typescript-session-events');
+      expect(result.entities.some((entity) => entity.id === 'javascript-release-script')).toBe(
+        false
+      );
+      expect(result.entities.some((entity) => entity.id === 'python-session-events')).toBe(false);
+      expect(result.entities[0]?.id).not.toBe('generated-session-event-version');
+    }
+  });
+
+  it('normalizes plural implementation nouns in conversational source questions', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'sdk', path: 'api', runtime: 'java', framework: 'java' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push({
+      id: 'java-tool-definition',
+      kind: 'symbol',
+      label: 'ToolDefinition',
+      projectId: 'sdk',
+      identity: {
+        key: 'symbol:sdk:src/main/java/rpc/ToolDefinition.java',
+        scope: 'project',
+        aliases: [],
+        fingerprint: 'java-tool-definition',
+      },
+      attributes: { language: 'java', symbolKind: 'type' },
+      proofIds: [],
+    });
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'Where are tools defined in the Java SDK?',
+      projectId: 'sdk',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('java-tool-definition');
+  });
+
   it('hard-bounds every high-cardinality field in the agent search projection', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({

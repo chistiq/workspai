@@ -450,10 +450,21 @@ const SEARCH_TOKEN_CANONICAL_FORMS = new Map<string, string>([
   ['connection', 'connect'],
   ['connections', 'connect'],
   ['diagnostics', 'diagnostic'],
+  ['defined', 'define'],
+  ['definition', 'define'],
+  ['definitions', 'define'],
+  ['events', 'event'],
+  ['handled', 'handle'],
+  ['handling', 'handle'],
+  ['implemented', 'implement'],
+  ['implementing', 'implement'],
+  ['implementations', 'implementation'],
+  ['implements', 'implement'],
   ['reliable', 'reliability'],
   ['tested', 'test'],
   ['testing', 'test'],
   ['tests', 'test'],
+  ['tools', 'tool'],
   ['verification', 'verify'],
   ['verified', 'verify'],
   ['verifies', 'verify'],
@@ -570,6 +581,7 @@ function generatedOrVendoredPenalty(
     'vendored',
   ].some((term) => terms.has(term));
   if (explicitGeneratedIntent) return 0;
+  if (entity.attributes.generated === true) return 5_000;
   const artifact = typeof entity.attributes.artifact === 'string' ? entity.attributes.artifact : '';
   const location = `${entity.label}/${entity.identity.key}/${artifact}`.toLowerCase();
   return /(?:^|\/)(?:__fixtures__|__testfixtures__|build|compiled|dist|fixture|fixtures|generated|node_modules|target|testdata|third_party|vendor)(?:\/|$)/u.test(
@@ -597,6 +609,15 @@ function matchedSearchTerms(document: SearchDocument, terms: string[]): number {
     if (token && !matchedDocumentTokens.has(token)) matchedDocumentTokens.add(token);
   }
   return matchedDocumentTokens.size;
+}
+
+function matchedIdentityTerms(document: SearchDocument, terms: string[]): number {
+  const identityTokens = new Set([
+    ...document.labelTokens,
+    ...document.identityTokens,
+    ...document.aliasTokens,
+  ]);
+  return matchedSearchTerms({ ...document, allTokens: identityTokens }, terms);
 }
 
 const LANGUAGE_QUERY_TERMS = new Map<string, string>([
@@ -641,11 +662,35 @@ const LANGUAGE_QUERY_TERMS = new Map<string, string>([
 ]);
 
 function requestedLanguages(terms: string[]): Set<string> {
-  return new Set(
+  const languages = new Set(
     terms
       .map((term) => LANGUAGE_QUERY_TERMS.get(term))
       .filter((language): language is string => Boolean(language))
   );
+  // Node.js repositories commonly author their runtime source in TypeScript.
+  // Treat an explicit Node.js/NodeJS phrase as a runtime family facet instead
+  // of filtering the graph down to JavaScript-only entities. Requiring either
+  // the compact `nodejs` token or the `node` + `js` pair avoids interpreting a
+  // generic graph "node" query as a language constraint.
+  const explicitNodeRuntime =
+    terms.includes('nodejs') || (terms.includes('node') && terms.includes('js'));
+  if (explicitNodeRuntime) {
+    languages.add('javascript');
+    languages.add('typescript');
+  }
+  return languages;
+}
+
+function requestedLanguageTerms(terms: string[]): Set<string> {
+  const languageTerms = new Set(terms.filter((term) => LANGUAGE_QUERY_TERMS.has(term)));
+  const explicitNodeRuntime =
+    terms.includes('nodejs') || (terms.includes('node') && terms.includes('js'));
+  if (explicitNodeRuntime) {
+    languageTerms.add('node');
+    languageTerms.add('js');
+    languageTerms.add('nodejs');
+  }
+  return languageTerms;
 }
 
 function entityLanguage(entity: WorkspaceKnowledgeEntity): string | null {
@@ -742,6 +787,7 @@ const GENERIC_RELATION_QUERY_TERMS = new Set([
   'project',
   'provide',
   'provided',
+  'sdk',
   'system',
   'use',
   'used',
@@ -856,8 +902,15 @@ export function searchKnowledgeGraph(
   const meaningfulTerms = contentTerms.filter((term) => !NATURAL_LANGUAGE_STOPWORDS.has(term));
   const terms = meaningfulTerms.length > 0 ? meaningfulTerms : contentTerms;
   const languages = requestedLanguages(terms);
+  const languageTerms = requestedLanguageTerms(terms);
   const termSet = new Set(terms);
-  const qualifierTerms = terms.filter((term) => !isGenericQueryTerm(term));
+  // Runtime/language words constrain the result set; they are not the subject
+  // of the question. Excluding them from qualifier evidence prevents every
+  // file under `nodejs/`, `python/`, or a similar language directory from
+  // satisfying a query whose actual subject is, for example, session events.
+  const qualifierTerms = terms.filter(
+    (term) => !languageTerms.has(term) && !isGenericQueryTerm(term)
+  );
   const broadArchitectureIntent = hasBroadArchitectureIntent(termSet);
   const defaultMinimumTermMatches =
     terms.length <= 1 ? terms.length : Math.min(2, Math.ceil(terms.length / 3));
@@ -907,6 +960,7 @@ export function searchKnowledgeGraph(
     .map((document) => {
       const matchedTerms = matchedSearchTerms(document, terms);
       const matchedQualifiers = matchedSearchTerms(document, qualifierTerms);
+      const matchedIdentityQualifiers = matchedIdentityTerms(document, qualifierTerms);
       const language = entityLanguage(document.entity);
       const languageBoost = language && languages.has(language) ? 400 : 0;
       const rawIntentScore = architectureIntentScore(document.entity, termSet);
@@ -927,6 +981,7 @@ export function searchKnowledgeGraph(
           ? projectOverviewScore(document.entity)
           : searchScore(document, query, terms, inverseDocumentFrequency) +
             matchedQualifiers * 300 +
+            matchedIdentityQualifiers * 400 +
             languageBoost +
             intentScore -
             generatedOrVendoredPenalty(document.entity, termSet),

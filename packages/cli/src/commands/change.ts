@@ -38,7 +38,9 @@ function workspaceFor(options: CommonOptions): string {
     startPath: process.cwd(),
     explicitWorkspacePath: options.workspace,
     strict: true,
-    requireProjectMembership: true,
+    // Explicit workspace automation is already bounded by the Goal/change id.
+    // Do not make CI, IDE, or MCP callers change cwd merely to address it.
+    requireProjectMembership: !options.workspace,
   });
   if (!resolution) throw new Error('No canonical Workspai workspace could be resolved.');
   return path.resolve(resolution.workspacePath);
