@@ -30,9 +30,9 @@
 
 # Workspai CLI v0.74.0
 
-Prepared September 5, 2026.
+Released September 5, 2026.
 
-**Publication status: pending.** Prepared for release; not yet published.
+**Publication status:** Published.
 
 ## Proof-backed Polyglot Workspace Execution
 
@@ -130,11 +130,11 @@ are not converted into false CLI success.
   80.92% measured coverage. Python build and start completed; its generated
   test dependency incompatibility remained an explicit project blocker.
 
-## Install after publication
+## Install
 
 ```bash
 npm install -g workspai@0.74.0
 workspai --version
 ```
 
-The optional `wspai` alias is prepared at the matching `0.74.0` version.
+The optional `wspai` alias is released at the matching `0.74.0` version.

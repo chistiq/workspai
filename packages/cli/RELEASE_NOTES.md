@@ -5,7 +5,7 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Planned Release: v0.74.0 (publication pending)
+## Latest Release: v0.74.0 (September 5, 2026)
 
 ### Proof-backed Polyglot Workspace Execution
 
@@ -35,16 +35,16 @@ public command, schema version, or canonical artifact path is removed. Stricter
 identity validation may reject ambiguous registry aliases and workspace-escape
 paths that older versions accepted implicitly.
 
-**Publication status:** Prepared September 5, 2026; not yet published.
+**Publication status:** Released September 5, 2026.
 
-**Install after publication:**
+**Install:**
 
 ```bash
 npm install -g workspai@0.74.0
 workspai --version
 ```
 
-[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.74.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.74.0/packages/cli/releases/RELEASE_NOTES_v0.74.0.md)
 
 ---
 
