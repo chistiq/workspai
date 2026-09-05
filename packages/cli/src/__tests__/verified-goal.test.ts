@@ -61,6 +61,24 @@ afterEach(async () => {
 });
 
 describe('verified engineering goals', () => {
+  it('preserves the marker-defined workspace identity in durable goal evidence', async () => {
+    const workspacePath = await workspaceFixture();
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'logical-enterprise-workspace',
+    });
+
+    const result = await planVerifiedGoal({
+      workspacePath,
+      kind: 'release-readiness',
+    });
+
+    expect(result.goal.workspace.name).toBe('logical-enterprise-workspace');
+    expect((await fsExtra.readJson(result.goal.artifactPaths.goal)).workspace.name).toBe(
+      'logical-enterprise-workspace'
+    );
+  });
+
   it('plans and deterministically resumes the same release goal', async () => {
     const workspacePath = await workspaceFixture();
     const first = await planVerifiedGoal({

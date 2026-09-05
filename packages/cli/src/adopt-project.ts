@@ -59,6 +59,7 @@ import {
   type AdoptProjectEffects,
   type IngestionPlan,
 } from './contracts/ingestion-contract.js';
+import { resolveWorkspaceRegistrationName } from './workspace-marker.js';
 
 export interface AdoptProjectOptions {
   workspacePath: string;
@@ -570,6 +571,7 @@ export async function adoptProjectIntoWorkspace(
     moduleSupport,
     adoptedAt,
   });
+  const workspaceName = await resolveWorkspaceRegistrationName(workspacePath);
   const adoptPayload = {
     schema_version: '1.0',
     kind: 'workspai.adopted_project',
@@ -577,7 +579,7 @@ export async function adoptProjectIntoWorkspace(
     managed_by: 'workspai',
     mode: 'linked',
     workspace: {
-      name: path.basename(workspacePath),
+      name: workspaceName,
       contract: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
     },
     project: {

@@ -59,6 +59,24 @@ describe('polyglot lifecycle plan', () => {
     });
   });
 
+  it('executes a CMake add_subdirectory tree once while preserving independent builds', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-cmake-tree-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'service', 'CMakeLists.txt'),
+      'project(service C)\nadd_subdirectory("genproto")\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'service', 'genproto', 'CMakeLists.txt'),
+      'add_library(proto proto.c)\n'
+    );
+    await fs.outputFile(path.join(root, 'standalone', 'CMakeLists.txt'), 'project(standalone C)\n');
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['service', 'standalone']);
+  });
+
   it('models a Gradle multi-project build once at its root while preserving other runtimes', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-gradle-lifecycle-'));
     tempDirs.push(root);
@@ -258,5 +276,48 @@ describe('polyglot lifecycle plan', () => {
         expect.objectContaining({ stage: 'test', command: 'bun run test' }),
       ]),
     });
+  });
+
+  it('plans evidence-backed start commands and preserves the Python package manager', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-service-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(path.join(root, 'go-api', 'go.mod'), 'module example.test/go-api\n');
+    await fs.outputFile(
+      path.join(root, 'go-api', 'cmd', 'server', 'main.go'),
+      'package main\nfunc main() {}\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'python-api', 'pyproject.toml'),
+      [
+        '[tool.poetry]',
+        'name = "python-api"',
+        '[tool.poetry.scripts]',
+        'start = "src.cli:start"',
+        '[build-system]',
+        'requires = ["poetry-core"]',
+        '[tool.pytest.ini_options]',
+      ].join('\n')
+    );
+    await fs.outputFile(
+      path.join(root, 'dotnet-api', 'service.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.find((unit) => unit.runtime === 'go')?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'start', command: 'go run ./cmd/server' })
+    );
+    expect(plan.units.find((unit) => unit.runtime === 'python')?.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: 'init', command: 'poetry install' }),
+        expect.objectContaining({ stage: 'test', command: 'poetry run pytest' }),
+        expect.objectContaining({ stage: 'build', command: 'poetry build' }),
+        expect.objectContaining({ stage: 'start', command: 'poetry run start' }),
+      ])
+    );
+    expect(plan.units.find((unit) => unit.runtime === 'dotnet')?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'start', command: 'dotnet run --project service.csproj' })
+    );
   });
 });

@@ -1044,7 +1044,11 @@ async function finalizeCreatedProjectWorkspace(
     const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
       await import('./workspace.js');
     const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
-    await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
+    const { resolveWorkspaceRegistrationName } = await import('./workspace-marker.js');
+    await registerWorkspaceStrict(
+      workspacePath,
+      await resolveWorkspaceRegistrationName(workspacePath)
+    );
     await registerProjectInWorkspaceStrict(workspacePath, projectName, projectPath);
     await syncWorkspaceContract({ workspacePath, strict: true });
     const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
@@ -3086,7 +3090,11 @@ export async function handleImportCommand(
         }
         const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
           await import('./workspace.js');
-        await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
+        const { resolveWorkspaceRegistrationName } = await import('./workspace-marker.js');
+        await registerWorkspaceStrict(
+          workspacePath,
+          await resolveWorkspaceRegistrationName(workspacePath)
+        );
         await registerProjectInWorkspaceStrict(
           workspacePath,
           importedProject.name,
@@ -3379,7 +3387,11 @@ export async function handleAdoptCommand(
         } else {
           const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
             await import('./workspace.js');
-          await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
+          const { resolveWorkspaceRegistrationName } = await import('./workspace-marker.js');
+          await registerWorkspaceStrict(
+            workspacePath,
+            await resolveWorkspaceRegistrationName(workspacePath)
+          );
           await registerProjectInWorkspaceStrict(
             workspacePath,
             adoptedProject.name,
@@ -3407,8 +3419,12 @@ export async function handleAdoptCommand(
           validateLiveInputs: true,
         });
         if (bootstrapReceipt.status === 'blocked') {
+          const failedChecks = bootstrapReceipt.checks
+            .filter((check) => check.status === 'failed')
+            .map((check) => `${check.id}: ${check.message}`)
+            .join('; ');
           throw new Error(
-            'Adopted project did not produce a usable agent-grounding route; inspect the bootstrap checks.'
+            `Adopted project did not produce a usable agent-grounding route${failedChecks ? ` (${failedChecks})` : '; inspect the bootstrap checks.'}`
           );
         }
         await transaction?.commit();
@@ -9655,15 +9671,19 @@ See the command reference for action-specific required inputs and output artifac
       } = await import('./workspace-repair-engine.js');
       if (repairAction === 'capabilities') {
         let workspacePath: string | undefined;
+        let resolvedProjectPath: string | undefined;
         if (actionOptions.workspace) {
           workspacePath = requireWorkspaceRootForAction('repair capabilities');
         } else {
           try {
-            const resolved = resolveProjectWorkspaceSync({
+            const resolution = resolveProjectWorkspaceSync({
               startPath: process.cwd(),
               strict: false,
-            })?.workspacePath;
-            if (resolved && hasWorkspaceRootMarkers(resolved)) workspacePath = resolved;
+            });
+            if (resolution && hasWorkspaceRootMarkers(resolution.workspacePath)) {
+              workspacePath = resolution.workspacePath;
+              resolvedProjectPath = resolution.projectPath ?? undefined;
+            }
           } catch {
             // Capability discovery is intentionally available without a
             // workspace. Resolution errors only suppress optional local
@@ -9675,6 +9695,7 @@ See the command reference for action-specific required inputs and output artifac
             ? {
                 workspacePath,
                 project: actionOptions.project,
+                projectPath: actionOptions.project ? undefined : resolvedProjectPath,
               }
             : actionOptions.project
               ? { project: actionOptions.project }

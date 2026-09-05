@@ -4,6 +4,7 @@ import path from 'path';
 import fsExtra from 'fs-extra';
 
 import { findWorkspaceRoot } from '../workspace-snapshot.js';
+import { resolveProjectWorkspaceSync } from '../project-workspace-link.js';
 import { buildInfraPlan, writeInfraArtifacts } from '../utils/infra-plan.js';
 import { runDockerComposeCommand, explainDockerFailure } from '../utils/infra-docker.js';
 import { listInfraMappedEnvVars } from '../utils/infra-env.js';
@@ -17,7 +18,11 @@ import { normalizeRegistryPath } from '../utils/registry-path.js';
 import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
 
 export function resolveInfraWorkspacePath(workspacePath?: string): string {
-  const resolved = workspacePath ? path.resolve(workspacePath) : findWorkspaceRoot(process.cwd());
+  const resolved = workspacePath
+    ? path.resolve(workspacePath)
+    : (findWorkspaceRoot(process.cwd()) ??
+      resolveProjectWorkspaceSync({ startPath: process.cwd() })?.workspacePath ??
+      null);
   if (!resolved) {
     throw new Error(
       'Not inside a Workspai workspace. Run from workspace root or pass --workspace.'

@@ -14,9 +14,74 @@ import {
   repairAdaptersForQualificationBoundary,
   selectQualificationLifecycleProjectId,
   selectQualificationProjectId,
+  resolveQualificationProjectPath,
+  summarizeQualificationCoverage,
+  qualificationLeafCommandPaths,
+  qualificationCommandTargets,
+  qualificationInvocationCoversPath,
 } from '../../scripts/qualification-publication-safety.mjs';
 
 describe('qualification report publication safety', () => {
+  it('resolves a relative project against the workspace instead of the caller directory', () => {
+    const workspacePath = path.resolve('isolated-workspace');
+    const expected = path.join(workspacePath, 'services', 'api');
+    expect(
+      resolveQualificationProjectPath({
+        workspacePath,
+        workspaceContract: { projects: [{ relativePath: 'services/api' }] },
+        pathExists: (candidate) => candidate === path.join(expected, '.workspai/project.json'),
+      })
+    ).toBe(expected);
+  });
+
+  it('does not claim verified coverage for missing, failed, or governed-blocked checks', () => {
+    expect(summarizeQualificationCoverage([])).toBe('not-run');
+    expect(summarizeQualificationCoverage([{ accepted: false }])).toBe('failed');
+    expect(
+      summarizeQualificationCoverage([{ accepted: true, acceptanceClass: 'governed-block' }])
+    ).toBe('governed-block');
+    expect(summarizeQualificationCoverage([{ accepted: true, acceptanceClass: 'succeeded' }])).toBe(
+      'verified'
+    );
+  });
+
+  it('derives leaf commands and distinguishes functional execution from parent coverage', () => {
+    const paths = qualificationLeafCommandPaths({
+      commands: [
+        { path: ['change'], hidden: false },
+        { path: ['change', 'begin'], hidden: false },
+        { path: ['change', 'list'], hidden: false },
+        { path: ['hidden'], hidden: true },
+      ],
+    });
+    expect(paths).toEqual([
+      ['change', 'begin'],
+      ['change', 'list'],
+    ]);
+    expect(qualificationInvocationCoversPath(['change', 'begin', '--json'], paths[0])).toBe(true);
+    expect(qualificationInvocationCoversPath(['change', 'list'], paths[0])).toBe(false);
+  });
+
+  it('expands workspace, delegated Core, and runtime-adapter surfaces into auditable targets', () => {
+    const targets = qualificationCommandTargets({
+      runtimeInventory: {
+        commands: [
+          { path: ['workspace'], hidden: false },
+          { path: ['doctor'], hidden: false },
+        ],
+      },
+      workspace: { subcommands: ['model', 'graph'] },
+      commands: { coreBacked: ['modules'], projectScoped: ['build'] },
+    });
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        { path: ['doctor'], owner: 'npm-wrapper', scope: 'command' },
+        { path: ['workspace', 'model'], owner: 'npm-wrapper', scope: 'workspace' },
+        { path: ['modules'], owner: 'python-core', scope: 'core' },
+        { path: ['build'], owner: 'runtime-adapter', scope: 'project' },
+      ])
+    );
+  });
   it('accepts non-zero exits only for explicit commands with governed outcomes', () => {
     expect(qualificationCommandAllowsGovernedBlock(['doctor', 'workspace', '--json'])).toBe(true);
     expect(qualificationCommandAllowsGovernedBlock(['doctor', 'project', '--json'])).toBe(true);
@@ -30,6 +95,7 @@ describe('qualification report publication safety', () => {
       ])
     ).toBe(true);
     expect(qualificationCommandAllowsGovernedBlock(['workspace', 'verify', '--json'])).toBe(true);
+    expect(qualificationCommandAllowsGovernedBlock(['pipeline', '--json'])).toBe(true);
     expect(
       qualificationCommandAllowsGovernedBlock(['workspace', 'graph', 'explain', 'missing'])
     ).toBe(false);

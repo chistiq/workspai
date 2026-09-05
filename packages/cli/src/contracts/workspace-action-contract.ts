@@ -295,12 +295,13 @@ export const WORKSPACE_ACTION_CONTRACTS = {
   },
   goal: {
     usage:
-      'workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--target <percent>] [--json]',
+      'workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--runtime <runtime>] [--target <percent>] [--json]',
     summary: 'Plan, resume, and evidence-verify a durable engineering goal for people and agents.',
     flags: [
       '--workspace',
       '--json',
       '--scope',
+      '--runtime',
       '--target',
       '--allow-breaking',
       '--allow-force',
@@ -310,6 +311,7 @@ export const WORKSPACE_ACTION_CONTRACTS = {
       '--reuse-intelligence',
     ],
     flagDescriptions: {
+      '--runtime': 'Select the runtime measured by a test-coverage goal.',
       '--target': 'Set the required test coverage percentage (0–100).',
     },
     subactions: ['plan', 'status', 'verify'],
@@ -317,13 +319,14 @@ export const WORKSPACE_ACTION_CONTRACTS = {
     examples: [
       'workspai workspace goal plan release-readiness --json',
       'workspai workspace goal plan dependency-security --scope project:api --json',
-      'workspai workspace goal plan test-coverage --scope project:web --target 75 --json',
+      'workspai workspace goal plan test-coverage --scope project:web --runtime node --target 75 --json',
       'workspai workspace goal verify <goal-id> --json',
     ],
   },
   graph: {
     usage: 'workspai workspace graph [mode] [query|from] [to] [--json]',
-    summary: 'Build, query, prove, compare, or export the workspace graph.',
+    summary:
+      'Query and export the canonical Knowledge Graph; explain, dot, and mermaid target the project dependency topology.',
     flags: [
       '--workspace',
       '--json',

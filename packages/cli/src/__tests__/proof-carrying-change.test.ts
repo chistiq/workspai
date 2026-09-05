@@ -316,6 +316,10 @@ describe('proof-carrying change composition', () => {
       expect.objectContaining({ id: 'effects-receipted', status: 'passed' })
     );
     expect(verified.capsule.verification.length).toBeGreaterThan(0);
+    const listed = await listProofCarryingChanges({ workspacePath });
+    expect(listed.changes[0]?.blockers).toContainEqual(
+      expect.stringContaining('independently-verified')
+    );
     await expect(
       validateProofCarryingChangeCapsule({ workspacePath, changeId: begun.changeId })
     ).resolves.toMatchObject({ valid: true });

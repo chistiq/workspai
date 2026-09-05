@@ -62,7 +62,7 @@ import {
   projectMetadataCandidates,
   workspaceMetadataCandidates,
 } from './utils/workspace-paths.js';
-import { readWorkspaceMarker } from './workspace-marker.js';
+import { readWorkspaceMarker, resolveWorkspaceRegistrationName } from './workspace-marker.js';
 import { getProbeTimeoutMs } from './utils/command-timeouts.js';
 import { executableAvailable } from './utils/executable-availability.js';
 import {
@@ -102,6 +102,7 @@ import { buildDoctorGraphDiagnosis } from './utils/doctor-graph-diagnosis.js';
 import type { DoctorGraphDiagnosis } from './contracts/doctor-graph-diagnosis-contract.js';
 import { DOCTOR_SUMMARY_SCHEMA_VERSION } from './contracts/doctor-summary-contract.js';
 import { buildDoctorDiagnosis, type DoctorDiagnosis } from './doctor/index.js';
+import { detectProjectHealthSurface } from './utils/project-health-surface.js';
 import { inferWorkspaceProjectKind } from './utils/project-kind.js';
 import { resolveWorkspaceRegisteredProjects } from './utils/workspace-registry-summary.js';
 import { evaluatePythonVersionConstraint } from './utils/python-version-constraint.js';
@@ -2933,6 +2934,23 @@ function parsePipPackageList(output: string): Array<{ name?: string }> | null {
   }
 }
 
+export function pythonPackageListProvesDependencies(
+  packages: Array<{ name?: string }> | null,
+  frameworkImport: string
+): boolean {
+  const ignored = new Set(['pip', 'setuptools', 'wheel']);
+  const requiredDistribution = frameworkImport.split('.')[0].replaceAll('_', '-').toLowerCase();
+  return (
+    packages?.some((pkg) => {
+      if (typeof pkg.name !== 'string') return false;
+      const packageName = pkg.name.replaceAll('_', '-').toLowerCase();
+      return requiredDistribution
+        ? packageName === requiredDistribution
+        : !ignored.has(packageName);
+    }) ?? false
+  );
+}
+
 async function inspectPythonEnvironment(input: {
   environmentPath: string;
   frameworkImport: string;
@@ -2976,11 +2994,15 @@ async function inspectPythonEnvironment(input: {
         reject: false,
       });
       const packages = parsePipPackageList(`${result.stdout ?? ''}\n${result.stderr ?? ''}`);
-      const ignored = new Set(['pip', 'setuptools', 'wheel']);
-      const dependenciesInstalled =
-        packages?.some(
-          (pkg) => typeof pkg.name === 'string' && !ignored.has(pkg.name.toLowerCase())
-        ) ?? false;
+      // A partially-created environment often contains transitive packaging
+      // libraries even though the application's framework was never
+      // installed. Those packages do not prove dependency materialization.
+      // When a framework import is known, require its distribution metadata as
+      // the portable fallback after the import probe fails.
+      const dependenciesInstalled = pythonPackageListProvesDependencies(
+        packages,
+        input.frameworkImport
+      );
       return { interpreter, coreVersion, dependenciesInstalled };
     } catch {
       return { interpreter, coreVersion, dependenciesInstalled: false };
@@ -3750,22 +3772,7 @@ async function appendBuiltInBackendProbes(
         : 'Add migration tooling baseline (migrations dir or runtime-native migration config).',
   });
 
-  const healthMarkers = [
-    'src/health',
-    'src/healthcheck',
-    'src/main/resources/application.yml',
-    'src/main/resources/application.properties',
-    'app/health.py',
-    'routes/health.ts',
-    'routes/health.js',
-  ];
-  let hasHealthSurface = false;
-  for (const marker of healthMarkers) {
-    if (await fsExtra.pathExists(path.join(projectPath, marker))) {
-      hasHealthSurface = true;
-      break;
-    }
-  }
+  const hasHealthSurface = await detectProjectHealthSurface(projectPath);
 
   const healthIntent =
     hasHealthSurface ||
@@ -9887,7 +9894,7 @@ export async function runDoctor(
         scope: 'project',
         workspace: reportedWorkspacePath
           ? {
-              name: path.basename(reportedWorkspacePath),
+              name: await resolveWorkspaceRegistrationName(reportedWorkspacePath),
               path: reportedWorkspacePath,
             }
           : null,

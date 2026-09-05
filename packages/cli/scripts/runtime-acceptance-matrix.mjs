@@ -644,11 +644,24 @@ function runGlobalCommandScenarios(runDirectory) {
     { id: 'modules.help', command: ['modules', '--help'] },
     { id: 'license.help', command: ['license', '--help'] },
   ]) {
+    const requiresLiveCoreCatalog = new Set([
+      'list',
+      'info.fastapi-standard',
+      'frameworks.help',
+      'modules.help',
+      'license.help',
+    ]).has(id);
     runScenario({
       id: `global.${id}`,
       scope: 'global',
       args: command,
       cwd: globalScenarioCwd,
+      ...(args.contractOnly && requiresLiveCoreCatalog
+        ? {
+            skipReason:
+              'Live Python Core catalog execution is an integration check; commands --json already validates its public contract in contract-only mode.',
+          }
+        : {}),
       expect: args.full ? 'pass' : 'passOrActionableRuntimeFailure',
     });
   }
@@ -1291,6 +1304,7 @@ function isActionableRuntimeFailure(output) {
     /No module named/i,
     /command not found/i,
     /could not execute/i,
+    /failed to run the Python core engine/i,
     /command timed out/i,
     /Cargo command failed/i,
     /PHP lifecycle command failed/i,
@@ -1424,6 +1438,13 @@ function childEnv() {
   env.GOFLAGS = [env.GOFLAGS, '-modcacherw'].filter(Boolean).join(' ');
   if (!args.full && !env.RAPIDKIT_CHILD_COMMAND_TIMEOUT_MS) {
     env.RAPIDKIT_CHILD_COMMAND_TIMEOUT_MS = '60000';
+  }
+  if (args.contractOnly) {
+    // Contract validation must remain offline-safe. A missing Core runtime is
+    // already an accepted, actionable result in this mode; do not spend the
+    // pre-push budget retrying a registry that may intentionally be offline.
+    env.RAPIDKIT_BRIDGE_PIP_RETRY ??= '0';
+    env.RAPIDKIT_BRIDGE_PIP_TIMEOUT_MS ??= '15000';
   }
   return env;
 }

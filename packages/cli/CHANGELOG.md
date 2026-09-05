@@ -5,6 +5,42 @@ All notable changes to Workspai CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Execute polyglot lifecycle stages through direct bounded child processes,
+  report real timeouts as exit 124, treat empty Go tooling modules as skipped,
+  and avoid duplicate CMake execution when an ancestor owns a nested
+  `add_subdirectory` target.
+- Resolve `infra`, snapshots, and repair capability inspection from adopted
+  project directories through their canonical workspace binding. Metadata
+  snapshots now retain canonical contracts, registries, policy/toolchain
+  inputs, and registered external project identities needed for recovery.
+- Accept the documented `--runtime` selector for verified test-coverage goals
+  and keep the generated CLI/extension command contracts aligned.
+- Keep evaluation token efficiency unknown when no usable model measurement
+  exists, classify missing CMake packages as dependency failures, and avoid
+  publishing stale fixed provider-price estimates in `workspai ai info`.
+- Resolve workspace lifecycle targets by their registered names even when the
+  directory basename differs. Reject ambiguous registry aliases and project
+  paths that escape the workspace through symlinks, and preserve the same
+  marker-defined identity across adoption, contracts, Doctor, Goals,
+  remediation plans, snapshots, and agent evidence.
+- Derive qualification coverage from completed checks instead of predeclaring
+  it verified, resolve relative project paths against the workspace, and
+  exercise the complete Goal and proof-carrying change lifecycle.
+- Keep automatically observed nested manifests inside their managed aggregate
+  project boundary. Explicitly registered nested projects remain independent
+  and read their own metadata, preventing parent identity/runtime leakage and
+  self-invalidating Graph fingerprints during adoption.
+
+- Make Graph retrieval reject generic distractors when the named subject has no
+  evidence, infer service-language affinity from matching authored source, and
+  prioritize lifecycle/manifests for build questions. Multi-language Goal
+  constraints retain explicit language anchors, and short search terms no
+  longer collide through ambiguous prefix matching.
+
 ## [0.73.0] - 2026-09-04
 
 ### Added

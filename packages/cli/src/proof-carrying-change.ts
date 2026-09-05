@@ -1499,6 +1499,15 @@ export async function listProofCarryingChanges(input: {
       discoveredWorkspaceName ??= lease.workspace.name;
       const capsule = await buildCapsule({ workspacePath, lease, record });
       const validation = await validateProofCarryingChangeCapsule({ workspacePath, changeId });
+      const transactionBlockers = record.transaction.blockers.map(
+        (blocker) => blocker.details ?? blocker.code
+      );
+      const assuranceBlockers =
+        capsule.status === 'blocked'
+          ? capsule.assurances
+              .filter((assurance) => assurance.status === 'failed')
+              .map((assurance) => `${assurance.id}: ${assurance.summary}`)
+          : [];
       entries.push({
         changeId,
         goalId: lease.goalId,
@@ -1511,7 +1520,7 @@ export async function listProofCarryingChanges(input: {
           passed: capsule.assurances.filter((assurance) => assurance.status === 'passed').length,
           total: capsule.assurances.length,
         },
-        blockers: record.transaction.blockers.map((blocker) => blocker.details ?? blocker.code),
+        blockers: [...new Set([...transactionBlockers, ...assuranceBlockers])],
         capsuleArtifact: pathsFor(changeId).capsule,
         valid: validation.valid,
         errors: validation.errors,

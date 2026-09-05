@@ -10,6 +10,7 @@ import {
   removeImportedProjectsRegistryEntries,
 } from './imported-projects-registry.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
 import { discoverWorkspaceProjects } from './utils/workspace-discovery.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import {
@@ -18,6 +19,8 @@ import {
   workspaceMetadataCandidates,
   workspaceMetadataPath,
 } from './utils/workspace-paths.js';
+import { resolveWorkspaceRegistrationName } from './workspace-marker.js';
+import { resolveProjectWorkspaceSync } from './project-workspace-link.js';
 
 export const WORKSPACE_SNAPSHOT_SCHEMA_V1 = 'rapidkit-workspace-snapshot-v1' as const;
 export const WORKSPACE_SNAPSHOT_SCHEMA_V2 = 'rapidkit-workspace-snapshot-v2' as const;
@@ -172,6 +175,12 @@ interface LifecyclePolicy {
 
 const METADATA_PATHS = [
   '.workspai/workspace.json',
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceRegistry,
+  '.workspai/imported-projects.json',
+  '.workspai/policies.yml',
+  '.workspai/toolchain.lock',
+  '.workspai/cache-config.yml',
   '.workspai-workspace',
   'workspai.config.json',
   'workspai.config.js',
@@ -344,7 +353,11 @@ export function findWorkspaceRoot(startPath = process.cwd()): string | null {
 }
 
 function requireWorkspaceRoot(workspacePath?: string): string {
-  const resolved = workspacePath ? path.resolve(workspacePath) : findWorkspaceRoot(process.cwd());
+  const resolved = workspacePath
+    ? path.resolve(workspacePath)
+    : (findWorkspaceRoot(process.cwd()) ??
+      resolveProjectWorkspaceSync({ startPath: process.cwd() })?.workspacePath ??
+      null);
   if (!resolved) {
     throw new Error(
       'Not inside a Workspai workspace. Run from workspace root or pass --workspace.'
@@ -365,7 +378,7 @@ async function getWorkspaceName(workspacePath: string): Promise<string> {
   const rawName = workspaceJson?.workspace_name ?? workspaceJson?.name;
   return typeof rawName === 'string' && rawName.trim()
     ? rawName.trim()
-    : path.basename(workspacePath);
+    : resolveWorkspaceRegistrationName(workspacePath);
 }
 
 function snapshotsRoot(workspacePath: string): string {
@@ -414,14 +427,40 @@ function shouldCopyPath(workspacePath: string, sourcePath: string): boolean {
 }
 
 async function collectProjects(workspacePath: string): Promise<WorkspaceSnapshotProject[]> {
-  const projects = await discoverWorkspaceProjects(workspacePath, {
+  const discoveredProjects = await discoverWorkspaceProjects(workspacePath, {
     descendIntoMatchedProjects: false,
   });
+  const projects = new Map<string, WorkspaceSnapshotProject>();
+  for (const projectPath of discoveredProjects) {
+    const relativePath = path.relative(workspacePath, projectPath).replace(/\\/g, '/');
+    projects.set(relativePath, { name: path.basename(projectPath), relativePath });
+  }
 
-  return projects.map((projectPath) => ({
-    name: path.basename(projectPath),
-    relativePath: path.relative(workspacePath, projectPath),
-  }));
+  const contract = await safeReadJson(
+    workspaceMetadataCandidates(workspacePath, 'workspace.contract.json').find((candidate) =>
+      existsSync(candidate)
+    ) ?? workspaceMetadataPath(workspacePath, 'workspace.contract.json')
+  );
+  if (Array.isArray(contract?.projects)) {
+    for (const candidate of contract.projects) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      const project = candidate as Record<string, unknown>;
+      const relativePath =
+        typeof project.relativePath === 'string' ? project.relativePath.replace(/\\/g, '/') : '';
+      const name = typeof project.slug === 'string' ? project.slug.trim() : '';
+      if (
+        !relativePath ||
+        !name ||
+        relativePath.startsWith('../') ||
+        path.isAbsolute(relativePath)
+      ) {
+        continue;
+      }
+      projects.set(relativePath, { name, relativePath });
+    }
+  }
+
+  return [...projects.values()].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
 async function copyMetadataPaths(workspacePath: string, filesRoot: string): Promise<string[]> {
@@ -1034,11 +1073,30 @@ async function resolveProjectPath(workspacePath: string, projectRef: string): Pr
     ? path.resolve(normalizedRef)
     : path.resolve(workspacePath, normalizedRef);
 
+  const validateContainedProject = async (candidate: string): Promise<string> => {
+    const [realWorkspace, realProject, stats] = await Promise.all([
+      fsExtra.realpath(workspacePath),
+      fsExtra.realpath(candidate),
+      fsExtra.stat(candidate),
+    ]);
+    const relative = path.relative(realWorkspace, realProject);
+    if (
+      !stats.isDirectory() ||
+      !relative ||
+      relative === '..' ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
+      throw new Error(`Project ${projectRef} is not a directory contained by the workspace.`);
+    }
+    return candidate;
+  };
+
   if (
     absoluteCandidate.startsWith(`${path.resolve(workspacePath)}${path.sep}`) &&
     (await fsExtra.pathExists(absoluteCandidate))
   ) {
-    return absoluteCandidate;
+    return validateContainedProject(absoluteCandidate);
   }
 
   const projects = await discoverWorkspaceProjects(workspacePath, {
@@ -1052,28 +1110,33 @@ async function resolveProjectPath(workspacePath: string, projectRef: string): Pr
 
   if (matches.length === 0) {
     const registeredProjects = await readImportedProjectsRegistry(workspacePath);
-    const registeredMatch = registeredProjects.find((project) => {
+    const registeredMatches = registeredProjects.filter((project) => {
       const relativePath = project.relativePath?.replace(/\\/g, '/');
       return (
         project.name === normalizedRef ||
         relativePath === normalizedRef.replace(/\\/g, '/') ||
-        path.resolve(project.path) === path.resolve(normalizedRef)
+        path.resolve(workspacePath, project.path) === absoluteCandidate
       );
     });
-    if (
-      registeredMatch &&
-      !path.resolve(registeredMatch.path).startsWith(`${path.resolve(workspacePath)}${path.sep}`)
-    ) {
+    const registeredPaths = [
+      ...new Set(registeredMatches.map((project) => path.resolve(workspacePath, project.path))),
+    ];
+    if (registeredPaths.length > 1)
+      throw new Error(`Project reference is ambiguous: ${projectRef}`);
+    const registeredPath = registeredPaths[0];
+    if (registeredPath && !registeredPath.startsWith(`${path.resolve(workspacePath)}${path.sep}`)) {
       throw new Error(
         `Project ${projectRef} is a linked external project and cannot be archived or deleted by workspace lifecycle commands. Only managed projects contained by the workspace support archive/delete; manage the external source or its workspace registration explicitly.`
       );
     }
+    if (registeredPath && (await fsExtra.pathExists(registeredPath)))
+      return validateContainedProject(registeredPath);
     throw new Error(`Project not found in workspace: ${projectRef}`);
   }
   if (matches.length > 1) {
     throw new Error(`Project reference is ambiguous: ${projectRef}`);
   }
-  return matches[0];
+  return validateContainedProject(matches[0]);
 }
 
 async function reconcileWorkspaceProjectsAfterLifecycle(workspacePath: string): Promise<void> {

@@ -2975,7 +2975,7 @@
     },
     {
       "id": "goal",
-      "usage": "workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--target <percent>] [--json]",
+      "usage": "workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--runtime <runtime>] [--target <percent>] [--json]",
       "summary": "Plan, resume, and evidence-verify a durable engineering goal for people and agents.",
       "options": [
         {
@@ -2989,6 +2989,10 @@
         {
           "flag": "--scope",
           "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--runtime",
+          "description": "Select the runtime measured by a test-coverage goal."
         },
         {
           "flag": "--target",
@@ -3028,14 +3032,14 @@
       "examples": [
         "workspai workspace goal plan release-readiness --json",
         "workspai workspace goal plan dependency-security --scope project:api --json",
-        "workspai workspace goal plan test-coverage --scope project:web --target 75 --json",
+        "workspai workspace goal plan test-coverage --scope project:web --runtime node --target 75 --json",
         "workspai workspace goal verify <goal-id> --json"
       ]
     },
     {
       "id": "graph",
       "usage": "workspai workspace graph [mode] [query|from] [to] [--json]",
-      "summary": "Build, query, prove, compare, or export the workspace graph.",
+      "summary": "Query and export the canonical Knowledge Graph; explain, dot, and mermaid target the project dependency topology.",
       "options": [
         {
           "flag": "--workspace",

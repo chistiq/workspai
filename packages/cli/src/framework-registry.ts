@@ -729,11 +729,18 @@ export function categorizeError(
 
   if (!errorPatterns) {
     errorPatterns = {
+      // Check timeouts before broad "failed"/"error" patterns so package
+      // manager and wrapper download failures retain their actionable cause.
+      timeout: ['timed out', 'timeout', 'deadline exceeded', 'SocketTimeoutException'],
+      dependency: [
+        'cannot find module',
+        'import.*error',
+        'Could not find a package configuration file provided by',
+        'CMAKE_PREFIX_PATH',
+      ],
       setup: ['ModuleNotFoundError', 'No module named', 'npm ERR!', 'error:', 'not found'],
       'test-failure': ['FAILED', 'FAIL', 'failed'],
-      dependency: ['cannot find module', 'import.*error'],
       runtime: ['Exception', 'Error:', 'panic', 'TypeError'],
-      timeout: ['timeout', 'Timeout', 'deadline exceeded'],
       unknown: [],
     };
   }

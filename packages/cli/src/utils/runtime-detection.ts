@@ -41,7 +41,10 @@ export function detectBackendRuntime(
   return detectBackendFrameworkFromProject(projectPath, authoredProjectJson).runtime;
 }
 
-export function readRapidkitProjectJson(start: string): RapidkitProjectJson {
+export function readRapidkitProjectJson(
+  start: string,
+  options: { searchParents?: boolean } = {}
+): RapidkitProjectJson {
   let currentPath = start;
 
   while (true) {
@@ -55,6 +58,7 @@ export function readRapidkitProjectJson(start: string): RapidkitProjectJson {
       }
     }
 
+    if (options.searchParents === false) break;
     const parent = path.dirname(currentPath);
     if (parent === currentPath) break;
     currentPath = parent;

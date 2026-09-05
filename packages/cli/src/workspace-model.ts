@@ -677,7 +677,9 @@ async function buildProjectModel(
     contractProject?: WorkspaceContract['projects'][number];
   }
 ): Promise<WorkspaceModelProject> {
-  const projectJson = readRapidkitProjectJson(projectPath);
+  // Discovery already resolved this project's boundary. Ancestor metadata
+  // belongs to another project, even when it contains this directory.
+  const projectJson = readRapidkitProjectJson(projectPath, { searchParents: false });
   const detection = detectBackendFrameworkFromProject(projectPath, projectJson);
   const capabilities = resolveProjectCommandCapabilities(projectPath);
   const runtimeSupport = getRuntimeSupport(detection.runtime);
@@ -1396,7 +1398,18 @@ async function discoverWorkspaceModelInputs(workspacePath: string, observableSca
   }
   const projectPaths = collectUniquePaths([
     ...rapidkitProjectPaths,
-    ...observableProjectPaths,
+    ...observableProjectPaths.filter(
+      (candidate) =>
+        !rapidkitProjectPaths.some((owner) => {
+          const relative = path.relative(owner, candidate);
+          return (
+            relative !== '' &&
+            relative !== '..' &&
+            !relative.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relative)
+          );
+        })
+    ),
     ...contractProjectPaths.keys(),
     ...importedProjects.map((project) =>
       path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)

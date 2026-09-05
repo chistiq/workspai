@@ -775,6 +775,100 @@ describe('workspace knowledge graph', () => {
     ).toBe(true);
   });
 
+  it('extracts proof-carrying HTTP routes from Go Gin, Rust Axum, and ASP.NET source', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-http-routes-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'polyglot-http' },
+      projects: [],
+    });
+    await fsExtra.outputFile(
+      path.join(root, 'go-api', 'internal', 'server.go'),
+      [
+        'package server',
+        '// @Router /api/v1/health/live [get]',
+        'func routes(r *gin.Engine) {',
+        '  r.POST("/api/v1/jobs", createJob)',
+        '}',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'rust-api', 'src', 'main.rs'),
+      [
+        'use axum::{routing::get, Router};',
+        'fn app() -> Router {',
+        '  Router::new().route("/health", get(health))',
+        '}',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'dotnet-api', 'src', 'Program.cs'),
+      [
+        'var app = builder.Build();',
+        'app.MapHealthChecks("/health/live");',
+        'app.MapGet("/api/v1/info", () => Results.Ok());',
+      ].join('\n')
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'polyglot-http' },
+      projects: [
+        { id: 'go-api', path: 'go-api', runtime: 'go', framework: 'gin' },
+        { id: 'rust-api', path: 'rust-api', runtime: 'rust', framework: 'axum' },
+        { id: 'dotnet-api', path: 'dotnet-api', runtime: 'dotnet', framework: 'dotnet' },
+      ],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities
+        .filter((entity) => entity.kind === 'endpoint')
+        .map((entity) => `${entity.projectId}:${entity.label}`)
+        .sort()
+    ).toEqual([
+      'dotnet-api:GET /api/v1/info',
+      'dotnet-api:GET /health/live',
+      'go-api:GET /api/v1/health/live',
+      'go-api:POST /api/v1/jobs',
+      'rust-api:GET /health',
+    ]);
+    for (const endpoint of graph.entities.filter((entity) => entity.kind === 'endpoint')) {
+      const proof = graph.proofs.find((candidate) => endpoint.proofIds.includes(candidate.id));
+      expect(proof).toMatchObject({ provider: 'source-structure', trust: 'observed' });
+      expect(proof?.line).toBeGreaterThan(0);
+    }
+
+    const compound = searchKnowledgeGraph(graph, {
+      query: 'Where is the Axum router and health handler defined?',
+      projectId: 'rust-api',
+      limit: 5,
+    });
+    expect(compound.entities.map((entity) => entity.label)).toContain('GET /health');
+    expect(compound.proofs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ artifact: 'rust-api/src/main.rs', line: 3 }),
+      ])
+    );
+
+    const dotnet = searchKnowledgeGraph(graph, {
+      query: 'Where is the ASP.NET health endpoint mapped?',
+      projectId: 'dotnet-api',
+      limit: 5,
+    });
+    expect(dotnet.entities[0]?.label).toBe('GET /health/live');
+    expect(dotnet.entities.map((entity) => entity.label)).toContain('GET /health/live');
+    expect(dotnet.proofs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ artifact: 'dotnet-api/src/Program.cs', line: 2 }),
+      ])
+    );
+  });
+
   it('resolves local imports against the full fingerprint inventory beyond the extraction window', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-large-imports-'));
     tempDirs.push(root);
@@ -1777,6 +1871,42 @@ describe('workspace knowledge graph', () => {
     ).toBe(false);
   });
 
+  it('does not confuse authentication with authorship while retaining auth identifiers', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities = ['authoredMetadata', 'authorName', 'authMiddleware', 'authorization'].map(
+      (label) => ({
+        id: label,
+        kind: 'symbol',
+        label,
+        projectId: 'api',
+        identity: { key: `symbol:api:${label}`, scope: 'project', aliases: [], fingerprint: label },
+        attributes: {},
+        proofIds: [],
+      })
+    );
+    for (const query of ['authentication', 'authenticate', 'auth']) {
+      const ids = searchKnowledgeGraph(graph, { query, limit: 8 }).entities.map(
+        (entity) => entity.id
+      );
+      expect(ids).not.toContain('authoredMetadata');
+      expect(ids).not.toContain('authorName');
+      expect(ids).toContain('authMiddleware');
+      expect(ids).toContain('authorization');
+    }
+    expect(
+      searchKnowledgeGraph(graph, { query: 'authoredMetadata', limit: 1 }).entities[0]?.id
+    ).toBe('authoredMetadata');
+  });
+
   it('prefers authored source over compiled copies unless generated output is requested', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -2335,6 +2465,118 @@ describe('workspace knowledge graph', () => {
     });
 
     expect(result.entities[0]?.id).toBe('java-tool-definition');
+  });
+
+  it('uses source evidence to constrain service results by requested language', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'demo', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities = [
+      {
+        id: 'java-ad-service',
+        kind: 'service',
+        label: 'ad',
+        projectId: 'demo',
+        identity: { key: 'service:demo:ad', scope: 'project', aliases: [], fingerprint: 'ad' },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'python-recommendation-service',
+        kind: 'service',
+        label: 'recommendation',
+        projectId: 'demo',
+        identity: {
+          key: 'service:demo:recommendation',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'recommendation',
+        },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'java-ad-source',
+        kind: 'file',
+        label: 'src/ad/main/java/AdService.java',
+        projectId: 'demo',
+        identity: {
+          key: 'file:demo:src/ad/main/java/AdService.java',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'java-ad-source',
+        },
+        attributes: { language: 'java' },
+        proofIds: [],
+      },
+      {
+        id: 'python-recommendation-source',
+        kind: 'file',
+        label: 'src/recommendation/service.py',
+        projectId: 'demo',
+        identity: {
+          key: 'file:demo:src/recommendation/service.py',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'python-recommendation-source',
+        },
+        attributes: { language: 'python' },
+        proofIds: [],
+      },
+    ];
+
+    const ids = searchKnowledgeGraph(graph, {
+      query: 'Which services are implemented in Java?',
+      projectId: 'demo',
+      limit: 8,
+    }).entities.map((entity) => entity.id);
+
+    expect(ids).toContain('java-ad-service');
+    expect(ids).toContain('java-ad-source');
+    expect(ids).not.toContain('python-recommendation-service');
+    expect(ids).not.toContain('python-recommendation-source');
+  });
+
+  it('prioritizes build manifests when a caller asks how a named service is built', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'demo', path: 'api', runtime: 'rust', framework: 'rust' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push({
+      id: 'shipping-build-manifest',
+      kind: 'file',
+      label: 'src/shipping/Cargo.toml',
+      projectId: 'demo',
+      identity: {
+        key: 'file:demo:src/shipping/Cargo.toml',
+        scope: 'project',
+        aliases: [],
+        fingerprint: 'shipping-build-manifest',
+      },
+      attributes: {},
+      proofIds: [],
+    });
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'How is the shipping service built?',
+      projectId: 'demo',
+      limit: 8,
+    });
+
+    expect(result.entities[0]?.id).toBe('shipping-build-manifest');
   });
 
   it('hard-bounds every high-cardinality field in the agent search projection', async () => {

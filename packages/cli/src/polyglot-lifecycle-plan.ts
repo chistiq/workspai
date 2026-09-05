@@ -85,6 +85,51 @@ function portableRelative(root: string, target: string): string {
   return path.relative(root, target).split(path.sep).join('/') || '.';
 }
 
+function goMainPackage(root: string): string | null {
+  const candidates = new Set<string>();
+  const visit = (directory: string, depth: number): void => {
+    if (depth > 4) return;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRECTORIES.has(entry.name)) visit(path.join(directory, entry.name), depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.go') || entry.name.endsWith('_test.go'))
+        continue;
+      const file = path.join(directory, entry.name);
+      try {
+        const contents = fs.readFileSync(file, 'utf8');
+        if (/^\s*package\s+main\b/m.test(contents) && /^\s*func\s+main\s*\(/m.test(contents)) {
+          candidates.add(portableRelative(root, directory));
+        }
+      } catch {
+        // An unreadable source file cannot prove a runnable package.
+      }
+    }
+  };
+  visit(root, 0);
+  return candidates.size === 1 ? [...candidates][0] : null;
+}
+
+function hasTomlScript(contents: string, section: string, script: string): boolean {
+  let active = false;
+  for (const line of contents.split(/\r?\n/)) {
+    const header = line.match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/)?.[1]?.trim();
+    if (header !== undefined) {
+      active = header === section;
+      continue;
+    }
+    if (active && new RegExp(`^\\s*${script}\\s*=`).test(line)) return true;
+  }
+  return false;
+}
+
 function listManifests(root: string, maxDepth: number): string[] {
   const manifests: string[] = [];
   const visit = (directory: string, depth: number): void => {
@@ -208,6 +253,35 @@ function isNestedGradleSubproject(projectRoot: string, manifest: string): boolea
     fs.existsSync(path.join(projectRoot, 'settings.gradle')) ||
     fs.existsSync(path.join(projectRoot, 'settings.gradle.kts'))
   );
+}
+
+/**
+ * CMake commonly composes nested CMakeLists files through add_subdirectory.
+ * Those children share the parent's configure/build directory and must not be
+ * executed as independent lifecycle roots. Keep unrelated nested CMake
+ * projects independent unless an ancestor explicitly claims them.
+ */
+function isOwnedCmakeSubproject(projectRoot: string, manifest: string): boolean {
+  if (path.basename(manifest) !== 'CMakeLists.txt') return false;
+  const childRoot = path.dirname(manifest);
+  let ancestor = path.dirname(childRoot);
+  while (ancestor.startsWith(`${projectRoot}${path.sep}`) || ancestor === projectRoot) {
+    const parentManifest = path.join(ancestor, 'CMakeLists.txt');
+    if (fs.existsSync(parentManifest)) {
+      try {
+        const contents = fs.readFileSync(parentManifest, 'utf8');
+        for (const match of contents.matchAll(/add_subdirectory\s*\(\s*["']?([^\s)"']+)/giu)) {
+          const declaredChild = match[1];
+          if (declaredChild && path.resolve(ancestor, declaredChild) === childRoot) return true;
+        }
+      } catch {
+        // An unreadable parent cannot safely claim ownership of the child.
+      }
+    }
+    if (ancestor === projectRoot) break;
+    ancestor = path.dirname(ancestor);
+  }
+  return false;
 }
 
 type WorkspaceBoundary = {
@@ -448,20 +522,33 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
   } else if (name === 'pyproject.toml') {
     runtime = 'python';
     ecosystem = 'python';
+    const poetryManaged = /^\s*\[tool\.poetry\]\s*$/m.test(contents);
+    const hasStartScript =
+      hasTomlScript(contents, 'tool.poetry.scripts', 'start') ||
+      hasTomlScript(contents, 'project.scripts', 'start');
     stages = [
-      stage('init', 'python -m pip install -e .'),
+      stage('init', poetryManaged ? 'poetry install' : 'python -m pip install -e .'),
       ...(fs.existsSync(path.join(root, 'tests')) || /\[tool\.pytest/i.test(contents)
-        ? [stage('test', 'python -m pytest')]
+        ? [stage('test', poetryManaged ? 'poetry run pytest' : 'python -m pytest')]
         : []),
-      ...(/\[build-system\]/.test(contents) ? [stage('build', 'python -m build', 'medium')] : []),
+      ...(/\[build-system\]/.test(contents)
+        ? [stage('build', poetryManaged ? 'poetry build' : 'python -m build', 'medium')]
+        : []),
+      ...(hasStartScript
+        ? [stage('start', poetryManaged ? 'poetry run start' : 'start', 'medium')]
+        : []),
     ];
   } else if (name === 'go.mod') {
     runtime = 'go';
     ecosystem = 'go';
+    const mainPackage = goMainPackage(root);
     stages = [
       stage('init', 'go mod download'),
       stage('test', 'go test ./...'),
       stage('build', 'go build ./...'),
+      ...(mainPackage
+        ? [stage('start', mainPackage === '.' ? 'go run .' : `go run ./${mainPackage}`)]
+        : []),
     ];
   } else if (name === 'Cargo.toml') {
     runtime = 'rust';
@@ -516,6 +603,9 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
       stage('init', `dotnet restore ${name}`),
       ...(testProject ? [stage('test', `dotnet test ${name}`)] : []),
       stage('build', `dotnet build ${name}`),
+      ...(!testProject && /<Project\s+Sdk=["']Microsoft\.NET\.Sdk\.Web["']/i.test(contents)
+        ? [stage('start', `dotnet run --project ${name}`)]
+        : []),
     ];
   } else if (name === 'composer.json') {
     runtime = 'php';
@@ -620,6 +710,7 @@ export function buildPolyglotLifecyclePlan(
   const units = manifests
     .filter((manifest) => !isNestedTestFixtureManifest(projectRoot, manifest))
     .filter((manifest) => !isNestedGradleSubproject(projectRoot, manifest))
+    .filter((manifest) => !isOwnedCmakeSubproject(projectRoot, manifest))
     .filter((manifest) => hasNodeLifecycleEvidence(manifest))
     .filter((manifest) => !isOwnedWorkspaceMember(manifest, nodeBoundaries, 'package.json'))
     .filter((manifest) => !isOwnedWorkspaceMember(manifest, cargoBoundaries, 'Cargo.toml'))

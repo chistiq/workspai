@@ -48,8 +48,11 @@ export interface ProjectMetadata {
   contextJson: RapidkitContextJson;
   detection: BackendFrameworkDetection;
   moduleSupport: boolean;
-  engine: 'npm' | 'pip' | 'python' | 'unknown';
+  engine: ProjectEngine;
 }
+
+export type ProjectEngine =
+  'npm' | 'pip' | 'python' | 'poetry' | 'venv' | 'pipx' | 'uv' | 'unknown';
 
 export function readRapidkitContextJson(projectRoot: string): RapidkitContextJson {
   for (const contextPath of projectMetadataCandidates(projectRoot, 'context.json')) {
@@ -67,7 +70,15 @@ export function readRapidkitContextJson(projectRoot: string): RapidkitContextJso
 
 function readContextEngine(contextJson: RapidkitContextJson): ProjectMetadata['engine'] {
   const engine = contextJson?.engine;
-  if (engine === 'npm' || engine === 'pip' || engine === 'python') {
+  if (
+    engine === 'npm' ||
+    engine === 'pip' ||
+    engine === 'python' ||
+    engine === 'poetry' ||
+    engine === 'venv' ||
+    engine === 'pipx' ||
+    engine === 'uv'
+  ) {
     return engine;
   }
   return 'unknown';

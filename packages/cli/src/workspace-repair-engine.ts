@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { execa } from 'execa';
 import fsExtra from 'fs-extra';
+import { buildPolyglotLifecyclePlan } from './polyglot-lifecycle-plan.js';
 
 import {
   buildArtifactRemediationPlan,
@@ -1814,6 +1815,10 @@ async function detectWorkspaceRepairAdapterIds(
     detected.push('jvm-gradle');
   if ((await exists('deps.edn')) || (await exists('project.clj'))) detected.push('clojure');
   if (await exists('build.sbt')) detected.push('scala-sbt');
+  for (const unit of buildPolyglotLifecyclePlan(projectPath).units) {
+    const adapterId = adapterIdForEcosystem(unit.ecosystem);
+    if (adapterId) detected.push(adapterId);
+  }
   const order = new Map(
     WORKSPACE_REPAIR_ADAPTER_CAPABILITIES.map((capability, index) => [capability.id, index])
   );
@@ -2091,10 +2096,20 @@ export async function inspectWorkspaceRepairCapabilities(
     inspectionPath = matches[0].name;
   } else {
     projectPath = path.resolve(workspacePath, input.projectPath ?? '.');
-    if (!inside(workspacePath, projectPath)) {
-      throw new Error('Repair capability inspection project path escapes the workspace.');
+    if (inside(workspacePath, projectPath)) {
+      inspectionPath = portable(workspacePath, projectPath);
+    } else {
+      const targets = await resolveWorkspaceProjectLensTargets(workspacePath);
+      const match = targets.resolved.find(
+        (target) => path.resolve(target.projectPath) === projectPath
+      );
+      if (!match) {
+        throw new Error(
+          'Repair capability inspection external project is not registered in the workspace.'
+        );
+      }
+      inspectionPath = match.name;
     }
-    inspectionPath = portable(workspacePath, projectPath);
   }
   return {
     ...contract,

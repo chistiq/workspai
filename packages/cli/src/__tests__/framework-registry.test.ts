@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { validateCommand } from '../framework-registry.js';
+import { categorizeError, validateCommand } from '../framework-registry.js';
 
 describe('framework command preflight', () => {
   const tempDirs: string[] = [];
@@ -30,5 +30,13 @@ describe('framework command preflight', () => {
 
     expect(result.valid).toBe(false);
     expect(result.reason).toContain(root);
+  });
+
+  it('classifies missing CMake packages as dependency failures', () => {
+    expect(
+      categorizeError(
+        'Could not find a package configuration file provided by "Protobuf". Add it to CMAKE_PREFIX_PATH.'
+      )
+    ).toBe('dependency');
   });
 });

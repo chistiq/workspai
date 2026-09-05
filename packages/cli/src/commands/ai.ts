@@ -294,10 +294,11 @@ export function registerAICommands(program: Command): void {
       );
       console.log(chalk.gray('  Usage: workspai ai recommend "I need authentication"'));
 
-      console.log(chalk.bold('\n💰 Pricing:\n'));
-      console.log(chalk.white('• Per query: ~$0.0002') + chalk.gray(' (practically free)'));
-      console.log(chalk.white('• 100 queries: ~$0.02') + chalk.gray(' (2 cents)'));
-      console.log(chalk.white('• 1000 queries: ~$0.20') + chalk.gray(' (20 cents)'));
+      console.log(chalk.bold('\n💰 Cost:\n'));
+      console.log(
+        chalk.white('• Provider and model pricing varies; review current pricing before use.')
+      );
+      console.log(chalk.gray('• Workspai does not add a per-query fee to local CLI requests.'));
 
       console.log(chalk.bold('\n🚀 Getting Started:\n'));
       if (!apiKey) {

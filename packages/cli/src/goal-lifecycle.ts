@@ -125,6 +125,25 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
     (goal.sourceBinding.graph.inputHash
       ? currentGraphInputHash === goal.sourceBinding.graph.inputHash
       : currentGraphHash === goal.sourceBinding.graph.hash);
+  let verificationReceiptCurrent = false;
+  if (entry.verificationReceipt && entry.verifiedGoalId) {
+    const receipt = entry.verificationReceipt;
+    const { readVerifiedGoal } = await import('./verified-goal.js');
+    const verified = await readVerifiedGoal(workspacePath, entry.verifiedGoalId).catch(
+      () => undefined
+    );
+    const graphFingerprint = currentGraphInputHash ?? currentGraphHash;
+    verificationReceiptCurrent = Boolean(
+      verified &&
+      receipt.verifiedGoalId === entry.verifiedGoalId &&
+      receipt.attempt === verified.status.attempt &&
+      receipt.statusHash === hashCanonicalJson(verified.status) &&
+      receipt.modelHash === currentModelHash &&
+      receipt.graphFingerprint === graphFingerprint &&
+      receipt.graphFingerprintSemantics ===
+        (currentGraphInputHash ? 'workspace-knowledge-graph-inputs-v1' : 'canonical-json-v1')
+    );
+  }
   if (!originalBindingMatches) {
     const changeTransactionIds =
       entry.changeTransactionIds ?? (entry.changeTransactionId ? [entry.changeTransactionId] : []);
@@ -161,24 +180,7 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
         }
       }
     }
-    if (!sanctioned && entry.verificationReceipt && entry.verifiedGoalId) {
-      const receipt = entry.verificationReceipt;
-      const { readVerifiedGoal } = await import('./verified-goal.js');
-      const verified = await readVerifiedGoal(workspacePath, entry.verifiedGoalId).catch(
-        () => undefined
-      );
-      const graphFingerprint = currentGraphInputHash ?? currentGraphHash;
-      sanctioned = Boolean(
-        verified &&
-        receipt.verifiedGoalId === entry.verifiedGoalId &&
-        receipt.attempt === verified.status.attempt &&
-        receipt.statusHash === hashCanonicalJson(verified.status) &&
-        receipt.modelHash === currentModelHash &&
-        receipt.graphFingerprint === graphFingerprint &&
-        receipt.graphFingerprintSemantics ===
-          (currentGraphInputHash ? 'workspace-knowledge-graph-inputs-v1' : 'canonical-json-v1')
-      );
-    }
+    if (!sanctioned) sanctioned = verificationReceiptCurrent;
     if (!sanctioned) {
       throw new Error(
         `Goal ${entry.id} is stale because its canonical model or graph binding changed outside a closed Goal repair transaction or recorded CLI verification attempt. Regenerate it with --refresh.`
@@ -205,7 +207,10 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
       throw new Error(`Goal measurement evidence escapes its project boundary: ${evidence.path}`);
     }
     const content = await fsExtra.readFile(evidencePath).catch(() => null);
-    if (!content || createHash('sha256').update(content).digest('hex') !== evidence.sha256) {
+    if (
+      (!content || createHash('sha256').update(content).digest('hex') !== evidence.sha256) &&
+      !verificationReceiptCurrent
+    ) {
       throw new Error(
         `Goal ${entry.id} is stale because measurement evidence changed: ${evidence.project}/${evidence.path}`
       );

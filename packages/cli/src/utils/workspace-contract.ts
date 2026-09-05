@@ -39,6 +39,7 @@ import {
   detectBackendFrameworkFromProject,
   isWorkspaiManagedLinkedProjectMetadata,
 } from './backend-framework-contract.js';
+import { readWorkspaceMarker } from '../workspace-marker.js';
 
 export const WORKSPACE_CONTRACT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
 export const WORKSPACE_CONTRACT_VERIFY_REPORT_PATH =
@@ -359,6 +360,8 @@ async function readWorkspaceMetadata(
       // Try the next metadata generation.
     }
   }
+  const marker = await readWorkspaceMarker(workspacePath);
+  if (marker?.name?.trim()) return { name: marker.name.trim() };
   return { name: path.basename(workspacePath) };
 }
 

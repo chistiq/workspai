@@ -582,7 +582,7 @@ export async function buildAgentBootstrapReceipt(input: {
     canonicalMembershipValid ? 'passed' : 'failed',
     canonicalMembershipValid
       ? 'The project and workspace identities agree across the entry, Model, and Graph.'
-      : 'The project or workspace identity is missing or inconsistent in canonical evidence.'
+      : `The project or workspace identity is missing or inconsistent in canonical evidence (entry workspace=${context.workspace.name}, model workspace=${String(modelWorkspace?.name ?? 'missing')}, graph workspace=${String(graphWorkspace?.name ?? 'missing')}, entry project=${context.project.name}, model projects=${modelProjects.map((project) => String(project.name ?? 'missing')).join(',') || 'missing'}, graph projects=${[...new Set(graphEntities.map((entity) => entity.projectId).filter((projectId): projectId is string => typeof projectId === 'string'))].join(',') || 'missing'}).`
   );
 
   const freshnessStatus: AgentEntryCheckStatus =

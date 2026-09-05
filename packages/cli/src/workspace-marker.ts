@@ -7,6 +7,7 @@
  */
 
 import fsExtra from 'fs-extra';
+import path from 'node:path';
 import { legacyWorkspaceMarkerPath, workspaceMarkerPath } from './utils/workspace-paths.js';
 
 export interface WorkspaceMarker {
@@ -104,6 +105,13 @@ export async function readWorkspaceMarker(workspacePath: string): Promise<Worksp
   }
 
   return null;
+}
+
+/** Resolve the canonical registry identity without silently replacing a marker-defined name. */
+export async function resolveWorkspaceRegistrationName(workspacePath: string): Promise<string> {
+  const marker = await readWorkspaceMarker(workspacePath);
+  const markerName = marker?.name?.trim();
+  return markerName || path.basename(path.resolve(workspacePath));
 }
 
 /**

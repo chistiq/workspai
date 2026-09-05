@@ -352,6 +352,8 @@ export async function buildWorkspaceExplain(
           `${entry.project?.name ?? entry.target} (d${entry.distance ?? 0}, via ${entry.via ?? '—'})`
       ) ?? [];
     const subgraph = verify?.affectedSubgraph;
+    const formatProjects = (projects: string[] | undefined): string =>
+      projects && projects.length > 0 ? projects.join(', ') : 'none';
     return {
       schemaVersion: WORKSPACE_EXPLAIN_SCHEMA_VERSION,
       generatedAt,
@@ -381,7 +383,7 @@ export async function buildWorkspaceExplain(
           'gate',
           'Subgraph gate',
           subgraph
-            ? `Directly changed: ${subgraph.directlyChanged}; transitive dependents: ${subgraph.transitiveDependents}; covered: ${subgraph.covered}; uncovered: ${subgraph.uncovered}; unverifiable: ${subgraph.unverifiable}.`
+            ? `Directly changed: ${formatProjects(subgraph.directlyChanged)}; transitive dependents: ${formatProjects(subgraph.transitiveDependents)}; covered: ${formatProjects(subgraph.covered)}; uncovered: ${formatProjects(subgraph.uncovered)}; unverifiable: ${formatProjects(subgraph.unverifiable)}.`
             : 'No verify subgraph coverage available.'
         ),
       ],

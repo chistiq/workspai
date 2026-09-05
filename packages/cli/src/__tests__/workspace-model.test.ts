@@ -639,6 +639,36 @@ describe('workspace intelligence model', () => {
     expect(model.projects[0].importantFiles).toContain('compose.yaml');
   });
 
+  it('keeps inferred nested manifests inside a registered aggregate boundary', async () => {
+    const workspacePath = await makeTempDir('model-project-boundaries-');
+    const parent = path.join(workspacePath, 'suite');
+    await fsExtra.outputJson(path.join(parent, '.workspai/project.json'), {
+      name: 'suite',
+      runtime: 'node',
+      framework: 'node',
+    });
+    await fsExtra.outputFile(
+      path.join(parent, 'libs/worker/pyproject.toml'),
+      '[project]\nname = "worker"\n'
+    );
+    const model = await buildWorkspaceModel({ workspacePath });
+    expect(model.projects.map((project) => project.path)).toEqual(['suite']);
+    expect(new Set(model.projects.map((project) => project.name)).size).toBe(model.projects.length);
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai/workspace.contract.json'), {
+      kind: 'rapidkit.workspace.contract',
+      schemaVersion: 1,
+      workspace: { name: 'boundary-test' },
+      projects: [
+        { slug: 'suite', relativePath: 'suite', contracts: {} },
+        { slug: 'worker', relativePath: 'suite/libs/worker', contracts: {} },
+      ],
+    });
+    const explicit = await buildWorkspaceModel({ workspacePath });
+    expect(explicit.projects.find((project) => project.path === 'suite/libs/worker')).toMatchObject(
+      { name: 'worker', runtime: 'python' }
+    );
+  });
+
   it('publishes bounded nested ecosystem entry manifests for composite roots', async () => {
     const workspacePath = await makeTempDir('rk-model-composite-controls-');
     const projectPath = path.join(workspacePath, 'bindings');

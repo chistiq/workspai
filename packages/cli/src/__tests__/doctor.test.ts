@@ -47,6 +47,21 @@ describe('Doctor Command', () => {
     expect(typeof runDoctor).toBe('function');
   }, 15_000);
 
+  it('does not treat a partially-created Python environment as materialized', async () => {
+    const { pythonPackageListProvesDependencies } = await import('../doctor.js');
+
+    expect(
+      pythonPackageListProvesDependencies(
+        [{ name: 'pip' }, { name: 'anyio' }, { name: 'pydantic-core' }],
+        'fastapi'
+      )
+    ).toBe(false);
+    expect(
+      pythonPackageListProvesDependencies([{ name: 'FastAPI' }, { name: 'pip' }], 'fastapi')
+    ).toBe(true);
+    expect(pythonPackageListProvesDependencies([{ name: 'requests' }], '')).toBe(true);
+  });
+
   it('should fail doctor apply exit code when a fix execution fails', async () => {
     const { computeDoctorFixAwareExitCode } = await import('../doctor.js');
 

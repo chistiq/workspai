@@ -264,6 +264,23 @@ async function validateWrapperStagePreflight(
     };
   }
 
+  // The public wrapper delegates to runtime adapters, whose evidence-backed
+  // command can be more precise than the framework registry's portable
+  // fallback. In particular, Go start resolves an unambiguous main package at
+  // execution time; requiring the registry fallback (`./app`) would reject a
+  // valid source project before the adapter can run it. Preflight the adapter
+  // toolchain here and let the adapter validate stage-specific source state.
+  const adapterExecutables: Partial<Record<RuntimeFamily, string>> = {
+    go: 'go',
+    rust: 'cargo',
+    dotnet: 'dotnet',
+    php: 'php',
+  };
+  const adapterExecutable = adapterExecutables[runtime];
+  if (adapterExecutable) {
+    return validateCommand(adapterExecutable, projectPath);
+  }
+
   const nativeCommand = nativeStageCommand.trim().split(/\s+/)[0];
   if (nativeCommand && ['npm', 'npx', 'pnpm', 'yarn'].includes(nativeCommand)) {
     const invocation = resolvePackageRunnerInvocation(nativeCommand);
@@ -685,16 +702,25 @@ export function resolveWorkspaceRunStageTimeoutMs(stage: string, runtime: Runtim
   return 300_000;
 }
 
-function parseDirectLocalWrapperCommand(command: string): { file: string; args: string[] } | null {
+function parseDirectLifecycleCommand(command: string): { file: string; args: string[] } | null {
   const normalized = command.trim();
-  // Generated Maven/Gradle wrappers are intentionally simple. Execute these
-  // without an intermediate shell so Execa's timeout targets the real wrapper
-  // process instead of leaving a descendant holding stdout/stderr open.
-  if (!/^\.\.?[\\/]/.test(normalized) || /[&|;<>()$`"']/.test(normalized)) {
+  // Manifest-derived lifecycle commands are usually simple argv sequences.
+  // Avoid a shell for those commands so timeout/cancellation targets the real
+  // package manager or toolchain process instead of orphaning a child that
+  // keeps stdout/stderr open. Commands that require shell syntax retain the
+  // compatibility fallback below.
+  if (!normalized || /[&|;<>()$`"'\n\r]/.test(normalized)) {
     return null;
   }
   const [file, ...args] = normalized.split(/\s+/);
-  return file ? { file, args } : null;
+  if (
+    !file ||
+    /^[A-Za-z_][A-Za-z0-9_]*=/.test(file) ||
+    ![file, ...args].every((token) => /^[A-Za-z0-9_./:@%+,=\\-]+$/.test(token))
+  ) {
+    return null;
+  }
+  return { file, args };
 }
 
 function resolvePositiveDuration(name: string, fallback: number): number {
@@ -869,17 +895,51 @@ async function runRapidkitSelfCommand(
     };
   }
 
+  let commandTimedOut = false;
+  let hardKillTimer: NodeJS.Timeout | undefined;
+  let timeoutTimer: NodeJS.Timeout | undefined;
   try {
     const subprocess = execa(process.execPath, [entrypoint, ...args], {
       cwd,
       reject: false,
-      timeout: timeoutMs,
-      forceKillAfterDelay: 1000,
+      // A project wrapper can spawn another package-manager or test process.
+      // Put the nested lifecycle in its own POSIX process group so a timeout
+      // closes descendant-held stdout/stderr pipes instead of leaving the
+      // workspace run hung after its advertised budget.
+      detached: process.platform !== 'win32',
       env: {
         ...process.env,
         RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
       },
     });
+    if (timeoutMs && timeoutMs > 0) {
+      timeoutTimer = setTimeout(() => {
+        commandTimedOut = true;
+        const pid = subprocess.pid;
+        if (!pid) {
+          subprocess.kill('SIGTERM');
+          return;
+        }
+        if (process.platform === 'win32') {
+          void execa('taskkill', ['/pid', String(pid), '/T', '/F'], { reject: false });
+          return;
+        }
+        try {
+          process.kill(-pid, 'SIGTERM');
+        } catch {
+          subprocess.kill('SIGTERM');
+        }
+        hardKillTimer = setTimeout(() => {
+          try {
+            process.kill(-pid, 'SIGKILL');
+          } catch {
+            // The process group already exited.
+          }
+        }, 1_000);
+        hardKillTimer.unref();
+      }, timeoutMs);
+      timeoutTimer.unref();
+    }
     if (streamOutput) {
       subprocess.stdout?.on('data', (chunk) => process.stdout.write(chunk));
       subprocess.stderr?.on('data', (chunk) => process.stderr.write(chunk));
@@ -887,29 +947,36 @@ async function runRapidkitSelfCommand(
     const result = await subprocess;
 
     return {
-      exitCode: Number(result.exitCode ?? 1),
+      exitCode: commandTimedOut ? 124 : Number(result.exitCode ?? 1),
       stdout: result.stdout,
-      stderr: result.stderr,
+      stderr: commandTimedOut
+        ? `${result.stderr ?? ''}${result.stderr ? '\n' : ''}Stage timed out after ${timeoutMs}ms`
+        : result.stderr,
     };
   } catch (error) {
     const timedOut =
-      typeof error === 'object' &&
-      error !== null &&
-      'timedOut' in error &&
-      Boolean((error as { timedOut?: unknown }).timedOut);
+      commandTimedOut ||
+      (typeof error === 'object' &&
+        error !== null &&
+        'timedOut' in error &&
+        Boolean((error as { timedOut?: unknown }).timedOut));
     return {
       exitCode: timedOut ? 124 : 1,
       stdout:
         typeof error === 'object' && error !== null && 'stdout' in error
           ? String((error as { stdout?: unknown }).stdout ?? '')
           : '',
-      stderr:
-        typeof error === 'object' && error !== null && 'stderr' in error
+      stderr: timedOut
+        ? `Stage timed out after ${timeoutMs}ms`
+        : typeof error === 'object' && error !== null && 'stderr' in error
           ? String((error as { stderr?: unknown }).stderr ?? '')
           : error instanceof Error
             ? error.message
             : String(error),
     };
+  } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    if (hardKillTimer) clearTimeout(hardKillTimer);
   }
 }
 
@@ -1090,6 +1157,7 @@ async function executeStageCommand(
 ): Promise<{
   exitCode: number;
   command: string;
+  skipped?: boolean;
   message?: string;
   errorCategory?: ErrorCategory;
   healthStatus?: { healthy: boolean; reason?: string };
@@ -1175,6 +1243,7 @@ async function executeStageCommand(
   let stdout = '';
   let stderr = '';
   let errorCategory: ErrorCategory | undefined;
+  let commandTimedOut = false;
   let healthStatus: { healthy: boolean; reason?: string } | undefined;
   const timeoutMs = resolveWorkspaceRunStageTimeoutMs(stage, runtime);
   const startedAt = Date.now();
@@ -1195,9 +1264,9 @@ async function executeStageCommand(
             ? await runRapidkitInitInProcess(projectPath)
             : await runRapidkitSelfCommand([stage], projectPath, timeoutMs, streamOutput)
           : await (async () => {
-              const directWrapper = parseDirectLocalWrapperCommand(finalCommand);
-              return directWrapper
-                ? execa(directWrapper.file, directWrapper.args, {
+              const directCommand = parseDirectLifecycleCommand(finalCommand);
+              return directCommand
+                ? execa(directCommand.file, directCommand.args, {
                     cwd: projectPath,
                     reject: false,
                     timeout: timeoutMs,
@@ -1212,7 +1281,13 @@ async function executeStageCommand(
                   });
             })();
 
-    exitCode = Number(result.exitCode ?? 0);
+    commandTimedOut = Boolean(
+      typeof result === 'object' &&
+      result !== null &&
+      'timedOut' in result &&
+      (result as { timedOut?: unknown }).timedOut
+    );
+    exitCode = commandTimedOut ? 124 : Number(result.exitCode ?? 0);
     stdout = result.stdout;
     stderr = result.stderr;
     healthStatus =
@@ -1224,11 +1299,12 @@ async function executeStageCommand(
     if (exitCode !== 0) {
       const output = `${stdout}\n${stderr}`;
       const durationMs = Date.now() - startedAt;
+      const categorized = categorizeError(output);
       const timedOut =
+        commandTimedOut ||
         exitCode === 124 ||
-        categorizeError(output) === 'timeout' ||
         (exitCode === 143 && durationMs >= Math.floor(timeoutMs * 0.8));
-      errorCategory = timedOut ? 'timeout' : categorizeError(output);
+      errorCategory = timedOut || categorized === 'timeout' ? 'timeout' : categorized;
     }
   } catch (error) {
     const timedOut =
@@ -1256,9 +1332,22 @@ async function executeStageCommand(
   const outputExcerpt = boundedFailureOutput(combinedOutput);
   const failureSummary = primaryFailureLine(combinedOutput);
   const durationMs = Date.now() - startedAt;
+  const noApplicableGoTests =
+    stage === 'test' &&
+    runtime === 'go' &&
+    exitCode !== 0 &&
+    /(?:matched no packages|no packages to test)/i.test(combinedOutput.join('\n'));
+  if (noApplicableGoTests) {
+    return {
+      exitCode: 0,
+      command: finalCommand,
+      skipped: true,
+      message: 'No Go packages matched; test stage is not applicable to this runtime unit.',
+    };
+  }
   const timedOut =
+    commandTimedOut ||
     exitCode === 124 ||
-    errorCategory === 'timeout' ||
     (exitCode === 143 && durationMs >= Math.floor(timeoutMs * 0.8));
   const normalizedCategory = exitCode === 0 ? undefined : timedOut ? 'timeout' : errorCategory;
   const failureDiagnostic =
@@ -1641,8 +1730,37 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         }));
       row.runtimeExecutions = runtimeExecutions;
 
+      if (!lifecyclePlan.polyglot && !runtimeFilter && runtimeExecutions.length > 0) {
+        const detected = await detectProjectFramework(projectPath);
+        row.framework = detected.framework;
+        row.runtimeDetected = detected.runtime;
+        const configuredCommand = detected.commandOverrides?.[options.stage];
+        const plannedCommand = configuredCommand
+          ? configuredCommand
+          : isWrapperOwnedRuntime(detected.runtime)
+            ? `rapidkit ${options.stage}`
+            : resolveWorkspaceStageCommand({
+                projectPath,
+                runtime: detected.runtime,
+                framework: detected.framework,
+                stage: options.stage,
+              });
+        if (plannedCommand) {
+          const representative = runtimeExecutions[0];
+          runtimeExecutions.splice(0, runtimeExecutions.length, {
+            ...representative,
+            unitId: `project:${detected.runtime}`,
+            root: '.',
+            manifest: plannedUnits.map(({ unit }) => unit.manifest).join(', '),
+            command: plannedCommand,
+          });
+        }
+      }
+
       if (options.planOnly) {
-        row.runtimeDetected = plannedUnits[0]?.unit.runtime;
+        if (!row.runtimeDetected) {
+          row.runtimeDetected = plannedUnits[0]?.unit.runtime;
+        }
         row.status = 'skipped';
         row.reason =
           plannedUnits.length > 0
@@ -1688,7 +1806,11 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
           );
           execution.durationMs = Date.now() - unitStarted;
           execution.exitCode = result.exitCode;
-          execution.status = result.exitCode === 0 ? 'passed' : 'failed';
+          execution.status = result.skipped
+            ? 'skipped'
+            : result.exitCode === 0
+              ? 'passed'
+              : 'failed';
           execution.reason = result.message;
           execution.errorCategory = result.errorCategory;
           execution.failureDiagnostic = result.failureDiagnostic;
@@ -1709,9 +1831,14 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
           .map((execution) => `[${execution.runtime}:${execution.root}] ${execution.command}`)
           .join(' && ');
         row.durationMs = Date.now() - started;
+        const passedUnit = runtimeExecutions.find((execution) => execution.status === 'passed');
         row.exitCode = failedUnit?.exitCode ?? 0;
-        row.status = failedUnit ? 'failed' : 'passed';
-        row.reason = failedUnit ? (firstFailure ?? 'runtime-unit stage failed') : undefined;
+        row.status = failedUnit ? 'failed' : passedUnit ? 'passed' : 'skipped';
+        row.reason = failedUnit
+          ? (firstFailure ?? 'runtime-unit stage failed')
+          : passedUnit
+            ? undefined
+            : 'No applicable runtime unit executed the requested stage';
         row.errorCategory = failedUnit ? (failedUnit.errorCategory ?? 'runtime') : undefined;
         row.errorMessage = row.reason;
         row.failureDiagnostic = failedUnit?.failureDiagnostic;
@@ -1801,7 +1928,11 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       const primaryRuntimeExecution = row.runtimeExecutions?.[0];
       if (primaryRuntimeExecution) {
         primaryRuntimeExecution.command = execResult.command;
-        primaryRuntimeExecution.status = execResult.exitCode === 0 ? 'passed' : 'failed';
+        primaryRuntimeExecution.status = execResult.skipped
+          ? 'skipped'
+          : execResult.exitCode === 0
+            ? 'passed'
+            : 'failed';
         primaryRuntimeExecution.exitCode = execResult.exitCode;
         primaryRuntimeExecution.durationMs = row.durationMs;
         primaryRuntimeExecution.reason = execResult.message;
@@ -1809,7 +1940,10 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         primaryRuntimeExecution.failureDiagnostic = execResult.failureDiagnostic;
       }
 
-      if (execResult.exitCode === 0) {
+      if (execResult.skipped) {
+        row.status = 'skipped';
+        row.reason = execResult.message;
+      } else if (execResult.exitCode === 0) {
         row.status = 'passed';
         row.reason = undefined;
       } else {

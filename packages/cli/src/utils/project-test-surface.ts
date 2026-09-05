@@ -102,6 +102,20 @@ export async function detectProjectTestSurface(
         const runtime = runtimeFromTestFile(entry.name);
         if (runtime) runtimeFamilies.add(runtime);
       }
+      if (!detected && entry.name.toLowerCase().endsWith('.rs')) {
+        try {
+          const contents = await fsExtra.readFile(fullPath, 'utf8');
+          if (
+            /#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]/u.test(contents) ||
+            /#\s*\[\s*(?:[A-Za-z_][\w]*::)?test\s*\]/u.test(contents)
+          ) {
+            detected = true;
+            runtimeFamilies.add('rust');
+          }
+        } catch {
+          // Unreadable source cannot prove an inline Rust test surface.
+        }
+      }
       if (
         /^(?:pytest\.ini|tox\.ini|noxfile\.py|phpunit\.xml(?:\.dist)?|\.rspec)$/i.test(entry.name)
       ) {

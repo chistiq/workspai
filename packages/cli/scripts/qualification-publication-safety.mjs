@@ -17,6 +17,86 @@ const RESERVED_PROJECT_NAMES = new Set([
   'tests',
 ]);
 
+export function resolveQualificationProjectPath({
+  workspacePath,
+  requestedProject,
+  workspaceContract,
+  workspaceModel,
+  importedRegistry,
+  pathExists = existsSync,
+}) {
+  const candidates = [
+    requestedProject,
+    ...(importedRegistry?.projects ?? []).map((project) => project.path),
+    ...(workspaceContract?.projects ?? []).map(
+      (project) => project.externalPath ?? project.relativePath
+    ),
+    ...(workspaceModel?.projects ?? []).map((project) => project.absolutePath ?? project.path),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    const resolved = path.resolve(workspacePath, candidate);
+    if (
+      pathExists(path.join(resolved, '.workspai', 'project.json')) ||
+      pathExists(path.join(resolved, '.rapidkit', 'project.json'))
+    )
+      return resolved;
+  }
+  return null;
+}
+
+export function summarizeQualificationCoverage(records) {
+  if (!records.length) return 'not-run';
+  if (records.some((record) => !record.accepted)) return 'failed';
+  if (records.some((record) => record.acceptanceClass === 'governed-block'))
+    return 'governed-block';
+  return 'verified';
+}
+
+export function qualificationLeafCommandPaths(runtimeInventory) {
+  const commands = Array.isArray(runtimeInventory?.commands)
+    ? runtimeInventory.commands.filter(
+        (command) => command && command.hidden !== true && Array.isArray(command.path)
+      )
+    : [];
+  return commands
+    .filter(
+      (candidate) =>
+        !commands.some(
+          (other) =>
+            other.path.length > candidate.path.length &&
+            candidate.path.every((part, index) => other.path[index] === part)
+        )
+    )
+    .map((command) => command.path.map(String));
+}
+
+export function qualificationCommandTargets(commandSurface) {
+  const targets = qualificationLeafCommandPaths(commandSurface?.runtimeInventory)
+    .filter((commandPath) => commandPath[0] !== 'workspace')
+    .map((path) => ({ path, owner: 'npm-wrapper', scope: 'command' }));
+  for (const subcommand of commandSurface?.workspace?.subcommands ?? []) {
+    targets.push({
+      path: ['workspace', String(subcommand)],
+      owner: 'npm-wrapper',
+      scope: 'workspace',
+    });
+  }
+  for (const command of commandSurface?.commands?.coreBacked ?? []) {
+    targets.push({ path: [String(command)], owner: 'python-core', scope: 'core' });
+  }
+  for (const command of commandSurface?.commands?.projectScoped ?? []) {
+    targets.push({ path: [String(command)], owner: 'runtime-adapter', scope: 'project' });
+  }
+  return [...new Map(targets.map((target) => [target.path.join(' '), target])).values()].sort(
+    (left, right) => left.path.join(' ').localeCompare(right.path.join(' '))
+  );
+}
+
+export function qualificationInvocationCoversPath(invocation, commandPath) {
+  return commandPath.every((part, index) => invocation[index] === part);
+}
+
 const FORBIDDEN_REPORT_KEYS = new Set([
   'argv',
   'cwd',
@@ -83,6 +163,8 @@ export function qualificationCommandAllowsGovernedBlock(argv) {
     command === 'readiness' ||
     command.startsWith('workspace intelligence run') ||
     command.startsWith('workspace verify') ||
+    command.startsWith('workspace goal verify') ||
+    command === 'pipeline' ||
     command.startsWith('workspace why') ||
     command.startsWith('workspace remediation-plan')
   );

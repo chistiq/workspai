@@ -5,6 +5,7 @@ import type {
   WorkspaceKnowledgeProof,
   WorkspaceKnowledgeRelation,
 } from './contracts/workspace-knowledge-graph-contract.js';
+import path from 'node:path';
 
 export const WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION = 'workspace-knowledge-search.v1' as const;
 
@@ -442,6 +443,7 @@ const SEARCH_TOKEN_CANONICAL_FORMS = new Map<string, string>([
   ['authentication', 'auth'],
   ['authorization', 'auth'],
   ['authorizing', 'auth'],
+  ['built', 'build'],
   ['config', 'configuration'],
   ['configs', 'configuration'],
   ['dependencies', 'dependency'],
@@ -501,6 +503,9 @@ function searchDocument(entity: WorkspaceKnowledgeEntity): SearchDocument {
   const identity = normalized(entity.identity.key);
   const aliases = entity.identity.aliases.map(normalized);
   const haystack = searchableEntityText(entity);
+  const labelTokens = new Set(searchTokens(entity.label));
+  const identityTokens = new Set(searchTokens(entity.identity.key));
+  const aliasTokens = new Set(entity.identity.aliases.flatMap(searchTokens));
   return {
     entity,
     label,
@@ -509,17 +514,26 @@ function searchDocument(entity: WorkspaceKnowledgeEntity): SearchDocument {
     haystack,
     // Preserve the original casing until tokenization so identifiers such as
     // CopilotClient remain searchable as both "copilot" and "client".
-    labelTokens: new Set(searchTokens(entity.label)),
-    identityTokens: new Set(searchTokens(entity.identity.key)),
-    aliasTokens: new Set(entity.identity.aliases.flatMap(searchTokens)),
-    allTokens: new Set(searchTokens(haystack)),
+    labelTokens,
+    identityTokens,
+    aliasTokens,
+    allTokens: new Set([
+      ...searchTokens(haystack),
+      ...labelTokens,
+      ...identityTokens,
+      ...aliasTokens,
+    ]),
   };
 }
 
+function matchesSearchPrefix(token: string, term: string): boolean {
+  // Short prefixes are too ambiguous for architecture retrieval (for example
+  // `auth` versus `author`). Short canonical forms still match exact tokens.
+  return term.length >= 5 && token.startsWith(term);
+}
+
 function containsTokenOrPrefix(tokens: ReadonlySet<string>, term: string): boolean {
-  return (
-    tokens.has(term) || (term.length >= 3 && [...tokens].some((token) => token.startsWith(term)))
-  );
+  return tokens.has(term) || [...tokens].some((token) => matchesSearchPrefix(token, term));
 }
 
 function documentMatchesTerm(document: SearchDocument, term: string): boolean {
@@ -602,7 +616,7 @@ function matchedSearchTerms(document: SearchDocument, terms: string[]): number {
     const prefix =
       exact === undefined && term.length >= 3
         ? [...document.allTokens].find(
-            (token) => token.startsWith(term) && !matchedDocumentTokens.has(token)
+            (token) => matchesSearchPrefix(token, term) && !matchedDocumentTokens.has(token)
           )
         : undefined;
     const token = exact ?? prefix;
@@ -698,6 +712,36 @@ function entityLanguage(entity: WorkspaceKnowledgeEntity): string | null {
   return typeof language === 'string' ? normalized(language) : null;
 }
 
+const LANGUAGE_AFFINITY_KINDS = new Set<WorkspaceKnowledgeEntityKind>([
+  'api',
+  'endpoint',
+  'module',
+  'package',
+  'service',
+]);
+
+function inferredLanguageAffinity(
+  document: SearchDocument,
+  documents: SearchDocument[],
+  languages: ReadonlySet<string>
+): number {
+  if (languages.size === 0 || !LANGUAGE_AFFINITY_KINDS.has(document.entity.kind)) return 0;
+  const subjectTerms = [...document.labelTokens].filter(
+    (term) => term.length >= 2 && !isGenericQueryTerm(term)
+  );
+  if (subjectTerms.length === 0) return 0;
+  const supportingDocuments = documents.filter((candidate) => {
+    const language = entityLanguage(candidate.entity);
+    return (
+      language !== null &&
+      languages.has(language) &&
+      candidate.entity.projectId === document.entity.projectId &&
+      subjectTerms.every((term) => candidate.allTokens.has(term))
+    );
+  });
+  return supportingDocuments.length > 0 ? 600 + Math.min(supportingDocuments.length, 10) * 10 : 0;
+}
+
 function projectOverviewScore(entity: WorkspaceKnowledgeEntity): number {
   const priorities: Partial<Record<WorkspaceKnowledgeEntityKind, number>> = {
     project: 1_000,
@@ -724,6 +768,7 @@ const ARCHITECTURE_INTENT_QUERY_TERMS = new Set([
   'bindings',
   'bridge',
   'bridges',
+  'build',
   'dependency',
   'dependencies',
   'depends',
@@ -748,6 +793,10 @@ const ARCHITECTURE_INTENT_QUERY_TERMS = new Set([
   'service',
   'services',
   'api',
+  'endpoint',
+  'endpoints',
+  'route',
+  'routes',
   'rpc',
   'schema',
   'schemas',
@@ -822,6 +871,8 @@ function architectureIntentScore(
     terms.has('doc') || terms.has('docs') || terms.has('document') || terms.has('documentation');
   const hasServiceIntent =
     terms.has('service') || terms.has('services') || terms.has('api') || terms.has('rpc');
+  const hasEndpointIntent =
+    terms.has('endpoint') || terms.has('endpoints') || terms.has('route') || terms.has('routes');
   const hasSchemaIntent =
     terms.has('schema') ||
     terms.has('schemas') ||
@@ -829,6 +880,7 @@ function architectureIntentScore(
     terms.has('protobuf') ||
     terms.has('proto') ||
     terms.has('contract');
+  const hasBuildIntent = terms.has('build');
   const mechanism =
     typeof entity.attributes.mechanism === 'string' ? normalized(entity.attributes.mechanism) : '';
   const specification =
@@ -855,6 +907,26 @@ function architectureIntentScore(
   }
   if (hasDocumentationIntent && ['document', 'decision'].includes(entity.kind)) score += 725;
   if (hasServiceIntent && ['api', 'endpoint', 'service'].includes(entity.kind)) score += 700;
+  if (hasEndpointIntent && entity.kind === 'endpoint') score += 1_000;
+  if (hasBuildIntent) {
+    const artifact =
+      typeof entity.attributes.artifact === 'string' ? entity.attributes.artifact : entity.label;
+    const buildSurface = path.basename(artifact).toLowerCase();
+    const lifecycleStage =
+      typeof entity.attributes.stage === 'string' ? normalized(entity.attributes.stage) : '';
+    if (entity.kind === 'lifecycle-stage' && lifecycleStage === 'build') {
+      score += 1_100;
+    } else if (
+      entity.kind === 'file' &&
+      /^(?:cargo\.toml|composer\.json|dockerfile(?:\..+)?|go\.mod|makefile|package\.json|pom\.xml|pyproject\.toml|requirements[^/]*\.txt)$/u.test(
+        buildSurface
+      )
+    ) {
+      score += 950;
+    } else if (entity.kind === 'package' || entity.kind === 'container') {
+      score += 700;
+    }
+  }
   if (
     hasSchemaIntent &&
     (entity.kind === 'schema' ||
@@ -877,7 +949,9 @@ function hasBroadArchitectureIntent(terms: ReadonlySet<string>): boolean {
     terms.has('deploy') || terms.has('deployment') || terms.has('infrastructure'),
     terms.has('doc') || terms.has('docs') || terms.has('documentation'),
     terms.has('service') || terms.has('api') || terms.has('rpc'),
+    terms.has('endpoint') || terms.has('endpoints') || terms.has('route') || terms.has('routes'),
     terms.has('schema') || terms.has('protobuf') || terms.has('proto') || terms.has('contract'),
+    terms.has('build'),
   ];
   return dimensions.filter(Boolean).length >= 3;
 }
@@ -912,8 +986,17 @@ export function searchKnowledgeGraph(
     (term) => !languageTerms.has(term) && !isGenericQueryTerm(term)
   );
   const broadArchitectureIntent = hasBroadArchitectureIntent(termSet);
-  const defaultMinimumTermMatches =
-    terms.length <= 1 ? terms.length : Math.min(2, Math.ceil(terms.length / 3));
+  // Coordinated questions commonly name complementary graph subjects rather
+  // than synonyms on one entity (for example, "Axum router and health
+  // handler"). Allow each bounded result to satisfy one distinguishing
+  // subject so the result set can carry the answer as a small evidence bundle.
+  // Non-compound queries retain the stricter multi-term relevance threshold.
+  const compoundSubjectQuery = qualifierTerms.length >= 2 && /\b(?:and|or)\b/iu.test(options.query);
+  const defaultMinimumTermMatches = compoundSubjectQuery
+    ? 1
+    : terms.length <= 1
+      ? terms.length
+      : Math.min(2, Math.ceil(terms.length / 3));
   const minimumTermMatches =
     options.minimumTermMatches === undefined
       ? defaultMinimumTermMatches
@@ -953,9 +1036,6 @@ export function searchKnowledgeGraph(
       return [term, Math.log((documents.length + 1) / (documentFrequency + 1)) + 1] as const;
     })
   );
-  const hasQualifierEvidence = qualifierTerms.some((term) =>
-    documents.some((document) => documentMatchesTerm(document, term))
-  );
   const ranked = documents
     .map((document) => {
       const matchedTerms = matchedSearchTerms(document, terms);
@@ -963,6 +1043,8 @@ export function searchKnowledgeGraph(
       const matchedIdentityQualifiers = matchedIdentityTerms(document, qualifierTerms);
       const language = entityLanguage(document.entity);
       const languageBoost = language && languages.has(language) ? 400 : 0;
+      const languageAffinity =
+        language === null ? inferredLanguageAffinity(document, documents, languages) : 0;
       const rawIntentScore = architectureIntentScore(document.entity, termSet);
       // Intent boosts identify the requested entity class, but a generic word
       // such as "schema" must not outrank an entity matching the caller's
@@ -977,23 +1059,31 @@ export function searchKnowledgeGraph(
         matchedTerms,
         matchedQualifiers,
         intentScore,
+        languageAffinity,
         score: scopeOnlyQuery
           ? projectOverviewScore(document.entity)
           : searchScore(document, query, terms, inverseDocumentFrequency) +
             matchedQualifiers * 300 +
             matchedIdentityQualifiers * 400 +
             languageBoost +
+            languageAffinity +
             intentScore -
             generatedOrVendoredPenalty(document.entity, termSet),
       };
     })
     .filter((entry) => {
       const language = entityLanguage(entry.entity);
+      const explicitLanguageAnchor =
+        language !== null && languages.has(language) && entry.entity.kind === 'language';
       return (
-        (languages.size === 0 || language === null || languages.has(language)) &&
+        (languages.size === 0 ||
+          (language !== null && languages.has(language)) ||
+          entry.languageAffinity > 0) &&
         (query.length === 0 ||
           (entry.score > 0 &&
-            (!hasQualifierEvidence || qualifierTerms.length === 0 || entry.matchedQualifiers > 0) &&
+            (qualifierTerms.length === 0 ||
+              entry.matchedQualifiers > 0 ||
+              explicitLanguageAnchor) &&
             (scopeOnlyQuery ||
               entry.matchedTerms >= minimumTermMatches ||
               (entry.intentScore > 0 && (broadArchitectureIntent || terms.length <= 2)))))

@@ -160,6 +160,42 @@ describe('workspace intelligence snapshots and diffs', () => {
     expect(diff.changes).toEqual([]);
   });
 
+  it('classifies project engine changes instead of emitting a ghost structural diff', async () => {
+    const workspacePath = await makeTempDir('rk-intel-engine-diff-');
+    const projectPath = path.join(workspacePath, 'api');
+    await fsExtra.outputJson(path.join(projectPath, '.rapidkit', 'project.json'), {
+      name: 'api',
+      runtime: 'python',
+      kit_name: 'fastapi.standard',
+    });
+    await fsExtra.outputJson(path.join(projectPath, '.rapidkit', 'context.json'), {
+      engine: 'python',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'pyproject.toml'), '[project]\nname="api"\n');
+    const before = await buildWorkspaceModelSnapshot({ workspacePath });
+    const beforePath = await writeWorkspaceModelSnapshot(before, workspacePath);
+
+    await fsExtra.writeJson(
+      path.join(projectPath, '.rapidkit', 'context.json'),
+      { engine: 'poetry' },
+      { spaces: 2 }
+    );
+    const diff = await diffWorkspaceModel({ workspacePath, fromPath: beforePath });
+
+    expect(diff.summary.changed).toBe(true);
+    expect(diff.summary.changedProjects).toBe(1);
+    expect(diff.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'project.changed',
+          target: 'api',
+          before: expect.objectContaining({ engine: 'python' }),
+          after: expect.objectContaining({ engine: 'poetry' }),
+        }),
+      ])
+    );
+  });
+
   it('converts model diff into workspace impact and verification commands', async () => {
     const workspacePath = await makeTempDir('rk-intel-impact-');
     await fsExtra.outputJson(path.join(workspacePath, 'api', '.rapidkit', 'project.json'), {

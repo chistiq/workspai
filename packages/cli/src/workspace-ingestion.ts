@@ -21,6 +21,7 @@ import { syncWorkspaceConsumerArtifacts } from './utils/workspace-onboarding.js'
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { hasWorkspaceRootMarkers, PROJECT_WORKSPACE_LINK_FILE } from './utils/workspace-paths.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
+import { resolveWorkspaceRegistrationName } from './workspace-marker.js';
 
 export interface ConnectWorkspaceOptions {
   workspacePath: string;
@@ -94,7 +95,10 @@ async function reconcileConnectedWorkspace(
   workspacePath: string,
   mode: 'managed' | 'local' | 'off'
 ): Promise<{ writtenFiles: string[]; warnings: string[] }> {
-  await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
+  await registerWorkspaceStrict(
+    workspacePath,
+    await resolveWorkspaceRegistrationName(workspacePath)
+  );
   const syncResult = await syncWorkspaceProjects(workspacePath, true);
   if (!syncResult.workspaceFound) {
     throw new Error(`Workspace registry reconciliation failed: ${workspacePath}`);

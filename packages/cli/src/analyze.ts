@@ -26,6 +26,7 @@ import {
 } from './utils/workspace-paths.js';
 import { inferWorkspaceProjectKind } from './utils/project-kind.js';
 import { detectProjectTestSurface } from './utils/project-test-surface.js';
+import { detectProjectHealthSurface } from './utils/project-health-surface.js';
 import {
   detectProjectGovernance,
   type ProjectGovernanceProfile,
@@ -257,39 +258,6 @@ async function readFirstJsonObject(candidates: string[]): Promise<Record<string,
   return null;
 }
 
-async function hasHealthEndpoint(projectPath: string): Promise<boolean> {
-  const candidatePaths = [
-    'health',
-    'health.ts',
-    'health.js',
-    'health.py',
-    'health.go',
-    'health.kt',
-    'health.rb',
-    'health.php',
-    'healthcheck',
-    'health-check',
-    'src/health.ts',
-    'src/health.js',
-    'src/health.py',
-    'src/health.go',
-    'src/health.kt',
-    'src/health.rb',
-    'src/health.php',
-    'src/healthcheck.ts',
-    'src/healthcheck.js',
-    'src/liveness.ts',
-    'src/readiness.ts',
-    'src/ping.ts',
-    'app/controllers/health_controller.rb',
-    'app/controllers/health_check_controller.rb',
-    'config/initializers/health_check.rb',
-  ];
-  if (await hasAnyPath(projectPath, candidatePaths)) return true;
-  const routes = await readText(path.join(projectPath, 'config', 'routes.rb'));
-  return /(?:health|readiness|liveness|readiness_check|health_check)/iu.test(routes);
-}
-
 async function hasEnvironmentContractIntent(
   projectPath: string,
   projectJson: Record<string, unknown> | null
@@ -412,7 +380,7 @@ async function analyzeProject(
     declaration: contractProject?.governance,
   });
   const hasCiConfig = governance.ci.status === 'repository';
-  const hasHealthEndpointFlag = await hasHealthEndpoint(projectPath);
+  const hasHealthEndpointFlag = await detectProjectHealthSurface(projectPath);
 
   const findings: AnalyzeFinding[] = [];
   if (detection.key === 'unknown') {

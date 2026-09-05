@@ -62,6 +62,18 @@ describe('workspace contract registry', () => {
     });
   });
 
+  it('uses the canonical marker identity when no workspace manifest exists', async () => {
+    const workspacePath = await makeTempDir('rk-contract-marker-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'logical-workspace-name',
+    });
+
+    const contract = await buildWorkspaceContract({ workspacePath });
+
+    expect(contract.workspace.name).toBe('logical-workspace-name');
+  });
+
   it('discovers context.json-only projects when building a workspace contract', async () => {
     const workspacePath = await makeTempDir('rk-contract-context-');
     await fsExtra.outputJson(path.join(workspacePath, 'web-ui', '.rapidkit', 'context.json'), {

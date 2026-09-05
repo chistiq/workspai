@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import {
   readWorkspaceMarker,
+  resolveWorkspaceRegistrationName,
   writeWorkspaceMarker,
   updateWorkspaceMetadata,
   createNpmWorkspaceMarker,
@@ -57,6 +58,27 @@ describe('Workspace Marker', () => {
 
       const result = await readWorkspaceMarker(testDir);
       expect(result).toBeNull();
+    });
+  });
+
+  describe('resolveWorkspaceRegistrationName', () => {
+    it('preserves a marker-defined identity when it differs from the directory name', async () => {
+      await fsExtra.outputJson(path.join(testDir, '.workspai-workspace'), {
+        signature: 'RAPIDKIT_WORKSPACE',
+        name: 'canonical-workspace-name',
+      });
+
+      await expect(resolveWorkspaceRegistrationName(testDir)).resolves.toBe(
+        'canonical-workspace-name'
+      );
+    });
+
+    it('falls back to the directory name for a legacy marker without a name', async () => {
+      await fsExtra.outputJson(path.join(testDir, '.workspai-workspace'), {
+        signature: 'RAPIDKIT_WORKSPACE',
+      });
+
+      await expect(resolveWorkspaceRegistrationName(testDir)).resolves.toBe(path.basename(testDir));
     });
   });
 

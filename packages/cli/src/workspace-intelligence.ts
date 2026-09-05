@@ -369,18 +369,8 @@ export async function writeWorkspaceModelSnapshot(
 }
 
 function projectSignature(project: WorkspaceModelProject): Record<string, unknown> {
-  return {
-    name: project.name,
-    path: project.path,
-    kind: project.kind,
-    category: project.category,
-    runtime: project.runtime,
-    framework: project.framework,
-    generator: project.generator,
-    supportTier: project.supportTier,
-    commands: project.commands,
-    importantFiles: project.importantFiles,
-  };
+  const { evidence: _ignoredLiveEvidence, ...structuralProject } = project;
+  return structuralProject;
 }
 
 function addChange(changes: WorkspaceModelDiffChange[], change: WorkspaceModelDiffChange): void {
@@ -588,8 +578,19 @@ export async function diffWorkspaceModel(
     }
   }
 
-  const gitChangedFiles = changes.filter((change) => change.type.startsWith('git.')).length;
   const modelChanged = previous.hash !== currentHash;
+  if (modelChanged && !changes.some((change) => !change.type.startsWith('git.'))) {
+    addChange(changes, {
+      type: 'workspace.changed',
+      severity: 'warning',
+      target: 'model.structural-hash',
+      message:
+        'Workspace structural identity changed outside the currently classified diff fields.',
+      before: previous.hash,
+      after: currentHash,
+    });
+  }
+  const gitChangedFiles = changes.filter((change) => change.type.startsWith('git.')).length;
   const fromRef = gitRequested
     ? `git:${gitRef ?? 'HEAD'}`
     : path.relative(workspacePath, fromPath).split(path.sep).join('/');

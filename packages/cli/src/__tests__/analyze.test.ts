@@ -189,6 +189,46 @@ describe('analyze command', () => {
     expect(report.findings.some((item) => item.id === 'project.health.missing')).toBe(false);
   });
 
+  it('recognizes nested and inline health/test surfaces in native services', async () => {
+    const workspaceDir = await createTempDir();
+    const rustDir = path.join(workspaceDir, 'rust-api');
+    const goDir = path.join(workspaceDir, 'go-api');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    for (const [projectDir, metadata] of [
+      [rustDir, { name: 'rust-api', runtime: 'rust', framework: 'axum' }],
+      [goDir, { name: 'go-api', runtime: 'go', framework: 'gogin' }],
+    ] as const) {
+      await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, '.workspai', 'project.json'),
+        JSON.stringify(metadata)
+      );
+    }
+    await fs.writeFile(path.join(rustDir, 'Cargo.toml'), '[package]\nname = "rust-api"\n');
+    await fs.mkdir(path.join(rustDir, 'src'), { recursive: true });
+    await fs.writeFile(
+      path.join(rustDir, 'src', 'main.rs'),
+      'fn app() { Router::new().route("/health", get(health)); }\n#[cfg(test)]\nmod tests {}\n'
+    );
+    await fs.writeFile(path.join(goDir, 'go.mod'), 'module example.test/go-api\n');
+    await fs.mkdir(path.join(goDir, 'internal', 'handlers'), { recursive: true });
+    await fs.writeFile(
+      path.join(goDir, 'internal', 'handlers', 'health.go'),
+      'package handlers\n// @Router /health [get]\n'
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+    const rust = report.projects.find((project) => project.name === 'rust-api');
+    const go = report.projects.find((project) => project.name === 'go-api');
+    expect(rust).toMatchObject({ hasTests: true, hasHealthEndpoint: true });
+    expect(go).toMatchObject({ hasHealthEndpoint: true });
+    expect(report.findings.filter((item) => item.id === 'project.health.missing')).toHaveLength(0);
+  });
+
   it('does not invent dotenv or HTTP health contracts for a generic Python application', async () => {
     const workspaceDir = await createTempDir();
     const projectDir = path.join(workspaceDir, 'python-platform');

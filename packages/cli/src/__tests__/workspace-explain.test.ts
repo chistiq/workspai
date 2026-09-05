@@ -419,6 +419,42 @@ describe('workspace explain (Phase 4.B)', () => {
     );
   });
 
+  it('renders empty trace subgraph collections as none', async () => {
+    const diffPath = path.join(workspacePath, 'no-change-diff.json');
+    await fsExtra.outputJson(diffPath, {
+      schemaVersion: 'workspace-model-diff.v1',
+      generatedAt: new Date().toISOString(),
+      fromRef: 'baseline.json',
+      toRef: 'current.json',
+      fromHash: 'same',
+      toHash: 'same',
+      summary: {
+        changed: false,
+        addedProjects: 0,
+        removedProjects: 0,
+        changedProjects: 0,
+        workspaceChanges: 0,
+        validationChanges: 0,
+        gitChangedFiles: 0,
+      },
+      changes: [],
+      currentModel: { schemaVersion: 'workspace-model.v1' },
+    });
+
+    const report = await buildWorkspaceExplain({
+      workspacePath,
+      target: { kind: 'trace', diffRef: diffPath },
+      model: { summary: { projectCount: 1 }, projects: [] } as never,
+      contract: null,
+      verify: verifyFixture({ risk: 'low', affectedProjects: 0, blockers: [] }) as never,
+      impact: null,
+    });
+
+    expect(report.sections.find((section) => section.id === 'gate')?.body).toBe(
+      'Directly changed: none; transitive dependents: none; covered: none; uncovered: none; unverifiable: none.'
+    );
+  });
+
   it('rejects malformed verify evidence instead of narrating unvalidated data', async () => {
     await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_VERIFY_REPORT_PATH), {
       schemaVersion: 'workspace-verify.v1',

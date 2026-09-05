@@ -196,6 +196,90 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(projectPath);
   });
 
+  it('reports the wrapper command that a single-runtime plan will actually execute', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-plan-'));
+    const projectPath = await createProjectWithoutContext(workspacePath, 'go-api');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'go-api',
+      runtime: 'go',
+      framework: 'gogin',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.test/go-api\n');
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      scope: 'project:go-api',
+      planOnly: true,
+      json: true,
+    });
+
+    expect(report.projects.find((item) => item.selected)?.runtimeExecutions?.[0]).toMatchObject({
+      runtime: 'go',
+      command: 'rapidkit test',
+      status: 'planned',
+    });
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('lets the Go runtime adapter resolve start from source without requiring a stale app binary', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-go-start-'));
+    const projectPath = await createProjectWithoutContext(workspacePath, 'go-api');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'go-api',
+      runtime: 'go',
+      framework: 'gogin',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.test/go-api\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'cmd', 'server', 'main.go'),
+      'package main\nfunc main() {}\n'
+    );
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    let settleStart:
+      ((value: { exitCode: number; stdout: string; stderr: string }) => void) | null = null;
+    const startProcess = new Promise<{ exitCode: number; stdout: string; stderr: string }>(
+      (resolve) => {
+        settleStart = resolve;
+      }
+    ) as Promise<{ exitCode: number; stdout: string; stderr: string }> & {
+      kill: ReturnType<typeof vi.fn>;
+    };
+    startProcess.kill = vi.fn(() => {
+      settleStart?.({ exitCode: 143, stdout: 'listening', stderr: '' });
+      return true;
+    });
+    execaMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'which')
+        return Promise.resolve({ exitCode: 0, stdout: '/usr/bin/go', stderr: '' });
+      if (args.includes('start')) return startProcess;
+      return Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' });
+    });
+    process.env.WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS = '10';
+
+    try {
+      const report = await runWorkspaceStage({
+        workspacePath,
+        stage: 'start',
+        scope: 'project:go-api',
+        enforceGates: false,
+        json: true,
+      });
+
+      expect(report.summary).toMatchObject({ passed: 1, failed: 0, exitCode: 0 });
+      expect(report.projects.find((item) => item.selected)).toMatchObject({
+        executionCommand: 'rapidkit start',
+        status: 'passed',
+      });
+      expect(startProcess.kill).toHaveBeenCalledTimes(1);
+      expect(execaMock).not.toHaveBeenCalledWith('which', ['./app'], expect.anything());
+    } finally {
+      delete process.env.WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS;
+      await fsExtra.remove(workspacePath);
+    }
+  });
+
   it('assigns nested runtime units to the most specific selected project boundary', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-overlap-run-model-'));
     const rootProject = path.join(workspacePath, 'repo');
@@ -254,7 +338,7 @@ describe('workspace-run', { timeout: 30_000 }, () => {
       scripts: { build: 'node -e "process.exit(0)"' },
     });
     await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
-    noGateMock();
+    const execaMock = noGateMock();
 
     const report = await runWorkspaceStage({
       workspacePath,
@@ -268,6 +352,12 @@ describe('workspace-run', { timeout: 30_000 }, () => {
       expect.arrayContaining([
         expect.objectContaining({ runtime: 'go', command: 'go build ./...', status: 'passed' }),
         expect.objectContaining({ runtime: 'node', command: 'npm run build', status: 'passed' }),
+      ])
+    );
+    expect(execaMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(['go', ['build', './...']]),
+        expect.arrayContaining(['npm', ['run', 'build']]),
       ])
     );
 
@@ -284,7 +374,7 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
     execaMock.mockImplementation(async (cmd: string, args: string[]) => {
       if ((cmd === 'go' && args.includes('build')) || cmd.includes('go build')) {
-        return { exitCode: 124, stdout: '', stderr: 'operation timed out' };
+        return { exitCode: null, timedOut: true, stdout: '', stderr: '' };
       }
       return { exitCode: 0, stdout: 'ok', stderr: '' };
     });
@@ -305,6 +395,76 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     expect(report.projects[0]?.failureDiagnostic).toMatchObject({
       timedOut: true,
       category: 'timeout',
+    });
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('reports an empty Go test module as skipped instead of a product failure', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-go-tools-test-'));
+    const projectPath = path.join(workspacePath, 'tools');
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.test/tools\n');
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (cmd: string, args: string[]) => {
+      if (cmd === 'go' && args[0] === 'test') {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: 'go: warning: "./..." matched no packages\nno packages to test',
+        };
+      }
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      runtime: 'go',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.runtimeExecutions?.[0]).toMatchObject({
+      runtime: 'go',
+      status: 'skipped',
+      exitCode: 0,
+    });
+    expect(report.projects[0]).toMatchObject({ status: 'skipped', exitCode: 0 });
+    expect(report.summary).toMatchObject({ passed: 0, failed: 0, skipped: 1, exitCode: 0 });
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('separates a tool-reported network timeout from the Workspai process timeout', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-wrapper-timeout-'));
+    const projectPath = path.join(workspacePath, 'service');
+    await fsExtra.outputFile(path.join(projectPath, 'build.gradle'), 'plugins { id "java" }\n');
+    await fsExtra.outputFile(path.join(projectPath, 'gradlew'), '#!/bin/sh\n');
+    await fsExtra.chmod(path.join(projectPath, 'gradlew'), 0o755);
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (cmd: string, args: string[]) => {
+      if (cmd === './gradlew' && args[0] === 'test') {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr:
+            'Downloading distribution failed: java.net.SocketTimeoutException: Read timed out',
+        };
+      }
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      runtime: 'java',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.failureDiagnostic).toMatchObject({
+      category: 'timeout',
+      timedOut: false,
     });
 
     await fsExtra.remove(workspacePath);

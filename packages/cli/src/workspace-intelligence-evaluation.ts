@@ -137,7 +137,12 @@ export function summarizeWorkspaceEvaluation(
     0
   );
   summary.efficiency.tokensPerVerifiedOutcome =
-    summary.outcome.verified && summary.outcome.status === 'passed'
+    summary.outcome.verified &&
+    summary.outcome.status === 'passed' &&
+    summary.tokenSources.providerReported +
+      summary.tokenSources.tokenizerCounted +
+      summary.tokenSources.estimated >
+      0
       ? summary.tokens.observedTotal
       : null;
   return summary;

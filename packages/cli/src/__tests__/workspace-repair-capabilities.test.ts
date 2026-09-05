@@ -160,6 +160,33 @@ describe('Workspace Repair capability contract', () => {
     expect(report.inspection?.detectedAdapters).toEqual(['node', 'python', 'go']);
   });
 
+  it('detects repair adapters at nested polyglot lifecycle boundaries', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-nested-polyglot-')
+    );
+    roots.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, 'platform', 'package.json'), {});
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'platform', 'services', 'checkout', 'go.mod'),
+      'module example.test/checkout\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'platform', 'services', 'shipping', 'Cargo.toml'),
+      '[package]\nname="shipping"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'platform', 'services', 'fraud', 'build.gradle.kts'),
+      'plugins { kotlin("jvm") }\n'
+    );
+
+    const report = await inspectWorkspaceRepairCapabilities({
+      workspacePath,
+      projectPath: 'platform',
+    });
+
+    expect(report.inspection?.detectedAdapters).toEqual(['node', 'go', 'rust', 'jvm-gradle']);
+  });
+
   it('resolves a registered project reference, including an external project, before inspection', async () => {
     const workspacePath = await fsExtra.mkdtemp(
       path.join(os.tmpdir(), 'workspai-repair-registered-project-')
@@ -189,6 +216,11 @@ describe('Workspace Repair capability contract', () => {
     });
     await expect(
       inspectWorkspaceRepairCapabilities({ workspacePath, project: 'external-api' })
+    ).resolves.toMatchObject({
+      inspection: { projectPath: 'external-api', detectedAdapters: ['go'] },
+    });
+    await expect(
+      inspectWorkspaceRepairCapabilities({ workspacePath, projectPath: externalRoot })
     ).resolves.toMatchObject({
       inspection: { projectPath: 'external-api', detectedAdapters: ['go'] },
     });

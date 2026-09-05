@@ -1408,6 +1408,30 @@ describe('CLI Entry Point', () => {
       expect(overlay.stdout).not.toContain('workspace.option.unsupported');
     });
 
+    it('allows the documented runtime selector for test-coverage goals', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-goal-runtime-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+
+      const result = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'workspace',
+          'goal',
+          'plan',
+          'test-coverage',
+          '--runtime',
+          'go',
+          '--target',
+          '80',
+          '--json',
+        ],
+        { cwd: workspaceRoot, reject: false }
+      );
+
+      expect(result.stdout).not.toContain('workspace.option.unsupported');
+    });
+
     it('rejects unknown graph modes before building or emitting the graph', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-graph-unknown-'));
       await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');

@@ -1085,6 +1085,71 @@ const ROUTE_PATTERNS = [
   },
 ] as const;
 
+const GO_ROUTE_PATTERNS = [
+  {
+    pattern: /@Router\s+([^\s]+)\s+\[(?:get|post|put|delete|patch|options|head)\]/i,
+    detail: 'swagger route',
+  },
+  {
+    pattern: /\b[A-Za-z_]\w*\.(?:GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s*\(\s*["']([^"']+)["']/,
+    detail: 'go router route',
+  },
+] as const;
+
+const RUST_ROUTE_PATTERNS = [
+  {
+    pattern:
+      /\.route\s*\(\s*["']([^"']+)["']\s*,\s*(?:routing::)?(?:get|post|put|delete|patch|options|head)\s*\(/i,
+    detail: 'rust router route',
+  },
+] as const;
+
+const DOTNET_ROUTE_PATTERNS = [
+  {
+    pattern: /\b[A-Za-z_]\w*\.Map(?:Get|Post|Put|Delete|Patch|Methods)\s*\(\s*["']([^"']+)["']/i,
+    detail: 'dotnet route',
+  },
+  {
+    pattern: /\b[A-Za-z_]\w*\.MapHealthChecks\s*\(\s*["']([^"']+)["']/i,
+    detail: 'dotnet health route',
+  },
+] as const;
+
+function routePatternsForFile(filePath: string) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === '.go') return [...ROUTE_PATTERNS, ...GO_ROUTE_PATTERNS];
+  if (extension === '.rs') return [...ROUTE_PATTERNS, ...RUST_ROUTE_PATTERNS];
+  if (extension === '.cs') return [...ROUTE_PATTERNS, ...DOTNET_ROUTE_PATTERNS];
+  return ROUTE_PATTERNS;
+}
+
+function inferHttpMethod(routeLine: string, detail: string): string {
+  if (detail === 'swagger route') {
+    return (
+      routeLine.match(/\[(get|post|put|delete|patch|options|head)\]/i)?.[1]?.toUpperCase() ?? 'HTTP'
+    );
+  }
+  if (detail === 'rust router route') {
+    return (
+      routeLine
+        .match(/,\s*(?:routing::)?(get|post|put|delete|patch|options|head)\s*\(/i)?.[1]
+        ?.toUpperCase() ?? 'HTTP'
+    );
+  }
+  if (detail === 'dotnet health route') return 'GET';
+  if (detail === 'dotnet route') {
+    return (
+      routeLine.match(/\.Map(Get|Post|Put|Delete|Patch|Methods)\s*\(/i)?.[1]?.toUpperCase() ??
+      'HTTP'
+    );
+  }
+  return (
+    routeLine
+      .match(/(?:@|\.|\[|^\s*)(get|post|put|delete|patch|options|head)/i)?.[1]
+      ?.toUpperCase() ?? 'HTTP'
+  );
+}
+
 function hash(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -3675,7 +3740,7 @@ const sourceLanguageProvider: Provider = {
 
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
-  version: '1.0.0',
+  version: '1.2.0',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
@@ -3925,14 +3990,12 @@ const sourceStructureProvider: Provider = {
         const extractsHttpRoutes =
           project.framework !== 'vscode-extension' && project.kind !== 'extension';
         for (const route of extractsHttpRoutes
-          ? captureSourceFindings(sourceContents, ROUTE_PATTERNS, 100)
+          ? captureSourceFindings(sourceContents, routePatternsForFile(file), 100)
           : []) {
           const routeLine = contents.split(/\r?\n/)[route.line - 1] ?? '';
-          if (isCommentOnlyRouteMatch(file, routeLine)) continue;
-          const method =
-            routeLine
-              .match(/(?:@|\.|\[|^\s*)(get|post|put|delete|patch|options|head)/i)?.[1]
-              ?.toUpperCase() ?? 'HTTP';
+          if (route.detail !== 'swagger route' && isCommentOnlyRouteMatch(file, routeLine))
+            continue;
+          const method = inferHttpMethod(routeLine, route.detail);
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,

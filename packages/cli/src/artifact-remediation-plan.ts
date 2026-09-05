@@ -20,6 +20,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { executableAvailable } from './utils/executable-availability.js';
+import { resolveWorkspaceRegistrationName } from './workspace-marker.js';
 
 export type ArtifactRemediationRisk = 'safe' | 'guarded' | 'invasive';
 export type ArtifactRemediationMode =
@@ -1699,7 +1700,7 @@ export async function buildArtifactRemediationPlan(input: {
     schemaVersion: ARTIFACT_REMEDIATION_PLAN_SCHEMA_VERSION,
     generatedAt,
     workspace: {
-      name: path.basename(workspacePath),
+      name: await resolveWorkspaceRegistrationName(workspacePath),
       ...(includeAbsolutePaths ? { path: workspacePath } : {}),
     },
     source: {

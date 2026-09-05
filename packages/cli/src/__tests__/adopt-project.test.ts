@@ -58,6 +58,22 @@ afterEach(async () => {
 });
 
 describe('adopt-project', () => {
+  it('retains the canonical marker name when the workspace directory has a different name', async () => {
+    const workspacePath = await makeWorkspace();
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'canonical-workspace',
+    });
+    const projectPath = await makeTempDir('rapidkit-adopt-canonical-workspace-');
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), { name: 'service' });
+
+    const adopted = await adoptProjectIntoWorkspace({ workspacePath, source: projectPath });
+
+    await expect(fsExtra.readJson(adopted.adoptJsonPath)).resolves.toMatchObject({
+      workspace: { name: 'canonical-workspace' },
+    });
+  });
+
   it('adopts an existing local project without moving source files', async () => {
     const workspacePath = await makeWorkspace();
     const projectPath = await makeTempDir('rapidkit-adopt-source-');
