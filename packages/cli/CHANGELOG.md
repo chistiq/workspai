@@ -7,39 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.74.0] - Unreleased
+
+### Added
+
+- Added shared, cross-language health-surface discovery so Analyze, Doctor,
+  Graph, and consumer evidence agree on health endpoints across Go, Python,
+  Rust, .NET, and supported JavaScript frameworks.
+- Extended enterprise workspace qualification to cover the complete Goal and
+  proof-carrying change lifecycle, derive coverage only from completed checks,
+  and prevent internal qualification paths from entering published artifacts.
+
+### Changed
+
+- Execute polyglot lifecycle stages through bounded native child processes,
+  preserve process exit semantics, report timeouts as exit 124, and avoid
+  duplicate ownership-level execution for nested Go and CMake projects.
+- Resolve registered project identities, `infra`, snapshots, repair
+  capabilities, and lifecycle targets through canonical workspace bindings,
+  including callers that start inside an adopted external project.
+- Preserve canonical contracts, registries, policy and toolchain inputs, and
+  external-project identities in recovery snapshots.
+- Make Graph retrieval use authored subject evidence and language affinity,
+  reject generic distractors, prioritize lifecycle evidence for build queries,
+  and keep short terms and multi-language Goal constraints unambiguous.
+- Keep token-efficiency claims unknown without a usable model measurement and
+  remove stale fixed provider-price estimates from `workspai ai info`.
+
 ### Fixed
 
-- Execute polyglot lifecycle stages through direct bounded child processes,
-  report real timeouts as exit 124, treat empty Go tooling modules as skipped,
-  and avoid duplicate CMake execution when an ancestor owns a nested
-  `add_subdirectory` target.
-- Resolve `infra`, snapshots, and repair capability inspection from adopted
-  project directories through their canonical workspace binding. Metadata
-  snapshots now retain canonical contracts, registries, policy/toolchain
-  inputs, and registered external project identities needed for recovery.
 - Accept the documented `--runtime` selector for verified test-coverage goals
   and keep the generated CLI/extension command contracts aligned.
-- Keep evaluation token efficiency unknown when no usable model measurement
-  exists, classify missing CMake packages as dependency failures, and avoid
-  publishing stale fixed provider-price estimates in `workspai ai info`.
-- Resolve workspace lifecycle targets by their registered names even when the
-  directory basename differs. Reject ambiguous registry aliases and project
-  paths that escape the workspace through symlinks, and preserve the same
-  marker-defined identity across adoption, contracts, Doctor, Goals,
-  remediation plans, snapshots, and agent evidence.
-- Derive qualification coverage from completed checks instead of predeclaring
-  it verified, resolve relative project paths against the workspace, and
-  exercise the complete Goal and proof-carrying change lifecycle.
+- Reject ambiguous registry aliases and project paths that escape a workspace
+  through symlinks, while preserving marker-defined identity across adoption,
+  contracts, Doctor, Goals, remediation, snapshots, and agent evidence.
 - Keep automatically observed nested manifests inside their managed aggregate
   project boundary. Explicitly registered nested projects remain independent
   and read their own metadata, preventing parent identity/runtime leakage and
   self-invalidating Graph fingerprints during adoption.
-
-- Make Graph retrieval reject generic distractors when the named subject has no
-  evidence, infer service-language affinity from matching authored source, and
-  prioritize lifecycle/manifests for build questions. Multi-language Goal
-  constraints retain explicit language anchors, and short search terms no
-  longer collide through ambiguous prefix matching.
+- Classify missing CMake packages as dependency failures and make runtime
+  contract acceptance remain offline-safe instead of timing out while probing
+  optional Python Core catalog commands.
+- Prevent generated Goal evidence and workspace snapshots from invalidating
+  their own Graph fingerprints during verification.
 
 ## [0.73.0] - 2026-09-04
 

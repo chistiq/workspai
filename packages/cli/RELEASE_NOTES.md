@@ -5,48 +5,60 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.73.0 (September 4, 2026)
+## Planned Release: v0.74.0 (publication pending)
+
+### Proof-backed Polyglot Workspace Execution
+
+Workspai 0.74.0 hardens the complete Model-to-Graph-to-Goal-to-PCC lifecycle
+across adopted and generated polyglot workspaces. Native execution, canonical
+project identity, recovery snapshots, health evidence, and consumer outputs now
+share one verified boundary and preserve real host or dependency blockers.
+
+**What's New:**
+
+- Bounded native lifecycle execution reports actual exit codes, terminates
+  timed-out process trees, and preserves actionable missing-toolchain evidence.
+- Canonical workspace identity now remains consistent from an adopted external
+  project through Doctor, Goals, repair, snapshots, recovery, and agent output.
+- Analyze and Doctor share cross-language health-surface evidence across Go,
+  Python, Rust, .NET, and supported JavaScript service patterns.
+- Graph retrieval uses authored subject evidence, stable language affinity, and
+  lifecycle-aware ranking while rejecting generic keyword distractors.
+- Goal and proof-carrying change qualification covers authorization, effects,
+  re-observation, verification, and publication-safety evidence.
+- Consumer output keeps unmeasured efficiency unknown and no longer publishes
+  stale fixed AI-provider price estimates.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, Doctor, Snapshot, and agent contracts remain supported. No
+public command, schema version, or canonical artifact path is removed. Stricter
+identity validation may reject ambiguous registry aliases and workspace-escape
+paths that older versions accepted implicitly.
+
+**Publication status:** Prepared September 5, 2026; not yet published.
+
+**Install after publication:**
+
+```bash
+npm install -g workspai@0.74.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.74.0.md)
+
+---
+
+## v0.73.0 (September 4, 2026)
 
 ### Reliable Polyglot Intelligence and Bounded Agent Context
 
 Workspai 0.73.0 strengthens the complete adoption-to-agent loop across large
 and nested polyglot repositories. Framework detection, project topology, Graph
-retrieval, Goal and Change addressing, and bounded consumer context now remain
+retrieval, Goal and Change addressing, and bounded consumer context remain
 consistent when repositories overlap, callers run outside project directories,
 or canonical Graph evidence contains more findings than an agent lens can hold.
 
-**What's New:**
-
-- Node.js retrieval treats JavaScript and TypeScript as one runtime family and
-  ranks direct authored identities above generated or incidental matches.
-- Aggregate repositories no longer infer false dependency cycles through their
-  explicitly registered nested project boundaries.
-- Explicit Workspace, Goal, and Change scopes work from CI, IDE, MCP, and other
-  external callers without artificial current-directory coupling.
-- Project Agent Context enforces its existing 16-diagnostic budget without
-  losing canonical evidence: retained findings stay deterministic and a final
-  diagnostic points consumers to the complete Workspace Graph set.
-- Managed adoption metadata is refreshed from live repository evidence, and a
-  Vitest-only Node SDK is no longer promoted to a Vite application.
-- Contributor routing is machine-readable and freshness-checked, while
-  path-aware and daily-reused CI avoids unrelated heavyweight validation.
-- Security workflows use explicit least-privilege permissions and the patched
-  `fast-uri` dependency.
-
-**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
-Live, MCP, Repair, Doctor, and agent contracts remain supported. The Project
-Agent Context diagnostic ceiling is unchanged; producers now enforce it and
-preserve a pointer to the complete canonical evidence. No public command, flag,
-schema version, or artifact path is removed.
-
 **Publication status:** Released September 4, 2026.
-
-**Install:**
-
-```bash
-npm install -g workspai@0.73.0
-workspai --version
-```
 
 [Full Release Notes](https://github.com/chistiq/workspai/blob/v0.73.0/packages/cli/releases/RELEASE_NOTES_v0.73.0.md)
 
