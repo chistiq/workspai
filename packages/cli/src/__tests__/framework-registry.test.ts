@@ -39,4 +39,14 @@ describe('framework command preflight', () => {
       )
     ).toBe('dependency');
   });
+
+  it('classifies external resource fetch failures as dependencies, not test failures', () => {
+    const output = [
+      'Build error occurred',
+      'Error: Turbopack build failed with 2 errors:',
+      'Failed to fetch Geist from Google Fonts.',
+    ].join('\n');
+
+    expect(categorizeError(output, undefined, 'build')).toBe('dependency');
+  });
 });

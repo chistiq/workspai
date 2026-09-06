@@ -1419,6 +1419,20 @@ describe('Runtime Adapters', () => {
       expect(run).toHaveBeenCalledWith('yarn', ['run', 'build'], '/tmp/node-project');
     });
 
+    it('returns an actionable native command when a lifecycle script fails silently', async () => {
+      const run = vi.fn().mockResolvedValue(1);
+      const adapter = new NodeRuntimeAdapter(run);
+      mockNodePackageScripts('/tmp/node-project', { build: 'next build' }, 'package-lock.json');
+
+      const result = await adapter.runBuild('/tmp/node-project');
+
+      expect(result).toMatchObject({
+        exitCode: 1,
+        message: expect.stringContaining('npm run build'),
+      });
+      expect(result.message).toContain('/tmp/node-project');
+    });
+
     it('uses Bun for a Bun-locked package script and restores its cache environment', async () => {
       process.env.RAPIDKIT_DEP_SHARING_MODE = 'shared-runtime-caches';
       process.env.RAPIDKIT_WORKSPACE_PATH = '/tmp/workspace';

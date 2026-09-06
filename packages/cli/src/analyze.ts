@@ -239,6 +239,35 @@ async function hasAnyPath(projectPath: string, candidates: string[]): Promise<bo
   return false;
 }
 
+async function hasNestedNamedPath(
+  projectPath: string,
+  names: ReadonlySet<string>,
+  maxDepth = 4
+): Promise<boolean> {
+  const visit = async (directory: string, depth: number): Promise<boolean> => {
+    if (depth > maxDepth) return false;
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && names.has(entry.name.toLowerCase())) return true;
+      if (
+        entry.isDirectory() &&
+        !entry.isSymbolicLink() &&
+        !PROJECT_SKIP_DIRS.has(entry.name) &&
+        (await visit(path.join(directory, entry.name), depth + 1))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return visit(projectPath, 0);
+}
+
 async function hasAnyAbsolutePath(candidates: string[]): Promise<boolean> {
   for (const candidate of candidates) {
     if (await pathExists(candidate)) {
@@ -354,7 +383,8 @@ async function analyzeProject(
     runtime,
     framework: detection.key,
   });
-  const requiresDeploymentSurface = ['backend', 'service', 'worker'].includes(projectKind);
+  const requiresDeploymentSurface = ['backend', 'service', 'worker', 'agent'].includes(projectKind);
+  const requiresContainerSurface = ['backend', 'service', 'worker'].includes(projectKind);
   const requiresHttpHealthSurface =
     requiresDeploymentSurface &&
     /^(?:fastapi|django|flask|nestjs|express|fastify|springboot|gofiber|gogin|dotnet-webapi|laravel|rails|phoenix|axum|actix|rocket)$/u.test(
@@ -369,11 +399,9 @@ async function analyzeProject(
   ]);
   const hasTests = await hasTestFiles(projectPath);
   const hasDockerfile = await hasAnyPath(projectPath, ['Dockerfile', 'dockerfile']);
-  const hasEnvExample = await hasAnyPath(projectPath, [
-    '.env.example',
-    'env.example',
-    'config/env.example',
-  ]);
+  const hasEnvExample =
+    (await hasAnyPath(projectPath, ['.env.example', 'env.example', 'config/env.example'])) ||
+    (await hasNestedNamedPath(projectPath, new Set(['.env.example', 'env.example'])));
   const hasEnvContractIntent = await hasEnvironmentContractIntent(projectPath, projectJson);
   const governance = await detectProjectGovernance({
     projectPath,
@@ -474,7 +502,7 @@ async function analyzeProject(
       )
     );
   }
-  if (requiresDeploymentSurface && !hasDockerfile) {
+  if (requiresContainerSurface && !hasDockerfile) {
     findings.push(
       finding(
         'project.container.missing',

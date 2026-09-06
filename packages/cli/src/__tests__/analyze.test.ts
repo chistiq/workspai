@@ -139,6 +139,44 @@ describe('analyze command', () => {
     );
   });
 
+  it('recognizes an isolated agent environment example without requiring a root secret file', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'agent-app');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({
+        name: 'agent-app',
+        kind: 'agent',
+        runtime: 'python',
+        framework: 'microsoft-agent-framework',
+        contracts: { env: ['FOUNDRY_PROJECT_ENDPOINT'] },
+      })
+    );
+    await fs.mkdir(path.join(projectDir, 'agents', 'primary'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\n'
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'agents', 'primary', '.env.example'),
+      'FOUNDRY_PROJECT_ENDPOINT=https://example.invalid\n'
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0]?.hasEnvExample).toBe(true);
+    expect(report.findings.map((finding) => finding.id)).not.toContain(
+      'project.env.example.missing'
+    );
+    expect(report.findings.map((finding) => finding.id)).not.toContain('project.container.missing');
+  });
+
   it('generates a workspace analysis report with project health and CI detection', async () => {
     const workspaceDir = await createTempDir();
     const projectDir = path.join(workspaceDir, 'service-a');

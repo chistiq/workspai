@@ -106,6 +106,11 @@ export interface AgentFrameworkAdapter {
 const OWNERSHIP_MARKER = 'Generated and managed by Workspai';
 
 export function normalizedAgentInstanceName(value: string): string {
+  if (/[\\/\0-\x1f\x7f]/u.test(value) || value.trim() === '.' || value.trim() === '..') {
+    throw new Error(
+      'Agent instance name must be a human-readable name, not a path or control sequence.'
+    );
+  }
   const normalized = value
     .trim()
     .toLowerCase()

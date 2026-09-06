@@ -160,7 +160,10 @@ export function readProjectMetadata(projectRoot: string): ProjectMetadata | null
     return null;
   }
 
-  const projectJson = readRapidkitProjectJson(resolvedRoot);
+  // A discovered project boundary owns only its own metadata. Parent lookup
+  // here can silently replace a nested/external project's authored identity
+  // with an unrelated workspace ancestor.
+  const projectJson = readRapidkitProjectJson(resolvedRoot, { searchParents: false });
   const contextJson = readRapidkitContextJson(resolvedRoot);
   const detection = resolveDetection(resolvedRoot, projectJson, contextJson);
 

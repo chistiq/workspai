@@ -2,6 +2,35 @@ import { listFrontendGenerators } from '../frontend-project.js';
 import { listOfficialProjectGenerators } from '../official-project.js';
 import { listInteractiveKits, type KitDefinition } from '../utils/kit-registry.js';
 import type { PromptChoice } from './prompts.js';
+import { listAgentFrameworkProjectKits } from '../agent-frameworks/project-kits.js';
+
+export const CREATE_KIT_CATEGORY_IDS = [
+  'backend',
+  'frontend',
+  'desktop',
+  'agent',
+  'extension',
+  'gaming',
+] as const;
+
+export type CreateKitCategoryId = (typeof CREATE_KIT_CATEGORY_IDS)[number];
+
+export type CategorizedKitChoice = PromptChoice<string> & {
+  category: CreateKitCategoryId;
+};
+
+const CREATE_KIT_CATEGORIES: ReadonlyArray<{
+  id: CreateKitCategoryId;
+  label: string;
+  hint: string;
+}> = [
+  { id: 'backend', label: 'Backend', hint: 'APIs and services' },
+  { id: 'frontend', label: 'Frontend', hint: 'Web applications' },
+  { id: 'desktop', label: 'Desktop', hint: 'Native desktop applications' },
+  { id: 'agent', label: 'AI Agent', hint: 'Governed agent runtimes' },
+  { id: 'extension', label: 'Extension', hint: 'Editor and platform extensions' },
+  { id: 'gaming', label: 'Gaming', hint: 'Game runtimes and tooling' },
+];
 
 function kitPickerLabel(kit: KitDefinition): string {
   const separator = ' — ';
@@ -12,19 +41,34 @@ function kitPickerLabel(kit: KitDefinition): string {
   return kit.label.trim();
 }
 
-export function buildKitPickerChoices(): PromptChoice<string>[] {
-  const backendChoices = listInteractiveKits().map((kit) => ({
-    value: kit.id,
-    label: `${categoryLabel(kit.category)} · ${kitPickerLabel(kit)}`,
-    hint: `${kit.runtime} · tested baseline`,
-    name: kit.label,
-  }));
+function createCategoryForKit(kit: KitDefinition): CreateKitCategoryId | null {
+  return CREATE_KIT_CATEGORY_IDS.includes(kit.category as CreateKitCategoryId)
+    ? (kit.category as CreateKitCategoryId)
+    : null;
+}
+
+export function buildKitPickerChoices(category?: CreateKitCategoryId): CategorizedKitChoice[] {
+  const registeredChoices = listInteractiveKits().flatMap((kit) => {
+    const kitCategory = createCategoryForKit(kit);
+    return kitCategory
+      ? [
+          {
+            value: kit.id,
+            label: `${categoryLabel(kitCategory)} · ${kitPickerLabel(kit)}`,
+            hint: `${kit.runtime} · tested baseline`,
+            name: kit.label,
+            category: kitCategory,
+          },
+        ]
+      : [];
+  });
 
   const frontendChoices = listFrontendGenerators().map((generator) => ({
     value: generator.kitId,
     label: `Frontend · ${generator.displayName}`,
     hint: 'official · latest stable',
     name: `${generator.displayName} — ${generator.framework}`,
+    category: 'frontend' as const,
   }));
 
   const officialChoices = listOfficialProjectGenerators().map((generator) => ({
@@ -32,20 +76,39 @@ export function buildKitPickerChoices(): PromptChoice<string>[] {
     label: `${categoryLabel(generator.category)} · ${generator.displayName}`,
     hint: `${generator.runtimeCandidates.join(' + ')} · official latest stable`,
     name: `${generator.displayName} — ${generator.category}`,
+    category: generator.category as Extract<
+      CreateKitCategoryId,
+      'backend' | 'desktop' | 'extension'
+    >,
   }));
 
-  const choices = [...backendChoices, ...frontendChoices, ...officialChoices].sort(
-    (left, right) => {
-      const categoryOrder = ['Backend', 'Frontend', 'Desktop', 'Extension'];
-      const leftCategory = left.label?.split(' · ')[0] ?? '';
-      const rightCategory = right.label?.split(' · ')[0] ?? '';
-      const categoryDelta =
-        categoryOrder.indexOf(leftCategory) - categoryOrder.indexOf(rightCategory);
+  const agentChoices = listAgentFrameworkProjectKits().map((kit) => ({
+    value: kit.id,
+    label: `AI Agent · ${kit.label}`,
+    hint: `${kit.runtime} · release-admitted baseline`,
+    name: kit.label,
+    category: 'agent' as const,
+  }));
+
+  const choices = [...registeredChoices, ...frontendChoices, ...officialChoices, ...agentChoices]
+    .filter((choice) => !category || choice.category === category)
+    .sort((left, right) => {
+      const leftCategory = CREATE_KIT_CATEGORY_IDS.indexOf(left.category);
+      const rightCategory = CREATE_KIT_CATEGORY_IDS.indexOf(right.category);
+      const categoryDelta = leftCategory - rightCategory;
       return categoryDelta || (left.label ?? '').localeCompare(right.label ?? '');
-    }
-  );
+    });
   assertUniqueKitPickerLabels(choices);
   return choices;
+}
+
+export function buildKitCategoryChoices(): PromptChoice<CreateKitCategoryId>[] {
+  const available = new Set(buildKitPickerChoices().map((choice) => choice.category));
+  return CREATE_KIT_CATEGORIES.filter((category) => available.has(category.id)).map((category) => ({
+    value: category.id,
+    label: category.label,
+    hint: category.hint,
+  }));
 }
 
 function categoryLabel(category: string): string {

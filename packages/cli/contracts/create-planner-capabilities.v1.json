@@ -110,6 +110,30 @@
       "versionPolicy": "tested-baseline",
       "moduleSupport": false,
       "workspacePythonEngine": "none"
+    },
+    {
+      "id": "agent.microsoft.python",
+      "runtime": "python",
+      "framework": "microsoft-agent-framework",
+      "plannerFramework": "microsoft-agent-framework",
+      "category": "agent",
+      "owner": "workspai",
+      "stability": "stable",
+      "versionPolicy": "tested-baseline",
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
+    },
+    {
+      "id": "agent.microsoft.dotnet",
+      "runtime": "dotnet",
+      "framework": "microsoft-agent-framework",
+      "plannerFramework": "microsoft-agent-framework",
+      "category": "agent",
+      "owner": "workspai",
+      "stability": "stable",
+      "versionPolicy": "tested-baseline",
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
     }
   ],
   "officialCreate": [

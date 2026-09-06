@@ -5,7 +5,53 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.74.0 (September 5, 2026)
+## Latest Release: v0.75.0 (September 6, 2026)
+
+### Governed Agent Framework Workspaces
+
+Workspai 0.75.0 introduces a governed, framework-neutral foundation for AI
+agent projects and admits Microsoft Agent Framework projects for Python and
+.NET through the same Model, Graph, Goal, Proof-Carrying Change, lifecycle, and
+verification boundaries used by the rest of the Workspace.
+
+**What's New:**
+
+- Create Microsoft Agent Framework Python and .NET projects from the dedicated
+  AI Agent category without installing dependencies or calling a model.
+- Plan, attach, and apply framework integrations through scoped Goals,
+  authorization, managed-file ownership, typed effects, and PCC evidence.
+- Resolve only release-admitted framework versions backed by an exact
+  cross-platform conformance receipt; upstream discovery proposes updates but
+  cannot silently promote them.
+- Model nested agent runtimes as real Python and .NET lifecycle units, with
+  deterministic build, test, and start capabilities based on authored
+  evidence.
+- Preserve byte-accurate PCC baselines so Graph provider churn is not reported
+  as a user file mutation, while real additions, edits, and deletions remain
+  fail-closed.
+- Preserve actionable lifecycle diagnostics across nested package-manager
+  processes and provide the exact native rerun command when a tool emits no
+  capturable output.
+
+**Compatibility:** Existing Model, Graph, Goal, Decisions, PCC, Live, MCP,
+Repair, Doctor, Snapshot, and agent contracts remain supported. Agent Framework
+support is additive. Existing projects and official framework kits are not
+rewritten, and no public command or canonical artifact path is removed.
+
+**Publication status:** Released September 6, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.75.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.75.0/packages/cli/releases/RELEASE_NOTES_v0.75.0.md)
+
+---
+
+## v0.74.0 (September 5, 2026)
 
 ### Proof-backed Polyglot Workspace Execution
 

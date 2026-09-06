@@ -1,6 +1,6 @@
 {
   "name": "workspai",
-  "version": "0.74.0",
+  "version": "0.75.0",
   "type": "module",
   "description": "Open-source workspace intelligence CLI for software systems: create, adopt, govern, verify, and align polyglot workspaces for humans, CI, IDEs, and AI agents.",
   "keywords": [
@@ -116,6 +116,9 @@
     "test:agent-framework:python": "tsx scripts/smoke-microsoft-agent-framework-adapter.ts --runtime python",
     "test:agent-framework:dotnet": "tsx scripts/smoke-microsoft-agent-framework-adapter.ts --runtime dotnet",
     "verify:agent-framework:matrix": "tsx scripts/verify-agent-framework-conformance.ts --reports test-results/agent-framework-conformance",
+    "discover:agent-framework:versions": "tsx scripts/discover-agent-framework-versions.ts",
+    "propose:agent-framework:versions": "tsx scripts/propose-agent-framework-version-update.ts",
+    "promote:agent-framework:admission": "tsx scripts/promote-agent-framework-release-admission.ts",
     "prepush:test:runtime-contract": "node scripts/run-cached-prepush-gate.mjs runtime-contract",
     "test:runtime-matrix:full": "node scripts/runtime-acceptance-matrix.mjs --full",
     "test:real-world": "node scripts/real-world-qualification.mjs",

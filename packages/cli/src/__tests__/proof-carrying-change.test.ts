@@ -88,6 +88,86 @@ afterEach(async () => {
 });
 
 describe('proof-carrying change composition', () => {
+  it('uses baseline byte identity instead of provider churn as filesystem change evidence', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const graphPath = path.join(
+      workspacePath,
+      '.workspai',
+      'reports',
+      'workspace-knowledge-graph.json'
+    );
+    const graph = await fsExtra.readJson(graphPath);
+    let semanticProof: Record<string, unknown> | undefined;
+    for (const proof of graph.proofs as Array<Record<string, unknown>>) {
+      if (
+        typeof proof.artifact === 'string' &&
+        (await fsExtra.pathExists(path.join(workspacePath, proof.artifact)))
+      ) {
+        semanticProof = proof;
+        break;
+      }
+    }
+    expect(semanticProof).toBeDefined();
+    delete semanticProof?.contentHash;
+    await fsExtra.writeJson(graphPath, graph);
+
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Verify provider-neutral filesystem evidence',
+    });
+    const begun = await beginProofCarryingChange({
+      workspacePath,
+      goalId: planned.goalPack.id,
+    });
+    const baselinePath = path.join(
+      workspacePath,
+      '.workspai',
+      'changes',
+      begun.changeId,
+      'private',
+      'baseline-graph.json'
+    );
+    const baseline = await fsExtra.readJson(baselinePath);
+    expect(baseline.pccArtifactContentHashes[semanticProof?.artifact as string]).toMatch(
+      /^[a-f0-9]{64}$/u
+    );
+    expect(
+      baseline.proofs.find((proof: { id: string }) => proof.id === semanticProof?.id)?.contentHash
+    ).toBeUndefined();
+
+    await authorizeProofCarryingChange({
+      workspacePath,
+      changeId: begun.changeId,
+      effectClasses: ['command'],
+      grantedBy: 'maintainer',
+    });
+    await recordProofCarryingChangeEffect({
+      workspacePath,
+      changeId: begun.changeId,
+      receipt: {
+        id: 'provider-refresh',
+        effectClass: 'command',
+        status: 'succeeded',
+        summary: 'Refreshed semantic providers without changing source bytes.',
+        artifacts: [],
+        observedAt: '2026-08-29T00:01:00.000Z',
+        idempotencyKey: 'provider-refresh-v1',
+      },
+    });
+
+    graph.proofs = graph.proofs.filter((proof: { id: string }) => proof.id !== semanticProof?.id);
+    await fsExtra.writeJson(graphPath, graph);
+    const verified = await verifyProofCarryingChange({
+      workspacePath,
+      changeId: begun.changeId,
+      refresh: false,
+    });
+
+    expect(verified.capsule.remainingUncertainty).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/Uncovered artifacts:/u)])
+    );
+  });
+
   it('keeps a Goal lease valid when Workspai operational telemetry changes before PCC begins', async () => {
     const { workspacePath, projectPath } = await fixture();
     const planned = await planGoalPack({
@@ -387,9 +467,20 @@ describe('proof-carrying change composition', () => {
       refresh: false,
     });
 
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-verify-last-run.json'),
+      { replacedBy: 'a later unrelated verification' }
+    );
+
     await expect(
       validateProofCarryingChangeCapsule({ workspacePath, changeId: begun.changeId })
     ).resolves.toMatchObject({ valid: true });
+    const capsule = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'changes', begun.changeId, 'capsule.json')
+    );
+    expect(capsule.verification[0].artifact).toBe(
+      `.workspai/changes/${begun.changeId}/verification/workspace-verify.json`
+    );
   });
 
   it('detects stale leases, unreceipted architecture changes, and tampered capsules', async () => {

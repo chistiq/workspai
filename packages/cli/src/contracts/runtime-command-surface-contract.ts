@@ -163,6 +163,16 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Resolve portable project entry contracts and issue canonical-first grounding receipts for coding agents.',
   'agent bootstrap':
     'Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery.',
+  'agent framework':
+    'Inspect release-admitted agent framework runtimes and their governed project integration commands.',
+  'agent framework list':
+    'List exact tested framework baselines and whether their reviewed cross-platform admission remains current.',
+  'agent framework plan':
+    'Bind an isolated agent attachment plan to a Goal, canonical architecture generation, and Proof-Carrying Change without writing project files.',
+  'agent framework attach':
+    'Plan, explicitly authorize, and write only Workspai-owned agent files while preserving project dependencies and user-authored content.',
+  'agent framework apply':
+    'Apply an already authorized hash-bound agent framework plan and record file digests plus an ownership receipt.',
   autopilot:
     'Coordinate supported automated governance actions while preserving explicit evidence and release gates.',
   'autopilot release':

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-09-06
+
 ### Added
 
 - Added a framework-neutral Agent Framework Adapter Contract with explicit
@@ -22,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added preview Microsoft Agent Framework adapters for Python 1.17 and .NET
   1.20 with deterministic scaffold/attach plans, ownership-safe rendering,
   secret-reference enforcement, runtime resolution, and independent validation.
-  The adapters remain non-selectable until every advertised conformance lane
-  supplies digest-bound passing evidence.
+  Selection fails closed unless every advertised conformance lane supplies
+  digest-bound passing evidence for the exact shipped manifest.
 - Added a six-lane Microsoft adapter conformance workflow that emits auditable
   per-check evidence even for blocked lanes, compiles the pinned Python and
   .NET projects on Linux, macOS, and Windows, and rejects incomplete,
@@ -37,6 +39,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pinned Python conformance to the reproducible 3.10.11 cross-platform binary
   baseline and suppressed secondary artifact-upload failures when runtime setup
   prevents the conformance step from starting.
+- Added a centralized `latest-admitted` Agent Framework version policy and a
+  weekly PyPI/NuGet discovery workflow. New upstream releases automatically
+  refresh a review-only candidate pull request and dispatch the full
+  cross-platform admission matrix; stable and preview lanes remain independent
+  and no candidate is merged automatically.
+- Strengthened framework admission from compile/import coverage to a
+  deterministic, credentialless context-to-agent-to-response lifecycle on every
+  supported runtime and operating-system lane.
+- Split interactive project creation into category and kit selection, with
+  reserved Agent and Gaming categories that remain hidden until an admitted
+  kit is actually available.
+- Added `agent framework list`, `plan`, `attach`, and `apply` as the first
+  user-facing Microsoft Agent Framework integration. Attach requests now become
+  a scoped Goal and hash-bound Proof-Carrying Change; project files are written
+  only after an explicit filesystem approval, while installs, credentials, and
+  provider calls remain outside the implicit effect boundary.
+- Added release-admitted `agent.microsoft.python` and
+  `agent.microsoft.dotnet` project kits. Their scaffold runs inside project
+  registration, Goal, PCC, ownership-receipt, and rollback boundaries instead
+  of bypassing the governed attach lifecycle.
+- Bound selectable built-in adapters to a reviewed release-admission receipt
+  containing the exact adapter manifest, framework baseline, source commit, CI
+  run, runtime, and platform matrix. Any drift fails closed, and version-update
+  pull requests refresh the receipt only after all six conformance lanes pass.
+
+### Changed
+
+- Model admitted agent projects as an additive `agent` category while
+  preserving Microsoft Agent Framework as the canonical identity across its
+  Python and .NET runtimes. Preview projects emitted as generic workers migrate
+  during modeling without rewriting user files.
+- Publish agent kits in the native Create capability contract and generate one
+  authoritative runtime manifest per instance, eliminating empty root
+  manifests and phantom lifecycle units.
+- Derive Python and .NET lifecycle claims from executable evidence; Python main
+  modules gain deterministic compile and run stages, .NET console projects gain
+  a run stage, and test support is not claimed without a test surface or an
+  owned Core project runner.
+- Execute independent same-runtime manifests as separate Workspace Run units
+  instead of collapsing them into one root wrapper command.
+- Generate credentialless context-boundary tests and environment-name examples
+  for both agent kits. Python lifecycle plans select the platform Python 3
+  launcher and use standard-library `unittest` unless pytest ownership is
+  explicitly observed; .NET exposes a dedicated test project.
+- Ignore only the exact empty root manifests emitted by older Workspai agent
+  kits when a real `agents/primary` runtime exists. Any user edit restores the
+  root as an independent lifecycle unit.
+
+### Fixed
+
+- Keep generated .NET agent tests outside the primary executable's compile
+  glob, configure their dedicated xUnit project for Microsoft Testing Platform,
+  and verify the entrypoint-to-context-loader binding across separate files.
+- Run the bundle-size release gate in the CLI workspace and validate governed
+  agent kits at their canonical nested runtime boundaries, keeping the official
+  monorepo release dry-run aligned with the shipped project architecture.
+- Materialize raw-byte hashes for physical artifacts in immutable PCC
+  baselines, so provider, entity, and relation churn cannot be mistaken for a
+  user file mutation while real additions, edits, and deletions remain
+  fail-closed.
+- Preserve actionable lifecycle failure evidence across nested Workspace Run
+  and package-manager processes, classify external resource failures as
+  dependency failures when native output is available, and provide the exact
+  native rerun command when an interactive tool emits no capturable output.
+- Reject an existing Python Core project target at the Workspai boundary before
+  delegation, preserving the existing directory and replacing the internal
+  Python traceback with a concise path-aware recovery message.
+- Bind a framework-neutral architecture prediction into every planned adapter
+  PCC, distinguish byte changes from relation-only Graph changes, and exclude
+  concurrent mutations outside a project-scoped Change from receipt coverage.
+- Abort generated Change evidence and cancel its generated Goal when planning
+  is blocked or idempotently produces no work, and reject path-shaped agent
+  names before lifecycle evidence is created.
+- Preserve project-boundary metadata while building the Model so parent
+  metadata and runtime heuristics cannot erase an authored framework identity.
+- Add actionable install, verify, run, environment, and governance instructions
+  to generated Python and .NET agent project READMEs.
+- Scope PCC architecture overlays as well as receipt coverage to the immutable
+  project or project-set lease, and treat Graph facts derived from a predicted
+  artifact mutation as expected rather than independent surprise noise.
+- Snapshot Workspace Verify evidence inside each Change before binding its
+  receipt, so a later unrelated verification run cannot invalidate an older
+  proof-carrying capsule through the mutable `last-run` pointer.
+- Recognize bounded nested environment examples during Analyze so isolated
+  agent instances do not receive a false missing-environment finding or need
+  to duplicate secret-name documentation at the project root. Avoid
+  recommending a container for local agent projects that do not declare a
+  service deployment boundary.
+- Keep Doctor aligned with Model and Analyze for governed agent projects:
+  preserve their framework, runtime, agent kind, and application archetype;
+  discover nested environment and dependency contracts; and target Python and
+  .NET repair commands at the owned `agents/primary` runtime.
 
 ## [0.74.0] - 2026-09-05
 

@@ -23,7 +23,15 @@ if (officialProbe.status !== 0) {
 const actualOfficial = JSON.parse(officialProbe.stdout);
 assertSameSet('available official generators', expectedOfficial, actualOfficial);
 
-const expectedNative = (contract.nativeCreate ?? []).map((entry) => entry.id).sort();
+const nativeCreate = contract.nativeCreate ?? [];
+const expectedNative = nativeCreate
+  .filter((entry) => entry.category !== 'agent')
+  .map((entry) => entry.id)
+  .sort();
+const expectedGovernedAgent = nativeCreate
+  .filter((entry) => entry.category === 'agent')
+  .map((entry) => entry.id)
+  .sort();
 const nativeProbe = spawnSync(
   process.execPath,
   [path.join(repoRoot, 'scripts', 'runtime-acceptance-matrix.mjs'), '--list-kits'],
@@ -42,9 +50,15 @@ const enterpriseSmokeSource = readFileSync(
 if (!/\bkit:\s*['"]rust\.axum['"]/.test(enterpriseSmokeSource)) {
   fail('Rust Axum must have an enterprise package create smoke scenario');
 }
+for (const kit of expectedGovernedAgent) {
+  const escapedKit = kit.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  if (!new RegExp(`\\bkit:\\s*['"]${escapedKit}['"]`, 'u').test(enterpriseSmokeSource)) {
+    fail(`${kit} must have a governed enterprise package create smoke scenario`);
+  }
+}
 
 console.log(
-  `Generator smoke coverage aligned: ${expectedOfficial.length} official + ${expectedNative.length} native generator(s).`
+  `Generator smoke coverage aligned: ${expectedOfficial.length} official + ${expectedNative.length} native runtime + ${expectedGovernedAgent.length} governed agent generator(s).`
 );
 
 function assertSameSet(label, expected, actual) {

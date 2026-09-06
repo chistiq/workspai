@@ -9,10 +9,12 @@ import {
   AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_CONTRACT_PATH,
   AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_SCHEMA_VERSION,
 } from '../contracts/agent-framework-contract.js';
+import { PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION } from '../contracts/proof-carrying-change-contract.js';
 import type { DecisionArtifactReference } from '../decisions/decision-contract.js';
 import { readDecisionTransaction } from '../decisions/decision-store.js';
 import {
   attachProofCarryingChangePlan,
+  recordProofCarryingChangePrediction,
   recordProofCarryingChangeEffect,
 } from '../proof-carrying-change.js';
 import {
@@ -335,6 +337,34 @@ export async function prepareAgentFrameworkChange(input: {
       planDigest,
     };
   }
+  // PCC capsules must describe the expected mutation, not merely carry an
+  // adapter-specific plan that generic Change consumers cannot interpret.
+  await recordProofCarryingChangePrediction({
+    workspacePath: target.workspacePath,
+    changeId: input.changeId,
+    actorKind: 'cli',
+    actorId: 'workspai-agent-framework',
+    prediction: {
+      schemaVersion: PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION,
+      changeId: input.changeId,
+      goalId: '',
+      generatedAt: new Date().toISOString(),
+      baselineGeneration: '',
+      nonCanonical: true,
+      proofEligible: false,
+      operations: plan.files.map((file) => ({
+        operation: 'change',
+        targetKind: 'artifact',
+        targetId: artifactPath(target.artifactPrefix, file.path),
+        rationale: `${file.overwrite} under the admitted agent-framework plan.`,
+        confidence: 'high',
+      })),
+      assumptions: [
+        'Only hash-bound Workspai-managed files in the admitted ownership roots will change.',
+      ],
+      predictedRisk: plan.files.length > 0 ? 'low' : 'none',
+    },
+  });
   const attached = await attachProofCarryingChangePlan({
     workspacePath: target.workspacePath,
     changeId: input.changeId,

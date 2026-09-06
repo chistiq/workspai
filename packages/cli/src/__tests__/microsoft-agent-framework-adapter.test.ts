@@ -85,7 +85,14 @@ describe('Microsoft Agent Framework adapters', () => {
     const second = microsoftAgentFrameworkPythonAdapter.render(input);
     expect(first).toEqual(second);
     expect(first.conflicts).toEqual([]);
-    expect(first.files).toHaveLength(4);
+    expect(first.files.map((file) => file.path)).toEqual([
+      'agents/release-reviewer/main.py',
+      'agents/release-reviewer/pyproject.toml',
+      'agents/release-reviewer/tests/test_context.py',
+      'agents/release-reviewer/.env.example',
+      'agents/release-reviewer/README.md',
+      '.workspai/agent-frameworks/microsoft-agent-framework-python/release-reviewer.json',
+    ]);
     expect(
       first.files.every((file) => file.content.includes(AGENT_FRAMEWORK_OWNERSHIP_MARKER))
     ).toBe(true);
@@ -109,11 +116,30 @@ describe('Microsoft Agent Framework adapters', () => {
     });
     const entrypoint =
       rendered.files.find((file) => file.path.endsWith('/Program.cs'))?.content ?? '';
-    const project = rendered.files.find((file) => file.path.endsWith('.csproj'))?.content ?? '';
-    expect(entrypoint).toContain('project-context-agent.json');
-    expect(entrypoint).toContain('const long ContextLimit = 131_072');
+    const contextLoader =
+      rendered.files.find((file) => file.path.endsWith('/WorkspaiContext.cs'))?.content ?? '';
+    const project =
+      rendered.files.find((file) => file.path.endsWith('/ReleaseReviewer.csproj'))?.content ?? '';
+    const testProject =
+      rendered.files.find((file) => file.path.endsWith('/ReleaseReviewer.Tests.csproj'))?.content ??
+      '';
+    expect(entrypoint).toContain('WorkspaiContext.LoadAsync');
+    expect(contextLoader).toContain('project-context-agent.json');
+    expect(contextLoader).toContain('const long ContextLimit = 131_072');
     expect(project).toContain('Microsoft.Agents.AI.Foundry" Version="1.20.0-preview.260831.1"');
     expect(project).toContain('Azure.Identity" Version="1.21.0"');
+    expect(project).toContain('<Compile Remove="tests/**/*.cs" />');
+    expect(testProject).toContain('<OutputType>Exe</OutputType>');
+    expect(testProject).toContain('<UseMicrosoftTestingPlatformRunner>true');
+    expect(testProject).toContain('<TestingPlatformDotnetTestSupport>true');
+    expect(
+      microsoftAgentFrameworkDotnetAdapter.context({
+        projectRoot: root,
+        instanceName: 'Release Reviewer',
+      }).verificationCommands
+    ).toContain(
+      'dotnet run --project agents/release-reviewer/tests/ReleaseReviewer.Tests.csproj --no-restore'
+    );
   });
 
   it('preserves user-authored files and exposes the conflict as a plan blocker', async () => {

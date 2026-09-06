@@ -11,16 +11,22 @@ on:
       - "packages/cli/src/__tests__/agent-framework-lifecycle.test.ts"
       - "packages/cli/src/__tests__/agent-framework-admission-candidate.test.ts"
       - "packages/cli/src/__tests__/agent-framework-registry.test.ts"
+      - "packages/cli/src/__tests__/agent-framework-version-policy.test.ts"
       - "packages/cli/src/__tests__/microsoft-agent-framework-adapter.test.ts"
       - "packages/cli/src/__tests__/contracts/agent-framework-contract.test.ts"
       - "packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts"
       - "packages/cli/scripts/verify-agent-framework-conformance.ts"
+      - "packages/cli/scripts/discover-agent-framework-versions.ts"
+      - "packages/cli/scripts/propose-agent-framework-version-update.ts"
+      - "packages/cli/scripts/promote-agent-framework-release-admission.ts"
       - "packages/cli/package.json"
       - "packages/cli/contracts/agent-framework-capabilities.v1.json"
       - "packages/cli/contracts/workspace-intelligence/agent-framework-*.v1.json"
       - "contracts/agent-framework-capabilities.v1.json"
       - "contracts/workspace-intelligence/agent-framework-*.v1.json"
       - ".github/workflows/agent-framework-conformance.yml"
+      - ".github/workflows/agent-framework-version-discovery.yml"
+      - ".github/agent-framework-version-update.md"
       - "package-lock.json"
   workflow_dispatch:
 
@@ -43,22 +49,24 @@ jobs:
         runtime: [python, dotnet]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20.19.0"
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: matrix.runtime == 'python'
         with:
           # 3.10.11 is the final 3.10 release with cross-platform binary
           # installers and is available for Linux, macOS arm64, and Windows.
           python-version: "3.10.11"
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         if: matrix.runtime == 'dotnet'
         with:
           dotnet-version: "8.0.x"
@@ -80,7 +88,7 @@ jobs:
 
       - name: Upload lane evidence
         if: always() && steps.conformance.outcome != 'skipped'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: agent-framework-${{ matrix.runtime }}-${{ runner.os }}
           path: packages/cli/test-results/agent-framework-conformance
@@ -95,9 +103,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20.19.0"
           cache: npm
@@ -107,7 +117,7 @@ jobs:
         run: npm ci
 
       - name: Download every conformance lane
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           pattern: agent-framework-*
           path: packages/cli/test-results/agent-framework-conformance
@@ -121,9 +131,63 @@ jobs:
 
       - name: Upload reviewable admission candidate
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: agent-framework-admission-candidate-${{ github.sha }}
           path: packages/cli/test-results/agent-framework-conformance
           if-no-files-found: error
           retention-days: 30
+
+  promote-automation-admission:
+    name: Bind admitted matrix to automation pull request
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/automation/agent-framework-version-baselines'
+    needs: admit-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Download verified admission candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: agent-framework-admission-candidate-${{ github.sha }}
+          path: packages/cli/test-results/agent-framework-admission
+
+      - name: Promote exact release admission
+        working-directory: packages/cli
+        run: >-
+          npm exec tsx -- scripts/promote-agent-framework-release-admission.ts
+          --candidate test-results/agent-framework-admission/agent-framework-admission-candidate.json
+          --output src/agent-frameworks/release-admissions.v1.json
+          --repository "${{ github.repository }}"
+          --workflow-run-id "${{ github.run_id }}"
+
+      - name: Update the existing automation branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- packages/cli/src/agent-frameworks/release-admissions.v1.json; then
+            echo "Release admission already matches this verified matrix."
+            exit 0
+          fi
+          gh auth setup-git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- packages/cli/src/agent-frameworks/release-admissions.v1.json
+          git commit -m "chore(agent-frameworks): bind verified release admission"
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"

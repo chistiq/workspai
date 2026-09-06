@@ -13,6 +13,7 @@ import {
   resolvePackageRunnerInvocation,
   shouldUseShellExecution,
 } from '../utils/platform-capabilities.js';
+import { formatNodeScriptCommand } from '../utils/node-package-manager.js';
 import { workspaceMetadataCandidates } from '../utils/workspace-paths.js';
 
 export type NodeCommandRunner = (command: string, args: string[], cwd: string) => Promise<number>;
@@ -205,7 +206,12 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
         return lastResult;
       }
     }
-    return lastResult;
+    return {
+      ...lastResult,
+      message:
+        lastResult.message ??
+        `Node lifecycle script failed. Re-run \`${formatNodeScriptCommand(projectPath, scriptName)}\` in ${projectPath} to inspect the native tool output.`,
+    };
   }
 
   private async runLifecycle(

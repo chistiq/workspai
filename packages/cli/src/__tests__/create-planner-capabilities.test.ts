@@ -9,6 +9,7 @@ import { listOfficialProjectGenerators } from '../official-project';
 import { listInteractiveKits, resolveKitDefinition } from '../utils/kit-registry';
 import { buildCreatePlannerCapabilitiesContract } from '../contracts/create-planner-capabilities-contract';
 import { WORKSPACE_PROFILES } from '../workspace-profile-compatibility';
+import { listAgentFrameworkProjectKits } from '../agent-frameworks/project-kits';
 
 describe('create planner capabilities', () => {
   it('keeps Workspai-owned backend kits in the native lane', () => {
@@ -22,6 +23,17 @@ describe('create planner capabilities', () => {
         status: 'available',
         canExecuteCreate: true,
         resolved: kitId,
+      });
+    }
+  });
+
+  it('keeps admitted agent-framework kits in the governed native lane', () => {
+    for (const kit of listAgentFrameworkProjectKits()) {
+      expect(resolveCreatePlannerCapability({ kitId: kit.id })).toMatchObject({
+        lane: 'native',
+        status: 'available',
+        canExecuteCreate: true,
+        resolved: kit.id,
       });
     }
   });
@@ -91,7 +103,14 @@ describe('create planner capabilities', () => {
     const contract = buildCreatePlannerCapabilitiesContract();
 
     expect(contract.workspaceProfiles.map((profile) => profile.id)).toEqual(WORKSPACE_PROFILES);
-    expect(contract.nativeCreate).toHaveLength(listInteractiveKits().length);
+    expect(contract.nativeCreate).toHaveLength(
+      listInteractiveKits().length + listAgentFrameworkProjectKits().length
+    );
+    expect(contract.nativeCreate.find((kit) => kit.id === 'agent.microsoft.python')).toMatchObject({
+      framework: 'microsoft-agent-framework',
+      category: 'agent',
+      versionPolicy: 'tested-baseline',
+    });
     expect(contract.nativeCreate.find((kit) => kit.id === 'fastapi.standard')).toMatchObject({
       plannerFramework: 'fastapi',
       workspacePythonEngine: 'required',

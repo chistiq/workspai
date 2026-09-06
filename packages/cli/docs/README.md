@@ -142,6 +142,7 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 - Scaffold a frontend app: [commands-reference.md](./commands-reference.md) (`create project nextjs <name>`)
 - Canonical intelligence gate: `workspace intelligence run --for-agent generic --strict --json`
 - Agent entry preflight: `agent bootstrap --for-agent <host> --json`
+- Governed agent runtime: `agent framework attach --project <name> --runtime <python|dotnet> --name <agent>`
 - Broader CI release gate: [commands-reference.md](./commands-reference.md) (`pipeline`, `readiness`)
 - Targeted model/context inspection — schemas in [contracts/workspace-intelligence/](../contracts/workspace-intelligence/)
 

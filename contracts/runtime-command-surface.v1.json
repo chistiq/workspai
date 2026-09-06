@@ -88,6 +88,30 @@
       "bootstrap"
     ],
     [
+      "agent",
+      "framework"
+    ],
+    [
+      "agent",
+      "framework",
+      "list"
+    ],
+    [
+      "agent",
+      "framework",
+      "plan"
+    ],
+    [
+      "agent",
+      "framework",
+      "attach"
+    ],
+    [
+      "agent",
+      "framework",
+      "apply"
+    ],
+    [
       "config",
       "ai"
     ],
@@ -277,6 +301,50 @@
       "canonicalArgv": [
         "agent",
         "bootstrap"
+      ]
+    },
+    {
+      "invocation": "agent framework",
+      "summary": "Inspect release-admitted agent framework runtimes and their governed project integration commands.",
+      "canonicalArgv": [
+        "agent",
+        "framework"
+      ]
+    },
+    {
+      "invocation": "agent framework apply",
+      "summary": "Apply an already authorized hash-bound agent framework plan and record file digests plus an ownership receipt.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "apply"
+      ]
+    },
+    {
+      "invocation": "agent framework attach",
+      "summary": "Plan, explicitly authorize, and write only Workspai-owned agent files while preserving project dependencies and user-authored content.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "attach"
+      ]
+    },
+    {
+      "invocation": "agent framework list",
+      "summary": "List exact tested framework baselines and whether their reviewed cross-platform admission remains current.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "list"
+      ]
+    },
+    {
+      "invocation": "agent framework plan",
+      "summary": "Bind an isolated agent attachment plan to a Goal, canonical architecture generation, and Proof-Carrying Change without writing project files.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "plan"
       ]
     },
     {
@@ -4301,7 +4369,9 @@
       "gofiber.standard",
       "gogin.standard",
       "dotnet.webapi.clean",
-      "rust.axum"
+      "rust.axum",
+      "agent.microsoft.python",
+      "agent.microsoft.dotnet"
     ],
     "officialCreate": [
       "frontend.nextjs",

@@ -287,6 +287,7 @@ function contextualizeDoctorSystemChecks(
 }
 
 type DetectedFramework =
+  | 'Microsoft Agent Framework'
   | 'FastAPI'
   | 'Django'
   | 'Flask'
@@ -354,6 +355,7 @@ type ProjectRuntimeFamily =
   | 'unknown';
 type ProjectKind =
   | 'backend'
+  | 'agent'
   | 'frontend'
   | 'desktop'
   | 'extension'
@@ -1406,6 +1408,7 @@ function buildPythonDependencyInstallFixCommand(input: {
   projectPath: string;
   manager: 'project-script' | 'poetry' | 'uv' | 'venv';
   projectScript?: string;
+  uvProject?: string;
 }): string {
   if (input.manager === 'project-script' && input.projectScript) {
     return buildProjectFixCommand(input.projectPath, input.projectScript);
@@ -1414,7 +1417,10 @@ function buildPythonDependencyInstallFixCommand(input: {
     return buildProjectFixCommand(input.projectPath, 'poetry install --no-root');
   }
   if (input.manager === 'uv') {
-    return buildProjectFixCommand(input.projectPath, 'uv sync');
+    return buildProjectFixCommand(
+      input.projectPath,
+      input.uvProject ? `uv sync --project ${input.uvProject}` : 'uv sync'
+    );
   }
   return buildProjectFixCommand(
     input.projectPath,
@@ -1494,6 +1500,10 @@ function supportTierForFramework(framework: DetectedFramework): FrameworkSupport
 }
 
 function kindForFramework(framework: DetectedFramework): ProjectKind {
+  if (framework === 'Microsoft Agent Framework') {
+    return 'agent';
+  }
+
   if (framework === 'Tauri' || framework === 'Electron') {
     return 'desktop';
   }
@@ -1676,6 +1686,8 @@ function toDoctorRuntimeFamily(runtime: BackendRuntimeFamily): ProjectRuntimeFam
 
 function toDoctorFramework(detection: BackendFrameworkDetection): DetectedFramework {
   switch (detection.key) {
+    case 'microsoft-agent-framework':
+      return 'Microsoft Agent Framework';
     case 'fastapi':
       return 'FastAPI';
     case 'django':
@@ -1820,13 +1832,15 @@ function applyBackendFrameworkDetection(
   health.frameworkConfidence = detection.confidence;
   health.supportTier = detection.supportTier;
   health.projectKind =
-    detection.key === 'tauri' || detection.key === 'electron'
-      ? 'desktop'
-      : detection.key === 'vscode-extension'
-        ? 'extension'
-        : isGenericBackendDetection(detection)
-          ? 'generic'
-          : 'backend';
+    detection.key === 'microsoft-agent-framework'
+      ? 'agent'
+      : detection.key === 'tauri' || detection.key === 'electron'
+        ? 'desktop'
+        : detection.key === 'vscode-extension'
+          ? 'extension'
+          : isGenericBackendDetection(detection)
+            ? 'generic'
+            : 'backend';
   health.runtimeFamily = toDoctorRuntimeFamily(detection.runtime);
 }
 
@@ -3062,7 +3076,8 @@ async function resolvePoetryEnvironmentPath(projectPath: string): Promise<string
 async function resolvePythonProjectEnvironment(
   projectPath: string,
   frameworkImport: string,
-  usesPoetry: boolean
+  usesPoetry: boolean,
+  runtimeRoot?: string
 ): Promise<{
   environmentPath?: string;
   interpreter?: string;
@@ -3078,6 +3093,19 @@ async function resolvePythonProjectEnvironment(
         frameworkImport,
       })),
     };
+  }
+
+  if (runtimeRoot) {
+    const runtimeEnvironmentPath = path.join(projectPath, runtimeRoot, '.venv');
+    if (await fsExtra.pathExists(runtimeEnvironmentPath)) {
+      return {
+        environmentPath: runtimeEnvironmentPath,
+        ...(await inspectPythonEnvironment({
+          environmentPath: runtimeEnvironmentPath,
+          frameworkImport,
+        })),
+      };
+    }
   }
 
   if (usesPoetry) {
@@ -4636,33 +4664,49 @@ async function checkProjectUnnormalized(
 
   // Python/FastAPI project checks
   if (primaryRuntime === 'python') {
-    const pythonDetection = await detectPythonFramework(projectPath, projectJsonData);
-    applyFrameworkMetadata(health, pythonDetection.framework, pythonDetection.confidence);
+    if (primaryBackendDetection.key === 'microsoft-agent-framework') {
+      applyBackendFrameworkDetection(health, primaryBackendDetection);
+    } else {
+      const pythonDetection = await detectPythonFramework(projectPath, projectJsonData);
+      applyFrameworkMetadata(health, pythonDetection.framework, pythonDetection.confidence);
+    }
 
     let frameworkImport = 'fastapi';
     if (health.framework === 'Django') frameworkImport = 'django';
     else if (health.framework === 'Flask') frameworkImport = 'flask';
     else if (health.framework === 'Python') frameworkImport = '';
+    else if (health.framework === 'Microsoft Agent Framework') {
+      frameworkImport = 'agent-framework-core';
+    }
 
-    const pyprojectText = await readFileIfExists(pyprojectTomlPath);
+    const agentRuntimeRoot =
+      health.framework === 'Microsoft Agent Framework' ? 'agents/primary' : undefined;
+    const pythonManifestPath = agentRuntimeRoot
+      ? path.join(projectPath, agentRuntimeRoot, 'pyproject.toml')
+      : pyprojectTomlPath;
+    const pyprojectText = await readFileIfExists(pythonManifestPath);
     const usesPoetry = /\[tool\.poetry\]/.test(pyprojectText);
     const projectSetupScript = await findPythonProjectSetupScript(projectPath);
     const pythonEnvironmentManager: 'project-script' | 'poetry' | 'uv' | 'venv' = projectSetupScript
       ? 'project-script'
-      : usesPoetry
-        ? 'poetry'
-        : (await fsExtra.pathExists(path.join(projectPath, 'uv.lock')))
-          ? 'uv'
-          : 'venv';
+      : agentRuntimeRoot
+        ? 'uv'
+        : usesPoetry
+          ? 'poetry'
+          : (await fsExtra.pathExists(path.join(projectPath, 'uv.lock')))
+            ? 'uv'
+            : 'venv';
     const pythonDependencyFixCommand = buildPythonDependencyInstallFixCommand({
       projectPath,
       manager: pythonEnvironmentManager,
       ...(projectSetupScript ? { projectScript: projectSetupScript } : {}),
+      ...(agentRuntimeRoot ? { uvProject: agentRuntimeRoot } : {}),
     });
     const environment = await resolvePythonProjectEnvironment(
       projectPath,
       frameworkImport,
-      usesPoetry
+      usesPoetry,
+      agentRuntimeRoot
     );
     health.venvActive = Boolean(environment.environmentPath);
     health.depsInstalled = environment.dependenciesInstalled;
@@ -4848,14 +4892,25 @@ async function checkProjectUnnormalized(
 
     const objPath = path.join(projectPath, 'obj');
     const srcObjPath = path.join(projectPath, 'src', 'obj');
+    const agentObjPath = path.join(projectPath, 'agents', 'primary', 'obj');
+    const agentTestObjPath = path.join(projectPath, 'agents', 'primary', 'tests', 'obj');
     const packagesLockPath = path.join(projectPath, 'packages.lock.json');
     health.depsInstalled =
       (await fsExtra.pathExists(objPath)) ||
       (await fsExtra.pathExists(srcObjPath)) ||
+      (await fsExtra.pathExists(agentObjPath)) ||
+      (await fsExtra.pathExists(agentTestObjPath)) ||
       (await fsExtra.pathExists(packagesLockPath));
     if (!health.depsInstalled) {
       health.issues.push('.NET restore/build artifacts not found');
-      health.fixCommands?.push(buildProjectFixCommand(projectPath, 'dotnet restore'));
+      health.fixCommands?.push(
+        buildProjectFixCommand(
+          projectPath,
+          health.framework === 'Microsoft Agent Framework'
+            ? 'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file'
+            : 'dotnet restore'
+        )
+      );
     }
 
     const envPath = path.join(projectPath, '.env');
@@ -4993,6 +5048,7 @@ async function detectProjectArchetype(
   health: ProjectHealth
 ): Promise<ProjectArchetype> {
   if (health.projectKind === 'extension') return 'plugin';
+  if (health.projectKind === 'agent') return 'application';
   if (health.projectKind === 'platform') {
     const packageJson = await fsExtra
       .readJson(path.join(projectPath, 'package.json'))
@@ -5145,7 +5201,13 @@ async function checkProject(
     });
   }
   const canonicalKind = await inferWorkspaceProjectKind(projectPath);
-  if (canonicalKind === 'backend' || canonicalKind === 'service' || canonicalKind === 'worker') {
+  if (canonicalKind === 'agent') {
+    health.projectKind = 'agent';
+  } else if (
+    canonicalKind === 'backend' ||
+    canonicalKind === 'service' ||
+    canonicalKind === 'worker'
+  ) {
     health.projectKind = 'backend';
   } else if (
     canonicalKind === 'frontend' ||
@@ -6893,6 +6955,16 @@ function parseDependencySyncFix(
       args: ['install', '--no-root'],
     },
     { pattern: 'poetry\\s+lock', command: 'poetry', args: ['lock'] },
+    {
+      pattern: 'uv\\s+lock\\s+--project\\s+agents/primary',
+      command: 'uv',
+      args: ['lock', '--project', 'agents/primary'],
+    },
+    {
+      pattern: 'uv\\s+sync\\s+--project\\s+agents/primary',
+      command: 'uv',
+      args: ['sync', '--project', 'agents/primary'],
+    },
     { pattern: 'uv\\s+lock', command: 'uv', args: ['lock'] },
     { pattern: 'uv\\s+sync', command: 'uv', args: ['sync'] },
     { pattern: '(?:\\.\\/)?script\\/setup', command: 'script/setup', args: [] },
@@ -6926,6 +6998,12 @@ function parseDependencySyncFix(
     },
     { pattern: 'composer\\s+install', command: 'composer', args: ['install'] },
     { pattern: 'bundle\\s+install', command: 'bundle', args: ['install'] },
+    {
+      pattern:
+        'dotnet\\s+restore\\s+agents/primary/tests/Primary\\.Tests\\.csproj\\s+--use-lock-file',
+      command: 'dotnet',
+      args: ['restore', 'agents/primary/tests/Primary.Tests.csproj', '--use-lock-file'],
+    },
     { pattern: 'dotnet\\s+restore', command: 'dotnet', args: ['restore'] },
     { pattern: 'cargo\\s+fetch', command: 'cargo', args: ['fetch'] },
     { pattern: 'mix\\s+deps\\.get', command: 'mix', args: ['deps.get'] },
@@ -7025,7 +7103,10 @@ function parseDependencySyncFix(
   return null;
 }
 
-function dependencyMaterializationMetadata(executableValue: string): {
+function dependencyMaterializationMetadata(
+  executableValue: string,
+  args: string[] = []
+): {
   ecosystem: string;
   files: string[];
 } {
@@ -7064,6 +7145,18 @@ function dependencyMaterializationMetadata(executableValue: string): {
     };
   }
   if (['poetry', 'uv', 'pip', 'pip3', 'python', 'python3', 'py'].includes(executable)) {
+    const projectFlag = args.indexOf('--project');
+    if (executable === 'uv' && projectFlag >= 0 && args[projectFlag + 1]) {
+      const projectRoot = args[projectFlag + 1].replaceAll('\\', '/').replace(/\/$/u, '');
+      return {
+        ecosystem: 'uv',
+        files: [
+          `${projectRoot}/pyproject.toml`,
+          `${projectRoot}/uv.lock`,
+          `${projectRoot}/requirements.txt`,
+        ],
+      };
+    }
     return {
       ecosystem: executable === 'uv' ? 'uv' : executable === 'poetry' ? 'poetry' : 'python',
       files: ['pyproject.toml', 'poetry.lock', 'uv.lock', 'requirements.txt'],
@@ -7075,8 +7168,20 @@ function dependencyMaterializationMetadata(executableValue: string): {
     return { ecosystem: 'composer', files: ['composer.json', 'composer.lock'] };
   if (executable === 'bundle') return { ecosystem: 'bundler', files: ['Gemfile', 'Gemfile.lock'] };
   if (executable === 'mix') return { ecosystem: 'mix', files: ['mix.exs', 'mix.lock'] };
-  if (executable === 'dotnet')
-    return { ecosystem: 'dotnet', files: ['Directory.Packages.props', 'packages.lock.json'] };
+  if (executable === 'dotnet') {
+    const projectFile = args.find((arg) => /\.(?:cs|fs|vb)proj$/iu.test(arg));
+    const projectRoot = projectFile ? path.posix.dirname(projectFile.replaceAll('\\', '/')) : null;
+    return {
+      ecosystem: 'dotnet',
+      files: projectRoot
+        ? [
+            projectFile as string,
+            `${projectRoot}/Directory.Packages.props`,
+            `${projectRoot}/packages.lock.json`,
+          ]
+        : ['Directory.Packages.props', 'packages.lock.json'],
+    };
+  }
   if (executable === 'clojure' || executable === 'lein')
     return { ecosystem: 'clojure', files: ['deps.edn', 'project.clj'] };
   if (executable === 'sbt') return { ecosystem: 'sbt', files: ['build.sbt'] };
@@ -7108,7 +7213,7 @@ function attachDependencyMaterializationCapabilities(health: ProjectHealth): voi
     // failure. The ProjectHealth state and the typed diagnosis must describe
     // the same observable runtime state.
     if (health.depsInstalled && !materializationIssue) continue;
-    const metadata = dependencyMaterializationMetadata(parsed.command);
+    const metadata = dependencyMaterializationMetadata(parsed.command, parsed.args);
     const capability = buildDependencyMaterializationRepairCapability({
       issueId: 'runtime-dependency-materialization',
       title: `Install ${metadata.ecosystem} dependencies`,

@@ -15,8 +15,9 @@ existing project ---/            |
 Microsoft Agent Framework is the first concrete implementation of this
 foundation. Its Python and .NET adapters are intentionally separate because
 their package graphs, runtime requirements, entrypoints, and verification
-commands differ. Both remain preview and non-selectable until the required
-conformance matrix passes for every advertised platform and runtime lane.
+commands differ. Both are available for governed attachment after their exact
+manifest digests pass the required Linux, macOS, and Windows conformance lanes
+and are bound into the reviewed release-admission inventory.
 
 ## Published contracts
 
@@ -105,6 +106,18 @@ then atomically applies the unchanged plan and records effect evidence.
 
 Generated starter files use an isolated `agents/<instance>` root and keep
 adapter state under `.workspai/agent-frameworks/<adapter>/<instance>.json`.
+That instance contains the only runtime dependency manifest; the project root
+does not receive an empty Python or .NET manifest that could be mistaken for a
+second executable unit. Workspace Model reports these projects as `agent`,
+retains `microsoft-agent-framework` as their framework identity, and reports
+only lifecycle stages backed by concrete manifests, entrypoints, tests, or an
+owned project runner.
+Each starter also includes credentialless tests for the bounded context
+boundary and an environment-name example with no secret values. Python uses
+the host platform's normal Python 3 launcher and remains dependency-free for
+these tests; .NET uses a separately pinned test project. The conformance matrix
+executes these tests in addition to compiling and exercising the deterministic
+framework lifecycle.
 Existing user-authored files are blockers, never overwrite targets. A managed
 comment alone does not prove ownership: refresh also requires the previous
 Workspai ownership receipt, which is bound to the exact adapter-manifest digest;
@@ -126,26 +139,75 @@ baseline while the adapter continues to declare Python `>=3.10` support.
 After verification, CI emits one admission-candidate artifact. It binds the
 source commit, CLI version, adapter-manifest digests, lane reports, and every
 evidence file by SHA-256. Its status is always `pending`: successful CI produces
-reviewable evidence, not release authority. Promotion into the built-in registry
-remains a separate maintainer-reviewed release action.
+reviewable evidence, not release authority. Only the protected version-update
+branch may convert that candidate into the exact release-admission inventory,
+and the resulting pull request still passes normal review and repository gates.
 
-CI evidence is not silently embedded into a release. The default registry
-therefore remains blocked until a reviewed release process supplies the exact
-digest-bound report set. This keeps a green workflow from becoming runtime
-authority merely because it ran.
+CI evidence is not silently trusted at runtime. The default registry remains
+blocked when callers provide neither raw conformance reports nor explicit
+permission to use the bundled reviewed release inventory. User-facing commands
+enable that inventory deliberately and fail closed if an adapter version,
+manifest digest, framework baseline, runtime, or platform list has changed.
 
-## Create and attach
+## Attach an agent runtime
 
-A future agent-project kit declares one primary adapter:
+Build current Workspace Intelligence first, then inspect the release-admitted
+runtimes:
 
-```text
-workspai create project <agent-kit> <name>
+```bash
+npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai agent framework list --json
 ```
 
-An existing framework project will use the same adapter through an explicit
-attach operation. Detection itself is read-only and never authorizes writes.
-Both flows plan changes before writing and may write only owned files or managed
-sections under declared relative roots.
+Planning creates a Goal-bound, hash-bound Proof-Carrying Change but does not
+write project files:
+
+```bash
+npx workspai agent framework plan \
+  --project api \
+  --runtime python \
+  --name support-agent
+```
+
+The interactive attach command displays the same plan and asks before granting
+its filesystem effect. Automation must opt in with `--yes` and records the
+identity supplied by `--granted-by`:
+
+```bash
+npx workspai agent framework attach \
+  --project api \
+  --runtime python \
+  --name support-agent
+```
+
+The operation writes only isolated adapter-owned files, records an ownership
+receipt, and returns the canonical intelligence and Change verification
+commands to run next. It never installs packages, calls a model, persists a
+credential, or executes generated code. A separately authorized saved plan can
+be applied with `agent framework apply`.
+
+The PCC stores both the exact adapter plan and a framework-neutral architecture
+prediction. Verification compares byte-backed artifact changes, requires typed
+receipts for mutations inside the immutable project scope, and does not blame a
+Change for concurrent work in another registered project. Its actual Graph
+overlay is scoped by the same immutable lease, and entities, relations, and
+proofs derived from an explicitly predicted artifact are treated as expected
+consequences rather than unrelated surprises. A blocked or no-op
+request created without an external Goal closes its generated Change and Goal
+instead of leaving actionable lifecycle state behind.
+
+The same admitted lifecycle is available for a new project:
+
+```bash
+npx workspai create project agent.microsoft.python support-agent
+npx workspai create project agent.microsoft.dotnet operations-agent
+```
+
+Create writes a minimal runtime identity, registers the project, creates the
+Goal and PCC, applies the adapter-owned scaffold, and records its ownership
+receipt before committing the project lifecycle transaction. A failed scaffold
+rolls back the new directory and workspace registration. Detection itself
+remains read-only and never authorizes writes.
 
 A workspace may contain multiple independently scoped framework adapters. A
 project that deliberately connects two frameworks must declare that bridge;
@@ -205,9 +267,11 @@ implemented, and their preview state still prevents premature selection.
 2. Use the framework-neutral registry, detector, and bounded manifest loader.
 3. Review the Microsoft Python and .NET digest-bound evidence produced by the
    full conformance matrix.
-4. Promote and package each adapter's evidence independently only after all
-   Linux, macOS, and Windows lanes pass.
-5. Add a kit only after create and attach share the admitted adapter.
+4. Keep automated upstream discovery separate from release authority: open or
+   refresh one version pull request, rerun the full matrix, bind the exact green
+   candidate, then rely on protected-branch review before merge.
+5. Admit another framework only after its create and attach paths share these
+   ownership, rollback, and verification guarantees.
 
 AutoGen is not planned as a new-project target because Microsoft Agent
 Framework is its supported successor path. Eve, LangGraph, and OpenAI Agents

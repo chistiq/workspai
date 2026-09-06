@@ -6,8 +6,11 @@ import path from 'node:path';
 import {
   digestBuiltinAgentFrameworkManifest,
   managedFile,
+  MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
+  MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
   microsoftAgentFrameworkDotnetAdapter,
   microsoftAgentFrameworkPythonAdapter,
+  packageVersion,
   type AgentFrameworkAdapter,
   type AgentFrameworkManagedFile,
 } from '../src/agent-frameworks/index.js';
@@ -30,6 +33,119 @@ type CommandResult = { stdout: string; stderr: string };
 type Check = AgentFrameworkConformanceReport['checks'][number];
 
 const INSTANCE_NAME = 'Conformance Agent';
+const LIFECYCLE_CONTEXT_MARKER = 'WORKSPAI_CONTEXT_BOUNDARY_OK';
+const LIFECYCLE_RESPONSE_MARKER = 'WORKSPAI_AGENT_LIFECYCLE_OK';
+
+function pythonLifecycleHarness(): string {
+  return `import asyncio
+
+from agent_framework import Agent, ChatResponse, Message
+
+CONTEXT_MARKER = "${LIFECYCLE_CONTEXT_MARKER}"
+RESPONSE_MARKER = "${LIFECYCLE_RESPONSE_MARKER}"
+
+
+class LocalChatClient:
+    def __init__(self) -> None:
+        self.call_count = 0
+        self.context_observed = False
+
+    def get_response(self, messages, *, stream=False, options=None, **kwargs):
+        if stream:
+            raise RuntimeError("Credentialless conformance does not request streaming")
+        self.call_count += 1
+        message_text = "\\n".join(getattr(message, "text", str(message)) for message in messages)
+        self.context_observed = CONTEXT_MARKER in f"{message_text} {options!r} {kwargs!r}"
+
+        async def respond():
+            return ChatResponse(messages=Message("assistant", [RESPONSE_MARKER]))
+
+        return respond()
+
+
+async def main() -> None:
+    client = LocalChatClient()
+    agent = Agent(
+        client=client,
+        name="workspai-conformance",
+        instructions=f"Treat this as bounded repository context: {CONTEXT_MARKER}",
+    )
+    response = await agent.run("Confirm the admitted context.")
+    if response.text != RESPONSE_MARKER:
+        raise RuntimeError(f"Unexpected agent response: {response.text!r}")
+    if client.call_count != 1 or not client.context_observed:
+        raise RuntimeError("Agent lifecycle did not carry bounded context to the local provider")
+    print(RESPONSE_MARKER)
+
+
+asyncio.run(main())
+`;
+}
+
+function dotnetLifecycleHarness(): string {
+  return `using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+
+const string ContextMarker = "${LIFECYCLE_CONTEXT_MARKER}";
+const string ResponseMarker = "${LIFECYCLE_RESPONSE_MARKER}";
+
+using var client = new LocalChatClient(ContextMarker, ResponseMarker);
+AIAgent agent = new ChatClientAgent(
+    client,
+    new ChatClientAgentOptions
+    {
+        Name = "workspai-conformance",
+        ChatOptions = new ChatOptions
+        {
+            Instructions = $"Treat this as bounded repository context: {ContextMarker}",
+        },
+    });
+var response = await agent.RunAsync("Confirm the admitted context.");
+if (response.Text != ResponseMarker)
+{
+    throw new InvalidOperationException($"Unexpected agent response: {response.Text}");
+}
+if (client.CallCount != 1 || !client.ContextObserved)
+{
+    throw new InvalidOperationException("Agent lifecycle did not carry bounded context to the local provider.");
+}
+Console.WriteLine(ResponseMarker);
+
+sealed class LocalChatClient(string contextMarker, string responseMarker) : IChatClient
+{
+    public int CallCount { get; private set; }
+    public bool ContextObserved { get; private set; }
+
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        this.CallCount++;
+        this.ContextObserved = options?.Instructions?.Contains(contextMarker, StringComparison.Ordinal) == true;
+        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, responseMarker)));
+    }
+
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.Yield();
+        yield return new ChatResponseUpdate(ChatRole.Assistant, responseMarker);
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null) =>
+        serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+
+    public void Dispose()
+    {
+    }
+}
+`;
+}
 
 function argument(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -145,18 +261,26 @@ async function cliVersion(): Promise<string> {
 
 async function authoredDetectionFixture(runtime: Runtime, root: string): Promise<void> {
   if (runtime === 'python') {
+    const coreVersion = packageVersion(
+      MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
+      'agent-framework-core'
+    );
     await fs.writeFile(
       path.join(root, 'pyproject.toml'),
-      '[project]\nname = "conformance"\ndependencies = ["agent-framework-core==1.17.0"]\n',
+      `[project]\nname = "conformance"\ndependencies = ["agent-framework-core==${coreVersion}"]\n`,
       'utf8'
     );
     return;
   }
+  const foundryVersion = packageVersion(
+    MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
+    'Microsoft.Agents.AI.Foundry'
+  );
   const projectPath = path.join(root, 'src', 'Agent', 'Agent.csproj');
   await fs.mkdir(path.dirname(projectPath), { recursive: true });
   await fs.writeFile(
     projectPath,
-    '<Project><ItemGroup><PackageReference Include="Microsoft.Agents.AI.Foundry" Version="1.20.0-preview.260831.1" /></ItemGroup></Project>\n',
+    `<Project><ItemGroup><PackageReference Include="Microsoft.Agents.AI.Foundry" Version="${foundryVersion}" /></ItemGroup></Project>\n`,
     'utf8'
   );
 }
@@ -448,16 +572,24 @@ async function main(): Promise<void> {
     await record('context-generation-binding', () => {
       const entrypoint = rendered.files.find((file) => file.path === context.entrypoint);
       assertCondition(entrypoint, 'Declared entrypoint was not rendered.');
-      assertCondition(
-        entrypoint.content.includes('.workspai/reports/project-context-agent.json'),
-        'Entrypoint is not bound to canonical agent context.'
+      const contextBoundary = rendered.files.find((file) =>
+        file.content.includes('.workspai/reports/project-context-agent.json')
       );
       assertCondition(
-        entrypoint.content.includes('131_072'),
-        'Entrypoint does not enforce the 128 KiB context boundary.'
+        contextBoundary,
+        'Rendered adapter files are not bound to canonical agent context.'
+      );
+      assertCondition(
+        contextBoundary.content.includes('131_072'),
+        'Canonical context loader does not enforce the 128 KiB boundary.'
+      );
+      assertCondition(
+        runtime === 'python' || entrypoint.content.includes('WorkspaiContext.LoadAsync'),
+        '.NET entrypoint does not invoke its canonical context loader.'
       );
       return {
         entrypoint: context.entrypoint,
+        contextBoundary: contextBoundary.path,
         contextInputs: adapter.manifest.bindings.contextInputs,
         byteLimit: 131072,
       };
@@ -514,7 +646,14 @@ async function main(): Promise<void> {
           coreVersion === adapter.manifest.framework.testedVersions[0],
           `Installed agent-framework-core ${coreVersion ?? 'unknown'} does not match the tested baseline.`
         );
-        assertCondition(foundryVersion === '1.12.0', 'Installed Foundry package is not 1.12.0.');
+        const expectedFoundryVersion = packageVersion(
+          MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
+          'agent-framework-foundry'
+        );
+        assertCondition(
+          foundryVersion === expectedFoundryVersion,
+          `Installed Foundry package is not ${expectedFoundryVersion}.`
+        );
         installedFrameworkPackages = {
           'agent-framework-core': coreVersion,
           'agent-framework-foundry': foundryVersion,
@@ -534,6 +673,11 @@ async function main(): Promise<void> {
         );
         await run(
           'uv',
+          ['run', '--project', '.', 'python', '-m', 'unittest', 'discover', '-s', 'tests'],
+          path.resolve(generatedRoot, path.dirname(context.dependencyManifest))
+        );
+        await run(
+          'uv',
           [
             'run',
             '--project',
@@ -543,6 +687,23 @@ async function main(): Promise<void> {
             'from agent_framework import Agent; from agent_framework.foundry import FoundryChatClient',
           ],
           generatedRoot
+        );
+        const lifecycleHarness = path.join(generatedRoot, 'credentialless-agent-lifecycle.py');
+        await fs.writeFile(lifecycleHarness, pythonLifecycleHarness(), 'utf8');
+        const lifecycle = await run(
+          'uv',
+          [
+            'run',
+            '--project',
+            path.dirname(context.dependencyManifest),
+            'python',
+            lifecycleHarness,
+          ],
+          generatedRoot
+        );
+        assertCondition(
+          lifecycle.stdout.includes(LIFECYCLE_RESPONSE_MARKER),
+          'Credentialless Python agent lifecycle did not return its admitted response.'
         );
       } else {
         const version = await run('dotnet', ['--version'], generatedRoot);
@@ -568,8 +729,12 @@ async function main(): Promise<void> {
           frameworkVersion === adapter.manifest.framework.testedVersions[0],
           `Installed Microsoft.Agents.AI ${String(frameworkVersion)} does not match the tested baseline.`
         );
+        const expectedFoundryVersion = packageVersion(
+          MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
+          'Microsoft.Agents.AI.Foundry'
+        );
         assertCondition(
-          foundryVersion === '1.20.0-preview.260831.1',
+          foundryVersion === expectedFoundryVersion,
           `Installed Microsoft.Agents.AI.Foundry ${String(foundryVersion)} does not match the tested integration baseline.`
         );
         installedFrameworkPackages = {
@@ -577,6 +742,27 @@ async function main(): Promise<void> {
           'Microsoft.Agents.AI.Foundry': foundryVersion,
         };
         await run('dotnet', ['build', context.dependencyManifest, '--no-restore'], generatedRoot);
+        const testProject = rendered.files.find((file) =>
+          file.path.endsWith('.Tests.csproj')
+        )?.path;
+        assertCondition(testProject, 'Rendered .NET test project is missing.');
+        await run('dotnet', ['restore', testProject, '--use-lock-file'], generatedRoot);
+        // xUnit v3 test projects are native Microsoft Testing Platform executables. Running the
+        // generated test project directly is stable across supported .NET SDKs and avoids
+        // inheriting or rewriting a host repository's global.json runner policy.
+        await run('dotnet', ['run', '--project', testProject, '--no-restore'], generatedRoot);
+        const generatedEntrypoint = path.resolve(generatedRoot, context.entrypoint);
+        await fs.rename(generatedEntrypoint, `${generatedEntrypoint}.verified`);
+        await fs.writeFile(generatedEntrypoint, dotnetLifecycleHarness(), 'utf8');
+        const lifecycle = await run(
+          'dotnet',
+          ['run', '--project', context.dependencyManifest, '--no-restore'],
+          generatedRoot
+        );
+        assertCondition(
+          lifecycle.stdout.includes(LIFECYCLE_RESPONSE_MARKER),
+          'Credentialless .NET agent lifecycle did not return its admitted response.'
+        );
       }
       assertCondition(runtimeVersion.length > 0, 'Runtime version was not captured.');
       return {
@@ -585,6 +771,11 @@ async function main(): Promise<void> {
         installedFrameworkPackages,
         verificationCommands: context.verificationCommands,
         providerInvocationPerformed: false,
+        credentiallessAgentLifecycle: {
+          executed: true,
+          contextObserved: true,
+          responseMarker: LIFECYCLE_RESPONSE_MARKER,
+        },
       };
     });
 
@@ -694,7 +885,7 @@ async function main(): Promise<void> {
     verdict: failedChecks.length === 0 ? 'admitted' : 'blocked',
     blockers: failedChecks.map((check) => `${check.id}: ${check.summary}`),
     limitations: [
-      'Conformance compiles and imports the pinned adapter baseline without invoking a model provider.',
+      'Conformance compiles the generated entrypoint and executes a bounded context-to-agent-to-response lifecycle with a local deterministic provider.',
       'Credential-backed Foundry execution requires a separate explicit integration environment and is not admission evidence.',
     ],
   };

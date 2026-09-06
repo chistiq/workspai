@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertUniqueKitPickerLabels,
+  buildKitCategoryChoices,
   buildKitPickerChoices,
 } from '../cli-ui/kit-picker-choices.js';
 
@@ -49,7 +50,40 @@ describe('kit picker choices', () => {
           value: 'extension.vscode',
           label: expect.stringMatching(/^Extension ·/),
         }),
+        expect.objectContaining({
+          value: 'agent.microsoft.python',
+          label: 'AI Agent · Microsoft Agent Framework · Python',
+        }),
+        expect.objectContaining({
+          value: 'agent.microsoft.dotnet',
+          label: 'AI Agent · Microsoft Agent Framework · .NET',
+        }),
       ])
     );
+  });
+
+  it('presents only categories that currently have a selectable admitted kit', () => {
+    expect(buildKitCategoryChoices()).toEqual([
+      expect.objectContaining({ value: 'backend', label: 'Backend' }),
+      expect.objectContaining({ value: 'frontend', label: 'Frontend' }),
+      expect.objectContaining({ value: 'desktop', label: 'Desktop' }),
+      expect.objectContaining({ value: 'agent', label: 'AI Agent' }),
+      expect.objectContaining({ value: 'extension', label: 'Extension' }),
+    ]);
+  });
+
+  it('filters the kit list by the selected category without changing kit identity', () => {
+    const backend = buildKitPickerChoices('backend');
+    const frontend = buildKitPickerChoices('frontend');
+
+    expect(backend.length).toBeGreaterThan(5);
+    expect(backend.every((choice) => choice.category === 'backend')).toBe(true);
+    expect(frontend.length).toBeGreaterThan(5);
+    expect(frontend.every((choice) => choice.category === 'frontend')).toBe(true);
+    expect(buildKitPickerChoices('agent')).toHaveLength(2);
+    expect(buildKitPickerChoices('agent').every((choice) => choice.category === 'agent')).toBe(
+      true
+    );
+    expect(buildKitPickerChoices('gaming')).toEqual([]);
   });
 });

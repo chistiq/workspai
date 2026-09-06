@@ -1028,4 +1028,46 @@ describe('doctor enterprise surface probes', () => {
       false
     );
   });
+
+  it('binds agent dependency and environment repairs to the nested runtime boundary', async () => {
+    const pythonProject = await makeProject({
+      'agents/primary/pyproject.toml':
+        '[project]\nname = "primary"\ndependencies = ["agent-framework-core==1.17.0"]\n',
+      'agents/primary/.env.example': 'FOUNDRY_PROJECT_ENDPOINT=\n',
+    });
+    const dotnetProject = await makeProject({
+      'agents/primary/Primary.csproj': '<Project Sdk="Microsoft.NET.Sdk"></Project>\n',
+      'agents/primary/tests/Primary.Tests.csproj': '<Project Sdk="Microsoft.NET.Sdk"></Project>\n',
+    });
+
+    const python = await buildEnterpriseSurfaceProbes({
+      projectPath: pythonProject,
+      runtimeFamily: 'python',
+      projectKind: 'agent',
+      hasTests: true,
+    });
+    const dotnet = await buildEnterpriseSurfaceProbes({
+      projectPath: dotnetProject,
+      runtimeFamily: 'dotnet',
+      projectKind: 'agent',
+      hasTests: true,
+    });
+
+    expect(python.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
+      status: 'pass',
+      applicability: 'applicable',
+    });
+    expect(python.find((probe) => probe.id === 'surface-dependency-contract')).toMatchObject({
+      status: 'warn',
+      repairCapability: { command: expect.stringContaining('uv lock --project agents/primary') },
+    });
+    expect(dotnet.find((probe) => probe.id === 'surface-dependency-contract')).toMatchObject({
+      status: 'warn',
+      repairCapability: {
+        command: expect.stringContaining(
+          'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file'
+        ),
+      },
+    });
+  });
 });

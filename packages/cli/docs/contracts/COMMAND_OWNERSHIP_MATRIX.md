@@ -78,6 +78,11 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `product manifest create`
 - `product plan`
 - `agent bootstrap`
+- `agent framework`
+- `agent framework list`
+- `agent framework plan`
+- `agent framework attach`
+- `agent framework apply`
 - `project agent-entry`
 - `project commands`
 - `project coverage`

@@ -26,6 +26,7 @@ export type BackendRuntimeFamily =
   | 'unknown';
 
 export type BackendPlatformKey =
+  | 'microsoft-agent-framework'
   | 'fastapi'
   | 'django'
   | 'flask'
@@ -120,6 +121,17 @@ type BackendContractDescriptor = BackendFrameworkContract & {
 };
 
 const BACKEND_CONTRACTS: Record<BackendPlatformKey, BackendContractDescriptor> = {
+  'microsoft-agent-framework': {
+    key: 'microsoft-agent-framework',
+    // The authored runtime hint overrides this default because Microsoft
+    // Agent Framework has equally governed Python and .NET adapters.
+    runtime: 'python',
+    displayName: 'Microsoft Agent Framework',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['microsoft-agent-framework', 'microsoft agent framework'],
+    kitPrefixes: ['agent.microsoft'],
+  },
   fastapi: {
     key: 'fastapi',
     runtime: 'python',
@@ -768,12 +780,18 @@ export function detectBackendFrameworkFromHints(input: {
 }): BackendFrameworkDetection {
   const byKit = findByKitName(input.kitName);
   if (byKit !== 'unknown') {
-    return buildDetection(byKit, 'high', 'kit');
+    const detected = buildDetection(byKit, 'high', 'kit');
+    return byKit === 'microsoft-agent-framework' && input.runtime
+      ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
+      : detected;
   }
 
   const byFramework = normalizeBackendPlatformKey(input.framework);
   if (byFramework !== 'unknown') {
-    return buildDetection(byFramework, 'high', 'framework');
+    const detected = buildDetection(byFramework, 'high', 'framework');
+    return byFramework === 'microsoft-agent-framework' && input.runtime
+      ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
+      : detected;
   }
 
   const byRuntime = normalizeBackendPlatformKey(input.runtime);

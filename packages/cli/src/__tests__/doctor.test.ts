@@ -3482,6 +3482,93 @@ describe('Doctor Command', () => {
     }
   });
 
+  it('keeps governed nested Python agent identity and environment evidence consistent', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-agent-'));
+    const projectPath = path.join(tempRoot, 'apex-agent');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'apex-agent',
+      generated_by: 'workspai',
+      kind: 'agent',
+      runtime: 'python',
+      framework: 'microsoft-agent-framework',
+      kit: 'agent.microsoft.python',
+      contracts: { env: ['FOUNDRY_PROJECT_ENDPOINT'] },
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[project]\nname = "apex-agent"\nrequires-python = ">=3.10"\ndependencies = []\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\ndependencies = ["agent-framework-core==1.17.0"]\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', '.env.example'),
+      'FOUNDRY_PROJECT_ENDPOINT=\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'tests', 'test_context.py'),
+      'import unittest\n'
+    );
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: '', exitCode: 0 } as any;
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true, fresh: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as
+        string | undefined;
+      const payload = JSON.parse(jsonLine ?? '{}');
+      expect(payload.project).toMatchObject({
+        framework: 'Microsoft Agent Framework',
+        frameworkKey: 'microsoft-agent-framework',
+        runtimeFamily: 'python',
+        projectKind: 'agent',
+        projectArchetype: 'application',
+      });
+      expect(
+        payload.project.fixCommands.some((command: string) =>
+          command.includes('uv sync --project agents/primary')
+        )
+      ).toBe(true);
+      const dependencyMaterialization = payload.project.repairCapabilities.find(
+        (capability: { id?: string }) =>
+          capability.id === 'runtime-dependency-materialization.dependency-materialization'
+      );
+      expect(dependencyMaterialization).toMatchObject({
+        invocation: {
+          executable: 'uv',
+          args: ['sync', '--project', 'agents/primary'],
+        },
+      });
+      expect(
+        dependencyMaterialization.files.map((file: string) => file.replaceAll('\\', '/'))
+      ).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('agents/primary/pyproject.toml'),
+          expect.stringContaining('agents/primary/uv.lock'),
+        ])
+      );
+      expect(
+        payload.project.probes.find((probe: { id?: string }) => probe.id === 'surface-env-contract')
+      ).toMatchObject({ status: 'pass', applicability: 'applicable' });
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
   it('should report command capabilities for nested ASP.NET Core project files', async () => {
     const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-doctor-dotnet-'));
     const workspacePath = path.join(tempRoot, 'workspace');

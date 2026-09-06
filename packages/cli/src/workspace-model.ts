@@ -52,6 +52,7 @@ import {
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { readWorkspaceContract, type WorkspaceContract } from './utils/workspace-contract.js';
 import { readRapidkitProjectJson } from './utils/runtime-detection.js';
+import { readProjectMetadata } from './utils/project-metadata.js';
 import { getRuntimeSupport } from './utils/support-matrix.js';
 import { discoverWorkspaceProjects } from './utils/workspace-discovery.js';
 import { readWorkspaceMarker } from './workspace-marker.js';
@@ -680,7 +681,15 @@ async function buildProjectModel(
   // Discovery already resolved this project's boundary. Ancestor metadata
   // belongs to another project, even when it contains this directory.
   const projectJson = readRapidkitProjectJson(projectPath, { searchParents: false });
-  const detection = detectBackendFrameworkFromProject(projectPath, projectJson);
+  // Authored Workspai metadata is the canonical identity for native projects.
+  // Re-running source heuristics here used to erase multi-runtime framework
+  // identities (for example Microsoft Agent Framework became plain Python or
+  // .NET) even though the capability resolver had already read them correctly.
+  const metadata = readProjectMetadata(projectPath);
+  const detection =
+    metadata && !isWorkspaiManagedLinkedProjectMetadata(projectJson)
+      ? metadata.detection
+      : detectBackendFrameworkFromProject(projectPath, projectJson);
   const capabilities = resolveProjectCommandCapabilities(projectPath);
   const runtimeSupport = getRuntimeSupport(detection.runtime);
   const kind = await inferWorkspaceProjectKind(projectPath, projectJson, {
@@ -802,6 +811,9 @@ function inferWorkspaceType(projects: WorkspaceModelProject[]): string {
   }
   if (categories.has('extension')) {
     return 'extension-workspace';
+  }
+  if (categories.has('agent')) {
+    return projects.length > 1 ? 'agent-platform-workspace' : 'agent-workspace';
   }
   if (categories.has('platform')) {
     return 'platform-workspace';
