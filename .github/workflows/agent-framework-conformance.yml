@@ -54,7 +54,9 @@ jobs:
       - uses: actions/setup-python@v6
         if: matrix.runtime == 'python'
         with:
-          python-version: "3.10.21"
+          # 3.10.11 is the final 3.10 release with cross-platform binary
+          # installers and is available for Linux, macOS arm64, and Windows.
+          python-version: "3.10.11"
 
       - uses: actions/setup-dotnet@v5
         if: matrix.runtime == 'dotnet'
@@ -72,11 +74,12 @@ jobs:
         run: npm --workspace workspai exec vitest -- run src/__tests__/contracts/agent-framework-contract.test.ts src/__tests__/agent-framework-registry.test.ts src/__tests__/microsoft-agent-framework-adapter.test.ts
 
       - name: Compile generated adapter project
+        id: conformance
         working-directory: packages/cli
         run: npm exec tsx -- scripts/smoke-microsoft-agent-framework-adapter.ts --runtime ${{ matrix.runtime }} --report-dir test-results/agent-framework-conformance
 
       - name: Upload lane evidence
-        if: always()
+        if: always() && steps.conformance.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: agent-framework-${{ matrix.runtime }}-${{ runner.os }}

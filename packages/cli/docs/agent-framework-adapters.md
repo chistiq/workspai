@@ -119,6 +119,9 @@ checks, the exact runtime and framework baseline, a digest of the adapter
 manifest, and one bounded evidence file per check. Reports are retained as CI
 artifacts for review. A final job validates every evidence path and admits the
 matrix only when all three operating-system lanes pass for both adapters.
+Python conformance is pinned to 3.10.11, the final Python 3.10 release with
+cross-platform binary installers; this provides one reproducible minimum-runtime
+baseline while the adapter continues to declare Python `>=3.10` support.
 
 After verification, CI emits one admission-candidate artifact. It binds the
 source commit, CLI version, adapter-manifest digests, lane reports, and every

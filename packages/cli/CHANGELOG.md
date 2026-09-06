@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and ownership receipts for safe idempotent refreshes.
 - Added a review-pending admission candidate that binds the complete six-lane
   framework matrix, source commit, reports, and evidence files by SHA-256.
+- Pinned Python conformance to the reproducible 3.10.11 cross-platform binary
+  baseline and suppressed secondary artifact-upload failures when runtime setup
+  prevents the conformance step from starting.
 
 ## [0.74.0] - 2026-09-05
 
