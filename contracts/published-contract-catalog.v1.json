@@ -496,6 +496,36 @@
       "contractPath": "contracts/agent-customization-pack.v1.json",
       "publication": "capability-contract"
     },
+    "agentFrameworkCapabilities": {
+      "schemaVersion": "workspai.agent-framework-capabilities.v1",
+      "contractPath": "contracts/agent-framework-capabilities.v1.json",
+      "publication": "capability-contract"
+    },
+    "agentFrameworkAdapterManifest": {
+      "schemaVersion": "workspai.agent-framework-adapter-manifest.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkConformanceReport": {
+      "schemaVersion": "workspai.agent-framework-conformance-report.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-conformance-report.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkChangePlan": {
+      "schemaVersion": "workspai.agent-framework-change-plan.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-change-plan.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkOwnershipReceipt": {
+      "schemaVersion": "workspai.agent-framework-ownership-receipt.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkAdmissionCandidate": {
+      "schemaVersion": "workspai.agent-framework-admission-candidate.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json",
+      "publication": "json-schema"
+    },
     "agentCustomizationPackReport": {
       "schemaVersion": "rapidkit-agent-customization-pack.v1",
       "contractPath": "contracts/workspace-intelligence/agent-customization-pack-report.v1.json",

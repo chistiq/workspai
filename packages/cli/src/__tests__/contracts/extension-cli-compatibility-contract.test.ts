@@ -26,6 +26,18 @@ describe('extension-cli-compatibility contract', () => {
       'artifact-remediation-plan-v1'
     );
     expect(contract.publishedContractSchemas.factFreshness).toBe('rapidkit-fact-freshness-v1');
+    expect(contract.publishedContractSchemas.agentFrameworkCapabilities).toBe(
+      'workspai.agent-framework-capabilities.v1'
+    );
+    expect(contract.publishedContractSchemas.agentFrameworkAdapterManifest).toBe(
+      'workspai.agent-framework-adapter-manifest.v1'
+    );
+    expect(contract.publishedContractSchemas.agentFrameworkChangePlan).toBe(
+      'workspai.agent-framework-change-plan.v1'
+    );
+    expect(contract.publishedContractSchemas.agentFrameworkOwnershipReceipt).toBe(
+      'workspai.agent-framework-ownership-receipt.v1'
+    );
     expect(contract.publishedContractSchemas.doctorFixResult).toBe('rapidkit-doctor-fix-result-v1');
   });
 });

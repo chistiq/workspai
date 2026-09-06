@@ -13,6 +13,7 @@ const CLI_EXTENSION_CONTRACT_FILES = [
   'runtime-command-surface.v1.json',
   'cli-operation-result.v1.json',
   'command-capabilities.v1.json',
+  'agent-framework-capabilities.v1.json',
   'version.v1.json',
   'published-contract-catalog.v1.json',
   'workspace-archive-capabilities.v1.json',
@@ -37,6 +38,10 @@ const CLI_EXTENSION_CONTRACT_FILES = [
   'workspace-repair-capabilities.v1.json',
   'workspace-intelligence/workspace-repair-proposal.v1.json',
   'workspace-intelligence/workspace-repair-transaction.v1.json',
+  'workspace-intelligence/agent-framework-adapter-manifest.v1.json',
+  'workspace-intelligence/agent-framework-conformance-report.v1.json',
+  'workspace-intelligence/agent-framework-change-plan.v1.json',
+  'workspace-intelligence/agent-framework-ownership-receipt.v1.json',
   'analyze-last-run.v1.json',
 ];
 

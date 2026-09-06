@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a framework-neutral Agent Framework Adapter Contract with explicit
+  capability declarations, authority boundaries, version-pinned manifests,
+  secure managed-file rules, and mandatory conformance evidence. No concrete
+  agent framework adapter or scaffold is advertised by this contract-only
+  foundation.
+- Added a bounded manifest loader, typed authored-evidence detection for npm,
+  PyPI, and NuGet projects, an ambiguity-safe adapter registry, and exact
+  platform/runtime/framework-version conformance admission. Discovery never
+  executes adapter packages or treats generated Workspai files as authored
+  framework evidence.
+- Added preview Microsoft Agent Framework adapters for Python 1.17 and .NET
+  1.20 with deterministic scaffold/attach plans, ownership-safe rendering,
+  secret-reference enforcement, runtime resolution, and independent validation.
+  The adapters remain non-selectable until every advertised conformance lane
+  supplies digest-bound passing evidence.
+- Added a six-lane Microsoft adapter conformance workflow that emits auditable
+  per-check evidence even for blocked lanes, compiles the pinned Python and
+  .NET projects on Linux, macOS, and Windows, and rejects incomplete,
+  duplicated, stale-manifest, or evidence-missing report sets before admission.
+- Added a PCC-backed agent-framework lifecycle that binds the exact project,
+  adapter version, managed paths, and content digests before authorization,
+  writes only after an explicit filesystem grant, and records portable effect
+  and ownership receipts for safe idempotent refreshes.
+- Added a review-pending admission candidate that binds the complete six-lane
+  framework matrix, source commit, reports, and evidence files by SHA-256.
+
 ## [0.74.0] - 2026-09-05
 
 ### Added

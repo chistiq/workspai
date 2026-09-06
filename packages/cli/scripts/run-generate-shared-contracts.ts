@@ -30,6 +30,14 @@ import {
 } from '../src/contracts/ingestion-contract.js';
 import { buildStudioCardRepairCapabilitiesContract } from '../src/contracts/studio-card-repair-capabilities-contract.js';
 import { buildWorkspaceRepairCapabilitiesContract } from '../src/contracts/workspace-repair-capabilities-contract.js';
+import {
+  buildAgentFrameworkAdapterManifestSchema,
+  buildAgentFrameworkAdmissionCandidateSchema,
+  buildAgentFrameworkCapabilitiesContract,
+  buildAgentFrameworkChangePlanSchema,
+  buildAgentFrameworkConformanceReportSchema,
+  buildAgentFrameworkOwnershipReceiptSchema,
+} from '../src/contracts/agent-framework-contract.js';
 
 const contractsDir = path.resolve(process.cwd(), 'contracts');
 
@@ -77,3 +85,24 @@ writeJson(
 writeJson('workspace-intelligence-chain.v1.json', buildWorkspaceIntelligenceChainContract());
 writeJson('studio-card-repair-capabilities.v1.json', buildStudioCardRepairCapabilitiesContract());
 writeJson('workspace-repair-capabilities.v1.json', buildWorkspaceRepairCapabilitiesContract());
+writeJson('agent-framework-capabilities.v1.json', buildAgentFrameworkCapabilitiesContract());
+writeJson(
+  'workspace-intelligence/agent-framework-adapter-manifest.v1.json',
+  buildAgentFrameworkAdapterManifestSchema()
+);
+writeJson(
+  'workspace-intelligence/agent-framework-conformance-report.v1.json',
+  buildAgentFrameworkConformanceReportSchema()
+);
+writeJson(
+  'workspace-intelligence/agent-framework-change-plan.v1.json',
+  buildAgentFrameworkChangePlanSchema()
+);
+writeJson(
+  'workspace-intelligence/agent-framework-ownership-receipt.v1.json',
+  buildAgentFrameworkOwnershipReceiptSchema()
+);
+writeJson(
+  'workspace-intelligence/agent-framework-admission-candidate.v1.json',
+  buildAgentFrameworkAdmissionCandidateSchema()
+);
