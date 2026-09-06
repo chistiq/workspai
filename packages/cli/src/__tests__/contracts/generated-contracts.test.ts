@@ -32,6 +32,13 @@ import {
 } from '../../contracts/ingestion-contract';
 import { buildStudioCardRepairCapabilitiesContract } from '../../contracts/studio-card-repair-capabilities-contract';
 import { buildWorkspaceRepairCapabilitiesContract } from '../../contracts/workspace-repair-capabilities-contract';
+import {
+  buildAgentFrameworkAdapterManifestSchema,
+  buildAgentFrameworkCapabilitiesContract,
+  buildAgentFrameworkChangePlanSchema,
+  buildAgentFrameworkConformanceReportSchema,
+  buildAgentFrameworkOwnershipReceiptSchema,
+} from '../../contracts/agent-framework-contract';
 
 function readJsonContract(fileName: string): unknown {
   const contractPath = path.resolve(process.cwd(), 'contracts', fileName);
@@ -119,6 +126,24 @@ describe('generated shared contracts (Wave B + C)', () => {
     expect(readJsonContract('agent-customization-pack.v1.json')).toEqual(
       buildAgentCustomizationPackContract()
     );
+  });
+
+  it('keeps agent framework contracts aligned with the generator', () => {
+    expect(readJsonContract('agent-framework-capabilities.v1.json')).toEqual(
+      buildAgentFrameworkCapabilitiesContract()
+    );
+    expect(
+      readJsonContract('workspace-intelligence/agent-framework-adapter-manifest.v1.json')
+    ).toEqual(buildAgentFrameworkAdapterManifestSchema());
+    expect(
+      readJsonContract('workspace-intelligence/agent-framework-conformance-report.v1.json')
+    ).toEqual(buildAgentFrameworkConformanceReportSchema());
+    expect(readJsonContract('workspace-intelligence/agent-framework-change-plan.v1.json')).toEqual(
+      buildAgentFrameworkChangePlanSchema()
+    );
+    expect(
+      readJsonContract('workspace-intelligence/agent-framework-ownership-receipt.v1.json')
+    ).toEqual(buildAgentFrameworkOwnershipReceiptSchema());
   });
 
   it('keeps committed import stack parity snapshot aligned with the generator', () => {

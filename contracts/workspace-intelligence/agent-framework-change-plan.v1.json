@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/workspace-intelligence/agent-framework-change-plan.v1.json",
+  "title": "Workspai Agent Framework Change Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "adapterId",
+    "adapterVersion",
+    "frameworkVersion",
+    "mode",
+    "projectRoot",
+    "target",
+    "instanceName",
+    "files",
+    "changes",
+    "requiredEnvironment",
+    "permissions",
+    "blockers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "workspai.agent-framework-change-plan.v1"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "blocked",
+        "no-op"
+      ]
+    },
+    "adapterId": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"
+    },
+    "adapterVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "frameworkVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "enum": [
+        "scaffold",
+        "attach"
+      ]
+    },
+    "projectRoot": {
+      "const": "."
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "artifactPrefix"
+      ],
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifactPrefix": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "anyOf": [
+              {
+                "pattern": "^/"
+              },
+              {
+                "pattern": "^[A-Za-z]:[\\/]"
+              },
+              {
+                "pattern": "(^|[\\/])\\.\\.([\\/]|$)"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "instanceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256",
+          "overwrite"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "anyOf": [
+                {
+                  "pattern": "^/"
+                },
+                {
+                  "pattern": "^[A-Za-z]:[\\/]"
+                },
+                {
+                  "pattern": "(^|[\\/])\\.\\.([\\/]|$)"
+                }
+              ]
+            }
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "overwrite": {
+            "enum": [
+              "create-only",
+              "replace-if-owned"
+            ]
+          }
+        }
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "path",
+          "summary"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "create-file",
+              "replace-owned-file",
+              "dependency-recommendation"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "anyOf": [
+                {
+                  "pattern": "^/"
+                },
+                {
+                  "pattern": "^[A-Za-z]:[\\/]"
+                },
+                {
+                  "pattern": "(^|[\\/])\\.\\.([\\/]|$)"
+                }
+              ]
+            }
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "requiredEnvironment": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "network:model-provider",
+          "network:dependency-registry"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "blocked"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "planned"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "changes": {
+            "type": "array",
+            "minItems": 1
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1
+          },
+          "blockers": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "no-op"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "changes": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "blockers": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

@@ -13,6 +13,16 @@ import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from './workspace-intelligence-runtime-registry.js';
+import {
+  AGENT_FRAMEWORK_ADAPTER_MANIFEST_CONTRACT_PATH,
+  AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH,
+  AGENT_FRAMEWORK_ADAPTER_PROTOCOL_VERSION,
+  AGENT_FRAMEWORK_CAPABILITIES_CONTRACT_PATH,
+  AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_CHANGE_PLAN_CONTRACT_PATH,
+  AGENT_FRAMEWORK_CONFORMANCE_REPORT_CONTRACT_PATH,
+  AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_CONTRACT_PATH,
+} from './agent-framework-contract.js';
 
 export const WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION =
   'workspai-workspace-intelligence-architecture-v1';
@@ -87,6 +97,20 @@ export type WorkspaceIntelligenceArchitectureContract = {
       discoveryIndex: (typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS)['goalIndex'];
       mutationMode: 'proposal-only';
       sourceAuthority: 'workspace-model-and-derived-knowledge-graph';
+      rules: string[];
+    };
+    agentFrameworkIntegration: {
+      status: 'preview-adapters';
+      protocolVersion: typeof AGENT_FRAMEWORK_ADAPTER_PROTOCOL_VERSION;
+      capabilitiesContract: {
+        schemaVersion: typeof AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION;
+        path: typeof AGENT_FRAMEWORK_CAPABILITIES_CONTRACT_PATH;
+      };
+      adapterManifestSchema: typeof AGENT_FRAMEWORK_ADAPTER_MANIFEST_CONTRACT_PATH;
+      conformanceReportSchema: typeof AGENT_FRAMEWORK_CONFORMANCE_REPORT_CONTRACT_PATH;
+      changePlanSchema: typeof AGENT_FRAMEWORK_CHANGE_PLAN_CONTRACT_PATH;
+      ownershipReceiptSchema: typeof AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_CONTRACT_PATH;
+      admissionCandidateSchema: typeof AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH;
       rules: string[];
     };
   };
@@ -199,6 +223,28 @@ export function buildWorkspaceIntelligenceArchitectureContract(): WorkspaceIntel
           'Portable Goal artifacts exclude absolute machine paths, secrets, raw model responses, and unrestricted command output.',
         ],
       },
+      agentFrameworkIntegration: {
+        status: 'preview-adapters',
+        protocolVersion: AGENT_FRAMEWORK_ADAPTER_PROTOCOL_VERSION,
+        capabilitiesContract: {
+          schemaVersion: AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION,
+          path: AGENT_FRAMEWORK_CAPABILITIES_CONTRACT_PATH,
+        },
+        adapterManifestSchema: AGENT_FRAMEWORK_ADAPTER_MANIFEST_CONTRACT_PATH,
+        conformanceReportSchema: AGENT_FRAMEWORK_CONFORMANCE_REPORT_CONTRACT_PATH,
+        changePlanSchema: AGENT_FRAMEWORK_CHANGE_PLAN_CONTRACT_PATH,
+        ownershipReceiptSchema: AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_CONTRACT_PATH,
+        admissionCandidateSchema: AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH,
+        rules: [
+          'Create kits and existing-project attachment must consume the same framework adapter contract.',
+          'A framework adapter owns runtime integration, never canonical Model, Graph, Goal, PCC, or verification truth.',
+          'No framework is advertised as supported until a version-pinned manifest and required conformance matrix are published.',
+          'Framework identity, project runtime, and model provider remain independently selectable dimensions.',
+          'Microsoft Agent Framework Python and .NET adapters are implemented as preview but remain non-selectable until every advertised conformance lane passes.',
+          'Execution plans are bound to PCC before authorization, and later refreshes require a manifest-bound ownership receipt rather than trusting generated-file markers.',
+          'A green conformance matrix emits only a commit- and digest-bound pending admission candidate; registry authority requires a separate reviewed release action.',
+        ],
+      },
     },
     consumers: [
       {
@@ -270,6 +316,7 @@ export function buildWorkspaceIntelligenceArchitectureContract(): WorkspaceIntel
         'Existing projects can enter Workspace Intelligence through adopt/import when they are readable and can be registered, even when native scaffold is unavailable.',
         'Existing runtime signals in the create planner are examples for detection, not a closed allowlist of adopt/import support.',
         'Agent grounding is available through workspace context, agent-sync, generated agent files, skills index, and MCP evidence access.',
+        'Workspai publishes a framework-neutral adapter contract without claiming that a framework integration has shipped.',
         'Verification and governance claims must reference doctor, analyze, readiness, pipeline, workspace verify, or generated evidence artifacts.',
       ],
       forbiddenUnlessImplemented: [
@@ -278,6 +325,7 @@ export function buildWorkspaceIntelligenceArchitectureContract(): WorkspaceIntel
         'Do not claim a chat UI or repository chat exists in the CLI unless a shipped command or product surface implements it.',
         'Do not present inferred or unknown facts as verified evidence.',
         'Do not describe documentation as the source of truth; documentation must be described as generated from evidence.',
+        'Do not claim support for an agent framework without a published adapter manifest and passing conformance evidence for the selected version and platform.',
       ],
     },
     createPlannerReality: {

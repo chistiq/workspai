@@ -1,0 +1,129 @@
+name: Agent Framework Adapter Matrix
+
+on:
+  pull_request:
+    paths:
+      - "packages/cli/src/agent-frameworks/**"
+      - "packages/cli/src/contracts/agent-framework-contract.ts"
+      - "packages/cli/src/proof-carrying-change.ts"
+      - "packages/cli/src/utils/json-schema-contract.ts"
+      - "packages/cli/src/utils/workspace-paths.ts"
+      - "packages/cli/src/__tests__/agent-framework-lifecycle.test.ts"
+      - "packages/cli/src/__tests__/agent-framework-admission-candidate.test.ts"
+      - "packages/cli/src/__tests__/agent-framework-registry.test.ts"
+      - "packages/cli/src/__tests__/microsoft-agent-framework-adapter.test.ts"
+      - "packages/cli/src/__tests__/contracts/agent-framework-contract.test.ts"
+      - "packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts"
+      - "packages/cli/scripts/verify-agent-framework-conformance.ts"
+      - "packages/cli/package.json"
+      - "packages/cli/contracts/agent-framework-capabilities.v1.json"
+      - "packages/cli/contracts/workspace-intelligence/agent-framework-*.v1.json"
+      - "contracts/agent-framework-capabilities.v1.json"
+      - "contracts/workspace-intelligence/agent-framework-*.v1.json"
+      - ".github/workflows/agent-framework-conformance.yml"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-framework-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  microsoft-agent-framework:
+    name: Microsoft Agent Framework · ${{ matrix.runtime }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        runtime: [python, dotnet]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: actions/setup-python@v6
+        if: matrix.runtime == 'python'
+        with:
+          # 3.10.11 is the final 3.10 release with cross-platform binary
+          # installers and is available for Linux, macOS arm64, and Windows.
+          python-version: "3.10.11"
+
+      - uses: actions/setup-dotnet@v5
+        if: matrix.runtime == 'dotnet'
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install pinned uv runtime
+        if: matrix.runtime == 'python'
+        run: python -m pip install uv==0.12.6
+
+      - name: Validate contracts and adapter behavior
+        run: npm --workspace workspai exec vitest -- run src/__tests__/contracts/agent-framework-contract.test.ts src/__tests__/agent-framework-registry.test.ts src/__tests__/microsoft-agent-framework-adapter.test.ts
+
+      - name: Compile generated adapter project
+        id: conformance
+        working-directory: packages/cli
+        run: npm exec tsx -- scripts/smoke-microsoft-agent-framework-adapter.ts --runtime ${{ matrix.runtime }} --report-dir test-results/agent-framework-conformance
+
+      - name: Upload lane evidence
+        if: always() && steps.conformance.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-framework-${{ matrix.runtime }}-${{ runner.os }}
+          path: packages/cli/test-results/agent-framework-conformance
+          if-no-files-found: error
+          retention-days: 14
+
+  admit-matrix:
+    name: Admit complete adapter matrix
+    if: always()
+    needs: microsoft-agent-framework
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Download every conformance lane
+        uses: actions/download-artifact@v5
+        with:
+          pattern: agent-framework-*
+          path: packages/cli/test-results/agent-framework-conformance
+          merge-multiple: true
+
+      - name: Verify evidence and admit complete matrix
+        working-directory: packages/cli
+        env:
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm exec tsx -- scripts/verify-agent-framework-conformance.ts --reports test-results/agent-framework-conformance --write-candidate test-results/agent-framework-conformance/agent-framework-admission-candidate.json --source-commit "$SOURCE_COMMIT"
+
+      - name: Upload reviewable admission candidate
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-framework-admission-candidate-${{ github.sha }}
+          path: packages/cli/test-results/agent-framework-conformance
+          if-no-files-found: error
+          retention-days: 30

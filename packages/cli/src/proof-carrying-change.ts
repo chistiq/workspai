@@ -873,6 +873,86 @@ export async function recordProofCarryingChangePrediction(input: {
   });
 }
 
+/**
+ * Bind a typed, portable execution plan to an evidence-ready PCC transaction.
+ *
+ * Domain integrations use this boundary instead of treating a broad effect
+ * authorization as permission to execute an unrecorded plan. The payload is
+ * persisted under the immutable change namespace and its canonical digest is
+ * appended to the decision event chain before a human can authorize effects.
+ */
+export async function attachProofCarryingChangePlan(input: {
+  workspacePath: string;
+  changeId: string;
+  role: string;
+  schemaVersion: string;
+  contractPath: string;
+  payload: unknown;
+  actorKind?: Parameters<typeof actor>[0];
+  actorId?: string;
+}): Promise<{
+  changeId: string;
+  state: string;
+  artifact: string;
+  digest: string;
+}> {
+  const { lease, record: initial } = await loadChange(input.workspacePath, input.changeId);
+  await assertLeaseStillCurrent(input.workspacePath, lease);
+  if (initial.transaction.state !== 'evidence-ready') {
+    throw new Error(
+      `Plan attachment requires evidence-ready state, observed ${initial.transaction.state}.`
+    );
+  }
+  const role = input.role.trim().toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/.test(role)) {
+    throw new Error(`Invalid proof-carrying plan role: ${input.role}`);
+  }
+  if (!input.schemaVersion.trim()) throw new Error('Plan schema version is required.');
+  const contractPath = input.contractPath.replace(/\\/g, '/');
+  if (
+    !contractPath.startsWith('contracts/') ||
+    contractPath.split('/').some((segment) => segment === '..' || segment === '.')
+  ) {
+    throw new Error(
+      `Plan contract path must resolve inside the published contract root: ${input.contractPath}`
+    );
+  }
+  if (
+    !input.payload ||
+    typeof input.payload !== 'object' ||
+    (input.payload as { schemaVersion?: unknown }).schemaVersion !== input.schemaVersion
+  ) {
+    throw new Error('Plan payload schema version does not match its PCC reference.');
+  }
+  assertJsonSchemaContract(input.payload, contractPath, `${role} plan`);
+  const digest = hashCanonicalJson(input.payload);
+  const artifact = `${pathsFor(input.changeId).directory}/plans/${role}-${digest}.json`;
+  await writeWorkspaceArtifactJson(input.workspacePath, artifact, input.payload);
+  const record = await append(
+    input.workspacePath,
+    initial,
+    input.changeId,
+    event(
+      'plan-attached',
+      {
+        summary: `Attach ${role} execution plan.`,
+        references: [
+          reference({
+            role,
+            artifact,
+            schemaVersion: input.schemaVersion,
+            value: digest,
+          }),
+        ],
+      },
+      input.actorKind ?? 'cli',
+      input.actorId ?? 'workspai-plan'
+    )
+  );
+  await publishCapsule(input.workspacePath, lease, record);
+  return { changeId: input.changeId, state: record.transaction.state, artifact, digest };
+}
+
 export async function authorizeProofCarryingChange(input: {
   workspacePath: string;
   changeId: string;

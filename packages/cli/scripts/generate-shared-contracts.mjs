@@ -45,6 +45,12 @@ const GENERATED_FILES = [
   'workspace-intelligence-chain.v1.json',
   'studio-card-repair-capabilities.v1.json',
   'workspace-repair-capabilities.v1.json',
+  'agent-framework-capabilities.v1.json',
+  'workspace-intelligence/agent-framework-adapter-manifest.v1.json',
+  'workspace-intelligence/agent-framework-conformance-report.v1.json',
+  'workspace-intelligence/agent-framework-change-plan.v1.json',
+  'workspace-intelligence/agent-framework-ownership-receipt.v1.json',
+  'workspace-intelligence/agent-framework-admission-candidate.v1.json',
 ];
 
 function runGenerator() {

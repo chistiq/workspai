@@ -97,6 +97,14 @@ import {
   PROOF_CARRYING_CHANGE_CAPSULE_VALIDATION_SCHEMA_VERSION,
   PROOF_CARRYING_CHANGE_CAPSULE_SCHEMA_VERSION,
 } from './proof-carrying-change-contract.js';
+import {
+  AGENT_FRAMEWORK_ADAPTER_MANIFEST_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_ADMISSION_CANDIDATE_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_CHANGE_PLAN_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_CONFORMANCE_REPORT_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_SCHEMA_VERSION,
+} from './agent-framework-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -182,6 +190,12 @@ export function getPublishedContractVersions() {
       WORKSPACE_INTELLIGENCE_EVALUATION_COMPARISON_SCHEMA_VERSION,
     workspaceIntelligenceHistory: WORKSPACE_HISTORY_SCHEMA_VERSION,
     agentCustomizationPackCapabilities: AGENT_CUSTOMIZATION_PACK_SCHEMA_VERSION,
+    agentFrameworkCapabilities: AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION,
+    agentFrameworkAdapterManifest: AGENT_FRAMEWORK_ADAPTER_MANIFEST_SCHEMA_VERSION,
+    agentFrameworkConformanceReport: AGENT_FRAMEWORK_CONFORMANCE_REPORT_SCHEMA_VERSION,
+    agentFrameworkChangePlan: AGENT_FRAMEWORK_CHANGE_PLAN_SCHEMA_VERSION,
+    agentFrameworkOwnershipReceipt: AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_SCHEMA_VERSION,
+    agentFrameworkAdmissionCandidate: AGENT_FRAMEWORK_ADMISSION_CANDIDATE_SCHEMA_VERSION,
     agentCustomizationPackReport: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.agentCustomizationPack,
     agentReportsIndex: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.agentIndex,
     workspaceOperationalSkill: WORKSPACE_OPERATIONAL_SKILL_SCHEMA_VERSION,
@@ -318,6 +332,17 @@ export function getPublishedContractCatalog() {
     workspaceIntelligenceHistory:
       'contracts/workspace-intelligence/workspace-intelligence-history.v1.json',
     agentCustomizationPackCapabilities: 'contracts/agent-customization-pack.v1.json',
+    agentFrameworkCapabilities: 'contracts/agent-framework-capabilities.v1.json',
+    agentFrameworkAdapterManifest:
+      'contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json',
+    agentFrameworkConformanceReport:
+      'contracts/workspace-intelligence/agent-framework-conformance-report.v1.json',
+    agentFrameworkChangePlan:
+      'contracts/workspace-intelligence/agent-framework-change-plan.v1.json',
+    agentFrameworkOwnershipReceipt:
+      'contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json',
+    agentFrameworkAdmissionCandidate:
+      'contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json',
     agentCustomizationPackReport:
       'contracts/workspace-intelligence/agent-customization-pack-report.v1.json',
     agentReportsIndex: 'contracts/workspace-intelligence/agent-reports-index.v1.json',
