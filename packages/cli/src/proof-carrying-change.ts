@@ -69,8 +69,14 @@ type ChangePaths = {
   prediction: string;
   actualOverlay: string;
   surprises: string;
+  workspaceVerification: string;
   capsule: string;
   privateBaselineGraph: string;
+};
+
+type ProofCarryingChangeBaseline = WorkspaceKnowledgeGraph & {
+  /** Private byte inventory; never published as canonical Graph evidence. */
+  pccArtifactContentHashes?: Record<string, string>;
 };
 
 const kernelPorts = { digestCanonical: hashCanonicalJson };
@@ -93,6 +99,7 @@ function pathsFor(changeId: string): ChangePaths {
     prediction: `${directory}/predicted-overlay.json`,
     actualOverlay: `${directory}/actual-overlay.json`,
     surprises: `${directory}/architecture-surprises.json`,
+    workspaceVerification: `${directory}/verification/workspace-verify.json`,
     capsule: `${directory}/capsule.json`,
     privateBaselineGraph: `${directory}/private/baseline-graph.json`,
   };
@@ -125,6 +132,56 @@ async function readJson<T>(workspacePath: string, relativePath: string): Promise
   const absolute = await resolveContainedWorkspaceArtifactPath(workspacePath, relativePath);
   if (!absolute) return null;
   return (await fsExtra.readJson(absolute)) as T;
+}
+
+async function rawArtifactContentHash(
+  workspacePath: string,
+  artifact: string
+): Promise<string | null> {
+  const candidate = await resolvePortableWorkspaceEvidenceCandidatePath(
+    workspacePath,
+    normalizedArtifactIdentity(artifact)
+  );
+  if (!candidate) return null;
+  const stat = await fsExtra.stat(candidate).catch(() => null);
+  if (!stat?.isFile()) return null;
+  return createHash('sha256')
+    .update(await fsExtra.readFile(candidate))
+    .digest('hex');
+}
+
+/**
+ * A provider may cite a real source file without hashing its bytes because the
+ * proof describes a semantic observation rather than file ingestion. PCC
+ * baselines still need byte identity: otherwise provider churn can look like a
+ * source mutation. Materialize missing hashes only in the private, immutable
+ * baseline inventory; the canonical Graph and its proof semantics remain
+ * owned by their providers and are not enriched or rewritten here.
+ */
+async function materializeBaselineArtifactHashes(
+  workspacePath: string,
+  graph: WorkspaceKnowledgeGraph
+): Promise<ProofCarryingChangeBaseline> {
+  const hashes = new Map<string, Promise<string | null>>();
+  await Promise.all(
+    graph.proofs.map(async (proof) => {
+      const artifact = normalizedArtifactIdentity(proof.artifact);
+      let pending = hashes.get(artifact);
+      if (!pending) {
+        pending = rawArtifactContentHash(workspacePath, artifact);
+        hashes.set(artifact, pending);
+      }
+      await pending;
+    })
+  );
+  const pccArtifactContentHashes = Object.fromEntries(
+    (
+      await Promise.all(
+        [...hashes.entries()].map(async ([artifact, pending]) => [artifact, await pending] as const)
+      )
+    ).filter((entry): entry is readonly [string, string] => typeof entry[1] === 'string')
+  );
+  return { ...graph, pccArtifactContentHashes };
 }
 
 async function workspaceIdentityName(workspacePath: string): Promise<string> {
@@ -322,6 +379,66 @@ function actualOperations(overlay: WorkspaceKnowledgeGraphChangeOverlay) {
   );
 }
 
+function artifactCoveredActualOperationKeys(
+  overlay: WorkspaceKnowledgeGraphChangeOverlay,
+  predicted: Array<{ operation: string; targetKind: string; targetId: string }>
+): Set<string> {
+  const artifacts = new Set(
+    predicted
+      .filter((operation) => operation.targetKind === 'artifact')
+      .map((operation) => normalizedArtifactIdentity(operation.targetId))
+  );
+  if (artifacts.size === 0) return new Set();
+
+  const covered = new Set<string>();
+  const coveredProofIds = new Set<string>();
+  const inspectProof = (operation: string, proof: { id: string; artifact: string }): void => {
+    if (!artifacts.has(normalizedArtifactIdentity(proof.artifact))) return;
+    coveredProofIds.add(proof.id);
+    covered.add(operationKey(operation, 'proof', proof.id));
+  };
+  overlay.proofs.added.forEach((proof) => inspectProof('add', proof));
+  overlay.proofs.removed.forEach((proof) => inspectProof('remove', proof));
+  overlay.proofs.changed.forEach((change) => {
+    const proof = change.after ?? change.before;
+    if (proof) inspectProof('change', proof);
+  });
+
+  const coveredEntityIds = new Set<string>();
+  const inspectEntity = (operation: string, entity: { id: string; proofIds: string[] }): void => {
+    if (!entity.proofIds.some((proofId) => coveredProofIds.has(proofId))) return;
+    coveredEntityIds.add(entity.id);
+    covered.add(operationKey(operation, 'entity', entity.id));
+  };
+  overlay.entities.added.forEach((entity) => inspectEntity('add', entity));
+  overlay.entities.removed.forEach((entity) => inspectEntity('remove', entity));
+  overlay.entities.changed.forEach((change) => {
+    const entity = change.after ?? change.before;
+    if (entity) inspectEntity('change', entity);
+  });
+
+  const inspectRelation = (
+    operation: string,
+    relation: { id: string; from: string; to: string; proofIds: string[] }
+  ): void => {
+    if (
+      !relation.proofIds.some((proofId) => coveredProofIds.has(proofId)) &&
+      !coveredEntityIds.has(relation.from) &&
+      !coveredEntityIds.has(relation.to)
+    ) {
+      return;
+    }
+    covered.add(operationKey(operation, 'relation', relation.id));
+  };
+  overlay.relations.added.forEach((relation) => inspectRelation('add', relation));
+  overlay.relations.removed.forEach((relation) => inspectRelation('remove', relation));
+  overlay.relations.changed.forEach((change) => {
+    const relation = change.after ?? change.before;
+    if (relation) inspectRelation('change', relation);
+  });
+  return covered;
+}
+
 function buildSurpriseReport(input: {
   changeId: string;
   generatedAt: string;
@@ -343,18 +460,23 @@ function buildSurpriseReport(input: {
   const actualKeys = new Set(
     actual.map((item) => operationKey(item.operation, item.targetKind, item.targetId))
   );
-  const matched = actual.filter((item) =>
-    predictedKeys.has(operationKey(item.operation, item.targetKind, item.targetId))
+  const artifactCoveredKeys = artifactCoveredActualOperationKeys(input.actual, predicted);
+  const matched = actual.filter(
+    (item) =>
+      predictedKeys.has(operationKey(item.operation, item.targetKind, item.targetId)) ||
+      artifactCoveredKeys.has(operationKey(item.operation, item.targetKind, item.targetId))
   );
   const unpredicted = actual.filter(
-    (item) => !predictedKeys.has(operationKey(item.operation, item.targetKind, item.targetId))
+    (item) =>
+      !predictedKeys.has(operationKey(item.operation, item.targetKind, item.targetId)) &&
+      !artifactCoveredKeys.has(operationKey(item.operation, item.targetKind, item.targetId))
   );
   const missing = predicted.filter(
     (item) => !actualKeys.has(operationKey(item.operation, item.targetKind, item.targetId))
   );
   const verdict = !input.prediction
     ? 'no-prediction'
-    : unpredicted.length === 0 && missing.length === 0
+    : unpredicted.length === 0 && missing.length === 0 && artifactCoveredKeys.size === 0
       ? 'exact'
       : unpredicted.length === 0
         ? 'within-expectation'
@@ -669,7 +791,11 @@ export async function beginProofCarryingChange(input: {
   const changeId = `change-${goal.intent.category}-${randomUUID().replace(/-/g, '').slice(0, 16)}`;
   const paths = pathsFor(changeId);
   const generatedAt = new Date().toISOString();
-  const baselineGraphDigest = hashCanonicalJson(snapshot.graph);
+  const privateBaselineGraph = await materializeBaselineArtifactHashes(
+    workspacePath,
+    snapshot.graph
+  );
+  const baselineGraphDigest = hashCanonicalJson(privateBaselineGraph);
   const lease: ArchitectureChangeLease = {
     schemaVersion: ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION,
     changeId,
@@ -717,7 +843,7 @@ export async function beginProofCarryingChange(input: {
     },
   };
   await writeWorkspaceArtifactJsonSet(workspacePath, paths.lease, [
-    { relativePath: paths.privateBaselineGraph, payload: snapshot.graph },
+    { relativePath: paths.privateBaselineGraph, payload: privateBaselineGraph },
     { relativePath: paths.lease, payload: lease },
   ]);
   const actorKind = input.actorKind ?? 'cli';
@@ -1240,6 +1366,109 @@ function normalizedArtifactIdentity(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
+function scopeArchitectureOverlay(input: {
+  overlay: WorkspaceKnowledgeGraphChangeOverlay;
+  scope: ArchitectureChangeLease['scope'];
+  projectPrefixes: string[];
+  scopedEntityIds: Set<string>;
+}): WorkspaceKnowledgeGraphChangeOverlay {
+  if (input.scope.kind === 'workspace') return input.overlay;
+  const projects = new Set(input.scope.projects);
+  const entityInScope = (entity: { projectId?: string }): boolean =>
+    Boolean(entity.projectId && projects.has(entity.projectId));
+  const entities = {
+    added: input.overlay.entities.added.filter(entityInScope),
+    removed: input.overlay.entities.removed.filter(entityInScope),
+    changed: input.overlay.entities.changed.filter((change) =>
+      entityInScope(change.after ?? change.before ?? {})
+    ),
+  };
+  const relationInScope = (relation: { from: string; to: string }): boolean =>
+    input.scopedEntityIds.has(relation.from) || input.scopedEntityIds.has(relation.to);
+  const relations = {
+    added: input.overlay.relations.added.filter(relationInScope),
+    removed: input.overlay.relations.removed.filter(relationInScope),
+    changed: input.overlay.relations.changed.filter((change) => {
+      const relation = change.after ?? change.before;
+      return Boolean(relation && relationInScope(relation));
+    }),
+  };
+  const proofIds = new Set([
+    ...entities.added.flatMap((entity) => entity.proofIds),
+    ...entities.removed.flatMap((entity) => entity.proofIds),
+    ...entities.changed.flatMap((change) => [
+      ...(change.before?.proofIds ?? []),
+      ...(change.after?.proofIds ?? []),
+    ]),
+    ...relations.added.flatMap((relation) => relation.proofIds),
+    ...relations.removed.flatMap((relation) => relation.proofIds),
+    ...relations.changed.flatMap((change) => [
+      ...(change.before?.proofIds ?? []),
+      ...(change.after?.proofIds ?? []),
+    ]),
+  ]);
+  const artifactInScope = (artifact: string): boolean => {
+    const normalized = normalizedArtifactIdentity(artifact);
+    if (input.projectPrefixes.includes('.')) return true;
+    return input.projectPrefixes.some(
+      (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`)
+    );
+  };
+  const proofInScope = (proof: { id: string; artifact: string }): boolean =>
+    proofIds.has(proof.id) || artifactInScope(proof.artifact);
+  const proofs = {
+    added: input.overlay.proofs.added.filter(proofInScope),
+    removed: input.overlay.proofs.removed.filter(proofInScope),
+    changed: input.overlay.proofs.changed.filter((change) => {
+      const proof = change.after ?? change.before;
+      return Boolean(proof && proofInScope(proof));
+    }),
+  };
+  const impactedEntityIds = input.overlay.impactedEntityIds.filter((id) =>
+    input.scopedEntityIds.has(id)
+  );
+  const changedArtifacts = input.overlay.changedArtifacts.filter(artifactInScope);
+  const destructive = entities.removed.length + relations.removed.length + proofs.removed.length;
+  const total =
+    destructive +
+    entities.added.length +
+    entities.changed.length +
+    relations.added.length +
+    relations.changed.length +
+    proofs.added.length +
+    proofs.changed.length;
+  const risk =
+    total === 0
+      ? 'none'
+      : destructive > 0 || impactedEntityIds.length >= 10
+        ? 'high'
+        : impactedEntityIds.length >= 5 || total >= 5
+          ? 'medium'
+          : 'low';
+  return {
+    ...input.overlay,
+    entities,
+    relations,
+    proofs,
+    impactedEntityIds,
+    changedArtifacts,
+    summary: {
+      entityAdds: entities.added.length,
+      entityRemovals: entities.removed.length,
+      entityChanges: entities.changed.length,
+      relationAdds: relations.added.length,
+      relationRemovals: relations.removed.length,
+      relationChanges: relations.changed.length,
+      proofAdds: proofs.added.length,
+      proofRemovals: proofs.removed.length,
+      proofChanges: proofs.changed.length,
+      impactedEntities: impactedEntityIds.length,
+      changedArtifacts: changedArtifacts.length,
+      risk,
+    },
+  };
+}
+
 function filesystemArtifactIdentity(value: string): string {
   const normalized = path.normalize(path.resolve(value));
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -1282,6 +1511,58 @@ export async function findUncoveredEffectArtifacts(input: {
   return uncovered;
 }
 
+function artifactIsInsideChangeScope(input: {
+  artifact: string;
+  scope: ArchitectureChangeLease['scope'];
+  projectPrefixes: string[];
+  receiptedArtifacts: Set<string>;
+}): boolean {
+  const artifact = normalizedArtifactIdentity(input.artifact);
+  if (input.receiptedArtifacts.has(artifact)) return true;
+  if (input.scope.kind === 'workspace') return true;
+  if (input.projectPrefixes.includes('.')) return true;
+  return input.projectPrefixes.some(
+    (prefix) => artifact === prefix || artifact.startsWith(`${prefix}/`)
+  );
+}
+
+async function artifactContentChanged(input: {
+  workspacePath: string;
+  artifact: string;
+  baseline: ProofCarryingChangeBaseline;
+  head: WorkspaceKnowledgeGraph;
+}): Promise<boolean> {
+  const identity = normalizedArtifactIdentity(input.artifact);
+  const signatures = (graph: WorkspaceKnowledgeGraph): string[] | null => {
+    const matching = graph.proofs.filter(
+      (proof) => normalizedArtifactIdentity(proof.artifact) === identity
+    );
+    if (matching.length === 0) return [];
+    if (matching.some((proof) => !proof.contentHash)) return null;
+    return [...new Set(matching.map((proof) => proof.contentHash as string))].sort();
+  };
+  const before = signatures(input.baseline);
+  const after = signatures(input.head);
+  const currentHash = await rawArtifactContentHash(input.workspacePath, identity);
+  const baselineHash = input.baseline.pccArtifactContentHashes?.[identity];
+
+  // Compare the immutable baseline directly with current bytes when possible.
+  // This remains correct even when a provider, entity, or relation disappears
+  // from the current Graph. An absent current file is a real deletion.
+  if (baselineHash) return currentHash === null || currentHash !== baselineHash;
+  if (before && before.length > 0) {
+    return currentHash === null || !before.includes(currentHash);
+  }
+
+  // A path not present in the baseline but present now is a real addition.
+  if (before && before.length === 0) return currentHash !== null || Boolean(after?.length);
+
+  // Old baselines may contain provider proofs without byte identity. Preserve
+  // their fail-closed behavior; newly created baselines are materialized above.
+  if (before === null || after === null) return true;
+  return hashCanonicalJson(before) !== hashCanonicalJson(after);
+}
+
 export async function verifyProofCarryingChange(input: {
   workspacePath: string;
   changeId: string;
@@ -1311,11 +1592,24 @@ export async function verifyProofCarryingChange(input: {
     );
   }
   const generatedAt = new Date().toISOString();
-  const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(
-    baseline,
-    snapshot.graph,
-    new Date(generatedAt)
-  );
+  const scopedProjectPrefixes = snapshot.model.projects
+    .filter((project) => lease.scope.projects.includes(project.name))
+    .map((project) => normalizedArtifactIdentity(project.path).replace(/\/$/u, ''))
+    .filter(Boolean);
+  const overlay = scopeArchitectureOverlay({
+    overlay: buildWorkspaceKnowledgeGraphChangeOverlay(
+      baseline,
+      snapshot.graph,
+      new Date(generatedAt)
+    ),
+    scope: lease.scope,
+    projectPrefixes: scopedProjectPrefixes,
+    scopedEntityIds: new Set(
+      [...baseline.entities, ...snapshot.graph.entities]
+        .filter((entity) => entity.projectId && lease.scope.projects.includes(entity.projectId))
+        .map((entity) => entity.id)
+    ),
+  });
   const paths = pathsFor(input.changeId);
   await writeWorkspaceArtifactJson(workspacePath, paths.actualOverlay, overlay);
   const actualReference = verificationArtifactReference(
@@ -1387,9 +1681,37 @@ export async function verifyProofCarryingChange(input: {
       ...effect.artifacts.map((artifact) => artifact.artifact),
       ...(effect.deletedArtifacts ?? []).map((artifact) => artifact.artifact),
     ]);
+  const receiptedArtifactSet = new Set(receiptedArtifacts.map(normalizedArtifactIdentity));
+  const scopedChangedArtifacts = (
+    await Promise.all(
+      overlay.changedArtifacts.map(async (artifact) => ({
+        artifact,
+        contentChanged: await artifactContentChanged({
+          workspacePath,
+          artifact,
+          baseline,
+          head: snapshot.graph,
+        }),
+      }))
+    )
+  )
+    .filter(
+      ({ artifact, contentChanged }) =>
+        contentChanged &&
+        artifactIsInsideChangeScope({
+          artifact,
+          scope: lease.scope,
+          projectPrefixes: scopedProjectPrefixes,
+          receiptedArtifacts: receiptedArtifactSet,
+        })
+    )
+    .map(({ artifact }) => artifact);
   const uncoveredArtifacts = await findUncoveredEffectArtifacts({
     workspacePath,
-    changedArtifacts: overlay.changedArtifacts,
+    // Concurrent work in another registered project is not an unexplained
+    // effect of this project-scoped transaction. Shared/workspace mutations
+    // remain in scope only when explicitly receipted by this Change.
+    changedArtifacts: scopedChangedArtifacts,
     receiptedArtifacts,
   });
   if (uncoveredArtifacts.length > 0) {
@@ -1440,13 +1762,20 @@ export async function verifyProofCarryingChange(input: {
   if (!persistedVerify) {
     throw new Error(`Workspace Verify evidence was not persisted at ${relativeVerifyPath}.`);
   }
+  await writeWorkspaceArtifactJson(workspacePath, paths.workspaceVerification, persistedVerify);
+  const immutableVerify = await readJson<typeof verify>(workspacePath, paths.workspaceVerification);
+  if (!immutableVerify) {
+    throw new Error(
+      `Change-scoped Workspace Verify evidence was not persisted at ${paths.workspaceVerification}.`
+    );
+  }
   // Artifact writers attach the active CLI run correlation at persistence time.
   // Bind the receipt to those exact bytes, not the pre-write in-memory value,
   // otherwise a freshly sealed CLI capsule fails its own integrity replay.
   const gate = evaluateWorkspaceVerifyGate(persistedVerify, { strict: input.strict === true });
   const current = snapshotGeneration(snapshot);
   const workspaceReceipt: DecisionVerificationReceipt = {
-    id: `verify-workspace-${hashCanonicalJson({ generatedAt, verify: persistedVerify, gate }).slice(0, 16)}`,
+    id: `verify-workspace-${hashCanonicalJson({ generatedAt, verify: immutableVerify, gate }).slice(0, 16)}`,
     criterionId: 'workspace-verify',
     status: gate.passed ? 'passed' : 'failed',
     summary: gate.passed
@@ -1459,9 +1788,9 @@ export async function verifyProofCarryingChange(input: {
     },
     artifacts: [
       verificationArtifactReference(
-        relativeVerifyPath,
-        persistedVerify.schemaVersion,
-        persistedVerify
+        paths.workspaceVerification,
+        immutableVerify.schemaVersion,
+        immutableVerify
       ),
       actualReference,
       surpriseReference,

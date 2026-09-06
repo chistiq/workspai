@@ -307,8 +307,8 @@ npx workspai create
 If you choose project creation, the same project flow is used.
 
 When the terminal is interactive and the current directory is not inside a
-workspace, **every supported backend, frontend, desktop, and extension kit** shows the workspace
-management question before scaffolding:
+workspace, **every supported backend, frontend, desktop, agent, and extension kit** shows the
+workspace management question before scaffolding:
 
 ```text
 This project is outside a Workspai workspace. How should it be managed?
@@ -338,6 +338,8 @@ npx workspai create project frontend.nextjs dashboard
 npx workspai create project desktop.tauri desktop-app
 npx workspai create project desktop.electron admin-console
 npx workspai create project extension.vscode editor-tools
+npx workspai create project agent.microsoft.python support-agent
+npx workspai create project agent.microsoft.dotnet operations-agent
 npx workspai create project php.laravel customer-api
 ```
 
@@ -384,6 +386,18 @@ Workspai has official-generator paths for:
 The ecosystem's official generator creates the application. Workspai then adds
 project metadata and performs the selected workspace registration.
 
+## Agent Framework kits
+
+| Kit                      | Runtime | Framework baseline | Behavior                                   |
+| ------------------------ | ------- | ------------------ | ------------------------------------------ |
+| `agent.microsoft.python` | Python  | Release-admitted   | Goal + PCC + owned isolated agent scaffold |
+| `agent.microsoft.dotnet` | .NET    | Release-admitted   | Goal + PCC + owned isolated agent scaffold |
+
+Agent kits require Workspace governance and therefore do not accept
+`--no-workspace`. They do not install dependencies, call a model, or store
+credentials. Their exact framework versions are promoted only after the full
+Linux, macOS, and Windows conformance matrix passes.
+
 ## Desktop, extension, and additional backend generators
 
 | Category  | Project           | Kit                | Creation owner                        |
@@ -394,8 +408,8 @@ project metadata and performs the selected workspace registration.
 | Desktop   | Electron Forge    | `desktop.electron` | create-electron-app                   |
 | Extension | VS Code Extension | `extension.vscode` | generator-code                        |
 
-Every generated project receives a canonical `kind` and `category`. The four
-user-facing categories are `backend`, `frontend`, `desktop`, and `extension`;
+Every generated project receives a canonical `kind` and `category`. The five
+user-facing creation categories are `backend`, `frontend`, `desktop`, `agent`, and `extension`;
 they remain visible in the Workspace Model and Knowledge Graph so consumers do
 not have to guess a project’s role from its runtime.
 

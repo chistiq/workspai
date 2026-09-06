@@ -65,17 +65,29 @@ function probePython(projectRoot: string, command: LifecycleProbeCommand): boole
     pathExists(path.join(projectRoot, 'requirements.txt')) ||
     pathExists(path.join(projectRoot, 'requirements.in'));
   const hasManagePy = pathExists(path.join(projectRoot, 'manage.py'));
+  const hasCoreProjectCli =
+    pathExists(path.join(projectRoot, '.workspai', 'cli.py')) ||
+    pathExists(path.join(projectRoot, '.rapidkit', 'cli.py'));
+  const pyproject = readTextIfExists(path.join(projectRoot, 'pyproject.toml'));
+  const hasTests =
+    pathExists(path.join(projectRoot, 'tests')) ||
+    pathExists(path.join(projectRoot, 'test')) ||
+    /\[tool\.pytest/i.test(pyproject);
+  const hasBuildSystem = /^\s*\[build-system\]\s*$/m.test(pyproject);
+  const hasStartScript =
+    /^\s*\[(?:project\.scripts|tool\.poetry\.scripts)\]\s*$/m.test(pyproject) &&
+    /^\s*(?:start|serve)\s*=/m.test(pyproject);
 
   switch (command) {
     case 'init':
       return hasPyProject || hasRequirements;
     case 'dev':
     case 'start':
-      return hasPyProject || hasManagePy || hasRequirements;
+      return hasManagePy || hasStartScript || hasCoreProjectCli;
     case 'test':
-      return hasPyProject || hasRequirements || pathExists(path.join(projectRoot, 'tests'));
+      return hasTests || hasCoreProjectCli;
     case 'build':
-      return hasPyProject || hasRequirements;
+      return hasBuildSystem || hasCoreProjectCli;
     case 'lint':
     case 'format':
       return (
@@ -174,13 +186,43 @@ function probeDotnet(projectRoot: string, command: LifecycleProbeCommand): boole
   const hasProjectFile = hasNestedCsproj(projectRoot);
   if (!hasProjectFile) return false;
 
+  const projectFiles: string[] = [];
+  const visit = (directory: string): void => {
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (['.git', '.workspai', 'bin', 'obj', 'node_modules'].includes(entry.name)) continue;
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (/\.(?:cs|fs|vb)proj$/i.test(entry.name)) projectFiles.push(target);
+    }
+  };
+  visit(projectRoot);
+  const contents = projectFiles.map(readTextIfExists);
+  const hasTestProject = contents.some(
+    (value) =>
+      /<IsTestProject>\s*true\s*<\/IsTestProject>/i.test(value) ||
+      /Microsoft\.NET\.Test\.Sdk/i.test(value)
+  );
+  const hasRunnableProject = contents.some(
+    (value) =>
+      /Microsoft\.NET\.Sdk\.Web/i.test(value) ||
+      /<OutputType>\s*(?:Exe|WinExe)\s*<\/OutputType>/i.test(value)
+  );
+
   switch (command) {
     case 'init':
-    case 'dev':
-    case 'test':
     case 'build':
-    case 'start':
       return true;
+    case 'dev':
+    case 'start':
+      return hasRunnableProject;
+    case 'test':
+      return hasTestProject;
     case 'lint':
       return (
         hasMakefileTarget(projectRoot, 'lint') ||

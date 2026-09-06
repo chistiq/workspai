@@ -7,6 +7,7 @@ import { buildPolyglotLifecyclePlan } from '../polyglot-lifecycle-plan.js';
 
 describe('polyglot lifecycle plan', () => {
   const tempDirs: string[] = [];
+  const python = process.platform === 'win32' ? 'python' : 'python3';
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((directory) => fs.remove(directory)));
@@ -319,5 +320,128 @@ describe('polyglot lifecycle plan', () => {
     expect(plan.units.find((unit) => unit.runtime === 'dotnet')?.stages).toContainEqual(
       expect.objectContaining({ stage: 'start', command: 'dotnet run --project service.csproj' })
     );
+  });
+
+  it('treats a manifest-backed Python main module as buildable and runnable', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-python-agent-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+    await fs.outputFile(path.join(root, 'agents', 'primary', 'main.py'), 'print("ready")\n');
+
+    expect(buildPolyglotLifecyclePlan(root).units[0]?.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: 'build', command: `${python} -m compileall .` }),
+        expect.objectContaining({ stage: 'start', command: `${python} main.py` }),
+      ])
+    );
+  });
+
+  it('uses dependency-free unittest unless the Python project proves pytest ownership', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-python-test-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'stdlib', 'pyproject.toml'),
+      '[project]\nname = "stdlib-tests"\nversion = "0.1.0"\n'
+    );
+    await fs.outputFile(path.join(root, 'stdlib', 'tests', 'test_context.py'), 'import unittest\n');
+    await fs.outputFile(
+      path.join(root, 'pytest-owned', 'pyproject.toml'),
+      '[project]\nname = "pytest-owned"\ndependencies = ["pytest==9.1.1"]\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'pytest-owned', 'tests', 'test_context.py'),
+      'def test_ok(): pass\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(
+      plan.units
+        .find((unit) => unit.root === 'stdlib')
+        ?.stages.find((stage) => stage.stage === 'test')
+    ).toMatchObject({ command: `${python} -m unittest discover -s tests` });
+    expect(
+      plan.units
+        .find((unit) => unit.root === 'pytest-owned')
+        ?.stages.find((stage) => stage.stage === 'test')
+    ).toMatchObject({ command: `${python} -m pytest` });
+  });
+
+  it('treats a direct .NET test project as the only test execution boundary', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-dotnet-test-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'agents', 'primary', 'Primary.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'agents', 'primary', 'tests', 'Primary.Tests.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>\n'
+    );
+
+    const units = buildPolyglotLifecyclePlan(root).units;
+    expect(units.find((unit) => unit.root === 'agents/primary')?.stages).not.toContainEqual(
+      expect.objectContaining({ stage: 'test' })
+    );
+    expect(units.find((unit) => unit.root === 'agents/primary/tests')?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'test', command: 'dotnet test Primary.Tests.csproj' })
+    );
+  });
+
+  it('ignores exact legacy agent-kit shell manifests without hiding authored root units', async () => {
+    const pythonRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-legacy-python-agent-lifecycle-')
+    );
+    const dotnetRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-legacy-dotnet-agent-lifecycle-')
+    );
+    tempDirs.push(pythonRoot, dotnetRoot);
+
+    await fs.outputJson(path.join(pythonRoot, '.workspai', 'project.json'), {
+      name: 'apex-app',
+      generated_by: 'workspai',
+      kit: 'agent.microsoft.python',
+    });
+    await fs.outputFile(
+      path.join(pythonRoot, 'pyproject.toml'),
+      '[project]\nname = "apex-app"\nversion = "0.1.0"\nrequires-python = ">=3.10"\ndependencies = []\n\n[tool.uv]\npackage = false\n'
+    );
+    await fs.outputFile(
+      path.join(pythonRoot, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+
+    await fs.outputJson(path.join(dotnetRoot, '.workspai', 'project.json'), {
+      name: 'radar-app',
+      generated_by: 'workspai',
+      kit_name: 'agent.microsoft.dotnet',
+    });
+    await fs.outputFile(
+      path.join(dotnetRoot, 'radar-app.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>enable</Nullable>\n  </PropertyGroup>\n</Project>\n'
+    );
+    await fs.outputFile(
+      path.join(dotnetRoot, 'agents', 'primary', 'Primary.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>\n'
+    );
+
+    expect(buildPolyglotLifecyclePlan(pythonRoot).units.map((unit) => unit.root)).toEqual([
+      'agents/primary',
+    ]);
+    expect(buildPolyglotLifecyclePlan(dotnetRoot).units.map((unit) => unit.root)).toEqual([
+      'agents/primary',
+    ]);
+
+    await fs.appendFile(
+      path.join(pythonRoot, 'pyproject.toml'),
+      '\n[project.scripts]\napp = "app:main"\n'
+    );
+    expect(buildPolyglotLifecyclePlan(pythonRoot).units.map((unit) => unit.root)).toEqual([
+      '.',
+      'agents/primary',
+    ]);
   });
 });

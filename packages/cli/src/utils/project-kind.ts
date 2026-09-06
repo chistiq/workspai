@@ -17,6 +17,7 @@ export type WorkspaceProjectKind =
   | 'extension'
   | 'service'
   | 'worker'
+  | 'agent'
   | 'platform'
   | 'library'
   | 'infra'
@@ -29,6 +30,7 @@ export type WorkspaceProjectCategory =
   | 'frontend'
   | 'desktop'
   | 'extension'
+  | 'agent'
   | 'platform'
   | 'library'
   | 'infrastructure'
@@ -49,6 +51,7 @@ const PROJECT_KIND_VALUES = new Set<WorkspaceProjectKind>([
   'service',
   'frontend',
   'worker',
+  'agent',
   'platform',
   'library',
   'infra',
@@ -298,6 +301,8 @@ export function categorizeWorkspaceProjectKind(
     case 'service':
     case 'worker':
       return 'backend';
+    case 'agent':
+      return 'agent';
     case 'frontend':
     case 'desktop':
     case 'extension':
@@ -331,6 +336,15 @@ export async function inferWorkspaceProjectKind(
   const metadataKind =
     normalizeProjectKind(authoredMetadata?.kind) ?? normalizeProjectKind(authoredMetadata?.type);
   if (metadataKind) {
+    // Migrate projects emitted by the first agent-kit preview, which used the
+    // generic worker taxonomy before the additive agent category existed.
+    if (
+      metadataKind === 'worker' &&
+      typeof authoredMetadata?.framework === 'string' &&
+      authoredMetadata.framework.trim().toLowerCase() === 'microsoft-agent-framework'
+    ) {
+      return 'agent';
+    }
     return metadataKind;
   }
 

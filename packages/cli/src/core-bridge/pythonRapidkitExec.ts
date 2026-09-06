@@ -1538,8 +1538,8 @@ const KNOWN_CORE_ERRORS: Array<{
       const dir = path.basename(m[1]);
       return (
         `❌ Directory "${dir}" already exists.\n` +
-        `💡 Choose a different name, or remove the existing directory first:\n` +
-        `   rm -rf ${m[1]}`
+        `   Target: ${m[1]}\n` +
+        '💡 Choose a different name, or inspect and move/remove the existing directory first.'
       );
     },
   },

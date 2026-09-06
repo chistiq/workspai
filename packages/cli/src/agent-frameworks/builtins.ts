@@ -20,7 +20,8 @@ export function digestBuiltinAgentFrameworkManifest(adapter: AgentFrameworkAdapt
 }
 
 export function createBuiltinAgentFrameworkRegistry(
-  conformanceReports: Readonly<Record<string, AgentFrameworkConformanceReport[]>> = {}
+  conformanceReports: Readonly<Record<string, AgentFrameworkConformanceReport[]>> = {},
+  options: { trustReviewedReleaseAdmissions?: boolean } = {}
 ): AgentFrameworkRegistry {
   const registry = new AgentFrameworkRegistry();
   for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
@@ -29,6 +30,7 @@ export function createBuiltinAgentFrameworkRegistry(
       manifestSha256: digestBuiltinAgentFrameworkManifest(adapter),
       source: 'builtin',
       conformanceReports: structuredClone(conformanceReports[adapter.manifest.adapter.id] ?? []),
+      ...(options.trustReviewedReleaseAdmissions ? { releaseAdapter: adapter } : {}),
     });
   }
   return registry;

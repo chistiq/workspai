@@ -7,12 +7,15 @@ import {
   type AgentFrameworkConformanceReport,
 } from '../contracts/agent-framework-contract.js';
 import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
+import { assessBundledAgentFrameworkRelease } from './release-admission.js';
+import type { AgentFrameworkAdapter } from './adapter.js';
 
 export type AgentFrameworkRegistryEntry = {
   manifest: AgentFrameworkAdapterManifest;
   manifestSha256: string;
   source: 'builtin' | 'package' | 'workspace';
   conformanceReports: AgentFrameworkConformanceReport[];
+  releaseAdapter?: AgentFrameworkAdapter;
 };
 
 export type AgentFrameworkResolution = {
@@ -36,7 +39,19 @@ function normalizedToken(value: string): string {
 }
 
 function cloneEntry(entry: AgentFrameworkRegistryEntry): AgentFrameworkRegistryEntry {
-  return structuredClone(entry);
+  return structuredClone({
+    manifest: entry.manifest,
+    manifestSha256: entry.manifestSha256,
+    source: entry.source,
+    conformanceReports: entry.conformanceReports,
+  });
+}
+
+function storedEntry(entry: AgentFrameworkRegistryEntry): AgentFrameworkRegistryEntry {
+  return {
+    ...cloneEntry(entry),
+    ...(entry.releaseAdapter ? { releaseAdapter: entry.releaseAdapter } : {}),
+  };
 }
 
 export class AgentFrameworkRegistry {
@@ -61,7 +76,7 @@ export class AgentFrameworkRegistry {
     if (this.#entries.has(adapterId)) {
       throw new Error(`Agent framework adapter id is already registered: ${adapterId}`);
     }
-    this.#entries.set(adapterId, cloneEntry(entry));
+    this.#entries.set(adapterId, storedEntry(entry));
     return this;
   }
 
@@ -79,6 +94,12 @@ export class AgentFrameworkRegistry {
   resolveAdapter(adapterId: string): AgentFrameworkAdmissionResolution {
     const entry = this.#entries.get(normalizedToken(adapterId));
     if (!entry) return { status: 'unresolved', entry: null, blockers: [] };
+    const releaseAdmission = entry.releaseAdapter
+      ? assessBundledAgentFrameworkRelease(entry.releaseAdapter)
+      : null;
+    if (releaseAdmission?.status === 'admitted') {
+      return { status: 'admitted', entry: cloneEntry(entry), blockers: [] };
+    }
     const admission = assessAgentFrameworkAdmission({
       manifest: entry.manifest,
       manifestSha256: entry.manifestSha256,
@@ -86,7 +107,11 @@ export class AgentFrameworkRegistry {
     });
     return admission.status === 'admitted'
       ? { status: 'admitted', entry: cloneEntry(entry), blockers: [] }
-      : { status: 'blocked', entry: cloneEntry(entry), blockers: admission.blockers };
+      : {
+          status: 'blocked',
+          entry: cloneEntry(entry),
+          blockers: [...(releaseAdmission?.blockers ?? []), ...admission.blockers],
+        };
   }
 
   async resolveProject(input: {
@@ -123,17 +148,20 @@ export class AgentFrameworkRegistry {
     }
     const selected = this.#entries.get(normalizedToken(detected[0].adapterId));
     if (!selected) throw new Error('Agent framework registry index is inconsistent.');
+    const releaseAdmission = selected.releaseAdapter
+      ? assessBundledAgentFrameworkRelease(selected.releaseAdapter)
+      : null;
     const admission = assessAgentFrameworkAdmission({
       manifest: selected.manifest,
       manifestSha256: selected.manifestSha256,
       reports: selected.conformanceReports,
     });
-    if (admission.status !== 'admitted') {
+    if (admission.status !== 'admitted' && releaseAdmission?.status !== 'admitted') {
       return {
         status: 'blocked',
         entry: cloneEntry(selected),
         candidates,
-        blockers: admission.blockers,
+        blockers: [...(releaseAdmission?.blockers ?? []), ...admission.blockers],
       };
     }
     return {

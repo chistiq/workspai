@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { detectNodePackageManager } from './utils/node-package-manager.js';
+import { getDefaultPythonCommand } from './utils/platform-capabilities.js';
 
 export const POLYGLOT_LIFECYCLE_PLAN_SCHEMA_VERSION = 'polyglot-lifecycle-plan.v1' as const;
 
@@ -174,6 +175,69 @@ function listManifests(root: string, maxDepth: number): string[] {
   };
   visit(root, 0);
   return manifests;
+}
+
+/**
+ * Early agent kits emitted a second, empty runtime manifest at the project
+ * root in addition to the real manifest under agents/primary. That shell has
+ * no executable code or dependencies, but treating it as a lifecycle unit
+ * causes duplicate restore/build commands in upgraded workspaces.
+ *
+ * Only suppress the exact Workspai-generated legacy shape. A user-authored or
+ * subsequently expanded root manifest remains a first-class lifecycle unit.
+ */
+function isLegacyAgentKitShellManifest(projectRoot: string, manifest: string): boolean {
+  if (path.dirname(manifest) !== projectRoot) return false;
+
+  let metadata: Record<string, unknown>;
+  let contents: string;
+  try {
+    metadata = JSON.parse(
+      fs.readFileSync(path.join(projectRoot, '.workspai', 'project.json'), 'utf8')
+    ) as Record<string, unknown>;
+    contents = fs.readFileSync(manifest, 'utf8').replace(/\r\n/g, '\n').trim();
+  } catch {
+    return false;
+  }
+  if (metadata.generated_by !== 'workspai') return false;
+
+  const kit = String(metadata.kit ?? metadata.kit_name ?? '');
+  if (kit === 'agent.microsoft.python' && path.basename(manifest) === 'pyproject.toml') {
+    const name = typeof metadata.name === 'string' ? metadata.name : '';
+    const legacy = [
+      '[project]',
+      `name = ${JSON.stringify(name)}`,
+      'version = "0.1.0"',
+      'requires-python = ">=3.10"',
+      'dependencies = []',
+      '',
+      '[tool.uv]',
+      'package = false',
+    ].join('\n');
+    return (
+      name.length > 0 &&
+      contents === legacy &&
+      fs.existsSync(path.join(projectRoot, 'agents', 'primary', 'pyproject.toml'))
+    );
+  }
+
+  if (kit === 'agent.microsoft.dotnet' && /\.(?:cs|fs|vb)proj$/iu.test(manifest)) {
+    const legacy = [
+      '<Project Sdk="Microsoft.NET.Sdk">',
+      '  <PropertyGroup>',
+      '    <TargetFramework>net8.0</TargetFramework>',
+      '    <ImplicitUsings>enable</ImplicitUsings>',
+      '    <Nullable>enable</Nullable>',
+      '  </PropertyGroup>',
+      '</Project>',
+    ].join('\n');
+    return (
+      contents === legacy &&
+      fs.existsSync(path.join(projectRoot, 'agents', 'primary', 'Primary.csproj'))
+    );
+  }
+
+  return false;
 }
 
 /**
@@ -445,6 +509,37 @@ function nodeStages(root: string, contents: string): PolyglotLifecycleStage[] {
   ];
 }
 
+function pythonTestCommand(
+  root: string,
+  contents: string,
+  poetryManaged: boolean,
+  python: string
+): string | null {
+  const hasTests = fs.existsSync(path.join(root, 'tests'));
+  const requirementsDeclarePytest = [
+    'requirements.txt',
+    'requirements-dev.txt',
+    'requirements-test.txt',
+  ].some((name) => {
+    try {
+      return /^\s*pytest(?:\[|\s|[<>=~!])/im.test(fs.readFileSync(path.join(root, name), 'utf8'));
+    } catch {
+      return false;
+    }
+  });
+  const pytestBacked =
+    /\[tool\.pytest(?:\.|\])/i.test(contents) ||
+    /["']pytest(?:\[|[<>=~!]|["'])/i.test(contents) ||
+    fs.existsSync(path.join(root, 'pytest.ini')) ||
+    fs.existsSync(path.join(root, 'conftest.py')) ||
+    requirementsDeclarePytest;
+  if (pytestBacked) return poetryManaged ? 'poetry run pytest' : `${python} -m pytest`;
+  if (!hasTests) return null;
+  return poetryManaged
+    ? 'poetry run python -m unittest discover -s tests'
+    : `${python} -m unittest discover -s tests`;
+}
+
 function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUnit | null {
   const name = path.basename(manifest);
   const root = path.dirname(manifest);
@@ -523,20 +618,25 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
     runtime = 'python';
     ecosystem = 'python';
     const poetryManaged = /^\s*\[tool\.poetry\]\s*$/m.test(contents);
+    const python = getDefaultPythonCommand();
     const hasStartScript =
       hasTomlScript(contents, 'tool.poetry.scripts', 'start') ||
       hasTomlScript(contents, 'project.scripts', 'start');
+    const hasMainModule = fs.existsSync(path.join(root, 'main.py'));
+    const testCommand = pythonTestCommand(root, contents, poetryManaged, python);
     stages = [
-      stage('init', poetryManaged ? 'poetry install' : 'python -m pip install -e .'),
-      ...(fs.existsSync(path.join(root, 'tests')) || /\[tool\.pytest/i.test(contents)
-        ? [stage('test', poetryManaged ? 'poetry run pytest' : 'python -m pytest')]
-        : []),
+      stage('init', poetryManaged ? 'poetry install' : `${python} -m pip install -e .`),
+      ...(testCommand ? [stage('test', testCommand)] : []),
       ...(/\[build-system\]/.test(contents)
         ? [stage('build', poetryManaged ? 'poetry build' : 'python -m build', 'medium')]
-        : []),
-      ...(hasStartScript
-        ? [stage('start', poetryManaged ? 'poetry run start' : 'start', 'medium')]
-        : []),
+        : hasMainModule
+          ? [stage('build', `${python} -m compileall .`)]
+          : []),
+      ...(hasMainModule
+        ? [stage('start', `${python} main.py`)]
+        : hasStartScript
+          ? [stage('start', poetryManaged ? 'poetry run start' : 'start', 'medium')]
+          : []),
     ];
   } else if (name === 'go.mod') {
     runtime = 'go';
@@ -603,7 +703,9 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
       stage('init', `dotnet restore ${name}`),
       ...(testProject ? [stage('test', `dotnet test ${name}`)] : []),
       stage('build', `dotnet build ${name}`),
-      ...(!testProject && /<Project\s+Sdk=["']Microsoft\.NET\.Sdk\.Web["']/i.test(contents)
+      ...(!testProject &&
+      (/<Project\s+Sdk=["']Microsoft\.NET\.Sdk\.Web["']/i.test(contents) ||
+        /<OutputType>\s*(?:Exe|WinExe)\s*<\/OutputType>/i.test(contents))
         ? [stage('start', `dotnet run --project ${name}`)]
         : []),
     ];
@@ -708,6 +810,7 @@ export function buildPolyglotLifecyclePlan(
   const nodeBoundaries = nodeWorkspaceBoundaries(manifests);
   const cargoBoundaries = cargoWorkspaceBoundaries(manifests);
   const units = manifests
+    .filter((manifest) => !isLegacyAgentKitShellManifest(projectRoot, manifest))
     .filter((manifest) => !isNestedTestFixtureManifest(projectRoot, manifest))
     .filter((manifest) => !isNestedGradleSubproject(projectRoot, manifest))
     .filter((manifest) => !isOwnedCmakeSubproject(projectRoot, manifest))

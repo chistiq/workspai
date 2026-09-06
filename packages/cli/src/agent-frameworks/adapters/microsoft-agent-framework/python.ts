@@ -14,11 +14,19 @@ import {
 } from '../../adapter.js';
 import { detectAgentFramework } from '../../detection.js';
 import { PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH } from '../../../utils/workspace-paths.js';
+import { getDefaultPythonCommand } from '../../../utils/platform-capabilities.js';
 import { microsoftAgentFrameworkManifest } from './common.js';
+import { MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE, packageVersion } from '../../version-policy.js';
 
-const FRAMEWORK_VERSION = '1.17.0';
-const FOUNDRY_PACKAGE_VERSION = '1.12.0';
-const AZURE_IDENTITY_VERSION = '1.25.3';
+const FRAMEWORK_VERSION = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion;
+const FOUNDRY_PACKAGE_VERSION = packageVersion(
+  MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
+  'agent-framework-foundry'
+);
+const AZURE_IDENTITY_VERSION = packageVersion(
+  MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
+  'azure-identity'
+);
 
 export const microsoftAgentFrameworkPythonManifest = microsoftAgentFrameworkManifest(
   'python',
@@ -57,6 +65,8 @@ function pathsFor(instanceName: string) {
     root: `agents/${slug}`,
     entrypoint: `agents/${slug}/main.py`,
     dependencyManifest: `agents/${slug}/pyproject.toml`,
+    test: `agents/${slug}/tests/test_context.py`,
+    environmentExample: `agents/${slug}/.env.example`,
     readme: `agents/${slug}/README.md`,
     state: `.workspai/agent-frameworks/microsoft-agent-framework-python/${slug}.json`,
   };
@@ -64,6 +74,7 @@ function pathsFor(instanceName: string) {
 
 function renderPythonFiles(input: AgentFrameworkAdapterInput) {
   const target = pathsFor(input.instanceName);
+  const python = getDefaultPythonCommand();
   return [
     managedFile(
       target.entrypoint,
@@ -74,8 +85,16 @@ function renderPythonFiles(input: AgentFrameworkAdapterInput) {
       `# Generated and managed by Workspai. Dependency versions are a tested baseline.\n[project]\nname = "${target.slug}"\nversion = "0.1.0"\nrequires-python = ">=3.10"\ndependencies = [\n  "agent-framework-core==${FRAMEWORK_VERSION}",\n  "agent-framework-foundry==${FOUNDRY_PACKAGE_VERSION}",\n  "azure-identity==${AZURE_IDENTITY_VERSION}",\n]\n\n[tool.uv]\npackage = false\n`
     ),
     managedFile(
+      target.test,
+      `# Generated and managed by Workspai. This test performs no network calls.\n\nimport sys\nimport tempfile\nimport types\nimport unittest\nfrom pathlib import Path\nfrom unittest.mock import patch\n\nagent_framework = types.ModuleType("agent_framework")\nagent_framework.Agent = object\nfoundry = types.ModuleType("agent_framework.foundry")\nfoundry.FoundryChatClient = object\nazure = types.ModuleType("azure")\nazure_identity = types.ModuleType("azure.identity")\nazure_identity.DefaultAzureCredential = object\nsys.modules.setdefault("agent_framework", agent_framework)\nsys.modules.setdefault("agent_framework.foundry", foundry)\nsys.modules.setdefault("azure", azure)\nsys.modules.setdefault("azure.identity", azure_identity)\n\nfrom main import load_workspai_context\n\n\nclass WorkspaiContextTests(unittest.TestCase):\n    def test_reads_bounded_context_without_a_provider_call(self) -> None:\n        with tempfile.TemporaryDirectory() as temporary:\n            root = Path(temporary)\n            context = root / "${PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH}"\n            context.parent.mkdir(parents=True)\n            context.write_text("bounded evidence", encoding="utf-8")\n            with patch("main.Path.cwd", return_value=root):\n                self.assertEqual(load_workspai_context(), "bounded evidence")\n\n    def test_rejects_context_larger_than_the_admitted_boundary(self) -> None:\n        with tempfile.TemporaryDirectory() as temporary:\n            root = Path(temporary)\n            context = root / "${PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH}"\n            context.parent.mkdir(parents=True)\n            context.write_bytes(b"x" * 131_073)\n            with patch("main.Path.cwd", return_value=root):\n                with self.assertRaisesRegex(RuntimeError, "128 KiB"):\n                    load_workspai_context()\n\n\nif __name__ == "__main__":\n    unittest.main()\n`
+    ),
+    managedFile(
+      target.environmentExample,
+      `# Generated and managed by Workspai. Copy variable names into your secret manager or shell; never commit credentials.\nFOUNDRY_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com/api/projects/your-project\nFOUNDRY_MODEL=gpt-4o\n`
+    ),
+    managedFile(
       target.readme,
-      `<!-- Generated and managed by Workspai. -->\n# ${target.slug}\n\nThis Microsoft Agent Framework entrypoint consumes bounded Workspai context.\n\nRequired environment references:\n\n- \`FOUNDRY_PROJECT_ENDPOINT\`\n- \`FOUNDRY_MODEL\` (optional)\n\nNo credential value is stored in this directory. Run only after Workspai verification and an explicit network grant.\n`
+      `<!-- Generated and managed by Workspai. -->\n# ${target.slug}\n\nThis Microsoft Agent Framework entrypoint consumes bounded Workspai context. Run these commands from the project root.\n\n## Install\n\n\`${python} -m venv .venv\`\n\nActivate the environment, then run:\n\n\`${python} -m pip install -e ${target.root}\`\n\n## Verify\n\n\`${python} -m compileall ${target.root}\`\n\n\`cd ${target.root} && ${python} -m unittest discover -s tests\`\n\n## Run\n\nSet \`FOUNDRY_PROJECT_ENDPOINT\` and optionally \`FOUNDRY_MODEL\` in your shell, then run:\n\n\`${python} ${target.entrypoint}\`\n\nOn another operating system, use its Python 3 launcher (normally \`python3\` on macOS/Linux and \`python\` on Windows). No credential value is stored in this directory. Run only after Workspai verification and an explicit network grant.\n`
     ),
     managedFile(
       target.state,
@@ -136,6 +155,7 @@ export const microsoftAgentFrameworkPythonAdapter: AgentFrameworkAdapter = {
   },
   context(input): AgentFrameworkProjectContext {
     const target = pathsFor(input.instanceName);
+    const python = getDefaultPythonCommand();
     return {
       adapterId: microsoftAgentFrameworkPythonManifest.adapter.id,
       frameworkId: microsoftAgentFrameworkPythonManifest.framework.id,
@@ -143,7 +163,10 @@ export const microsoftAgentFrameworkPythonAdapter: AgentFrameworkAdapter = {
       entrypoint: target.entrypoint,
       dependencyManifest: target.dependencyManifest,
       requiredEnvironment: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
-      verificationCommands: [`python -m compileall ${target.root}`],
+      verificationCommands: [
+        `${python} -m compileall ${target.root}`,
+        `cd ${target.root} && ${python} -m unittest discover -s tests`,
+      ],
       boundaries: [
         'Workspai remains the canonical workspace and verification authority.',
         'The framework owns conversation and runtime state only.',

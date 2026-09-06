@@ -95,6 +95,172 @@
     },
     {
       "path": [
+        "agent",
+        "framework"
+      ],
+      "command": "framework",
+      "parent": "agent",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Create and attach release-admitted agent runtimes through Workspai governance",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "apply"
+      ],
+      "command": "apply",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Apply an already authorized hash-bound framework plan",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--project <name>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "attach"
+      ],
+      "command": "attach",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Plan, approve, and write one isolated governed agent instance",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "-y, --yes",
+          "attributeName": "yes"
+        },
+        {
+          "flags": "--granted-by <identity>",
+          "attributeName": "grantedBy"
+        },
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--project <name>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--name <name>",
+          "attributeName": "name"
+        },
+        {
+          "flags": "--goal <goal-id>",
+          "attributeName": "goal"
+        },
+        {
+          "flags": "--intent <text>",
+          "attributeName": "intent"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "list"
+      ],
+      "command": "list",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "List tested framework runtimes and their release-admission state",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "plan"
+      ],
+      "command": "plan",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Create a hash-bound attachment plan without writing project files",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--project <name>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--name <name>",
+          "attributeName": "name"
+        },
+        {
+          "flags": "--goal <goal-id>",
+          "attributeName": "goal"
+        },
+        {
+          "flags": "--intent <text>",
+          "attributeName": "intent"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
         "ai"
       ],
       "command": "ai",

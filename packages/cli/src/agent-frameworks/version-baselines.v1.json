@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "workspai.agent-framework-version-baselines.v1",
+  "baselines": [
+    {
+      "adapterId": "microsoft-agent-framework-python",
+      "frameworkId": "microsoft-agent-framework",
+      "runtime": "python",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "1.17.0",
+      "packages": [
+        {
+          "ecosystem": "pypi",
+          "name": "agent-framework-core",
+          "version": "1.17.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://pypi.org/pypi/agent-framework-core/json"
+        },
+        {
+          "ecosystem": "pypi",
+          "name": "agent-framework-foundry",
+          "version": "1.12.0",
+          "channel": "stable",
+          "role": "framework-integration",
+          "registryUrl": "https://pypi.org/pypi/agent-framework-foundry/json"
+        },
+        {
+          "ecosystem": "pypi",
+          "name": "azure-identity",
+          "version": "1.25.3",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://pypi.org/pypi/azure-identity/json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
+    },
+    {
+      "adapterId": "microsoft-agent-framework-dotnet",
+      "frameworkId": "microsoft-agent-framework",
+      "runtime": "dotnet",
+      "policy": "latest-admitted",
+      "releaseChannel": "preview",
+      "frameworkVersion": "1.20.0",
+      "packages": [
+        {
+          "ecosystem": "nuget",
+          "name": "Microsoft.Agents.AI",
+          "version": "1.20.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "Microsoft.Agents.AI.Foundry",
+          "version": "1.20.0-preview.260831.1",
+          "channel": "preview",
+          "role": "framework-integration",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai.foundry/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "Azure.Identity",
+          "version": "1.21.0",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/azure.identity/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "Microsoft.NET.Test.Sdk",
+          "version": "18.0.0",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.net.test.sdk/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "xunit.v3.mtp-v2",
+          "version": "3.2.2",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/xunit.v3.mtp-v2/index.json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
+    }
+  ]
+}

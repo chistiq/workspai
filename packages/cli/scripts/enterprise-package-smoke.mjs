@@ -207,6 +207,8 @@ const REQUIRED_PACKAGE_FILES = [
   'contracts/workspace-intelligence/workspace-repair-transaction.v1.json',
   'contracts/workspace-intelligence/project-agent-entry.v1.json',
   'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
+  'contracts/workspace-intelligence/agent-framework-change-plan.v1.json',
+  'contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json',
   'contracts/extension-cli-compatibility.v1.json',
   'data/modules-embeddings.json',
   'templates/kits/fastapi-standard/README.md.j2',
@@ -345,7 +347,102 @@ function assertCliContracts() {
     }
   }
 
+  const frameworks = parseTrailingJson(runCli(['agent', 'framework', 'list', '--json']));
+  if (
+    frameworks.schemaVersion !== 'workspai.agent-framework-list.v1' ||
+    frameworks.adapters?.length !== 2 ||
+    frameworks.adapters.some((adapter) => adapter.status !== 'admitted')
+  ) {
+    fail('published CLI does not expose the two exact release-admitted framework adapters');
+  }
+
   log(`verified CLI contract surfaces for v${version.version}`);
+}
+
+function smokeCreateAgentFrameworkKits() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-agent-kit-smoke-'));
+  const workspaceName = 'agent-kit-workspace';
+  const workspacePath = path.join(tempDir, workspaceName);
+  const createWorkspace = spawnSync(
+    process.execPath,
+    [
+      cliPath,
+      'create',
+      'workspace',
+      workspaceName,
+      '--output',
+      tempDir,
+      '--profile',
+      'minimal',
+      '--skip-python-engine',
+      '--skip-git',
+      '--yes',
+    ],
+    { cwd: tempDir, encoding: 'utf8', env: cliEnv(), stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  if (createWorkspace.status !== 0) {
+    fail(
+      `agent kit workspace creation failed with exit ${createWorkspace.status}\n${createWorkspace.stdout}\n${createWorkspace.stderr}`
+    );
+  }
+
+  const scenarios = [
+    {
+      kit: 'agent.microsoft.python',
+      name: 'python-agent',
+      expectedFiles: [
+        'README.md',
+        '.workspai/project.json',
+        '.workspai/agent-frameworks/microsoft-agent-framework-python/primary.json',
+        'agents/primary/main.py',
+        'agents/primary/pyproject.toml',
+        'agents/primary/tests/test_context.py',
+        'agents/primary/.env.example',
+        'agents/primary/README.md',
+      ],
+    },
+    {
+      kit: 'agent.microsoft.dotnet',
+      name: 'dotnet-agent',
+      expectedFiles: [
+        'README.md',
+        '.workspai/project.json',
+        '.workspai/agent-frameworks/microsoft-agent-framework-dotnet/primary.json',
+        'agents/primary/Program.cs',
+        'agents/primary/WorkspaiContext.cs',
+        'agents/primary/Primary.csproj',
+        'agents/primary/tests/Primary.Tests.csproj',
+        'agents/primary/tests/WorkspaiContextTests.cs',
+        'agents/primary/.env.example',
+        'agents/primary/README.md',
+      ],
+    },
+  ];
+  try {
+    for (const scenario of scenarios) {
+      const result = spawnSync(
+        process.execPath,
+        [cliPath, 'create', 'project', scenario.kit, scenario.name, '--skip-git', '--yes'],
+        {
+          cwd: workspacePath,
+          encoding: 'utf8',
+          env: cliEnv(),
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }
+      );
+      if (result.status !== 0) {
+        fail(
+          `${scenario.kit} governed create failed with exit ${result.status}\n${result.stdout}\n${result.stderr}`
+        );
+      }
+      assertGeneratedProject(path.join(workspacePath, scenario.name), scenario.expectedFiles);
+    }
+    const ownershipRoot = path.join(workspacePath, '.workspai', 'agent-frameworks', 'ownership');
+    if (!fs.existsSync(ownershipRoot)) fail('agent kit smoke did not record ownership receipts');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+  log(`verified ${scenarios.length} governed agent framework create scenarios`);
 }
 
 function assertGeneratedProject(projectPath, expectedFiles) {
@@ -532,6 +629,7 @@ for (const relativePath of [
 assertPackContents();
 assertCliContracts();
 smokeCreateNpmBackedKits();
+smokeCreateAgentFrameworkKits();
 smokeCreateOfflineFallbackKits();
 
 log('enterprise package smoke passed');

@@ -1,0 +1,148 @@
+name: Agent Framework Version Discovery
+
+on:
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: agent-framework-version-discovery
+  cancel-in-progress: true
+
+jobs:
+  discover:
+    name: Discover upstream candidates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Propose version baseline update
+        working-directory: packages/cli
+        run: >-
+          npm exec tsx -- scripts/propose-agent-framework-version-update.ts
+          --baseline src/agent-frameworks/version-baselines.v1.json
+          --report test-results/agent-framework-version-discovery/report.json
+
+      - name: Detect candidate changes
+        id: candidate
+        shell: bash
+        run: |
+          if git diff --quiet -- packages/cli/src/agent-frameworks/version-baselines.v1.json; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Regenerate and synchronize published contracts
+        if: steps.candidate.outputs.available == 'true'
+        working-directory: packages/cli
+        run: npm run sync:shared-contracts -- --npm-only
+
+      - name: Validate proposed baseline
+        if: steps.candidate.outputs.available == 'true'
+        run: |
+          npm --workspace workspai run typecheck
+          npm --workspace workspai exec vitest -- run src/__tests__/agent-framework-version-policy.test.ts src/__tests__/microsoft-agent-framework-adapter.test.ts src/__tests__/contracts/agent-framework-contract.test.ts
+          npm --workspace workspai run check:shared-contracts -- --npm-only
+
+      - name: Create or refresh review pull request
+        if: steps.candidate.outputs.available == 'true'
+        id: pull-request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMATION_BRANCH: automation/agent-framework-version-baselines
+        run: |
+          gh auth setup-git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          remote_sha="$(git ls-remote --heads origin "refs/heads/$AUTOMATION_BRANCH" | cut -f1)"
+          if [ -n "$remote_sha" ]; then
+            git fetch origin "refs/heads/$AUTOMATION_BRANCH:refs/remotes/origin/$AUTOMATION_BRANCH"
+          fi
+          pull_request_url="$(gh pr list --state open --head "$AUTOMATION_BRANCH" --json url --jq '.[0].url')"
+          git checkout -B "$AUTOMATION_BRANCH"
+          git add -- \
+            packages/cli/src/agent-frameworks/version-baselines.v1.json \
+            packages/cli/contracts \
+            contracts
+          candidate_tree="$(git write-tree)"
+          if [ -n "$remote_sha" ] && [ -n "$pull_request_url" ] && [ "$candidate_tree" = "$(git rev-parse "refs/remotes/origin/$AUTOMATION_BRANCH^{tree}")" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "url=$pull_request_url" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "chore(agent-frameworks): propose admitted baseline updates"
+          if [ -n "$remote_sha" ]; then
+            git push --force-with-lease="refs/heads/$AUTOMATION_BRANCH:$remote_sha" origin "HEAD:refs/heads/$AUTOMATION_BRANCH"
+          else
+            git push origin "HEAD:refs/heads/$AUTOMATION_BRANCH"
+          fi
+          if [ -z "$pull_request_url" ]; then
+            pull_request_url="$(gh pr create \
+              --base "${{ github.event.repository.default_branch }}" \
+              --head "$AUTOMATION_BRANCH" \
+              --title "chore(agent-frameworks): admit discovered framework versions" \
+              --body-file .github/agent-framework-version-update.md)"
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "url=$pull_request_url" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch cross-platform admission matrix
+        if: steps.candidate.outputs.available == 'true' && steps.pull-request.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTOMATION_BRANCH: automation/agent-framework-version-baselines
+        run: gh workflow run agent-framework-conformance.yml --ref "$AUTOMATION_BRANCH"
+
+      - name: Upload reviewable candidates
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-framework-version-discovery-${{ github.sha }}
+          path: packages/cli/test-results/agent-framework-version-discovery/report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish run summary
+        if: always()
+        shell: bash
+        env:
+          CANDIDATE_AVAILABLE: ${{ steps.candidate.outputs.available }}
+          CANDIDATE_CHANGED: ${{ steps.pull-request.outputs.changed }}
+          PULL_REQUEST_URL: ${{ steps.pull-request.outputs.url }}
+        run: |
+          if [ "$CANDIDATE_AVAILABLE" = "true" ] && [ "$CANDIDATE_CHANGED" = "true" ]; then
+            echo "### Agent framework update proposed" >> "$GITHUB_STEP_SUMMARY"
+            echo "A guarded pull request was created or refreshed and the complete admission matrix was dispatched." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "$PULL_REQUEST_URL" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$CANDIDATE_AVAILABLE" = "true" ]; then
+            echo "### Existing agent framework proposal is current" >> "$GITHUB_STEP_SUMMARY"
+            echo "No branch mutation or redundant admission run was needed." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "$PULL_REQUEST_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Agent framework baselines are current" >> "$GITHUB_STEP_SUMMARY"
+            echo "No admitted release-channel candidate was found." >> "$GITHUB_STEP_SUMMARY"
+          fi

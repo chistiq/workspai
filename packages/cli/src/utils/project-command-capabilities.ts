@@ -237,6 +237,10 @@ export function resolveProjectCommandCapabilities(
     projectPath: projectRoot ?? undefined,
     framework: detection.key,
   });
+  const polyglotPlan = projectRoot ? buildPolyglotLifecyclePlan(projectRoot) : null;
+  const polyglotFleetStages = new Set(
+    polyglotPlan?.units.flatMap((unit) => unit.stages.map((stage) => stage.stage)) ?? []
+  );
   const commandMap: Record<string, CommandCapability> = {};
 
   for (const command of UNIVERSAL_COMMANDS) {
@@ -253,12 +257,11 @@ export function resolveProjectCommandCapabilities(
   }
 
   for (const command of RUNTIME_COMMANDS) {
-    const runtimeSupported = isRuntimeLifecycleCommandSupported(
-      projectRoot,
-      command,
-      detection,
-      runtimeCommandSupport
-    );
+    const runtimeSupported =
+      isRuntimeLifecycleCommandSupported(projectRoot, command, detection, runtimeCommandSupport) ||
+      (hasNpmRuntimeExecutor(detection.runtime) &&
+        FLEET_STAGE_COMMANDS.has(command) &&
+        polyglotFleetStages.has(command as WorkspaceRunStageName));
     const owner = resolveRuntimeCommandOwner(command, detection);
     const execution = resolveRuntimeCommandExecutionScope(command, runtimeSupported);
     commandMap[command] = capability(command, {
@@ -324,13 +327,6 @@ export function resolveProjectCommandCapabilities(
       RUNTIME_COMMANDS.includes(entry.command as (typeof RUNTIME_COMMANDS)[number])
     )
     .filter((entry) => entry.status === 'supported');
-  const polyglotFleetStages = projectRoot
-    ? new Set(
-        buildPolyglotLifecyclePlan(projectRoot).units.flatMap((unit) =>
-          unit.stages.map((stage) => stage.stage)
-        )
-      )
-    : new Set<WorkspaceRunStageName>();
   const fleetStages = WORKSPACE_RUN_STAGES.filter(
     (stage) =>
       supportedRuntimeCommands.some(

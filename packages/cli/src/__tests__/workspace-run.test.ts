@@ -364,6 +364,40 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(workspacePath);
   });
 
+  it('keeps a single nested runtime unit at its owning directory', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-nested-agent-run-'));
+    const projectPath = path.join(workspacePath, 'agent-app');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'agent-app',
+      runtime: 'python',
+      framework: 'microsoft-agent-framework',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'main.py'),
+      'print("ok")\n'
+    );
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      planOnly: true,
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.runtimeExecutions).toEqual([
+      expect.objectContaining({
+        root: 'agents/primary',
+        command: `${process.platform === 'win32' ? 'python' : 'python3'} -m compileall .`,
+      }),
+    ]);
+    await fsExtra.remove(workspacePath);
+  });
+
   it('propagates a runtime-unit timeout category to the project result', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-polyglot-timeout-'));
     const projectPath = path.join(workspacePath, 'sdk');
@@ -1304,6 +1338,49 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     expect(projectReport?.status).toBe('failed');
     expect(projectReport?.errorCategory).toBe('setup');
 
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('preserves the actionable root cause of a noisy build failure', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
+    await createProject(workspacePath, 'web');
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args.includes('build')) {
+        return {
+          exitCode: 1,
+          stdout: [
+            'Creating an optimized production build ...',
+            'Turbopack build encountered 2 warnings:',
+            'Warning: Error while requesting resource',
+            'Build error occurred',
+            'Error: Turbopack build failed with 2 errors:',
+            'Failed to fetch Geist from Google Fonts.',
+            '12 verbose cwd /workspace/web',
+            '13 verbose os Linux',
+            '14 verbose node v24.0.0',
+            '15 verbose npm v11.0.0',
+            '16 verbose exit 1',
+            '17 verbose code 1',
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      return { exitCode: 0, stdout: '{}', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.errorCategory).toBe('dependency');
+    expect(report.projects[0]?.reason).toContain('Failed to fetch Geist');
+    expect(report.projects[0]?.failureDiagnostic?.outputExcerpt).toContain(
+      'Failed to fetch Geist from Google Fonts.'
+    );
     await fsExtra.remove(workspacePath);
   });
 

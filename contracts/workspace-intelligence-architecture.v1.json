@@ -679,7 +679,9 @@
       "gofiber.standard",
       "gogin.standard",
       "dotnet.webapi.clean",
-      "rust.axum"
+      "rust.axum",
+      "agent.microsoft.python",
+      "agent.microsoft.dotnet"
     ],
     "officialCreate": [
       "frontend.nextjs",

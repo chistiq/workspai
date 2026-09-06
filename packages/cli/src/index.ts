@@ -2,8 +2,12 @@
 
 import { Command, Option } from 'commander';
 import chalk from 'chalk';
-import { prompt, showIntro } from './cli-ui/index.js';
-import { buildKitPickerChoices } from './cli-ui/kit-picker-choices.js';
+import { createUiSpinner, prompt, showIntro } from './cli-ui/index.js';
+import {
+  buildKitCategoryChoices,
+  buildKitPickerChoices,
+  type CreateKitCategoryId,
+} from './cli-ui/kit-picker-choices.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
@@ -43,6 +47,14 @@ import { registerAICommands } from './commands/ai.js';
 import { registerProductCommands } from './commands/product.js';
 import { registerInfraCommands } from './commands/infra.js';
 import { registerChangeCommands } from './commands/change.js';
+import { registerAgentFrameworkCommands } from './commands/agent-framework.js';
+import {
+  applyPreparedAgentFrameworkAttachment,
+  initializeAgentFrameworkProjectRoot,
+  isAgentFrameworkProjectKit,
+  prepareAgentFrameworkAttachment,
+  resolveAgentFrameworkProjectKit,
+} from './agent-frameworks/index.js';
 import {
   WORKSPACE_REPAIR_DECISIONS,
   type WorkspaceRepairDecision,
@@ -769,7 +781,10 @@ export function validateNpmKitFlags(kitId: string, args: readonly string[]): str
   return null;
 }
 
-async function prepareOutsideWorkspaceCreate(args: string[]): Promise<void> {
+async function prepareOutsideWorkspaceCreate(
+  args: string[],
+  options: { requireWorkspace?: boolean } = {}
+): Promise<void> {
   if (
     args.includes('--dry-run') ||
     args.includes('--no-workspace') ||
@@ -807,10 +822,14 @@ async function prepareOutsideWorkspaceCreate(args: string[]): Promise<void> {
           name: 'Turn the current folder into a workspace',
           value: 'current',
         },
-        {
-          name: 'Create it without workspace management',
-          value: 'none',
-        },
+        ...(options.requireWorkspace
+          ? []
+          : [
+              {
+                name: 'Create it without workspace management',
+                value: 'none',
+              },
+            ]),
       ],
       default: 1,
     },
@@ -996,7 +1015,13 @@ async function rollbackProjectLifecycleTransaction(
 async function finalizeCreatedProjectWorkspace(
   args: string[],
   projectPath: string,
-  projectName: string
+  projectName: string,
+  options: {
+    beforeCommit?: (context: {
+      workspacePath: string;
+      registerCompensation: ProjectLifecycleTransaction['registerCompensation'];
+    }) => Promise<void>;
+  } = {}
 ): Promise<string | undefined> {
   if (args.includes('--no-workspace') || args.includes('--dry-run')) {
     return undefined;
@@ -1060,6 +1085,10 @@ async function finalizeCreatedProjectWorkspace(
       mode: 'managed',
     });
     await syncWorkspaceContractAfterProjectChange(workspacePath, { strict: true });
+    await options.beforeCommit?.({
+      workspacePath,
+      registerCompensation: transaction.registerCompensation,
+    });
     await transaction.commit();
   } catch (error) {
     await rollbackProjectLifecycleTransaction(transaction, error);
@@ -1078,6 +1107,115 @@ async function finalizeCreatedProjectWorkspace(
   }
 
   return workspacePath;
+}
+
+async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
+  if (args[0] !== 'create' || args[1] !== 'project') return 1;
+  const kit = resolveAgentFrameworkProjectKit(args[2]);
+  if (!kit) return 1;
+  const projectName = args[3];
+  if (!projectName) {
+    process.stderr.write(
+      `Usage: workspai create project ${kit.id} <name> [--agent-name <name>] [--output <dir>] [--dry-run]\n`
+    );
+    return 1;
+  }
+  if (args.includes('--no-workspace')) {
+    process.stderr.write('Agent framework projects require Workspai workspace governance.\n');
+    return 1;
+  }
+  try {
+    validateProjectName(projectName);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+  const outputDir = readFlagValue(args, '--output') || process.cwd();
+  const projectPath = path.resolve(outputDir, projectName);
+  const instanceName = readFlagValue(args, '--agent-name')?.trim() || 'primary';
+  const grantedBy = readFlagValue(args, '--granted-by')?.trim() || 'operator';
+  if (args.includes('--dry-run')) {
+    console.log(chalk.bold(`\nAI Agent · ${kit.label}`));
+    console.log(chalk.gray(`   Target: ${projectPath}`));
+    console.log(chalk.gray(`   Agent: ${instanceName}`));
+    console.log(
+      chalk.gray('   Plan: register project, create Goal/PCC, then apply admitted scaffold')
+    );
+    console.log(chalk.gray('   Dry run: no files or workspace evidence will be changed.'));
+    return 0;
+  }
+  if (await fsExtra.pathExists(projectPath)) {
+    process.stderr.write(`❌ Directory "${projectPath}" already exists\n`);
+    return 1;
+  }
+  let ownsProjectPath = false;
+  let frameworkResult: Awaited<ReturnType<typeof applyPreparedAgentFrameworkAttachment>> | null =
+    null;
+  try {
+    await fsExtra.ensureDir(path.dirname(projectPath));
+    await initializeAgentFrameworkProjectRoot({ projectPath, projectName, kit });
+    ownsProjectPath = true;
+    await finalizeCreatedProjectWorkspace(args, projectPath, projectName, {
+      beforeCommit: async ({ workspacePath, registerCompensation }) => {
+        const prepared = await prepareAgentFrameworkAttachment({
+          workspacePath,
+          project: projectName,
+          runtime: kit.runtime,
+          instanceName,
+          mode: 'scaffold',
+          intent: `Create ${projectName} as a governed ${kit.label} project`,
+        });
+        registerCompensation(async () => {
+          const { abortProofCarryingChange } = await import('./proof-carrying-change.js');
+          await abortProofCarryingChange({
+            workspacePath,
+            changeId: prepared.changeId,
+            reason: 'Agent framework project creation transaction rolled back.',
+            actorId: 'workspai-agent-framework',
+          }).catch(() => undefined);
+        });
+        if (prepared.status !== 'planned') {
+          throw new Error(
+            `Agent framework scaffold is ${prepared.status}: ${prepared.blockers.join(' ')}`
+          );
+        }
+        const applied = await applyPreparedAgentFrameworkAttachment({ prepared, grantedBy });
+        frameworkResult = applied;
+        registerCompensation(() =>
+          fsExtra.remove(path.join(workspacePath, applied.ownershipReceipt))
+        );
+      },
+    });
+    if (!args.includes('--skip-git') && !args.includes('--no-git')) {
+      const { initializeStandaloneGitRepository } = await import('./create.js');
+      await initializeStandaloneGitRepository(
+        projectPath,
+        createUiSpinner('Preparing git repository', {
+          component: 'create.agent-framework',
+          phase: 'git-init',
+          metadata: { projectName, kit: kit.id },
+        }),
+        'chore: initialize Workspai agent project'
+      );
+    }
+    console.log(chalk.green(`✔ Governed ${kit.label} project created at ${projectPath}`));
+    console.log(chalk.gray('   Dependencies were not installed and no model was called.'));
+    const completed = frameworkResult as Awaited<
+      ReturnType<typeof applyPreparedAgentFrameworkAttachment>
+    > | null;
+    if (completed) {
+      console.log(chalk.gray(`   Change: ${completed.changeId}`));
+      console.log(chalk.gray(`   Ownership: ${completed.ownershipReceipt}`));
+      for (const action of completed.nextActions) console.log(chalk.gray(`   Next: ${action}`));
+    }
+    return 0;
+  } catch (error) {
+    if (ownsProjectPath) await fsExtra.remove(projectPath).catch(() => undefined);
+    process.stderr.write(
+      `Workspai ${kit.id} generator failed: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+    return 1;
+  }
 }
 
 async function runNpmBackedKitCreate(args: string[]): Promise<number> {
@@ -1351,6 +1489,7 @@ Examples:
   npx workspai create project rust.axum api --skip-install
   npx workspai create project desktop.tauri desktop-app
   npx workspai create project extension.vscode editor-tools --skip-install
+  npx workspai create project agent.microsoft.python support-agent --skip-git
 
 Common kits:
   fastapi.standard      Python API via RapidKit Core bridge
@@ -1365,7 +1504,14 @@ Common kits:
   desktop.tauri         Desktop Tauri app
   desktop.electron      Desktop Electron Forge app
   extension.vscode      VS Code extension
+  agent.microsoft.python Microsoft Agent Framework · Python
+  agent.microsoft.dotnet Microsoft Agent Framework · .NET
   php.laravel           Backend Laravel application
+
+Interactive selection:
+  Workspai first asks what you are building, then shows only kits in that category.
+  Backend, Frontend, Desktop, AI Agent, Extension, and Gaming are stable category ids;
+  categories without an admitted kit are hidden until a compatible kit is available.
 
 Options:
   --output <dir>        Parent directory for the project
@@ -1741,16 +1887,25 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         if (process.stdin.isTTY) {
           showIntro('create project');
         }
+        const { kitCategory } = (await prompt([
+          {
+            type: 'rawlist',
+            name: 'kitCategory',
+            message: 'What are you building?',
+            choices: buildKitCategoryChoices(),
+          },
+        ])) as { kitCategory: CreateKitCategoryId };
         const { kitChoice } = (await prompt([
           {
             type: 'rawlist',
             name: 'kitChoice',
             message: 'Select a kit to scaffold:',
-            choices: buildKitPickerChoices(),
+            choices: buildKitPickerChoices(kitCategory),
           },
         ])) as { kitChoice: string };
 
         if (
+          isAgentFrameworkProjectKit(kitChoice) ||
           isNpmBackedKit(kitChoice) ||
           isFrontendProjectKit(kitChoice) ||
           isOfficialProjectKit(kitChoice)
@@ -1771,11 +1926,13 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
             return 1;
           }
           await prepareOutsideWorkspaceCreate(normalizedArgs);
-          const code = isFrontendProjectKit(kitChoice)
-            ? await runFrontendProjectCreate(normalizedArgs)
-            : isOfficialProjectKit(kitChoice)
-              ? await runOfficialProjectCreate(normalizedArgs)
-              : await runNpmBackedKitCreate(normalizedArgs);
+          const code = isAgentFrameworkProjectKit(kitChoice)
+            ? await runAgentFrameworkProjectCreate(normalizedArgs)
+            : isFrontendProjectKit(kitChoice)
+              ? await runFrontendProjectCreate(normalizedArgs)
+              : isOfficialProjectKit(kitChoice)
+                ? await runOfficialProjectCreate(normalizedArgs)
+                : await runNpmBackedKitCreate(normalizedArgs);
           return code;
         }
 
@@ -1795,6 +1952,10 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       }
 
       const requestedKit = args[2];
+      if (isAgentFrameworkProjectKit(requestedKit)) {
+        await prepareOutsideWorkspaceCreate(args, { requireWorkspace: true });
+        return await runAgentFrameworkProjectCreate(args);
+      }
       const capability = resolveCreatePlannerCapability({
         kitId: requestedKit,
         framework: requestedKit,
@@ -1837,6 +1998,25 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       if (args.includes('--dry-run')) {
         printBridgeBackedCreateDryRun(args);
         return 0;
+      }
+
+      // Python Core correctly refuses to scaffold over an existing directory,
+      // but that collision is part of the Workspai create contract and should
+      // be rejected before delegation. Apart from avoiding a noisy Python
+      // traceback, this keeps every create backend consistent and guarantees
+      // that an existing project is never partially touched by the bridge.
+      const bridgeProjectName = args[3];
+      const bridgeOutputDir = readFlagValue(args, '--output') || process.cwd();
+      const bridgeProjectPath = bridgeProjectName
+        ? path.resolve(bridgeOutputDir, bridgeProjectName)
+        : undefined;
+      if (bridgeProjectPath && (await fsExtra.pathExists(bridgeProjectPath))) {
+        process.stderr.write(`❌ Project "${bridgeProjectName}" already exists.\n`);
+        process.stderr.write(`   Target: ${bridgeProjectPath}\n`);
+        process.stderr.write(
+          '💡 Choose a different name, or inspect and move/remove the existing directory first.\n'
+        );
+        return 1;
       }
 
       // Filter wrapper-only flags from args forwarded to the Python core engine
@@ -2711,10 +2891,17 @@ export async function runCommandInCwd(
     process.argv.includes('--json') ||
     process.env.RAPIDKIT_WORKSPACE_RUN_CHILD === '1' ||
     process.env.RAPIDKIT_SUPPRESS_RUN_COMMAND_OUTPUT === '1';
-  const inheritChildOutput =
-    !captureForStructuredParent &&
+  const isPackageLifecycleCommand =
     command === 'npm' &&
     (commandArgs[0] === 'run' || commandArgs[0] === 'run-script' || commandArgs[0] === 'install');
+  // During `workspace run`, this CLI is already captured by the orchestrator.
+  // Let package-manager descendants inherit that outer pipe directly. Some
+  // interactive build tools intentionally emit nothing into a second nested
+  // pipe, which previously discarded their only actionable failure message.
+  const inheritIntoWorkspaceRunCapture =
+    process.env.RAPIDKIT_WORKSPACE_RUN_CHILD === '1' && isPackageLifecycleCommand;
+  const inheritChildOutput =
+    inheritIntoWorkspaceRunCapture || (!captureForStructuredParent && isPackageLifecycleCommand);
   const readNpmFailureLogExcerpt = (): string => {
     const cacheDir = spawnEnv.npm_config_cache;
     if (!cacheDir) return '';
@@ -2850,7 +3037,12 @@ export async function runCommandInCwd(
       const stdout = Buffer.concat(stdoutChunks);
       const stderr = Buffer.concat(stderrChunks);
       const npmFailureExcerpt =
-        code && code !== 0 && stdout.length === 0 && stderr.length === 0 && command === 'npm'
+        !inheritChildOutput &&
+        code &&
+        code !== 0 &&
+        stdout.length === 0 &&
+        stderr.length === 0 &&
+        command === 'npm'
           ? readNpmFailureLogExcerpt()
           : '';
       if (shouldDebugWorkspaiArgs()) {
@@ -8383,6 +8575,8 @@ agentCommand
         operation: 'agent bootstrap',
       })
   );
+
+registerAgentFrameworkCommands(agentCommand);
 
 const projectCommand = program
   .command('project')

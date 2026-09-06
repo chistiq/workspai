@@ -500,17 +500,17 @@ describe('workspace intelligence model', () => {
         },
       },
     });
-    expect(model.projects[0].commands.supported).toContain('test');
-    expect(model.projects[0].commands.fleetStages).toContain('test');
-    expect(model.projects[0].commands.localOnly).toContain('dev');
+    expect(model.projects[0].commands.supported).not.toContain('test');
+    expect(model.projects[0].commands.fleetStages).not.toContain('test');
+    expect(model.projects[0].commands.localOnly).not.toContain('dev');
     expect(model.projects[0].commands.map.test).toMatchObject({
-      status: 'supported',
-      fleetEligible: true,
-      executionScope: 'fleet',
+      status: 'unsupported',
+      fleetEligible: false,
     });
     expect(model.projects[0].commands.map.dev).toMatchObject({
       executionScope: 'local-only',
       fleetEligible: false,
+      status: 'unsupported',
     });
     expect(model.projects[0].importantFiles).toContain('.rapidkit/project.json');
     expect(model.facts?.map((fact) => fact.id)).toEqual(

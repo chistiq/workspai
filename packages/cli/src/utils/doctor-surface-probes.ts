@@ -45,6 +45,7 @@ export type DoctorSurfaceRuntimeFamily = (typeof DOCTOR_SURFACE_RUNTIME_FAMILIES
 
 export type DoctorSurfaceProjectKind =
   | 'backend'
+  | 'agent'
   | 'frontend'
   | 'desktop'
   | 'extension'
@@ -452,6 +453,7 @@ async function collectEnvironmentContractKeys(projectPath: string): Promise<stri
 async function inferDependencyBaselineRepair(input: {
   projectPath: string;
   runtime: DoctorSurfaceRuntimeFamily;
+  projectKind?: DoctorSurfaceProjectKind;
   packageJsonData?: Record<string, unknown> | null;
 }): Promise<DependencyBaselineRepair | null> {
   if (input.runtime === 'node') {
@@ -571,6 +573,18 @@ async function inferDependencyBaselineRepair(input: {
   }
 
   if (input.runtime === 'dotnet') {
+    if (input.projectKind === 'agent') {
+      return {
+        command: 'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file',
+        title: '.NET agent dependency restore',
+        files: [
+          'agents/primary/Primary.csproj',
+          'agents/primary/tests/Primary.Tests.csproj',
+          'agents/primary/**/packages.lock.json',
+        ],
+        limitations: ['Review the generated NuGet lock files before committing.'],
+      };
+    }
     return {
       command: 'dotnet restore',
       title: '.NET dependency restore',
@@ -600,7 +614,11 @@ async function inferDependencyBaselineRepair(input: {
   }
 
   if (input.runtime === 'python') {
-    const pyprojectText = await readTextIfExists(path.join(input.projectPath, 'pyproject.toml'));
+    const manifestPath =
+      input.projectKind === 'agent'
+        ? path.join(input.projectPath, 'agents', 'primary', 'pyproject.toml')
+        : path.join(input.projectPath, 'pyproject.toml');
+    const pyprojectText = await readTextIfExists(manifestPath);
     if (/\[tool\.poetry\]/.test(pyprojectText)) {
       return {
         command: 'poetry install --no-root',
@@ -613,9 +631,12 @@ async function inferDependencyBaselineRepair(input: {
     }
     if (/\[tool\.uv\]|\[project\]/.test(pyprojectText)) {
       return {
-        command: 'uv lock',
+        command: input.projectKind === 'agent' ? 'uv lock --project agents/primary' : 'uv lock',
         title: 'Generate uv lockfile',
-        files: ['pyproject.toml', 'uv.lock'],
+        files:
+          input.projectKind === 'agent'
+            ? ['agents/primary/pyproject.toml', 'agents/primary/uv.lock']
+            : ['pyproject.toml', 'uv.lock'],
         limitations: ['Review uv.lock changes before committing.'],
       };
     }
@@ -1167,10 +1188,30 @@ async function buildGitignoreRepair(projectPath: string): Promise<DoctorRepairCa
 async function buildDependencyContractProbe(input: {
   projectPath: string;
   runtime: DoctorSurfaceRuntimeFamily;
+  projectKind?: DoctorSurfaceProjectKind;
   packageJsonData?: Record<string, unknown> | null;
 }): Promise<DoctorSurfaceProbe | null> {
-  const manifests = DEPENDENCY_MANIFESTS[input.runtime] ?? [];
-  const lockfiles = DEPENDENCY_LOCKFILES[input.runtime] ?? [];
+  const agentRuntimeRoot = input.projectKind === 'agent' ? 'agents/primary' : null;
+  const manifests = [
+    ...(DEPENDENCY_MANIFESTS[input.runtime] ?? []),
+    ...(agentRuntimeRoot && input.runtime === 'python'
+      ? [`${agentRuntimeRoot}/pyproject.toml`]
+      : agentRuntimeRoot && input.runtime === 'dotnet'
+        ? [`${agentRuntimeRoot}/Primary.csproj`, `${agentRuntimeRoot}/tests/Primary.Tests.csproj`]
+        : []),
+  ];
+  const lockfiles = [
+    ...(DEPENDENCY_LOCKFILES[input.runtime] ?? []),
+    ...(agentRuntimeRoot && input.runtime === 'python'
+      ? [`${agentRuntimeRoot}/uv.lock`]
+      : agentRuntimeRoot && input.runtime === 'dotnet'
+        ? [
+            `${agentRuntimeRoot}/packages.lock.json`,
+            `${agentRuntimeRoot}/tests/packages.lock.json`,
+            `${agentRuntimeRoot}/Directory.Packages.props`,
+          ]
+        : []),
+  ];
   if (manifests.length === 0 && lockfiles.length === 0) {
     return null;
   }
@@ -1189,6 +1230,7 @@ async function buildDependencyContractProbe(input: {
       ? await inferDependencyBaselineRepair({
           projectPath: input.projectPath,
           runtime: input.runtime,
+          projectKind: input.projectKind,
           packageJsonData: input.packageJsonData,
         })
       : null;
@@ -1231,7 +1273,9 @@ async function buildDependencyContractProbe(input: {
 }
 
 async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurfaceProbe> {
-  const envExampleExists = await fsExtra.pathExists(path.join(input.projectPath, '.env.example'));
+  const envExampleExists =
+    (await fsExtra.pathExists(path.join(input.projectPath, '.env.example'))) ||
+    (await hasFileWithSuffix(input.projectPath, '.env.example', 4));
   const envContractVariantExists = await anyPathExists(input.projectPath, [
     '.env.sample',
     '.env.template',
@@ -1253,6 +1297,7 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
   const envFileConventionSupported =
     envExists ||
     input.projectKind === 'backend' ||
+    input.projectKind === 'agent' ||
     input.projectKind === 'frontend' ||
     input.projectKind === 'fullstack';
   const generatedExample = environmentKeys.map((key) => `${key}=`).join('\n');
@@ -2168,6 +2213,7 @@ export async function buildEnterpriseSurfaceProbes(
   const dependencyProbe = await buildDependencyContractProbe({
     projectPath: input.projectPath,
     runtime,
+    projectKind: input.projectKind,
     packageJsonData: input.packageJsonData,
   });
   if (dependencyProbe) probes.push(dependencyProbe);

@@ -721,7 +721,8 @@ export function detectRuntimeFromMarkers(projectPath: string): RuntimeFamily {
  */
 export function categorizeError(
   output: string,
-  errorPatterns?: Record<ErrorCategory, string[]>
+  errorPatterns?: Record<ErrorCategory, string[]>,
+  stage?: WorkspaceRunStage
 ): ErrorCategory {
   if (!output) {
     return 'unknown';
@@ -737,6 +738,13 @@ export function categorizeError(
         'import.*error',
         'Could not find a package configuration file provided by',
         'CMAKE_PREFIX_PATH',
+        'failed to fetch',
+        'error while requesting resource',
+        'unable to (?:resolve|connect)',
+        'could not resolve host',
+        'network (?:is )?unreachable',
+        'ECONNREFUSED',
+        'ENOTFOUND',
       ],
       setup: ['ModuleNotFoundError', 'No module named', 'npm ERR!', 'error:', 'not found'],
       'test-failure': ['FAILED', 'FAIL', 'failed'],
@@ -746,6 +754,9 @@ export function categorizeError(
   }
 
   for (const [category, patterns] of Object.entries(errorPatterns)) {
+    // Broad framework patterns such as "failed" are useful for test output,
+    // but must not turn build, init, or start failures into test failures.
+    if (category === 'test-failure' && stage && stage !== 'test') continue;
     for (const pattern of patterns) {
       if (new RegExp(pattern, 'i').test(output)) {
         return category as ErrorCategory;

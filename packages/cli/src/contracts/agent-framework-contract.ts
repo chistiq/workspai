@@ -477,7 +477,7 @@ export function buildAgentFrameworkCapabilitiesContract() {
     versioning: {
       adapterProtocol: 'SemVer-compatible immutable v1 envelope; breaking fields require v2.',
       upstreamFramework:
-        'Every adapter declares a bounded supported range and exact tested versions.',
+        'Agent framework kits select the latest admitted baseline, never an unchecked latest registry release. Discovery and candidate pull requests are automatic; promotion requires complete cross-platform conformance and human merge review.',
       stability: {
         experimental: 'Contract exploration only; not advertised as usable.',
         preview: 'Usable only with explicit preview selection and complete required conformance.',
@@ -494,6 +494,8 @@ export function buildAgentFrameworkCapabilitiesContract() {
         'All paths are relative, containment-checked, symlink-aware, and bound to an authorized project root.',
         'Portable artifacts contain references or bounded projections, never raw secret-bearing sessions.',
         'Framework dependencies are pinned by a tested-baseline policy and audited before admission.',
+        'Stable and preview release channels remain explicit and cannot be silently interchanged.',
+        'Scheduled update automation executes trusted default-branch code, opens review-only pull requests, and never merges candidates.',
       ],
     },
     publication: {

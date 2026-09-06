@@ -1000,8 +1000,22 @@ function isVitestRuntime(): boolean {
 
 function boundedFailureOutput(lines: string[], limit = 8): string {
   if (lines.length <= limit) return lines.join('\n');
-  const headCount = 3;
-  return [...lines.slice(0, headCount), ...lines.slice(-(limit - headCount))].join('\n');
+  const primary = primaryFailureLine(lines);
+  const primaryIndex = primary ? lines.lastIndexOf(primary) : -1;
+  const selected = new Set<number>([0, 1]);
+  if (primaryIndex >= 0) {
+    for (let index = Math.max(0, primaryIndex - 2); index <= primaryIndex + 2; index += 1) {
+      if (index < lines.length) selected.add(index);
+    }
+  }
+  for (let index = lines.length - 1; index >= 0 && selected.size < limit; index -= 1) {
+    selected.add(index);
+  }
+  return [...selected]
+    .sort((left, right) => left - right)
+    .slice(0, limit)
+    .map((index) => lines[index])
+    .join('\n');
 }
 
 function primaryFailureLine(lines: string[]): string | undefined {
@@ -1299,7 +1313,7 @@ async function executeStageCommand(
     if (exitCode !== 0) {
       const output = `${stdout}\n${stderr}`;
       const durationMs = Date.now() - startedAt;
-      const categorized = categorizeError(output);
+      const categorized = categorizeError(output, undefined, stage);
       const timedOut =
         commandTimedOut ||
         exitCode === 124 ||
@@ -1730,7 +1744,16 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         }));
       row.runtimeExecutions = runtimeExecutions;
 
-      if (!lifecyclePlan.polyglot && !runtimeFilter && runtimeExecutions.length > 0) {
+      // The project shortcut is safe only for one concrete runtime unit. Two
+      // independent manifests can use the same language; collapsing those to
+      // one root wrapper silently skips work just as surely as collapsing a
+      // polyglot project would.
+      if (
+        !lifecyclePlan.polyglot &&
+        !runtimeFilter &&
+        runtimeExecutions.length === 1 &&
+        plannedUnits[0]?.unit.root === '.'
+      ) {
         const detected = await detectProjectFramework(projectPath);
         row.framework = detected.framework;
         row.runtimeDetected = detected.runtime;
@@ -1773,7 +1796,12 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         return;
       }
 
-      if (lifecyclePlan.polyglot || runtimeFilter) {
+      if (
+        lifecyclePlan.polyglot ||
+        runtimeFilter ||
+        plannedUnits.length > 1 ||
+        (plannedUnits.length === 1 && plannedUnits[0]?.unit.root !== '.')
+      ) {
         if (plannedUnits.length === 0) {
           row.status = 'failed';
           row.reason = runtimeFilter
