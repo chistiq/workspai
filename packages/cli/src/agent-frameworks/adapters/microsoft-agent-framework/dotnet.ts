@@ -117,7 +117,7 @@ function renderDotnetFiles(input: AgentFrameworkAdapterInput) {
     ),
     managedFile(
       target.readme,
-      `<!-- Generated and managed by Workspai. -->\n# ${target.projectName}\n\nThis Microsoft Agent Framework entrypoint consumes bounded Workspai context. Run these commands from the project root.\n\n## Install\n\n\`dotnet restore ${target.dependencyManifest} --use-lock-file\`\n\n\`dotnet restore ${target.testProject} --use-lock-file\`\n\n## Verify\n\n\`dotnet build ${target.dependencyManifest} --no-restore\`\n\n\`dotnet test ${target.testProject} --no-restore\`\n\n## Run\n\nSet \`FOUNDRY_PROJECT_ENDPOINT\` and optionally \`FOUNDRY_MODEL\` in your shell, then run:\n\n\`dotnet run --project ${target.dependencyManifest} --no-restore\`\n\nNo credential value is stored in this directory. Run only after Workspai verification and an explicit network grant.\n`
+      `<!-- Generated and managed by Workspai. -->\n# ${target.projectName}\n\nThis Microsoft Agent Framework entrypoint consumes bounded Workspai context. Run these commands from the project root.\n\n## Install\n\n\`dotnet restore ${target.dependencyManifest} --use-lock-file\`\n\n\`dotnet restore ${target.testProject} --use-lock-file\`\n\n## Verify\n\n\`dotnet build ${target.dependencyManifest} --no-restore\`\n\n\`dotnet run --project ${target.testProject} --no-restore\`\n\nThe test project is an isolated xUnit v3 executable backed by Microsoft Testing Platform. Running it directly keeps verification independent from any repository-level \`global.json\` test-runner policy.\n\n## Run\n\nSet \`FOUNDRY_PROJECT_ENDPOINT\` and optionally \`FOUNDRY_MODEL\` in your shell, then run:\n\n\`dotnet run --project ${target.dependencyManifest} --no-restore\`\n\nNo credential value is stored in this directory. Run only after Workspai verification and an explicit network grant.\n`
     ),
     managedFile(
       target.state,
@@ -189,7 +189,7 @@ export const microsoftAgentFrameworkDotnetAdapter: AgentFrameworkAdapter = {
         `dotnet restore ${target.dependencyManifest} --use-lock-file`,
         `dotnet build ${target.dependencyManifest} --no-restore`,
         `dotnet restore ${target.testProject} --use-lock-file`,
-        `dotnet test ${target.testProject} --no-restore`,
+        `dotnet run --project ${target.testProject} --no-restore`,
       ],
       boundaries: [
         'Workspai remains the canonical workspace and verification authority.',

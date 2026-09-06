@@ -747,7 +747,10 @@ async function main(): Promise<void> {
         )?.path;
         assertCondition(testProject, 'Rendered .NET test project is missing.');
         await run('dotnet', ['restore', testProject, '--use-lock-file'], generatedRoot);
-        await run('dotnet', ['test', testProject, '--no-restore'], generatedRoot);
+        // xUnit v3 test projects are native Microsoft Testing Platform executables. Running the
+        // generated test project directly is stable across supported .NET SDKs and avoids
+        // inheriting or rewriting a host repository's global.json runner policy.
+        await run('dotnet', ['run', '--project', testProject, '--no-restore'], generatedRoot);
         const generatedEntrypoint = path.resolve(generatedRoot, context.entrypoint);
         await fs.rename(generatedEntrypoint, `${generatedEntrypoint}.verified`);
         await fs.writeFile(generatedEntrypoint, dotnetLifecycleHarness(), 'utf8');

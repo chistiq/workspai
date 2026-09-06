@@ -132,6 +132,14 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(testProject).toContain('<OutputType>Exe</OutputType>');
     expect(testProject).toContain('<UseMicrosoftTestingPlatformRunner>true');
     expect(testProject).toContain('<TestingPlatformDotnetTestSupport>true');
+    expect(
+      microsoftAgentFrameworkDotnetAdapter.context({
+        projectRoot: root,
+        instanceName: 'Release Reviewer',
+      }).verificationCommands
+    ).toContain(
+      'dotnet run --project agents/release-reviewer/tests/ReleaseReviewer.Tests.csproj --no-restore'
+    );
   });
 
   it('preserves user-authored files and exposes the conflict as a plan blocker', async () => {
