@@ -24,6 +24,8 @@ agent attachment for existing repositories without changing public contracts.
   preserving authored-source search priority.
 - Use portable evidence paths for Agent Framework plans and effect receipts
   in externally adopted projects.
+- Keep Windows adoption verification stable across transient filesystem locks
+  without suppressing persistent cleanup failures.
 
 **Compatibility:** Existing commands, schema versions, managed-default
 automation, and framework admission policy remain supported. No upstream

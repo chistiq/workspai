@@ -13,7 +13,19 @@ import { WORKSPACE_CONTRACT_PATH } from '../utils/workspace-contract.js';
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  // Release cwd/console/prompt spies before removing trees that the adoption
+  // flow inspected. Windows may briefly retain directory handles after the
+  // final filesystem read, so use Node's bounded EBUSY/EPERM retry support.
+  // A persistent lock still rejects the cleanup and fails the test.
+  vi.restoreAllMocks();
+  for (const dir of tempDirs.splice(0)) {
+    await fs.rm(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 10 : 0,
+      retryDelay: 100,
+    });
+  }
 });
 
 async function makeTempDir(prefix: string): Promise<string> {
