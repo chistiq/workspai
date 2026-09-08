@@ -12,7 +12,7 @@ describe('Graph identity and evidence lineage', () => {
     const first = normalizeGraphEntityIdentity({
       namespace: 'SOURCE',
       kind: 'File',
-      relativeLocator: '.\\SRC\\Café.ts',
+      relativeLocator: '.\\SRC\\Caf\u00e9.ts',
       caseSensitivity: 'insensitive',
       scope,
     });

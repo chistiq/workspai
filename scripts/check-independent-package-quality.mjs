@@ -25,25 +25,58 @@ function readJson(relativePath) {
   }
 }
 
-function isSafeFile(relativePath, ownerDirectory) {
+function normalizeSafePortablePath(relativePath) {
   if (
     typeof relativePath !== "string" ||
-    path.isAbsolute(relativePath) ||
-    relativePath.includes("\\")
+    relativePath.length === 0 ||
+    relativePath.includes("\\") ||
+    path.posix.isAbsolute(relativePath) ||
+    /^[A-Za-z]:/u.test(relativePath)
   ) {
-    return false;
+    return undefined;
   }
-  const normalized = path.normalize(relativePath);
-  if (normalized === ".." || normalized.startsWith(`..${path.sep}`))
+  const normalized = path.posix.normalize(relativePath);
+  if (normalized === ".." || normalized.startsWith("../")) return undefined;
+  return normalized;
+}
+
+function isPortablePathOwnedBy(relativePath, ownerDirectory) {
+  const normalized = normalizeSafePortablePath(relativePath);
+  if (!normalized) return false;
+  if (!ownerDirectory) return true;
+  const normalizedOwner = normalizeSafePortablePath(ownerDirectory);
+  if (!normalizedOwner) return false;
+  return (
+    normalized === normalizedOwner ||
+    normalized.startsWith(`${normalizedOwner}/`)
+  );
+}
+
+function isSafeFile(relativePath, ownerDirectory) {
+  if (!isPortablePathOwnedBy(relativePath, ownerDirectory)) return false;
+  const normalized = normalizeSafePortablePath(relativePath);
+  if (!normalized) return false;
+  const absolute = path.resolve(root, ...normalized.split("/"));
+  if (absolute !== root && !absolute.startsWith(`${root}${path.sep}`))
     return false;
-  const absolute = path.join(root, normalized);
   if (!fs.existsSync(absolute) || !fs.lstatSync(absolute).isFile())
     return false;
-  if (!ownerDirectory) return true;
-  return (
-    normalized === ownerDirectory ||
-    normalized.startsWith(`${ownerDirectory}${path.sep}`)
-  );
+  return true;
+}
+
+const portablePathControls = [
+  ["packages/shared/README.md", "packages/shared", true],
+  ["./packages/shared/README.md", "packages/shared", true],
+  ["packages/graph/README.md", "packages/shared", false],
+  ["packages/sharedness/README.md", "packages/shared", false],
+  ["../packages/shared/README.md", "packages/shared", false],
+  ["packages\\shared\\README.md", "packages/shared", false],
+  ["C:/packages/shared/README.md", "packages/shared", false],
+];
+for (const [candidate, owner, expected] of portablePathControls) {
+  if (isPortablePathOwnedBy(candidate, owner) !== expected) {
+    fail(`portable package path control failed for ${candidate}`);
+  }
 }
 
 function normalizePackagePath(value) {
