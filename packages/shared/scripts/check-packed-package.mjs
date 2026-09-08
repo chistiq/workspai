@@ -10,10 +10,18 @@ const consumerRoot = path.join(temporaryRoot, 'consumer');
 const npmCache = path.join(temporaryRoot, 'npm-cache');
 
 function runNpm(args, cwd) {
-  // Invoke the platform npm shim. Re-entering npm through npm_execpath while
-  // already inside a workspace lifecycle can inherit workspace-only output
-  // settings and suppress the JSON payload required by this gate.
-  const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  // Prefer npm's JavaScript entrypoint so Windows does not ask spawnSync to
+  // execute a .cmd shim directly. Node 20 can reject that invocation with
+  // EINVAL before npm starts. The shell fallback keeps direct script runs
+  // usable when npm_execpath is unavailable.
+  const npmExecPath = process.env.npm_execpath;
+  const useNpmEntrypoint = Boolean(npmExecPath && fs.existsSync(npmExecPath));
+  const command = useNpmEntrypoint
+    ? process.execPath
+    : process.platform === 'win32'
+      ? 'npm.cmd'
+      : 'npm';
+  const commandArgs = useNpmEntrypoint ? [npmExecPath, ...args] : args;
   const environment = { ...process.env, npm_config_cache: npmCache };
   for (const inheritedWorkspaceSetting of [
     'npm_config_workspace',
@@ -24,10 +32,12 @@ function runNpm(args, cwd) {
   ]) {
     delete environment[inheritedWorkspaceSetting];
   }
-  const result = spawnSync(command, args, {
+  const result = spawnSync(command, commandArgs, {
     cwd,
     encoding: 'utf8',
     env: environment,
+    shell: process.platform === 'win32' && !useNpmEntrypoint,
+    windowsHide: true,
   });
   if (result.error || result.status !== 0) {
     throw new Error(

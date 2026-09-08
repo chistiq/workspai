@@ -14,7 +14,16 @@ const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
 const typescriptCli = toolRequire.resolve('typescript/bin/tsc');
 
 function runNpm(args, cwd) {
-  const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  // Bypass the Windows .cmd shim when npm exposes its JavaScript entrypoint.
+  // Direct shim execution through spawnSync can fail with EINVAL on Node 20.
+  const npmExecPath = process.env.npm_execpath;
+  const useNpmEntrypoint = Boolean(npmExecPath && fs.existsSync(npmExecPath));
+  const command = useNpmEntrypoint
+    ? process.execPath
+    : process.platform === 'win32'
+      ? 'npm.cmd'
+      : 'npm';
+  const commandArgs = useNpmEntrypoint ? [npmExecPath, ...args] : args;
   const environment = { ...process.env, npm_config_cache: npmCache };
   for (const key of [
     'npm_config_workspace',
@@ -25,7 +34,13 @@ function runNpm(args, cwd) {
   ]) {
     delete environment[key];
   }
-  const result = spawnSync(command, args, { cwd, encoding: 'utf8', env: environment });
+  const result = spawnSync(command, commandArgs, {
+    cwd,
+    encoding: 'utf8',
+    env: environment,
+    shell: process.platform === 'win32' && !useNpmEntrypoint,
+    windowsHide: true,
+  });
   if (result.error || result.status !== 0) {
     throw new Error(
       `npm ${args.join(' ')} failed${result.error ? `: ${result.error.message}` : ''}\n${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim()
