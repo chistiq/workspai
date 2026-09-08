@@ -12,6 +12,10 @@ const script = path.join(packageRoot, 'scripts/check-foundation-matrix-admission
 const temporaryDirectories: string[] = [];
 const sourceCommit = 'a'.repeat(40);
 
+function repositoryRelative(file: string): string {
+  return path.relative(repositoryRoot, file).split(path.sep).join('/');
+}
+
 function digest(file: string): string {
   return `sha256:${crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')}`;
 }
@@ -79,11 +83,11 @@ function runAdmission(directory: string): {
     [
       script,
       '--evidence-directory',
-      path.relative(repositoryRoot, directory),
+      repositoryRelative(directory),
       '--source-commit',
       sourceCommit,
       '--output',
-      path.relative(repositoryRoot, output),
+      repositoryRelative(output),
     ],
     { cwd: repositoryRoot, encoding: 'utf8' }
   );

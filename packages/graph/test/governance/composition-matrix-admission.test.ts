@@ -11,6 +11,10 @@ const script = path.join(packageRoot, 'scripts/check-composition-matrix-admissio
 const temporaryDirectories: string[] = [];
 const sourceCommit = 'c'.repeat(40);
 
+function repositoryRelative(file: string): string {
+  return path.relative(repositoryRoot, file).split(path.sep).join('/');
+}
+
 function createEvidenceDirectory(): string {
   const testResultsRoot = path.join(repositoryRoot, 'test-results');
   fs.mkdirSync(testResultsRoot, { recursive: true });
@@ -63,11 +67,11 @@ function runAdmission(directory: string) {
     [
       script,
       '--evidence-directory',
-      path.relative(repositoryRoot, directory),
+      repositoryRelative(directory),
       '--source-commit',
       sourceCommit,
       '--output',
-      path.relative(repositoryRoot, output),
+      repositoryRelative(output),
     ],
     { cwd: repositoryRoot, encoding: 'utf8' }
   );
