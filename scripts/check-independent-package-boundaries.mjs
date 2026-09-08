@@ -29,6 +29,54 @@ function fail(message) {
   failures.push(message);
 }
 
+function normalizeSafePortablePath(value) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.includes("\\") ||
+    path.posix.isAbsolute(value) ||
+    /^[A-Za-z]:/u.test(value)
+  ) {
+    return undefined;
+  }
+  const normalized = path.posix.normalize(value);
+  if (normalized === ".." || normalized.startsWith("../")) return undefined;
+  return normalized;
+}
+
+function resolveOwnedEvidencePath(value, ownerDirectory) {
+  const normalized = normalizeSafePortablePath(value);
+  const normalizedOwner = normalizeSafePortablePath(ownerDirectory);
+  if (
+    !normalized ||
+    !normalizedOwner ||
+    (normalized !== normalizedOwner &&
+      !normalized.startsWith(`${normalizedOwner}/`))
+  ) {
+    return undefined;
+  }
+  const resolved = path.resolve(root, ...normalized.split("/"));
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    return undefined;
+  }
+  return resolved;
+}
+
+const evidencePathControls = [
+  ["packages/shared/governance/report.json", "packages/shared", true],
+  ["./packages/shared/governance/report.json", "packages/shared", true],
+  ["packages/graph/governance/report.json", "packages/shared", false],
+  ["packages/sharedness/report.json", "packages/shared", false],
+  ["../packages/shared/report.json", "packages/shared", false],
+  ["packages\\shared\\report.json", "packages/shared", false],
+  ["C:/packages/shared/report.json", "packages/shared", false],
+];
+for (const [candidate, owner, expected] of evidencePathControls) {
+  if (Boolean(resolveOwnedEvidencePath(candidate, owner)) !== expected) {
+    fail(`portable evidence path control failed for ${candidate}`);
+  }
+}
+
 const rootManifest = readJson("package.json");
 const packageRegistry = readJson("independent-packages.json");
 const sharedConsumerMigration = readJson(
@@ -117,23 +165,16 @@ for (const entry of registeredPackages) {
     );
   }
   for (const evidencePath of entry.requiredEvidence ?? []) {
-    if (typeof evidencePath !== "string") {
-      fail(`${entry.name} has a non-string architecture evidence path`);
-      continue;
-    }
-    const normalized = path.normalize(evidencePath);
-    const packagePrefix = `${entry.directory}${path.sep}`;
-    if (
-      path.isAbsolute(evidencePath) ||
-      normalized.includes(`..${path.sep}`) ||
-      !normalized.startsWith(packagePrefix)
-    ) {
+    const resolvedEvidence = resolveOwnedEvidencePath(
+      evidencePath,
+      entry.directory,
+    );
+    if (!resolvedEvidence) {
       fail(
         `${entry.name} has unsafe or out-of-package evidence path ${evidencePath}`,
       );
       continue;
     }
-    const resolvedEvidence = path.join(root, normalized);
     if (
       !fs.existsSync(resolvedEvidence) ||
       !fs.lstatSync(resolvedEvidence).isFile()
@@ -343,15 +384,14 @@ for (const adopter of adoptionRecords) {
     fail(`SH6 Shared subpath evidence drifted for ${adopter.package}`);
   }
   for (const evidencePath of adopter.evidence ?? []) {
-    if (
-      typeof evidencePath !== "string" ||
-      path.isAbsolute(evidencePath) ||
-      path.normalize(evidencePath).includes(`..${path.sep}`)
-    ) {
+    const evidence = resolveOwnedEvidencePath(
+      evidencePath,
+      registryEntry.directory,
+    );
+    if (!evidence) {
       fail(`${adopter.package} has unsafe SH6 evidence path ${evidencePath}`);
       continue;
     }
-    const evidence = path.join(root, evidencePath);
     if (!fs.existsSync(evidence) || !fs.lstatSync(evidence).isFile()) {
       fail(`${adopter.package} is missing SH6 evidence ${evidencePath}`);
     }
