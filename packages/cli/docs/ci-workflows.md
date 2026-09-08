@@ -48,8 +48,14 @@ branch action when strict checks require synchronization with the latest
 
 The release workflow requires the cost-bounded
 `Official Generator Smoke · primary` Linux run for the exact release SHA. A
-normal push that touches the contracted generator surface produces this gate;
-maintainers do not need to run the full cross-platform matrix before publishing.
+normal push that touches the contracted generator surface produces this gate.
+It can also be run manually with `matrix_mode: primary`, an empty `generators`
+field, and `execute: true`; this executes every contracted generator on the
+primary Linux lane and is eligible for the same exact-SHA release gate.
+Targeted, contract-only, and `full` runs have distinct identities and cannot
+satisfy that gate. The full cross-platform matrix remains available manually
+and on the weekly schedule for broader compatibility and upstream-drift checks,
+but is not required before publishing.
 
 Consumer mirror synchronization does not add another required CLI workflow.
 Local pre-commit synchronizes mirrors when contract sources are staged;
@@ -66,11 +72,12 @@ paths. Frontend changes run the frontend generators, desktop/extension/Laravel
 changes run that platform group, and native-only changes skip the unrelated
 official network matrix while retaining native artifact verification. Shared
 contracts, dependencies, smoke infrastructure, and release gates conservatively
-run every official generator. The weekly schedule and manual dispatch still run
-the complete Linux, macOS, and Windows matrix as a compatibility and
-upstream-drift signal. npm and Composer download caches reduce repeated network
-work without treating an earlier commit or calendar-day result as proof for a
-new SHA.
+run every official generator. The weekly schedule runs the complete Linux,
+macOS, and Windows matrix as a compatibility and upstream-drift signal. Manual
+dispatch defaults to the Linux `primary` matrix and offers `full` when
+cross-platform qualification is needed. npm and Composer download caches reduce
+repeated network work without treating an earlier commit or calendar-day result
+as proof for a new SHA.
 
 The Windows coverage lane intentionally uses bounded Vitest worker concurrency
 and platform-aware transaction timeouts. Filesystem-heavy workspace tests must

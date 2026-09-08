@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Added an explicit manual `primary` or `full` official-generator matrix choice;
+  an all-generator executed `primary` run for the exact commit can satisfy the
+  release gate, while targeted and contract-only runs remain ineligible.
+
 ## [0.75.1] - 2026-09-08
 
 ### Changed

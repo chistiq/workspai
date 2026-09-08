@@ -1,5 +1,5 @@
 name: Official Generator Smoke
-run-name: Official Generator Smoke · ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.generators == '' && 'full' || 'targeted') || github.event_name == 'schedule' && 'full' || 'primary' }}
+run-name: Official Generator Smoke · ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.execute != 'true' && 'contract-only' || github.event.inputs.generators != '' && 'targeted' || github.event.inputs.matrix_mode) || github.event_name == 'schedule' && 'full' || 'primary' }}
 
 on:
   push:
@@ -40,6 +40,14 @@ on:
       - ".github/workflows/release-npm-manual.yml"
   workflow_dispatch:
     inputs:
+      matrix_mode:
+        description: "Operating-system coverage for the selected generators"
+        required: true
+        type: choice
+        options:
+          - primary
+          - full
+        default: primary
       generators:
         description: "Comma-separated contracted generator IDs, or empty for all"
         required: false
@@ -105,6 +113,7 @@ jobs:
         working-directory: packages/cli
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MATRIX_MODE: ${{ github.event.inputs.matrix_mode || 'primary' }}
           REQUESTED_GENERATORS: ${{ github.event.inputs.generators || '' }}
           ALL_CHANGED: ${{ steps.changes.outputs.all || 'false' }}
           FRONTEND_CHANGED: ${{ steps.changes.outputs.frontend || 'false' }}
@@ -118,8 +127,12 @@ jobs:
           RUN_NATIVE="false"
           SELECT_ARGS=()
 
-          if [[ "$EVENT_NAME" == "schedule" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ "$EVENT_NAME" == "schedule" ]]; then
             MODE="full"
+            RUN_NATIVE="true"
+            SELECT_ARGS=(--groups all)
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            MODE="$REQUESTED_MATRIX_MODE"
             RUN_NATIVE="true"
             if [[ -n "$REQUESTED_GENERATORS" ]]; then
               SELECT_ARGS=(--generators "$REQUESTED_GENERATORS")

@@ -74,6 +74,11 @@ describe('shared contracts workflow (Wave A + B)', () => {
     });
     expect(parsedSmokeWorkflow.jobs.impact.outputs).toHaveProperty('run_official');
     expect(parsedSmokeWorkflow.jobs.impact.outputs).toHaveProperty('run_native');
+    expect(parsedSmokeWorkflow.on.workflow_dispatch.inputs.matrix_mode).toMatchObject({
+      type: 'choice',
+      default: 'primary',
+      options: ['primary', 'full'],
+    });
     expect(parsedSmokeWorkflow.jobs.network.needs).toEqual(['impact', 'contract']);
     expect(parsedSmokeWorkflow.jobs.network.strategy.matrix).toBe(
       '${{ fromJSON(needs.impact.outputs.matrix) }}'
@@ -86,6 +91,9 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(smokeWorkflow).toContain('uses: dorny/paths-filter@v4');
     expect(smokeWorkflow).toContain('MODE="primary"');
     expect(smokeWorkflow).toContain('MODE="full"');
+    expect(smokeWorkflow).toContain('MODE="$REQUESTED_MATRIX_MODE"');
+    expect(smokeWorkflow).toContain("github.event.inputs.execute != 'true' && 'contract-only'");
+    expect(smokeWorkflow).toContain("github.event.inputs.generators != '' && 'targeted'");
     expect(smokeWorkflow).toContain('SELECT_ARGS=(--groups all)');
     expect(smokeWorkflow).toContain('GROUPS+=(frontend)');
     expect(smokeWorkflow).toContain('GROUPS+=(platform)');
@@ -96,7 +104,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(smokeWorkflow).toContain('Restore Composer download cache');
     expect(smokeWorkflow).toContain('extensions: fileinfo');
     expect(releaseWorkflow).toContain("run.name === 'Official Generator Smoke · primary'");
-    expect(releaseWorkflow).toContain("run.event !== 'push'");
+    expect(releaseWorkflow).toContain("['push', 'workflow_dispatch'].includes(run.event)");
     expect(releaseWorkflow).not.toContain('run.display_title?.endsWith');
     expect(releaseWorkflow).not.toContain("'Official Generator Smoke · full'");
   });
