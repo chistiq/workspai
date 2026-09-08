@@ -111,7 +111,11 @@ import {
   WORKSPACE_INTELLIGENCE_SUBCOMMANDS,
   WORKSPACE_SUBCOMMANDS,
 } from './utils/workspace-command-surface.js';
-import { emitWorkspacePhase } from './observability/cli-progress.js';
+import {
+  createCliSpinner,
+  emitWorkspacePhase,
+  type CliSpinnerHandle,
+} from './observability/cli-progress.js';
 import {
   getPublishedContractCatalog,
   getPublishedContractVersions,
@@ -175,6 +179,15 @@ import {
   type AdoptProjectRollbackSnapshot,
 } from './adopt-project.js';
 import {
+  buildAdoptOutsideWorkspacePromptChoices,
+  defaultAdoptOutsideWorkspacePromptIndex,
+  resolveAdoptOutsideWorkspaceChoice,
+  resolveExplicitAdoptWorkspaceTarget,
+  resolveOutsideWorkspaceAdoptTarget,
+  type AdoptOutsideWorkspaceMode,
+  type AdoptWorkspaceResolutionMode,
+} from './adopt-workspace-resolution.js';
+import {
   resolveProjectPortableSkillTransactionPaths,
   type ProjectGroundingMode,
 } from './project-intelligence-lens.js';
@@ -216,11 +229,13 @@ import {
   isWindowsPlatform,
 } from './utils/platform-capabilities.js';
 import {
+  LEGACY_RAPIDKIT_METADATA_DIR,
   MANAGED_DEFAULT_WORKSPACE_LABEL,
   PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
   PROJECT_GROUNDING_RELATIVE_PATH,
   PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
+  WORKSPAI_METADATA_DIR,
   findExistingWorkspacePath,
   getCanonicalWorkspacesDirectory,
   projectMetadataCandidates,
@@ -847,7 +862,57 @@ async function prepareOutsideWorkspaceCreate(
   }
 }
 
+async function prepareOutsideWorkspaceAdopt(
+  sourcePath: string,
+  options: {
+    json?: boolean;
+    explicitWorkspace?: boolean;
+  }
+): Promise<AdoptOutsideWorkspaceMode | undefined> {
+  if (options.json || options.explicitWorkspace || findWorkspaceUp(sourcePath)) {
+    return undefined;
+  }
+
+  if (!process.stdin.isTTY) {
+    return undefined;
+  }
+
+  const choice = await resolveAdoptOutsideWorkspaceChoice({ sourcePath });
+  if (!choice.parentEligible) return undefined;
+  const promptChoices = buildAdoptOutsideWorkspacePromptChoices();
+  const { workspaceMode } = (await prompt([
+    {
+      type: 'rawlist',
+      name: 'workspaceMode',
+      message: 'This project is outside a Workspai workspace. How should it be managed?',
+      choices: promptChoices,
+      default: defaultAdoptOutsideWorkspacePromptIndex(),
+    },
+  ])) as { workspaceMode: AdoptOutsideWorkspaceMode };
+
+  return workspaceMode;
+}
+
+async function bootstrapAdoptWorkspaceTarget(
+  workspacePath: string,
+  transaction: ProjectLifecycleTransaction
+): Promise<void> {
+  const { registerWorkspaceAtPath } = await import('./create.js');
+  await registerWorkspaceAtPath(workspacePath, {
+    skipGit: true,
+    yes: true,
+    testMode:
+      process.env.VITEST === 'true' ||
+      process.env.VITEST === '1' ||
+      process.env.NODE_ENV === 'test',
+    userConfig: await loadUserConfig(),
+    lifecycleTransaction: transaction,
+  });
+}
+
 interface ProjectLifecycleTransaction {
+  captureFile(filePath: string): Promise<void>;
+  captureOwnedTree(treePath: string): Promise<boolean>;
   commit(): Promise<void>;
   rollback(): Promise<void>;
   registerCompensation(compensation: () => void | Promise<void>): void;
@@ -965,6 +1030,22 @@ async function beginProjectLifecycleTransaction(
       await transaction.captureFile(capturePath);
       capturedFiles.add(capturePath);
     }
+    if (projectPath) {
+      for (const projectManagedDirectory of [
+        WORKSPAI_METADATA_DIR,
+        LEGACY_RAPIDKIT_METADATA_DIR,
+        '.agents',
+        '.amazonq',
+        '.claude',
+        '.cursor',
+        '.github',
+        '.grok',
+        '.vscode',
+        '.windsurf',
+      ]) {
+        await transaction.captureOwnedTree(path.join(projectPath, projectManagedDirectory));
+      }
+    }
     if (options.ownedDestination) {
       await transaction.captureOwnedTree(options.ownedDestination);
     }
@@ -973,6 +1054,8 @@ async function beginProjectLifecycleTransaction(
     }
     let finished = false;
     return {
+      captureFile: (filePath) => transaction.captureFile(filePath),
+      captureOwnedTree: (treePath) => transaction.captureOwnedTree(treePath),
       registerCompensation: (compensation) => transaction.registerCompensation(compensation),
       commit: async () => {
         if (finished) return;
@@ -3414,9 +3497,11 @@ export async function handleAdoptCommand(
     ) => Promise<void>;
   }
 ): Promise<number> {
+  let adoptSpinner: CliSpinnerHandle | undefined;
   let activeAdoptBlock: string | undefined;
   const startAdoptBlock = (blockId: string, message: string): void => {
     activeAdoptBlock = blockId;
+    if (adoptSpinner) adoptSpinner.text = message;
     emitActivityBlock({ blockId, status: 'running', message, component: 'adopt' });
   };
   const completeAdoptBlock = (blockId: string, message: string): void => {
@@ -3440,13 +3525,25 @@ export async function handleAdoptCommand(
   startAdoptBlock('adopt.resolve', 'Resolving project and workspace');
   const sourcePath = path.resolve(source || process.cwd());
   const explicitWorkspace = options.workspace ? path.resolve(options.workspace) : null;
-  const ingestionResolution = explicitWorkspace
-    ? { workspacePath: explicitWorkspace, error: null }
-    : resolveWorkspaceForIngestion(process.cwd());
-  let workspacePath = ingestionResolution.workspacePath;
+  let workspacePath: string | null = null;
+  let workspaceResolution: AdoptWorkspaceResolutionMode = 'nearest';
   let usedDefaultWorkspace = false;
   let createdDefaultWorkspace = false;
   let willCreateDefaultWorkspace = false;
+  let willBootstrapWorkspace = false;
+  let bootstrappedWorkspace = false;
+  let bootstrapTargetPath: string | null = null;
+
+  let ingestionResolution = explicitWorkspace
+    ? { workspacePath: null as string | null, error: null }
+    : resolveWorkspaceForIngestion(process.cwd());
+
+  // Preserve the current-workspace ownership rule for external adoption, but
+  // when the caller is outside every workspace resolve an already-linked or
+  // physically contained source from the source itself.
+  if (!explicitWorkspace && !ingestionResolution.error && !ingestionResolution.workspacePath) {
+    ingestionResolution = resolveWorkspaceForIngestion(sourcePath);
+  }
 
   if (ingestionResolution.error) {
     failActiveAdoptBlock(ingestionResolution.error.message);
@@ -3470,31 +3567,91 @@ export async function handleAdoptCommand(
   }
 
   if (explicitWorkspace) {
-    if (!hasWorkspaceRootMarkers(explicitWorkspace)) {
-      const message = `Workspace path is not a valid Workspai workspace: ${explicitWorkspace}`;
-      failActiveAdoptBlock(message);
+    const explicitResolution = await resolveExplicitAdoptWorkspaceTarget(explicitWorkspace, {
+      dryRun: options.dryRun,
+    });
+    if (!explicitResolution.ok) {
+      failActiveAdoptBlock(explicitResolution.message);
       if (options.json) {
-        console.log(JSON.stringify({ error: message }, null, 2));
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'adopt',
+              code: explicitResolution.code,
+              message: explicitResolution.message,
+            }),
+            null,
+            2
+          )
+        );
       } else {
-        console.log(chalk.red(`❌ ${message}`));
+        console.log(chalk.red(`❌ ${explicitResolution.message}`));
       }
       return 1;
     }
-  } else if (!workspacePath || !hasWorkspaceRootMarkers(workspacePath)) {
-    const defaultWorkspacePath = resolveManagedDefaultImportWorkspacePath();
-    workspacePath = defaultWorkspacePath;
-    usedDefaultWorkspace = true;
-    willCreateDefaultWorkspace = options.dryRun !== true;
+    ({
+      workspacePath,
+      resolution: workspaceResolution,
+      usedDefaultWorkspace,
+      willCreateDefaultWorkspace,
+      willBootstrapWorkspace,
+      bootstrapTargetPath,
+    } = explicitResolution.result);
+  } else if (
+    ingestionResolution.workspacePath &&
+    hasWorkspaceRootMarkers(ingestionResolution.workspacePath)
+  ) {
+    workspacePath = ingestionResolution.workspacePath;
+    workspaceResolution = 'nearest';
+  } else {
+    const outsideWorkspaceMode = await prepareOutsideWorkspaceAdopt(sourcePath, {
+      json: options.json,
+      explicitWorkspace: false,
+    });
+
+    const outsideResolution = await resolveOutsideWorkspaceAdoptTarget({
+      sourcePath,
+      outsideWorkspaceMode,
+      dryRun: options.dryRun,
+    });
+    if (!outsideResolution.ok) {
+      failActiveAdoptBlock(outsideResolution.message);
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'adopt',
+              code: outsideResolution.code,
+              message: outsideResolution.message,
+            }),
+            null,
+            2
+          )
+        );
+      } else {
+        console.log(chalk.red(`❌ ${outsideResolution.message}`));
+      }
+      return 1;
+    }
+
+    ({
+      workspacePath,
+      resolution: workspaceResolution,
+      usedDefaultWorkspace,
+      willCreateDefaultWorkspace,
+      willBootstrapWorkspace,
+      bootstrapTargetPath,
+    } = outsideResolution.result);
   }
 
-  const allowsUncreatedDefaultWorkspace =
-    usedDefaultWorkspace &&
-    workspacePath !== null &&
-    (options.dryRun === true || willCreateDefaultWorkspace);
-  if (
-    !workspacePath ||
-    (!hasWorkspaceRootMarkers(workspacePath) && !allowsUncreatedDefaultWorkspace)
-  ) {
+  const wouldBootstrapWorkspace =
+    workspaceResolution === 'explicit-bootstrap' || workspaceResolution === 'parent-bootstrap';
+  const allowsUncreatedWorkspace =
+    (usedDefaultWorkspace && (options.dryRun === true || willCreateDefaultWorkspace)) ||
+    (wouldBootstrapWorkspace && (options.dryRun === true || willBootstrapWorkspace)) ||
+    (workspacePath !== null && hasWorkspaceRootMarkers(workspacePath));
+
+  if (!workspacePath || (!hasWorkspaceRootMarkers(workspacePath) && !allowsUncreatedWorkspace)) {
     const message = 'Not inside a Workspai workspace';
     failActiveAdoptBlock(message);
     if (options.json) {
@@ -3521,7 +3678,8 @@ export async function handleAdoptCommand(
     if (options.dryRun !== true) {
       transaction = await beginProjectLifecycleTransaction(workspacePath, {
         projectPath: sourcePath,
-        ownedWorkspace: willCreateDefaultWorkspace ? workspacePath : undefined,
+        ownedWorkspace:
+          willCreateDefaultWorkspace || willBootstrapWorkspace ? workspacePath : undefined,
       });
       if (willCreateDefaultWorkspace) {
         const ensuredWorkspace = await ensureManagedDefaultImportWorkspace({
@@ -3530,6 +3688,20 @@ export async function handleAdoptCommand(
         workspacePath = ensuredWorkspace.workspacePath;
         createdDefaultWorkspace = ensuredWorkspace.created;
       }
+      if (willBootstrapWorkspace && bootstrapTargetPath) {
+        await bootstrapAdoptWorkspaceTarget(bootstrapTargetPath, transaction);
+        bootstrappedWorkspace = true;
+      }
+    }
+    if (!options.json && process.stdout.isTTY) {
+      adoptSpinner = createCliSpinner('Analyzing project for adoption', {
+        component: 'adopt',
+        phase: 'adopt.lifecycle',
+        metadata: {
+          dryRun: options.dryRun === true,
+          workspaceResolution,
+        },
+      });
     }
     completeAdoptBlock('adopt.resolve', 'Project and workspace resolved');
     startAdoptBlock('adopt.detect', 'Detecting architecture and adoption effects');
@@ -3639,19 +3811,25 @@ export async function handleAdoptCommand(
       skipAdoptBlock('adopt.ground', 'Dry run: project agent entry not written');
     }
 
+    adoptSpinner?.succeed(
+      options.dryRun === true ? 'Adoption preview ready' : 'Project adoption ready'
+    );
+    adoptSpinner = undefined;
+
     if (options.json) {
       console.log(
         JSON.stringify(
           {
             workspacePath,
-            workspaceResolution: usedDefaultWorkspace
-              ? 'default-auto'
-              : explicitWorkspace
-                ? 'explicit'
-                : 'nearest',
+            workspaceResolution,
             defaultWorkspaceCreated: usedDefaultWorkspace ? createdDefaultWorkspace : false,
+            workspaceBootstrapped: bootstrappedWorkspace,
             wouldCreateDefaultWorkspace:
               usedDefaultWorkspace && options.dryRun === true
+                ? !hasWorkspaceRootMarkers(workspacePath)
+                : false,
+            wouldBootstrapWorkspace:
+              wouldBootstrapWorkspace && options.dryRun === true
                 ? !hasWorkspaceRootMarkers(workspacePath)
                 : false,
             projectWorkspaceCommand,
@@ -3682,6 +3860,8 @@ export async function handleAdoptCommand(
           `ℹ Adopted outside a workspace, so Workspai used the default workspace: ${workspacePath}`
         )
       );
+    } else if (bootstrappedWorkspace) {
+      console.log(chalk.green(`✔ Workspace bootstrapped at: ${workspacePath}`));
     }
     if (createdDefaultWorkspace && options.dryRun !== true) {
       console.log(
@@ -3759,6 +3939,8 @@ export async function handleAdoptCommand(
     }
     const message = error instanceof Error ? error.message : String(error);
     failActiveAdoptBlock(message);
+    adoptSpinner?.fail('Project adoption failed');
+    adoptSpinner = undefined;
     if (options.json) {
       console.log(JSON.stringify({ error: message }, null, 2));
     } else {
@@ -7967,7 +8149,10 @@ program
   .description(
     'Adopt an existing local project into a Workspai workspace without moving or copying source'
   )
-  .option('--workspace <path>', 'Workspace root path (defaults to nearest or managed default)')
+  .option(
+    '--workspace <path>',
+    'Workspace root path (valid workspace, or an existing empty directory to bootstrap)'
+  )
   .option('--name <projectName>', 'Override adopted project name')
   .option(
     '--enable-modules',
@@ -13170,6 +13355,21 @@ export async function bootstrapCli(): Promise<void> {
   const isPositionalVersionInvocation =
     preFirst === 'version' &&
     preArgs.slice(1).every((arg) => arg === '--json' || arg === '--no-color');
+
+  // Wrapper lifecycle commands bypass Commander. Handle help before runtime
+  // detection, readiness writes or delegation can execute a project command.
+  if (
+    isWrapperLifecycleCommand(preFirst) &&
+    preArgs
+      .slice(1, preArgs.indexOf('--') < 0 ? undefined : preArgs.indexOf('--'))
+      .some((arg) => arg === '--help' || arg === '-h')
+  ) {
+    await writeStdoutAndExit(
+      `Workspai ${preFirst}\n\nUsage: workspai ${preFirst}\n\nRun the project's ${preFirst} command through its runtime adapter.\n` +
+        'Run workspai project commands --json to inspect project capabilities.\n' +
+        'Run workspai workspace run --help for fleet execution and planning.\n'
+    );
+  }
 
   if (isWorkspaceActionHelpRequest(preArgs)) {
     await writeStdoutAndExit(`${renderWorkspaceActionHelp(preArgs[1])}\n`);

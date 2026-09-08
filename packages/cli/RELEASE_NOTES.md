@@ -5,7 +5,44 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.75.0 (September 6, 2026)
+## Latest Release: v0.75.1 (September 8, 2026)
+
+### Safer Adoption and Reliable Agent Evidence
+
+Workspai 0.75.1 improves adoption recovery, source provenance, and governed
+agent attachment for existing repositories without changing public contracts.
+
+**What's New:**
+
+- Choose a safe parent workspace during interactive adoption; automation
+  retains its existing managed-default behavior.
+- Bootstrap an explicitly selected empty workspace directory, with rollback
+  if adoption fails and no conversion of unrelated non-empty directories.
+- Follow adoption progress without polluting JSON or non-interactive output.
+- Request lifecycle help without starting runtime commands or readiness writes.
+- Keep generated files identifiable even without optional polyglot analysis,
+  preserving authored-source search priority.
+- Use portable evidence paths for Agent Framework plans and effect receipts
+  in externally adopted projects.
+
+**Compatibility:** Existing commands, schema versions, managed-default
+automation, and framework admission policy remain supported. No upstream
+framework kit or application dependency is rewritten.
+
+**Publication status:** Released September 8, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.75.1
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.75.1/packages/cli/releases/RELEASE_NOTES_v0.75.1.md)
+
+---
+
+## v0.75.0 (September 6, 2026)
 
 ### Governed Agent Framework Workspaces
 

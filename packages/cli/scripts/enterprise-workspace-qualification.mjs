@@ -67,6 +67,7 @@ const CHANGE_EXPORT_PLACEHOLDER = '__WORKSPAI_CHANGE_EXPORT__';
 let verifiedGoalId;
 let goalPackId;
 let changeId;
+let changeState;
 let projectCapabilities;
 const predictionPath = path.join(outputRoot, 'qualification-prediction.json');
 const effectPath = path.join(outputRoot, 'qualification-effect.json');
@@ -479,6 +480,15 @@ for (const [commandIndex, commandTemplate] of commands.entries()) {
     }
     return part;
   });
+  // A healthy repository can commit verification. Terminal transactions cannot
+  // be resumed or aborted; preserve that success instead of manufacturing a failure.
+  if (
+    argv[0] === 'change' &&
+    ((argv[1] === 'resume' && !['blocked', 'awaiting-human'].includes(changeState)) ||
+      (argv[1] === 'abort' && ['committed', 'aborted'].includes(changeState)))
+  ) {
+    continue;
+  }
   const expectJson = commandSpec.expectJson !== false;
   const invocation = !expectJson || argv.includes('--json') ? argv : [...argv, '--json'];
   const started = Date.now();
@@ -520,6 +530,9 @@ for (const [commandIndex, commandTemplate] of commands.entries()) {
   }
   if (argv[0] === 'change' && argv[1] === 'begin' && typeof parsed?.changeId === 'string') {
     changeId = parsed.changeId;
+  }
+  if (argv[0] === 'change' && typeof parsed?.state === 'string') {
+    changeState = parsed.state;
   }
   if (argv.slice(0, 3).join(' ') === 'workspace goal plan' && typeof parsed?.goal?.id === 'string')
     verifiedGoalId = parsed.goal.id;

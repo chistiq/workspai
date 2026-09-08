@@ -23,6 +23,7 @@ import {
 } from '../utils/artifact-path-compat.js';
 import { withInterprocessLock } from '../utils/interprocess-lock.js';
 import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
+import { resolveWorkspaceProjectPaths } from '../utils/workspace-project-paths.js';
 import { WORKSPACE_MODEL_REPORT_PATH, type WorkspaceModel } from '../workspace-model.js';
 import { hashCanonicalJson } from '../workspace-model-hash.js';
 import { workspaceModelProjectRoot } from '../workspace-knowledge-graph-projection.js';
@@ -169,7 +170,14 @@ async function resolveTarget(
     workspaceName: model.workspace.name,
     projectName: project.name,
     projectRoot,
-    artifactPrefix: portable(project.path),
+    artifactPrefix:
+      projectRoot === workspacePath
+        ? '.'
+        : resolveWorkspaceProjectPaths({
+            workspacePath,
+            projectPath: projectRoot,
+            projectName: project.name,
+          }).contractRelativePath,
   };
 }
 

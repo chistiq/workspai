@@ -93,6 +93,25 @@ describe('CLI Entry Point', () => {
   });
 
   describe('Version and Help', () => {
+    it.each(['build', 'dev', 'start', 'test', 'lint', 'format'])(
+      'renders %s help without probing tools or mutating a project',
+      async (command) => {
+        await fs.writeFile(path.join(TEST_DIR, 'go.mod'), 'module example.test/demo\n\ngo 1.22\n');
+        const before = await fs.readdir(TEST_DIR);
+        for (const flag of ['--help', '-h']) {
+          const result = await execa(process.execPath, [CLI_PATH, command, flag], {
+            cwd: TEST_DIR,
+            env: { ...process.env, PATH: '', WORKSPAI_STATE_DIR: path.join(TEST_DIR, 'state') },
+          });
+          expect(result.exitCode).toBe(0);
+          expect(result.stdout).toContain(`Usage: workspai ${command}`);
+          expect(result.stdout).not.toContain('readiness');
+          expect(await fs.readdir(TEST_DIR)).toEqual(before);
+        }
+      },
+      15000
+    );
+
     it('should display version with --version flag', async () => {
       const { stdout } = await execa('node', [CLI_PATH, '--version']);
       expect(stdout).toMatch(/\d+\.\d+\.\d+/);

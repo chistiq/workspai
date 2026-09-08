@@ -3740,7 +3740,7 @@ const sourceLanguageProvider: Provider = {
 
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
-  version: '1.2.0',
+  version: '1.2.1',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
@@ -3805,6 +3805,10 @@ const sourceStructureProvider: Provider = {
           continue;
         }
         const sourceContents = sourceCodeForExtraction(file, contents);
+        // Generated provenance is a source property, even when the optional
+        // polyglot provider is inapplicable or its deep scan is bounded.
+        const generated =
+          isGeneratedArtifact(project.root, file) || generatedReference(contents) !== null;
         const artifact = context.state.artifactPath(file, project);
         const fileProof = await context.state.addProof({
           provider: this.id,
@@ -3825,7 +3829,7 @@ const sourceStructureProvider: Provider = {
             artifact,
             language: sourceLanguage(file, project.runtime),
             bytes: Buffer.byteLength(contents),
-            ...(isGeneratedArtifact(project.root, file) ? { generated: true } : {}),
+            ...(generated ? { generated: true } : {}),
           },
           proofIds: [fileProof],
         });
@@ -3973,7 +3977,7 @@ const sourceStructureProvider: Provider = {
               attributes: {
                 symbolKind: symbol.detail,
                 language: sourceLanguage(file, project.runtime),
-                ...(isGeneratedArtifact(project.root, file) ? { generated: true } : {}),
+                ...(generated ? { generated: true } : {}),
               },
               proofIds: [proof],
             });

@@ -63,14 +63,17 @@ function admittedRegistry() {
   return createBuiltinAgentFrameworkRegistry({ [adapter.manifest.adapter.id]: reports });
 }
 
-async function fixture(): Promise<{
+async function fixture(external = false): Promise<{
   workspacePath: string;
   projectPath: string;
   changeId: string;
 }> {
   const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-agent-framework-'));
   roots.push(workspacePath);
-  const projectPath = path.join(workspacePath, 'api');
+  const projectPath = external
+    ? await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-agent-external-'))
+    : path.join(workspacePath, 'api');
+  if (external) roots.push(projectPath);
   await fsExtra.outputJson(path.join(workspacePath, '.workspai-workspace'), {
     name: 'platform',
     profile: 'polyglot',
@@ -83,7 +86,8 @@ async function fixture(): Promise<{
     projects: [
       {
         slug: 'api',
-        relativePath: 'api',
+        relativePath: external ? 'external/api' : 'api',
+        ...(external ? { externalPath: projectPath } : {}),
         runtime: 'node',
         framework: 'express',
         kit: 'express.standard',
@@ -111,7 +115,7 @@ async function fixture(): Promise<{
   });
   await writeWorkspaceModel(model, workspacePath);
   const goal = await planGoalPack({
-    startPath: projectPath,
+    startPath: workspacePath,
     intent: 'Add a bounded Microsoft Agent Framework release reviewer',
     scope: 'project:api',
   });
@@ -144,87 +148,93 @@ describe('agent framework proof-carrying lifecycle', () => {
     expect(transaction.transaction.plans).toEqual([]);
   });
 
-  it('binds an exact project plan, applies it only after authorization, and records ownership', async () => {
-    const { workspacePath, projectPath, changeId } = await fixture();
-    const registry = admittedRegistry();
-    const prepared = await prepareAgentFrameworkChange({
-      workspacePath,
-      project: 'api',
-      changeId,
-      registry,
-      adapterId: microsoftAgentFrameworkPythonAdapter.manifest.adapter.id,
-      instanceName: 'Release Reviewer',
-      mode: 'attach',
-    });
-
-    expect(prepared.status).toBe('planned');
-    expect(prepared.plan.target).toEqual({ project: 'api', artifactPrefix: 'api' });
-    expect(prepared.plan.files).toHaveLength(6);
-    expect(prepared.planArtifact).toContain(
-      `/plans/agent-framework-change-plan-${prepared.planDigest}.json`
-    );
-    const beforeAuthorization = await readDecisionTransaction(workspacePath, changeId);
-    expect(beforeAuthorization.transaction.plans).toContainEqual(
-      expect.objectContaining({
-        role: 'agent-framework-change-plan',
-        digest: expect.objectContaining({ value: prepared.planDigest }),
-      })
-    );
-
-    await expect(
-      applyAgentFrameworkChange({
+  it.each([false, true])(
+    'binds and applies a project plan with external=%s only after authorization',
+    async (external) => {
+      const { workspacePath, projectPath, changeId } = await fixture(external);
+      const artifactPrefix = external ? 'external/api' : 'api';
+      const registry = admittedRegistry();
+      const prepared = await prepareAgentFrameworkChange({
         workspacePath,
         project: 'api',
         changeId,
         registry,
         adapterId: microsoftAgentFrameworkPythonAdapter.manifest.adapter.id,
-      })
-    ).rejects.toThrow(/authorized PCC transaction/i);
-    expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'release-reviewer'))).toBe(
-      false
-    );
+        instanceName: 'Release Reviewer',
+        mode: 'attach',
+      });
 
-    await authorizeProofCarryingChange({
-      workspacePath,
-      changeId,
-      effectClasses: ['filesystem'],
-      grantedBy: 'maintainer',
-    });
-    const applied = await applyAgentFrameworkChange({
-      workspacePath,
-      project: 'api',
-      changeId,
-      registry,
-      adapterId: microsoftAgentFrameworkPythonAdapter.manifest.adapter.id,
-    });
+      expect(prepared.status).toBe('planned');
+      expect(prepared.plan.target).toEqual({ project: 'api', artifactPrefix });
+      expect(prepared.plan.files).toHaveLength(6);
+      expect(prepared.planArtifact).toContain(
+        `/plans/agent-framework-change-plan-${prepared.planDigest}.json`
+      );
+      const beforeAuthorization = await readDecisionTransaction(workspacePath, changeId);
+      expect(beforeAuthorization.transaction.plans).toContainEqual(
+        expect.objectContaining({
+          role: 'agent-framework-change-plan',
+          digest: expect.objectContaining({ value: prepared.planDigest }),
+        })
+      );
 
-    expect(applied.status).toBe('applied');
-    expect(applied.files).toHaveLength(6);
-    expect(
-      await fsExtra.readFile(
-        path.join(projectPath, 'agents', 'release-reviewer', 'main.py'),
-        'utf8'
-      )
-    ).toContain('Generated and managed by Workspai');
-    const ownership = await fsExtra.readJson(path.join(workspacePath, applied.ownershipReceipt));
-    expect(ownership).toMatchObject({
-      schemaVersion: 'workspai.agent-framework-ownership-receipt.v1',
-      changeId,
-      target: { workspace: 'platform', project: 'api', instanceName: 'release-reviewer' },
-    });
-    expect(ownership.files).toHaveLength(6);
-    const transaction = await readDecisionTransaction(workspacePath, changeId);
-    expect(transaction.transaction.effects).toContainEqual(
-      expect.objectContaining({
-        effectClass: 'filesystem',
-        status: 'succeeded',
-        artifacts: expect.arrayContaining([
-          expect.objectContaining({ artifact: applied.ownershipReceipt }),
-          expect.objectContaining({ artifact: 'api/agents/release-reviewer/main.py' }),
-        ]),
-      })
-    );
-  });
+      await expect(
+        applyAgentFrameworkChange({
+          workspacePath,
+          project: 'api',
+          changeId,
+          registry,
+          adapterId: microsoftAgentFrameworkPythonAdapter.manifest.adapter.id,
+        })
+      ).rejects.toThrow(/authorized PCC transaction/i);
+      expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'release-reviewer'))).toBe(
+        false
+      );
+
+      await authorizeProofCarryingChange({
+        workspacePath,
+        changeId,
+        effectClasses: ['filesystem'],
+        grantedBy: 'maintainer',
+      });
+      const applied = await applyAgentFrameworkChange({
+        workspacePath,
+        project: 'api',
+        changeId,
+        registry,
+        adapterId: microsoftAgentFrameworkPythonAdapter.manifest.adapter.id,
+      });
+
+      expect(applied.status).toBe('applied');
+      expect(applied.files).toHaveLength(6);
+      expect(
+        await fsExtra.readFile(
+          path.join(projectPath, 'agents', 'release-reviewer', 'main.py'),
+          'utf8'
+        )
+      ).toContain('Generated and managed by Workspai');
+      const ownership = await fsExtra.readJson(path.join(workspacePath, applied.ownershipReceipt));
+      expect(ownership).toMatchObject({
+        schemaVersion: 'workspai.agent-framework-ownership-receipt.v1',
+        changeId,
+        target: { workspace: 'platform', project: 'api', instanceName: 'release-reviewer' },
+      });
+      expect(ownership.files).toHaveLength(6);
+      const transaction = await readDecisionTransaction(workspacePath, changeId);
+      expect(transaction.transaction.effects).toContainEqual(
+        expect.objectContaining({
+          effectClass: 'filesystem',
+          status: 'succeeded',
+          artifacts: expect.arrayContaining([
+            expect.objectContaining({ artifact: applied.ownershipReceipt }),
+            expect.objectContaining({
+              artifact: `${artifactPrefix}/agents/release-reviewer/main.py`,
+            }),
+          ]),
+        })
+      );
+    }
+  );
 
   it('fails closed when a user file appears after plan authorization', async () => {
     const { workspacePath, projectPath, changeId } = await fixture();

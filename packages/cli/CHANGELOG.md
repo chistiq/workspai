@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.1] - 2026-09-08
+
+### Changed
+
+- Handle lifecycle help before runtime probes, readiness writes or command
+  execution, including when the project toolchain is unavailable.
+- Mark generated source provenance during source extraction even when optional
+  polyglot analysis is unavailable, preserving authored-source search priority.
+- Let enterprise qualification preserve committed changes instead of attempting
+  invalid resume/abort transitions on terminal transactions.
+- Bind agent framework plans and effect receipts to portable artifact identities
+  for adopted external projects while keeping managed writes in the project root.
+- Made interactive adoption outside a workspace offer a safe parent-workspace
+  bootstrap only when the parent contains exactly the project being adopted;
+  automation retains the managed-default behavior.
+- Allowed `adopt --workspace <path>` to bootstrap an existing empty directory,
+  while rejecting every non-empty non-workspace target without modification.
+- Joined workspace bootstrap and adoption into one recoverable lifecycle so a
+  later registry, Model, Graph, consumer-sync, or grounding failure restores
+  both workspace and project preimages.
+- Added a minimal interactive adoption progress indicator that follows the
+  detect, link, intelligence-publish, and agent-grounding phases while keeping
+  JSON and non-interactive output unchanged.
+
 ## [0.75.0] - 2026-09-06
 
 ### Added

@@ -178,6 +178,12 @@ npx workspai infra down [--workspace <path>] [--volumes]
 npx workspai infra status [--workspace <path>] [--json] [--strict]
 ```
 
+For `adopt`, an explicit `--workspace` must identify either an existing valid
+workspace or an existing empty directory that Workspai can bootstrap safely.
+Interactive adoption may also offer the direct parent when it contains exactly
+the project being adopted. Non-interactive callers continue to use the managed
+default when no workspace is specified.
+
 Every workspace action has action-scoped help generated from the same contract
 that governs its accepted flags. For example:
 

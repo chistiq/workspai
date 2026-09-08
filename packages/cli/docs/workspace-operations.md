@@ -50,7 +50,16 @@ npx workspai workspace import team.workspai-archive.zip --output ./team --json
 ### Adopt behavior
 
 - Source files are not moved or copied.
-- Default workspace resolution matches import, including canonical creation and valid legacy managed-default reuse.
+- An interactive adopt outside every workspace offers the managed default or,
+  only when the direct parent contains exactly the project being adopted,
+  turning that parent into a workspace. Parent bootstrap is the recommended
+  choice in that narrowly safe case.
+- Non-interactive and `--json` callers keep the existing managed-default
+  behavior unless they pass `--workspace` explicitly.
+- `--workspace <path>` adopts into an existing valid Workspai workspace. An
+  existing empty directory is bootstrapped first; a non-empty directory that
+  is not already a valid workspace is rejected without modification.
+- The project directory itself is never converted into its own workspace.
 - Writes `.workspai/project.json`, `.workspai/adopt.json`, and `.workspai/adopt-readiness.json`.
 - Registry and contract sync include adopted projects for `workspace model`, `workspace context`, Dashboard, and agents.
 - Managed grounding writes a portable project lens, project grounding, and a
@@ -184,7 +193,8 @@ workspace contract.
   `commandsResolveWorkspaceFromProject`, and `importedProject`. The imported
   project includes its `source`.
 - Adopt returns `workspacePath`, `workspaceResolution`,
-  `defaultWorkspaceCreated`, `wouldCreateDefaultWorkspace`,
+  `defaultWorkspaceCreated`, `workspaceBootstrapped`,
+  `wouldCreateDefaultWorkspace`, `wouldBootstrapWorkspace`,
   `projectWorkspaceCommand`, `commandsResolveWorkspaceFromProject`, `dryRun`,
   and `adoptedProject`.
 - Project results include detected `name`, `path`, `stack`, `runtime`, `framework`, `supportTier`, `moduleSupport`, and `confidence` where available.
