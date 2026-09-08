@@ -252,7 +252,10 @@ describe('handleAdoptCommand workspace resolution', () => {
         workspacePath: string;
       };
       expect(payload.workspaceResolution).toBe('nearest');
-      expect(payload.workspacePath).toBe(workspacePath);
+      // macOS exposes /var as a symlink to /private/var. Adoption may return
+      // the physical cwd spelling, so assert filesystem identity rather than
+      // requiring one lexical alias of the same workspace.
+      expect(await fs.realpath(payload.workspacePath)).toBe(await fs.realpath(workspacePath));
     } finally {
       process.chdir(previousCwd);
       promptSpy.mockRestore();

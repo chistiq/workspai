@@ -67,8 +67,9 @@ Unpredicted architecture changes can still block verification.
 
 Regression coverage exercises adoption recovery, lifecycle help, generated
 provenance, and internal/external Agent Framework authorization and receipts.
-Windows adoption tests restore the real process working directory before
-bounded retries for transient directory locks; persistent locks remain visible.
+Cross-platform adoption tests restore the real process working directory,
+compare canonical filesystem identity across macOS path aliases, and use bounded
+retries for transient Windows locks; persistent locks remain visible.
 
 ## Install
 
