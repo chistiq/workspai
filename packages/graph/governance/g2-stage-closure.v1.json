@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G2",
+  "asOf": "2026-09-08",
+  "status": "local-passed-remote-pending-awaiting-approval",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "The in-memory reference composer preserves the admitted fact, ontology, proof, quality and one-way Graph truth contracts.",
+      "evidence": [
+        "packages/graph/src/application/compose-graph.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Composition sources, facts, edges, worker output and time are explicitly bounded through policy and fixed safety ceilings.",
+      "evidence": [
+        "packages/graph/src/application/composition-types.ts",
+        "packages/graph/src/ports/index.ts"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "CPU-heavy reference composition executes through an explicit worker port and a real Node worker while the host event loop remains responsive.",
+      "evidence": [
+        "packages/graph/src/adapters/node/index.ts",
+        "packages/graph/scripts/check-node-worker-adapter.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Worker omission, duplication, mutation, injection, budget abuse, identity collision, evidence amplification and majority voting fail closed.",
+      "evidence": [
+        "packages/graph/src/application/compose-graph.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Composition remains in memory, accepts portable admitted inputs and publishes neither internal governance material nor machine-local paths.",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Local Node worker and packed consumption pass; same-commit Linux, macOS and Windows G2 evidence remains required.",
+      "evidence": [
+        "packages/graph/scripts/check-node-worker-adapter.mjs",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "The root composer is host-neutral, the Node worker is explicit by subpath and the central CLI remains outside the package runtime.",
+      "evidence": [
+        "packages/graph/tsup.config.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Canonical generation identity is invariant to source order and temporal evaluation while every admitted fact is accounted for exactly once.",
+      "evidence": [
+        "packages/graph/src/application/compose-graph.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "The versioned portable worker task can be implemented by later native or WASM adapters without moving identity, proof or authority semantics.",
+      "evidence": [
+        "packages/graph/src/ports/index.ts",
+        "packages/graph/src/application/composition-types.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Cancellation, timeout, unsupported tasks, worker crash, invalid transport and resource exhaustion produce non-publishable typed outcomes.",
+      "evidence": [
+        "packages/graph/src/adapters/node/index.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Reference semantics, execution ports, host adapter, adversarial properties and governance state have package-owned executable evidence.",
+      "evidence": [
+        "packages/graph/governance/g2-stage-plan.v1.json",
+        "packages/graph/test/governance/g2-stage-plan.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "A separately packed consumer executes the real worker subpath while source, tests, scripts, governance and source maps remain excluded.",
+      "evidence": ["packages/graph/scripts/check-packed-package.mjs", "packages/graph/package.json"]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-package-check",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run check",
+      "evidence": "Contracts, types, lint, formatting, coverage, build, real worker execution, installed tarball and admission integrity pass."
+    },
+    {
+      "id": "package-infrastructure",
+      "status": "passed",
+      "command": "corepack npm run check:package-infrastructure",
+      "evidence": "Shared and Graph checks plus permanent quality, boundary and mirror guards pass."
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Same-commit Linux, macOS and Windows G2 composition evidence is not yet retained."
+    }
+  ],
+  "measurements": {
+    "candidateSchemas": 16,
+    "testFiles": 17,
+    "tests": 106,
+    "coverageStatementsPercent": 91.1,
+    "coverageBranchesPercent": 89.29,
+    "coverageFunctionsPercent": 95.78,
+    "coverageLinesPercent": 92.79,
+    "workerFixtureFacts": 5000,
+    "packedFiles": 47,
+    "packedCompressedBytes": 62040,
+    "packedCompressedBudgetBytes": 262144,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": {
+    "local": ["linux", "node-20-or-newer"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "The same signed commit must retain successful Linux, Windows and macOS composition evidence before G2 approval.",
+    "N-ary composition remains gated by proposed ADR-0012; the current G2 closure makes no n-ary materialization claim.",
+    "Rust, native and WASM acceleration remain prohibited until G6 measurements justify a parity-checked adapter.",
+    "Query, persistence, incremental execution, stable publication and CLI replacement remain governed by later stages."
+  ],
+  "nextStage": "G3",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "awaiting",
+    "requiredForNextStage": true,
+    "rule": "A signed maintainer checkpoint plus retained same-commit Linux, Windows and macOS G2 evidence authorizes G3 only."
+  }
+}

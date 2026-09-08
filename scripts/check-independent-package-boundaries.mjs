@@ -29,6 +29,37 @@ function fail(message) {
   failures.push(message);
 }
 
+function stageAtOrAfter(current, recorded) {
+  const parse = (value) => {
+    const match = /^([A-Z]+)(\d+)([A-Z]*)$/u.exec(String(value).toUpperCase());
+    return match
+      ? { family: match[1], sequence: Number(match[2]), suffix: match[3] }
+      : undefined;
+  };
+  const currentStage = parse(current);
+  const recordedStage = parse(recorded);
+  return Boolean(
+    currentStage &&
+    recordedStage &&
+    currentStage.family === recordedStage.family &&
+    (currentStage.sequence > recordedStage.sequence ||
+      (currentStage.sequence === recordedStage.sequence &&
+        currentStage.suffix.localeCompare(recordedStage.suffix) >= 0)),
+  );
+}
+
+for (const [current, recorded, expected] of [
+  ["G2", "G1", true],
+  ["G2", "G2", true],
+  ["G1", "G2", false],
+  ["SH7", "G1", false],
+  ["invalid", "G1", false],
+]) {
+  if (stageAtOrAfter(current, recorded) !== expected) {
+    fail(`stage ordering control failed for ${current} and ${recorded}`);
+  }
+}
+
 function normalizeSafePortablePath(value) {
   if (
     typeof value !== "string" ||
@@ -367,11 +398,11 @@ for (const adopter of adoptionRecords) {
   }
   if (
     adopter.directory !== registryEntry.directory ||
-    adopter.packageStage !== registryEntry.currentStage ||
+    !stageAtOrAfter(registryEntry.currentStage, adopter.packageStage) ||
     adopter.maturityBefore !== registryEntry.maturity ||
     adopter.maturityAfter !== registryEntry.maturity
   ) {
-    fail(`SH6 stage or maturity drifted for ${adopter.package}`);
+    fail(`SH6 stage regressed or maturity drifted for ${adopter.package}`);
   }
   const adoptedSubpaths = [...(adopter.sharedSubpaths ?? [])].sort();
   const requiredSubpaths = [...(migration.requiredSubpaths ?? [])].sort();

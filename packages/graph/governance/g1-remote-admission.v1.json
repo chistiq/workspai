@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "workspai-graph-remote-admission.v1",
+  "package": "@workspai/graph",
+  "stage": "G1",
+  "status": "passed",
+  "sourceCommit": "205d5f6f3b2a0caed828a27ec7a8012afc6f2eb6",
+  "sourceCommitSignature": {
+    "status": "verified",
+    "scheme": "gpg-eddsa",
+    "keyFingerprint": "18CF672100B83B0EBCE34937C9448C37DF763127"
+  },
+  "candidateClosureDigest": "sha256:734ad57830d041a6c81a44bdfca1913b0927818600d3a9f3f1c09bca80dcf280",
+  "contractCatalogDigest": "sha256:48c44cc61375f73dca4ed3bd47154e265647e9224a9500c23b803358a9bd044e",
+  "workflow": {
+    "provider": "github-actions",
+    "name": "CI & Metrics Matrix",
+    "runId": "34285709553",
+    "runUrl": "https://github.com/chistiq/workspai/actions/runs/34285709553",
+    "conclusion": "success"
+  },
+  "platforms": [
+    {
+      "runner": "Linux",
+      "jobId": "102260733315",
+      "artifactId": "10079404916",
+      "artifactName": "graph-foundation-admission-Linux-node-20",
+      "artifactBytes": 743,
+      "conclusion": "success"
+    },
+    {
+      "runner": "macOS",
+      "jobId": "102260733318",
+      "artifactId": "10079428770",
+      "artifactName": "graph-foundation-admission-macOS-node-20",
+      "artifactBytes": 742,
+      "conclusion": "success"
+    },
+    {
+      "runner": "Windows",
+      "jobId": "102260733331",
+      "artifactId": "10079442734",
+      "artifactName": "graph-foundation-admission-Windows-node-20",
+      "artifactBytes": 743,
+      "conclusion": "success"
+    }
+  ],
+  "matrixAdmission": {
+    "jobId": "102264552931",
+    "jobName": "Admit Graph foundation matrix",
+    "artifactId": "10079822670",
+    "artifactName": "graph-foundation-admission-candidate",
+    "artifactBytes": 839,
+    "conclusion": "success",
+    "requiredOperatingSystems": ["Linux", "macOS", "Windows"]
+  },
+  "repositoryGate": {
+    "jobId": "102264552996",
+    "jobName": "CI Gate",
+    "conclusion": "success"
+  },
+  "reviewedAt": "2026-09-08",
+  "failures": []
+}

@@ -1,7 +1,7 @@
 export const GRAPH_CONFORMANCE_PROFILE = Object.freeze({
   id: 'workspai.graph.conformance',
   version: '0.1.0-candidate',
-  maturity: 'foundation' as const,
+  maturity: 'composition-candidate' as const,
   requiredSuites: [
     'contracts',
     'semantic-invalid',
@@ -9,6 +9,11 @@ export const GRAPH_CONFORMANCE_PROFILE = Object.freeze({
     'canonical-replay',
     'identity-portability',
     'lineage-independence',
+    'reference-composition',
+    'proof-evaluation',
+    'conflict-preservation',
+    'quality-assessment',
+    'execution-port-responsiveness',
     'query-cache-lifecycle',
     'architecture-boundaries',
     'determinism',

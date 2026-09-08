@@ -5,7 +5,7 @@ export const GRAPH_PACKAGE_STATUS_CONTRACT = defineWisContract({
   version: '0.1.0-draft',
 });
 
-export const GRAPH_PACKAGE_MATURITY = 'contract-design' as const;
+export const GRAPH_PACKAGE_MATURITY = 'composition-candidate' as const;
 
 export const GRAPH_PACKAGE_METADATA = Object.freeze({
   name: '@workspai/graph',
@@ -32,17 +32,22 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'query-cache-lifecycle-semantic-admission',
     'bounded-canonical-digest-replay',
     'evidence-independence-assessment',
+    'deterministic-reference-composition',
+    'evidence-backed-proof-evaluation',
+    'functional-conflict-preservation',
+    'graph-quality-assessment',
+    'injected-execution-ports',
+    'validated-worker-output-accounting',
+    'node-reference-worker-adapter',
+    'non-publishable-cancellation',
   ] as const,
   plannedCapabilities: [
-    'facts',
-    'identity',
-    'ontology',
-    'composition',
-    'proof',
-    'quality',
     'query',
     'projection',
     'incremental',
+    'storage-adapters',
+    'provider-runtime',
+    'cli-shadow-parity',
   ] as const,
 });
 

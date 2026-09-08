@@ -2,7 +2,7 @@
 
 Evidence-backed, storage-neutral workspace graph engine for Workspai.
 
-Status: **contract design · development-only · not publishable**
+Status: **composition candidate · development-only · not publishable**
 
 > This is the developing independent Graph implementation. The released
 > Workspai CLI already contains the current official internal graph capability.
@@ -12,16 +12,21 @@ Status: **contract design · development-only · not publishable**
 > gates.
 
 The package is intentionally available for internal and community development
-before publication. Its root API currently exposes package status only. Graph
-construction, query and persistence APIs stay unavailable until their contracts,
-semantic fixtures and conformance gates are implemented.
+before publication. Its root API exposes package status and the G2 deterministic
+composition candidate. Query, persistence, provider execution and CLI
+replacement stay unavailable until their later conformance gates are complete.
 
-The current `/conformance` surface includes the SH6 Shared-adoption boundary and
-the G1 candidate contract admission layer. It validates installed WIS envelope
-identity, provider detection/manifests, FactBatch provenance and accounting,
-ontology-constrained canonical graphs, immutable generations, quality and exact
-query-cache lifecycle envelopes. It is a consumer-safety API, not a graph
-engine or maturity claim.
+The current `/conformance` surface includes the SH6 Shared-adoption boundary,
+the admitted G1 contract layer and G2 reference-engine suites. It validates WIS
+envelope identity, provider detection/manifests, FactBatch provenance and
+accounting, ontology-constrained canonical graphs, immutable generations,
+quality and exact query-cache lifecycle envelopes. The composer is a semantic
+reference candidate, not a standalone-stability or release claim.
+
+Node hosts may explicitly import `@workspai/graph/adapters/node` to execute the
+portable reference-composition task outside the event loop. The package root
+remains host-neutral. Worker output is revalidated against admitted facts before
+it can influence a canonical graph.
 
 ```ts
 import { admitGraphProviderOutput, assessGraphSharedEnvelope } from '@workspai/graph/conformance';
@@ -73,6 +78,5 @@ publication.
 Consumer contracts, API guidance, provider authoring, security, architecture
 and roadmaps are maintained once in the canonical Workspai documentation
 portfolio. They are intentionally not duplicated in this public package
-repository or npm artifact. The approved G0 design lock authorizes G1 contract
-and conformance work; it does not claim a graph engine, standalone stability or
-release admission.
+repository or npm artifact. The approved G1 evidence authorizes G2 composition
+work only; it does not claim standalone stability or release admission.

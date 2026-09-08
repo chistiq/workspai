@@ -7,6 +7,8 @@ export default defineConfig({
     'providers/index': 'src/providers/index.ts',
     'conformance/index': 'src/conformance/index.ts',
     'testing/index': 'src/testing/index.ts',
+    'adapters/node/index': 'src/adapters/node/index.ts',
+    'adapters/node/reference-worker-entry': 'src/adapters/node/reference-worker-entry.ts',
   },
   format: ['esm'],
   target: 'node20',

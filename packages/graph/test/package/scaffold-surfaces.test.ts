@@ -9,7 +9,7 @@ import {
 import { GRAPH_PROJECTIONS_AVAILABLE } from '../../src/projections/index.js';
 import { GRAPH_FORBIDDEN_RUNTIME_DEPENDENCIES } from '../../src/testing/index.js';
 
-describe('contract-design scaffold surfaces', () => {
+describe('developing Graph package surfaces', () => {
   it('locks the one-way truth direction and core invariants', () => {
     expect(GRAPH_TRUTH_DEPENDENCY_DIRECTION).toEqual([
       'wis-contracts',
@@ -20,15 +20,16 @@ describe('contract-design scaffold surfaces', () => {
     expect(GRAPH_TRUTH_INVARIANTS).toContain('model-does-not-write-back-graph-truth');
   });
 
-  it('keeps unavailable runtime surfaces explicitly unavailable', () => {
-    expect(GRAPH_ADAPTERS_AVAILABLE).toBe(false);
+  it('exposes the admitted execution adapter while keeping later projections unavailable', () => {
+    expect(GRAPH_ADAPTERS_AVAILABLE).toBe(true);
     expect(GRAPH_PROJECTIONS_AVAILABLE).toBe(false);
   });
 
-  it('publishes a conformance seed without granting production trust', () => {
-    expect(GRAPH_CONFORMANCE_PROFILE.maturity).toBe('foundation');
+  it('publishes composition conformance without granting production trust', () => {
+    expect(GRAPH_CONFORMANCE_PROFILE.maturity).toBe('composition-candidate');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('architecture-boundaries');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('security-adversarial');
+    expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('reference-composition');
   });
 
   it('lists the central CLI and consumer frameworks as forbidden runtime dependencies', () => {

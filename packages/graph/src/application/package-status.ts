@@ -38,12 +38,13 @@ export function getGraphPackageStatus(
     diagnostics: [],
     compatibility: {
       status: 'conditionally-compatible',
-      unsupportedCapabilities: ['graph-engine'],
+      unsupportedCapabilities: ['query', 'persistence', 'incremental', 'cli-runtime-bridge'],
     },
     omissions: [
       {
-        code: 'GRAPH_ENGINE_NOT_IMPLEMENTED',
-        reason: 'The package is intentionally limited to contract-design scaffold capabilities.',
+        code: 'GRAPH_ENGINE_NOT_STANDALONE_STABLE',
+        reason:
+          'The deterministic composition candidate exists, but later query, persistence, incremental and standalone-admission stages are incomplete.',
         affectsStatus: true,
         recoverable: true,
         scope,
