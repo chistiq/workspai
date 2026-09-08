@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "workspai-graph-contract-catalog.v1",
+  "generatedBy": "@workspai/graph",
+  "contracts": [
+    {
+      "id": "https://schemas.workspai.dev/graph/canonical-graph/v0.1.0-candidate",
+      "file": "schemas/canonical-graph.v0.1.0-candidate.schema.json",
+      "sha256": "bad426350a3d7b4e7498ddba5da6c2c929c48185a0e002037733f41a351554e9"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/derivation-lineage/v0.1.0-candidate",
+      "file": "schemas/derivation-lineage.v0.1.0-candidate.schema.json",
+      "sha256": "bb4a7ddf6aa753545075bf8084017178948c9467db5044f7a785abe5b9814d26"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/entity-identity/v0.1.0-candidate",
+      "file": "schemas/entity-identity.v0.1.0-candidate.schema.json",
+      "sha256": "9dbb1663f0447fbceeb9256d50251548b9b8a8fe474171b8ce8061878cb5ef55"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/evidence-independence/v0.1.0-candidate",
+      "file": "schemas/evidence-independence.v0.1.0-candidate.schema.json",
+      "sha256": "bf556d512a2af8d5d2d2a8ea488332277ce79363622a422e573c3f8d194ed29e"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/fact-batch/v0.1.0-candidate",
+      "file": "schemas/fact-batch.v0.1.0-candidate.schema.json",
+      "sha256": "2c4418357d00e0b8547f9f9e9f8e788e7854cc092301ba5a85264b70c0123a85"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/generation-publication/v0.1.0-candidate",
+      "file": "schemas/generation-publication.v0.1.0-candidate.schema.json",
+      "sha256": "aa44741f640c0aa8e6f8a7a8bf627200141a56bf73870fd4822204248eaf4c58"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/quality/v0.1.0-candidate",
+      "file": "schemas/graph-quality.v0.1.0-candidate.schema.json",
+      "sha256": "e16a16e05cf157f8f738a3e8a336c1a9cc4d6bbd0bfe69b063f6b673a099e4a2"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/model-generation-binding/v0.1.0-candidate",
+      "file": "schemas/model-generation-binding.v0.1.0-candidate.schema.json",
+      "sha256": "af0d736a6329d2a44d44ab576a6ffd735cb9b20b70279c7f817ba34994120beb"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/nary-assertion/v0.1.0-candidate",
+      "file": "schemas/nary-assertion.v0.1.0-candidate.schema.json",
+      "sha256": "89faf7056a1fed6e654af5e58a2444c080098a5382328cee6359a62b2181455c"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/ontology-profile/v0.1.0-candidate",
+      "file": "schemas/ontology-profile.v0.1.0-candidate.schema.json",
+      "sha256": "42dab242a9accaaa59daf55b8bcaccc2e8ec14eccb044f4753cc9300d3eae29b"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/provider-detection/v0.1.0-candidate",
+      "file": "schemas/provider-detection.v0.1.0-candidate.schema.json",
+      "sha256": "053db8217925a8f1a23c0ecb8034034d907b09f8b1972a14d48aedb70a5c7f26"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/provider-manifest/v0.1.0-candidate",
+      "file": "schemas/provider-manifest.v0.1.0-candidate.schema.json",
+      "sha256": "4a9947b5320b368fb15755e560013399918ac3dac750f84aa2d4e9fbe472ad55"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/query-cache-entry/v0.1.0-candidate",
+      "file": "schemas/query-cache-entry.v0.1.0-candidate.schema.json",
+      "sha256": "63e64ef3e1c449c86b3917aa2f0d82710c9280fd93244a585d6d74290a16bcd2"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/query-cache-invalidation/v0.1.0-candidate",
+      "file": "schemas/query-cache-invalidation.v0.1.0-candidate.schema.json",
+      "sha256": "171e79091891723f3b8b1fec73973b9565c8d84b965364e2bd5a15758d59aba7"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/query-cache-key/v0.1.0-candidate",
+      "file": "schemas/query-cache-key.v0.1.0-candidate.schema.json",
+      "sha256": "9d2950256754290ad11737df4ae7146159c3646844dbb8298158332a815c804c"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/query-cache-reuse/v0.1.0-candidate",
+      "file": "schemas/query-cache-reuse.v0.1.0-candidate.schema.json",
+      "sha256": "1c7b70110412c07d1395904ab404d885e7a5d7956d618d9c045f60e55b998f94"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "workspai-shared-domain-adoption.v1",
-  "asOf": "2026-08-15",
+  "asOf": "2026-09-08",
   "sharedPackage": "@workspai/shared",
   "sharedVersion": "0.0.0-development",
   "status": "candidate-stabilized-local-review-pending",
@@ -19,7 +19,7 @@
     {
       "package": "@workspai/graph",
       "directory": "packages/graph",
-      "packageStage": "G0",
+      "packageStage": "G1",
       "maturityBefore": "contract-design",
       "maturityAfter": "contract-design",
       "sharedSubpaths": [

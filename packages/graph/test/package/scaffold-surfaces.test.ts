@@ -26,7 +26,7 @@ describe('contract-design scaffold surfaces', () => {
   });
 
   it('publishes a conformance seed without granting production trust', () => {
-    expect(GRAPH_CONFORMANCE_PROFILE.maturity).toBe('seed');
+    expect(GRAPH_CONFORMANCE_PROFILE.maturity).toBe('foundation');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('architecture-boundaries');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('security-adversarial');
   });

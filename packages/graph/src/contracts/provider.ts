@@ -1,9 +1,13 @@
-import { defineWisContract, type WisContractReference } from '@workspai/shared/contracts';
+import { defineWisContract } from '@workspai/shared/contracts';
 
 export const GRAPH_PROVIDER_MANIFEST_CONTRACT = defineWisContract({
   id: 'workspai.graph.provider-manifest',
-  version: '0.1.0-draft',
-} satisfies WisContractReference);
+  version: '0.1.0-candidate',
+});
+export const GRAPH_PROVIDER_DETECTION_CONTRACT = defineWisContract({
+  id: 'workspai.graph.provider-detection',
+  version: '0.1.0-candidate',
+});
 
 export type GraphRelationSemantics = 'structural' | 'behavioral' | 'declarative' | 'derived';
 
@@ -37,6 +41,25 @@ export interface GraphProviderManifest {
   readonly capabilities: GraphProviderCapabilityClaim;
   readonly permissions: GraphProviderPermissions;
   readonly limits: GraphProviderLimits;
+  readonly contractVersions: readonly string[];
+  readonly supportedInputs: readonly string[];
+  readonly incremental: 'none' | 'input' | 'native';
+  readonly identitySchemes: readonly { readonly id: string; readonly version: string }[];
+}
+
+export interface GraphProviderDetectionRequest {
+  readonly availableInputs: readonly string[];
+  readonly scopeKind: 'project' | 'workspace';
+  readonly networkAllowed: boolean;
+}
+
+export interface GraphProviderDetectionResult {
+  readonly contract: typeof GRAPH_PROVIDER_DETECTION_CONTRACT;
+  readonly provider: { readonly id: string; readonly version: string };
+  readonly status: 'applicable' | 'not-applicable' | 'blocked' | 'unknown';
+  readonly matchedInputs: readonly string[];
+  readonly missingPermissions: readonly string[];
+  readonly diagnostics: readonly { readonly code: string; readonly message: string }[];
 }
 
 export function defineGraphProviderManifest<const TManifest extends GraphProviderManifest>(

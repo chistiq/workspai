@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/model-generation-binding/v0.1.0-candidate",
+  "title": "WorkspaiGraphModelGenerationBindingCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["graphGeneration", "modelGeneration", "architectureEpoch"],
+  "properties": {
+    "graphGeneration": { "$ref": "#/$defs/generation" },
+    "modelGeneration": { "$ref": "#/$defs/generation" },
+    "architectureEpoch": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "generatedAt", "contentDigest"],
+      "properties": {
+        "id": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "parents": { "type": "array", "items": { "type": "string" } },
+        "contentDigest": { "type": "object", "required": ["algorithm", "value"] }
+      }
+    }
+  }
+}

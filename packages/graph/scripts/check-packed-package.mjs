@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,8 @@ const sharedRoot = path.resolve(packageRoot, '../shared');
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-graph-pack-'));
 const consumerRoot = path.join(temporaryRoot, 'consumer');
 const npmCache = path.join(temporaryRoot, 'npm-cache');
+const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
+const typescriptCli = toolRequire.resolve('typescript/bin/tsc');
 
 function runNpm(args, cwd) {
   const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -100,6 +103,48 @@ try {
     consumerRoot
   );
 
+  fs.writeFileSync(
+    path.join(consumerRoot, 'consumer.ts'),
+    `
+      import type { GraphProviderManifest, WorkspaiGraphProviderManifestCandidate } from '@workspai/graph/contracts';
+      import { GRAPH_PROVIDER_MANIFEST_CONTRACT, GRAPH_IDENTITY_SCHEME } from '@workspai/graph/contracts';
+      import { validateGraphProviderManifest } from '@workspai/graph/conformance';
+      const wire: WorkspaiGraphProviderManifestCandidate = {
+        contract: GRAPH_PROVIDER_MANIFEST_CONTRACT,
+        id: 'packed.fixture', version: '1', displayName: 'Packed fixture', determinism: 'deterministic',
+        capabilities: { entityKinds: ['file'], relationKinds: ['contains'], relationSemantics: ['structural'], factFamilies: ['source.contains'], allowedClaims: ['observed'] },
+        permissions: { filesystem: 'read', network: 'deny', process: 'deny', credentials: 'deny' },
+        limits: { maxDurationMs: 1000, maxFacts: 10 }, contractVersions: ['0.1.0-candidate'],
+        supportedInputs: ['source-file'], incremental: 'input', identitySchemes: [GRAPH_IDENTITY_SCHEME],
+      };
+      const semantic: GraphProviderManifest = wire;
+      if (!validateGraphProviderManifest(semantic).accepted) throw new Error('invalid fixture');
+    `,
+    'utf8'
+  );
+  const typecheck = spawnSync(
+    process.execPath,
+    [
+      typescriptCli,
+      '--noEmit',
+      '--strict',
+      '--skipLibCheck',
+      '--target',
+      'ES2022',
+      '--module',
+      'NodeNext',
+      '--moduleResolution',
+      'NodeNext',
+      path.join(consumerRoot, 'consumer.ts'),
+    ],
+    { cwd: consumerRoot, encoding: 'utf8' }
+  );
+  if (typecheck.error || typecheck.status !== 0) {
+    throw new Error(
+      `packed Graph TypeScript consumer failed\n${typecheck.stdout ?? ''}\n${typecheck.stderr ?? ''}`
+    );
+  }
+
   const smoke = spawnSync(
     process.execPath,
     [
@@ -124,6 +169,28 @@ try {
         if (!adoption.accepted || adoption.status !== 'exact') process.exit(17);
         if (conformance.GRAPH_SHARED_ADOPTION_PROFILE.cliBridge !== 'prohibited') process.exit(18);
         if (adoption.sharedContract.digest.length !== 71) process.exit(19);
+        const manifest = providers.defineGraphProviderManifest({
+          contract: contracts.GRAPH_PROVIDER_MANIFEST_CONTRACT,
+          id: 'packed.fixture', version: '1', displayName: 'Packed fixture',
+          determinism: 'deterministic',
+          capabilities: { entityKinds: ['file'], relationKinds: ['contains'], relationSemantics: ['structural'], factFamilies: ['source.contains'], allowedClaims: ['observed'] },
+          permissions: { filesystem: 'read', network: 'deny', process: 'deny', credentials: 'deny' },
+          limits: { maxDurationMs: 1000, maxFacts: 10 },
+          contractVersions: ['0.1.0-candidate'], supportedInputs: ['source-file'], incremental: 'input',
+          identitySchemes: [contracts.GRAPH_IDENTITY_SCHEME],
+        });
+        if (!conformance.validateGraphProviderManifest(manifest).accepted) process.exit(20);
+        const detection = {
+          contract: contracts.GRAPH_PROVIDER_DETECTION_CONTRACT,
+          provider: { id: manifest.id, version: manifest.version },
+          status: 'applicable', matchedInputs: ['source-file'], missingPermissions: [], diagnostics: [],
+        };
+        if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
+        const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
+        if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
+        const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
+        if (!digest.accepted || digest.value.algorithm !== 'sha256') process.exit(24);
+        if (conformance.validateGraphQueryCacheKey({ contract: contracts.GRAPH_QUERY_CACHE_CONTRACT }).accepted) process.exit(22);
       `,
     ],
     { cwd: consumerRoot, encoding: 'utf8' }
@@ -144,6 +211,19 @@ try {
     'dist/providers/index.js',
     'dist/conformance/index.js',
     'dist/testing/index.js',
+    'conformance/contract-catalog.v1.json',
+    'schemas/entity-identity.v0.1.0-candidate.schema.json',
+    'schemas/fact-batch.v0.1.0-candidate.schema.json',
+    'schemas/provider-detection.v0.1.0-candidate.schema.json',
+    'schemas/provider-manifest.v0.1.0-candidate.schema.json',
+    'schemas/ontology-profile.v0.1.0-candidate.schema.json',
+    'schemas/canonical-graph.v0.1.0-candidate.schema.json',
+    'schemas/generation-publication.v0.1.0-candidate.schema.json',
+    'schemas/model-generation-binding.v0.1.0-candidate.schema.json',
+    'schemas/query-cache-key.v0.1.0-candidate.schema.json',
+    'schemas/query-cache-entry.v0.1.0-candidate.schema.json',
+    'schemas/query-cache-reuse.v0.1.0-candidate.schema.json',
+    'schemas/query-cache-invalidation.v0.1.0-candidate.schema.json',
   ]) {
     if (!paths.includes(requiredPath))
       throw new Error(`packed Graph package omits ${requiredPath}`);

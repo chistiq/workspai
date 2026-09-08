@@ -1,0 +1,183 @@
+{
+  "contract": { "id": "workspai.graph.fact-batch", "version": "0.1.0-candidate" },
+  "provider": { "id": "fixture.maximal", "version": "2.1.0" },
+  "batchId": "batch:fixture:maximal:1",
+  "scope": { "kind": "project", "projectIds": ["project:maximal"] },
+  "inputs": [
+    {
+      "locator": "src/index.ts",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "locator": "package.json",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  ],
+  "facts": [
+    {
+      "factId": "fact:maximal:imports:1",
+      "factType": "source.import",
+      "subject": {
+        "id": "entity:maximal:source",
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" },
+        "kind": "file",
+        "scope": { "kind": "project", "projectIds": ["project:maximal"] },
+        "aliases": [{ "id": "entity:maximal:source-old", "reason": "move" }]
+      },
+      "predicate": "imports",
+      "object": {
+        "id": "entity:maximal:module",
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" },
+        "kind": "module",
+        "scope": { "kind": "project", "projectIds": ["project:maximal"] }
+      },
+      "scope": { "kind": "project", "projectIds": ["project:maximal"] },
+      "evidence": [
+        {
+          "id": "evidence:maximal:source:1",
+          "sourceKind": "source-file",
+          "relativeLocator": "src/index.ts",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      ],
+      "provenance": { "id": "fixture.maximal", "version": "2.1.0" },
+      "derivation": "extracted",
+      "authority": "observed",
+      "confidence": 0.97,
+      "freshness": {
+        "status": "stale",
+        "validUntil": "2026-09-08T12:30:00Z",
+        "renewal": "rescan-input"
+      },
+      "truthLifecycle": {
+        "invalidatedBy": ["input-change", "deletion", "expiry", "provider-change"]
+      },
+      "observedAt": "2026-09-08T12:00:00Z",
+      "inputDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "unknownZones": [
+        {
+          "code": "dynamic-import-target",
+          "scope": "src/index.ts",
+          "reason": "Runtime-computed target cannot be proven statically."
+        }
+      ],
+      "extensions": { "fixture.seed": "maximal-v1" }
+    },
+    {
+      "factId": "fact:maximal:contains:1",
+      "factType": "source.contains",
+      "subject": {
+        "id": "entity:maximal:source",
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" },
+        "kind": "file",
+        "scope": { "kind": "project", "projectIds": ["project:maximal"] }
+      },
+      "predicate": "contains",
+      "object": { "kind": "string", "value": "entrypoint" },
+      "scope": { "kind": "project", "projectIds": ["project:maximal"] },
+      "evidence": [
+        {
+          "id": "evidence:maximal:manifest:1",
+          "sourceKind": "package-manifest",
+          "relativeLocator": "package.json",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ],
+      "provenance": { "id": "fixture.maximal", "version": "2.1.0" },
+      "derivation": "declared",
+      "authority": "declared",
+      "confidence": 1,
+      "freshness": { "status": "current", "renewal": "manifest-change" },
+      "truthLifecycle": { "invalidatedBy": ["input-change", "deletion"] },
+      "observedAt": "2026-09-08T12:00:00Z",
+      "inputDigest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "unknownZones": []
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "dynamic-import-unresolved",
+      "severity": "warning",
+      "path": "src/index.ts",
+      "message": "One dynamic import remains explicitly unresolved."
+    }
+  ],
+  "coverage": [
+    { "dimension": "source-files", "observed": 1, "expected": 1 },
+    { "dimension": "package-manifests", "observed": 1, "expected": 1 }
+  ],
+  "unknownZones": [
+    {
+      "code": "dynamic-import-target",
+      "scope": "src/index.ts",
+      "reason": "Runtime-computed target cannot be proven statically."
+    }
+  ],
+  "unsupportedZones": [
+    {
+      "code": "generated-binary",
+      "scope": "vendor/native.node",
+      "reason": "Binary internals are outside this provider profile."
+    }
+  ],
+  "redaction": { "policy": "workspai.graph.portable-default", "redacted": 1, "omitted": 0 },
+  "status": "partial",
+  "processing": [
+    {
+      "input": {
+        "locator": "src/index.ts",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "provider": { "id": "fixture.maximal", "version": "2.1.0" },
+      "stage": { "id": "source-parser", "version": "2" },
+      "outcome": "processed",
+      "outputDigest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "diagnostics": []
+    },
+    {
+      "input": {
+        "locator": "package.json",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "provider": { "id": "fixture.maximal", "version": "2.1.0" },
+      "stage": { "id": "manifest-parser", "version": "3" },
+      "outcome": "unchanged",
+      "priorDigest": {
+        "algorithm": "sha256",
+        "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "outputDigest": {
+        "algorithm": "sha256",
+        "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "diagnostics": []
+    }
+  ]
+}

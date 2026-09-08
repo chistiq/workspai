@@ -16,17 +16,24 @@ before publication. Its root API currently exposes package status only. Graph
 construction, query and persistence APIs stay unavailable until their contracts,
 semantic fixtures and conformance gates are implemented.
 
-The current `/conformance` surface includes an SH6 Shared-adoption boundary. It
-validates the installed WIS envelope and registry identity, then rejects foreign
-producers, unsupported Graph schemas and implicit domain migration. It is a
-consumer-safety API, not a graph engine or maturity claim.
+The current `/conformance` surface includes the SH6 Shared-adoption boundary and
+the G1 candidate contract admission layer. It validates installed WIS envelope
+identity, provider detection/manifests, FactBatch provenance and accounting,
+ontology-constrained canonical graphs, immutable generations, quality and exact
+query-cache lifecycle envelopes. It is a consumer-safety API, not a graph
+engine or maturity claim.
 
 ```ts
-import { assessGraphSharedEnvelope } from '@workspai/graph/conformance';
+import { admitGraphProviderOutput, assessGraphSharedEnvelope } from '@workspai/graph/conformance';
 
 const assessment = assessGraphSharedEnvelope(candidate);
 if (!assessment.accepted) {
   // Handle the typed, payload-free diagnostics.
+}
+
+const admitted = admitGraphProviderOutput(untrustedManifest, untrustedBatch);
+if (!admitted.accepted) {
+  // Nothing reaches composition through this provider output.
 }
 ```
 
@@ -66,5 +73,6 @@ publication.
 Consumer contracts, API guidance, provider authoring, security, architecture
 and roadmaps are maintained once in the canonical Workspai documentation
 portfolio. They are intentionally not duplicated in this public package
-repository or npm artifact. G0 is still in progress and has not produced or
-claimed a closure.
+repository or npm artifact. The approved G0 design lock authorizes G1 contract
+and conformance work; it does not claim a graph engine, standalone stability or
+release admission.

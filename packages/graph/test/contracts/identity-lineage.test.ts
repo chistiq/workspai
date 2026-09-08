@@ -1,0 +1,102 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  assessGraphEvidenceIndependence,
+  normalizeGraphEntityIdentity,
+} from '../../src/conformance/index.js';
+
+const scope = { kind: 'project' as const, projectIds: ['project:fixture'] as [string] };
+
+describe('Graph identity and evidence lineage', () => {
+  it('normalizes separators, Unicode and configured case deterministically', () => {
+    const first = normalizeGraphEntityIdentity({
+      namespace: 'SOURCE',
+      kind: 'File',
+      relativeLocator: '.\\SRC\\Café.ts',
+      caseSensitivity: 'insensitive',
+      scope,
+    });
+    const second = normalizeGraphEntityIdentity({
+      namespace: 'source',
+      kind: 'file',
+      relativeLocator: './src/Cafe\u0301.ts',
+      caseSensitivity: 'insensitive',
+      scope,
+    });
+    expect(first).toMatchObject({ accepted: true });
+    expect(second).toMatchObject({ accepted: true });
+    if (first.accepted && second.accepted)
+      expect(first.value.reference.id).toBe(second.value.reference.id);
+  });
+
+  it.each(['/private/source.ts', 'C:\\private\\source.ts', '../source.ts', 'src/../../secret'])(
+    'rejects machine-local or escaping identity %s',
+    (relativeLocator) => {
+      expect(
+        normalizeGraphEntityIdentity({
+          namespace: 'source',
+          kind: 'file',
+          relativeLocator,
+          caseSensitivity: 'sensitive',
+          scope,
+        })
+      ).toMatchObject({ accepted: false });
+    }
+  );
+
+  it('does not count common-root generated claims as corroboration', () => {
+    const assessment = assessGraphEvidenceIndependence([
+      { factId: 'fact:a', derivation: 'generated', evidenceRoots: ['root:1'], parentFactIds: [] },
+      { factId: 'fact:b', derivation: 'generated', evidenceRoots: ['root:1'], parentFactIds: [] },
+    ]);
+    expect(assessment).toMatchObject({ independent: false });
+    expect(assessment.rejectedPairs).toContainEqual({
+      left: 'fact:a',
+      right: 'fact:b',
+      reason: 'generated-sibling',
+    });
+  });
+
+  it('accepts genuinely independent evidence roots', () => {
+    expect(
+      assessGraphEvidenceIndependence([
+        {
+          factId: 'fact:a',
+          derivation: 'observed',
+          evidenceRoots: ['root:source'],
+          parentFactIds: [],
+        },
+        {
+          factId: 'fact:b',
+          derivation: 'declared',
+          evidenceRoots: ['root:manifest'],
+          parentFactIds: [],
+        },
+      ])
+    ).toMatchObject({ independent: true, rejectedPairs: [] });
+  });
+
+  it('rejects direct and transitive lineage ancestry as independent corroboration', () => {
+    const result = assessGraphEvidenceIndependence([
+      { factId: 'fact:root', derivation: 'observed', evidenceRoots: ['root:a'], parentFactIds: [] },
+      {
+        factId: 'fact:middle',
+        derivation: 'computed',
+        evidenceRoots: ['root:b'],
+        parentFactIds: ['fact:root'],
+      },
+      {
+        factId: 'fact:leaf',
+        derivation: 'inferred',
+        evidenceRoots: ['root:c'],
+        parentFactIds: ['fact:middle'],
+      },
+    ]);
+    expect(result.independent).toBe(false);
+    expect(result.rejectedPairs).toContainEqual({
+      left: 'fact:root',
+      right: 'fact:leaf',
+      reason: 'ancestor',
+    });
+  });
+});

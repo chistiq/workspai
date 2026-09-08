@@ -27,6 +27,10 @@ describe('provider manifest contract scaffold', () => {
         credentials: 'deny',
       },
       limits: { maxDurationMs: 1_000, maxFacts: 10_000 },
+      contractVersions: ['0.1.0-candidate'],
+      supportedInputs: ['source-file'],
+      incremental: 'input',
+      identitySchemes: [{ id: 'workspai.graph.portable-entity', version: '1' }],
     });
 
     expect(manifest.capabilities.allowedClaims).toEqual(['declared-import']);

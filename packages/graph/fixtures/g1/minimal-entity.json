@@ -1,0 +1,6 @@
+{
+  "id": "entity:fixture:source",
+  "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" },
+  "kind": "file",
+  "scope": { "kind": "project", "projectIds": ["project:fixture"] }
+}

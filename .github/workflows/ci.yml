@@ -194,6 +194,23 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Capture Graph foundation-admission platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+        run: >-
+          node packages/graph/scripts/check-foundation-admission.mjs
+          --ci-evidence --json
+          --output artifacts/graph-foundation-admission-${{ runner.os }}.json
+
+      - name: Upload Graph foundation-admission platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-foundation-admission-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-foundation-admission-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
+
       # Shared parity contract gate (npm <-> extension snapshot)
       - name: Validate import stack parity contract snapshot
         run: npm --workspace workspai run test:parity-contract

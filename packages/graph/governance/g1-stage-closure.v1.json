@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G1",
+  "asOf": "2026-09-08",
+  "status": "ready-for-review",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "contract-completeness",
+      "status": "passed-local",
+      "summary": "Candidate identity, facts, provider detection, ontology, graph, generation, quality, lineage, n-ary and query-cache contracts are schema compiled and semantically admitted.",
+      "evidence": [
+        "packages/graph/conformance/contract-catalog.v1.json",
+        "packages/graph/src/contracts",
+        "packages/graph/src/conformance"
+      ]
+    },
+    {
+      "id": "provider-trust-boundary",
+      "status": "passed-local",
+      "summary": "Provider manifests and FactBatch outputs cross one fail-closed admission boundary; authored declarations have no privileged graph mutation path.",
+      "evidence": [
+        "packages/graph/src/conformance/foundation.ts",
+        "packages/graph/test/contracts/foundation-admission.test.ts"
+      ]
+    },
+    {
+      "id": "identity-proof-and-partial-honesty",
+      "status": "passed-local",
+      "summary": "Portable identities, alias collisions, unresolved candidates, evidence independence, competing facts, stale state, partial output, unknowns and unsupported zones remain explicit.",
+      "evidence": [
+        "packages/graph/fixtures/g1",
+        "packages/graph/test/contracts/identity-lineage.test.ts",
+        "packages/graph/test/contracts/portable-fixture-corpus.test.ts"
+      ]
+    },
+    {
+      "id": "determinism-and-resource-bounds",
+      "status": "passed-local",
+      "summary": "Canonical JSON and SHA-256 replay are deterministic and bounded against cycles, excessive nesting, non-JSON values and non-finite numbers.",
+      "evidence": [
+        "packages/graph/src/conformance/canonical-json.ts",
+        "packages/graph/test/contracts/graph-contracts.test.ts",
+        "packages/graph/test/contracts/adversarial-admission.test.ts"
+      ]
+    },
+    {
+      "id": "package-and-consumer-integrity",
+      "status": "passed-local",
+      "summary": "Generated wire types and schemas survive a separately packed Shared and Graph install; governance, source, tests, scripts and local paths remain outside the artifact.",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "quality-depth",
+      "status": "passed-local",
+      "summary": "Graph conformance exceeds the enforced 90/90/90/85 line, statement, function and branch thresholds with adversarial behavior tests.",
+      "evidence": ["packages/graph/vitest.config.ts", "packages/graph/package.json"]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-package-check",
+      "status": "passed-local",
+      "command": "corepack npm --workspace @workspai/graph run check",
+      "evidence": "Generated-contract drift, typecheck, lint, format, coverage, tests, build and isolated packed consumer pass."
+    },
+    {
+      "id": "package-infrastructure",
+      "status": "passed-local",
+      "command": "corepack npm run check:package-infrastructure",
+      "evidence": "Independent package quality, boundaries, mirrors, Shared adoption and Graph package gates pass."
+    }
+  ],
+  "measurements": {
+    "candidateSchemas": 16,
+    "testFiles": 12,
+    "tests": 67,
+    "coverageStatementsPercent": 94.7,
+    "coverageBranchesPercent": 93.22,
+    "coverageFunctionsPercent": 100,
+    "coverageLinesPercent": 95.75,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": {
+    "local": ["linux", "node-20-or-newer"],
+    "remoteMatrix": "required-before-G1-approval"
+  },
+  "remainingRisks": [
+    "Linux evidence is local; Windows and macOS contract and packed-consumer lanes must be retained before approval.",
+    "G2 deterministic composition, proof policy and conflict resolution are not implemented.",
+    "Rust/native acceleration remains prohibited until TypeScript reference semantics exist and G6 measurements justify it."
+  ],
+  "nextStage": "G2",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "pending-maintainer-and-cross-platform-evidence",
+    "requiredForNextStage": true,
+    "rule": "A signed maintainer checkpoint plus retained Linux, Windows and macOS G1 conformance evidence authorizes G2 composition work."
+  }
+}

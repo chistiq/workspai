@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/query-cache-key/v0.1.0-candidate",
+  "title": "WorkspaiGraphQueryCacheKeyCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "graphGeneration",
+    "queryDigest",
+    "ontologyDigest",
+    "proofPolicyDigest",
+    "profileDigest",
+    "scope",
+    "redactionPolicyDigest",
+    "authorizationDigest",
+    "budget"
+  ],
+  "properties": {
+    "contract": { "const": { "id": "workspai.graph.query-cache", "version": "0.1.0-candidate" } },
+    "graphGeneration": { "type": "object", "required": ["id", "generatedAt", "contentDigest"] },
+    "queryDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "ontologyDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "proofPolicyDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "profileDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "scope": { "type": "object" },
+    "redactionPolicyDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "authorizationDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxDepth", "maxNodes", "maxEdges", "maxEvidence"],
+      "properties": {
+        "maxDepth": { "type": "integer", "minimum": 1 },
+        "maxNodes": { "type": "integer", "minimum": 1 },
+        "maxEdges": { "type": "integer", "minimum": 1 },
+        "maxEvidence": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cursor", "size"],
+      "properties": { "cursor": { "type": "string" }, "size": { "type": "integer", "minimum": 1 } }
+    }
+  }
+}

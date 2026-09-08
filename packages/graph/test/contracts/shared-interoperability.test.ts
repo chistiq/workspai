@@ -17,7 +17,7 @@ describe('Shared protocol interoperability', () => {
     expectTypeOf(GRAPH_PROVIDER_MANIFEST_CONTRACT).toMatchTypeOf<WisContractReference>();
     expect(GRAPH_PROVIDER_MANIFEST_CONTRACT).toEqual({
       id: 'workspai.graph.provider-manifest',
-      version: '0.1.0-draft',
+      version: '0.1.0-candidate',
     });
     expect(Object.isFrozen(GRAPH_PROVIDER_MANIFEST_CONTRACT)).toBe(true);
   });

@@ -10,6 +10,23 @@ describe('@workspai/graph development package', () => {
     expect(GRAPH_PACKAGE_METADATA.implementedCapabilities).toEqual([
       'package-status',
       'shared-adoption-conformance',
+      'entity-identity-contract-candidate',
+      'provider-manifest-contract-candidate',
+      'provider-detection-contract-candidate',
+      'fact-batch-contract-candidate',
+      'foundation-semantic-admission',
+      'provider-output-admission',
+      'generated-wire-types',
+      'content-addressed-contract-catalog',
+      'portable-identity-normalization',
+      'ontology-semantic-admission',
+      'canonical-graph-semantic-admission',
+      'generation-publication-semantic-admission',
+      'graph-model-generation-binding-admission',
+      'quality-semantic-admission',
+      'query-cache-lifecycle-semantic-admission',
+      'bounded-canonical-digest-replay',
+      'evidence-independence-assessment',
     ]);
   });
 

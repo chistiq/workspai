@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G0",
+  "asOf": "2026-09-08",
+  "status": "approved",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Canonical truth, dependency direction, dual scope and non-hybrid extraction decisions are locked.",
+      "evidence": [
+        "packages/graph/governance/g0-design-lock.v1.json",
+        "packages/graph/governance/architecture-boundaries.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Provider, ontology, backend, consumer and optional native extension boundaries are defined before implementation.",
+      "evidence": ["packages/graph/governance/g0-design-lock.v1.json"]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Reference-runtime, bounded-worker and measured native acceleration rules are locked without premature engine claims.",
+      "evidence": ["packages/graph/governance/g0-design-lock.v1.json"]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Untrusted inputs, provider isolation, resource bounds and fail-closed admission are design requirements.",
+      "evidence": [
+        "packages/graph/governance/g0-design-lock.v1.json",
+        "packages/graph/governance/architecture-boundaries.json"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Portable locators, redaction and no internal documentation publication are locked.",
+      "evidence": [
+        "packages/graph/governance/g0-design-lock.v1.json",
+        "packages/graph/package.json"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "passed",
+      "summary": "TypeScript is the reference runtime and native acceleration remains optional and cross-platform gated.",
+      "evidence": [
+        "packages/graph/governance/g0-design-lock.v1.json",
+        "packages/graph/package.json"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Graph has its own package boundary and the CLI bridge remains prohibited.",
+      "evidence": [
+        "packages/graph/governance/architecture-boundaries.json",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Canonical serialization, proof-carrying truth and full versus incremental equivalence are locked as future gates.",
+      "evidence": ["packages/graph/governance/g0-design-lock.v1.json"]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Versioned contracts, architecture epochs and staged CLI replacement are required.",
+      "evidence": [
+        "packages/graph/governance/g0-design-lock.v1.json",
+        "packages/graph/src/conformance/shared-adoption.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Cancellation, partial results, atomic publication and recoverable adapters are explicit design constraints.",
+      "evidence": ["packages/graph/governance/g0-design-lock.v1.json"]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Layering, traceability, stage gates and ADR ownership are established.",
+      "evidence": [
+        "packages/graph/governance/architecture-boundaries.json",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "The package is development-only, allowlisted and independently guarded against publication.",
+      "evidence": [
+        "packages/graph/package.json",
+        "packages/graph/scripts/refuse-publish.mjs",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-package-check",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run check",
+      "evidence": "Local Graph package checks pass at the accepted G0 boundary."
+    },
+    {
+      "id": "package-infrastructure",
+      "status": "passed",
+      "command": "corepack npm run check:package-infrastructure",
+      "evidence": "Package quality, boundary, mirror and packed-install guards pass."
+    },
+    {
+      "id": "design-lock",
+      "status": "passed",
+      "evidence": "The canonical documentation set and accepted ADRs are content-addressed without publishing internal documents or local paths."
+    }
+  ],
+  "measurements": {
+    "mandatoryDocuments": 8,
+    "acceptedDecisions": 4,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0
+  },
+  "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "not-applicable" },
+  "remainingRisks": [
+    "G1 contract wire schemas and semantic fixture corpus are not yet complete.",
+    "Rust/native acceleration remains prohibited until G2 reference semantics and G6 measured bottlenecks exist."
+  ],
+  "nextStage": "G1",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-09-08",
+    "rule": "Explicit maintainer acceptance of the G0 architecture decisions authorizes G1 contract and conformance work only."
+  }
+}

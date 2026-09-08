@@ -64,7 +64,9 @@
   ],
   "scripts": {
     "prepublishOnly": "node scripts/refuse-publish.mjs",
-    "build": "tsup",
+    "generate": "node scripts/generate-contract-catalog.mjs",
+    "generate:check": "node scripts/generate-contract-catalog.mjs --check",
+    "build": "corepack npm run generate:check && tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\"",
     "lint:fix": "corepack npm run lint -- --fix",
@@ -75,9 +77,10 @@
     "test:contracts": "vitest run test/contracts",
     "test:package": "vitest run test/package",
     "test:coverage": "vitest run --coverage",
-    "check": "corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm run test && corepack npm run build && corepack npm run pack:check",
+    "check": "corepack npm run generate:check && corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm run test:coverage && corepack npm run build && corepack npm run pack:check && corepack npm run admission:audit",
     "pack:dry": "corepack npm pack --dry-run",
-    "pack:check": "node scripts/check-packed-package.mjs"
+    "pack:check": "node scripts/check-packed-package.mjs",
+    "admission:audit": "node scripts/check-foundation-admission.mjs --allow-pending"
   },
   "dependencies": {
     "@workspai/shared": "0.0.0-development"
@@ -87,7 +90,9 @@
     "@typescript-eslint/eslint-plugin": "^8.46.2",
     "@typescript-eslint/parser": "^8.46.2",
     "@vitest/coverage-v8": "^4.0.15",
+    "ajv": "8.20.0",
     "eslint": "^9.39.2",
+    "json-schema-to-typescript": "15.0.4",
     "prettier": "^3.6.2",
     "tsup": "^8.5.1",
     "typescript": "^5.5.0",
