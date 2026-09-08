@@ -277,6 +277,40 @@ jobs:
           name: rapidkit-coverage
           fail_ci_if_error: false
 
+  graph-foundation-admission:
+    name: Admit Graph foundation matrix
+    needs: build-test-matrix
+    if: needs.build-test-matrix.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout admitted commit
+        uses: actions/checkout@v4
+
+      - name: Download Graph platform evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: graph-foundation-admission-*
+          path: artifacts/graph-foundation-platforms
+          merge-multiple: true
+
+      - name: Verify complete Graph foundation matrix
+        run: >-
+          node packages/graph/scripts/check-foundation-matrix-admission.mjs
+          --evidence-directory artifacts/graph-foundation-platforms
+          --source-commit "${{ github.sha }}"
+          --output artifacts/graph-foundation-admission-candidate.json
+
+      - name: Upload Graph foundation admission candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-foundation-admission-candidate
+          path: artifacts/graph-foundation-admission-candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
   phase4-runtime-contracts:
     name: Phase4 Runtime Contracts (${{ matrix.os }})
     needs: changes

@@ -49,9 +49,9 @@
       "cliRuntimeIntegration": "prohibited-before-standalone-stability",
       "documentationAuthority": "workspai-docs:Packages/graph",
       "qualityPlanRef": "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md",
-      "latestClosure": "packages/graph/governance/g0-stage-closure.v1.json",
+      "latestClosure": "packages/graph/governance/g1-stage-closure.v1.json",
       "currentStage": "G1",
-      "stageStatus": "in-progress"
+      "stageStatus": "closed-awaiting-approval"
     }
   ]
 }

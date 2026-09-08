@@ -2,12 +2,20 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
 const closurePath = path.join(packageRoot, 'governance/g1-stage-closure.v1.json');
 const catalogPath = path.join(packageRoot, 'conformance/contract-catalog.v1.json');
+const stageClosureSchemaPath = path.join(
+  repositoryRoot,
+  'contracts/independent-package-stage-closure.v1.json'
+);
+const qualityPolicyPath = path.join(repositoryRoot, 'independent-package-quality-policy.v1.json');
+const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
+const Ajv2020 = toolRequire('ajv/dist/2020').default;
 
 function parseArguments(argv) {
   const options = { allowPending: false, ciEvidence: false, json: false, output: undefined };
@@ -43,6 +51,13 @@ function safeRepositoryFile(value) {
   return resolved;
 }
 
+function existingRepositoryFile(value) {
+  const resolved = safeRepositoryFile(value);
+  return resolved && fs.existsSync(resolved) && fs.lstatSync(resolved).isFile()
+    ? resolved
+    : undefined;
+}
+
 function outputPath(value) {
   const resolved = safeRepositoryFile(value);
   if (!resolved) throw new Error('--output must be a safe repository-relative path.');
@@ -53,6 +68,8 @@ function auditFoundation(options) {
   const failures = [];
   const closure = readJson(closurePath);
   const catalog = readJson(catalogPath);
+  const stageClosureSchema = readJson(stageClosureSchemaPath);
+  const qualityPolicy = readJson(qualityPolicyPath);
   const packageManifest = readJson(path.join(packageRoot, 'package.json'));
   const schemas = fs
     .readdirSync(path.join(packageRoot, 'schemas'))
@@ -65,7 +82,29 @@ function auditFoundation(options) {
   if (closure.package !== packageManifest.name || closure.stage !== 'G1') {
     failures.push('G1 closure package identity drifted');
   }
-  if (closure.status !== 'ready-for-review' || closure.nextStageAuthorized !== false) {
+  let validateClosure;
+  try {
+    validateClosure = new Ajv2020({
+      allErrors: true,
+      strict: true,
+      validateFormats: false,
+    }).compile(stageClosureSchema);
+  } catch (error) {
+    failures.push(
+      `stage closure schema does not compile: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  if (validateClosure && !validateClosure(closure)) {
+    failures.push(
+      `G1 closure violates the shared stage contract: ${JSON.stringify(validateClosure.errors)}`
+    );
+  }
+  if (
+    closure.status !== 'local-passed-remote-pending-awaiting-approval' ||
+    closure.nextStageAuthorized !== false ||
+    closure.approval?.status !== 'awaiting' ||
+    closure.environment?.remoteMatrix !== 'pending'
+  ) {
     failures.push('G1 must remain review-pending until retained cross-platform evidence exists');
   }
   if (packageManifest.private !== true)
@@ -77,11 +116,15 @@ function auditFoundation(options) {
     failures.push('G1 closure has no permanent quality dimensions');
   }
   const dimensionIds = new Set();
+  const requiredDimensionIds = new Set(
+    (qualityPolicy.qualityDimensions ?? []).map((dimension) => dimension.id)
+  );
   for (const dimension of closure.dimensions ?? []) {
     if (
       typeof dimension.id !== 'string' ||
       dimensionIds.has(dimension.id) ||
-      dimension.status !== 'passed-local'
+      !requiredDimensionIds.has(dimension.id) ||
+      !['passed', 'pending-remote'].includes(dimension.status)
     ) {
       failures.push(`invalid G1 dimension: ${String(dimension.id)}`);
     }
@@ -91,11 +134,17 @@ function auditFoundation(options) {
       continue;
     }
     for (const evidence of dimension.evidence) {
-      const file = safeRepositoryFile(evidence);
-      if (!file || !fs.existsSync(file)) {
+      const file = existingRepositoryFile(evidence);
+      if (!file) {
         failures.push(`unsafe or missing G1 evidence: ${String(evidence)}`);
       }
     }
+  }
+  if (
+    dimensionIds.size !== requiredDimensionIds.size ||
+    [...requiredDimensionIds].some((id) => !dimensionIds.has(id))
+  ) {
+    failures.push('G1 closure does not report every permanent quality dimension exactly once');
   }
   if (!Array.isArray(catalog.contracts) || catalog.contracts.length !== schemas.length) {
     failures.push('schema catalog count does not match packaged schemas');

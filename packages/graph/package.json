@@ -80,7 +80,8 @@
     "check": "corepack npm run generate:check && corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm run test:coverage && corepack npm run build && corepack npm run pack:check && corepack npm run admission:audit",
     "pack:dry": "corepack npm pack --dry-run",
     "pack:check": "node scripts/check-packed-package.mjs",
-    "admission:audit": "node scripts/check-foundation-admission.mjs --allow-pending"
+    "admission:audit": "node scripts/check-foundation-admission.mjs --allow-pending",
+    "admission:matrix": "node scripts/check-foundation-matrix-admission.mjs"
   },
   "dependencies": {
     "@workspai/shared": "0.0.0-development"

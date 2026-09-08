@@ -5,104 +5,178 @@
   "package": "@workspai/graph",
   "stage": "G1",
   "asOf": "2026-09-08",
-  "status": "ready-for-review",
+  "status": "local-passed-remote-pending-awaiting-approval",
   "advancesAdmissionGate": false,
   "dimensions": [
     {
-      "id": "contract-completeness",
-      "status": "passed-local",
-      "summary": "Candidate identity, facts, provider detection, ontology, graph, generation, quality, lineage, n-ary and query-cache contracts are schema compiled and semantically admitted.",
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Candidate identity, fact, provider, ontology, graph, generation, quality, lineage, n-ary and cache contracts preserve the accepted Graph truth boundary.",
       "evidence": [
+        "packages/graph/governance/g0-design-lock.v1.json",
         "packages/graph/conformance/contract-catalog.v1.json",
-        "packages/graph/src/contracts",
-        "packages/graph/src/conformance"
+        "packages/graph/test/contracts/graph-contracts.test.ts"
       ]
     },
     {
-      "id": "provider-trust-boundary",
-      "status": "passed-local",
-      "summary": "Provider manifests and FactBatch outputs cross one fail-closed admission boundary; authored declarations have no privileged graph mutation path.",
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Provider capabilities, ontology families, bounded facts and extensible contract versions are explicit and fail closed before composition.",
       "evidence": [
+        "packages/graph/src/contracts/provider.ts",
+        "packages/graph/src/contracts/core-ontology.ts",
+        "packages/graph/test/contracts/provider-manifest.test.ts"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Canonicalization and contract admission enforce finite depth, item and issue budgets while the packed package remains below its declared compressed-size ceiling.",
+      "evidence": [
+        "packages/graph/src/conformance/canonical-json.ts",
+        "packages/graph/src/conformance/foundation.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Traversal, absolute identity, forged proof, invalid authority, recursive payload and graph-amplification cases are rejected through bounded semantic admission.",
+      "evidence": [
+        "packages/graph/test/contracts/adversarial-admission.test.ts",
+        "packages/graph/fixtures/g1/semantic-invalid-mutations.json",
+        "packages/graph/src/conformance/foundation.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Portable proof locators, explicit redaction and package allowlists prevent absolute paths, secret values and internal governance material from entering consumer artifacts.",
+      "evidence": [
+        "packages/graph/fixtures/g1/invalid-absolute-entity.json",
+        "packages/graph/test/contracts/portable-fixture-corpus.test.ts",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Portable identities and isolated packed consumption pass locally; same-commit Linux, macOS and Windows evidence is automated and still pending retention.",
+      "evidence": [
+        "packages/graph/scripts/check-foundation-admission.mjs",
+        "packages/graph/scripts/check-foundation-matrix-admission.mjs",
+        "packages/graph/test/governance/foundation-matrix-admission.test.ts"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Graph imports Shared only through four admitted public subpaths, has no CLI dependency and exposes no runtime bridge or second graph implementation.",
+      "evidence": [
+        "packages/graph/test/architecture/package-boundaries.test.ts",
+        "packages/graph/test/contracts/shared-interoperability.test.ts",
+        "packages/graph/package.json"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Canonical JSON and SHA-256 replay are insertion-order invariant; identities, relation semantics, proof lineage, conflicts, unknowns and generation dependencies are semantically validated.",
+      "evidence": [
+        "packages/graph/src/conformance/canonical-json.ts",
+        "packages/graph/src/conformance/graph.ts",
+        "packages/graph/test/contracts/identity-lineage.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Every candidate contract is independently versioned and content-addressed; unsupported Shared or Graph versions and unauthorized domain migration are rejected.",
+      "evidence": [
+        "packages/graph/conformance/contract-catalog.v1.json",
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/test/contracts/schema-catalog.test.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Partial, stale, unknown, unsupported, cancelled and failed provider states remain distinguishable with bounded diagnostics and complete processing accounting.",
+      "evidence": [
+        "packages/graph/fixtures/g1/maximal-fact-batch.json",
         "packages/graph/src/conformance/foundation.ts",
         "packages/graph/test/contracts/foundation-admission.test.ts"
       ]
     },
     {
-      "id": "identity-proof-and-partial-honesty",
-      "status": "passed-local",
-      "summary": "Portable identities, alias collisions, unresolved candidates, evidence independence, competing facts, stale state, partial output, unknowns and unsupported zones remain explicit.",
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Generated wire types, semantic validators, reusable fixtures, permanent architecture guards and enforced coverage keep the candidate surface traceable and testable.",
       "evidence": [
-        "packages/graph/fixtures/g1",
-        "packages/graph/test/contracts/identity-lineage.test.ts",
-        "packages/graph/test/contracts/portable-fixture-corpus.test.ts"
+        "packages/graph/scripts/generate-contract-catalog.mjs",
+        "packages/graph/vitest.config.ts",
+        "packages/graph/test/package/public-api.test.ts"
       ]
     },
     {
-      "id": "determinism-and-resource-bounds",
-      "status": "passed-local",
-      "summary": "Canonical JSON and SHA-256 replay are deterministic and bounded against cycles, excessive nesting, non-JSON values and non-finite numbers.",
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "Publication is blocked by two manifest guards; separately packed Shared and Graph consumers prove declared exports while source, tests, scripts, governance, coverage and maps remain excluded.",
       "evidence": [
-        "packages/graph/src/conformance/canonical-json.ts",
-        "packages/graph/test/contracts/graph-contracts.test.ts",
-        "packages/graph/test/contracts/adversarial-admission.test.ts"
-      ]
-    },
-    {
-      "id": "package-and-consumer-integrity",
-      "status": "passed-local",
-      "summary": "Generated wire types and schemas survive a separately packed Shared and Graph install; governance, source, tests, scripts and local paths remain outside the artifact.",
-      "evidence": [
+        "packages/graph/scripts/refuse-publish.mjs",
         "packages/graph/scripts/check-packed-package.mjs",
-        "packages/graph/test/architecture/package-boundaries.test.ts"
+        "packages/graph/package.json"
       ]
-    },
-    {
-      "id": "quality-depth",
-      "status": "passed-local",
-      "summary": "Graph conformance exceeds the enforced 90/90/90/85 line, statement, function and branch thresholds with adversarial behavior tests.",
-      "evidence": ["packages/graph/vitest.config.ts", "packages/graph/package.json"]
     }
   ],
   "checks": [
     {
       "id": "graph-package-check",
-      "status": "passed-local",
+      "status": "passed",
       "command": "corepack npm --workspace @workspai/graph run check",
       "evidence": "Generated-contract drift, typecheck, lint, format, coverage, tests, build and isolated packed consumer pass."
     },
     {
       "id": "package-infrastructure",
-      "status": "passed-local",
+      "status": "passed",
       "command": "corepack npm run check:package-infrastructure",
       "evidence": "Independent package quality, boundaries, mirrors, Shared adoption and Graph package gates pass."
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Same-commit Linux, macOS and Windows foundation admission artifacts have not yet been retained."
     }
   ],
   "measurements": {
     "candidateSchemas": 16,
-    "testFiles": 12,
-    "tests": 67,
+    "testFiles": 13,
+    "tests": 70,
     "coverageStatementsPercent": 94.7,
     "coverageBranchesPercent": 93.22,
     "coverageFunctionsPercent": 100,
     "coverageLinesPercent": 95.75,
+    "packedFiles": 42,
+    "packedCompressedBytes": 35161,
+    "packedCompressedBudgetBytes": 262144,
     "publicInternalDocuments": 0,
     "cliRuntimeBridges": 0,
     "nativeTruthImplementations": 0
   },
   "environment": {
     "local": ["linux", "node-20-or-newer"],
-    "remoteMatrix": "required-before-G1-approval"
+    "remoteMatrix": "pending"
   },
   "remainingRisks": [
-    "Linux evidence is local; Windows and macOS contract and packed-consumer lanes must be retained before approval.",
+    "The automated same-commit Linux, Windows and macOS admission candidate must be retained before approval.",
     "G2 deterministic composition, proof policy and conflict resolution are not implemented.",
     "Rust/native acceleration remains prohibited until TypeScript reference semantics exist and G6 measurements justify it."
   ],
   "nextStage": "G2",
   "nextStageAuthorized": false,
   "approval": {
-    "status": "pending-maintainer-and-cross-platform-evidence",
+    "status": "awaiting",
     "requiredForNextStage": true,
-    "rule": "A signed maintainer checkpoint plus retained Linux, Windows and macOS G1 conformance evidence authorizes G2 composition work."
+    "rule": "A signed maintainer checkpoint plus retained same-commit Linux, Windows and macOS G1 conformance evidence authorizes G2 composition work."
   }
 }
