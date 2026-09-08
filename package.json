@@ -23,6 +23,7 @@
   "overrides": {
     "brace-expansion": "5.0.9",
     "esbuild": "^0.28.1",
+    "js-yaml": "4.3.2",
     "postcss": {
       ".": "8.5.25",
       "nanoid": "3.3.18"
@@ -69,7 +70,10 @@
     "prepush:check": "corepack npm run check:cross-platform-lockfile && corepack npm --workspace workspai run contracts:prepush && corepack npm run check:brand && corepack npm run check:package-quality && corepack npm run check:package-boundaries && corepack npm run check:package-mirrors && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/ui": "^4.1.11",
     "chokidar": "^3.6.0",
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "vitest": "^4.1.11"
   }
 }

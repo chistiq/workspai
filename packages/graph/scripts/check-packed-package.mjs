@@ -58,7 +58,9 @@ function packedFiles(installedRoot) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolutePath = path.join(directory, entry.name);
       if (entry.isDirectory()) pending.push(absolutePath);
-      else if (entry.isFile()) files.push(path.relative(installedRoot, absolutePath));
+      else if (entry.isFile()) {
+        files.push(path.relative(installedRoot, absolutePath).split(path.sep).join('/'));
+      }
     }
   }
   return files;

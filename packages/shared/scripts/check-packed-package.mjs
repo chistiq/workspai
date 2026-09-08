@@ -162,7 +162,11 @@ try {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolutePath = path.join(directory, entry.name);
       if (entry.isDirectory()) pending.push(absolutePath);
-      else if (entry.isFile()) packedPaths.push(path.relative(installedPackageRoot, absolutePath));
+      else if (entry.isFile()) {
+        packedPaths.push(
+          path.relative(installedPackageRoot, absolutePath).split(path.sep).join('/')
+        );
+      }
     }
   }
   for (const requiredPath of [
