@@ -5,6 +5,7 @@ import fsExtra from 'fs-extra';
 import {
   detectBackendFrameworkFromProject,
   detectBackendFrameworkFromHints,
+  isWorkspaiManagedLinkedProjectMetadata,
   type BackendFrameworkDetection,
 } from './backend-framework-contract.js';
 import { resolveKitDefinition } from './kit-registry.js';
@@ -47,8 +48,11 @@ export interface ProjectMetadata {
   contextJson: RapidkitContextJson;
   detection: BackendFrameworkDetection;
   moduleSupport: boolean;
-  engine: 'npm' | 'pip' | 'python' | 'unknown';
+  engine: ProjectEngine;
 }
+
+export type ProjectEngine =
+  'npm' | 'pip' | 'python' | 'poetry' | 'venv' | 'pipx' | 'uv' | 'unknown';
 
 export function readRapidkitContextJson(projectRoot: string): RapidkitContextJson {
   for (const contextPath of projectMetadataCandidates(projectRoot, 'context.json')) {
@@ -66,7 +70,15 @@ export function readRapidkitContextJson(projectRoot: string): RapidkitContextJso
 
 function readContextEngine(contextJson: RapidkitContextJson): ProjectMetadata['engine'] {
   const engine = contextJson?.engine;
-  if (engine === 'npm' || engine === 'pip' || engine === 'python') {
+  if (
+    engine === 'npm' ||
+    engine === 'pip' ||
+    engine === 'python' ||
+    engine === 'poetry' ||
+    engine === 'venv' ||
+    engine === 'pipx' ||
+    engine === 'uv'
+  ) {
     return engine;
   }
   return 'unknown';
@@ -105,24 +117,27 @@ function resolveDetection(
   projectJson: RapidkitProjectJson,
   contextJson: RapidkitContextJson
 ): BackendFrameworkDetection {
+  const authoredProjectJson = isWorkspaiManagedLinkedProjectMetadata(projectJson)
+    ? null
+    : projectJson;
   const hinted = detectBackendFrameworkFromHints({
     runtime:
-      typeof projectJson?.runtime === 'string'
-        ? projectJson.runtime
+      typeof authoredProjectJson?.runtime === 'string'
+        ? authoredProjectJson.runtime
         : typeof contextJson?.runtime === 'string'
           ? (contextJson.runtime as string)
           : undefined,
     framework:
-      typeof projectJson?.framework === 'string'
-        ? projectJson.framework
+      typeof authoredProjectJson?.framework === 'string'
+        ? authoredProjectJson.framework
         : typeof contextJson?.framework === 'string'
           ? (contextJson.framework as string)
           : undefined,
     kitName:
-      typeof projectJson?.kit_name === 'string'
-        ? projectJson.kit_name
-        : typeof projectJson?.kit === 'string'
-          ? projectJson.kit
+      typeof authoredProjectJson?.kit_name === 'string'
+        ? authoredProjectJson.kit_name
+        : typeof authoredProjectJson?.kit === 'string'
+          ? authoredProjectJson.kit
           : typeof contextJson?.kit === 'string'
             ? (contextJson.kit as string)
             : undefined,
@@ -132,7 +147,7 @@ function resolveDetection(
     return hinted;
   }
 
-  return detectBackendFrameworkFromProject(projectRoot, projectJson);
+  return detectBackendFrameworkFromProject(projectRoot, authoredProjectJson);
 }
 
 export function readProjectMetadata(projectRoot: string): ProjectMetadata | null {
@@ -145,7 +160,10 @@ export function readProjectMetadata(projectRoot: string): ProjectMetadata | null
     return null;
   }
 
-  const projectJson = readRapidkitProjectJson(resolvedRoot);
+  // A discovered project boundary owns only its own metadata. Parent lookup
+  // here can silently replace a nested/external project's authored identity
+  // with an unrelated workspace ancestor.
+  const projectJson = readRapidkitProjectJson(resolvedRoot, { searchParents: false });
   const contextJson = readRapidkitContextJson(resolvedRoot);
   const detection = resolveDetection(resolvedRoot, projectJson, contextJson);
 

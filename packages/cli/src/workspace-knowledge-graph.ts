@@ -8,6 +8,7 @@ import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-poli
 import { parseAllDocuments } from 'yaml';
 
 import type { WorkspaceContract } from './utils/workspace-contract.js';
+import type { ProjectGovernanceProfile } from './utils/project-governance.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
@@ -24,6 +25,7 @@ import {
   type WorkspaceKnowledgeGraph,
   type WorkspaceKnowledgeGraphInputFingerprint,
   type WorkspaceKnowledgeProof,
+  type WorkspaceKnowledgeProviderInputCoverage,
   type WorkspaceKnowledgeProviderRun,
   type WorkspaceKnowledgeRelation,
   type WorkspaceKnowledgeRelationKind,
@@ -32,6 +34,10 @@ import {
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 import { workspaceModelProjectTopology, type WorkspaceModel } from './workspace-model.js';
 import { buildPolyglotLifecyclePlan } from './polyglot-lifecycle-plan.js';
+import {
+  calculateWorkspaceKnowledgeBindingCoverage,
+  countWorkspaceKnowledgeUnknowns,
+} from './workspace-knowledge-graph-quality.js';
 
 export const WORKSPACE_KNOWLEDGE_GRAPH_REPORT_PATH =
   WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph;
@@ -46,6 +52,7 @@ export type WorkspaceKnowledgeProjectInput = {
   kit?: string;
   kind?: string;
   category?: string;
+  governance?: ProjectGovernanceProfile;
 };
 
 export type BuildWorkspaceKnowledgeGraphOptions = {
@@ -55,8 +62,20 @@ export type BuildWorkspaceKnowledgeGraphOptions = {
   projectTopology: WorkspaceDependencyGraph;
   contract?: WorkspaceContract | null;
   now?: Date;
+  /** Adaptive deep-provider budget override. This is not the inventory limit. */
   maxFilesPerProject?: number;
+  /** Emergency safety boundary for a complete per-project path inventory. */
+  inventoryFileLimitPerProject?: number;
+  /** Adaptive semantic-provider budget override. */
+  semanticFilesPerProject?: number;
+  /** Adaptive source extraction budget override. */
+  sourceFilesPerProject?: number;
   source: Omit<WorkspaceKnowledgeGraph['source'], 'inputs'>;
+  /**
+   * Optional last valid artifact used only as a project-scope cache. Reuse is
+   * authorized by matching live input fingerprints, never by timestamps.
+   */
+  previousGraph?: WorkspaceKnowledgeGraph | null;
 };
 
 export function assertWorkspaceKnowledgeGraphSourceBinding(
@@ -116,19 +135,52 @@ type JsonRecord = Record<string, unknown>;
 type ProviderContext = {
   workspacePath: string;
   projects: ResolvedProject[];
+  /** Complete eligible path inventory, subject only to the emergency bound. */
   filesByProject: ReadonlyMap<string, readonly string[]>;
+  /** Fair, component/language-balanced input for content-heavy providers. */
+  deepFilesByProject: ReadonlyMap<string, readonly string[]>;
+  /** Larger balanced input for semantic providers. */
   semanticFilesByProject: ReadonlyMap<string, readonly string[]>;
-  semanticScanLimit: number;
+  inventoryByProject: ReadonlyMap<string, ProjectFileInventory>;
+  scanBudgetsByProject: ReadonlyMap<string, ProjectGraphScanBudget>;
   workspaceFiles: readonly string[];
   now: Date;
-  maxFilesPerProject: number;
   contract: WorkspaceContract | null;
   state: KnowledgeGraphState;
 };
 type ResolvedProject = WorkspaceKnowledgeProjectInput & { root: string; artifactPrefix: string };
+
+function projectFoundationAttributes(
+  project: WorkspaceKnowledgeProjectInput
+): Record<string, WorkspaceKnowledgeAttribute> {
+  return {
+    path: project.path,
+    ...(project.runtime !== undefined ? { runtime: project.runtime } : {}),
+    ...(project.runtimeCandidates !== undefined
+      ? { runtimeCandidates: project.runtimeCandidates }
+      : {}),
+    ...(project.framework !== undefined ? { framework: project.framework } : {}),
+    ...(project.kit !== undefined ? { kit: project.kit } : {}),
+    ...(project.kind !== undefined ? { kind: project.kind } : {}),
+    ...(project.category !== undefined ? { category: project.category } : {}),
+    ...(project.governance
+      ? {
+          governanceCiStatus: project.governance.ci.status,
+          governanceReleaseStatus: project.governance.release.status,
+          governanceOwnershipStatus: project.governance.ownership.status,
+          governanceProviders: [
+            project.governance.ci.provider,
+            project.governance.release.provider,
+            project.governance.ownership.provider,
+          ].filter((value): value is string => Boolean(value)),
+        }
+      : {}),
+  };
+}
 type Provider = {
   id: string;
   version: string;
+  scanTier?: 'complete-inventory' | 'adaptive-semantic' | 'adaptive-deep' | 'derived';
   /**
    * Applicability is deliberately separate from execution success. A provider
    * that has no matching source surface is skipped; a provider that has a
@@ -138,6 +190,35 @@ type Provider = {
   applicable?(context: ProviderContext): boolean | Promise<boolean>;
   run(context: ProviderContext): Promise<void>;
 };
+
+type ProjectFileInventory = {
+  files: string[];
+  eligibleFileCount: number;
+  eligibleFileCountExact: boolean;
+  truncated: boolean;
+  fileLimit: number;
+  strategy: 'git-index-worktree-v1' | 'filesystem-bfs-v1';
+};
+
+type ProjectGraphScanBudget = {
+  semanticFileBudget: number;
+  deepFileBudget: number;
+  sourceExtractionFileBudget: number;
+};
+
+const DEFAULT_GRAPH_INVENTORY_EMERGENCY_LIMIT = 500_000;
+const MAX_GRAPH_INVENTORY_EMERGENCY_LIMIT = 2_000_000;
+
+function positiveGraphBudgetOverride(
+  value: number | undefined,
+  environmentName: string
+): number | undefined {
+  if (value !== undefined && Number.isFinite(value) && value > 0) return Math.floor(value);
+  const raw = process.env[environmentName];
+  if (!raw) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -168,6 +249,56 @@ const IGNORED_DIRECTORIES = new Set([
   '__fixtures__',
   'testdata',
 ]);
+
+/**
+ * Workspai writes these portable agent entry projections after Graph creation.
+ * They are consumers of canonical evidence, never inputs to that evidence. If
+ * they participate in inventory or Git diff hashing, a successful intelligence
+ * run invalidates its own Graph as soon as agent synchronization completes.
+ *
+ * Match at every project boundary because a workspace may contain nested
+ * projects. Repository-authored instructions remain available directly to the
+ * agent; excluding adapter projections from Graph evidence also prevents the
+ * Graph from citing its own generated guidance as source architecture.
+ */
+const GENERATED_AGENT_PROJECTION_BASENAMES = new Set([
+  'AGENTS.md',
+  'CLAUDE.md',
+  'GEMINI.md',
+  'QWEN.md',
+]);
+
+/**
+ * Runtime-owned workspace metadata changes as IDE and CLI activity is
+ * observed. It is an operational control surface, not repository
+ * architecture. Including it in the Graph input fingerprint would let
+ * telemetry emitted after Goal creation invalidate the Goal/PCC lease before
+ * the first approved effect can run.
+ */
+const WORKSPAI_OPERATIONAL_PROJECTION_BASENAMES = new Set(['.workspai-workspace']);
+
+const GENERATED_AGENT_PROJECTION_PATTERNS = [
+  /(?:^|\/)\.agents\/skills\/workspai-[^/]+\//u,
+  /(?:^|\/)\.amazonq\/rules\/workspai-[^/]+\.md$/u,
+  /(?:^|\/)\.claude\/(?:rules|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.cursor\/(?:rules|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.grok\/(?:rules|skills)\/workspai-[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.github\/agents\/workspai-[^/]+\.agent\.md$/u,
+  /(?:^|\/)\.github\/(?:instructions|prompts|skills)\/(?:workspai-|rapidkit-)[^/]+(?:\/|$)/u,
+  /(?:^|\/)\.github\/copilot-instructions\.md$/u,
+  /(?:^|\/)\.windsurf\/rules\/workspai-[^/]+\.md$/u,
+  /(?:^|\/)\.windsurfrules$/u,
+  /(?:^|\/)\.vscode\/(?:workspai|rapidkit)-agent-hooks\.json$/u,
+];
+
+function isManagedArchitectureProjection(root: string, candidate: string): boolean {
+  const relative = toPosix(path.relative(root, candidate));
+  return (
+    GENERATED_AGENT_PROJECTION_BASENAMES.has(path.posix.basename(relative)) ||
+    WORKSPAI_OPERATIONAL_PROJECTION_BASENAMES.has(path.posix.basename(relative)) ||
+    GENERATED_AGENT_PROJECTION_PATTERNS.some((pattern) => pattern.test(relative))
+  );
+}
 
 const TEST_OR_FIXTURE_DIRECTORIES = new Set([
   'test',
@@ -246,6 +377,8 @@ const MANIFEST_NAMES = new Set([
   'WORKSPACE.bazel',
 ]);
 
+const ARCHITECTURE_CONTROL_NAMES = new Set([...MANIFEST_NAMES, 'go.work', 'go.work.sum']);
+
 const HTTP_METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
 const SOURCE_EXTENSIONS = new Set([
   '.c',
@@ -286,6 +419,63 @@ const SOURCE_EXTENSIONS = new Set([
   '.vb',
 ]);
 
+// Language inventory is intentionally broader than source-structure parsing.
+// DSLs and systems languages still define architecture even when Workspai has
+// no safe import/symbol extractor for their grammar yet.
+const LANGUAGE_INVENTORY_EXTENSIONS = new Set([
+  ...SOURCE_EXTENSIONS,
+  '.adb',
+  '.ads',
+  '.asm',
+  '.bash',
+  '.bat',
+  '.cl',
+  '.cob',
+  '.cu',
+  '.cuh',
+  '.erl',
+  '.f',
+  '.f03',
+  '.f08',
+  '.f77',
+  '.f90',
+  '.f95',
+  '.fish',
+  '.for',
+  '.gql',
+  '.graphql',
+  '.groovy',
+  '.hip',
+  '.hrl',
+  '.hs',
+  '.hlsl',
+  '.jl',
+  '.ll',
+  '.m',
+  '.metal',
+  '.mir',
+  '.mlir',
+  '.mm',
+  '.nim',
+  '.pas',
+  '.pl',
+  '.pm',
+  '.proto',
+  '.ps1',
+  '.s',
+  '.sh',
+  '.sol',
+  '.sql',
+  '.sv',
+  '.td',
+  '.thrift',
+  '.v',
+  '.vhd',
+  '.vhdl',
+  '.zig',
+  '.zsh',
+]);
+
 type SourceFinding = { name: string; line: number; detail: string };
 
 function sourceLanguage(filePath: string, primaryRuntime?: string): string {
@@ -293,16 +483,42 @@ function sourceLanguage(filePath: string, primaryRuntime?: string): string {
   if (extension === '.h' && primaryRuntime === 'cpp') return 'cpp';
   const languages: Record<string, string> = {
     '.c': 'c',
+    '.adb': 'ada',
+    '.ads': 'ada',
+    '.asm': 'assembly',
+    '.bash': 'shell',
+    '.bat': 'batch',
     '.cc': 'cpp',
+    '.cl': 'opencl',
+    '.cob': 'cobol',
     '.cpp': 'cpp',
     '.cs': 'csharp',
+    '.cu': 'cuda',
+    '.cuh': 'cuda',
     '.dart': 'dart',
+    '.erl': 'erlang',
     '.ex': 'elixir',
     '.exs': 'elixir',
+    '.f': 'fortran',
+    '.f03': 'fortran',
+    '.f08': 'fortran',
+    '.f77': 'fortran',
+    '.f90': 'fortran',
+    '.f95': 'fortran',
+    '.fish': 'shell',
+    '.for': 'fortran',
+    '.gql': 'graphql',
     '.go': 'go',
+    '.graphql': 'graphql',
+    '.groovy': 'groovy',
     '.h': 'c',
+    '.hip': 'hip',
     '.hpp': 'cpp',
+    '.hrl': 'erlang',
+    '.hs': 'haskell',
+    '.hlsl': 'hlsl',
     '.java': 'java',
+    '.jl': 'julia',
     '.cjs': 'javascript',
     '.cts': 'typescript',
     '.js': 'javascript',
@@ -327,15 +543,90 @@ function sourceLanguage(filePath: string, primaryRuntime?: string): string {
     '.fs': 'fsharp',
     '.fsx': 'fsharp',
     '.lua': 'lua',
+    '.ll': 'llvm-ir',
+    '.m': 'objective-c',
+    '.metal': 'metal',
+    '.mir': 'llvm-mir',
+    '.mlir': 'mlir',
+    '.mm': 'objective-cpp',
+    '.nim': 'nim',
+    '.pas': 'pascal',
+    '.pl': 'perl',
+    '.pm': 'perl',
+    '.proto': 'protobuf',
+    '.ps1': 'powershell',
+    '.s': 'assembly',
+    '.sh': 'shell',
+    '.sol': 'solidity',
+    '.sql': 'sql',
+    '.sv': 'systemverilog',
+    '.td': 'tablegen',
+    '.thrift': 'thrift',
+    '.v': 'verilog',
     '.vb': 'visual-basic',
+    '.vhd': 'vhdl',
+    '.vhdl': 'vhdl',
+    '.zig': 'zig',
+    '.zsh': 'shell',
   };
   return languages[extension] ?? extension.slice(1);
 }
 
-function balancedSourceSelection(files: readonly string[], limit: number): string[] {
+const LOWER_PRIORITY_SOURCE_SEGMENTS = new Set([
+  'external',
+  'third_party',
+  'third-party',
+  'vendor',
+  'vendors',
+  'vendored',
+]);
+
+const CANONICAL_SOURCE_SEGMENTS = new Set([
+  'app',
+  'apps',
+  'cli',
+  'cmd',
+  'core',
+  'extensions',
+  'internal',
+  'lib',
+  'packages',
+  'services',
+  'src',
+]);
+
+function sourceSelectionPriority(file: string, projectRoot: string): number {
+  const relative = toPosix(path.relative(projectRoot, file));
+  const segments = relative.split('/').filter(Boolean);
+  const topLevel = segments[0]?.toLowerCase() ?? '';
+  const containsLowerPrioritySegment = segments.some((segment) =>
+    LOWER_PRIORITY_SOURCE_SEGMENTS.has(segment.toLowerCase())
+  );
+
+  // Prefer the repository's authored source surfaces over vendored or mirrored
+  // trees. The latter remain eligible and language balancing can still select
+  // representatives from them; they simply cannot consume the entire bounded
+  // extraction window before canonical source is observed.
+  return (
+    (containsLowerPrioritySegment ? 1_000 : 0) +
+    (CANONICAL_SOURCE_SEGMENTS.has(topLevel) ? -100 : 0) +
+    Math.min(segments.length, 20)
+  );
+}
+
+function balancedSourceSelection(
+  files: readonly string[],
+  limit: number,
+  projectRoot: string
+): string[] {
   if (files.length <= limit) return [...files];
+  const prioritized = [...files].sort(
+    (left, right) =>
+      sourceSelectionPriority(left, projectRoot) - sourceSelectionPriority(right, projectRoot) ||
+      left.localeCompare(right)
+  );
   const byLanguage = new Map<string, string[]>();
-  for (const file of files) {
+  for (const file of prioritized) {
     const language = sourceLanguage(file);
     const languageFiles = byLanguage.get(language) ?? [];
     languageFiles.push(file);
@@ -346,11 +637,119 @@ function balancedSourceSelection(files: readonly string[], limit: number): strin
   for (const languageFiles of [...byLanguage.values()]) {
     for (const file of languageFiles.slice(0, floor)) selected.add(file);
   }
-  for (const file of files) {
+  for (const file of prioritized) {
     if (selected.size >= limit) break;
     selected.add(file);
   }
   return [...selected].sort((left, right) => left.localeCompare(right));
+}
+
+function projectComponentKey(file: string, projectRoot: string): string {
+  const segments = toPosix(path.relative(projectRoot, file)).split('/').filter(Boolean);
+  if (segments.length === 0) return '<root>';
+  const first = segments[0].toLowerCase();
+  if (
+    [
+      'app',
+      'apps',
+      'cmd',
+      'components',
+      'crates',
+      'modules',
+      'packages',
+      'plugins',
+      'services',
+    ].includes(first) &&
+    segments[1]
+  ) {
+    return `${first}/${segments[1].toLowerCase()}`;
+  }
+  return first;
+}
+
+/**
+ * Deterministic stratified selection for large repositories. Architecture
+ * contracts are retained first, then files are round-robined across component
+ * and language buckets. A large package or alphabetically early tree can no
+ * longer starve the rest of a polyglot monorepo.
+ */
+function balancedProjectFileSelection(
+  files: readonly string[],
+  limit: number,
+  projectRoot: string
+): string[] {
+  const unique = [...new Set(files)].sort((left, right) => left.localeCompare(right));
+  if (unique.length <= limit) return unique;
+
+  const selected = new Set<string>();
+  const mandatory = unique
+    .filter((file) => ARCHITECTURE_CONTROL_NAMES.has(path.basename(file)))
+    .sort(
+      (left, right) =>
+        toPosix(path.relative(projectRoot, left)).split('/').length -
+          toPosix(path.relative(projectRoot, right)).split('/').length || left.localeCompare(right)
+    );
+  for (const file of mandatory) {
+    if (selected.size >= limit) break;
+    selected.add(file);
+  }
+
+  const buckets = new Map<string, string[]>();
+  for (const file of unique) {
+    if (selected.has(file)) continue;
+    const bucket = `${projectComponentKey(file, projectRoot)}\0${sourceLanguage(file)}`;
+    const values = buckets.get(bucket) ?? [];
+    values.push(file);
+    buckets.set(bucket, values);
+  }
+  const orderedBuckets = [...buckets.entries()].sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  let offset = 0;
+  while (selected.size < limit) {
+    let added = false;
+    for (const [, values] of orderedBuckets) {
+      const file = values[offset];
+      if (!file) continue;
+      selected.add(file);
+      added = true;
+      if (selected.size >= limit) break;
+    }
+    if (!added) break;
+    offset += 1;
+  }
+  return [...selected].sort((left, right) => left.localeCompare(right));
+}
+
+function adaptiveGraphScanBudget(input: {
+  eligibleFiles: number;
+  deepOverride?: number;
+  semanticOverride?: number;
+  sourceOverride?: number;
+}): ProjectGraphScanBudget {
+  const eligible = Math.max(0, input.eligibleFiles);
+  const deepDefault = Math.min(25_000, Math.max(5_000, Math.ceil(eligible * 0.2)));
+  const deepFileBudget = Math.max(
+    100,
+    Math.min(input.deepOverride ?? deepDefault, Math.max(eligible, 100), 100_000)
+  );
+  const semanticDefault = Math.min(
+    100_000,
+    Math.max(25_000, deepFileBudget * 4, Math.ceil(eligible * 0.6))
+  );
+  const semanticFileBudget = Math.max(
+    deepFileBudget,
+    Math.min(input.semanticOverride ?? semanticDefault, Math.max(eligible, deepFileBudget), 250_000)
+  );
+  const sourceDefault = Math.min(
+    20_000,
+    Math.max(2_000, Math.ceil(Math.min(eligible, deepFileBudget) * 0.25))
+  );
+  const sourceExtractionFileBudget = Math.max(
+    100,
+    Math.min(input.sourceOverride ?? sourceDefault, deepFileBudget, 50_000)
+  );
+  return { semanticFileBudget, deepFileBudget, sourceExtractionFileBudget };
 }
 
 function captureSourceFindings(
@@ -686,6 +1085,71 @@ const ROUTE_PATTERNS = [
   },
 ] as const;
 
+const GO_ROUTE_PATTERNS = [
+  {
+    pattern: /@Router\s+([^\s]+)\s+\[(?:get|post|put|delete|patch|options|head)\]/i,
+    detail: 'swagger route',
+  },
+  {
+    pattern: /\b[A-Za-z_]\w*\.(?:GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s*\(\s*["']([^"']+)["']/,
+    detail: 'go router route',
+  },
+] as const;
+
+const RUST_ROUTE_PATTERNS = [
+  {
+    pattern:
+      /\.route\s*\(\s*["']([^"']+)["']\s*,\s*(?:routing::)?(?:get|post|put|delete|patch|options|head)\s*\(/i,
+    detail: 'rust router route',
+  },
+] as const;
+
+const DOTNET_ROUTE_PATTERNS = [
+  {
+    pattern: /\b[A-Za-z_]\w*\.Map(?:Get|Post|Put|Delete|Patch|Methods)\s*\(\s*["']([^"']+)["']/i,
+    detail: 'dotnet route',
+  },
+  {
+    pattern: /\b[A-Za-z_]\w*\.MapHealthChecks\s*\(\s*["']([^"']+)["']/i,
+    detail: 'dotnet health route',
+  },
+] as const;
+
+function routePatternsForFile(filePath: string) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === '.go') return [...ROUTE_PATTERNS, ...GO_ROUTE_PATTERNS];
+  if (extension === '.rs') return [...ROUTE_PATTERNS, ...RUST_ROUTE_PATTERNS];
+  if (extension === '.cs') return [...ROUTE_PATTERNS, ...DOTNET_ROUTE_PATTERNS];
+  return ROUTE_PATTERNS;
+}
+
+function inferHttpMethod(routeLine: string, detail: string): string {
+  if (detail === 'swagger route') {
+    return (
+      routeLine.match(/\[(get|post|put|delete|patch|options|head)\]/i)?.[1]?.toUpperCase() ?? 'HTTP'
+    );
+  }
+  if (detail === 'rust router route') {
+    return (
+      routeLine
+        .match(/,\s*(?:routing::)?(get|post|put|delete|patch|options|head)\s*\(/i)?.[1]
+        ?.toUpperCase() ?? 'HTTP'
+    );
+  }
+  if (detail === 'dotnet health route') return 'GET';
+  if (detail === 'dotnet route') {
+    return (
+      routeLine.match(/\.Map(Get|Post|Put|Delete|Patch|Methods)\s*\(/i)?.[1]?.toUpperCase() ??
+      'HTTP'
+    );
+  }
+  return (
+    routeLine
+      .match(/(?:@|\.|\[|^\s*)(get|post|put|delete|patch|options|head)/i)?.[1]
+      ?.toUpperCase() ?? 'HTTP'
+  );
+}
+
 function hash(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -757,9 +1221,20 @@ function portableAttributes(
   );
 }
 
-async function listFiles(root: string, maxFiles: number): Promise<string[]> {
+async function listFiles(
+  root: string,
+  maxFiles: number,
+  excludedRoots: readonly string[] = []
+): Promise<string[]> {
   const files: string[] = [];
   const queue = [root];
+  const normalizedExcludedRoots = excludedRoots.map((candidate) => path.resolve(candidate));
+  const isExcluded = (candidate: string): boolean => {
+    const absolute = path.resolve(candidate);
+    return normalizedExcludedRoots.some(
+      (excluded) => absolute === excluded || absolute.startsWith(`${excluded}${path.sep}`)
+    );
+  };
   let head = 0;
   while (head < queue.length && files.length < maxFiles) {
     const current = queue[head++];
@@ -774,6 +1249,7 @@ async function listFiles(root: string, maxFiles: number): Promise<string[]> {
       if (files.length >= maxFiles) break;
       if (entry.isSymbolicLink()) continue;
       const candidate = path.join(current, entry.name);
+      if (isExcluded(candidate)) continue;
       if (entry.isDirectory()) {
         if (
           !IGNORED_DIRECTORIES.has(entry.name) &&
@@ -782,7 +1258,7 @@ async function listFiles(root: string, maxFiles: number): Promise<string[]> {
           queue.push(candidate);
         }
       } else if (entry.isFile()) {
-        files.push(candidate);
+        if (!isManagedArchitectureProjection(root, candidate)) files.push(candidate);
       }
     }
   }
@@ -798,6 +1274,9 @@ type KnowledgeGraphFingerprintProject = {
 type KnowledgeGraphFingerprintInventories = {
   workspaceFiles?: readonly string[];
   projectFiles?: ReadonlyMap<string, readonly string[]>;
+  workspaceInventory?: ProjectFileInventory;
+  projectInventories?: ReadonlyMap<string, ProjectFileInventory>;
+  scanBudgetsByProject?: ReadonlyMap<string, ProjectGraphScanBudget>;
 };
 
 async function contentHash(filePath: string): Promise<string> {
@@ -830,7 +1309,140 @@ function gitInventoryPathspecs(): string[] {
     ...[...IGNORED_DIRECTORIES]
       .sort((left, right) => left.localeCompare(right))
       .map((directory) => `:(exclude,glob)**/${directory}/**`),
+    ...[...GENERATED_AGENT_PROJECTION_BASENAMES]
+      .sort((left, right) => left.localeCompare(right))
+      .map((file) => `:(exclude,glob)**/${file}`),
+    ...[...WORKSPAI_OPERATIONAL_PROJECTION_BASENAMES]
+      .sort((left, right) => left.localeCompare(right))
+      .map((file) => `:(exclude,glob)**/${file}`),
+    ':(exclude,glob)**/.agents/skills/workspai-*/**',
+    ':(exclude,glob)**/.amazonq/rules/workspai-*.md',
+    ':(exclude,glob)**/.claude/rules/workspai-*.md',
+    ':(exclude,glob)**/.claude/rules/rapidkit-*.md',
+    ':(exclude,glob)**/.claude/skills/workspai-*/**',
+    ':(exclude,glob)**/.cursor/rules/workspai-*.*',
+    ':(exclude,glob)**/.cursor/rules/rapidkit-*.*',
+    ':(exclude,glob)**/.cursor/skills/workspai-*/**',
+    ':(exclude,glob)**/.grok/rules/workspai-*.md',
+    ':(exclude,glob)**/.grok/skills/workspai-*/**',
+    ':(exclude,glob)**/.github/agents/workspai-*.agent.md',
+    ':(exclude,glob)**/.github/copilot-instructions.md',
+    ':(exclude,glob)**/.github/instructions/workspai-*.md',
+    ':(exclude,glob)**/.github/instructions/rapidkit-*.md',
+    ':(exclude,glob)**/.github/prompts/workspai-*.md',
+    ':(exclude,glob)**/.github/prompts/rapidkit-*.md',
+    ':(exclude,glob)**/.github/skills/workspai-*/**',
+    ':(exclude,glob)**/.github/skills/rapidkit-*/**',
+    ':(exclude,glob)**/.windsurf/rules/workspai-*.md',
+    ':(exclude,glob)**/.windsurfrules',
+    ':(exclude,glob)**/.vscode/workspai-agent-hooks.json',
+    ':(exclude,glob)**/.vscode/rapidkit-agent-hooks.json',
   ];
+}
+
+function parseNullSeparatedPaths(buffer: Buffer): string[] {
+  return buffer
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean)
+    .map((value) => value.replace(/\\/gu, '/'));
+}
+
+async function gitProjectFileInventory(
+  root: string,
+  fileLimit: number,
+  excludedRoots: readonly string[] = []
+): Promise<ProjectFileInventory | null> {
+  try {
+    await gitOutput(root, ['rev-parse', '--show-toplevel']);
+    const pathspecs = gitInventoryPathspecs();
+    const [staged, deleted, untracked] = await Promise.all([
+      gitOutput(root, ['ls-files', '--stage', '-z', '--', ...pathspecs]),
+      gitOutput(root, ['ls-files', '--deleted', '-z', '--', ...pathspecs]),
+      gitOutput(root, ['ls-files', '--others', '--exclude-standard', '-z', '--', ...pathspecs]),
+    ]);
+    const deletedPaths = new Set(parseNullSeparatedPaths(deleted));
+    const trackedPaths = staged
+      .toString('utf8')
+      .split('\0')
+      .filter(Boolean)
+      .flatMap((entry) => {
+        const match = entry.match(/^(\d{6}) [0-9a-f]+ \d\t([\s\S]+)$/u);
+        if (!match) return [];
+        const [, mode, rawPath] = match;
+        const relative = rawPath.replace(/\\/gu, '/');
+        if (mode === '120000' || mode === '160000' || deletedPaths.has(relative)) return [];
+        return [relative];
+      });
+    // The index mode alone is insufficient: a tracked regular file can be
+    // replaced by an unstaged symlink. Validate the live worktree object so no
+    // graph provider can follow a path outside the adopted project boundary.
+    const safeWorktreePaths = await mapWithConcurrency(
+      [...new Set([...trackedPaths, ...parseNullSeparatedPaths(untracked)])],
+      64,
+      async (relative) => {
+        const normalizedRelative = path.normalize(relative);
+        if (
+          path.isAbsolute(normalizedRelative) ||
+          normalizedRelative === '..' ||
+          normalizedRelative.startsWith(`..${path.sep}`)
+        )
+          return null;
+        const candidate = path.resolve(root, normalizedRelative);
+        try {
+          const stats = await fsExtra.lstat(candidate);
+          return stats.isFile() && !stats.isSymbolicLink() ? relative : null;
+        } catch {
+          return null;
+        }
+      }
+    );
+    const verifiedPaths = safeWorktreePaths.filter(
+      (relative): relative is string => relative !== null
+    );
+    const allFiles = verifiedPaths
+      .map((relative) => path.resolve(root, ...relative.split('/').filter(Boolean)))
+      .filter((candidate) => !isManagedArchitectureProjection(root, candidate))
+      .filter(
+        (candidate) =>
+          !excludedRoots.some(
+            (excludedRoot) =>
+              candidate === path.resolve(excludedRoot) ||
+              candidate.startsWith(`${path.resolve(excludedRoot)}${path.sep}`)
+          )
+      )
+      .sort((left, right) => left.localeCompare(right));
+    const truncated = allFiles.length > fileLimit;
+    return {
+      files: truncated ? balancedProjectFileSelection(allFiles, fileLimit, root) : allFiles,
+      eligibleFileCount: allFiles.length,
+      eligibleFileCountExact: true,
+      truncated,
+      fileLimit,
+      strategy: 'git-index-worktree-v1',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function projectFileInventory(
+  root: string,
+  fileLimit: number,
+  excludedRoots: readonly string[] = []
+): Promise<ProjectFileInventory> {
+  const gitInventory = await gitProjectFileInventory(root, fileLimit, excludedRoots);
+  if (gitInventory) return gitInventory;
+  const observed = await listFiles(root, fileLimit + 1, excludedRoots);
+  const truncated = observed.length > fileLimit;
+  return {
+    files: truncated ? balancedProjectFileSelection(observed, fileLimit, root) : observed,
+    eligibleFileCount: observed.length,
+    eligibleFileCountExact: !truncated,
+    truncated,
+    fileLimit,
+    strategy: 'filesystem-bfs-v1',
+  };
 }
 
 async function gitFingerprintScope(input: {
@@ -963,6 +1575,119 @@ async function gitFingerprintScope(input: {
   }
 }
 
+async function persistedGitFingerprintMatches(input: {
+  kind: 'workspace' | 'project';
+  id: string;
+  root: string;
+  fileLimit: number;
+  expectedHash: string;
+  excludedRoots?: readonly string[];
+}): Promise<boolean | null> {
+  try {
+    const rawScopePrefix = (await gitOutput(input.root, ['rev-parse', '--show-prefix']))
+      .toString('utf8')
+      .trim()
+      .replace(/\\/gu, '/');
+    const scopePrefix = rawScopePrefix ? `${rawScopePrefix.replace(/^\/+|\/+$/gu, '')}/` : '';
+    if (
+      path.posix.isAbsolute(scopePrefix) ||
+      scopePrefix === '../' ||
+      scopePrefix.startsWith('../') ||
+      scopePrefix.includes('/../')
+    ) {
+      return null;
+    }
+
+    const pathspecs = gitInventoryPathspecs();
+    const [tree, diff, untracked, flags] = await Promise.all([
+      gitOutput(input.root, ['ls-files', '--full-name', '-s', '--', ...pathspecs]),
+      gitOutput(input.root, [
+        'diff',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--binary',
+        'HEAD',
+        '--',
+        ...pathspecs,
+      ]),
+      gitOutput(input.root, [
+        'ls-files',
+        '--full-name',
+        '--others',
+        '--exclude-standard',
+        '-z',
+        '--',
+        ...pathspecs,
+      ]),
+      gitOutput(input.root, ['ls-files', '-v', '--', ...pathspecs]),
+    ]);
+    if (
+      flags
+        .toString('utf8')
+        .split(/\r?\n/u)
+        .some((line) => /^[a-z] /u.test(line))
+    ) {
+      return null;
+    }
+
+    // A compatible persisted git-worktree-v2 scope already proves the tracked
+    // inventory. Recompute its exact digest from Git's content-addressed index
+    // and worktree diff, then hash only safe untracked regular files. This
+    // avoids lstat-ing every tracked file for each read-only graph query while
+    // preserving additions, deletions, mode changes, dirty content, and
+    // untracked-content invalidation.
+    const excludedRoots = (input.excludedRoots ?? []).map((root) => path.resolve(root));
+    const extras = (
+      await mapWithConcurrency(
+        [...new Set(parseNullSeparatedPaths(untracked))].sort((left, right) =>
+          left.localeCompare(right)
+        ),
+        16,
+        async (repositoryRelativePath) => {
+          if (scopePrefix && !repositoryRelativePath.startsWith(scopePrefix)) return null;
+          const scopeRelativePath = scopePrefix
+            ? repositoryRelativePath.slice(scopePrefix.length)
+            : repositoryRelativePath;
+          const normalizedRelative = path.normalize(scopeRelativePath);
+          if (
+            !scopeRelativePath ||
+            path.isAbsolute(normalizedRelative) ||
+            normalizedRelative === '..' ||
+            normalizedRelative.startsWith(`..${path.sep}`)
+          ) {
+            return null;
+          }
+          const absolutePath = path.resolve(input.root, normalizedRelative);
+          if (
+            excludedRoots.some(
+              (root) => absolutePath === root || absolutePath.startsWith(`${root}${path.sep}`)
+            ) ||
+            isManagedArchitectureProjection(input.root, absolutePath)
+          ) {
+            return null;
+          }
+          try {
+            const stats = await fsExtra.lstat(absolutePath);
+            if (!stats.isFile() || stats.isSymbolicLink()) return null;
+          } catch {
+            return null;
+          }
+          return { path: scopeRelativePath, hash: await contentHash(absolutePath) };
+        }
+      )
+    ).filter((entry): entry is { path: string; hash: string } => entry !== null);
+
+    const digest = createHash('sha256');
+    digest.update(`git-worktree-v2\0${input.kind}\0${input.id}\0${input.fileLimit}\0`);
+    digest.update(tree);
+    digest.update(createHash('sha256').update(diff).digest());
+    for (const entry of extras) digest.update(`${entry.path}\0${entry.hash}\0`);
+    return digest.digest('hex') === input.expectedHash;
+  } catch {
+    return null;
+  }
+}
+
 async function mapWithConcurrency<T, R>(
   values: readonly T[],
   concurrency: number,
@@ -989,10 +1714,27 @@ async function fingerprintScope(input: {
   root: string;
   files: readonly string[];
   fileLimit: number;
+  eligibleFileCount?: number;
+  eligibleFileCountExact?: boolean;
+  inventoryStrategy?: ProjectFileInventory['strategy'];
+  selection?: WorkspaceKnowledgeGraphInputFingerprint['scopes'][number]['selection'];
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint['scopes'][number]> {
-  const gitFingerprint = await gitFingerprintScope(input);
-  if (gitFingerprint) return gitFingerprint;
-  const entries = await mapWithConcurrency(input.files, 16, async (filePath) => ({
+  const inventory = [...new Set(input.files)].sort((left, right) => left.localeCompare(right));
+  const eligibleFileCount = input.eligibleFileCount ?? inventory.length;
+  const truncated = eligibleFileCount > input.fileLimit || inventory.length > input.fileLimit;
+  const boundedFiles = inventory.slice(0, input.fileLimit);
+  const gitFingerprint = await gitFingerprintScope({ ...input, files: boundedFiles });
+  const inventoryMetadata = {
+    eligibleFileCount,
+    eligibleFileCountExact: input.eligibleFileCountExact ?? !truncated,
+    inventoryMode: truncated ? ('emergency-bounded' as const) : ('complete' as const),
+    ...(input.inventoryStrategy ? { inventoryStrategy: input.inventoryStrategy } : {}),
+    ...(input.selection ? { selection: input.selection } : {}),
+  };
+  if (gitFingerprint) {
+    return { ...gitFingerprint, fileCount: boundedFiles.length, truncated, ...inventoryMetadata };
+  }
+  const entries = await mapWithConcurrency(boundedFiles, 16, async (filePath) => ({
     path: toPosix(path.relative(input.root, filePath)),
     hash: await contentHash(filePath),
   }));
@@ -1007,14 +1749,16 @@ async function fingerprintScope(input: {
     hash: hash.digest('hex'),
     fileCount: entries.length,
     fileLimit: input.fileLimit,
-    truncated: entries.length >= input.fileLimit,
+    truncated,
+    ...inventoryMetadata,
   };
 }
 
 /**
- * Hash the exact bounded file inventories consumed by integrated graph
- * providers. Paths are scoped and portable; file contents, additions,
- * deletions and renames all change the resulting Merkle-style digest.
+ * Hash the complete eligible file inventories consumed by integrated graph
+ * providers. Only the explicit emergency bound may truncate a scope. Paths
+ * are scoped and portable; contents, additions, deletions and renames all
+ * change the resulting Merkle-style digest.
  */
 export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
   workspacePath: string;
@@ -1025,40 +1769,105 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint> {
   const workspacePath = path.resolve(input.workspacePath);
   const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
-  const workspaceFiles =
-    input.inventories?.workspaceFiles ?? (await listFiles(workspacePath, input.workspaceFileLimit));
+  const projectRoots = projects.map((project) =>
+    project.absolutePath
+      ? path.resolve(project.absolutePath)
+      : path.resolve(workspacePath, project.path)
+  );
+  const workspaceInventory =
+    input.inventories?.workspaceInventory ??
+    (input.inventories?.workspaceFiles
+      ? {
+          files: [...input.inventories.workspaceFiles],
+          eligibleFileCount: input.inventories.workspaceFiles.length,
+          eligibleFileCountExact:
+            input.inventories.workspaceFiles.length <= input.workspaceFileLimit,
+          truncated: input.inventories.workspaceFiles.length > input.workspaceFileLimit,
+          fileLimit: input.workspaceFileLimit,
+          strategy: 'filesystem-bfs-v1' as const,
+        }
+      : await projectFileInventory(workspacePath, input.workspaceFileLimit, projectRoots));
+  const scopedWorkspaceFiles = workspaceInventory.files.filter(
+    (file) => !projectRoots.some((root) => file === root || file.startsWith(`${root}${path.sep}`))
+  );
+  const scopedWorkspaceInventory: ProjectFileInventory = {
+    ...workspaceInventory,
+    files: scopedWorkspaceFiles,
+    eligibleFileCount:
+      workspaceInventory.eligibleFileCountExact && !workspaceInventory.truncated
+        ? scopedWorkspaceFiles.length
+        : workspaceInventory.eligibleFileCount,
+  };
   const scopes = await Promise.all([
     fingerprintScope({
       kind: 'workspace',
       id: 'workspace',
       root: workspacePath,
-      files: workspaceFiles,
+      files: scopedWorkspaceInventory.files,
       fileLimit: input.workspaceFileLimit,
+      eligibleFileCount: scopedWorkspaceInventory.eligibleFileCount,
+      eligibleFileCountExact: scopedWorkspaceInventory.eligibleFileCountExact,
+      inventoryStrategy: scopedWorkspaceInventory.strategy,
     }),
     ...projects.map(async (project) => {
       const root = project.absolutePath
         ? path.resolve(project.absolutePath)
         : path.resolve(workspacePath, project.path);
-      const files =
-        input.inventories?.projectFiles?.get(project.id) ??
-        (await listFiles(root, input.projectFileLimit));
+      const providedFiles = input.inventories?.projectFiles?.get(project.id);
+      const inventory =
+        input.inventories?.projectInventories?.get(project.id) ??
+        (providedFiles
+          ? {
+              files: [...providedFiles],
+              eligibleFileCount: providedFiles.length,
+              eligibleFileCountExact: providedFiles.length <= input.projectFileLimit,
+              truncated: providedFiles.length > input.projectFileLimit,
+              fileLimit: input.projectFileLimit,
+              strategy: 'filesystem-bfs-v1' as const,
+            }
+          : await projectFileInventory(root, input.projectFileLimit));
+      const budget = input.inventories?.scanBudgetsByProject?.get(project.id);
       return fingerprintScope({
         kind: 'project',
         id: project.id,
         root,
-        files,
+        files: inventory.files,
         fileLimit: input.projectFileLimit,
+        eligibleFileCount: inventory.eligibleFileCount,
+        eligibleFileCountExact: inventory.eligibleFileCountExact,
+        inventoryStrategy: inventory.strategy,
+        ...(budget
+          ? {
+              selection: {
+                strategy: 'component-language-round-robin-v1' as const,
+                semanticFileCount: Math.min(inventory.files.length, budget.semanticFileBudget),
+                semanticFileBudget: budget.semanticFileBudget,
+                deepFileCount: Math.min(inventory.files.length, budget.deepFileBudget),
+                deepFileBudget: budget.deepFileBudget,
+                sourceExtractionFileBudget: budget.sourceExtractionFileBudget,
+              },
+            }
+          : {}),
       });
     }),
   ]);
   scopes.sort(
     (left, right) => left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id)
   );
+  return workspaceKnowledgeGraphInputAggregate(scopes);
+}
+
+function workspaceKnowledgeGraphInputAggregate(
+  inputScopes: readonly WorkspaceKnowledgeGraphInputFingerprint['scopes'][number][]
+): WorkspaceKnowledgeGraphInputFingerprint {
+  const scopes = [...inputScopes].sort(
+    (left, right) => left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id)
+  );
   const hash = createHash('sha256');
   hash.update('workspace-knowledge-graph-inputs.v1\0hybrid-git-content-v2\0');
   for (const scope of scopes) {
     hash.update(
-      `${scope.kind}\0${scope.id}\0${scope.hash}\0${scope.fileCount}\0${scope.fileLimit}\0${scope.truncated}\0`
+      `${scope.kind}\0${scope.id}\0${scope.hash}\0${scope.fileCount}\0${scope.fileLimit}\0${scope.truncated}\0${scope.eligibleFileCount ?? scope.fileCount}\0${scope.eligibleFileCountExact ?? !scope.truncated}\0${scope.inventoryMode ?? (scope.truncated ? 'emergency-bounded' : 'complete')}\0${scope.inventoryStrategy ?? 'unknown'}\0${scope.selection ? hashCanonicalJson(scope.selection) : ''}\0`
     );
   }
   return {
@@ -1068,6 +1877,105 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
     hash: hash.digest('hex'),
     scopes,
   };
+}
+
+/**
+ * Verify a persisted graph fingerprint against live inputs. Git-backed scopes
+ * use the exact git-worktree-v2 digest without walking every tracked file;
+ * scopes that cannot prove that fast path fall back to the complete inventory.
+ */
+export async function workspaceKnowledgeGraphInputsMatchLiveState(input: {
+  workspacePath: string;
+  projects: readonly KnowledgeGraphFingerprintProject[];
+  expected: WorkspaceKnowledgeGraphInputFingerprint;
+}): Promise<boolean> {
+  if (workspaceKnowledgeGraphInputAggregate(input.expected.scopes).hash !== input.expected.hash) {
+    return false;
+  }
+  const workspacePath = path.resolve(input.workspacePath);
+  const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
+  const projectRoots = projects.map((project) =>
+    project.absolutePath
+      ? path.resolve(project.absolutePath)
+      : path.resolve(workspacePath, project.path)
+  );
+  const projectById = new Map(projects.map((project) => [project.id, project] as const));
+
+  for (const expectedScope of input.expected.scopes) {
+    const project =
+      expectedScope.kind === 'project' ? projectById.get(expectedScope.id) : undefined;
+    if (expectedScope.kind === 'project' && !project) return false;
+    const root = project
+      ? project.absolutePath
+        ? path.resolve(project.absolutePath)
+        : path.resolve(workspacePath, project.path)
+      : workspacePath;
+
+    if (expectedScope.strategy === 'git-worktree-v2') {
+      const fastMatch = await persistedGitFingerprintMatches({
+        kind: expectedScope.kind,
+        id: expectedScope.id,
+        root,
+        fileLimit: expectedScope.fileLimit,
+        expectedHash: expectedScope.hash,
+        ...(expectedScope.kind === 'workspace' ? { excludedRoots: projectRoots } : {}),
+      });
+      if (fastMatch !== null) {
+        if (!fastMatch) return false;
+        continue;
+      }
+    }
+
+    const rawInventory = await projectFileInventory(
+      root,
+      expectedScope.fileLimit,
+      expectedScope.kind === 'workspace' ? projectRoots : []
+    );
+    const files =
+      expectedScope.kind === 'workspace'
+        ? rawInventory.files.filter(
+            (file) =>
+              !projectRoots.some(
+                (projectRoot) =>
+                  file === projectRoot || file.startsWith(`${projectRoot}${path.sep}`)
+              )
+          )
+        : rawInventory.files;
+    const inventory: ProjectFileInventory = {
+      ...rawInventory,
+      files,
+      eligibleFileCount:
+        rawInventory.eligibleFileCountExact && !rawInventory.truncated
+          ? files.length
+          : rawInventory.eligibleFileCount,
+    };
+    const selection = expectedScope.selection
+      ? {
+          strategy: 'component-language-round-robin-v1' as const,
+          semanticFileCount: Math.min(
+            inventory.files.length,
+            expectedScope.selection.semanticFileBudget
+          ),
+          semanticFileBudget: expectedScope.selection.semanticFileBudget,
+          deepFileCount: Math.min(inventory.files.length, expectedScope.selection.deepFileBudget),
+          deepFileBudget: expectedScope.selection.deepFileBudget,
+          sourceExtractionFileBudget: expectedScope.selection.sourceExtractionFileBudget,
+        }
+      : undefined;
+    const actualScope = await fingerprintScope({
+      kind: expectedScope.kind,
+      id: expectedScope.id,
+      root,
+      files: inventory.files,
+      fileLimit: expectedScope.fileLimit,
+      eligibleFileCount: inventory.eligibleFileCount,
+      eligibleFileCountExact: inventory.eligibleFileCountExact,
+      inventoryStrategy: inventory.strategy,
+      ...(selection ? { selection } : {}),
+    });
+    if (hashCanonicalJson(actualScope) !== hashCanonicalJson(expectedScope)) return false;
+  }
+  return true;
 }
 
 async function readStructuredDocuments(filePath: string): Promise<JsonRecord[]> {
@@ -1104,7 +2012,13 @@ function isInterfaceContractCandidate(file: string): boolean {
 
 function isInfrastructureCandidate(file: string): boolean {
   const base = path.basename(file);
-  return /^Dockerfile(?:\..+)?$/i.test(base) || /\.tf$/i.test(base) || base === 'Chart.yaml';
+  const normalized = toPosix(file);
+  const isDevelopmentContainer = /(?:^|\/)\.devcontainer(?:\/|$)/i.test(normalized);
+  return (
+    (!isDevelopmentContainer && /^Dockerfile(?:\..+)?$/i.test(base)) ||
+    /\.tf$/i.test(base) ||
+    base === 'Chart.yaml'
+  );
 }
 
 function isDocumentationCandidate(file: string): boolean {
@@ -1115,10 +2029,13 @@ function isCiWorkflowCandidate(root: string, file: string): boolean {
   const relative = toPosix(path.relative(root, file));
   return (
     /^\.github\/workflows\/.+\.ya?ml$/i.test(relative) ||
-    /^(?:\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|Jenkinsfile|bitbucket-pipelines\.ya?ml|\.woodpecker\.ya?ml)$/i.test(
+    /^(?:\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|Jenkinsfile|bitbucket-pipelines\.ya?ml|\.woodpecker\.ya?ml|\.drone\.ya?ml|\.travis\.ya?ml|appveyor\.ya?ml)$/i.test(
       relative
     ) ||
-    /^\.circleci\/config\.ya?ml$/i.test(relative)
+    /^\.circleci\/config\.ya?ml$/i.test(relative) ||
+    /^\.buildkite\/pipeline\.ya?ml$/i.test(relative) ||
+    /^\.tekton\/.+\.ya?ml$/i.test(relative) ||
+    /^prow\/[^/]+\.(?:sh|py)$/i.test(relative)
   );
 }
 
@@ -1143,6 +2060,11 @@ async function composeCandidateFiles(context: ProviderContext): Promise<string[]
       if (await fsExtra.pathExists(candidate)) candidates.add(candidate);
     }
   }
+  for (const file of uniqueInventoryFiles(context)) {
+    if (/^(?:docker-)?compose(?:\.[a-z0-9_-]+)*\.ya?ml$/i.test(path.basename(file))) {
+      candidates.add(file);
+    }
+  }
   return [...candidates].sort((a, b) => a.localeCompare(b));
 }
 
@@ -1151,8 +2073,12 @@ async function ownershipCandidateFiles(context: ProviderContext): Promise<string
   const candidates = roots.flatMap((root) => [
     path.join(root, 'CODEOWNERS'),
     path.join(root, '.github', 'CODEOWNERS'),
+    path.join(root, '.gitlab', 'CODEOWNERS'),
     path.join(root, 'docs', 'CODEOWNERS'),
   ]);
+  for (const file of uniqueInventoryFiles(context)) {
+    if (path.basename(file) === 'OWNERS') candidates.push(file);
+  }
   const existing = await Promise.all(
     candidates.map(async (candidate) => ((await fsExtra.pathExists(candidate)) ? candidate : null))
   );
@@ -1300,6 +2226,7 @@ class KnowledgeGraphState {
     aliases?: string[];
     attributes?: Record<string, WorkspaceKnowledgeAttribute | undefined>;
     proofIds?: string[];
+    mergeArrayAttributes?: string[];
   }): string {
     const id = stableId(input.kind, input.key);
     const attributes = portableAttributes(input.attributes ?? {});
@@ -1323,6 +2250,14 @@ class KnowledgeGraphState {
         attribute in mergedAttributes &&
         JSON.stringify(mergedAttributes[attribute]) !== JSON.stringify(value)
       ) {
+        if (
+          input.mergeArrayAttributes?.includes(attribute) &&
+          Array.isArray(mergedAttributes[attribute]) &&
+          Array.isArray(value)
+        ) {
+          mergedAttributes[attribute] = value;
+          continue;
+        }
         const conflictKey = `${id}\0${attribute}`;
         if (!this.attributeConflicts.has(conflictKey)) {
           this.attributeConflicts.add(conflictKey);
@@ -1458,9 +2393,73 @@ function cargoDependencyName(dependency: string): string {
   );
 }
 
+type CargoWorkspacePackageDefaults = {
+  edition?: string;
+  rustVersion?: string;
+  version?: string;
+};
+
+function cargoWorkspacePackageDefaults(contents: string): CargoWorkspacePackageDefaults {
+  const workspacePackage = tomlTableSections(contents).find(
+    ({ name }) => name === 'workspace.package'
+  )?.body;
+  if (!workspacePackage) return {};
+  const value = (key: string): string | undefined => {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return workspacePackage.match(
+      new RegExp(`^\\s*${escapedKey}\\s*=\\s*["']([^"']+)["']`, 'm')
+    )?.[1];
+  };
+  return {
+    edition: value('edition'),
+    rustVersion: value('rust-version'),
+    version: value('version'),
+  };
+}
+
+function cargoPackageValue(
+  contents: string,
+  key: string,
+  workspaceDefault: string | undefined
+): string | undefined {
+  const packageBody = tomlTableSections(contents).find(({ name }) => name === 'package')?.body;
+  if (!packageBody) return workspaceDefault;
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const explicit = packageBody.match(
+    new RegExp(`^\\s*${escapedKey}\\s*=\\s*["']([^"']+)["']`, 'm')
+  )?.[1];
+  if (explicit) return explicit;
+  const inheritsWorkspace = new RegExp(
+    `^\\s*${escapedKey}(?:\\.workspace\\s*=\\s*true|\\s*=\\s*\\{[^}]*\\bworkspace\\s*=\\s*true[^}]*\\})`,
+    'm'
+  ).test(packageBody);
+  return inheritsWorkspace ? workspaceDefault : undefined;
+}
+
+function rustToolchainMetadata(contents: string): {
+  channel?: string;
+  profile?: string;
+  components: string[];
+  targets: string[];
+} {
+  const toolchain = tomlTableSections(contents).find(({ name }) => name === 'toolchain')?.body;
+  if (!toolchain) return { components: [], targets: [] };
+  const value = (key: string): string | undefined => {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return toolchain.match(new RegExp(`^\\s*${escapedKey}\\s*=\\s*["']([^"']+)["']`, 'm'))?.[1];
+  };
+  return {
+    channel: value('channel'),
+    profile: value('profile'),
+    components: extractTomlArrayAssignment(toolchain, 'components').sort(),
+    targets: extractTomlArrayAssignment(toolchain, 'targets').sort(),
+  };
+}
+
 function parseManifestMetadata(
   filePath: string,
-  contents: string
+  contents: string,
+  cargoWorkspaceDefaults: CargoWorkspacePackageDefaults = {}
 ): {
   ecosystem: string;
   name?: string;
@@ -1576,8 +2575,8 @@ function parseManifestMetadata(
       .join('\n');
     return {
       ecosystem: 'cargo',
-      name: first(/^name\s*=\s*["']([^"']+)["']/m),
-      version: first(/^version\s*=\s*["']([^"']+)["']/m),
+      name: cargoPackageValue(contents, 'name', undefined),
+      version: cargoPackageValue(contents, 'version', cargoWorkspaceDefaults.version),
       dependencies: [
         ...dependencyBlocks.matchAll(/^\s*(?:["']([^"']+)["']|([A-Za-z0-9_.-]+))\s*=/gm),
       ]
@@ -1586,8 +2585,11 @@ function parseManifestMetadata(
         .filter((dependency, index, values) => values.indexOf(dependency) === index)
         .sort(),
       metadata: {
-        edition: first(/^edition\s*=\s*["']([^"']+)["']/m) ?? 'unknown',
-        rustVersion: first(/^rust-version\s*=\s*["']([^"']+)["']/m) ?? 'unknown',
+        edition:
+          cargoPackageValue(contents, 'edition', cargoWorkspaceDefaults.edition) ?? 'unknown',
+        rustVersion:
+          cargoPackageValue(contents, 'rust-version', cargoWorkspaceDefaults.rustVersion) ??
+          'unknown',
         features:
           tomlTableSections(contents)
             .find(({ name: table }) => table === 'features')
@@ -1694,6 +2696,25 @@ function parseManifestMetadata(
   };
 }
 
+function parseGoWorkspaceMembers(contents: string): string[] {
+  const members = new Set<string>();
+  const add = (value: string): void => {
+    const member = value
+      .replace(/\/\/.*$/u, '')
+      .trim()
+      .replace(/^["']|["']$/gu, '')
+      .replace(/\\/gu, '/');
+    if (member && member !== '(' && member !== ')') members.add(member);
+  };
+  for (const block of contents.matchAll(/^\s*use\s*\(([\s\S]*?)^\s*\)/gmu)) {
+    for (const line of (block[1] ?? '').split(/\r?\n/u)) add(line);
+  }
+  for (const match of contents.matchAll(/^\s*use\s+([^\s(][^\r\n]*)$/gmu)) {
+    add(match[1] ?? '');
+  }
+  return [...members].sort((left, right) => left.localeCompare(right));
+}
+
 function normalizedPackageCoordinate(ecosystem: string, value: string): string {
   const normalized = ecosystem === 'cargo' ? cargoDependencyName(value) : value;
   return ecosystem === 'cargo'
@@ -1759,6 +2780,7 @@ function resolveLocalPackageDependencies(state: KnowledgeGraphState, projectId: 
 const foundationProvider: Provider = {
   id: 'workspace-foundation',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   async run(context) {
     const { state } = context;
     const workspaceProof = await state.addProof({
@@ -1800,15 +2822,7 @@ const foundationProvider: Provider = {
         label: project.id,
         projectId: project.id,
         aliases: [project.id, project.path],
-        attributes: {
-          path: project.path,
-          runtime: project.runtime,
-          runtimeCandidates: project.runtimeCandidates,
-          framework: project.framework,
-          kit: project.kit,
-          kind: project.kind,
-          category: project.category,
-        },
+        attributes: projectFoundationAttributes(project),
         proofIds: [projectProof],
       });
       state.addRelation({
@@ -1822,6 +2836,64 @@ const foundationProvider: Provider = {
 
       const envKeys = new Set<string>();
       const testFiles: string[] = [];
+      const goWorkspacePath = files.find(
+        (file) => path.resolve(file) === path.resolve(project.root, 'go.work')
+      );
+      let goWorkspace: { entityId: string; members: string[]; proofId: string } | undefined;
+      if (goWorkspacePath) {
+        try {
+          const contents = await fsExtra.readFile(goWorkspacePath, 'utf8');
+          const members = parseGoWorkspaceMembers(contents);
+          const artifact = state.artifactPath(goWorkspacePath, project);
+          const proofId = await state.addProof({
+            provider: this.id,
+            artifact,
+            absolutePath: goWorkspacePath,
+            pointer: '/use',
+            trust: 'authoritative',
+            derivation: 'authored',
+            confidence: 'high',
+            detail: `Go workspace with ${members.length} member(s)`,
+          });
+          const entityId = state.addEntity({
+            kind: 'module',
+            key: `go-workspace:${project.id}:${artifact}`,
+            label: `${project.id} Go workspace`,
+            projectId: project.id,
+            aliases: ['go.work'],
+            attributes: {
+              ecosystem: 'go',
+              manifest: artifact,
+              members,
+            },
+            proofIds: [proofId],
+          });
+          state.addRelation({
+            from: projectEntity,
+            to: entityId,
+            kind: 'contains',
+            trust: 'authoritative',
+            derivation: 'authored',
+            proofIds: [proofId],
+          });
+          goWorkspace = { entityId, members, proofId };
+        } catch {
+          // An unreadable go.work must not suppress package extraction.
+        }
+      }
+      let cargoDefaults: CargoWorkspacePackageDefaults = {};
+      const rootCargoManifest = files.find(
+        (file) => path.resolve(file) === path.resolve(project.root, 'Cargo.toml')
+      );
+      if (rootCargoManifest) {
+        try {
+          cargoDefaults = cargoWorkspacePackageDefaults(
+            await fsExtra.readFile(rootCargoManifest, 'utf8')
+          );
+        } catch {
+          // An unreadable root manifest must not suppress other package evidence.
+        }
+      }
       for (const file of files) {
         const base = path.basename(file);
         if (/^(?:\.env\.example|\.env\.sample|\.env\.template)$/i.test(base)) {
@@ -1846,7 +2918,7 @@ const foundationProvider: Provider = {
         if (!MANIFEST_NAMES.has(base) && !/\.(?:cs|fs|vb)proj$/i.test(base)) continue;
         try {
           const contents = await fsExtra.readFile(file, 'utf8');
-          const manifest = parseManifestMetadata(file, contents);
+          const manifest = parseManifestMetadata(file, contents, cargoDefaults);
           const manifestArtifact = state.artifactPath(file, project);
           const proof = await state.addProof({
             provider: this.id,
@@ -1902,6 +2974,30 @@ const foundationProvider: Provider = {
           }
         } catch {
           // Malformed manifests are reported by the dependency provider diagnostics.
+        }
+      }
+      if (goWorkspace) {
+        const packages = [...state.entities.values()].filter(
+          (entity) => entity.kind === 'package' && entity.projectId === project.id
+        );
+        for (const member of goWorkspace.members) {
+          const memberManifest = state.artifactPath(
+            path.join(project.root, member, 'go.mod'),
+            project
+          );
+          const memberPackage = packages.find(
+            (candidate) => candidate.attributes.manifest === memberManifest
+          );
+          if (!memberPackage) continue;
+          state.addRelation({
+            from: goWorkspace.entityId,
+            to: memberPackage.id,
+            kind: 'contains',
+            trust: 'authoritative',
+            derivation: 'authored',
+            confidence: 'high',
+            proofIds: [...new Set([goWorkspace.proofId, ...memberPackage.proofIds])],
+          });
         }
       }
       resolveLocalPackageDependencies(state, project.id);
@@ -1997,179 +3093,129 @@ function contributionCount(value: unknown): number {
 
 const vscodeExtensionManifestProvider: Provider = {
   id: 'vscode-extension-manifest',
-  version: '1.0.0',
+  version: '1.2.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     for (const project of context.projects) {
-      const manifestPath = path.join(project.root, 'package.json');
-      try {
-        const manifest = asRecord(await fsExtra.readJson(manifestPath));
-        if (stringValue(asRecord(manifest?.engines)?.vscode) || asRecord(manifest?.contributes)) {
-          return true;
+      const manifests = (context.filesByProject.get(project.id) ?? []).filter(
+        (file) => path.basename(file).toLowerCase() === 'package.json'
+      );
+      for (const manifestPath of manifests) {
+        try {
+          const manifest = asRecord(await fsExtra.readJson(manifestPath));
+          if (stringValue(asRecord(manifest?.engines)?.vscode) || asRecord(manifest?.contributes)) {
+            return true;
+          }
+        } catch {
+          // Missing or malformed manifests are not VS Code extension evidence.
         }
-      } catch {
-        // Missing or malformed root manifests are not VS Code extension evidence.
       }
     }
     return false;
   },
   async run(context) {
     for (const project of context.projects) {
-      const manifestPath = path.join(project.root, 'package.json');
-      let manifest: JsonRecord | null = null;
-      try {
-        manifest = asRecord(await fsExtra.readJson(manifestPath));
-      } catch {
-        continue;
-      }
-      const contributes = asRecord(manifest?.contributes);
-      const vscodeEngine = stringValue(asRecord(manifest?.engines)?.vscode);
-      if (!vscodeEngine && !contributes) continue;
+      const manifestPaths = (context.filesByProject.get(project.id) ?? [])
+        .filter((file) => path.basename(file).toLowerCase() === 'package.json')
+        .sort((left, right) => left.localeCompare(right));
+      for (const manifestPath of manifestPaths) {
+        let manifest: JsonRecord | null = null;
+        try {
+          manifest = asRecord(await fsExtra.readJson(manifestPath));
+        } catch {
+          continue;
+        }
+        const contributes = asRecord(manifest?.contributes);
+        const vscodeEngine = stringValue(asRecord(manifest?.engines)?.vscode);
+        if (!vscodeEngine && !contributes) continue;
 
-      const artifact = context.state.artifactPath(manifestPath, project);
-      const manifestProof = await context.state.addProof({
-        provider: this.id,
-        artifact,
-        absolutePath: manifestPath,
-        pointer: '/',
-        trust: 'authoritative',
-        derivation: 'authored',
-        confidence: 'high',
-        detail: `VS Code extension manifest for ${project.id}`,
-      });
-      const projectEntity = context.state.addEntity({
-        kind: 'project',
-        key: `project:${project.id}`,
-        label: project.id,
-        projectId: project.id,
-        attributes: {
-          vscodeExtension: true,
-          vscodeEngine,
-          extensionEntry: stringValue(manifest?.main) ?? stringValue(manifest?.browser),
-          extensionKind: stringArray(manifest?.extensionKind),
-          activationEvents: stringArray(manifest?.activationEvents),
-          contributionCounts: Object.entries(contributes ?? {})
-            .map(([name, value]) => `${name}:${contributionCount(value)}`)
-            .sort(),
-        },
-        proofIds: [manifestProof],
-      });
+        const manifestDirectory = path.dirname(manifestPath);
+        const isProjectManifest = path.resolve(manifestDirectory) === path.resolve(project.root);
+        const extensionPath = path
+          .relative(project.root, manifestDirectory)
+          .split(path.sep)
+          .join('/');
+        const extensionId =
+          stringValue(manifest?.name) ??
+          (extensionPath && extensionPath !== '.' ? extensionPath : project.id);
 
-      const commands = Array.isArray(contributes?.commands) ? contributes.commands : [];
-      const menus = asRecord(contributes?.menus);
-      const menuItems = Object.values(menus ?? {}).flatMap((value) =>
-        Array.isArray(value) ? value : []
-      );
-      const keybindings = Array.isArray(contributes?.keybindings) ? contributes.keybindings : [];
-      for (const [index, rawCommand] of commands.entries()) {
-        const command = asRecord(rawCommand);
-        const commandId = stringValue(command?.command);
-        if (!commandId) continue;
-        const pointer = `/contributes/commands/${index}`;
-        const proof = await context.state.addProof({
+        const artifact = context.state.artifactPath(manifestPath, project);
+        const manifestProof = await context.state.addProof({
           provider: this.id,
           artifact,
           absolutePath: manifestPath,
-          pointer,
+          pointer: '/',
           trust: 'authoritative',
           derivation: 'authored',
           confidence: 'high',
-          detail: `VS Code command ${commandId}`,
+          detail: `VS Code extension manifest for ${extensionId}`,
         });
-        const menuCount = menuItems.filter(
-          (item) => stringValue(asRecord(item)?.command) === commandId
-        ).length;
-        const keybindingCount = keybindings.filter(
-          (item) => stringValue(asRecord(item)?.command) === commandId
-        ).length;
-        const commandEntity = context.state.addEntity({
-          kind: 'api',
-          key: `vscode-command:${project.id}:${commandId}`,
-          label: commandId,
+        const projectEntity = context.state.addEntity({
+          kind: 'project',
+          key: `project:${project.id}`,
+          label: project.id,
           projectId: project.id,
-          aliases: [stringValue(command?.title), stringValue(command?.shortTitle)].filter(
-            (value): value is string => Boolean(value)
-          ),
-          attributes: {
-            surface: 'vscode-command',
-            title: stringValue(command?.title),
-            shortTitle: stringValue(command?.shortTitle),
-            category: stringValue(command?.category),
-            enablement: stringValue(command?.enablement),
-            icon: stringValue(command?.icon),
-            menuCount,
-            keybindingCount,
-            manifest: artifact,
-            pointer,
-          },
-          proofIds: [proof],
         });
-        context.state.addRelation({
-          from: projectEntity,
-          to: commandEntity,
-          kind: 'exposes',
-          trust: 'authoritative',
-          derivation: 'authored',
-          confidence: 'high',
-          proofIds: [proof],
-        });
-      }
-
-      const viewContainers = asRecord(contributes?.viewsContainers);
-      const containerEntities = new Map<string, string>();
-      for (const [location, rawContainers] of Object.entries(viewContainers ?? {})) {
-        if (!Array.isArray(rawContainers)) continue;
-        for (const [index, rawContainer] of rawContainers.entries()) {
-          const container = asRecord(rawContainer);
-          const containerId = stringValue(container?.id);
-          if (!containerId) continue;
-          const pointer = `/contributes/viewsContainers/${jsonPointerSegment(location)}/${index}`;
-          const proof = await context.state.addProof({
-            provider: this.id,
-            artifact,
-            absolutePath: manifestPath,
-            pointer,
-            trust: 'authoritative',
-            derivation: 'authored',
-            detail: `VS Code view container ${containerId}`,
-          });
-          const entity = context.state.addEntity({
-            kind: 'service',
-            key: `vscode-view-container:${project.id}:${containerId}`,
-            label: containerId,
-            projectId: project.id,
-            aliases: [stringValue(container?.title)].filter((value): value is string =>
-              Boolean(value)
-            ),
-            attributes: {
-              surface: 'vscode-view-container',
-              title: stringValue(container?.title),
-              location,
-              icon: stringValue(container?.icon),
-              manifest: artifact,
-              pointer,
-            },
-            proofIds: [proof],
-          });
-          containerEntities.set(containerId, entity);
+        const extensionEntity = isProjectManifest
+          ? context.state.addEntity({
+              kind: 'project',
+              key: `project:${project.id}`,
+              label: project.id,
+              projectId: project.id,
+              attributes: {
+                vscodeExtension: true,
+                vscodeEngine,
+                extensionEntry: stringValue(manifest?.main) ?? stringValue(manifest?.browser),
+                extensionKind: stringArray(manifest?.extensionKind),
+                activationEvents: stringArray(manifest?.activationEvents),
+                contributionCounts: Object.entries(contributes ?? {})
+                  .map(([name, value]) => `${name}:${contributionCount(value)}`)
+                  .sort(),
+              },
+              proofIds: [manifestProof],
+            })
+          : context.state.addEntity({
+              kind: 'package',
+              key: `vscode-extension:${project.id}:${extensionPath}`,
+              label: extensionId,
+              projectId: project.id,
+              attributes: {
+                surface: 'vscode-extension',
+                extensionPath,
+                manifest: artifact,
+                vscodeEngine,
+                extensionEntry: stringValue(manifest?.main) ?? stringValue(manifest?.browser),
+                extensionKind: stringArray(manifest?.extensionKind),
+                activationEvents: stringArray(manifest?.activationEvents),
+                contributionCounts: Object.entries(contributes ?? {})
+                  .map(([name, value]) => `${name}:${contributionCount(value)}`)
+                  .sort(),
+              },
+              proofIds: [manifestProof],
+            });
+        if (!isProjectManifest) {
           context.state.addRelation({
             from: projectEntity,
-            to: entity,
+            to: extensionEntity,
             kind: 'contains',
             trust: 'authoritative',
             derivation: 'authored',
-            proofIds: [proof],
+            confidence: 'high',
+            proofIds: [manifestProof],
           });
         }
-      }
 
-      const views = asRecord(contributes?.views);
-      for (const [containerId, rawViews] of Object.entries(views ?? {})) {
-        if (!Array.isArray(rawViews)) continue;
-        for (const [index, rawView] of rawViews.entries()) {
-          const view = asRecord(rawView);
-          const viewId = stringValue(view?.id);
-          if (!viewId) continue;
-          const pointer = `/contributes/views/${jsonPointerSegment(containerId)}/${index}`;
+        const commands = Array.isArray(contributes?.commands) ? contributes.commands : [];
+        const menus = asRecord(contributes?.menus);
+        const menuItems = Object.values(menus ?? {}).flatMap((value) =>
+          Array.isArray(value) ? value : []
+        );
+        const keybindings = Array.isArray(contributes?.keybindings) ? contributes.keybindings : [];
+        for (const [index, rawCommand] of commands.entries()) {
+          const command = asRecord(rawCommand);
+          const commandId = stringValue(command?.command);
+          if (!commandId) continue;
+          const pointer = `/contributes/commands/${index}`;
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
@@ -2177,52 +3223,204 @@ const vscodeExtensionManifestProvider: Provider = {
             pointer,
             trust: 'authoritative',
             derivation: 'authored',
-            detail: `VS Code view ${viewId}`,
+            confidence: 'high',
+            detail: `VS Code command ${commandId}`,
           });
-          const entity = context.state.addEntity({
-            kind: 'service',
-            key: `vscode-view:${project.id}:${viewId}`,
-            label: viewId,
+          const menuCount = menuItems.filter(
+            (item) => stringValue(asRecord(item)?.command) === commandId
+          ).length;
+          const keybindingCount = keybindings.filter(
+            (item) => stringValue(asRecord(item)?.command) === commandId
+          ).length;
+          const commandEntity = context.state.addEntity({
+            kind: 'api',
+            key: `vscode-command:${project.id}:${commandId}`,
+            label: commandId,
             projectId: project.id,
-            aliases: [stringValue(view?.name), stringValue(view?.contextualTitle)].filter(
+            aliases: [stringValue(command?.title), stringValue(command?.shortTitle)].filter(
               (value): value is string => Boolean(value)
             ),
             attributes: {
-              surface: view?.type === 'webview' ? 'vscode-webview' : 'vscode-view',
-              name: stringValue(view?.name),
-              contextualTitle: stringValue(view?.contextualTitle),
-              containerId,
-              viewType: stringValue(view?.type) ?? 'tree',
+              surface: 'vscode-command',
+              runtimeRegistrationRequired: false,
+              title: stringValue(command?.title),
+              shortTitle: stringValue(command?.shortTitle),
+              category: stringValue(command?.category),
+              enablement: stringValue(command?.enablement),
+              icon: stringValue(command?.icon),
+              menuCount,
+              keybindingCount,
               manifest: artifact,
               pointer,
             },
             proofIds: [proof],
           });
           context.state.addRelation({
-            from: containerEntities.get(containerId) ?? projectEntity,
-            to: entity,
-            kind: 'contains',
+            from: extensionEntity,
+            to: commandEntity,
+            kind: 'exposes',
             trust: 'authoritative',
             derivation: 'authored',
+            confidence: 'high',
             proofIds: [proof],
           });
         }
-      }
 
-      const configurations = Array.isArray(contributes?.configuration)
-        ? contributes.configuration
-        : contributes?.configuration
-          ? [contributes.configuration]
+        const viewContainers = asRecord(contributes?.viewsContainers);
+        const containerEntities = new Map<string, string>();
+        for (const [location, rawContainers] of Object.entries(viewContainers ?? {})) {
+          if (!Array.isArray(rawContainers)) continue;
+          for (const [index, rawContainer] of rawContainers.entries()) {
+            const container = asRecord(rawContainer);
+            const containerId = stringValue(container?.id);
+            if (!containerId) continue;
+            const pointer = `/contributes/viewsContainers/${jsonPointerSegment(location)}/${index}`;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath: manifestPath,
+              pointer,
+              trust: 'authoritative',
+              derivation: 'authored',
+              detail: `VS Code view container ${containerId}`,
+            });
+            const entity = context.state.addEntity({
+              kind: 'service',
+              key: `vscode-view-container:${project.id}:${containerId}`,
+              label: containerId,
+              projectId: project.id,
+              aliases: [stringValue(container?.title)].filter((value): value is string =>
+                Boolean(value)
+              ),
+              attributes: {
+                surface: 'vscode-view-container',
+                title: stringValue(container?.title),
+                location,
+                icon: stringValue(container?.icon),
+                manifest: artifact,
+                pointer,
+              },
+              proofIds: [proof],
+            });
+            containerEntities.set(containerId, entity);
+            context.state.addRelation({
+              from: extensionEntity,
+              to: entity,
+              kind: 'contains',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+        }
+
+        const views = asRecord(contributes?.views);
+        for (const [containerId, rawViews] of Object.entries(views ?? {})) {
+          if (!Array.isArray(rawViews)) continue;
+          for (const [index, rawView] of rawViews.entries()) {
+            const view = asRecord(rawView);
+            const viewId = stringValue(view?.id);
+            if (!viewId) continue;
+            const pointer = `/contributes/views/${jsonPointerSegment(containerId)}/${index}`;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath: manifestPath,
+              pointer,
+              trust: 'authoritative',
+              derivation: 'authored',
+              detail: `VS Code view ${viewId}`,
+            });
+            const entity = context.state.addEntity({
+              kind: 'service',
+              key: `vscode-view:${project.id}:${viewId}`,
+              label: viewId,
+              projectId: project.id,
+              aliases: [stringValue(view?.name), stringValue(view?.contextualTitle)].filter(
+                (value): value is string => Boolean(value)
+              ),
+              attributes: {
+                surface: view?.type === 'webview' ? 'vscode-webview' : 'vscode-view',
+                name: stringValue(view?.name),
+                contextualTitle: stringValue(view?.contextualTitle),
+                containerId,
+                viewType: stringValue(view?.type) ?? 'tree',
+                manifest: artifact,
+                pointer,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: containerEntities.get(containerId) ?? extensionEntity,
+              to: entity,
+              kind: 'contains',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+        }
+
+        const configurations = Array.isArray(contributes?.configuration)
+          ? contributes.configuration
+          : contributes?.configuration
+            ? [contributes.configuration]
+            : [];
+        for (const [configurationIndex, rawConfiguration] of configurations.entries()) {
+          const configuration = asRecord(rawConfiguration);
+          const properties = asRecord(configuration?.properties);
+          for (const [setting, rawDefinition] of Object.entries(properties ?? {})) {
+            const definition = asRecord(rawDefinition);
+            const configurationPointer = Array.isArray(contributes?.configuration)
+              ? `/contributes/configuration/${configurationIndex}`
+              : '/contributes/configuration';
+            const pointer = `${configurationPointer}/properties/${jsonPointerSegment(setting)}`;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath: manifestPath,
+              pointer,
+              trust: 'authoritative',
+              derivation: 'authored',
+              detail: `VS Code configuration ${setting}`,
+            });
+            const entity = context.state.addEntity({
+              kind: 'schema',
+              key: `vscode-configuration:${project.id}:${setting}`,
+              label: setting,
+              projectId: project.id,
+              attributes: {
+                surface: 'vscode-configuration',
+                title: stringValue(configuration?.title),
+                type: stringValue(definition?.type),
+                scope: stringValue(definition?.scope),
+                description:
+                  stringValue(definition?.description) ??
+                  stringValue(definition?.markdownDescription),
+                manifest: artifact,
+                pointer,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: extensionEntity,
+              to: entity,
+              kind: 'configured-by',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+        }
+
+        const chatParticipants = Array.isArray(contributes?.chatParticipants)
+          ? contributes.chatParticipants
           : [];
-      for (const [configurationIndex, rawConfiguration] of configurations.entries()) {
-        const configuration = asRecord(rawConfiguration);
-        const properties = asRecord(configuration?.properties);
-        for (const [setting, rawDefinition] of Object.entries(properties ?? {})) {
-          const definition = asRecord(rawDefinition);
-          const configurationPointer = Array.isArray(contributes?.configuration)
-            ? `/contributes/configuration/${configurationIndex}`
-            : '/contributes/configuration';
-          const pointer = `${configurationPointer}/properties/${jsonPointerSegment(setting)}`;
+        for (const [index, rawParticipant] of chatParticipants.entries()) {
+          const participant = asRecord(rawParticipant);
+          const participantId = stringValue(participant?.id);
+          if (!participantId) continue;
+          const pointer = `/contributes/chatParticipants/${index}`;
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
@@ -2230,80 +3428,36 @@ const vscodeExtensionManifestProvider: Provider = {
             pointer,
             trust: 'authoritative',
             derivation: 'authored',
-            detail: `VS Code configuration ${setting}`,
+            detail: `VS Code chat participant ${participantId}`,
           });
           const entity = context.state.addEntity({
-            kind: 'schema',
-            key: `vscode-configuration:${project.id}:${setting}`,
-            label: setting,
+            kind: 'api',
+            key: `vscode-chat-participant:${project.id}:${participantId}`,
+            label: participantId,
             projectId: project.id,
+            aliases: [stringValue(participant?.name), stringValue(participant?.fullName)].filter(
+              (value): value is string => Boolean(value)
+            ),
             attributes: {
-              surface: 'vscode-configuration',
-              title: stringValue(configuration?.title),
-              type: stringValue(definition?.type),
-              scope: stringValue(definition?.scope),
-              description:
-                stringValue(definition?.description) ??
-                stringValue(definition?.markdownDescription),
+              surface: 'vscode-chat-participant',
+              runtimeRegistrationRequired: false,
+              name: stringValue(participant?.name),
+              fullName: stringValue(participant?.fullName),
+              description: stringValue(participant?.description),
               manifest: artifact,
               pointer,
             },
             proofIds: [proof],
           });
           context.state.addRelation({
-            from: projectEntity,
+            from: extensionEntity,
             to: entity,
-            kind: 'configured-by',
+            kind: 'exposes',
             trust: 'authoritative',
             derivation: 'authored',
             proofIds: [proof],
           });
         }
-      }
-
-      const chatParticipants = Array.isArray(contributes?.chatParticipants)
-        ? contributes.chatParticipants
-        : [];
-      for (const [index, rawParticipant] of chatParticipants.entries()) {
-        const participant = asRecord(rawParticipant);
-        const participantId = stringValue(participant?.id);
-        if (!participantId) continue;
-        const pointer = `/contributes/chatParticipants/${index}`;
-        const proof = await context.state.addProof({
-          provider: this.id,
-          artifact,
-          absolutePath: manifestPath,
-          pointer,
-          trust: 'authoritative',
-          derivation: 'authored',
-          detail: `VS Code chat participant ${participantId}`,
-        });
-        const entity = context.state.addEntity({
-          kind: 'api',
-          key: `vscode-chat-participant:${project.id}:${participantId}`,
-          label: participantId,
-          projectId: project.id,
-          aliases: [stringValue(participant?.name), stringValue(participant?.fullName)].filter(
-            (value): value is string => Boolean(value)
-          ),
-          attributes: {
-            surface: 'vscode-chat-participant',
-            name: stringValue(participant?.name),
-            fullName: stringValue(participant?.fullName),
-            description: stringValue(participant?.description),
-            manifest: artifact,
-            pointer,
-          },
-          proofIds: [proof],
-        });
-        context.state.addRelation({
-          from: projectEntity,
-          to: entity,
-          kind: 'exposes',
-          trust: 'authoritative',
-          derivation: 'authored',
-          proofIds: [proof],
-        });
       }
     }
   },
@@ -2331,7 +3485,8 @@ function parseTomlStringTable(contents: string, table: string): Array<[string, s
 
 const pythonProjectManifestProvider: Provider = {
   id: 'python-project-manifest',
-  version: '1.0.0',
+  version: '1.1.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     for (const project of context.projects) {
       const manifestPath = (context.filesByProject.get(project.id) ?? []).find(
@@ -2402,7 +3557,13 @@ const pythonProjectManifestProvider: Provider = {
           label: script,
           projectId: project.id,
           aliases: [entrypoint],
-          attributes: { surface: 'python-console-script', entrypoint, manifest: artifact, pointer },
+          attributes: {
+            surface: 'python-console-script',
+            runtimeRegistrationRequired: false,
+            entrypoint,
+            manifest: artifact,
+            pointer,
+          },
           proofIds: [proof],
         });
         context.state.addRelation({
@@ -2420,19 +3581,43 @@ const pythonProjectManifestProvider: Provider = {
 
 const sourceLanguageProvider: Provider = {
   id: 'source-language-inventory',
-  version: '1.0.0',
+  version: '1.2.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
-      (context.semanticFilesByProject.get(project.id) ?? []).some((file) =>
-        SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())
+      (context.filesByProject.get(project.id) ?? []).some((file) =>
+        LANGUAGE_INVENTORY_EXTENSIONS.has(path.extname(file).toLowerCase())
       )
     );
   },
   async run(context) {
     for (const project of context.projects) {
-      const inventory = context.semanticFilesByProject.get(project.id) ?? [];
+      const inventory = context.filesByProject.get(project.id) ?? [];
+      const inventoryState = context.inventoryByProject.get(project.id);
+      const rustToolchainPath = (context.filesByProject.get(project.id) ?? []).find((file) =>
+        /^rust-toolchain(?:\.toml)?$/i.test(path.basename(file))
+      );
+      let rustToolchain: ReturnType<typeof rustToolchainMetadata> | undefined;
+      let rustToolchainProof: string | undefined;
+      if (rustToolchainPath) {
+        try {
+          rustToolchain = rustToolchainMetadata(await fsExtra.readFile(rustToolchainPath, 'utf8'));
+          rustToolchainProof = await context.state.addProof({
+            provider: this.id,
+            artifact: context.state.artifactPath(rustToolchainPath, project),
+            absolutePath: rustToolchainPath,
+            pointer: '/toolchain',
+            derivation: 'authored',
+            trust: 'authoritative',
+            confidence: 'high',
+            detail: 'Rust toolchain contract',
+          });
+        } catch {
+          // Source-language inventory remains usable when the toolchain file is unreadable.
+        }
+      }
       const sourceFiles = inventory.filter((file) =>
-        SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase())
+        LANGUAGE_INVENTORY_EXTENSIONS.has(path.extname(file).toLowerCase())
       );
       const languages = new Map<
         string,
@@ -2495,6 +3680,8 @@ const sourceLanguageProvider: Provider = {
           ...(entry.examples.length > 0 ? ['example'] : []),
           ...(entry.generated.length > 0 ? ['generated'] : []),
         ];
+        const languageProofIds =
+          language === 'rust' && rustToolchainProof ? [...proofIds, rustToolchainProof] : proofIds;
         const languageEntity = context.state.addEntity({
           kind: 'language',
           key: `language:${project.id}:${language}`,
@@ -2516,9 +3703,17 @@ const sourceLanguageProvider: Provider = {
             exampleFileCount: entry.examples.length,
             generatedFileCount: entry.generated.length,
             extensions: [...entry.extensions].sort(),
-            inventoryTruncated: inventory.length >= context.semanticScanLimit,
+            inventoryTruncated: inventoryState?.truncated ?? false,
+            ...(language === 'rust' && rustToolchain
+              ? {
+                  toolchainChannel: rustToolchain.channel,
+                  toolchainProfile: rustToolchain.profile,
+                  toolchainComponents: rustToolchain.components,
+                  toolchainTargets: rustToolchain.targets,
+                }
+              : {}),
           },
-          proofIds,
+          proofIds: languageProofIds,
         });
         context.state.addRelation({
           from: projectEntity,
@@ -2526,17 +3721,17 @@ const sourceLanguageProvider: Provider = {
           kind: 'uses-language',
           derivation: 'extracted',
           trust: 'observed',
-          confidence: inventory.length >= context.semanticScanLimit ? 'medium' : 'high',
-          proofIds,
+          confidence: inventoryState?.truncated ? 'medium' : 'high',
+          proofIds: languageProofIds,
         });
       }
-      if (inventory.length >= context.semanticScanLimit) {
+      if (inventoryState?.truncated) {
         context.state.diagnostics.push({
           code: 'graph.provider.source_language_inventory.limit_reached',
           severity: 'warning',
-          message: `Language inventory for ${project.id} reached ${context.semanticScanLimit} files. Counts are lower bounds.`,
+          message: `Language inventory for ${project.id} reached the ${inventoryState.fileLimit}-file emergency bound. Counts are lower bounds.`,
           recommendation:
-            'Increase maxFilesPerProject or use a scoped project run before treating language counts as complete.',
+            'Increase inventoryFileLimitPerProject or split the repository into explicit project boundaries before treating language counts as complete.',
         });
       }
     }
@@ -2545,7 +3740,8 @@ const sourceLanguageProvider: Provider = {
 
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
-  version: '1.0.0',
+  version: '1.2.1',
+  scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
       (context.filesByProject.get(project.id) ?? []).some(
@@ -2557,19 +3753,22 @@ const sourceStructureProvider: Provider = {
   },
   async run(context) {
     for (const project of context.projects) {
-      const projectInventory = (context.filesByProject.get(project.id) ?? []).filter(
+      const projectInventory = (context.deepFilesByProject.get(project.id) ?? []).filter(
         (file) => !isNonProductionArtifact(project.root, file)
       );
-      const resolutionInventory =
-        context.semanticFilesByProject.get(project.id) ?? projectInventory;
-      const files = balancedSourceSelection(
-        (context.filesByProject.get(project.id) ?? []).filter(
-          (file) =>
-            SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
-            !isNonProductionArtifact(project.root, file)
-        ),
-        1_000
+      const resolutionInventory = context.filesByProject.get(project.id) ?? projectInventory;
+      const extractionLimit =
+        context.scanBudgetsByProject.get(project.id)?.sourceExtractionFileBudget ?? 2_000;
+      // Keep symbol and binding work proportional to the explicit source
+      // extraction budget. A fixed 10k ceiling silently penalized symbol-dense
+      // repositories even when callers deliberately raised the file budget.
+      const symbolBudget = Math.min(100_000, Math.max(10_000, extractionLimit * 10));
+      const fullSourceCandidates = resolutionInventory.filter(
+        (file) =>
+          SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
+          !isNonProductionArtifact(project.root, file)
       );
+      const files = balancedSourceSelection(fullSourceCandidates, extractionLimit, project.root);
       // Extraction stays deliberately bounded, but local import resolution
       // must see the complete fingerprint inventory. Otherwise imports from a
       // sampled file to a valid file outside the extraction window become
@@ -2606,6 +3805,10 @@ const sourceStructureProvider: Provider = {
           continue;
         }
         const sourceContents = sourceCodeForExtraction(file, contents);
+        // Generated provenance is a source property, even when the optional
+        // polyglot provider is inapplicable or its deep scan is bounded.
+        const generated =
+          isGeneratedArtifact(project.root, file) || generatedReference(contents) !== null;
         const artifact = context.state.artifactPath(file, project);
         const fileProof = await context.state.addProof({
           provider: this.id,
@@ -2626,7 +3829,7 @@ const sourceStructureProvider: Provider = {
             artifact,
             language: sourceLanguage(file, project.runtime),
             bytes: Buffer.byteLength(contents),
-            ...(isGeneratedArtifact(project.root, file) ? { generated: true } : {}),
+            ...(generated ? { generated: true } : {}),
           },
           proofIds: [fileProof],
         });
@@ -2704,18 +3907,40 @@ const sourceStructureProvider: Provider = {
           } else {
             const unresolvedLocal = imported.name.startsWith('.');
             if (unresolvedLocal) unresolvedLocalImports += 1;
-            const module = context.state.addEntity({
-              kind: 'module',
-              key: `module:${project.id}:${imported.name}`,
-              label: imported.name,
-              projectId: project.id,
-              aliases: [imported.name],
-              attributes: {
-                specifier: imported.name,
-                resolution: unresolvedLocal ? 'unresolved-local' : 'external',
-              },
-              proofIds: [proof],
-            });
+            const language = sourceLanguage(file, project.runtime);
+            const npmDependencyName =
+              !unresolvedLocal && (language === 'javascript' || language === 'typescript')
+                ? imported.name.startsWith('@')
+                  ? imported.name.split('/').slice(0, 2).join('/')
+                  : imported.name.split('/')[0]
+                : null;
+            const declaredDependencyId = npmDependencyName
+              ? stableId('module', `dependency:npm:${npmDependencyName}`)
+              : null;
+            const declaredDependency = declaredDependencyId
+              ? context.state.entities.get(declaredDependencyId)
+              : undefined;
+            const module = declaredDependency
+              ? context.state.addEntity({
+                  kind: 'module',
+                  key: declaredDependency.identity.key,
+                  label: declaredDependency.label,
+                  aliases: [...declaredDependency.identity.aliases, imported.name],
+                  attributes: declaredDependency.attributes,
+                  proofIds: [...declaredDependency.proofIds, proof],
+                })
+              : context.state.addEntity({
+                  kind: 'module',
+                  key: `module:${project.id}:${imported.name}`,
+                  label: imported.name,
+                  projectId: project.id,
+                  aliases: [imported.name],
+                  attributes: {
+                    specifier: imported.name,
+                    resolution: unresolvedLocal ? 'unresolved-local' : 'external',
+                  },
+                  proofIds: [proof],
+                });
             context.state.addRelation({
               from: fileEntity,
               to: module,
@@ -2726,11 +3951,11 @@ const sourceStructureProvider: Provider = {
           }
         }
 
-        if (symbolCount < 10_000) {
+        if (symbolCount < symbolBudget) {
           const symbols = captureSourceFindings(
             sourceContents,
             SYMBOL_PATTERNS,
-            Math.min(100, 10_000 - symbolCount)
+            Math.min(100, symbolBudget - symbolCount)
           );
           symbolCount += symbols.length;
           for (const symbol of symbols) {
@@ -2752,7 +3977,7 @@ const sourceStructureProvider: Provider = {
               attributes: {
                 symbolKind: symbol.detail,
                 language: sourceLanguage(file, project.runtime),
-                ...(isGeneratedArtifact(project.root, file) ? { generated: true } : {}),
+                ...(generated ? { generated: true } : {}),
               },
               proofIds: [proof],
             });
@@ -2769,14 +3994,12 @@ const sourceStructureProvider: Provider = {
         const extractsHttpRoutes =
           project.framework !== 'vscode-extension' && project.kind !== 'extension';
         for (const route of extractsHttpRoutes
-          ? captureSourceFindings(sourceContents, ROUTE_PATTERNS, 100)
+          ? captureSourceFindings(sourceContents, routePatternsForFile(file), 100)
           : []) {
           const routeLine = contents.split(/\r?\n/)[route.line - 1] ?? '';
-          if (isCommentOnlyRouteMatch(file, routeLine)) continue;
-          const method =
-            routeLine
-              .match(/(?:@|\.|\[|^\s*)(get|post|put|delete|patch|options|head)/i)?.[1]
-              ?.toUpperCase() ?? 'HTTP';
+          if (route.detail !== 'swagger route' && isCommentOnlyRouteMatch(file, routeLine))
+            continue;
+          const method = inferHttpMethod(routeLine, route.detail);
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
@@ -2804,13 +4027,22 @@ const sourceStructureProvider: Provider = {
           });
         }
       }
-      if (files.length >= 1_000 || symbolCount >= 10_000) {
+      if (files.length < fullSourceCandidates.length) {
         context.state.diagnostics.push({
           code: 'graph.provider.source_structure.limit_reached',
           severity: 'info',
-          message: `Source extraction for ${project.id} sampled ${files.length} file(s) from ${projectInventory.length} indexed candidate(s).`,
+          message: `Source extraction for ${project.id} sampled ${files.length} file(s) from ${fullSourceCandidates.length} complete-inventory source candidate(s).`,
           recommendation:
             'Use bounded graph search, evidence, and path queries for proof-backed retrieval; do not treat the sampled symbol inventory as exhaustive.',
+        });
+      }
+      if (symbolCount >= symbolBudget) {
+        context.state.diagnostics.push({
+          code: 'graph.provider.source_structure.symbol_limit_reached',
+          severity: 'info',
+          message: `Symbol extraction for ${project.id} reached its adaptive ${symbolBudget}-symbol budget across ${files.length} selected source file(s).`,
+          recommendation:
+            'Increase graphSourceBudget when a more exhaustive symbol inventory is worth the additional graph size and extraction cost.',
         });
       }
       if (unresolvedLocalImports > 0) {
@@ -2822,6 +4054,144 @@ const sourceStructureProvider: Provider = {
             'Check path aliases, generated sources, extension mapping, or provider limits before treating the import graph as complete.',
         });
       }
+    }
+  },
+};
+
+/**
+ * Binds executable call sites only across relationships already proven by the
+ * source-structure provider. This is deliberately stricter than a repository-
+ * wide name search: a target must be uniquely defined in the same file or in a
+ * locally imported file. Ambiguous names remain unknown for a compiler/LSP
+ * adapter to resolve rather than becoming confident but false topology.
+ */
+const sourceSymbolBindingProvider: Provider = {
+  id: 'source-symbol-binding',
+  version: '1.0.0',
+  scanTier: 'derived',
+  applicable(context) {
+    return [...context.state.entities.values()].some((entity) => entity.kind === 'symbol');
+  },
+  async run(context) {
+    let ambiguousBindings = 0;
+    for (const project of context.projects) {
+      const sourceFileBudget =
+        context.scanBudgetsByProject.get(project.id)?.sourceExtractionFileBudget ?? 2_000;
+      const maxBindings = Math.min(100_000, Math.max(10_000, sourceFileBudget * 10));
+      let emittedBindings = 0;
+      const entities = [...context.state.entities.values()].filter(
+        (entity) => entity.projectId === project.id
+      );
+      const fileEntities = entities.filter((entity) => entity.kind === 'file');
+      const symbols = new Map(
+        entities.filter((entity) => entity.kind === 'symbol').map((entity) => [entity.id, entity])
+      );
+      const symbolsByFile = new Map<string, WorkspaceKnowledgeEntity[]>();
+      const importedFilesByFile = new Map<string, Set<string>>();
+      for (const relation of context.state.relations.values()) {
+        if (relation.kind === 'defines' && symbols.has(relation.to)) {
+          const values = symbolsByFile.get(relation.from) ?? [];
+          values.push(symbols.get(relation.to) as WorkspaceKnowledgeEntity);
+          symbolsByFile.set(relation.from, values);
+        }
+        if (relation.kind === 'imports') {
+          const target = context.state.entities.get(relation.to);
+          if (target?.kind !== 'file' || target.projectId !== project.id) continue;
+          const values = importedFilesByFile.get(relation.from) ?? new Set<string>();
+          values.add(relation.to);
+          importedFilesByFile.set(relation.from, values);
+        }
+      }
+      for (const fileEntity of fileEntities) {
+        if (emittedBindings >= maxBindings) break;
+        const artifact = stringValue(fileEntity.attributes.artifact);
+        if (!artifact) continue;
+        const projectRelative = artifact.startsWith(`${project.artifactPrefix}/`)
+          ? artifact.slice(project.artifactPrefix.length + 1)
+          : artifact;
+        const absolutePath = path.resolve(project.root, ...projectRelative.split('/'));
+        let contents: string;
+        try {
+          const stat = await fsExtra.stat(absolutePath);
+          if (!stat.isFile() || stat.size > 2 * 1024 * 1024) continue;
+          contents = sourceCodeForExtraction(
+            absolutePath,
+            await fsExtra.readFile(absolutePath, 'utf8')
+          );
+        } catch {
+          continue;
+        }
+        const candidateSymbols = [
+          ...(symbolsByFile.get(fileEntity.id) ?? []),
+          ...[...(importedFilesByFile.get(fileEntity.id) ?? [])].flatMap(
+            (targetFile) => symbolsByFile.get(targetFile) ?? []
+          ),
+        ];
+        const byName = new Map<string, WorkspaceKnowledgeEntity[]>();
+        for (const symbol of candidateSymbols) {
+          if (symbol.label.length < 3) continue;
+          const values = byName.get(symbol.label) ?? [];
+          if (!values.some((value) => value.id === symbol.id)) values.push(symbol);
+          byName.set(symbol.label, values);
+        }
+        for (const [name, targets] of byName) {
+          const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const callPattern = new RegExp(`\\b${escapedName}\\s*\\(`, 'g');
+          const matches = [...contents.matchAll(callPattern)];
+          if (matches.length === 0) continue;
+          if (targets.length !== 1) {
+            ambiguousBindings += matches.length;
+            continue;
+          }
+          const target = targets[0];
+          for (const match of matches.slice(0, 20)) {
+            if (emittedBindings >= maxBindings) break;
+            const line = contents.slice(0, match.index ?? 0).split(/\r?\n/).length;
+            // The declaration itself has the same lexical shape in several
+            // languages. Never turn its proven definition line into a call.
+            if (target.proofIds.some((proofId) => context.state.proofs.get(proofId)?.line === line))
+              continue;
+            const proof = await context.state.addProof({
+              provider: this.id,
+              artifact,
+              absolutePath,
+              line,
+              derivation: 'extracted',
+              trust: 'observed',
+              confidence: 'medium',
+              detail: `Unambiguous local call to ${name}`,
+            });
+            context.state.addRelation({
+              from: fileEntity.id,
+              to: target.id,
+              kind: 'calls',
+              derivation: 'extracted',
+              trust: 'observed',
+              confidence: 'medium',
+              proofIds: [proof],
+            });
+            emittedBindings += 1;
+          }
+        }
+      }
+      if (emittedBindings >= maxBindings) {
+        context.state.diagnostics.push({
+          code: 'graph.provider.source_symbol_binding.limit_reached',
+          severity: 'info',
+          message: `Source call binding for ${project.id} reached its adaptive ${maxBindings}-relation budget.`,
+          recommendation:
+            'Increase graphSourceBudget or use compiler/language-server semantic evidence when more exhaustive call topology is required.',
+        });
+      }
+    }
+    if (ambiguousBindings > 0) {
+      context.state.diagnostics.push({
+        code: 'graph.provider.source_symbol_binding.ambiguous_calls',
+        severity: 'info',
+        message: `${ambiguousBindings} call site(s) were left unbound because more than one proven local symbol matched.`,
+        recommendation:
+          'Provide compiler or language-server semantic evidence when exact overload or dynamic dispatch resolution is required.',
+      });
     }
   },
 };
@@ -2919,6 +4289,7 @@ function lineOfToken(contents: string, token: string): number | undefined {
 const runtimeBridgeSemanticProvider: Provider = {
   id: 'runtime-bridge-semantics',
   version: '1.0.0',
+  scanTier: 'adaptive-semantic',
   async applicable(context) {
     for (const project of context.projects) {
       for (const file of context.semanticFilesByProject.get(project.id) ?? []) {
@@ -3168,7 +4539,8 @@ const SEMANTIC_PROTOCOL_STOP_NAMES = new Set([
  */
 const polyglotSemanticProvider: Provider = {
   id: 'polyglot-semantics',
-  version: '1.0.0',
+  version: '1.1.0',
+  scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) => {
       const concreteRuntimeCandidates = new Set(
@@ -3184,7 +4556,7 @@ const polyglotSemanticProvider: Provider = {
   async run(context) {
     for (const project of context.projects) {
       const projectEntity = stableId('project', `project:${project.id}`);
-      const projectFiles = context.filesByProject.get(project.id) ?? [];
+      const projectFiles = context.deepFilesByProject.get(project.id) ?? [];
       const lifecyclePlan = buildPolyglotLifecyclePlan(project.root);
 
       const packages = [...context.state.entities.values()].filter(
@@ -3436,7 +4808,8 @@ const polyglotSemanticProvider: Provider = {
 
 const serviceContractProvider: Provider = {
   id: 'workspace-service-contract',
-  version: '1.0.0',
+  version: '1.1.0',
+  scanTier: 'derived',
   applicable(context) {
     return Boolean(
       context.contract?.projects.some(
@@ -3503,7 +4876,7 @@ const serviceContractProvider: Provider = {
           key: `contract-api:${project.slug}:${api.name}:${api.basePath}`,
           label: api.name,
           projectId: project.slug,
-          attributes: { basePath: api.basePath },
+          attributes: { basePath: api.basePath, runtimeRegistrationRequired: true },
           proofIds: [proof],
         });
         context.state.addRelation({
@@ -3559,7 +4932,8 @@ const serviceContractProvider: Provider = {
 
 const openApiProvider: Provider = {
   id: 'openapi',
-  version: '1.0.0',
+  version: '1.1.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
       (context.filesByProject.get(project.id) ?? []).some(isOpenApiCandidate)
@@ -3601,6 +4975,7 @@ const openApiProvider: Provider = {
             attributes: {
               version: stringValue(info?.version),
               specification: stringValue(document.openapi) ?? stringValue(document.swagger),
+              runtimeRegistrationRequired: true,
             },
             proofIds: [apiProof],
           });
@@ -3701,9 +5076,516 @@ const openApiProvider: Provider = {
   },
 };
 
+const API_IMPLEMENTATION_SCAN_LIMIT = 5_000;
+
+function apiImplementationCandidateScore(root: string, file: string): number {
+  const artifact = toPosix(path.relative(root, file)).toLowerCase();
+  let score = 0;
+  if (/(^|\/)(routes?|handlers?|controllers?|server|httpapi)(\/|$)/.test(artifact)) score += 100;
+  if (/(?:^|\/)(?:api|routes?|handlers?|controllers?|server)(?:\.[a-z0-9]+)$/.test(artifact)) {
+    score += 80;
+  }
+  if (/(^|\/)(src|app|lib)(\/|$)/.test(artifact)) score += 20;
+  if (/(^|\/)(protocol|sdk|client)(\/|$)/.test(artifact)) score -= 30;
+  return score;
+}
+
+function quotedOperationIdOffset(contents: string, operationId: string): number {
+  for (const quote of ['"', "'", '`']) {
+    const offset = contents.indexOf(`${quote}${operationId}${quote}`);
+    if (offset >= 0) return offset;
+  }
+  return -1;
+}
+
+/**
+ * Binds authored OpenAPI operations to the production source file that names
+ * the same stable operation identifier. Framework route extraction remains the
+ * stronger method/path proof; this provider covers router libraries and custom
+ * HTTP abstractions without treating tests, generated clients, docs, or
+ * filename guesses as implementation evidence.
+ */
+const authoredApiImplementationProvider: Provider = {
+  id: 'authored-api-implementation-binding',
+  version: '1.0.0',
+  scanTier: 'adaptive-semantic',
+  applicable(context) {
+    return [...context.state.entities.values()].some(
+      (entity) => entity.kind === 'endpoint' && typeof entity.attributes.operationId === 'string'
+    );
+  },
+  async run(context) {
+    for (const project of context.projects) {
+      const endpointsByOperationId = new Map<string, WorkspaceKnowledgeEntity[]>();
+      for (const endpoint of context.state.entities.values()) {
+        const operationId = endpoint.attributes.operationId;
+        if (
+          endpoint.kind !== 'endpoint' ||
+          endpoint.projectId !== project.id ||
+          typeof operationId !== 'string' ||
+          operationId.trim().length === 0
+        ) {
+          continue;
+        }
+        const endpoints = endpointsByOperationId.get(operationId) ?? [];
+        endpoints.push(endpoint);
+        endpointsByOperationId.set(operationId, endpoints);
+      }
+      if (endpointsByOperationId.size === 0) continue;
+
+      const candidates = (context.semanticFilesByProject.get(project.id) ?? [])
+        .filter(
+          (file) =>
+            SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) &&
+            !isNonProductionArtifact(project.root, file) &&
+            !isGeneratedArtifact(project.root, file)
+        )
+        .sort(
+          (left, right) =>
+            apiImplementationCandidateScore(project.root, right) -
+              apiImplementationCandidateScore(project.root, left) || left.localeCompare(right)
+        )
+        .slice(0, API_IMPLEMENTATION_SCAN_LIMIT);
+
+      const bestMatches = new Map<
+        string,
+        { file: string; contents: string; offset: number; score: number }
+      >();
+      for (const file of candidates) {
+        let contents: string;
+        try {
+          const stats = await fsExtra.stat(file);
+          if (!stats.isFile() || stats.size > 2 * 1024 * 1024) continue;
+          contents = await fsExtra.readFile(file, 'utf8');
+        } catch {
+          continue;
+        }
+        const score = apiImplementationCandidateScore(project.root, file);
+        // An operation identifier in a protocol declaration or client surface
+        // proves contract reuse, not server implementation. Only handler-like
+        // production locations may satisfy implementation coverage.
+        if (score < 50) continue;
+        for (const operationId of endpointsByOperationId.keys()) {
+          const offset = quotedOperationIdOffset(contents, operationId);
+          if (offset < 0) continue;
+          const current = bestMatches.get(operationId);
+          if (
+            current &&
+            (current.score > score ||
+              (current.score === score && current.file.localeCompare(file) <= 0))
+          ) {
+            continue;
+          }
+          bestMatches.set(operationId, { file, contents, offset, score });
+        }
+      }
+
+      for (const [operationId, match] of bestMatches) {
+        const artifact = context.state.artifactPath(match.file, project);
+        const line = match.contents.slice(0, match.offset).split(/\r?\n/).length;
+        const proof = await context.state.addProof({
+          provider: this.id,
+          artifact,
+          absolutePath: match.file,
+          line,
+          derivation: 'extracted',
+          trust: 'observed',
+          confidence: 'high',
+          detail: `Production handler binds OpenAPI operation ${operationId}`,
+        });
+        const fileEntity = context.state.addEntity({
+          kind: 'file',
+          key: `file:${project.id}:${artifact}`,
+          label: artifact,
+          projectId: project.id,
+          aliases: [path.basename(match.file)],
+          attributes: {
+            artifact,
+            language: sourceLanguage(match.file, project.runtime),
+            bytes: Buffer.byteLength(match.contents),
+          },
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: stableId('project', `project:${project.id}`),
+          to: fileEntity,
+          kind: 'contains',
+          derivation: 'extracted',
+          trust: 'observed',
+          proofIds: [proof],
+        });
+        for (const endpoint of endpointsByOperationId.get(operationId) ?? []) {
+          context.state.addRelation({
+            from: fileEntity,
+            to: endpoint.id,
+            kind: 'implements',
+            derivation: 'extracted',
+            trust: 'corroborated',
+            confidence: 'high',
+            proofIds: [...endpoint.proofIds, proof],
+          });
+        }
+      }
+    }
+  },
+};
+
+const DYNAMIC_API_REGISTRATION_MAX_PER_API = 8;
+
+const CONFIG_DRIVEN_ROUTE_PATTERN =
+  /(?:^|[,{\n]\s*)["']?(?:routes?|upstreams?|virtualHosts?|pathPrefix)["']?\s*[:=]/im;
+
+function dynamicApiRegistrationOffset(file: string, contents: string): number {
+  const extension = path.extname(file).toLowerCase();
+  if (/\.(?:json|ya?ml|toml)$/i.test(file)) {
+    if (!/(?:route|routing|gateway|proxy|ingress|server)/i.test(path.basename(file))) return -1;
+    const match = CONFIG_DRIVEN_ROUTE_PATTERN.exec(contents);
+    return match?.index ?? -1;
+  }
+  const patterns: readonly RegExp[] =
+    extension === '.py'
+      ? [/\b(?:include_router|add_api_route|mount)\s*\(/]
+      : ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts'].includes(extension)
+        ? [
+            /\b(?:router|app)\.(?:use|route|register)\s*\(/,
+            /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+            /\b(?:routeModule|routeMatcher|routesManifest|appPathsManifest)\b/,
+          ]
+        : extension === '.go'
+          ? [
+              /\.\s*InstallAPIGroups?\s*\(/,
+              /\.\s*registerResourceHandlers\s*\(/,
+              /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+            ]
+          : ['.java', '.kt', '.kts', '.scala', '.cs', '.fs', '.fsx', '.vb'].includes(extension)
+            ? [
+                /\b(?:RouterFunction|RequestMappingHandlerMapping|MapControllers|MapGroup)\s*[<(]/,
+                /\b(?:registerRoutes?|configureRoutes?)\s*\(/i,
+                /\bregister(?:Rest)?(?:Action|Handler)\s*\(/,
+              ]
+            : extension === '.rb'
+              ? [
+                  /\broutes\.draw\s+do\b/,
+                  /\bmount\s+(?:[A-Z][\w:]*|["'])/,
+                  /\b(?:resources?|namespace|scope)\s+[:"']/,
+                  /\b(?:get|post|put|patch|delete|match)\s+["']/,
+                ]
+              : [/\b(?:registerRoutes?|configureRoutes?)\s*\(/i];
+  for (const pattern of patterns) {
+    const match = pattern.exec(contents);
+    if (match) return match.index;
+  }
+  return -1;
+}
+
+/**
+ * Represents runtime- and configuration-generated routing without pretending
+ * that every authored endpoint has a statically provable handler. The graph
+ * binds a proof-carrying registration unit to the API; endpoint-level coverage
+ * remains unknown until a method/path or operation-id implementation is found.
+ */
+const dynamicApiRegistrationProvider: Provider = {
+  id: 'dynamic-api-registration-binding',
+  version: '1.1.0',
+  scanTier: 'adaptive-semantic',
+  applicable(context) {
+    if (![...context.state.entities.values()].some((entity) => entity.kind === 'api')) return false;
+    return context.projects.some((project) =>
+      (context.semanticFilesByProject.get(project.id) ?? [])
+        .filter(
+          (file) =>
+            (SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
+              /\.(?:json|ya?ml|toml)$/i.test(file)) &&
+            (apiImplementationCandidateScore(project.root, file) >= 20 ||
+              /\.(?:json|ya?ml|toml)$/i.test(file)) &&
+            !isNonProductionArtifact(project.root, file) &&
+            !isGeneratedArtifact(project.root, file) &&
+            !isOpenApiCandidate(file)
+        )
+        .slice(0, API_IMPLEMENTATION_SCAN_LIMIT)
+        .some((file) => {
+          try {
+            const stat = fsExtra.statSync(file);
+            return (
+              stat.isFile() &&
+              stat.size <= 2 * 1024 * 1024 &&
+              dynamicApiRegistrationOffset(file, fsExtra.readFileSync(file, 'utf8')) >= 0
+            );
+          } catch {
+            return false;
+          }
+        })
+    );
+  },
+  async run(context) {
+    for (const project of context.projects) {
+      const apis = [...context.state.entities.values()].filter(
+        (entity) =>
+          entity.kind === 'api' &&
+          entity.projectId === project.id &&
+          entity.attributes.runtimeRegistrationRequired === true
+      );
+      if (apis.length === 0) continue;
+      const candidates = (context.semanticFilesByProject.get(project.id) ?? [])
+        .filter(
+          (file) =>
+            (SOURCE_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
+              /\.(?:json|ya?ml|toml)$/i.test(file)) &&
+            !isNonProductionArtifact(project.root, file) &&
+            !isGeneratedArtifact(project.root, file) &&
+            !isOpenApiCandidate(file) &&
+            (apiImplementationCandidateScore(project.root, file) >= 20 ||
+              /\.(?:json|ya?ml|toml)$/i.test(file))
+        )
+        .sort(
+          (left, right) =>
+            apiImplementationCandidateScore(project.root, right) -
+              apiImplementationCandidateScore(project.root, left) || left.localeCompare(right)
+        )
+        .slice(0, API_IMPLEMENTATION_SCAN_LIMIT);
+      let emittedRegistrations = 0;
+      const registrationLimit = Math.max(1, apis.length * DYNAMIC_API_REGISTRATION_MAX_PER_API);
+      for (const file of candidates) {
+        if (emittedRegistrations >= registrationLimit) break;
+        let contents: string;
+        try {
+          const stat = await fsExtra.stat(file);
+          if (!stat.isFile() || stat.size > 2 * 1024 * 1024) continue;
+          contents = await fsExtra.readFile(file, 'utf8');
+        } catch {
+          continue;
+        }
+        const offset = dynamicApiRegistrationOffset(file, contents);
+        if (offset < 0) continue;
+        const targetApis =
+          apis.length === 1
+            ? apis
+            : apis.filter((api) =>
+                api.label
+                  .toLowerCase()
+                  .split(/[^a-z0-9]+/)
+                  .filter((token) => token.length >= 4)
+                  .some((token) => contents.toLowerCase().includes(token))
+              );
+        if (targetApis.length === 0) continue;
+        const artifact = context.state.artifactPath(file, project);
+        const proof = await context.state.addProof({
+          provider: this.id,
+          artifact,
+          absolutePath: file,
+          line: contents.slice(0, offset).split(/\r?\n/).length,
+          derivation: 'extracted',
+          trust: 'observed',
+          confidence: 'high',
+          detail: /\.(?:json|ya?ml|toml)$/i.test(file)
+            ? 'Configuration-driven API topology registration'
+            : 'Runtime-generated API topology registration',
+        });
+        const fileEntity = context.state.addEntity({
+          kind: 'file',
+          key: `file:${project.id}:${artifact}`,
+          label: artifact,
+          projectId: project.id,
+          aliases: [path.basename(file)],
+          attributes: { artifact, language: sourceLanguage(file, project.runtime) },
+          proofIds: [proof],
+        });
+        const registration = context.state.addEntity({
+          kind: 'runtime-unit',
+          key: `dynamic-api-registration:${project.id}:${artifact}`,
+          label: `${path.basename(file)} API registration`,
+          projectId: project.id,
+          attributes: {
+            mechanism: /\.(?:json|ya?ml|toml)$/i.test(file)
+              ? 'configuration-driven-routing'
+              : 'runtime-generated-routing',
+          },
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: stableId('project', `project:${project.id}`),
+          to: registration,
+          kind: 'contains',
+          derivation: 'extracted',
+          trust: 'observed',
+          proofIds: [proof],
+        });
+        context.state.addRelation({
+          from: registration,
+          to: fileEntity,
+          kind: 'configured-by',
+          derivation: 'extracted',
+          trust: 'observed',
+          proofIds: [proof],
+        });
+        for (const api of targetApis) {
+          context.state.addRelation({
+            from: registration,
+            to: api.id,
+            kind: 'implements',
+            derivation: 'extracted',
+            trust: 'corroborated',
+            confidence: 'high',
+            proofIds: [...api.proofIds, proof],
+          });
+        }
+        emittedRegistrations += 1;
+      }
+    }
+  },
+};
+
+type GraphqlTopLevelDefinition = {
+  kind:
+    | 'schema'
+    | 'scalar'
+    | 'type'
+    | 'interface'
+    | 'union'
+    | 'enum'
+    | 'input'
+    | 'directive'
+    | 'query'
+    | 'mutation'
+    | 'subscription'
+    | 'fragment';
+  name: string;
+  line: number;
+  extended: boolean;
+};
+
+/**
+ * Tokenize enough of GraphQL to classify top-level SDL and executable
+ * definitions without mistaking selection fields such as `type` for schema
+ * declarations. This intentionally avoids a heavyweight parser dependency,
+ * while honoring comments, quoted strings, block strings and brace depth.
+ */
+function graphqlTopLevelDefinitions(contents: string): GraphqlTopLevelDefinition[] {
+  const tokens: Array<{ value: string; line: number }> = [];
+  let line = 1;
+  for (let index = 0; index < contents.length;) {
+    const character = contents[index];
+    if (character === '\n') {
+      line += 1;
+      index += 1;
+      continue;
+    }
+    if (/\s|,/.test(character)) {
+      index += 1;
+      continue;
+    }
+    if (character === '#') {
+      while (index < contents.length && contents[index] !== '\n') index += 1;
+      continue;
+    }
+    if (contents.startsWith('"""', index)) {
+      index += 3;
+      while (index < contents.length && !contents.startsWith('"""', index)) {
+        if (contents[index] === '\n') line += 1;
+        index += 1;
+      }
+      index = Math.min(contents.length, index + 3);
+      continue;
+    }
+    if (character === '"') {
+      index += 1;
+      let escaped = false;
+      while (index < contents.length) {
+        const current = contents[index];
+        if (current === '\n') line += 1;
+        if (current === '"' && !escaped) {
+          index += 1;
+          break;
+        }
+        escaped = current === '\\' && !escaped;
+        if (current !== '\\') escaped = false;
+        index += 1;
+      }
+      continue;
+    }
+    const name = contents.slice(index).match(/^[_A-Za-z][_0-9A-Za-z]*/)?.[0];
+    if (name) {
+      tokens.push({ value: name, line });
+      index += name.length;
+      continue;
+    }
+    tokens.push({ value: character, line });
+    index += 1;
+  }
+
+  const schemaKinds = new Set<GraphqlTopLevelDefinition['kind']>([
+    'schema',
+    'scalar',
+    'type',
+    'interface',
+    'union',
+    'enum',
+    'input',
+    'directive',
+  ]);
+  const executableKinds = new Set<GraphqlTopLevelDefinition['kind']>([
+    'query',
+    'mutation',
+    'subscription',
+    'fragment',
+  ]);
+  const definitions: GraphqlTopLevelDefinition[] = [];
+  if (tokens[0]?.value === '{') {
+    definitions.push({
+      kind: 'query',
+      name: `anonymous-${tokens[0].line}`,
+      line: tokens[0].line,
+      extended: false,
+    });
+  }
+  let braceDepth = 0;
+  let extended = false;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.value === '}') {
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+    if (braceDepth === 0 && token.value === 'extend') {
+      extended = true;
+      continue;
+    }
+    if (braceDepth === 0) {
+      const kind = token.value as GraphqlTopLevelDefinition['kind'];
+      if (schemaKinds.has(kind)) {
+        const name =
+          kind === 'schema'
+            ? 'schema'
+            : kind === 'directive'
+              ? tokens[index + 1]?.value === '@'
+                ? tokens[index + 2]?.value
+                : undefined
+              : tokens[index + 1]?.value;
+        if (name && /^[_A-Za-z][_0-9A-Za-z]*$/.test(name)) {
+          definitions.push({ kind, name, line: token.line, extended });
+        }
+        extended = false;
+      } else if (executableKinds.has(kind)) {
+        const candidate = tokens[index + 1]?.value;
+        const name =
+          candidate && /^[_A-Za-z][_0-9A-Za-z]*$/.test(candidate)
+            ? candidate
+            : `anonymous-${token.line}`;
+        definitions.push({ kind, name, line: token.line, extended: false });
+        extended = false;
+      } else if (!['@', '&', '|'].includes(token.value)) {
+        extended = false;
+      }
+    }
+    if (token.value === '{') braceDepth += 1;
+  }
+  return definitions;
+}
+
 const interfaceContractProvider: Provider = {
   id: 'interface-contracts',
-  version: '1.0.0',
+  version: '1.1.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
       (context.filesByProject.get(project.id) ?? []).some(isInterfaceContractCandidate)
@@ -3719,44 +5601,167 @@ const interfaceContractProvider: Provider = {
         const extension = path.extname(file).toLowerCase();
         if (extension === '.graphql' || extension === '.gql') {
           const contents = await fsExtra.readFile(file, 'utf8');
+          const definitions = graphqlTopLevelDefinitions(contents);
+          const schemaDefinitions = definitions.filter((definition) =>
+            [
+              'schema',
+              'scalar',
+              'type',
+              'interface',
+              'union',
+              'enum',
+              'input',
+              'directive',
+            ].includes(definition.kind)
+          );
+          const executableDefinitions = definitions.filter((definition) =>
+            ['query', 'mutation', 'subscription', 'fragment'].includes(definition.kind)
+          );
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
             absolutePath: file,
             trust: 'authoritative',
             derivation: 'authored',
-            detail: 'GraphQL schema',
+            detail:
+              schemaDefinitions.length > 0
+                ? 'GraphQL schema contract'
+                : 'GraphQL executable document',
           });
-          const api = context.state.addEntity({
-            kind: 'api',
-            key: `graphql:${project.id}:${artifact}`,
-            label: `${project.id} GraphQL API`,
+          const fileEntity = context.state.addEntity({
+            kind: 'file',
+            key: `file:${project.id}:${artifact}`,
+            label: artifact,
             projectId: project.id,
-            attributes: { specification: 'graphql', artifact },
+            aliases: [path.basename(file)],
+            attributes: {
+              artifact,
+              language: 'graphql',
+              bytes: Buffer.byteLength(contents),
+              graphqlDocumentKind:
+                schemaDefinitions.length > 0 && executableDefinitions.length > 0
+                  ? 'mixed'
+                  : schemaDefinitions.length > 0
+                    ? 'schema'
+                    : 'executable',
+            },
             proofIds: [proof],
           });
           context.state.addRelation({
             from: stableId('project', `project:${project.id}`),
-            to: api,
-            kind: 'exposes',
+            to: fileEntity,
+            kind: 'contains',
             trust: 'authoritative',
             derivation: 'authored',
             proofIds: [proof],
           });
-          for (const match of contents.matchAll(
-            /^\s*(?:type|input|interface|enum|scalar|union)\s+([A-Za-z_]\w*)/gm
-          )) {
-            const schema = context.state.addEntity({
-              kind: 'schema',
-              key: `graphql-schema:${project.id}:${artifact}:${match[1]}`,
-              label: match[1],
-              projectId: project.id,
+          const protocol = context.state.addEntity({
+            kind: 'protocol',
+            key: 'protocol:graphql',
+            label: 'GraphQL',
+            aliases: ['graphql'],
+            attributes: { specification: 'GraphQL' },
+            proofIds: [proof],
+          });
+          const exposesRuntimeApi = schemaDefinitions.some(
+            (definition) =>
+              !definition.extended &&
+              (definition.kind === 'schema' ||
+                (definition.kind === 'type' &&
+                  ['Query', 'Mutation', 'Subscription'].includes(definition.name)))
+          );
+          const api = exposesRuntimeApi
+            ? context.state.addEntity({
+                kind: 'api',
+                key: `graphql-api:${project.id}`,
+                label: `${project.id} GraphQL API`,
+                projectId: project.id,
+                attributes: {
+                  specification: 'graphql',
+                  surface: 'graphql-schema',
+                  runtimeRegistrationRequired: true,
+                },
+                proofIds: [proof],
+              })
+            : null;
+          if (api) {
+            context.state.addRelation({
+              from: stableId('project', `project:${project.id}`),
+              to: api,
+              kind: 'exposes',
+              trust: 'authoritative',
+              derivation: 'authored',
               proofIds: [proof],
             });
             context.state.addRelation({
               from: api,
+              to: protocol,
+              kind: 'implements-protocol',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+          }
+          for (const definition of schemaDefinitions) {
+            const schema = context.state.addEntity({
+              kind: 'schema',
+              key: `graphql-schema:${project.id}:${artifact}:${definition.kind}:${definition.name}`,
+              label: definition.name,
+              projectId: project.id,
+              attributes: {
+                specification: 'graphql',
+                definitionKind: definition.kind,
+                extended: definition.extended,
+                line: definition.line,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: fileEntity,
               to: schema,
-              kind: 'contains',
+              kind: 'defines',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+            if (api) {
+              context.state.addRelation({
+                from: api,
+                to: schema,
+                kind: 'contains',
+                trust: 'authoritative',
+                derivation: 'authored',
+                proofIds: [proof],
+              });
+            }
+          }
+          for (const definition of executableDefinitions) {
+            const operation = context.state.addEntity({
+              kind: 'symbol',
+              key: `graphql-operation:${project.id}:${artifact}:${definition.kind}:${definition.name}`,
+              label: definition.name,
+              projectId: project.id,
+              attributes: {
+                language: 'graphql',
+                symbolKind: definition.kind === 'fragment' ? 'fragment' : 'operation',
+                operationKind: definition.kind,
+                artifact,
+                line: definition.line,
+              },
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: fileEntity,
+              to: operation,
+              kind: 'defines',
+              trust: 'authoritative',
+              derivation: 'authored',
+              proofIds: [proof],
+            });
+            context.state.addRelation({
+              from: operation,
+              to: protocol,
+              kind: 'consumes',
               trust: 'authoritative',
               derivation: 'authored',
               proofIds: [proof],
@@ -3846,7 +5851,11 @@ const interfaceContractProvider: Provider = {
             key: `asyncapi:${project.id}:${artifact}`,
             label: stringValue(asRecord(document.info)?.title) ?? `${project.id} AsyncAPI`,
             projectId: project.id,
-            attributes: { specification: `asyncapi ${String(document.asyncapi)}`, artifact },
+            attributes: {
+              specification: `asyncapi ${String(document.asyncapi)}`,
+              artifact,
+              runtimeRegistrationRequired: true,
+            },
             proofIds: [proof],
           });
           context.state.addRelation({
@@ -3886,6 +5895,7 @@ const interfaceContractProvider: Provider = {
 const infrastructureProvider: Provider = {
   id: 'infrastructure-as-code',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return uniqueInventoryFiles(context).some(isInfrastructureCandidate);
   },
@@ -3984,13 +5994,50 @@ function classifyImage(image: string): WorkspaceKnowledgeEntityKind {
   return 'container';
 }
 
+function legacyComposeServices(document: JsonRecord | undefined): JsonRecord | undefined {
+  if (!document) return undefined;
+  const reserved = new Set([
+    'version',
+    'name',
+    'services',
+    'networks',
+    'volumes',
+    'configs',
+    'secrets',
+  ]);
+  const serviceMarkers = new Set([
+    'image',
+    'build',
+    'command',
+    'entrypoint',
+    'ports',
+    'links',
+    'environment',
+    'volumes',
+    'depends_on',
+    'external_links',
+  ]);
+  const entries = Object.entries(document).filter(([name, value]) => {
+    if (reserved.has(name.toLowerCase())) return false;
+    const candidate = asRecord(value);
+    return candidate ? Object.keys(candidate).some((key) => serviceMarkers.has(key)) : false;
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
 const composeProvider: Provider = {
   id: 'compose',
-  version: '1.0.0',
+  version: '1.2.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     return (await composeCandidateFiles(context)).length > 0;
   },
   async run(context) {
+    const pendingDependencies: Array<{
+      from: string;
+      to: string;
+      proofId: string;
+    }> = [];
     for (const file of await composeCandidateFiles(context)) {
       let document: JsonRecord | undefined;
       try {
@@ -4002,10 +6049,18 @@ const composeProvider: Provider = {
           message: `Could not parse ${context.state.artifactPath(file)}: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
-      const services = asRecord(document?.services);
+      // Compose v1 placed service definitions at the document root. It still
+      // appears in long-lived enterprise repositories, so preserve that
+      // authored topology without misclassifying modern top-level resources.
+      const services = asRecord(document?.services) ?? legacyComposeServices(document);
       if (!services) continue;
       const ownerProject = projectForFile(context.projects, file);
-      const serviceIds = new Map<string, string>();
+      const artifact = context.state.artifactPath(file, ownerProject);
+      const composeFamily = path.basename(file).toLowerCase().startsWith('docker-compose')
+        ? 'docker-compose'
+        : 'compose';
+      const stackScope = `${ownerProject?.id ?? 'workspace'}:${path.posix.dirname(artifact)}:${composeFamily}`;
+      const serviceKey = (serviceName: string) => `compose-service:${stackScope}:${serviceName}`;
       for (const serviceName of Object.keys(services).sort()) {
         const service = asRecord(services[serviceName]);
         const build = service?.build;
@@ -4019,7 +6074,7 @@ const composeProvider: Provider = {
             ) ?? ownerProject);
         const proof = await context.state.addProof({
           provider: this.id,
-          artifact: context.state.artifactPath(file, ownerProject),
+          artifact,
           absolutePath: file,
           pointer: `/services/${serviceName}`,
           trust: 'authoritative',
@@ -4027,20 +6082,43 @@ const composeProvider: Provider = {
           detail: `Compose service ${serviceName}`,
         });
         const image = stringValue(service?.image);
+        const key = serviceKey(serviceName);
+        const existing = context.state.entities.get(stableId('service', key));
+        const existingPorts = Array.isArray(existing?.attributes.ports)
+          ? existing.attributes.ports.filter((value): value is string => typeof value === 'string')
+          : [];
+        const existingNetworks = Array.isArray(existing?.attributes.networks)
+          ? existing.attributes.networks.filter(
+              (value): value is string => typeof value === 'string'
+            )
+          : [];
+        const existingEnvironmentKeys = Array.isArray(existing?.attributes.environmentKeys)
+          ? existing.attributes.environmentKeys.filter(
+              (value): value is string => typeof value === 'string'
+            )
+          : [];
         const serviceEntity = context.state.addEntity({
           kind: 'service',
-          key: `compose-service:${context.state.artifactPath(file, ownerProject)}:${serviceName}`,
+          key,
           label: serviceName,
-          ...(serviceProject ? { projectId: serviceProject.id } : {}),
+          ...(serviceProject?.id || existing?.projectId
+            ? { projectId: serviceProject?.id ?? existing?.projectId }
+            : {}),
           attributes: {
-            image,
-            ports: stringArray(service?.ports).map(String),
-            networks: stringArray(service?.networks),
-            environmentKeys: environmentKeys(service?.environment),
+            image: image ?? existing?.attributes.image,
+            ports: [
+              ...new Set([...existingPorts, ...stringArray(service?.ports).map(String)]),
+            ].sort((left, right) => left.localeCompare(right)),
+            networks: [...new Set([...existingNetworks, ...stringArray(service?.networks)])].sort(
+              (left, right) => left.localeCompare(right)
+            ),
+            environmentKeys: [
+              ...new Set([...existingEnvironmentKeys, ...environmentKeys(service?.environment)]),
+            ].sort((left, right) => left.localeCompare(right)),
           },
-          proofIds: [proof],
+          proofIds: [...(existing?.proofIds ?? []), proof],
+          mergeArrayAttributes: ['ports', 'networks', 'environmentKeys'],
         });
-        serviceIds.set(serviceName, serviceEntity);
         if (serviceProject) {
           context.state.addRelation({
             from: stableId('project', `project:${serviceProject.id}`),
@@ -4072,30 +6150,43 @@ const composeProvider: Provider = {
       }
       for (const serviceName of Object.keys(services).sort()) {
         const service = asRecord(services[serviceName]);
-        const from = serviceIds.get(serviceName);
-        if (!from) continue;
         for (const dependency of stringArray(service?.depends_on)) {
-          const to = serviceIds.get(dependency);
-          if (!to) continue;
           const proof = await context.state.addProof({
             provider: this.id,
-            artifact: context.state.artifactPath(file, ownerProject),
+            artifact,
             absolutePath: file,
             pointer: `/services/${serviceName}/depends_on/${dependency}`,
             trust: 'authoritative',
             derivation: 'authored',
             detail: `${serviceName} depends on ${dependency}`,
           });
-          context.state.addRelation({
-            from,
-            to,
-            kind: 'depends-on',
-            trust: 'authoritative',
-            derivation: 'authored',
-            proofIds: [proof],
+          pendingDependencies.push({
+            from: stableId('service', serviceKey(serviceName)),
+            to: stableId('service', serviceKey(dependency)),
+            proofId: proof,
           });
         }
       }
+    }
+    for (const dependency of pendingDependencies) {
+      if (
+        !context.state.entities.has(dependency.from) ||
+        !context.state.entities.has(dependency.to)
+      ) {
+        // `depends_on` can name a service that is absent from the authored
+        // Compose stack. Do not retain a proof that cannot back an entity or
+        // relation in the published graph.
+        context.state.proofs.delete(dependency.proofId);
+        continue;
+      }
+      context.state.addRelation({
+        from: dependency.from,
+        to: dependency.to,
+        kind: 'depends-on',
+        trust: 'authoritative',
+        derivation: 'authored',
+        proofIds: [dependency.proofId],
+      });
     }
   },
 };
@@ -4103,6 +6194,7 @@ const composeProvider: Provider = {
 const documentationProvider: Provider = {
   id: 'documentation',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return uniqueInventoryFiles(context).some(isDocumentationCandidate);
   },
@@ -4164,6 +6256,7 @@ const documentationProvider: Provider = {
 const kubernetesProvider: Provider = {
   id: 'kubernetes',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     return (await kubernetesCandidateFiles(context)).length > 0;
   },
@@ -4246,6 +6339,7 @@ const kubernetesProvider: Provider = {
 const ciProvider: Provider = {
   id: 'ci-workflow',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return ciCandidateFiles(context).length > 0;
   },
@@ -4255,12 +6349,22 @@ const ciProvider: Provider = {
       const project = projectForFile(context.projects, file);
       const artifact = context.state.artifactPath(file, project);
       const isJenkins = path.basename(file) === 'Jenkinsfile';
+      const relative = toPosix(path.relative(project?.root ?? context.workspacePath, file));
+      const isExternalCiScript = /^prow\/[^/]+\.(?:sh|py)$/i.test(relative);
       let label = path.basename(file);
       let jobs: string[] = [];
       let triggers: string[] = [];
-      if (isJenkins) {
+      if (isJenkins || isExternalCiScript) {
         const contents = await fsExtra.readFile(file, 'utf8');
-        jobs = [...contents.matchAll(/\bstage\s*\(\s*["']([^"']+)["']/g)].map((match) => match[1]);
+        if (isJenkins) {
+          jobs = [...contents.matchAll(/\bstage\s*\(\s*["']([^"']+)["']/g)].map(
+            (match) => match[1]
+          );
+        } else {
+          label = `${path.basename(file)} · Prow`;
+          jobs = [path.basename(file).replace(/\.(?:sh|py)$/i, '')];
+          triggers = ['external-provider'];
+        }
       } else {
         let document: JsonRecord | undefined;
         try {
@@ -4270,7 +6374,6 @@ const ciProvider: Provider = {
         }
         if (!document) continue;
         label = stringValue(document.name) ?? label;
-        const relative = toPosix(path.relative(project?.root ?? context.workspacePath, file));
         if (/^\.gitlab-ci\./i.test(relative)) {
           const reserved = new Set([
             'stages',
@@ -4303,7 +6406,7 @@ const ciProvider: Provider = {
         provider: this.id,
         artifact,
         absolutePath: file,
-        ...(!isJenkins ? { pointer: '/jobs' } : {}),
+        ...(!isJenkins && !isExternalCiScript ? { pointer: '/jobs' } : {}),
         trust: 'authoritative',
         derivation: 'authored',
         detail: 'CI/CD workflow',
@@ -4312,6 +6415,7 @@ const ciProvider: Provider = {
         kind: 'pipeline',
         key: `pipeline:${artifact}`,
         label,
+        ...(project ? { projectId: project.id } : {}),
         attributes: { jobs, triggers, artifact },
         proofIds: [proof],
       });
@@ -4331,13 +6435,54 @@ const ciProvider: Provider = {
 
 const ownershipProvider: Provider = {
   id: 'codeowners',
-  version: '1.0.0',
+  version: '1.2.0',
+  scanTier: 'complete-inventory',
   async applicable(context) {
     return (await ownershipCandidateFiles(context)).length > 0;
   },
   async run(context) {
     for (const file of await ownershipCandidateFiles(context)) {
       const owningProject = projectForFile(context.projects, file);
+      if (path.basename(file) === 'OWNERS') {
+        const documents = await readStructuredDocuments(file);
+        for (const document of documents) {
+          for (const role of ['approvers', 'reviewers'] as const) {
+            const owners = Array.isArray(document[role]) ? document[role] : [];
+            for (let index = 0; index < owners.length; index += 1) {
+              const rawOwner = stringValue(owners[index]);
+              if (!rawOwner) continue;
+              const owner = rawOwner.startsWith('@') ? rawOwner : `@${rawOwner}`;
+              const proof = await context.state.addProof({
+                provider: this.id,
+                artifact: context.state.artifactPath(file, owningProject),
+                absolutePath: file,
+                pointer: `/${role}/${index}`,
+                trust: 'authoritative',
+                derivation: 'authored',
+                detail: `${role}: ${owner}`,
+              });
+              const ownerEntity = context.state.addEntity({
+                kind: 'owner',
+                key: `owner:${owner.toLowerCase()}`,
+                label: owner,
+                aliases: [rawOwner, owner],
+                proofIds: [proof],
+              });
+              context.state.addRelation({
+                from: ownerEntity,
+                to: owningProject
+                  ? stableId('project', `project:${owningProject.id}`)
+                  : stableId('workspace', `workspace:${context.state.workspaceName}`),
+                kind: 'owns',
+                trust: 'authoritative',
+                derivation: 'authored',
+                proofIds: [proof],
+              });
+            }
+          }
+        }
+        continue;
+      }
       const contents = await fsExtra.readFile(file, 'utf8');
       const lines = contents.split(/\r?\n/);
       for (let index = 0; index < lines.length; index += 1) {
@@ -4400,6 +6545,7 @@ const ownershipProvider: Provider = {
 const decisionProvider: Provider = {
   id: 'architecture-decisions',
   version: '1.0.0',
+  scanTier: 'complete-inventory',
   applicable(context) {
     return [
       { root: context.workspacePath, files: context.workspaceFiles },
@@ -4468,11 +6614,14 @@ const PROVIDERS: Provider[] = [
   pythonProjectManifestProvider,
   sourceLanguageProvider,
   sourceStructureProvider,
+  sourceSymbolBindingProvider,
   runtimeBridgeSemanticProvider,
   polyglotSemanticProvider,
   serviceContractProvider,
   openApiProvider,
   interfaceContractProvider,
+  authoredApiImplementationProvider,
+  dynamicApiRegistrationProvider,
   composeProvider,
   infrastructureProvider,
   kubernetesProvider,
@@ -4481,6 +6630,83 @@ const PROVIDERS: Provider[] = [
   documentationProvider,
   decisionProvider,
 ];
+
+function providerInputCoverage(
+  provider: Provider,
+  context: ProviderContext,
+  status: WorkspaceKnowledgeProviderRun['status']
+): WorkspaceKnowledgeProviderInputCoverage[] | undefined {
+  const tier = provider.scanTier;
+  if (!tier) return undefined;
+  const projects = context.projects;
+  if (projects.length === 0) {
+    return [
+      {
+        scope: 'workspace',
+        scopeId: 'workspace',
+        tier,
+        status: status === 'skipped' ? 'not-applicable' : 'complete',
+        eligibleFiles: context.workspaceFiles.length,
+        suppliedFiles: tier === 'derived' ? 0 : context.workspaceFiles.length,
+        ...(tier === 'derived' ? {} : { fileBudget: Math.max(context.workspaceFiles.length, 1) }),
+        selectionStrategy: tier === 'derived' ? 'derived' : 'complete',
+      },
+    ];
+  }
+  return projects.map((project) => {
+    const inventory = context.inventoryByProject.get(project.id);
+    const budget = context.scanBudgetsByProject.get(project.id);
+    const eligibleFiles = inventory?.eligibleFileCount ?? 0;
+    if (status === 'skipped') {
+      return {
+        scope: 'project' as const,
+        scopeId: project.id,
+        tier,
+        status: 'not-applicable' as const,
+        eligibleFiles,
+        suppliedFiles: 0,
+        selectionStrategy: tier === 'derived' ? ('derived' as const) : ('complete' as const),
+      };
+    }
+    if (tier === 'derived') {
+      return {
+        scope: 'project' as const,
+        scopeId: project.id,
+        tier,
+        status: 'complete' as const,
+        eligibleFiles: 0,
+        suppliedFiles: 0,
+        selectionStrategy: 'derived' as const,
+      };
+    }
+    const suppliedFiles =
+      tier === 'complete-inventory'
+        ? (context.filesByProject.get(project.id)?.length ?? 0)
+        : tier === 'adaptive-semantic'
+          ? (context.semanticFilesByProject.get(project.id)?.length ?? 0)
+          : (context.deepFilesByProject.get(project.id)?.length ?? 0);
+    const fileBudget =
+      tier === 'complete-inventory'
+        ? (inventory?.fileLimit ?? Math.max(suppliedFiles, 1))
+        : tier === 'adaptive-semantic'
+          ? (budget?.semanticFileBudget ?? Math.max(suppliedFiles, 1))
+          : (budget?.deepFileBudget ?? Math.max(suppliedFiles, 1));
+    const bounded = Boolean(inventory?.truncated) || suppliedFiles < eligibleFiles;
+    return {
+      scope: 'project' as const,
+      scopeId: project.id,
+      tier,
+      status: bounded ? ('bounded' as const) : ('complete' as const),
+      eligibleFiles,
+      suppliedFiles,
+      fileBudget: Math.max(fileBudget, 1),
+      selectionStrategy:
+        tier === 'complete-inventory'
+          ? ('complete' as const)
+          : ('component-language-round-robin-v1' as const),
+    };
+  });
+}
 
 async function addProjectTopology(
   state: KnowledgeGraphState,
@@ -4558,58 +6784,6 @@ function reconcileCrossProviderEvidence(state: KnowledgeGraphState): void {
   }
 }
 
-function bindingCoverage(eligibleIds: readonly string[], boundIds: ReadonlySet<string>) {
-  const eligible = [...new Set(eligibleIds)];
-  const boundCount = eligible.filter((id) => boundIds.has(id)).length;
-  return {
-    eligibleCount: eligible.length,
-    boundCount,
-    unknownCount: eligible.length - boundCount,
-    coverageRatio: eligible.length === 0 ? null : boundCount / eligible.length,
-  };
-}
-
-function calculateBindingCoverage(
-  entities: readonly WorkspaceKnowledgeEntity[],
-  relations: readonly WorkspaceKnowledgeRelation[]
-): NonNullable<WorkspaceKnowledgeGraph['quality']['bindingCoverage']> {
-  const projectIds = entities
-    .filter((entity) => entity.kind === 'project')
-    .map((entity) => entity.id);
-  const endpointIds = entities
-    .filter((entity) => entity.kind === 'endpoint')
-    .map((entity) => entity.id);
-  const implementedEndpoints = new Set(
-    relations
-      .filter((relation) => relation.kind === 'implements')
-      .flatMap((relation) => [relation.from, relation.to])
-  );
-  const testedProjects = new Set(
-    relations
-      .filter((relation) => relation.kind === 'tests')
-      .flatMap((relation) => [relation.from, relation.to])
-      .filter((id) => projectIds.includes(id))
-  );
-  const deployedProjects = new Set(
-    relations
-      .filter((relation) => relation.kind === 'deploys')
-      .flatMap((relation) => [relation.from, relation.to])
-      .filter((id) => projectIds.includes(id))
-  );
-  const ownedProjects = new Set(
-    relations
-      .filter((relation) => relation.kind === 'owns')
-      .flatMap((relation) => [relation.from, relation.to])
-      .filter((id) => projectIds.includes(id))
-  );
-  return {
-    apiImplementation: bindingCoverage(endpointIds, implementedEndpoints),
-    projectTests: bindingCoverage(projectIds, testedProjects),
-    projectDeployment: bindingCoverage(projectIds, deployedProjects),
-    projectOwnership: bindingCoverage(projectIds, ownedProjects),
-  };
-}
-
 export async function buildWorkspaceKnowledgeGraph(
   options: BuildWorkspaceKnowledgeGraphOptions
 ): Promise<WorkspaceKnowledgeGraph> {
@@ -4635,48 +6809,350 @@ export async function buildWorkspaceKnowledgeGraph(
     })
     .sort((a, b) => a.id.localeCompare(b.id));
   const state = new KnowledgeGraphState(workspacePath, now, options.workspace.name);
-  const maxFilesPerProject = Math.max(100, Math.min(options.maxFilesPerProject ?? 2_000, 10_000));
-  const semanticScanLimit = Math.min(Math.max(maxFilesPerProject * 10, 20_000), 50_000);
-  const filesByProject = new Map(
+  const requestedInventoryLimit = positiveGraphBudgetOverride(
+    options.inventoryFileLimitPerProject,
+    'WORKSPAI_GRAPH_INVENTORY_LIMIT'
+  );
+  const requestedDeepBudget = positiveGraphBudgetOverride(
+    options.maxFilesPerProject,
+    'WORKSPAI_GRAPH_DEEP_BUDGET'
+  );
+  const requestedSemanticBudget = positiveGraphBudgetOverride(
+    options.semanticFilesPerProject,
+    'WORKSPAI_GRAPH_SEMANTIC_BUDGET'
+  );
+  const requestedSourceBudget = positiveGraphBudgetOverride(
+    options.sourceFilesPerProject,
+    'WORKSPAI_GRAPH_SOURCE_BUDGET'
+  );
+  const inventoryFileLimit = Math.max(
+    100,
+    Math.min(
+      requestedInventoryLimit ?? DEFAULT_GRAPH_INVENTORY_EMERGENCY_LIMIT,
+      MAX_GRAPH_INVENTORY_EMERGENCY_LIMIT
+    )
+  );
+  const inventoryByProject = new Map(
     await Promise.all(
       projects.map(
-        async (project) => [project.id, await listFiles(project.root, maxFilesPerProject)] as const
+        async (project) =>
+          [project.id, await projectFileInventory(project.root, inventoryFileLimit)] as const
       )
     )
+  );
+  const filesByProject = new Map(
+    projects.map(
+      (project) => [project.id, inventoryByProject.get(project.id)?.files ?? []] as const
+    )
+  );
+  const scanBudgetsByProject = new Map(
+    projects.map((project) => {
+      const inventory = inventoryByProject.get(project.id);
+      return [
+        project.id,
+        adaptiveGraphScanBudget({
+          eligibleFiles: inventory?.files.length ?? 0,
+          ...(requestedDeepBudget !== undefined ? { deepOverride: requestedDeepBudget } : {}),
+          ...(requestedSemanticBudget !== undefined
+            ? { semanticOverride: requestedSemanticBudget }
+            : {}),
+          ...(requestedSourceBudget !== undefined ? { sourceOverride: requestedSourceBudget } : {}),
+        }),
+      ] as const;
+    })
+  );
+  const deepFilesByProject = new Map(
+    projects.map((project) => {
+      const inventory = inventoryByProject.get(project.id)?.files ?? [];
+      const budget = scanBudgetsByProject.get(project.id)?.deepFileBudget ?? inventory.length;
+      return [project.id, balancedProjectFileSelection(inventory, budget, project.root)] as const;
+    })
   );
   const semanticFilesByProject = new Map(
-    await Promise.all(
-      projects.map(
-        async (project) => [project.id, await listFiles(project.root, semanticScanLimit)] as const
-      )
-    )
+    projects.map((project) => {
+      const inventory = inventoryByProject.get(project.id)?.files ?? [];
+      const budget = scanBudgetsByProject.get(project.id)?.semanticFileBudget ?? inventory.length;
+      return [project.id, balancedProjectFileSelection(inventory, budget, project.root)] as const;
+    })
   );
-  const workspaceFileLimit = Math.min(maxFilesPerProject * Math.max(projects.length, 1), 20_000);
-  const workspaceFiles = await listFiles(workspacePath, workspaceFileLimit);
+  const rawWorkspaceInventory = await projectFileInventory(
+    workspacePath,
+    inventoryFileLimit,
+    projects.map((project) => project.root)
+  );
+  const workspaceFiles = rawWorkspaceInventory.files.filter(
+    (file) =>
+      !projects.some(
+        (project) => file === project.root || file.startsWith(`${project.root}${path.sep}`)
+      )
+  );
+  const workspaceInventory: ProjectFileInventory = {
+    ...rawWorkspaceInventory,
+    files: workspaceFiles,
+    eligibleFileCount:
+      rawWorkspaceInventory.eligibleFileCountExact && !rawWorkspaceInventory.truncated
+        ? workspaceFiles.length
+        : rawWorkspaceInventory.eligibleFileCount,
+    truncated: rawWorkspaceInventory.truncated,
+  };
   const inputFingerprint = await computeWorkspaceKnowledgeGraphInputFingerprint({
     workspacePath,
     projects,
-    projectFileLimit: semanticScanLimit,
-    workspaceFileLimit,
+    projectFileLimit: inventoryFileLimit,
+    workspaceFileLimit: inventoryFileLimit,
     inventories: {
-      workspaceFiles,
-      projectFiles: semanticFilesByProject,
+      workspaceInventory,
+      projectInventories: inventoryByProject,
+      scanBudgetsByProject,
     },
   });
+  for (const scope of inputFingerprint.scopes.filter((candidate) => candidate.truncated)) {
+    state.diagnostics.push({
+      code: `graph.input.${scope.kind}_file_limit_reached`,
+      severity: 'warning',
+      message: `${scope.kind === 'project' ? `Project ${scope.id}` : 'Workspace'} graph inventory reached the ${scope.fileLimit}-file emergency bound. The persisted graph remains usable, but completeness claims must be bounded.`,
+      recommendation:
+        'Increase inventoryFileLimitPerProject for this scope or split the repository into explicit project boundaries before claiming complete source coverage.',
+    });
+  }
+  const currentProjectScopes = new Map(
+    inputFingerprint.scopes
+      .filter((scope) => scope.kind === 'project')
+      .map((scope) => [scope.id, scope.hash] as const)
+  );
+  const previousProjectScopes = new Map(
+    (options.previousGraph?.source.inputs?.scopes ?? [])
+      .filter((scope) => scope.kind === 'project')
+      .map((scope) => [scope.id, scope.hash] as const)
+  );
+  const incrementalCacheProtocolVersion = '1.4.0';
+  const previousProviderVersions = new Map(
+    (options.previousGraph?.providers ?? [])
+      .filter((provider) => provider.id !== 'incremental-project-cache')
+      .map((provider) => [provider.id, provider.version] as const)
+  );
+  const previousProviderRuns = new Map(
+    (options.previousGraph?.providers ?? []).map((provider) => [provider.id, provider] as const)
+  );
+  const projectRoots = projects.map((project) => path.resolve(project.root));
+  const hasOverlappingProjectRoots = projectRoots.some((root, index) =>
+    projectRoots.some(
+      (candidate, candidateIndex) =>
+        candidateIndex !== index &&
+        (candidate === root || candidate.startsWith(`${root}${path.sep}`))
+    )
+  );
+  const providerSetIsCompatible =
+    PROVIDERS.every((provider) => previousProviderVersions.get(provider.id) === provider.version) &&
+    previousProviderRuns.get('incremental-project-cache')?.version ===
+      incrementalCacheProtocolVersion;
+  const canReusePrevious =
+    !hasOverlappingProjectRoots &&
+    options.previousGraph?.workspace.name === options.workspace.name &&
+    providerSetIsCompatible &&
+    currentProjectScopes.size > 0 &&
+    currentProjectScopes.size === previousProjectScopes.size &&
+    [...currentProjectScopes.keys()].every((id) => previousProjectScopes.has(id));
+  const previousProjectEntities = new Map(
+    (options.previousGraph?.entities ?? [])
+      .filter((entity) => entity.kind === 'project' && entity.projectId)
+      .map((entity) => [entity.projectId as string, entity] as const)
+  );
+  const currentProjectsById = new Map(projects.map((project) => [project.id, project] as const));
+  const projectSemanticsMatch = (project: ResolvedProject): boolean => {
+    const previousEntity = previousProjectEntities.get(project.id);
+    if (!previousEntity) return false;
+    const expected = projectFoundationAttributes(project);
+    const previousComparable = Object.fromEntries(
+      Object.keys(expected).map((key) => [key, previousEntity.attributes[key]])
+    );
+    return hashCanonicalJson(previousComparable) === hashCanonicalJson(expected);
+  };
+  const reusableProjectIds = new Set(
+    canReusePrevious
+      ? [...currentProjectScopes]
+          .filter(
+            ([id, fingerprint]) =>
+              previousProjectScopes.get(id) === fingerprint &&
+              currentProjectsById.has(id) &&
+              projectSemanticsMatch(currentProjectsById.get(id) as ResolvedProject)
+          )
+          .map(([id]) => id)
+      : []
+  );
+  const incrementalProjectProviderIds = new Set([
+    'vscode-extension-manifest',
+    'python-project-manifest',
+    'source-language-inventory',
+    'source-structure',
+    'source-symbol-binding',
+    'runtime-bridge-semantics',
+    'polyglot-semantics',
+    'workspace-service-contract',
+    'openapi',
+    'authored-api-implementation-binding',
+    'dynamic-api-registration-binding',
+    'interface-contracts',
+    'compose',
+    'infrastructure-as-code',
+    'kubernetes',
+    'ci-workflow',
+    'codeowners',
+  ]);
+  const projectsToScan = projects.filter((project) => !reusableProjectIds.has(project.id));
+  let pendingReusableSharedRelations: WorkspaceKnowledgeRelation[] = [];
+  if (options.previousGraph && reusableProjectIds.size > 0) {
+    const reusableProjectEntities = options.previousGraph.entities.filter(
+      (entity) => entity.projectId && reusableProjectIds.has(entity.projectId)
+    );
+    const reusableProjectEntityIds = new Set(reusableProjectEntities.map((entity) => entity.id));
+    const previousEntitiesById = new Map(
+      options.previousGraph.entities.map((entity) => [entity.id, entity] as const)
+    );
+    const previousProofsById = new Map(
+      options.previousGraph.proofs.map((proof) => [proof.id, proof] as const)
+    );
+    const reusableScopeEntityIds = new Set(reusableProjectEntityIds);
+    let expandedReusableScope = true;
+    while (expandedReusableScope) {
+      expandedReusableScope = false;
+      for (const relation of options.previousGraph.relations) {
+        const fromReusable = reusableScopeEntityIds.has(relation.from);
+        const toReusable = reusableScopeEntityIds.has(relation.to);
+        if (fromReusable === toReusable) continue;
+        const sharedId = fromReusable ? relation.to : relation.from;
+        const sharedEntity = previousEntitiesById.get(sharedId);
+        if (!sharedEntity || sharedEntity.projectId !== undefined) continue;
+        const proofIds = [...sharedEntity.proofIds, ...relation.proofIds];
+        if (
+          proofIds.some((proofId) => {
+            const provider = previousProofsById.get(proofId)?.provider;
+            return provider !== undefined && incrementalProjectProviderIds.has(provider);
+          })
+        ) {
+          reusableScopeEntityIds.add(sharedId);
+          expandedReusableScope = true;
+        }
+      }
+    }
+    if (projectsToScan.length === 0) {
+      for (const entity of options.previousGraph.entities) {
+        if (entity.projectId !== undefined) continue;
+        if (
+          entity.proofIds.some((proofId) => {
+            const provider = previousProofsById.get(proofId)?.provider;
+            return provider !== undefined && incrementalProjectProviderIds.has(provider);
+          })
+        ) {
+          reusableScopeEntityIds.add(entity.id);
+        }
+      }
+    }
+    const reusableSharedEntityIds = new Set(
+      [...reusableScopeEntityIds].filter((id) => !reusableProjectEntityIds.has(id))
+    );
+    const reusableEntities = [
+      ...reusableProjectEntities,
+      ...options.previousGraph.entities.filter((entity) => reusableSharedEntityIds.has(entity.id)),
+    ];
+    const reusableEntityIds = new Set(reusableEntities.map((entity) => entity.id));
+    const reusableRelations = options.previousGraph.relations.filter(
+      (relation) => reusableEntityIds.has(relation.from) && reusableEntityIds.has(relation.to)
+    );
+    pendingReusableSharedRelations = options.previousGraph.relations.filter((relation) => {
+      const fromReusable = reusableEntityIds.has(relation.from);
+      const toReusable = reusableEntityIds.has(relation.to);
+      if (fromReusable === toReusable) return false;
+      const sharedEntity = previousEntitiesById.get(fromReusable ? relation.to : relation.from);
+      return sharedEntity?.projectId === undefined;
+    });
+    const reusableProofIds = new Set(
+      [...reusableEntities, ...reusableRelations].flatMap((entry) => entry.proofIds)
+    );
+    for (const proof of options.previousGraph.proofs) {
+      if (reusableProofIds.has(proof.id)) state.proofs.set(proof.id, proof);
+    }
+    for (const entity of reusableEntities) state.entities.set(entity.id, entity);
+    for (const relation of reusableRelations) state.relations.set(relation.id, relation);
+    state.providers.push({
+      id: 'incremental-project-cache',
+      version: incrementalCacheProtocolVersion,
+      status: 'passed',
+      permission: 'filesystem-read',
+      discoveredEntities: reusableEntities.length,
+      discoveredRelations: reusableRelations.length,
+      proofCount: reusableProofIds.size,
+      diagnostics: [
+        `Reused ${reusableProjectIds.size} unchanged project scope(s); rescanning ${projectsToScan.length}.`,
+      ],
+    });
+  } else {
+    state.providers.push({
+      id: 'incremental-project-cache',
+      version: incrementalCacheProtocolVersion,
+      status: 'skipped',
+      permission: 'filesystem-read',
+      discoveredEntities: 0,
+      discoveredRelations: 0,
+      proofCount: 0,
+      diagnostics: [
+        hasOverlappingProjectRoots
+          ? `Overlapping project boundaries require a full scan to preserve deterministic artifact ownership; scanning ${projectsToScan.length}.`
+          : `No compatible unchanged project scope was reused; scanning ${projectsToScan.length}.`,
+      ],
+    });
+  }
   const context: ProviderContext = {
     workspacePath,
     projects,
     filesByProject,
+    deepFilesByProject,
     semanticFilesByProject,
-    semanticScanLimit,
+    inventoryByProject,
+    scanBudgetsByProject,
     workspaceFiles,
     now,
-    maxFilesPerProject,
     contract: options.contract ?? null,
     state,
   };
 
+  const incrementalContext: ProviderContext = { ...context, projects: projectsToScan };
+
   for (const provider of PROVIDERS) {
+    if (
+      reusableProjectIds.size > 0 &&
+      projectsToScan.length === 0 &&
+      incrementalProjectProviderIds.has(provider.id)
+    ) {
+      const previousRun = previousProviderRuns.get(provider.id);
+      if (previousRun) {
+        for (const diagnosticText of previousRun.diagnostics) {
+          const previousDiagnostic = options.previousGraph?.diagnostics.find(
+            (diagnostic) => `${diagnostic.code}: ${diagnostic.message}` === diagnosticText
+          );
+          if (
+            previousDiagnostic &&
+            !state.diagnostics.some(
+              (diagnostic) =>
+                diagnostic.code === previousDiagnostic.code &&
+                diagnostic.message === previousDiagnostic.message
+            )
+          ) {
+            state.diagnostics.push(previousDiagnostic);
+          }
+        }
+        state.providers.push({
+          ...previousRun,
+          diagnostics: [
+            ...new Set([
+              ...previousRun.diagnostics,
+              'Provider evidence reused from unchanged project scopes.',
+            ]),
+          ],
+        });
+        continue;
+      }
+    }
     const before = {
       entities: state.entities.size,
       relations: state.relations.size,
@@ -4686,11 +7162,15 @@ export async function buildWorkspaceKnowledgeGraph(
     let status: WorkspaceKnowledgeProviderRun['status'] = 'passed';
     let executionError: string | null = null;
     try {
-      const applicable = provider.applicable ? await provider.applicable(context) : true;
+      const providerContext =
+        reusableProjectIds.size > 0 && incrementalProjectProviderIds.has(provider.id)
+          ? incrementalContext
+          : context;
+      const applicable = provider.applicable ? await provider.applicable(providerContext) : true;
       if (!applicable) {
         status = 'skipped';
       } else {
-        await provider.run(context);
+        await provider.run(providerContext);
         const discoveredEntities = state.entities.size - before.entities;
         const discoveredRelations = state.relations.size - before.relations;
         const discoveredProofs = state.proofs.size - before.proofs;
@@ -4724,6 +7204,10 @@ export async function buildWorkspaceKnowledgeGraph(
     if (executionError && providerDiagnostics.length === 0) {
       providerDiagnostics.push(executionError);
     }
+    const inputCoverage = providerInputCoverage(provider, context, status);
+    if (status === 'passed' && inputCoverage?.some((coverage) => coverage.status === 'bounded')) {
+      status = 'partial';
+    }
     state.providers.push({
       id: provider.id,
       version: provider.version,
@@ -4733,7 +7217,39 @@ export async function buildWorkspaceKnowledgeGraph(
       discoveredRelations: state.relations.size - before.relations,
       proofCount: state.proofs.size - before.proofs,
       diagnostics: providerDiagnostics,
+      ...(inputCoverage ? { inputCoverage } : {}),
     });
+  }
+  if (options.previousGraph && pendingReusableSharedRelations.length > 0) {
+    const previousProofsById = new Map(
+      options.previousGraph.proofs.map((proof) => [proof.id, proof] as const)
+    );
+    let restoredRelations = 0;
+    let restoredProofs = 0;
+    for (const relation of pendingReusableSharedRelations) {
+      if (!state.entities.has(relation.from) || !state.entities.has(relation.to)) continue;
+      if (!state.relations.has(relation.id)) {
+        state.relations.set(relation.id, relation);
+        restoredRelations += 1;
+      }
+      for (const proofId of relation.proofIds) {
+        const proof = previousProofsById.get(proofId);
+        if (proof && !state.proofs.has(proofId)) {
+          state.proofs.set(proofId, proof);
+          restoredProofs += 1;
+        }
+      }
+    }
+    const cacheRun = state.providers.find(
+      (provider) => provider.id === 'incremental-project-cache'
+    );
+    if (cacheRun) {
+      cacheRun.discoveredRelations += restoredRelations;
+      cacheRun.proofCount += restoredProofs;
+      cacheRun.diagnostics.push(
+        `Restored ${restoredRelations} reusable project-to-workspace relation(s) with ${restoredProofs} additional proof(s).`
+      );
+    }
   }
   reconcileCrossProviderEvidence(state);
   await addProjectTopology(state, options.projectTopology);
@@ -4763,24 +7279,37 @@ export async function buildWorkspaceKnowledgeGraph(
         'Author service contracts or add OpenAPI, Compose, Kubernetes, package or import evidence.',
     });
   }
-  const explicitUnknownCount = state.diagnostics
-    .filter(
-      (diagnostic) =>
-        diagnostic.code.includes('unknown') ||
-        diagnostic.code.includes('unresolved') ||
-        diagnostic.code.includes('limit_reached') ||
-        diagnostic.code.endsWith('.empty_result')
-    )
-    .reduce(
-      (count, diagnostic) =>
-        count + Math.max(diagnostic.entityIds?.length ?? 0, diagnostic.relationIds?.length ?? 0, 1),
-      0
-    );
-  const bindingCoverage = calculateBindingCoverage(entities, relations);
-  const bindingUnknownCount = Object.values(bindingCoverage).reduce(
-    (count, dimension) => count + dimension.unknownCount,
-    0
+  const bindingCoverage = calculateWorkspaceKnowledgeBindingCoverage(entities, relations);
+  const completeInventoryScopes = inputFingerprint.scopes.filter(
+    (scope) => !scope.truncated
+  ).length;
+  const boundedInventoryScopes = inputFingerprint.scopes.length - completeInventoryScopes;
+  const providerCompleteness = state.providers.reduce(
+    (summary, provider) => {
+      if (provider.status === 'failed') summary.failed += 1;
+      else if (
+        provider.status === 'skipped' ||
+        provider.inputCoverage?.every((coverage) => coverage.status === 'not-applicable')
+      ) {
+        summary.notApplicable += 1;
+      } else if (
+        provider.status === 'partial' ||
+        provider.inputCoverage?.some((coverage) => coverage.status === 'bounded')
+      ) {
+        summary.bounded += 1;
+      } else {
+        summary.complete += 1;
+      }
+      return summary;
+    },
+    { complete: 0, bounded: 0, notApplicable: 0, failed: 0 }
   );
+  const completenessStatus =
+    boundedInventoryScopes > 0 ||
+    providerCompleteness.bounded > 0 ||
+    providerCompleteness.failed > 0
+      ? ('bounded' as const)
+      : ('complete' as const);
 
   return {
     schemaVersion: WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
@@ -4802,8 +7331,28 @@ export async function buildWorkspaceKnowledgeGraph(
         state.providers.length === 0 ? 1 : successfulProviders / state.providers.length,
       conflictCount: state.diagnostics.filter((diagnostic) => diagnostic.code.includes('conflict'))
         .length,
-      unknownCount: explicitUnknownCount + bindingUnknownCount,
+      unknownCount: countWorkspaceKnowledgeUnknowns(state.diagnostics, bindingCoverage),
       bindingCoverage,
+      completeness: {
+        status: completenessStatus,
+        inventory: {
+          scopeCount: inputFingerprint.scopes.length,
+          completeScopes: completeInventoryScopes,
+          boundedScopes: boundedInventoryScopes,
+          eligibleFiles: inputFingerprint.scopes.reduce(
+            (count, scope) => count + (scope.eligibleFileCount ?? scope.fileCount),
+            0
+          ),
+          indexedFiles: inputFingerprint.scopes.reduce(
+            (count, scope) => count + scope.fileCount,
+            0
+          ),
+          eligibleFileCountExact: inputFingerprint.scopes.every(
+            (scope) => scope.eligibleFileCountExact !== false
+          ),
+        },
+        providers: providerCompleteness,
+      },
       portable: true,
       secretValuesEmitted: false,
     },

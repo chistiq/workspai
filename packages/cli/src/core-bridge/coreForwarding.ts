@@ -22,7 +22,7 @@ export const WRAPPER_SHARED_CLI_FLAGS = new Set([
   '--no-workspace',
 ]);
 
-const PYTHON_CORE_CONTEXT_ENGINES = new Set(['pip', 'poetry', 'venv', 'pipx', 'python']);
+const PYTHON_CORE_CONTEXT_ENGINES = new Set(['pip', 'poetry', 'venv', 'pipx', 'python', 'uv']);
 
 export function isPythonCoreContextEngine(engine: unknown): engine is string {
   return typeof engine === 'string' && PYTHON_CORE_CONTEXT_ENGINES.has(engine);

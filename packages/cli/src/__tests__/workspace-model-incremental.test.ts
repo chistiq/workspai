@@ -58,6 +58,33 @@ describe('workspace model incremental (1.16)', () => {
     expect(next.model.graph).toEqual(next.model.projectTopology);
   });
 
+  it('reclassifies managed metadata when a newly supported root manifest appears', async () => {
+    const rubyProject = path.join(workspacePath, 'ruby-library');
+    await fsExtra.outputJson(path.join(rubyProject, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'ruby-library',
+      runtime: 'unknown',
+      framework: 'unknown',
+      import: { managed_by: 'workspai', source_type: 'local-folder' },
+    });
+    const first = await buildWorkspaceModelIncremental({ workspacePath });
+    expect(first.model.projects.find((project) => project.name === 'ruby-library')?.runtime).toBe(
+      'unknown'
+    );
+
+    await fsExtra.outputFile(
+      path.join(rubyProject, 'ruby-library.gemspec'),
+      'Gem::Specification.new { |spec| spec.name = "ruby-library" }\n'
+    );
+    const next = await buildWorkspaceModelIncremental({ workspacePath });
+
+    expect(next.mode).toBe('incremental');
+    expect(next.model.projects.find((project) => project.name === 'ruby-library')).toMatchObject({
+      runtime: 'ruby',
+      framework: 'ruby',
+    });
+  });
+
   it('handles an added project incrementally (reuse unchanged models, full graph re-scan)', async () => {
     await buildWorkspaceModelIncremental({ workspacePath });
     await writeProject('worker', { name: 'worker', version: '1.0.0' });
@@ -76,6 +103,56 @@ describe('workspace model incremental (1.16)', () => {
     const next = await buildWorkspaceModelIncremental({ workspacePath });
     expect(next.mode).toBe('full');
     expect(next.model.workspace.name).toBe('renamed-fixture');
+  });
+
+  it('incrementally rebuilds when source changes in a contract-only external project', async () => {
+    const externalRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-external-incr-'));
+    try {
+      await fsExtra.writeJson(path.join(externalRoot, 'package.json'), {
+        name: 'external-worker',
+        version: '1.0.0',
+      });
+      await fsExtra.outputFile(
+        path.join(externalRoot, 'src', 'worker.ts'),
+        'export const v = 1;\n'
+      );
+      await fsExtra.writeJson(path.join(workspacePath, '.rapidkit', 'workspace.contract.json'), {
+        schemaVersion: 1,
+        kind: 'rapidkit.workspace.contract',
+        generatedAt: '2026-08-28T00:00:00.000Z',
+        workspace: { name: 'incremental-fixture' },
+        projects: [
+          {
+            slug: 'external-worker',
+            relativePath: '../external-worker',
+            externalPath: externalRoot,
+            modules: [],
+            ports: [],
+            contracts: {
+              owns: [],
+              apis: [],
+              publishes: [],
+              consumes: [],
+              dependsOn: [],
+              env: [],
+            },
+          },
+        ],
+      });
+
+      const first = await buildWorkspaceModelIncremental({ workspacePath });
+      expect(first.mode).toBe('full');
+      expect(first.model.projects.some((project) => project.name === 'external-worker')).toBe(true);
+      expect((await buildWorkspaceModelIncremental({ workspacePath })).mode).toBe('unchanged');
+
+      await fsExtra.outputFile(
+        path.join(externalRoot, 'src', 'worker.ts'),
+        'export const v = 2;\n'
+      );
+      expect((await buildWorkspaceModelIncremental({ workspacePath })).mode).toBe('incremental');
+    } finally {
+      await fsExtra.remove(externalRoot);
+    }
   });
 
   it('rebuilds fully when a legacy cache lacks canonical projectTopology', async () => {

@@ -26,8 +26,16 @@
     "profile": { "type": ["string", "null"] },
     "summary": {
       "type": "object",
-      "required": ["score", "verdict", "projectCount", "runtimeCount", "findings"],
+      "required": [
+        "score",
+        "verdict",
+        "projectCount",
+        "runtimeCount",
+        "findings"
+      ],
       "properties": {
+        "statusScope": { "const": "source-structure" },
+        "releaseReadiness": { "const": "not-evaluated" },
         "score": { "type": "number" },
         "verdict": {
           "enum": ["ready", "needs-attention", "blocked"]

@@ -163,6 +163,16 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
     'Resolve portable project entry contracts and issue canonical-first grounding receipts for coding agents.',
   'agent bootstrap':
     'Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery.',
+  'agent framework':
+    'Inspect release-admitted agent framework runtimes and their governed project integration commands.',
+  'agent framework list':
+    'List exact tested framework baselines and whether their reviewed cross-platform admission remains current.',
+  'agent framework plan':
+    'Bind an isolated agent attachment plan to a Goal, canonical architecture generation, and Proof-Carrying Change without writing project files.',
+  'agent framework attach':
+    'Plan, explicitly authorize, and write only Workspai-owned agent files while preserving project dependencies and user-authored content.',
+  'agent framework apply':
+    'Apply an already authorized hash-bound agent framework plan and record file digests plus an ownership receipt.',
   autopilot:
     'Coordinate supported automated governance actions while preserving explicit evidence and release gates.',
   'autopilot release':
@@ -173,6 +183,38 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   cache: 'Inspect or clear Workspai cache entries used by workspace and project operations.',
   checkpoint:
     'Capture a named project or workspace checkpoint that can anchor later comparison or recovery.',
+  change:
+    'Compose Goal intent, architecture generations, typed effects, independent verification, and uncertainty into a tamper-evident change capsule.',
+  'change begin':
+    'Begin a decision transaction by pinning an immutable Goal Pack and exact Model, Graph, and live-input generation.',
+  'change list':
+    'Discover open, blocked, sealed, aborted, and invalid change capsules with integrity and assurance summaries.',
+  'change predict':
+    'Attach a bounded noncanonical architecture prediction that is explicitly ineligible as proof.',
+  'change authorize':
+    'Grant explicit bounded effect classes before any mutation receipt can enter the decision ledger.',
+  'change resume':
+    'Resume a blocked or human-paused transaction into an explicit bounded state with a durable human reason.',
+  'change effect': 'Inspect the typed effect-receipt command group for proof-carrying changes.',
+  'change effect record':
+    'Record an idempotent observed effect receipt without treating model intent or prediction as execution proof.',
+  'change verification':
+    'Inspect the independent Goal-criterion verification receipt command group.',
+  'change verification record':
+    'Admit a typed verification receipt only when it binds the current Model, Graph, effect head, and immutable Goal criterion.',
+  'change status':
+    'Read the derived decision state, assurance coverage, blockers, and remaining uncertainty.',
+  'change explain':
+    'Explain the evidence chain and safe next actions for an open, blocked, or sealed change.',
+  'change verify':
+    'Refresh canonical architecture, derive the actual Graph delta, compare prediction with observation, and run independent verification.',
+  'change abort':
+    'Terminate an open decision transaction with a durable reason while preserving its evidence history.',
+  'change capsule': 'Inspect the validation and export command group for change capsules.',
+  'change capsule validate':
+    'Validate capsule integrity, decision-head binding, baseline materialization, and referenced local evidence.',
+  'change capsule export':
+    'Export a validated portable capsule manifest to a workspace-contained destination.',
   commands:
     'Publish the installed CLI command inventory, ownership boundaries, aliases, options, and integrity verdict.',
   config:
@@ -219,6 +261,7 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   license: 'Inspect or validate the effective Workspai license and feature entitlement state.',
   lint: 'Run the detected project lint lifecycle under workspace compatibility and policy gates.',
   list: 'List detected or registered resources for the current command scope.',
+  live: 'Render the versioned cross-terminal execution graph for Workspai runs in the current project or workspace.',
   merge:
     'Combine supported governed configuration or project state through the owning runtime operation.',
   mirror:
@@ -336,6 +379,8 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   goal: 'Compile a plain-language engineering intent into a scope-bound, evidence-pinned Goal Pack and portable agent handoff without mutating source.',
   'workspace graph':
     'Query or export the evidence-backed workspace graph derived from the canonical model.',
+  'workspace graph benchmark-suite --write':
+    'Run the fixed multi-scenario retrieval suite, preserve estimate-versus-measurement provenance, and publish the benchmark artifact.',
   'workspace watch': 'Observe relevant workspace changes and publish versioned watch events.',
   'workspace remediation-plan':
     'Generate a structured remediation plan from current workspace evidence.',
@@ -398,6 +443,24 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
   Record<string, Omit<RuntimeCommandDocumentation, 'invocation' | 'summary'>>
 > = {
+  live: {
+    canonicalArgv: ['live', '--once', '--json', '--projection', 'board'],
+    output: {
+      defaultFormat: 'human-or-json',
+      modes: [
+        {
+          selector: '--once --json --projection monitor',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: '--once --json --projection board',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+      ],
+    },
+  },
   'workspace feedback': {
     canonicalArgv: ['workspace', 'feedback', 'record', '--json'],
     input: {
@@ -452,6 +515,11 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
         },
         {
           selector: 'benchmark <query> --limit <count> --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: 'benchmark-suite agent-core.v1 --write --json',
           format: 'json',
           mediaType: 'application/json',
         },

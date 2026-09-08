@@ -74,12 +74,13 @@ jobs:
             for (const run of runs) {
               if (!required.includes(run.name)) continue;
               // The Actions API exposes the configured run-name in run.name.
-              // Require the push-triggered, cost-bounded primary lane for this
-              // exact SHA. Scheduled/manual full and targeted runs remain
-              // compatibility signals and cannot satisfy the release gate.
+              // Require the cost-bounded primary lane for this exact SHA.
+              // A push or an explicit all-generator manual primary run may
+              // satisfy the gate. Full, targeted and contract-only dispatches
+              // have distinct run names and cannot qualify accidentally.
               if (
                 run.name === 'Official Generator Smoke · primary' &&
-                run.event !== 'push'
+                !['push', 'workflow_dispatch'].includes(run.event)
               ) continue;
               const current = latestByName.get(run.name);
               if (!current || new Date(run.created_at) > new Date(current.created_at)) {

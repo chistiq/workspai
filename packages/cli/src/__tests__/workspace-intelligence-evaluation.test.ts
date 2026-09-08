@@ -139,6 +139,26 @@ describe('workspace intelligence evaluation', () => {
     ).toThrow(/require at least one/i);
   });
 
+  it('does not report zero tokens per verified outcome when no usable model measurement exists', () => {
+    const events = [
+      normalizeWorkspaceEvaluationEvent({
+        kind: 'tool-call',
+        toolCall: {
+          tool: 'workspace verify',
+          result: 'passed',
+          changedSource: false,
+          durationMs: 10,
+        },
+      }),
+      normalizeWorkspaceEvaluationEvent({
+        kind: 'outcome',
+        outcome: { status: 'passed', verified: true, blockersResolved: 0 },
+      }),
+    ];
+
+    expect(summarizeWorkspaceEvaluation(events).efficiency.tokensPerVerifiedOutcome).toBeNull();
+  });
+
   it('persists a live run atomically, records idempotently, finalizes, and compares', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'wsp-eval-'));
     tempDirs.push(workspacePath);

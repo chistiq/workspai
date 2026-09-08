@@ -11,8 +11,12 @@ import {
   writeWorkspaceModel,
 } from '../workspace-model.js';
 import { buildWorkspaceModelSnapshot } from '../workspace-intelligence.js';
-import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
-import { hashWorkspaceModel } from '../workspace-model-hash.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
+import { projectWorkspaceKnowledgeGraph } from '../workspace-knowledge-graph-projection.js';
+import { hashCanonicalJson, hashWorkspaceModel } from '../workspace-model-hash.js';
 
 describe('workspace intelligence model', () => {
   const tempDirs: string[] = [];
@@ -175,6 +179,51 @@ describe('workspace intelligence model', () => {
     expect(model.summary.runtimes).toEqual(['dotnet', 'go', 'node', 'python']);
   });
 
+  it('keeps internal and external linked projects semantically equivalent after managed re-detection', async () => {
+    const workspacePath = await makeTempDir('rk-model-internal-polyglot-adopted-');
+    const projectPath = path.join(workspacePath, 'application');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'application-platform',
+      profile: 'polyglot',
+    });
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'application',
+      kind: 'frontend',
+      runtime: 'node',
+      runtime_candidates: ['node', 'go', 'ruby'],
+      framework: 'vue',
+      kit_name: 'adopted.vue',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'Gemfile'),
+      "source 'https://rubygems.org'\ngem 'rails'\n"
+    );
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'application-assets',
+      dependencies: { vue: '^3.0.0' },
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'components', 'gateway', 'go.mod'),
+      'module example.test/gateway\n'
+    );
+
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+
+    expect(model.projects[0]).toMatchObject({
+      name: 'application',
+      kind: 'backend',
+      runtime: 'ruby',
+      framework: 'rails',
+      kit: 'adopted.rails',
+      runtimeCandidates: ['ruby', 'go', 'node'],
+    });
+    expect(model.identity.runtimeFamilies).toEqual(['go', 'node', 'ruby']);
+  });
+
   it('treats contract-declared projects as canonical inventory and reports missing roots', async () => {
     const workspacePath = await makeTempDir('rk-model-contract-inventory-');
     await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
@@ -189,6 +238,11 @@ describe('workspace intelligence model', () => {
           runtime: 'node',
           framework: 'nestjs',
           kit: 'nestjs.standard',
+          governance: {
+            ci: { mode: 'external', provider: 'Buildkite', reference: 'platform/orders' },
+            release: { mode: 'external', provider: 'Release Engineering' },
+            ownership: { mode: 'external', provider: 'Service Catalog' },
+          },
           modules: [],
           ports: [],
           contracts: {
@@ -217,6 +271,14 @@ describe('workspace intelligence model', () => {
       name: 'orders-api',
       path: 'services/orders',
       kit: 'nestjs.standard',
+      governance: {
+        schemaVersion: 'workspai.project-governance.v1',
+        ci: {
+          status: 'external-declared',
+          provider: 'Buildkite',
+          reference: 'platform/orders',
+        },
+      },
       provenance: {
         path: 'workspace contract declaration reconciled with filesystem discovery',
       },
@@ -438,17 +500,17 @@ describe('workspace intelligence model', () => {
         },
       },
     });
-    expect(model.projects[0].commands.supported).toContain('test');
-    expect(model.projects[0].commands.fleetStages).toContain('test');
-    expect(model.projects[0].commands.localOnly).toContain('dev');
+    expect(model.projects[0].commands.supported).not.toContain('test');
+    expect(model.projects[0].commands.fleetStages).not.toContain('test');
+    expect(model.projects[0].commands.localOnly).not.toContain('dev');
     expect(model.projects[0].commands.map.test).toMatchObject({
-      status: 'supported',
-      fleetEligible: true,
-      executionScope: 'fleet',
+      status: 'unsupported',
+      fleetEligible: false,
     });
     expect(model.projects[0].commands.map.dev).toMatchObject({
       executionScope: 'local-only',
       fleetEligible: false,
+      status: 'unsupported',
     });
     expect(model.projects[0].importantFiles).toContain('.rapidkit/project.json');
     expect(model.facts?.map((fact) => fact.id)).toEqual(
@@ -556,6 +618,157 @@ describe('workspace intelligence model', () => {
 
     expect(model.projects[0].importantFiles).toEqual(
       expect.arrayContaining(['CMakeLists.txt', 'WORKSPACE', '.bazelrc'])
+    );
+  });
+
+  it('publishes modern Compose files as important project control surfaces', async () => {
+    const workspacePath = await makeTempDir('rk-model-compose-controls-');
+    const projectPath = path.join(workspacePath, 'platform');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'platform',
+      runtime: 'node',
+      framework: 'node',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'compose.yaml'),
+      'services:\n  api:\n    image: example/api\n'
+    );
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toContain('compose.yaml');
+  });
+
+  it('keeps inferred nested manifests inside a registered aggregate boundary', async () => {
+    const workspacePath = await makeTempDir('model-project-boundaries-');
+    const parent = path.join(workspacePath, 'suite');
+    await fsExtra.outputJson(path.join(parent, '.workspai/project.json'), {
+      name: 'suite',
+      runtime: 'node',
+      framework: 'node',
+    });
+    await fsExtra.outputFile(
+      path.join(parent, 'libs/worker/pyproject.toml'),
+      '[project]\nname = "worker"\n'
+    );
+    const model = await buildWorkspaceModel({ workspacePath });
+    expect(model.projects.map((project) => project.path)).toEqual(['suite']);
+    expect(new Set(model.projects.map((project) => project.name)).size).toBe(model.projects.length);
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai/workspace.contract.json'), {
+      kind: 'rapidkit.workspace.contract',
+      schemaVersion: 1,
+      workspace: { name: 'boundary-test' },
+      projects: [
+        { slug: 'suite', relativePath: 'suite', contracts: {} },
+        { slug: 'worker', relativePath: 'suite/libs/worker', contracts: {} },
+      ],
+    });
+    const explicit = await buildWorkspaceModel({ workspacePath });
+    expect(explicit.projects.find((project) => project.path === 'suite/libs/worker')).toMatchObject(
+      { name: 'worker', runtime: 'python' }
+    );
+  });
+
+  it('publishes bounded nested ecosystem entry manifests for composite roots', async () => {
+    const workspacePath = await makeTempDir('rk-model-composite-controls-');
+    const projectPath = path.join(workspacePath, 'bindings');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'bindings',
+      runtime: 'cpp',
+      framework: 'cpp',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'compose.yaml'), 'services: {}\n');
+    await fsExtra.outputFile(path.join(projectPath, 'cpp', 'CMakeLists.txt'), 'project(core)\n');
+    await fsExtra.outputFile(path.join(projectPath, 'python', 'pyproject.toml'), '[project]\n');
+    await fsExtra.outputFile(path.join(projectPath, 'r', 'DESCRIPTION'), 'Package: bindings\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'ruby', 'client', 'client.gemspec'),
+      'Gem::Specification.new\n'
+    );
+    for (let index = 0; index < 20; index += 1) {
+      await fsExtra.outputFile(
+        path.join(projectPath, 'a-native', `module-${index}`, 'meson.build'),
+        `project('module-${index}')\n`
+      );
+    }
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining([
+        'cpp/CMakeLists.txt',
+        'python/pyproject.toml',
+        'r/DESCRIPTION',
+        'ruby/client/client.gemspec',
+      ])
+    );
+    expect(model.projects[0].importantFiles.length).toBeLessThanOrEqual(19);
+  });
+
+  it('publishes the pinned Rust toolchain as an important project control surface', async () => {
+    const workspacePath = await makeTempDir('rk-model-rust-toolchain-');
+    const projectPath = path.join(workspacePath, 'editor');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'editor',
+      runtime: 'rust',
+      framework: 'rust',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'Cargo.toml'), '[workspace]\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'rust-toolchain.toml'),
+      '[toolchain]\nchannel = "1.90.0"\n'
+    );
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining(['Cargo.toml', 'rust-toolchain.toml'])
+    );
+  });
+
+  it('publishes Go workspace control files as important project surfaces', async () => {
+    const workspacePath = await makeTempDir('rk-model-go-workspace-');
+    const projectPath = path.join(workspacePath, 'platform');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'platform',
+      runtime: 'go',
+      framework: 'go',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.com/platform\n');
+    await fsExtra.outputFile(path.join(projectPath, 'go.work'), 'go 1.24\nuse (\n  .\n)\n');
+    await fsExtra.outputFile(path.join(projectPath, 'go.work.sum'), 'example checksum\n');
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining(['go.mod', 'go.work', 'go.work.sum'])
+    );
+  });
+
+  it('publishes product and monorepo control surfaces as important files', async () => {
+    const workspacePath = await makeTempDir('rk-model-product-controls-');
+    const projectPath = path.join(workspacePath, 'editor');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'editor',
+      runtime: 'node',
+      framework: 'electron',
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), { private: true });
+    await fsExtra.outputJson(path.join(projectPath, 'product.json'), { nameShort: 'Editor' });
+    await fsExtra.outputJson(path.join(projectPath, 'tsconfig.json'), { compilerOptions: {} });
+    await fsExtra.outputFile(path.join(projectPath, 'pnpm-workspace.yaml'), 'packages: []\n');
+    await fsExtra.outputFile(path.join(projectPath, '.bunfig.toml'), '[install.lockfile]\n');
+
+    const model = await buildWorkspaceModel({ workspacePath });
+
+    expect(model.projects[0].importantFiles).toEqual(
+      expect.arrayContaining([
+        'package.json',
+        'product.json',
+        'tsconfig.json',
+        'pnpm-workspace.yaml',
+        '.bunfig.toml',
+      ])
     );
   });
 
@@ -745,6 +958,205 @@ describe('workspace intelligence model', () => {
         secretValuesEmitted: false,
       },
     });
+  });
+
+  it('publishes integrity-bound project graph references and keeps one aggregate graph', async () => {
+    const workspacePath = await makeTempDir('rk-model-project-graphs-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'commerce-platform',
+      workspace_name: 'commerce-platform',
+      profile: 'polyglot',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, 'api', 'package.json'), {
+      name: 'api',
+      version: '1.0.0',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, 'web', 'package.json'), {
+      name: 'web',
+      version: '1.0.0',
+      dependencies: { api: 'workspace:*' },
+    });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'src', 'server.ts'),
+      'export const apiPort = 8080;\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'client.ts'),
+      "import { apiPort } from '../../api/src/server';\nexport { apiPort };\n"
+    );
+
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await writeWorkspaceModel(model, workspacePath);
+
+    const aggregate = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+    );
+    expect(
+      aggregate.entities.some((entity: { projectId?: string }) => entity.projectId === 'api')
+    ).toBe(true);
+    expect(
+      aggregate.entities.some((entity: { projectId?: string }) => entity.projectId === 'web')
+    ).toBe(true);
+
+    for (const projectName of ['api', 'web']) {
+      const projectGraphReferencePath = path.join(
+        workspacePath,
+        projectName,
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+      );
+      const reference = await fsExtra.readJson(projectGraphReferencePath);
+      const projection = projectWorkspaceKnowledgeGraph(aggregate, projectName);
+      expect(reference).toMatchObject({
+        schemaVersion: 'project-knowledge-graph-reference.v1',
+        project: { name: projectName },
+        canonical: {
+          graph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+          sourceHash: aggregate.source.hash,
+          projectionHash: hashCanonicalJson(projection),
+        },
+        summary: {
+          entityCount: projection.entities.length,
+          relationCount: projection.relations.length,
+          proofCount: projection.proofs.length,
+        },
+      });
+      expect(
+        await fsExtra.pathExists(
+          path.join(workspacePath, projectName, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+        )
+      ).toBe(false);
+    }
+  });
+
+  it('publishes a graph reference beside an external sibling project', async () => {
+    const fixtureRoot = await makeTempDir('rk-model-external-project-');
+    const workspacePath = path.join(fixtureRoot, 'workspace');
+    const originalProjectPath = path.join(workspacePath, 'grpc');
+    const externalProjectPath = path.join(fixtureRoot, 'grpc');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'grpc-lab',
+      workspace_name: 'grpc-lab',
+    });
+    await fsExtra.outputJson(path.join(originalProjectPath, 'package.json'), {
+      name: 'grpc',
+      version: '1.0.0',
+    });
+    await fsExtra.outputFile(
+      path.join(originalProjectPath, 'src', 'server.ts'),
+      'export const service = "grpc";\n'
+    );
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await fsExtra.move(originalProjectPath, externalProjectPath);
+    model.projects[0].path = '../grpc';
+    for (const topology of [model.projectTopology, model.graph]) {
+      const node = topology?.nodes.find((candidate) => candidate.id === model.projects[0].name);
+      if (node) node.path = '../grpc';
+    }
+
+    await writeWorkspaceModel(model, workspacePath);
+
+    const projectGraphReference = await fsExtra.readJson(
+      path.join(
+        externalProjectPath,
+        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+      )
+    );
+    expect(projectGraphReference.project.name).toBe(model.projects[0].name);
+    expect(
+      await fsExtra.pathExists(
+        path.join(
+          workspacePath,
+          'grpc',
+          WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+        )
+      )
+    ).toBe(false);
+  });
+
+  it('does not recreate a missing project root while publishing graph artifacts', async () => {
+    const workspacePath = await makeTempDir('rk-model-missing-project-graph-');
+    const projectPath = path.join(workspacePath, 'retired-service');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'retirement-lab',
+      workspace_name: 'retirement-lab',
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'retired-service',
+      version: '1.0.0',
+    });
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await fsExtra.remove(projectPath);
+
+    await writeWorkspaceModel(model, workspacePath);
+
+    expect(await fsExtra.pathExists(projectPath)).toBe(false);
+    const aggregate = await fsExtra.readJson(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+    );
+    expect(
+      aggregate.entities.some(
+        (entity: { projectId?: string }) => entity.projectId === model.projects[0].name
+      )
+    ).toBe(true);
+  });
+
+  it('rolls back workspace and project graph revisions as one transaction', async () => {
+    const workspacePath = await makeTempDir('rk-model-project-graph-transaction-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      name: 'transaction-lab',
+      workspace_name: 'transaction-lab',
+    });
+    for (const projectName of ['api', 'web']) {
+      await fsExtra.outputJson(path.join(workspacePath, projectName, 'package.json'), {
+        name: projectName,
+        version: '1.0.0',
+      });
+    }
+    const first = await buildWorkspaceModel({
+      workspacePath,
+      now: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    await writeWorkspaceModel(first, workspacePath);
+    const paths = [
+      path.join(workspacePath, WORKSPACE_MODEL_REPORT_PATH),
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph),
+      ...['api', 'web'].map((projectName) =>
+        path.join(
+          workspacePath,
+          projectName,
+          WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+        )
+      ),
+    ];
+    const preimages = await Promise.all(
+      paths.map((artifactPath) => fsExtra.readFile(artifactPath))
+    );
+    const second = { ...first, generatedAt: '2026-08-27T00:00:00.000Z' };
+
+    process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER = '3';
+    try {
+      await expect(writeWorkspaceModel(second, workspacePath)).rejects.toThrow(
+        'Injected artifact-set failure'
+      );
+    } finally {
+      delete process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER;
+    }
+
+    const restored = await Promise.all(paths.map((artifactPath) => fsExtra.readFile(artifactPath)));
+    expect(restored).toEqual(preimages);
+    for (const artifactPath of paths) {
+      const siblings = await fsExtra.readdir(path.dirname(artifactPath));
+      expect(siblings.some((name) => name.endsWith('.rollback'))).toBe(false);
+    }
   });
 
   it('rolls back model and knowledge graph as one publication transaction', async () => {

@@ -18,6 +18,7 @@ import {
 import { buildInfraPlan, writeInfraArtifacts } from '../../utils/infra-plan.js';
 import { INFRA_PLAN_RELATIVE_PATH, INFRA_PLAN_SCHEMA_VERSION } from '../../utils/infra-stack.js';
 import { normalizeRegistryPath } from '../../utils/registry-path.js';
+import { writeProjectWorkspaceLink } from '../../project-workspace-link.js';
 
 const tempDirs: string[] = [];
 const mockExeca = execa as unknown as ReturnType<typeof vi.fn>;
@@ -180,6 +181,50 @@ describe('infra command', () => {
 
     expect(resolveInfraWorkspacePath()).toBe(normalizeRegistryPath(workspacePath));
     expect(resolveInfraWorkspacePath(workspacePath)).toBe(normalizeRegistryPath(workspacePath));
+  });
+
+  it('resolves the canonical workspace from an adopted external project', async () => {
+    const workspacePath = await createWorkspace();
+    const projectPath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-infra-adopted-'));
+    tempDirs.push(projectPath);
+    await fsExtra.outputFile(path.join(workspacePath, '.workspai-workspace'), 'workspace\n');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'external-api',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'infra-test', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'external-api',
+          relativePath: 'external/external-api',
+          externalPath: projectPath,
+          relationship: 'adopted',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+    await writeProjectWorkspaceLink({
+      workspacePath,
+      projectPath,
+      projectName: 'external-api',
+      relationship: 'adopted',
+    });
+    process.chdir(projectPath);
+
+    expect(resolveInfraWorkspacePath()).toBe(normalizeRegistryPath(workspacePath));
   });
 
   it('throws when workspace root cannot be resolved', () => {

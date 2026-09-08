@@ -8,7 +8,7 @@ import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-gr
 import type { WorkspaceModel } from './workspace-model.js';
 import {
   assertWorkspaceKnowledgeGraphSourceBinding,
-  computeWorkspaceKnowledgeGraphInputFingerprint,
+  workspaceKnowledgeGraphInputsMatchLiveState,
 } from './workspace-knowledge-graph.js';
 import { firstExistingWorkspaceArtifactPath } from './utils/artifact-path-compat.js';
 
@@ -127,22 +127,21 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
   ) {
     return { status: 'miss', reason: 'invalid-input-fingerprint' };
   }
-  let liveInputs: WorkspaceKnowledgeGraph['source']['inputs'];
+  let liveInputsMatch: boolean;
   try {
-    liveInputs = await computeWorkspaceKnowledgeGraphInputFingerprint({
+    liveInputsMatch = await workspaceKnowledgeGraphInputsMatchLiveState({
       workspacePath,
       projects: modelCandidate.projects.map((project) => ({
         id: project.name,
         path: project.path,
         ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
       })),
-      projectFileLimit: projectScopes[0]?.fileLimit ?? 20_000,
-      workspaceFileLimit: workspaceScopes[0].fileLimit,
+      expected: inputs,
     });
   } catch {
     return { status: 'miss', reason: 'input-scan-failed' };
   }
-  if (!liveInputs || liveInputs.hash !== inputs.hash) {
+  if (!liveInputsMatch) {
     return { status: 'miss', reason: 'live-input-mismatch' };
   }
   return {

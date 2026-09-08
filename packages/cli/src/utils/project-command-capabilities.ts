@@ -8,7 +8,11 @@ import {
   type BackendFrameworkDetection,
 } from './backend-framework-contract.js';
 import { getRuntimeAdapter } from './runtime-adapters.js';
-import { readProjectMetadata, type ProjectMetadata } from './project-metadata.js';
+import {
+  readProjectMetadata,
+  type ProjectEngine,
+  type ProjectMetadata,
+} from './project-metadata.js';
 import { projectMetadataCandidates } from './workspace-paths.js';
 import {
   getFrameworkSupportTier,
@@ -22,6 +26,7 @@ import {
   isRuntimeLifecycleCommandAvailable,
   type LifecycleProbeCommand,
 } from './runtime-lifecycle-probes.js';
+import { buildPolyglotLifecyclePlan } from '../polyglot-lifecycle-plan.js';
 
 export type CommandExecutionScope =
   'universal' | 'global' | 'local-only' | 'fleet' | 'core-delegated';
@@ -42,7 +47,7 @@ export interface ProjectCommandCapabilities {
   schemaVersion: 1;
   scope: 'project';
   projectRoot: string | null;
-  engine: 'npm' | 'pip' | 'python' | 'unknown';
+  engine: ProjectEngine;
   runtime: string;
   runtimeCandidates: string[];
   compositeRuntime: boolean;
@@ -232,15 +237,19 @@ export function resolveProjectCommandCapabilities(
     projectPath: projectRoot ?? undefined,
     framework: detection.key,
   });
+  const polyglotPlan = projectRoot ? buildPolyglotLifecyclePlan(projectRoot) : null;
+  const polyglotFleetStages = new Set(
+    polyglotPlan?.units.flatMap((unit) => unit.stages.map((stage) => stage.stage)) ?? []
+  );
   const commandMap: Record<string, CommandCapability> = {};
 
   for (const command of UNIVERSAL_COMMANDS) {
     commandMap[command] = capability(command, {
-      owner: command === 'project' ? 'core' : 'npm',
+      owner: 'npm',
       status: 'supported',
       reason:
         command === 'project'
-          ? 'Project detection is a Core contract; workspace project lifecycle remains npm-owned.'
+          ? 'The npm CLI owns the project command surface and delegates only Core-specific detection operations.'
           : command === 'help'
             ? 'Help is available for every Workspai project through the npm CLI.'
             : 'Universal command available across Workspai project types.',
@@ -248,12 +257,11 @@ export function resolveProjectCommandCapabilities(
   }
 
   for (const command of RUNTIME_COMMANDS) {
-    const runtimeSupported = isRuntimeLifecycleCommandSupported(
-      projectRoot,
-      command,
-      detection,
-      runtimeCommandSupport
-    );
+    const runtimeSupported =
+      isRuntimeLifecycleCommandSupported(projectRoot, command, detection, runtimeCommandSupport) ||
+      (hasNpmRuntimeExecutor(detection.runtime) &&
+        FLEET_STAGE_COMMANDS.has(command) &&
+        polyglotFleetStages.has(command as WorkspaceRunStageName));
     const owner = resolveRuntimeCommandOwner(command, detection);
     const execution = resolveRuntimeCommandExecutionScope(command, runtimeSupported);
     commandMap[command] = capability(command, {
@@ -286,7 +294,7 @@ export function resolveProjectCommandCapabilities(
       const entry = commandMap[command];
       if (!entry) continue;
       entry.reason =
-        `Composite runtime boundary detected (${runtimeCandidates.join(', ')}). This capability describes only the primary ${detection.runtime} adapter; nested runtime lifecycle coverage requires explicit project boundaries or command contracts. ${entry.reason ?? ''}`.trim();
+        `Composite runtime boundary detected (${runtimeCandidates.join(', ')}). The project-local shortcut describes only the primary ${detection.runtime} adapter; workspace fleet planning covers detected nested runtime units separately through \`workspace run <stage> --plan\`. ${entry.reason ?? ''}`.trim();
     }
   }
 
@@ -319,10 +327,11 @@ export function resolveProjectCommandCapabilities(
       RUNTIME_COMMANDS.includes(entry.command as (typeof RUNTIME_COMMANDS)[number])
     )
     .filter((entry) => entry.status === 'supported');
-  const fleetStages = WORKSPACE_RUN_STAGES.filter((stage) =>
-    supportedRuntimeCommands.some(
-      (entry) => entry.fleetEligible === true && entry.command === stage
-    )
+  const fleetStages = WORKSPACE_RUN_STAGES.filter(
+    (stage) =>
+      supportedRuntimeCommands.some(
+        (entry) => entry.fleetEligible === true && entry.command === stage
+      ) || polyglotFleetStages.has(stage)
   );
   const localOnlyCommands = supportedRuntimeCommands
     .filter((entry) => entry.executionScope === 'local-only')

@@ -304,6 +304,7 @@
         "workspace graph path",
         "workspace graph search",
         "workspace graph benchmark",
+        "workspace graph benchmark-suite",
         "workspace graph overlay",
         "workspace graph dot",
         "workspace graph mermaid",
@@ -314,6 +315,9 @@
       "reads": [
         ".workspai/reports/workspace-model.json",
         ".workspai/reports/workspace-knowledge-graph.json"
+      ],
+      "produces": [
+        ".workspai/reports/workspace-intelligence-benchmark-last-run.json"
       ],
       "role": "Query the proof-backed graph derived from the canonical workspace model.",
       "chainStep": false
@@ -336,6 +340,19 @@
         ".workspai/reports/workspace-intelligence-evaluation-last-run.json"
       ],
       "role": "Measure model usage, activity, cost provenance, and verified outcomes without storing prompt or response bodies.",
+      "chainStep": false
+    },
+    {
+      "id": "activity",
+      "commands": [
+        "live",
+        "live --json --projection monitor",
+        "live --json --projection board"
+      ],
+      "reads": [
+        "local workspace activity journals"
+      ],
+      "role": "Project observational command activity into versioned monitor and renderer-neutral board contracts without treating activity as verification evidence.",
       "chainStep": false
     },
     {
@@ -542,6 +559,28 @@
         "Only fresh CLI evidence can verify completion, and scope expansion requires an explicit decision.",
         "Portable Goal artifacts exclude absolute machine paths, secrets, raw model responses, and unrestricted command output."
       ]
+    },
+    "agentFrameworkIntegration": {
+      "status": "preview-adapters",
+      "protocolVersion": "workspai.agent-framework-adapter-protocol.v1",
+      "capabilitiesContract": {
+        "schemaVersion": "workspai.agent-framework-capabilities.v1",
+        "path": "contracts/agent-framework-capabilities.v1.json"
+      },
+      "adapterManifestSchema": "contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json",
+      "conformanceReportSchema": "contracts/workspace-intelligence/agent-framework-conformance-report.v1.json",
+      "changePlanSchema": "contracts/workspace-intelligence/agent-framework-change-plan.v1.json",
+      "ownershipReceiptSchema": "contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json",
+      "admissionCandidateSchema": "contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json",
+      "rules": [
+        "Create kits and existing-project attachment must consume the same framework adapter contract.",
+        "A framework adapter owns runtime integration, never canonical Model, Graph, Goal, PCC, or verification truth.",
+        "No framework is advertised as supported until a version-pinned manifest and required conformance matrix are published.",
+        "Framework identity, project runtime, and model provider remain independently selectable dimensions.",
+        "Microsoft Agent Framework Python and .NET adapters are implemented as preview but remain non-selectable until every advertised conformance lane passes.",
+        "Execution plans are bound to PCC before authorization, and later refreshes require a manifest-bound ownership receipt rather than trusting generated-file markers.",
+        "A green conformance matrix emits only a commit- and digest-bound pending admission candidate; registry authority requires a separate reviewed release action."
+      ]
     }
   },
   "consumers": [
@@ -619,6 +658,7 @@
       "Existing projects can enter Workspace Intelligence through adopt/import when they are readable and can be registered, even when native scaffold is unavailable.",
       "Existing runtime signals in the create planner are examples for detection, not a closed allowlist of adopt/import support.",
       "Agent grounding is available through workspace context, agent-sync, generated agent files, skills index, and MCP evidence access.",
+      "Workspai publishes a framework-neutral adapter contract without claiming that a framework integration has shipped.",
       "Verification and governance claims must reference doctor, analyze, readiness, pipeline, workspace verify, or generated evidence artifacts."
     ],
     "forbiddenUnlessImplemented": [
@@ -626,7 +666,8 @@
       "Do not claim module commands are supported for runtimes where moduleSupport/moduleCommands are false.",
       "Do not claim a chat UI or repository chat exists in the CLI unless a shipped command or product surface implements it.",
       "Do not present inferred or unknown facts as verified evidence.",
-      "Do not describe documentation as the source of truth; documentation must be described as generated from evidence."
+      "Do not describe documentation as the source of truth; documentation must be described as generated from evidence.",
+      "Do not claim support for an agent framework without a published adapter manifest and passing conformance evidence for the selected version and platform."
     ]
   },
   "createPlannerReality": {
@@ -638,7 +679,9 @@
       "gofiber.standard",
       "gogin.standard",
       "dotnet.webapi.clean",
-      "rust.axum"
+      "rust.axum",
+      "agent.microsoft.python",
+      "agent.microsoft.dotnet"
     ],
     "officialCreate": [
       "frontend.nextjs",

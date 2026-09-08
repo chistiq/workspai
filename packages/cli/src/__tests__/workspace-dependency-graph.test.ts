@@ -210,6 +210,62 @@ describe('workspace dependency graph inference', () => {
     ]);
   });
 
+  it('does not report an actionable orphan warning for a single-project workspace', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-graph-singleton-'));
+    tempDirs.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+      workspace_name: 'singleton',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, 'api', 'package.json'), {
+      name: '@acme/api',
+      version: '1.0.0',
+    });
+
+    const model = await buildWorkspaceModel({ workspacePath, now: FIXED_NOW });
+    const graph = await inferWorkspaceDependencyGraph({
+      workspacePath,
+      model,
+      now: FIXED_NOW,
+    });
+
+    expect(graph.stats).toMatchObject({ nodeCount: 1, edgeCount: 0, orphanCount: 1 });
+    expect(graph.diagnostics ?? []).toEqual([]);
+    expect(graph.nodes[0].operationalProfile?.reasons).toEqual([
+      'Single-project workspace; inter-project dependency edges are not applicable',
+    ]);
+  });
+
+  it('does not infer dependency edges between overlapping aggregate and nested boundaries', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-graph-overlap-'));
+    tempDirs.push(workspacePath);
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'shared.ts'),
+      'export const shared = true;\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'index.ts'),
+      "import './nodejs/src/session';\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'nodejs', 'src', 'session.ts'),
+      "import { shared } from '../../shared';\nexport const session = shared;\n"
+    );
+
+    const graph = await inferWorkspaceDependencyGraph({
+      workspacePath,
+      model: {
+        projects: [
+          { name: 'aggregate', path: 'repo', runtime: 'node' },
+          { name: 'node-sdk', path: 'repo/nodejs', runtime: 'node' },
+        ],
+      },
+      now: FIXED_NOW,
+    });
+
+    expect(graph.edges).toEqual([]);
+    expect(graph.stats.hasCycle).toBe(false);
+  });
+
   it('lets a manual override win over an inferred edge of the same kind', async () => {
     const workspacePath = await makeWorkspace();
     await fsExtra.outputJson(

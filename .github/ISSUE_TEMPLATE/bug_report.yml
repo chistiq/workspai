@@ -1,7 +1,8 @@
 name: "Bug report"
 description: "Report a reproducible bug in Workspai"
 title: "[Bug]: "
-labels: ["type: bug", "needs-triage"]
+type: "Bug"
+labels: ["needs-triage"]
 body:
   - type: markdown
     attributes:

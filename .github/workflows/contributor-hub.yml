@@ -1,0 +1,24 @@
+name: Contributor Hub Freshness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 8 * * *"
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  contributor-hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+      - name: Verify contributor routes against GitHub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-contributor-hub.mjs --live

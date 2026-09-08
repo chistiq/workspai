@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/proof-carrying-change-capsule.v1.json",
+  "title": "Workspai Proof-Carrying Change Capsule",
+  "type": "object",
+  "required": ["schemaVersion", "changeId", "goalId", "generatedAt", "status", "workspace", "scope", "decision", "intent", "baseline", "prediction", "actualOverlay", "surpriseReport", "effects", "verification", "assurances", "remainingUncertainty", "integrity"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.proof-carrying-change-capsule.v1" },
+    "changeId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "goalId": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["open", "blocked", "verified", "sealed", "aborted"] },
+    "workspace": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1 } }, "additionalProperties": false },
+    "scope": { "$ref": "decision-event.v1.json#/$defs/scope" },
+    "decision": {
+      "type": "object",
+      "required": ["transaction", "eventHeadDigest", "effectHeadDigest", "state", "generation"],
+      "properties": {
+        "transaction": { "$ref": "decision-event.v1.json#/$defs/artifactReference" },
+        "eventHeadDigest": { "$ref": "decision-event.v1.json#/$defs/sha256" },
+        "effectHeadDigest": { "$ref": "decision-event.v1.json#/$defs/sha256" },
+        "state": { "type": "string", "minLength": 1 },
+        "generation": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "intent": { "$ref": "decision-event.v1.json#/$defs/artifactReference" },
+    "baseline": { "$ref": "architecture-change-lease.v1.json#/properties/baseline" },
+    "prediction": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/artifactReference" }, { "type": "null" }] },
+    "actualOverlay": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/artifactReference" }, { "type": "null" }] },
+    "surpriseReport": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/artifactReference" }, { "type": "null" }] },
+    "effects": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/artifactReference" } },
+    "deletedArtifacts": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/deletedArtifactReference" }, "uniqueItems": true },
+    "verification": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/artifactReference" } },
+    "assurances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "summary"],
+        "properties": {
+          "id": { "enum": ["intent-bound", "baseline-pinned", "effects-receipted", "architecture-reobserved", "independently-verified"] },
+          "status": { "enum": ["passed", "failed", "pending"] },
+          "summary": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "remainingUncertainty": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "semantics", "capsuleDigest"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "semantics": { "const": "canonical-json-v1" },
+        "capsuleDigest": { "$ref": "decision-event.v1.json#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

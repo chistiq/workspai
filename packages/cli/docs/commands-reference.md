@@ -22,6 +22,38 @@ project`, and a complete ownership-grouped command map. Scoped help carries
 exact flags and examples. `commands --json` remains the machine-complete
 inventory used to prevent the human map from drifting.
 
+## Start with the core loop
+
+```bash
+npx workspai adopt .
+npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai goal "Describe the required outcome" --for-agent generic
+npx workspai agent bootstrap --for-agent generic --strict --json
+```
+
+For source-changing work, continue through `change begin`, bounded
+authorization, effect receipts, independent verification, and capsule
+validation. For exact syntax, see the lifecycle section below.
+
+## Live cross-terminal activity
+
+```bash
+workspai live [target]
+workspai live --global [--max-scopes <count>]
+workspai live --run <run-id>
+workspai live --once --json --projection monitor|board
+workspai live --ascii|--accessible|--classic
+workspai live --capture <file.svg> [--capture-preset github|linkedin|x|square|wide]
+workspai live --replay <run-id> [--replay-speed <0.25..64>]
+```
+
+`workspai live` observes versioned activity emitted by CLI and Studio without
+changing command outcomes or upgrading telemetry into verification proof. The
+default TTY is an interactive Flow Board; the `board` JSON projection is the
+shared renderer-neutral surface for IDE, web, replay, and capture consumers.
+Use `--accessible` for stable screen-reader output and `--classic` for the
+compatibility view. See [Workspai Live Activity](./workspace-live-activity.md).
+
 ## Workspace lifecycle
 
 ```bash
@@ -35,7 +67,24 @@ npx workspai readiness [--workspace <path>] [--json] [--strict] [--skip-verify]
 npx workspai autopilot release [--mode <audit|safe-fix|enforce>] [--json] [--output <file>] [--since <ref>] [--parallel] [--max-workers <n>]
 npx workspai goal <intent> [--workspace <path>] [--scope <workspace|project:name|projects:a,b>] [--runtime <runtime>] [--for-agent <generic|claude|codex>] [--max-attempts <1-25>] [--refresh] [--dry-run] [--json]
 npx workspai goal <--status [goal-id]|--list|--activate <goal-id>|--cancel <goal-id>|--prepare <goal-id>|--verify <goal-id>> [--workspace <path>] [--no-run] [--json]
+npx workspai change begin [--goal <goal-id>] [--workspace <path>] [--json]
+npx workspai change list [--workspace <path>] [--json]
+npx workspai change predict --change <change-id> --file <prediction.json> [--workspace <path>] [--json]
+npx workspai change authorize --change <change-id> --effects <classes> [--granted-by <identity>] [--workspace <path>] [--json]
+npx workspai change effect record --change <change-id> --file <effect-receipt.json> [--workspace <path>] [--json]
+npx workspai change verify --change <change-id> [--strict] [--no-refresh] [--workspace <path>] [--json]
+npx workspai change verification record --change <change-id> --file <verification-receipt.json> [--workspace <path>] [--json]
+npx workspai change status --change <change-id> [--workspace <path>] [--json]
+npx workspai change explain --change <change-id> [--workspace <path>] [--json]
+npx workspai change resume --change <change-id> --to <authorized|executing|verifying> --reason <text> [--actor <identity>] [--json]
+npx workspai change abort --change <change-id> --reason <text> [--actor <identity>] [--json]
+npx workspai change capsule validate --change <change-id> [--workspace <path>] [--json]
+npx workspai change capsule export --change <change-id> --output <path> [--workspace <path>] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
+npx workspai agent framework list [--json]
+npx workspai agent framework plan --project <name> --runtime <python|dotnet> --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
+npx workspai agent framework attach --project <name> --runtime <python|dotnet> --name <agent> [-y] [--granted-by <identity>] [--workspace <path>] [--json]
+npx workspai agent framework apply --change <change-id> --project <name> --runtime <python|dotnet> [--workspace <path>] [--json]
 ```
 
 Recommended CI:
@@ -95,7 +144,7 @@ npx workspai workspace snapshot [--workspace <path>] [--json] [--include-paths] 
 npx workspai workspace diff --from <snapshot-or-model|git[:ref]> [--workspace <path>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace impact --from <workspace-diff-report> [--workspace <path>] [--scope project:<name>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>] [--strict]
 npx workspai workspace verify [--from-impact <file>] [--workspace <path>] [--scope project:<name>] [--strict] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
-npx workspai workspace graph [emit|explain|search|benchmark|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
+npx workspai workspace graph [emit|explain|search|benchmark|benchmark-suite|entities|evidence|path|overlay|dot|mermaid|jsonld|graphml|gexf] [key] [value] [--from <graph.json>] [--output <file>] [--limit <1..100>] [--kind <entity-kind>] [--workspace <path>] [--scope project:<name>] [--refresh-graph] [--graph-inventory-limit <count>] [--graph-semantic-budget <count>] [--graph-deep-budget <count>] [--graph-source-budget <count>] [--json] [--include-paths] [--include-evidence] [--scan-depth <count>]
 npx workspai workspace eval [init <task> [strategy]|record|status|report|compare --from <report>] [--workspace <path>] [--output <file>] [--json]
 npx workspai workspace watch [--workspace <path>] [--json] [--graph-stream] [--once] [--scan-depth <count>]
 npx workspai workspace explain <target> [--workspace <path>] [--json] [--write]
@@ -128,6 +177,12 @@ npx workspai infra up [--workspace <path>] [--no-plan] [--build]
 npx workspai infra down [--workspace <path>] [--volumes]
 npx workspai infra status [--workspace <path>] [--json] [--strict]
 ```
+
+For `adopt`, an explicit `--workspace` must identify either an existing valid
+workspace or an existing empty directory that Workspai can bootstrap safely.
+Interactive adoption may also offer the direct parent when it contains exactly
+the project being adopted. Non-interactive callers continue to use the managed
+default when no workspace is specified.
 
 Every workspace action has action-scoped help generated from the same contract
 that governs its accepted flags. For example:
@@ -181,6 +236,21 @@ claim verification. Lifecycle operations are mutually exclusive, cannot be
 combined with an intent or planning-only flags, and `--no-run` is valid only
 with `--verify`. See [Goal Packs](./goal-packs.md).
 
+`change` turns an active Goal into a Proof-Carrying Change. `list` is the
+versioned discovery surface for open, blocked, sealed, aborted, and invalid
+capsules. `begin` pins the
+exact Model, Graph, and live-input generation. `predict` is explicitly
+noncanonical and never counts as proof. A human uses `authorize` to grant
+bounded effect classes; agents and tools then append typed, idempotent effect
+receipts. Removed paths use `deletedArtifacts: [{ "artifact": "..." }]`; the
+CLI emits a governed tombstone only after proving the path is absent and
+contained by the workspace or linked-project contract. `verify` re-observes
+the canonical Graph, derives the actual overlay,
+reports prediction surprises, and records Workspace Verify against the exact
+post-effect generation. Additional Goal-domain receipts enter through
+`verification record`. Only complete, passing criteria can seal a capsule. See
+[Proof-Carrying Change](./proof-carrying-change.md).
+
 Coverage Goals are runtime-bound. Interactive terminals select from the
 canonical Workspace Model when the chosen scope has multiple runtimes;
 non-interactive consumers receive `needs-confirmation` and rerun with
@@ -194,10 +264,25 @@ the same runtime remains part of baseline and verification identity.
 `agent bootstrap` is the project-local canonical-first preflight. It validates
 the host discovery route, project/workspace binding, public artifact schemas,
 integrity hashes, Model/Graph freshness, live source inputs, and active Goal
-handoff before broad repository discovery. `project agent-entry verify` uses
+handoff before broad repository discovery. It also proves that the local
+project graph is the exact current projection of the canonical workspace
+aggregate; a missing, stale, foreign, or tampered shard blocks architecture
+claims. `project agent-entry verify` uses
 the same receipt and can audit every supported host with `--for-agent all`.
 Blocked receipts exit `2`; strict mode also maps degraded evidence to exit `2`.
 See [Canonical-first agent entry](./agent-entry.md).
+
+`agent framework` is the governed bridge between Workspai evidence and an
+agent runtime. `list` exposes only exact release-admitted baselines. `plan`
+creates or reuses a scoped Goal, begins a Proof-Carrying Change, and attaches a
+hash-bound file plan without writing project files. `attach` shows that plan
+and requires an interactive confirmation or explicit `--yes` before granting
+the filesystem effect and writing an isolated `agents/<name>` directory.
+Dependency installation, credentials, generated-code execution, and model
+provider calls are never implied by that approval. `apply` is the automation
+counterpart for a plan that was separately authorized with `change authorize`.
+Any adapter, version, manifest, runtime, or platform drift invalidates its
+bundled release admission until the complete conformance matrix passes again.
 
 `workspace feedback record` is a non-interactive machine interface. It requires
 exactly one JSON object on stdin and `--json`; an empty stdin or interactive TTY
@@ -218,6 +303,10 @@ and a risk summary. Observation timestamps and freshness alone do not create
 false change noise. Query indexes are cached
 per immutable graph object and invalidated automatically when a new graph is
 built. `dot` and `mermaid` intentionally remain project-topology renderers.
+`workspace graph entities --kind <kind> --scope project:<name> --limit <n>` is
+equivalent to the positional kind form and applies all three bounds before
+serializing JSON; `count`, `totalMatches`, and `truncated` make omissions
+explicit.
 Without `--output` they emit raw text for direct piping. With `--output` they
 write a durable file; adding `--json` returns a structured operation receipt
 with the format, node and edge counts, and resolved output path.
@@ -230,18 +319,38 @@ they never write facts back into the authorizing model during the same run.
 
 `workspace graph search <query> --limit <n> --json` returns bounded entities,
 one-hop relations, related entity summaries, and portable proofs instead of the
-complete graph. Ranking is deterministic and offline: it removes natural-language
+complete graph. New responses also expose `graphSourceHash`, allowing IDE and
+agent activity consumers to correlate returned entity/proof IDs only with the
+exact Graph revision that authored them. Ranking is deterministic and offline: it removes natural-language
 stopwords, weights rarer graph terms more strongly, and prefers exact labels and
-identities. `workspace graph benchmark <query> --limit <n> --json` compares
+identities. Authored source ranks ahead of compiled, generated, vendored,
+fixture, and test-data matches unless the query explicitly names one of those
+surfaces. `workspace graph benchmark <query> --limit <n> --json` compares
 that retrieval payload with the readable proof-indexed corpus using a labelled
 `characters / 4` estimate. It measures payload reduction only; it does not
 assert equivalent answer quality or model-specific billing savings.
 
+`workspace graph benchmark-suite agent-core.v1 --write --json` runs five fixed,
+repository-neutral scenarios covering architecture, ownership, interfaces,
+change safety, and delivery. It reads the proof corpus once, reports median and
+p95 bounded retrieval sizes, and writes
+`.workspai/reports/workspace-intelligence-benchmark-last-run.json`. If a
+finalized `workspace eval` report exists, its usage and verified outcome are
+attached under a separate provenance classification. Pass `--from
+<baseline-evaluation>` only for a task-aligned comparison. A measured reduction
+is emitted only when both runs use measured token sources and have comparable
+verified outcomes. See [Workspace Intelligence Benchmark](./workspace-intelligence-benchmark.md).
+
 Add `--scope project:<name>` to retrieve project-owned facts plus
 workspace-level shared entities proven to be connected to that project. The
+same scope constrains exact entity aliases used by `graph evidence` and `graph
+path`; a matching alias in another project cannot make a scoped target
+ambiguous. The
+`search` mode also accepts `--kind <entity-kind>` so agents can retrieve a
+precise semantic surface such as `runtime-unit`, `endpoint`, or `owner`. The
 agent projection reports explicit omission budgets for relations, related
 entities, proofs, aliases, attributes, and proof references. Read-oriented
-`search`, `entities`, `evidence`, `path`, and `benchmark` modes reuse the
+`search`, `entities`, `evidence`, `path`, `benchmark`, and `benchmark-suite` modes reuse the
 persisted graph only when its model binding, proofs, project scopes, and live
 Git/Merkle input fingerprint still match. `--refresh-graph` bypasses that
 compatible snapshot and rebuilds from current sources.
@@ -258,11 +367,14 @@ are suitable for IDE dashboards and conform to
 `workspace-intelligence-evaluation.v1`.
 
 `workspace model --write` also materializes the derived, contract-validated
-knowledge graph at `.workspai/reports/workspace-knowledge-graph.json`. The
-unified intelligence runner treats that artifact as a required output of the
-Model step, so CI, IDE adapters, agent grounding, and MCP all observe the same
-revision. Agent contexts carry its reference, quality counts, and bounded query
-commands instead of copying the entire graph into every prompt. MCP exposes
+knowledge graph once at
+`<workspace>/.workspai/reports/workspace-knowledge-graph.json`. Every registered
+project receives a compact, integrity-bound
+`.workspai/reports/project-knowledge-graph-reference.json` that names the exact
+project projection and canonical `workspace:` URI. The unified intelligence
+runner publishes the aggregate and references as one atomic Model-stage
+revision, so CI, IDE adapters, agent grounding, and MCP cannot observe a partial
+set. Bounded graph search remains the default retrieval path. MCP exposes
 `getWorkspaceKnowledgeGraph`, `searchWorkspaceGraph`, `queryWorkspaceEntities`,
 `getWorkspaceGraphEvidence`, and `findWorkspaceGraphPath`.
 
@@ -298,6 +410,12 @@ scaffold for them. Existing CMake and Meson projects can also expose discovered
 lifecycle units to `workspace run`; inspect them without execution using
 `workspace run <stage> --plan`, and select one runtime family with
 `--runtime <runtime>`.
+
+For npm, pnpm, and Cargo monorepos, the owning workspace manifest represents its
+matching members as one dependency-materialization boundary. Explicitly
+registered nested projects remain independent, while aggregate parents do not
+execute them a second time. Embedded eval, benchmark, integration, test-data,
+and fixture manifests are excluded unless they expose real lifecycle evidence.
 
 Core module/template commands are intentionally narrower than runtime detection.
 RapidKit Core modules are guaranteed only for RapidKit Core module-enabled kits:
@@ -395,7 +513,10 @@ Supported keys: `mode`, `dependency_sharing_mode`, `rules.enforce_workspace_mark
 
 ## Setup and warm dependencies
 
-`setup <runtime>` validates toolchain and updates `.workspai/toolchain.lock`.
+`setup <runtime>` validates an already installed host runtime and updates
+`.workspai/toolchain.lock`. It does not install system runtimes. When the executable is missing,
+the remediation plan emits an external prerequisite and blocks setup/bootstrap until fresh
+environment evidence is available.
 
 `--warm-deps` adds optional dependency warm-up (Node lock/deps, Go modules). Warm-deps is non-fatal and reports `completed` / `failed` / `skipped`.
 

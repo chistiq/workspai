@@ -68,7 +68,9 @@ async function beginLifecycleTransaction(): Promise<LifecycleTransaction> {
   return createLifecycleTransaction({ journalDirectory });
 }
 
-async function captureGlobalRegistryFiles(transaction: LifecycleTransaction): Promise<void> {
+async function captureGlobalRegistryFiles(
+  transaction: Pick<LifecycleTransaction, 'captureFile'>
+): Promise<void> {
   for (const registryFile of getWorkspaceRegistryFileCandidates()) {
     await transaction.captureFile(registryFile);
   }
@@ -90,33 +92,62 @@ async function beginExistingWorkspaceTransaction(
 ): Promise<LifecycleTransaction> {
   const transaction = await beginLifecycleTransaction();
   try {
-    await captureGlobalRegistryFiles(transaction);
-    await transaction.captureOwnedTree(path.join(workspacePath, WORKSPAI_METADATA_DIR));
-    await transaction.captureOwnedTree(path.join(workspacePath, '.venv'));
-
-    const touchedFiles = [
-      WORKSPAI_WORKSPACE_MARKER,
-      '.gitignore',
-      path.join(WORKSPAI_METADATA_DIR, 'workspace.json'),
-      path.join(WORKSPAI_METADATA_DIR, 'toolchain.lock'),
-      path.join(WORKSPAI_METADATA_DIR, 'policies.yml'),
-      path.join(WORKSPAI_METADATA_DIR, 'cache-config.yml'),
-      WORKSPACE_CONTRACT_PATH,
-      WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH,
-      'pyproject.toml',
-      'poetry.toml',
-      'poetry.lock',
-      'rapidkit',
-      'rapidkit.cmd',
-      'README.md',
-      '.rapidkit-global',
-    ];
-    for (const relativePath of touchedFiles) {
-      await transaction.captureFile(path.join(workspacePath, relativePath));
-    }
+    await captureWorkspaceRegistrationPreimages(transaction, workspacePath);
     return transaction;
   } catch (error) {
     return rollbackLifecycleTransaction(transaction, error);
+  }
+}
+
+export type WorkspaceRegistrationTransaction = Pick<
+  LifecycleTransaction,
+  'captureFile' | 'captureOwnedTree'
+>;
+
+async function captureWorkspaceRegistrationPreimages(
+  transaction: WorkspaceRegistrationTransaction,
+  workspacePath: string
+): Promise<void> {
+  await captureGlobalRegistryFiles(transaction);
+  await transaction.captureOwnedTree(path.join(workspacePath, WORKSPAI_METADATA_DIR));
+  await transaction.captureOwnedTree(path.join(workspacePath, '.venv'));
+  for (const consumerDirectory of [
+    '.agents',
+    '.amazonq',
+    '.claude',
+    '.cursor',
+    '.github',
+    '.grok',
+    '.vscode',
+    '.windsurf',
+  ]) {
+    await transaction.captureOwnedTree(path.join(workspacePath, consumerDirectory));
+  }
+
+  const touchedFiles = [
+    WORKSPAI_WORKSPACE_MARKER,
+    '.gitignore',
+    path.join(WORKSPAI_METADATA_DIR, 'workspace.json'),
+    path.join(WORKSPAI_METADATA_DIR, 'toolchain.lock'),
+    path.join(WORKSPAI_METADATA_DIR, 'policies.yml'),
+    path.join(WORKSPAI_METADATA_DIR, 'cache-config.yml'),
+    WORKSPACE_CONTRACT_PATH,
+    WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH,
+    'pyproject.toml',
+    'poetry.toml',
+    'poetry.lock',
+    'rapidkit',
+    'rapidkit.cmd',
+    'README.md',
+    'AGENTS.md',
+    'CLAUDE.md',
+    'GEMINI.md',
+    'QWEN.md',
+    '.windsurfrules',
+    '.rapidkit-global',
+  ];
+  for (const relativePath of touchedFiles) {
+    await transaction.captureFile(path.join(workspacePath, relativePath));
   }
 }
 
@@ -1148,6 +1179,8 @@ interface CreateProjectOptions {
   profile?: string;
   /** Parent directory for workspace creation. Defaults to process.cwd(). */
   parentDirectory?: string;
+  /** Defer the standalone workspace receipt when creation is one step in a larger command. */
+  suppressReceipt?: boolean;
 }
 
 export async function createProject(
@@ -1169,6 +1202,7 @@ export async function createProject(
     installMethod: providedInstallMethod,
     profile,
     parentDirectory,
+    suppressReceipt = false,
   } = options;
 
   // Default to 'rapidkit' directory
@@ -1421,12 +1455,14 @@ export async function createProject(
         );
       }
 
-      printWorkspaceCreationReceipt({
-        workspaceName: name,
-        workspacePath: projectPath,
-        profile: resolvedProfile,
-        projectCount: onboarding?.projectCount ?? 0,
-      });
+      if (!suppressReceipt) {
+        printWorkspaceCreationReceipt({
+          workspaceName: name,
+          workspacePath: projectPath,
+          profile: resolvedProfile,
+          projectCount: onboarding?.projectCount ?? 0,
+        });
+      }
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
       return rollbackLifecycleTransaction(transaction, _err);
@@ -1475,14 +1511,16 @@ export async function createProject(
         );
       }
 
-      printWorkspaceCreationReceipt({
-        workspaceName: name,
-        workspacePath: projectPath,
-        profile: resolvedProfile,
-        projectCount: onboarding?.projectCount ?? 0,
-        pythonEngine: 'skipped',
-        note: 'Install the optional Python engine later only when a Python-backed kit needs it.',
-      });
+      if (!suppressReceipt) {
+        printWorkspaceCreationReceipt({
+          workspaceName: name,
+          workspacePath: projectPath,
+          profile: resolvedProfile,
+          projectCount: onboarding?.projectCount ?? 0,
+          pythonEngine: 'skipped',
+          note: 'Install the optional Python engine later only when a Python-backed kit needs it.',
+        });
+      }
       return;
     } catch (_err) {
       spinner2.fail('Failed to create workspace');
@@ -1605,13 +1643,15 @@ export async function createProject(
                 );
               }
 
-              printWorkspaceCreationReceipt({
-                workspaceName: name,
-                workspacePath: projectPath,
-                profile: fallback,
-                projectCount: onboarding?.projectCount ?? 0,
-                note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
-              });
+              if (!suppressReceipt) {
+                printWorkspaceCreationReceipt({
+                  workspaceName: name,
+                  workspacePath: projectPath,
+                  profile: fallback,
+                  projectCount: onboarding?.projectCount ?? 0,
+                  note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
+                });
+              }
               return; // Exit successfully with fallback profile
             } catch (_err) {
               spinner2.fail('Failed to create workspace');
@@ -1661,13 +1701,15 @@ export async function createProject(
               );
             }
 
-            printWorkspaceCreationReceipt({
-              workspaceName: name,
-              workspacePath: projectPath,
-              profile: fallback,
-              projectCount: onboarding?.projectCount ?? 0,
-              note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
-            });
+            if (!suppressReceipt) {
+              printWorkspaceCreationReceipt({
+                workspaceName: name,
+                workspacePath: projectPath,
+                profile: fallback,
+                projectCount: onboarding?.projectCount ?? 0,
+                note: `Requested ${originalProfile}; used ${fallback} because Python was unavailable.`,
+              });
+            }
             return; // Exit successfully
           } catch (_err) {
             spinner2.fail('Failed to create workspace');
@@ -1847,15 +1889,17 @@ export async function createProject(
       );
     }
 
-    printWorkspaceCreationReceipt({
-      workspaceName: name,
-      workspacePath: projectPath,
-      profile: resolvedProfile,
-      projectCount: onboarding?.projectCount ?? 0,
-      pythonEngine: 'installed',
-      pythonVersion: pythonAnswers.pythonVersion,
-      installMethod: pythonAnswers.installMethod,
-    });
+    if (!suppressReceipt) {
+      printWorkspaceCreationReceipt({
+        workspaceName: name,
+        workspacePath: projectPath,
+        profile: resolvedProfile,
+        projectCount: onboarding?.projectCount ?? 0,
+        pythonEngine: 'installed',
+        pythonVersion: pythonAnswers.pythonVersion,
+        installMethod: pythonAnswers.installMethod,
+      });
+    }
   } catch (_error) {
     spinner.fail('Failed to create Workspai environment');
     return rollbackLifecycleTransaction(transaction, _error);
@@ -2537,6 +2581,8 @@ export async function registerWorkspaceAtPath(
     pythonVersion?: string;
     /** Bootstrap profile written into .workspai/workspace.json. */
     profile?: string;
+    /** Join a caller-owned lifecycle transaction instead of opening a nested one. */
+    lifecycleTransaction?: WorkspaceRegistrationTransaction;
   }
 ) {
   const {
@@ -2576,7 +2622,12 @@ export async function registerWorkspaceAtPath(
     component: 'create',
     phase: 'workspace.register',
   });
-  const transaction = await beginExistingWorkspaceTransaction(workspacePath);
+  const ownsLifecycleTransaction = !options?.lifecycleTransaction;
+  const transaction =
+    options?.lifecycleTransaction ?? (await beginExistingWorkspaceTransaction(workspacePath));
+  if (!ownsLifecycleTransaction) {
+    await captureWorkspaceRegistrationPreimages(transaction, workspacePath);
+  }
 
   try {
     const workspaceName = path.basename(workspacePath);
@@ -2630,7 +2681,9 @@ export async function registerWorkspaceAtPath(
       workspaceName: path.basename(workspacePath),
       silent: testMode,
     });
-    await commitLifecycleTransaction(transaction);
+    if (ownsLifecycleTransaction) {
+      await commitLifecycleTransaction(transaction as LifecycleTransaction);
+    }
 
     if (!skipGit) {
       await initializeStandaloneGitRepository(
@@ -2641,7 +2694,10 @@ export async function registerWorkspaceAtPath(
     }
   } catch (e) {
     spinner.fail('Failed to register workspace');
-    return rollbackLifecycleTransaction(transaction, e);
+    if (ownsLifecycleTransaction) {
+      return rollbackLifecycleTransaction(transaction as LifecycleTransaction, e);
+    }
+    throw e;
   }
 }
 

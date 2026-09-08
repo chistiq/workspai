@@ -31,6 +31,11 @@ export type RuntimeFamily =
   | 'cpp'
   | 'elixir'
   | 'ruby'
+  | 'clojure'
+  | 'scala'
+  | 'kotlin'
+  | 'deno'
+  | 'bun'
   | 'jvm-generic'
   | 'unknown';
 
@@ -504,6 +509,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: ['cmake -S . -B build'],
     elixir: ['mix deps.get'],
     ruby: ['bundle install'],
+    clojure: ['clojure -P'],
+    scala: ['sbt update'],
+    kotlin: ['./gradlew dependencies', 'gradle dependencies'],
+    deno: [],
+    bun: ['bun install'],
     'jvm-generic': ['mvn dependency:go-offline', 'gradle dependencies'],
     unknown: [],
   },
@@ -520,6 +530,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: ['ctest --test-dir build --output-on-failure'],
     elixir: ['mix test'],
     ruby: ['rspec', 'ruby -m minitest'],
+    clojure: ['clojure -X:test'],
+    scala: ['sbt test'],
+    kotlin: ['./gradlew test', 'gradle test'],
+    deno: ['deno task test', 'deno test'],
+    bun: ['bun test', 'bun run test'],
     'jvm-generic': ['mvn test', 'gradle test'],
     unknown: [],
   },
@@ -536,6 +551,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: ['cmake --build build'],
     elixir: ['mix compile'],
     ruby: ['gem build *.gemspec'],
+    clojure: [],
+    scala: ['sbt compile'],
+    kotlin: ['./gradlew build', 'gradle build'],
+    deno: ['deno task build'],
+    bun: ['bun run build'],
     'jvm-generic': ['mvn package -DskipTests', 'gradle build'],
     unknown: [],
   },
@@ -552,6 +572,11 @@ export const FALLBACK_PATTERNS: Record<WorkspaceRunStage, Record<RuntimeFamily, 
     cpp: [],
     elixir: ['mix phx.server', 'iex -S mix'],
     ruby: ['rails server', 'ruby app.rb', 'bundle exec puma'],
+    clojure: ['clojure -M:run'],
+    scala: ['sbt run'],
+    kotlin: ['./gradlew run', 'gradle run'],
+    deno: ['deno task start', 'deno task dev'],
+    bun: ['bun run start', 'bun run dev'],
     'jvm-generic': ['java -jar *.jar', 'gradle run'],
     unknown: [],
   },
@@ -696,7 +721,8 @@ export function detectRuntimeFromMarkers(projectPath: string): RuntimeFamily {
  */
 export function categorizeError(
   output: string,
-  errorPatterns?: Record<ErrorCategory, string[]>
+  errorPatterns?: Record<ErrorCategory, string[]>,
+  stage?: WorkspaceRunStage
 ): ErrorCategory {
   if (!output) {
     return 'unknown';
@@ -704,16 +730,33 @@ export function categorizeError(
 
   if (!errorPatterns) {
     errorPatterns = {
+      // Check timeouts before broad "failed"/"error" patterns so package
+      // manager and wrapper download failures retain their actionable cause.
+      timeout: ['timed out', 'timeout', 'deadline exceeded', 'SocketTimeoutException'],
+      dependency: [
+        'cannot find module',
+        'import.*error',
+        'Could not find a package configuration file provided by',
+        'CMAKE_PREFIX_PATH',
+        'failed to fetch',
+        'error while requesting resource',
+        'unable to (?:resolve|connect)',
+        'could not resolve host',
+        'network (?:is )?unreachable',
+        'ECONNREFUSED',
+        'ENOTFOUND',
+      ],
       setup: ['ModuleNotFoundError', 'No module named', 'npm ERR!', 'error:', 'not found'],
       'test-failure': ['FAILED', 'FAIL', 'failed'],
-      dependency: ['cannot find module', 'import.*error'],
       runtime: ['Exception', 'Error:', 'panic', 'TypeError'],
-      timeout: ['timeout', 'Timeout', 'deadline exceeded'],
       unknown: [],
     };
   }
 
   for (const [category, patterns] of Object.entries(errorPatterns)) {
+    // Broad framework patterns such as "failed" are useful for test output,
+    // but must not turn build, init, or start failures into test failures.
+    if (category === 'test-failure' && stage && stage !== 'test') continue;
     for (const pattern of patterns) {
       if (new RegExp(pattern, 'i').test(output)) {
         return category as ErrorCategory;
@@ -728,7 +771,10 @@ export function categorizeError(
  * Validate that a command is available before execution.
  * Checks system executables and shell builtins.
  */
-export async function validateCommand(command: string): Promise<{
+export async function validateCommand(
+  command: string,
+  cwd?: string
+): Promise<{
   valid: boolean;
   reason?: string;
 }> {
@@ -742,6 +788,26 @@ export async function validateCommand(command: string): Promise<{
   const builtins = ['echo', 'cd', 'pwd', 'test', 'true', 'false', 'exit'];
   if (builtins.includes(cmd)) {
     return { valid: true };
+  }
+
+  // `which ./gradlew` (and the Windows equivalent) is always the wrong
+  // lookup: project-local wrappers are paths, not PATH entries. Resolve any
+  // command containing a path separator against the execution directory and
+  // validate the file directly.
+  if (cmd.includes('/') || cmd.includes('\\')) {
+    const executablePath = path.isAbsolute(cmd) ? cmd : path.resolve(cwd ?? process.cwd(), cmd);
+    try {
+      await fs.promises.access(
+        executablePath,
+        process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK
+      );
+      return { valid: true };
+    } catch {
+      return {
+        valid: false,
+        reason: `Command '${cmd}' not found or not executable in '${cwd ?? process.cwd()}'`,
+      };
+    }
   }
 
   try {

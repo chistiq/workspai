@@ -3,6 +3,7 @@ import path from 'path';
 
 import chalk from 'chalk';
 import { execa } from 'execa';
+import { emitActivityArtifact, emitActivityBlock } from './activity/activity-runtime.js';
 import {
   detectRuntimeFromMarkers,
   categorizeError,
@@ -102,6 +103,15 @@ interface ProjectExecutionResult {
     exitCode: number | null;
     durationMs: number;
     reason?: string;
+    errorCategory?: ErrorCategory;
+    failureDiagnostic?: {
+      category: ErrorCategory;
+      exitCode: number;
+      command: string;
+      timedOut: boolean;
+      timeoutMs: number;
+      outputExcerpt?: string;
+    };
   }>;
   // Enterprise features
   errorCategory?: ErrorCategory;
@@ -196,6 +206,29 @@ async function pathExists(targetPath: string): Promise<boolean> {
   }
 }
 
+function pathIsWithin(rootPath: string, candidatePath: string): boolean {
+  const relative = path.relative(path.resolve(rootPath), path.resolve(candidatePath));
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+  );
+}
+
+function runtimeUnitBelongsToSelectedProject(input: {
+  projectPath: string;
+  unit: PolyglotRuntimeUnit;
+  selectedProjectPaths: string[];
+}): boolean {
+  const unitPath = path.resolve(input.projectPath, input.unit.root);
+  return !input.selectedProjectPaths.some((candidateProjectPath) => {
+    if (path.resolve(candidateProjectPath) === path.resolve(input.projectPath)) return false;
+    return (
+      pathIsWithin(input.projectPath, candidateProjectPath) &&
+      pathIsWithin(candidateProjectPath, unitPath)
+    );
+  });
+}
+
 async function hasAnyExistingPath(candidates: string[]): Promise<boolean> {
   for (const candidate of candidates) {
     if (await pathExists(candidate)) {
@@ -231,6 +264,23 @@ async function validateWrapperStagePreflight(
     };
   }
 
+  // The public wrapper delegates to runtime adapters, whose evidence-backed
+  // command can be more precise than the framework registry's portable
+  // fallback. In particular, Go start resolves an unambiguous main package at
+  // execution time; requiring the registry fallback (`./app`) would reject a
+  // valid source project before the adapter can run it. Preflight the adapter
+  // toolchain here and let the adapter validate stage-specific source state.
+  const adapterExecutables: Partial<Record<RuntimeFamily, string>> = {
+    go: 'go',
+    rust: 'cargo',
+    dotnet: 'dotnet',
+    php: 'php',
+  };
+  const adapterExecutable = adapterExecutables[runtime];
+  if (adapterExecutable) {
+    return validateCommand(adapterExecutable, projectPath);
+  }
+
   const nativeCommand = nativeStageCommand.trim().split(/\s+/)[0];
   if (nativeCommand && ['npm', 'npx', 'pnpm', 'yarn'].includes(nativeCommand)) {
     const invocation = resolvePackageRunnerInvocation(nativeCommand);
@@ -243,7 +293,7 @@ async function validateWrapperStagePreflight(
     }
   }
 
-  return validateCommand(nativeStageCommand);
+  return validateCommand(nativeStageCommand, projectPath);
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
@@ -627,7 +677,7 @@ async function shouldEnforceWorkspaceRunGates(
   return match[1] === 'true';
 }
 
-function resolveWorkspaceRunStageTimeoutMs(stage: string): number {
+export function resolveWorkspaceRunStageTimeoutMs(stage: string, runtime: RuntimeFamily): number {
   const raw = process.env.RAPIDKIT_WORKSPACE_RUN_STAGE_TIMEOUT_MS;
   if (raw) {
     const parsed = Number.parseInt(raw, 10);
@@ -635,7 +685,42 @@ function resolveWorkspaceRunStageTimeoutMs(stage: string): number {
       return parsed;
     }
   }
-  return stage === 'init' ? 120_000 : 90_000;
+  if (stage !== 'init') {
+    return 90_000;
+  }
+
+  // Cold dependency materialization includes package-manager bootstrap,
+  // resolver work, downloads, and native builds. One universal two-minute
+  // budget turns valid first runs into false timeouts, especially for Python,
+  // JVM, .NET, and Rust projects.
+  if (runtime === 'python' || runtime === 'java' || runtime === 'jvm-generic') {
+    return 600_000;
+  }
+  if (runtime === 'dotnet' || runtime === 'rust') {
+    return 600_000;
+  }
+  return 300_000;
+}
+
+function parseDirectLifecycleCommand(command: string): { file: string; args: string[] } | null {
+  const normalized = command.trim();
+  // Manifest-derived lifecycle commands are usually simple argv sequences.
+  // Avoid a shell for those commands so timeout/cancellation targets the real
+  // package manager or toolchain process instead of orphaning a child that
+  // keeps stdout/stderr open. Commands that require shell syntax retain the
+  // compatibility fallback below.
+  if (!normalized || /[&|;<>()$`"'\n\r]/.test(normalized)) {
+    return null;
+  }
+  const [file, ...args] = normalized.split(/\s+/);
+  if (
+    !file ||
+    /^[A-Za-z_][A-Za-z0-9_]*=/.test(file) ||
+    ![file, ...args].every((token) => /^[A-Za-z0-9_./:@%+,=\\-]+$/.test(token))
+  ) {
+    return null;
+  }
+  return { file, args };
 }
 
 function resolvePositiveDuration(name: string, fallback: number): number {
@@ -795,7 +880,12 @@ async function runStartupSmoke(input: {
   };
 }
 
-async function runRapidkitSelfCommand(args: string[], cwd: string, timeoutMs?: number) {
+async function runRapidkitSelfCommand(
+  args: string[],
+  cwd: string,
+  timeoutMs?: number,
+  streamOutput = false
+) {
   const entrypoint = process.argv[1];
   if (!entrypoint) {
     return {
@@ -805,41 +895,88 @@ async function runRapidkitSelfCommand(args: string[], cwd: string, timeoutMs?: n
     };
   }
 
+  let commandTimedOut = false;
+  let hardKillTimer: NodeJS.Timeout | undefined;
+  let timeoutTimer: NodeJS.Timeout | undefined;
   try {
-    const result = await execa(process.execPath, [entrypoint, ...args], {
+    const subprocess = execa(process.execPath, [entrypoint, ...args], {
       cwd,
       reject: false,
-      timeout: timeoutMs,
+      // A project wrapper can spawn another package-manager or test process.
+      // Put the nested lifecycle in its own POSIX process group so a timeout
+      // closes descendant-held stdout/stderr pipes instead of leaving the
+      // workspace run hung after its advertised budget.
+      detached: process.platform !== 'win32',
       env: {
         ...process.env,
         RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
       },
     });
+    if (timeoutMs && timeoutMs > 0) {
+      timeoutTimer = setTimeout(() => {
+        commandTimedOut = true;
+        const pid = subprocess.pid;
+        if (!pid) {
+          subprocess.kill('SIGTERM');
+          return;
+        }
+        if (process.platform === 'win32') {
+          void execa('taskkill', ['/pid', String(pid), '/T', '/F'], { reject: false });
+          return;
+        }
+        try {
+          process.kill(-pid, 'SIGTERM');
+        } catch {
+          subprocess.kill('SIGTERM');
+        }
+        hardKillTimer = setTimeout(() => {
+          try {
+            process.kill(-pid, 'SIGKILL');
+          } catch {
+            // The process group already exited.
+          }
+        }, 1_000);
+        hardKillTimer.unref();
+      }, timeoutMs);
+      timeoutTimer.unref();
+    }
+    if (streamOutput) {
+      subprocess.stdout?.on('data', (chunk) => process.stdout.write(chunk));
+      subprocess.stderr?.on('data', (chunk) => process.stderr.write(chunk));
+    }
+    const result = await subprocess;
 
     return {
-      exitCode: Number(result.exitCode ?? 1),
+      exitCode: commandTimedOut ? 124 : Number(result.exitCode ?? 1),
       stdout: result.stdout,
-      stderr: result.stderr,
+      stderr: commandTimedOut
+        ? `${result.stderr ?? ''}${result.stderr ? '\n' : ''}Stage timed out after ${timeoutMs}ms`
+        : result.stderr,
     };
   } catch (error) {
     const timedOut =
-      typeof error === 'object' &&
-      error !== null &&
-      'timedOut' in error &&
-      Boolean((error as { timedOut?: unknown }).timedOut);
+      commandTimedOut ||
+      (typeof error === 'object' &&
+        error !== null &&
+        'timedOut' in error &&
+        Boolean((error as { timedOut?: unknown }).timedOut));
     return {
       exitCode: timedOut ? 124 : 1,
       stdout:
         typeof error === 'object' && error !== null && 'stdout' in error
           ? String((error as { stdout?: unknown }).stdout ?? '')
           : '',
-      stderr:
-        typeof error === 'object' && error !== null && 'stderr' in error
+      stderr: timedOut
+        ? `Stage timed out after ${timeoutMs}ms`
+        : typeof error === 'object' && error !== null && 'stderr' in error
           ? String((error as { stderr?: unknown }).stderr ?? '')
           : error instanceof Error
             ? error.message
             : String(error),
     };
+  } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    if (hardKillTimer) clearTimeout(hardKillTimer);
   }
 }
 
@@ -863,8 +1000,22 @@ function isVitestRuntime(): boolean {
 
 function boundedFailureOutput(lines: string[], limit = 8): string {
   if (lines.length <= limit) return lines.join('\n');
-  const headCount = 3;
-  return [...lines.slice(0, headCount), ...lines.slice(-(limit - headCount))].join('\n');
+  const primary = primaryFailureLine(lines);
+  const primaryIndex = primary ? lines.lastIndexOf(primary) : -1;
+  const selected = new Set<number>([0, 1]);
+  if (primaryIndex >= 0) {
+    for (let index = Math.max(0, primaryIndex - 2); index <= primaryIndex + 2; index += 1) {
+      if (index < lines.length) selected.add(index);
+    }
+  }
+  for (let index = lines.length - 1; index >= 0 && selected.size < limit; index -= 1) {
+    selected.add(index);
+  }
+  return [...selected]
+    .sort((left, right) => left - right)
+    .slice(0, limit)
+    .map((index) => lines[index])
+    .join('\n');
 }
 
 function primaryFailureLine(lines: string[]): string | undefined {
@@ -1015,10 +1166,12 @@ async function executeStageCommand(
   framework?: string,
   commandOverrides?: Record<string, string>,
   environmentCommandVariants?: EnvironmentVariant,
-  environment?: 'dev' | 'staging' | 'prod'
+  environment?: 'dev' | 'staging' | 'prod',
+  streamOutput = false
 ): Promise<{
   exitCode: number;
   command: string;
+  skipped?: boolean;
   message?: string;
   errorCategory?: ErrorCategory;
   healthStatus?: { healthy: boolean; reason?: string };
@@ -1076,7 +1229,7 @@ async function executeStageCommand(
   });
 
   if (!useRapidkitWrapper) {
-    const validation = await validateCommand(finalCommand);
+    const validation = await validateCommand(finalCommand, projectPath);
     if (!validation.valid) {
       return {
         exitCode: 127,
@@ -1088,7 +1241,7 @@ async function executeStageCommand(
   } else if (nativeStageCommand) {
     const validation = useRapidkitWrapper
       ? await validateWrapperStagePreflight(projectPath, runtime, nativeStageCommand)
-      : await validateCommand(nativeStageCommand);
+      : await validateCommand(nativeStageCommand, projectPath);
     if (!validation.valid) {
       return {
         exitCode: 127,
@@ -1104,8 +1257,9 @@ async function executeStageCommand(
   let stdout = '';
   let stderr = '';
   let errorCategory: ErrorCategory | undefined;
+  let commandTimedOut = false;
   let healthStatus: { healthy: boolean; reason?: string } | undefined;
-  const timeoutMs = resolveWorkspaceRunStageTimeoutMs(stage);
+  const timeoutMs = resolveWorkspaceRunStageTimeoutMs(stage, runtime);
   const startedAt = Date.now();
 
   try {
@@ -1122,15 +1276,32 @@ async function executeStageCommand(
         : useRapidkitWrapper
           ? stage === 'init' && isVitestRuntime()
             ? await runRapidkitInitInProcess(projectPath)
-            : await runRapidkitSelfCommand([stage], projectPath, timeoutMs)
-          : await execa(finalCommand, [], {
-              cwd: projectPath,
-              reject: false,
-              shell: true,
-              timeout: timeoutMs,
-            });
+            : await runRapidkitSelfCommand([stage], projectPath, timeoutMs, streamOutput)
+          : await (async () => {
+              const directCommand = parseDirectLifecycleCommand(finalCommand);
+              return directCommand
+                ? execa(directCommand.file, directCommand.args, {
+                    cwd: projectPath,
+                    reject: false,
+                    timeout: timeoutMs,
+                    forceKillAfterDelay: 1000,
+                  })
+                : execa(finalCommand, [], {
+                    cwd: projectPath,
+                    reject: false,
+                    shell: true,
+                    timeout: timeoutMs,
+                    forceKillAfterDelay: 1000,
+                  });
+            })();
 
-    exitCode = Number(result.exitCode ?? 0);
+    commandTimedOut = Boolean(
+      typeof result === 'object' &&
+      result !== null &&
+      'timedOut' in result &&
+      (result as { timedOut?: unknown }).timedOut
+    );
+    exitCode = commandTimedOut ? 124 : Number(result.exitCode ?? 0);
     stdout = result.stdout;
     stderr = result.stderr;
     healthStatus =
@@ -1142,11 +1313,12 @@ async function executeStageCommand(
     if (exitCode !== 0) {
       const output = `${stdout}\n${stderr}`;
       const durationMs = Date.now() - startedAt;
+      const categorized = categorizeError(output, undefined, stage);
       const timedOut =
+        commandTimedOut ||
         exitCode === 124 ||
-        categorizeError(output) === 'timeout' ||
         (exitCode === 143 && durationMs >= Math.floor(timeoutMs * 0.8));
-      errorCategory = timedOut ? 'timeout' : categorizeError(output);
+      errorCategory = timedOut || categorized === 'timeout' ? 'timeout' : categorized;
     }
   } catch (error) {
     const timedOut =
@@ -1174,9 +1346,22 @@ async function executeStageCommand(
   const outputExcerpt = boundedFailureOutput(combinedOutput);
   const failureSummary = primaryFailureLine(combinedOutput);
   const durationMs = Date.now() - startedAt;
+  const noApplicableGoTests =
+    stage === 'test' &&
+    runtime === 'go' &&
+    exitCode !== 0 &&
+    /(?:matched no packages|no packages to test)/i.test(combinedOutput.join('\n'));
+  if (noApplicableGoTests) {
+    return {
+      exitCode: 0,
+      command: finalCommand,
+      skipped: true,
+      message: 'No Go packages matched; test stage is not applicable to this runtime unit.',
+    };
+  }
   const timedOut =
+    commandTimedOut ||
     exitCode === 124 ||
-    errorCategory === 'timeout' ||
     (exitCode === 143 && durationMs >= Math.floor(timeoutMs * 0.8));
   const normalizedCategory = exitCode === 0 ? undefined : timedOut ? 'timeout' : errorCategory;
   const failureDiagnostic =
@@ -1359,6 +1544,12 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
 
   const startedAt = Date.now();
   const workspacePath = path.resolve(options.workspacePath);
+  emitActivityBlock({
+    blockId: 'workspace.run.resolve',
+    status: 'running',
+    message: 'Resolving workspace project fleet',
+    component: 'workspace-run',
+  });
   const cachedEvidence = await readWorkspaceRunEvidence(workspacePath);
   const projectPaths = await discoverWorkspaceProjects(workspacePath);
   const { projects: scopedProjectPaths, normalizedScope } = await filterProjectsByScope(
@@ -1397,6 +1588,20 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
     selectionMode = 'all';
   }
 
+  emitActivityBlock({
+    blockId: 'workspace.run.resolve',
+    status: 'succeeded',
+    message: `Resolved ${scopedProjectPaths.length} project(s)`,
+    component: 'workspace-run',
+    attributes: { projects: scopedProjectPaths.length, selectionMode },
+  });
+
+  emitActivityBlock({
+    blockId: 'workspace.run.gates',
+    status: 'running',
+    message: 'Evaluating workspace run gates',
+    component: 'workspace-run',
+  });
   const enforceGates =
     options.stage === 'init' || options.planOnly === true
       ? false
@@ -1416,6 +1621,13 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         },
       ];
   const blockingGate = gateResults.find((gate) => gate.status === 'fail');
+  emitActivityBlock({
+    blockId: 'workspace.run.gates',
+    status: blockingGate ? 'blocked' : 'succeeded',
+    message: blockingGate ? `Blocked by ${blockingGate.gate}` : 'Workspace run gates passed',
+    component: 'workspace-run',
+    attributes: { gates: gateResults },
+  });
 
   const runTargets = scopedProjectPaths.filter((projectPath) => affectedProjects.has(projectPath));
   const continueOnError = options.continueOnError === true || options.stage === 'init';
@@ -1423,6 +1635,16 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   const maxWorkers = normalizeWorkers(options.maxWorkers, runTargets.length);
   const totalTargets = runTargets.length;
   let completedTargets = 0;
+  emitActivityBlock({
+    blockId: 'workspace.run.execute',
+    status: blockingGate ? 'blocked' : 'running',
+    message: blockingGate
+      ? `Execution blocked by ${blockingGate.gate}`
+      : `Executing ${options.stage} across ${totalTargets} project(s)`,
+    component: 'workspace-run',
+    progress: { completed: 0, total: totalTargets },
+    attributes: { stage: options.stage, parallel, maxWorkers },
+  });
 
   if (!options.json) {
     console.log(
@@ -1435,12 +1657,18 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   const executionRows = new Map<string, ProjectExecutionResult>();
   for (const projectPath of projectPaths) {
     const relativePath = normalizePathForMatch(path.relative(workspacePath, projectPath));
+    const declaredProjectName = await readProjectDeclaredName(projectPath);
     const insideScope = scopedProjectPaths.includes(projectPath);
     const selected = insideScope && affectedProjects.has(projectPath);
     executionRows.set(projectPath, {
       path: projectPath,
       relativePath,
-      projectName: path.basename(relativePath) || path.basename(projectPath),
+      // Linked and snapshot-qualified projects often have transport-specific
+      // folder names. Preserve the authored/adopted identity in fleet evidence
+      // so Live, IDE, CI, and repair consumers do not expose `project-001` or a
+      // cache directory as the project name.
+      projectName:
+        declaredProjectName ?? (path.basename(relativePath) || path.basename(projectPath)),
       selected,
       affected: selected,
       status: 'skipped',
@@ -1483,6 +1711,13 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       const lifecyclePlan = buildPolyglotLifecyclePlan(projectPath);
       const runtimeFilter = options.runtime?.trim().toLowerCase();
       const plannedUnits = lifecyclePlan.units
+        .filter((unit) =>
+          runtimeUnitBelongsToSelectedProject({
+            projectPath,
+            unit,
+            selectedProjectPaths: runTargets,
+          })
+        )
         .filter((unit) => !runtimeFilter || unit.runtime === runtimeFilter)
         .map((unit) => ({
           unit,
@@ -1509,8 +1744,46 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         }));
       row.runtimeExecutions = runtimeExecutions;
 
+      // The project shortcut is safe only for one concrete runtime unit. Two
+      // independent manifests can use the same language; collapsing those to
+      // one root wrapper silently skips work just as surely as collapsing a
+      // polyglot project would.
+      if (
+        !lifecyclePlan.polyglot &&
+        !runtimeFilter &&
+        runtimeExecutions.length === 1 &&
+        plannedUnits[0]?.unit.root === '.'
+      ) {
+        const detected = await detectProjectFramework(projectPath);
+        row.framework = detected.framework;
+        row.runtimeDetected = detected.runtime;
+        const configuredCommand = detected.commandOverrides?.[options.stage];
+        const plannedCommand = configuredCommand
+          ? configuredCommand
+          : isWrapperOwnedRuntime(detected.runtime)
+            ? `rapidkit ${options.stage}`
+            : resolveWorkspaceStageCommand({
+                projectPath,
+                runtime: detected.runtime,
+                framework: detected.framework,
+                stage: options.stage,
+              });
+        if (plannedCommand) {
+          const representative = runtimeExecutions[0];
+          runtimeExecutions.splice(0, runtimeExecutions.length, {
+            ...representative,
+            unitId: `project:${detected.runtime}`,
+            root: '.',
+            manifest: plannedUnits.map(({ unit }) => unit.manifest).join(', '),
+            command: plannedCommand,
+          });
+        }
+      }
+
       if (options.planOnly) {
-        row.runtimeDetected = plannedUnits[0]?.unit.runtime;
+        if (!row.runtimeDetected) {
+          row.runtimeDetected = plannedUnits[0]?.unit.runtime;
+        }
         row.status = 'skipped';
         row.reason =
           plannedUnits.length > 0
@@ -1523,7 +1796,12 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         return;
       }
 
-      if (lifecyclePlan.polyglot || runtimeFilter) {
+      if (
+        lifecyclePlan.polyglot ||
+        runtimeFilter ||
+        plannedUnits.length > 1 ||
+        (plannedUnits.length === 1 && plannedUnits[0]?.unit.root !== '.')
+      ) {
         if (plannedUnits.length === 0) {
           row.status = 'failed';
           row.reason = runtimeFilter
@@ -1551,12 +1829,19 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
             detected.framework,
             { [options.stage]: stage.command },
             detected.environmentCommandVariants,
-            detected.environment
+            detected.environment,
+            !options.json
           );
           execution.durationMs = Date.now() - unitStarted;
           execution.exitCode = result.exitCode;
-          execution.status = result.exitCode === 0 ? 'passed' : 'failed';
+          execution.status = result.skipped
+            ? 'skipped'
+            : result.exitCode === 0
+              ? 'passed'
+              : 'failed';
           execution.reason = result.message;
+          execution.errorCategory = result.errorCategory;
+          execution.failureDiagnostic = result.failureDiagnostic;
           if (result.exitCode !== 0 && !firstFailure)
             firstFailure = result.message ?? stage.command;
           if (result.exitCode !== 0 && !continueOnError) {
@@ -1574,11 +1859,17 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
           .map((execution) => `[${execution.runtime}:${execution.root}] ${execution.command}`)
           .join(' && ');
         row.durationMs = Date.now() - started;
+        const passedUnit = runtimeExecutions.find((execution) => execution.status === 'passed');
         row.exitCode = failedUnit?.exitCode ?? 0;
-        row.status = failedUnit ? 'failed' : 'passed';
-        row.reason = failedUnit ? (firstFailure ?? 'runtime-unit stage failed') : undefined;
-        row.errorCategory = failedUnit ? 'runtime' : undefined;
+        row.status = failedUnit ? 'failed' : passedUnit ? 'passed' : 'skipped';
+        row.reason = failedUnit
+          ? (firstFailure ?? 'runtime-unit stage failed')
+          : passedUnit
+            ? undefined
+            : 'No applicable runtime unit executed the requested stage';
+        row.errorCategory = failedUnit ? (failedUnit.errorCategory ?? 'runtime') : undefined;
         row.errorMessage = row.reason;
+        row.failureDiagnostic = failedUnit?.failureDiagnostic;
         completedTargets += 1;
         return;
       }
@@ -1653,7 +1944,8 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         framework,
         commandOverrides,
         environmentCommandVariants,
-        environment
+        environment,
+        !options.json
       );
       row.executionCommand = execResult.command;
       row.errorCategory = execResult.errorCategory;
@@ -1661,8 +1953,25 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       row.failureDiagnostic = execResult.failureDiagnostic;
       row.durationMs = Date.now() - started;
       row.exitCode = execResult.exitCode;
+      const primaryRuntimeExecution = row.runtimeExecutions?.[0];
+      if (primaryRuntimeExecution) {
+        primaryRuntimeExecution.command = execResult.command;
+        primaryRuntimeExecution.status = execResult.skipped
+          ? 'skipped'
+          : execResult.exitCode === 0
+            ? 'passed'
+            : 'failed';
+        primaryRuntimeExecution.exitCode = execResult.exitCode;
+        primaryRuntimeExecution.durationMs = row.durationMs;
+        primaryRuntimeExecution.reason = execResult.message;
+        primaryRuntimeExecution.errorCategory = execResult.errorCategory;
+        primaryRuntimeExecution.failureDiagnostic = execResult.failureDiagnostic;
+      }
 
-      if (execResult.exitCode === 0) {
+      if (execResult.skipped) {
+        row.status = 'skipped';
+        row.reason = execResult.message;
+      } else if (execResult.exitCode === 0) {
         row.status = 'passed';
         row.reason = undefined;
       } else {
@@ -1767,6 +2076,15 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   const failed = rows.filter((row) => row.status === 'failed').length;
   const skipped = rows.filter((row) => row.status === 'skipped').length;
 
+  emitActivityBlock({
+    blockId: 'workspace.run.execute',
+    status: failed > 0 ? 'failed' : blockingGate ? 'blocked' : 'succeeded',
+    message: `Workspace run finished: ${passed} passed, ${failed} failed, ${skipped} skipped`,
+    component: 'workspace-run',
+    progress: { completed: totalTargets, total: totalTargets, percent: 100 },
+    attributes: { passed, failed, skipped, stage: options.stage },
+  });
+
   const strict = options.strict === true;
   const exitCode =
     failed > 0 ||
@@ -1823,7 +2141,34 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   };
 
   const reportPath = path.join(workspacePath, WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH);
-  await publishWorkspaceRunStageReport(workspacePath, report);
+  emitActivityBlock({
+    blockId: 'workspace.run.publish',
+    status: 'running',
+    message: 'Publishing workspace run evidence',
+    component: 'workspace.run',
+  });
+  try {
+    await publishWorkspaceRunStageReport(workspacePath, report);
+    emitActivityBlock({
+      blockId: 'workspace.run.publish',
+      status: 'succeeded',
+      message: 'Workspace run evidence published',
+      component: 'workspace.run',
+    });
+    emitActivityArtifact({
+      workspacePath,
+      relativePath: WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH,
+      blockId: 'workspace.run.publish',
+    });
+  } catch (error) {
+    emitActivityBlock({
+      blockId: 'workspace.run.publish',
+      status: 'failed',
+      message: error instanceof Error ? error.message : 'Workspace run evidence publish failed',
+      component: 'workspace.run',
+    });
+    throw error;
+  }
 
   if (!options.json) {
     if (blockingGate) {

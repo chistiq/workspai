@@ -77,6 +77,7 @@ describe('generateDotnetWebApiCleanKit', () => {
       'rapidkit',
       'rapidkit.cmd',
       '.github/workflows/ci.yml',
+      '.github/dependabot.yml',
       '.workspai/project.json',
       '.workspai/context.json',
       '.workspai/project.json',
@@ -93,7 +94,7 @@ describe('generateDotnetWebApiCleanKit', () => {
 
     await generateDotnetWebApiCleanKit(projectPath, {
       project_name: 'billing-api',
-      target_framework: 'net8.0',
+      target_framework: 'net10.0',
       port: '9090',
       skipGit: true,
     });
@@ -111,9 +112,15 @@ describe('generateDotnetWebApiCleanKit', () => {
 
     const csproj = await fs.readFile(path.join(projectPath, 'src/billing-api.csproj'), 'utf8');
     expect(csproj).toContain('<Project Sdk="Microsoft.NET.Sdk.Web">');
-    expect(csproj).toContain('<TargetFramework>net8.0</TargetFramework>');
+    expect(csproj).toContain('<TargetFramework>net10.0</TargetFramework>');
     expect(csproj).toContain('<NoWarn>$(NoWarn);1591</NoWarn>');
     expect(csproj).toContain('Swashbuckle.AspNetCore');
+    expect(csproj).toContain('Microsoft.AspNetCore.OpenApi" Version="10.0.11');
+    expect(csproj).toContain('Swashbuckle.AspNetCore" Version="10.2.3');
+
+    const dockerfile = await fs.readFile(path.join(projectPath, 'Dockerfile'), 'utf8');
+    expect(dockerfile).toContain('mcr.microsoft.com/dotnet/aspnet:10.0');
+    expect(dockerfile).toContain('USER $APP_UID');
 
     const program = await fs.readFile(path.join(projectPath, 'src/Program.cs'), 'utf8');
     expect(program).toContain('MapHealthChecks("/health/live")');
@@ -140,7 +147,10 @@ describe('generateDotnetWebApiCleanKit', () => {
       path.join(projectPath, '.github/workflows/ci.yml'),
       'utf8'
     );
-    expect(ciWorkflow).toContain('actions/setup-dotnet@v4');
+    expect(ciWorkflow).toContain('actions/setup-dotnet@v6');
+    expect(ciWorkflow).toContain('dotnet-version: 10.0.x');
+    expect(ciWorkflow).toContain('permissions:\n  contents: read');
+    expect(ciWorkflow).toContain('package --vulnerable --include-transitive');
     expect(ciWorkflow).toContain('dotnet test');
     expect(ciWorkflow).toContain('windows-latest');
     expect(ciWorkflow).toContain(
@@ -151,7 +161,7 @@ describe('generateDotnetWebApiCleanKit', () => {
     );
   });
 
-  it('falls back to net8.0 when an inconsistent target framework is requested', async () => {
+  it('falls back to net10.0 when an inconsistent target framework is requested', async () => {
     const projectPath = path.join(testDir, 'framework-api');
 
     await generateDotnetWebApiCleanKit(projectPath, {
@@ -164,8 +174,8 @@ describe('generateDotnetWebApiCleanKit', () => {
     const projectJson = JSON.parse(
       await fs.readFile(path.join(projectPath, '.workspai/project.json'), 'utf8')
     );
-    expect(csproj).toContain('<TargetFramework>net8.0</TargetFramework>');
-    expect(projectJson.target_framework).toBe('net8.0');
+    expect(csproj).toContain('<TargetFramework>net10.0</TargetFramework>');
+    expect(projectJson.target_framework).toBe('net10.0');
   });
 
   it('does not invoke host tools when install and git are skipped', async () => {

@@ -56,6 +56,9 @@ Useful follow-up questions:
 # What APIs and endpoints exist?
 npx workspai workspace graph entities endpoint --json
 
+# Which languages are evidenced in one project? The flag form is equivalent.
+npx workspai workspace graph entities --kind language --scope project:billing --limit 100 --json
+
 # Why does Workspai believe this entity exists?
 npx workspai workspace graph evidence "GET /users" --json
 
@@ -79,6 +82,7 @@ A simplified response looks like this:
 ```json
 {
   "schemaVersion": "workspace-knowledge-search.v1",
+  "graphSourceHash": "<canonical-model-structural-sha256>",
   "query": "billing database",
   "projectId": "billing",
   "totalMatches": 23,
@@ -116,6 +120,26 @@ symbols are not implied to have been extracted. The graph diagnostic reports
 the sampled and indexed candidate counts and must not be read as exhaustive
 symbol coverage.
 
+Language inventory is intentionally broader than source-structure parsing.
+The complete eligible-path inventory recognizes systems languages and compiler
+DSLs such as Assembly, CUDA, Fortran, HLSL, LLVM IR/MIR, MLIR, Objective-C,
+OpenCL, and TableGen even when Workspai has no safe generic symbol parser for
+that syntax. Language counts therefore remain project-wide inventory facts;
+symbols, imports, and calls remain bounded to parser-supported source inputs.
+
+Call binding follows the same proof boundary. Workspai binds a call only when
+its target is uniquely defined in the same file or in a locally imported file
+that the Graph already resolved. Overloads, dynamic dispatch, and ambiguous
+names remain explicit unknowns for compiler or language-server evidence; the
+CLI does not turn a repository-wide text match into semantic certainty.
+
+When a previous graph has the same project set, provider versions, and live
+project fingerprints, unchanged project slices are reused and only changed
+projects repeat the expensive semantic scan. Workspace-level CI, governance,
+infrastructure, and topology providers still run against the complete current
+workspace. The `incremental-project-cache` provider receipt records reused and
+rescanned scope counts. A provider-version change forces a full rebuild.
+
 ### Fast reads without stale answers
 
 The read-oriented `search`, `entities`, `evidence`, `path`, and `benchmark`
@@ -127,13 +151,14 @@ only when all of the following remain true:
 - no proof is marked stale;
 - the graph fingerprint contains exactly one workspace scope and every
   canonical project scope with compatible scan limits;
-- a fresh bounded scan produces the same aggregate live-input hash.
+- a fresh complete eligible-path inventory produces the same aggregate
+  live-input hash.
 
 Git-backed scopes use `git-worktree-v2`, covering tracked tree state plus
-modified, deleted, renamed, untracked, and relevant ignored files. If Git cannot
+modified, deleted, renamed, and non-ignored untracked files. If Git cannot
 prove the scanned inventory safely—for example because a traversed initialized
 submodule or hidden index flag is present—Workspai falls back to
-`content-merkle-v1`, which hashes each bounded file by portable path and content.
+`content-merkle-v1`, which hashes each eligible file by portable path and content.
 The graph records the combined strategy as `hybrid-git-content-v2`.
 
 A miss rebuilds from live sources. Use `--refresh-graph` when the caller requires
@@ -143,23 +168,61 @@ an explicit rebuild even if the persisted snapshot is compatible:
 npx workspai workspace graph search "protobuf ownership" --refresh-graph --json
 ```
 
-The fingerprint proves compatibility of the exact bounded provider inventory;
-if a scope reports `truncated: true`, it must not be interpreted as proof about
-files beyond that declared limit.
+The fingerprint normally covers every eligible Git-tracked and non-ignored
+untracked file in each project scope. The default `500000`-file limit is an
+emergency safety boundary, not a semantic completeness target. A scope with
+`truncated: true` or `inventoryMode: emergency-bounded` must not be interpreted
+as proof about files beyond that boundary. Git inventories publish an exact
+`eligibleFileCount`; a non-Git fallback that reaches the boundary publishes
+`eligibleFileCountExact: false` instead of inventing a total.
+
+Path inventory and content-heavy extraction have separate budgets. Complete
+inventory feeds freshness, manifest discovery, language counts, architecture
+contracts, CI, ownership, infrastructure, and targeted providers. Semantic and
+deep providers receive deterministic adaptive selections distributed across
+component and language buckets. This prevents a large package, vendored tree,
+or alphabetically early directory from starving the rest of a polyglot
+monorepo. Every provider publishes `inputCoverage`; successful execution over a
+bounded selection is reported as `partial`, never as exhaustive coverage.
+
+Defaults scale with the eligible project population up to these safety
+ceilings:
+
+- complete inventory emergency bound: `500000` files per project;
+- adaptive semantic input: up to `100000` files per project;
+- adaptive deep-provider input: up to `25000` files per project;
+- source extraction: up to `20000` files per project.
+
+Use `--graph-inventory-limit`, `--graph-semantic-budget`,
+`--graph-deep-budget`, and `--graph-source-budget` on `workspace graph`, or the
+equivalent `WORKSPAI_GRAPH_INVENTORY_LIMIT`,
+`WORKSPAI_GRAPH_SEMANTIC_BUDGET`, `WORKSPAI_GRAPH_DEEP_BUDGET`, and
+`WORKSPAI_GRAPH_SOURCE_BUDGET` environment variables for non-interactive model,
+Adopt, and Intelligence runs. Increasing deep budgets affects cost, not the
+canonical per-project storage boundary.
+
+Workspai-generated agent entry projections are downstream consumers and are
+excluded from Graph inventory and Git diff hashing. Regenerating `AGENTS.md`,
+adapter entry files, GitHub agent definitions, or the Amazon Q entry rule
+therefore cannot invalidate the Graph that produced them or become circular
+architecture evidence. The reserved `.workspai-workspace` marker is excluded
+for the same ownership reason: its extension/CLI usage telemetry and other
+operational metadata describe Workspai activity, not source architecture. Real
+repository and workspace source changes remain part of the live fingerprint.
 
 ## Pick the command by question
 
-| You want to know…                                    | Use                                                     |
-| ---------------------------------------------------- | ------------------------------------------------------- |
-| What is relevant to a natural-language question?     | `workspace graph search <query> --limit <n> --json`     |
-| Which entities of one type exist?                    | `workspace graph entities <kind> --json`                |
-| Why does Workspai believe an item exists?            | `workspace graph evidence <entity-or-relation> --json`  |
-| How are two things connected?                        | `workspace graph path <from> <to> --json`               |
-| What changed between graph revisions?                | `workspace graph overlay --from <graph.json> --json`    |
-| What is the full portable graph?                     | `workspace graph emit --output graph.json --json`       |
-| How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`        |
-| How do I export to semantic or graph-analysis tools? | `workspace graph jsonld\|graphml\|gexf --output <file>` |
-| How much retrieval payload did one query avoid?      | `workspace graph benchmark <query> --limit <n> --json`  |
+| You want to know…                                    | Use                                                                           |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| What is relevant to a natural-language question?     | `workspace graph search <query> --limit <n> --json`                           |
+| Which entities of one type exist?                    | `workspace graph entities <kind> [--scope project:name] [--limit <n>] --json` |
+| Why does Workspai believe an item exists?            | `workspace graph evidence <entity-or-relation> --json`                        |
+| How are two things connected?                        | `workspace graph path <from> <to> --json`                                     |
+| What changed between graph revisions?                | `workspace graph overlay --from <graph.json> --json`                          |
+| What is the full portable graph?                     | `workspace graph emit --output graph.json --json`                             |
+| How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`                              |
+| How do I export to semantic or graph-analysis tools? | `workspace graph jsonld\|graphml\|gexf --output <file>`                       |
+| How much retrieval payload did one query avoid?      | `workspace graph benchmark <query> --limit <n> --json`                        |
 
 `graph emit --json` writes the complete dependency and Knowledge Graph to
 stdout and can be very large. Automation, IDEs, and agents should pass
@@ -275,9 +338,10 @@ in `project.runtimeCandidates` and aggregates them into
 monorepo's internal services, contracts, delivery surfaces, and proofs without
 pretending that the primary runtime describes the whole repository.
 
-The two artifacts are published under one workspace lock using a
-rollback-capable artifact transaction. Each file replacement is atomic; if any
-write fails, Workspai restores both preimages. `graph.source.kind` is fixed to
+The model, workspace aggregate, and all project graph artifacts are published
+under one workspace lock using a rollback-capable multi-root artifact
+transaction. Each file replacement is atomic; if any write fails, Workspai
+restores every preimage. `graph.source.kind` is fixed to
 `workspace-model`, `graph.source.artifact` is fixed to
 `.workspai/reports/workspace-model.json`, and `graph.source.hash` contains the
 stable structural hash of the persisted model. A current-state consumer must
@@ -357,13 +421,22 @@ into a false “complete” claim.
 
 ## Outputs and consumers
 
-`workspace model --write` publishes these two artifacts as one locked,
-rollback-capable artifact set:
+`workspace model --write` publishes the canonical model, one complete workspace
+aggregate, and one compact integrity-bound reference for every registered
+project as one locked, rollback-capable multi-root artifact set:
 
 ```text
-.workspai/reports/workspace-model.json
-.workspai/reports/workspace-knowledge-graph.json
+<workspace>/.workspai/reports/workspace-model.json
+<workspace>/.workspai/reports/workspace-knowledge-graph.json
+<project>/.workspai/reports/project-knowledge-graph-reference.json
 ```
+
+The workspace artifact preserves all registered projects and cross-project
+relations for Graph, Doctor, Context, Goal, and MCP consumers. Each project
+reference carries source and projection hashes, summary counts, a bounded query,
+and a portable canonical URI; it does not duplicate graph entities or proofs.
+Nested and external projects follow the same rule. Any publication failure
+restores the model, aggregate, and all project reference preimages together.
 
 The Knowledge Graph is consumed by:
 
@@ -385,8 +458,12 @@ The Knowledge Graph is consumed by:
   topology, rich graph, and quality summary in one response.
 
 The complete graph is an interchange artifact, not a prompt. Agents should
-start with `INDEX.json`, use bounded search, then retrieve evidence or a path
-for the selected result.
+start with compact project context, use bounded search, then retrieve evidence
+or a path for the selected result. Generated `project-context-agent.json`,
+`agent-entry.v1.json`, and bootstrap receipts expose a small project graph
+reference separately from the `workspace:` aggregate. Bootstrap schema-validates
+the reference and compares its projection hash with a fresh projection of the
+aggregate before it allows architecture claims. The complete graph is stored once.
 
 ### Interchange and visualization
 
@@ -451,11 +528,48 @@ hashes. Query indexes are cached per immutable graph object; replacing the graph
 is the in-memory invalidation boundary. Across CLI processes, compatible
 persisted read queries validate the live Git/Merkle fingerprint before reuse.
 `workspace model --cache` and `--incremental` avoid unnecessary model/project
-work when inputs are unchanged.
+work when inputs are unchanged. Full, cached, and incremental builds use the
+same project-discovery contract, including adopted/imported projects and
+projects declared only through a workspace contract `externalPath`. Manifest
+or source changes under an external project therefore invalidate the same
+signatures as equivalent in-workspace projects.
 
 Use full graph export for interchange or offline analysis. Use bounded search
 for interactive agents. The latter keeps response size proportional to the
 question instead of workspace size.
+
+Interactive ranking preserves source intent. When otherwise relevant matches
+compete, authored source is preferred over compiled output, generated code,
+vendored dependencies, fixtures, and test-data. Those surfaces remain
+retrievable when the query explicitly asks for them; they are not silently
+removed from the canonical Graph.
+
+Project scope also applies while resolving exact evidence and path endpoints.
+Aliases from another project cannot make a scoped target ambiguous, and shared
+workspace entities are admitted only when the Graph proves their connection to
+the selected project.
+
+### Runtime-generated API topology
+
+When an authored API contract is wired through framework registration or
+configuration rather than a literal route handler, the
+`dynamic-api-registration-binding` provider creates a proof-backed
+`runtime-unit -> implements -> api` relation. Detection is runtime-specific,
+production-only, filename-aware for routing configuration, and bounded per API.
+It intentionally does not claim endpoint implementation: endpoint coverage
+remains unknown until a method/path or operation-id binding is proven. Consumers
+can distinguish the two guarantees through `bindingCoverage.apiRuntimeRegistration`
+and `bindingCoverage.apiImplementation`.
+
+Runtime-registration eligibility is explicit. Network and event contracts such
+as OpenAPI, server-root GraphQL schemas, AsyncAPI, and authored workspace API
+contracts participate; command palettes, console scripts, chat participants,
+shared protocol identities, and client GraphQL operations do not. GraphQL query,
+mutation, subscription, and fragment documents are modeled as proof-backed
+symbols that consume the GraphQL protocol. Only an authored root `schema` or
+non-extension `Query`, `Mutation`, or `Subscription` type establishes a
+runtime-served GraphQL API. This prevents client-heavy repositories from
+inflating API registration unknowns while preserving their operation topology.
 
 ## Measuring retrieval payload reduction
 
@@ -468,6 +582,10 @@ Measure the current workspace instead:
 ```bash
 npx workspai workspace graph benchmark "authentication endpoint" --limit 12 --json
 ```
+
+Use `--kind <entity-kind>` with search when the task requires a precise
+semantic surface, for example `--kind runtime-unit` for dynamic registration
+units or `--kind endpoint` for authored operations.
 
 The report compares the readable, proof-indexed source corpus with the bounded
 search payload using a clearly labelled `characters / 4` token estimate. It
@@ -497,6 +615,8 @@ a general performance claim.
 - The live-input fingerprint enables whole-graph snapshot reuse; it is not yet
   a per-file incremental graph rebuild or a hosted semantic-vector index.
 - Compiler/LSP-grade symbol resolution belongs in deeper language providers.
+- Runtime registration evidence proves that an API enters the running topology;
+  it does not prove that every authored operation has a reachable handler.
 - Missing project edges mean “relationship not proven,” not “projects are
   independent.” Author service contracts or provide API/package/runtime
   evidence to close that gap.

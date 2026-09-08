@@ -95,6 +95,172 @@
     },
     {
       "path": [
+        "agent",
+        "framework"
+      ],
+      "command": "framework",
+      "parent": "agent",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Create and attach release-admitted agent runtimes through Workspai governance",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "apply"
+      ],
+      "command": "apply",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Apply an already authorized hash-bound framework plan",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--project <name>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "attach"
+      ],
+      "command": "attach",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Plan, approve, and write one isolated governed agent instance",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "-y, --yes",
+          "attributeName": "yes"
+        },
+        {
+          "flags": "--granted-by <identity>",
+          "attributeName": "grantedBy"
+        },
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--project <name>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--name <name>",
+          "attributeName": "name"
+        },
+        {
+          "flags": "--goal <goal-id>",
+          "attributeName": "goal"
+        },
+        {
+          "flags": "--intent <text>",
+          "attributeName": "intent"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "list"
+      ],
+      "command": "list",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "List tested framework runtimes and their release-admission state",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "agent",
+        "framework",
+        "plan"
+      ],
+      "command": "plan",
+      "parent": "agent framework",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Create a hash-bound attachment plan without writing project files",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--project <name>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--runtime <runtime>",
+          "attributeName": "runtime"
+        },
+        {
+          "flags": "--name <name>",
+          "attributeName": "name"
+        },
+        {
+          "flags": "--goal <goal-id>",
+          "attributeName": "goal"
+        },
+        {
+          "flags": "--intent <text>",
+          "attributeName": "intent"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
         "ai"
       ],
       "command": "ai",
@@ -281,6 +447,464 @@
       "hidden": false,
       "arguments": [],
       "options": []
+    },
+    {
+      "path": [
+        "change"
+      ],
+      "command": "change",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Create and verify tamper-evident, architecture-aware change capsules",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "abort"
+      ],
+      "command": "abort",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Terminate an open change without deleting evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--reason <text>",
+          "attributeName": "reason"
+        },
+        {
+          "flags": "--actor <identity>",
+          "attributeName": "actor"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "authorize"
+      ],
+      "command": "authorize",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Grant bounded effect capabilities",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--effects <classes>",
+          "attributeName": "effects"
+        },
+        {
+          "flags": "--granted-by <identity>",
+          "attributeName": "grantedBy"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "begin"
+      ],
+      "command": "begin",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Pin an active Goal and architecture baseline",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--goal <goal-id>",
+          "attributeName": "goal"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "capsule"
+      ],
+      "command": "capsule",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Validate or export a change capsule",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "capsule",
+        "export"
+      ],
+      "command": "export",
+      "parent": "change capsule",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Export a validated portable capsule manifest",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--output <path>",
+          "attributeName": "output"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "capsule",
+        "validate"
+      ],
+      "command": "validate",
+      "parent": "change capsule",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Validate capsule and referenced local evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "effect"
+      ],
+      "command": "effect",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Record typed observed effects",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "effect",
+        "record"
+      ],
+      "command": "record",
+      "parent": "change effect",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Append an idempotent effect receipt",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--file <receipt.json>",
+          "attributeName": "file"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "explain"
+      ],
+      "command": "explain",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Explain proof, uncertainty, and next actions",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "list"
+      ],
+      "command": "list",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "List discoverable change capsules and integrity",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "predict"
+      ],
+      "command": "predict",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Attach a noncanonical architecture prediction",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--file <prediction.json>",
+          "attributeName": "file"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "resume"
+      ],
+      "command": "resume",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Resume a blocked transaction with human intent",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--to <state>",
+          "attributeName": "to"
+        },
+        {
+          "flags": "--reason <text>",
+          "attributeName": "reason"
+        },
+        {
+          "flags": "--actor <identity>",
+          "attributeName": "actor"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "status"
+      ],
+      "command": "status",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Inspect the derived transaction and assurance state",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "verification"
+      ],
+      "command": "verification",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Record independent Goal-criterion verification",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "change",
+        "verification",
+        "record"
+      ],
+      "command": "record",
+      "parent": "change verification",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Append an exact-generation verification receipt",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--file <receipt.json>",
+          "attributeName": "file"
+        }
+      ]
+    },
+    {
+      "path": [
+        "change",
+        "verify"
+      ],
+      "command": "verify",
+      "parent": "change",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Re-observe architecture and verify exact effects",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--change <change-id>",
+          "attributeName": "change"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--no-refresh",
+          "attributeName": "refresh"
+        }
+      ]
     },
     {
       "path": [
@@ -724,6 +1348,102 @@
         {
           "flags": "--no-plan",
           "attributeName": "plan"
+        }
+      ]
+    },
+    {
+      "path": [
+        "live"
+      ],
+      "command": "live",
+      "parent": null,
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Open a live cross-terminal execution graph for Workspai activity",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "target",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--global",
+          "attributeName": "global"
+        },
+        {
+          "flags": "--run <runId>",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--once",
+          "attributeName": "once"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        },
+        {
+          "flags": "--projection <projection>",
+          "attributeName": "projection"
+        },
+        {
+          "flags": "--refresh-ms <milliseconds>",
+          "attributeName": "refreshMs"
+        },
+        {
+          "flags": "--max-runs <count>",
+          "attributeName": "maxRuns"
+        },
+        {
+          "flags": "--max-scopes <count>",
+          "attributeName": "maxScopes"
+        },
+        {
+          "flags": "--classic",
+          "attributeName": "classic"
+        },
+        {
+          "flags": "--no-color",
+          "attributeName": "color"
+        },
+        {
+          "flags": "--no-motion",
+          "attributeName": "motion"
+        },
+        {
+          "flags": "--ascii",
+          "attributeName": "ascii"
+        },
+        {
+          "flags": "--accessible",
+          "attributeName": "accessible"
+        },
+        {
+          "flags": "--capture <file>",
+          "attributeName": "capture"
+        },
+        {
+          "flags": "--capture-preset <preset>",
+          "attributeName": "capturePreset"
+        },
+        {
+          "flags": "--capture-theme <theme>",
+          "attributeName": "captureTheme"
+        },
+        {
+          "flags": "--no-capture-redact",
+          "attributeName": "captureRedact"
+        },
+        {
+          "flags": "--replay <runId>",
+          "attributeName": "replay"
+        },
+        {
+          "flags": "--replay-speed <multiplier>",
+          "attributeName": "replaySpeed"
         }
       ]
     },
@@ -1470,8 +2190,28 @@
           "attributeName": "scanDepth"
         },
         {
+          "flags": "--graph-inventory-limit <count>",
+          "attributeName": "graphInventoryLimit"
+        },
+        {
+          "flags": "--graph-semantic-budget <count>",
+          "attributeName": "graphSemanticBudget"
+        },
+        {
+          "flags": "--graph-deep-budget <count>",
+          "attributeName": "graphDeepBudget"
+        },
+        {
+          "flags": "--graph-source-budget <count>",
+          "attributeName": "graphSourceBudget"
+        },
+        {
           "flags": "--limit <count>",
           "attributeName": "limit"
+        },
+        {
+          "flags": "--kind <kind>",
+          "attributeName": "kind"
         },
         {
           "flags": "--refresh-graph",
@@ -1594,6 +2334,10 @@
           "attributeName": "parallel"
         },
         {
+          "flags": "--plan",
+          "attributeName": "plan"
+        },
+        {
           "flags": "--runtime <runtime>",
           "attributeName": "runtime"
         },
@@ -1696,6 +2440,7 @@
     "autopilot",
     "bootstrap",
     "cache",
+    "change",
     "commands",
     "config",
     "create",
@@ -1703,6 +2448,7 @@
     "goal",
     "import",
     "infra",
+    "live",
     "mirror",
     "pipeline",
     "product",

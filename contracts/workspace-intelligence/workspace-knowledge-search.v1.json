@@ -18,6 +18,7 @@
   ],
   "properties": {
     "schemaVersion": { "const": "workspace-knowledge-search.v1" },
+    "graphSourceHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "query": { "type": "string", "minLength": 1 },
     "kind": {
       "oneOf": [

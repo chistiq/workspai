@@ -693,18 +693,22 @@ describe.sequential('in-process workspace Commander coverage', () => {
     ]);
   }, 30_000);
 
-  it('executes top-level project creation callbacks', async () => {
-    await runTopLevelCommand([
-      'legacy-go-coverage',
-      '--template',
-      'gofiber.standard',
-      '--yes',
-      '--skip-git',
-      '--skip-install',
-      '--no-workspace',
-      '--no-update-check',
-    ]);
-  }, 30_000);
+  it(
+    'executes top-level project creation callbacks',
+    async () => {
+      await runTopLevelCommand([
+        'legacy-go-coverage',
+        '--template',
+        'gofiber.standard',
+        '--yes',
+        '--skip-git',
+        '--skip-install',
+        '--no-workspace',
+        '--no-update-check',
+      ]);
+    },
+    HEAVY_IN_PROCESS_TIMEOUT_MS
+  );
 
   it('executes top-level discovery, help, configuration, and AI callbacks', async () => {
     await runTopLevelCommand(['commands', '--json']);

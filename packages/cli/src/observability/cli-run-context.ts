@@ -6,6 +6,12 @@ import {
 } from '../contracts/cli-log-event-contract.js';
 import { emitCliLogEventRecord, setCliRunId } from './cli-log-event.js';
 import { isCliJsonLogFormat, resolveCliLogFormat } from './cli-log-format.js';
+import type { WorkspaceActivityBlueprint } from '../activity/activity-contract.js';
+import {
+  finalizeActivityRun,
+  initializeActivityRun,
+  resetActivityRuntimeForTests,
+} from '../activity/activity-runtime.js';
 
 export type CliRunContext = {
   runId: string;
@@ -13,6 +19,8 @@ export type CliRunContext = {
   command: string[];
   cwd: string;
   rapidkitVersion: string;
+  parentRunId?: string;
+  previousParentRunId?: string;
   finalized: boolean;
 };
 
@@ -30,21 +38,34 @@ export function initializeCliRunContext(input: {
   argv?: readonly string[];
   cwd?: string;
   rapidkitVersion: string;
+  activityBlueprint?: WorkspaceActivityBlueprint;
 }): CliRunContext {
   const argv = input.argv ?? process.argv;
   const command = filterObservabilityArgs(argv.slice(2));
 
+  const inheritedParentRunId = process.env.WORKSPAI_PARENT_RUN_ID;
   const run: CliRunContext = {
     runId: randomUUID(),
     startedAt: new Date().toISOString(),
     command,
     cwd: input.cwd ?? process.cwd(),
     rapidkitVersion: input.rapidkitVersion,
+    ...(inheritedParentRunId ? { parentRunId: inheritedParentRunId } : {}),
+    ...(inheritedParentRunId ? { previousParentRunId: inheritedParentRunId } : {}),
     finalized: false,
   };
 
   activeRun = run;
   setCliRunId(run.runId);
+  process.env.WORKSPAI_PARENT_RUN_ID = run.runId;
+  initializeActivityRun({
+    runId: run.runId,
+    command: run.command,
+    cwd: run.cwd,
+    rapidkitVersion: run.rapidkitVersion,
+    parentRunId: run.parentRunId,
+    blueprint: input.activityBlueprint,
+  });
 
   if (isCliJsonLogFormat(argv)) {
     emitCliLogEventRecord(buildRunEvent(run, 'run.started', 'info', 'CLI run started'));
@@ -59,6 +80,13 @@ export function finalizeCliRunContext(exitCode: number, message?: string): void 
   }
 
   activeRun.finalized = true;
+  finalizeActivityRun(exitCode, message);
+
+  if (activeRun.previousParentRunId) {
+    process.env.WORKSPAI_PARENT_RUN_ID = activeRun.previousParentRunId;
+  } else {
+    delete process.env.WORKSPAI_PARENT_RUN_ID;
+  }
 
   if (!isCliJsonLogFormat()) {
     activeRun = null;
@@ -151,9 +179,17 @@ function buildRunEvent(
 export function resetCliRunContextForTests(): void {
   activeRun = null;
   setCliRunId('unknown-run');
+  resetActivityRuntimeForTests();
+  delete process.env.WORKSPAI_PARENT_RUN_ID;
 }
 
 let processExitHookInstalled = false;
+const finalizeRunBeforeNaturalExit = (): void => {
+  const rawExitCode = process.exitCode ?? 0;
+  const numericExitCode =
+    typeof rawExitCode === 'number' ? rawExitCode : Number.parseInt(rawExitCode, 10);
+  finalizeCliRunContext(Number.isFinite(numericExitCode) ? numericExitCode : 1);
+};
 
 export function installCliProcessExitHook(options?: { force?: boolean }): void {
   if (processExitHookInstalled) {
@@ -167,6 +203,7 @@ export function installCliProcessExitHook(options?: { force?: boolean }): void {
   }
 
   processExitHookInstalled = true;
+  process.once('beforeExit', finalizeRunBeforeNaturalExit);
   const originalExit = process.exit.bind(process);
 
   process.exit = ((code?: number | string | null) => {
@@ -179,5 +216,6 @@ export function installCliProcessExitHook(options?: { force?: boolean }): void {
 }
 
 export function resetCliProcessExitHookForTests(): void {
+  process.removeListener('beforeExit', finalizeRunBeforeNaturalExit);
   processExitHookInstalled = false;
 }

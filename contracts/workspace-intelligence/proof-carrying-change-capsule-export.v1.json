@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/proof-carrying-change-capsule-export.v1.json",
+  "title": "Workspai Proof-Carrying Change Capsule Export",
+  "type": "object",
+  "required": ["schemaVersion", "changeId", "outputPath", "validation"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.proof-carrying-change-capsule-export.v1" },
+    "changeId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "outputPath": { "type": "string", "minLength": 1 },
+    "validation": { "$ref": "proof-carrying-change-capsule-validation.v1.json" }
+  },
+  "additionalProperties": false
+}

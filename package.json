@@ -1,7 +1,7 @@
 {
   "name": "workspai",
   "private": true,
-  "version": "0.64.0",
+  "version": "0.75.1",
   "description": "Workspai monorepo for Workspace Intelligence packages.",
   "author": "Chistiq",
   "license": "MIT",
@@ -38,6 +38,9 @@
     "check:brand": "node scripts/check-brand-contract.mjs",
     "check:english-text": "node scripts/english-text-guard.mjs --all",
     "check:english-text:staged": "node scripts/english-text-guard.mjs --staged",
+    "contributor:plan": "node scripts/contributor-plan.mjs",
+    "check:contributor-hub": "node scripts/check-contributor-hub.mjs",
+    "check:contributor-hub:live": "node scripts/check-contributor-hub.mjs --live",
     "check:cross-platform-lockfile": "node scripts/check-cross-platform-lockfile.mjs",
     "check": "corepack npm run check:cross-platform-lockfile && corepack npm run check:english-text && corepack npm run check:package-quality && corepack npm run check:package-boundaries && corepack npm run check:package-mirrors && corepack npm --workspaces --if-present run check",
     "fix": "corepack npm --workspaces --if-present run fix",

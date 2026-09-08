@@ -19,6 +19,10 @@
   "invariants": {
     "multiAdapterProjects": true,
     "missingTools": "decision-required",
+    "missingToolSameGenerationRetry": false,
+    "missingToolResumeBoundary": "environment-change-and-fresh-plan",
+    "plannerExecutorAvailabilityProbe": "shared-launchability-check",
+    "setupInstallsHostRuntimes": false,
     "unsupportedEcosystems": "decision-required",
     "silentFallbackToModelExecution": false,
     "mutationAuthority": "cli-only",
@@ -84,6 +88,74 @@
       ".workspai/repair/inbox/*.json",
       ".workspai/repair/engine.lock"
     ]
+  },
+  "qualificationMatrix": {
+    "schemaVersion": "workspai.workspace-repair-qualification-matrix.v1",
+    "status": "contract-enforced",
+    "dimensions": {
+      "adapters": [
+        "node",
+        "python",
+        "go",
+        "rust",
+        "php-composer",
+        "ruby-bundler",
+        "elixir-mix",
+        "deno",
+        "dotnet",
+        "jvm-maven",
+        "jvm-gradle",
+        "clojure",
+        "scala-sbt"
+      ],
+      "scopes": [
+        "project",
+        "workspace",
+        "linked-project",
+        "polyglot-project"
+      ],
+      "failureFamilies": [
+        "missing-tool",
+        "stale-evidence",
+        "missing-artifact",
+        "no-op-proposal",
+        "source-drift",
+        "validation-failure",
+        "producer-failure",
+        "provider-outage",
+        "interrupted-rollback",
+        "unsupported-runtime"
+      ],
+      "recoveryPaths": [
+        "automatic-refresh",
+        "bounded-replan",
+        "decision-required",
+        "checkpoint-rollback",
+        "durable-resume",
+        "manual-repair"
+      ],
+      "failureRecoveryPolicy": {
+        "missing-tool": "decision-required",
+        "stale-evidence": "automatic-refresh",
+        "missing-artifact": "automatic-refresh",
+        "no-op-proposal": "bounded-replan",
+        "source-drift": "bounded-replan",
+        "validation-failure": "checkpoint-rollback",
+        "producer-failure": "bounded-replan",
+        "provider-outage": "durable-resume",
+        "interrupted-rollback": "durable-resume",
+        "unsupported-runtime": "manual-repair"
+      }
+    },
+    "invariants": {
+      "everyAdapterDeclaresClosureStages": true,
+      "everyFailureTerminates": true,
+      "everyMutationIsCheckpointed": true,
+      "workspaceAndProjectScopesUseTheSameEngine": true,
+      "linkedProjectsRemainBoundaryChecked": true,
+      "missingToolsBlockExecutionBeforeApproval": true,
+      "polyglotActionsDeclareIndependentExecutablePrerequisites": true
+    }
   },
   "adapters": [
     {

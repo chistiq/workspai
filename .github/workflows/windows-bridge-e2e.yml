@@ -3,8 +3,26 @@ name: Windows Bridge E2E
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "packages/cli/src/**"
+      - "packages/cli/package.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/windows-bridge-e2e.yml"
+      - ".github/workflows/release-npm-manual.yml"
   pull_request:
     branches: [main, develop]
+    paths:
+      - "packages/cli/src/**"
+      - "packages/cli/package.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/windows-bridge-e2e.yml"
+      - ".github/workflows/release-npm-manual.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   windows-bridge-e2e:
@@ -19,14 +37,14 @@ jobs:
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
         shell: pwsh

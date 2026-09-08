@@ -76,6 +76,11 @@
       "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
       "publication": "json-schema"
     },
+    "projectKnowledgeGraphReference": {
+      "schemaVersion": "project-knowledge-graph-reference.v1",
+      "contractPath": "contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json",
+      "publication": "json-schema"
+    },
     "projectAgentEntry": {
       "schemaVersion": "workspai.agent-entry.v1",
       "contractPath": "contracts/workspace-intelligence/project-agent-entry.v1.json",
@@ -164,6 +169,61 @@
     "goalLifecycleResult": {
       "schemaVersion": "workspai.goal-lifecycle-result.v1",
       "contractPath": "contracts/workspace-intelligence/goal-lifecycle-result.v1.json",
+      "publication": "json-schema"
+    },
+    "decisionEvent": {
+      "schemaVersion": "workspai.decision-event.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-event.v1.json",
+      "publication": "json-schema"
+    },
+    "decisionTransaction": {
+      "schemaVersion": "workspai.decision-transaction.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-transaction.v1.json",
+      "publication": "json-schema"
+    },
+    "decisionCheckpoint": {
+      "schemaVersion": "workspai.decision-checkpoint.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-checkpoint.v1.json",
+      "publication": "json-schema"
+    },
+    "changeOperationResult": {
+      "schemaVersion": "workspai.change-operation-result.v1",
+      "contractPath": "contracts/workspace-intelligence/change-operation-result.v1.json",
+      "publication": "json-schema"
+    },
+    "architectureChangeLease": {
+      "schemaVersion": "workspai.architecture-change-lease.v1",
+      "contractPath": "contracts/workspace-intelligence/architecture-change-lease.v1.json",
+      "publication": "json-schema"
+    },
+    "predictedArchitectureChange": {
+      "schemaVersion": "workspai.predicted-architecture-change.v1",
+      "contractPath": "contracts/workspace-intelligence/predicted-architecture-change.v1.json",
+      "publication": "json-schema"
+    },
+    "architectureSurpriseReport": {
+      "schemaVersion": "workspai.architecture-surprise-report.v1",
+      "contractPath": "contracts/workspace-intelligence/architecture-surprise-report.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeCapsule": {
+      "schemaVersion": "workspai.proof-carrying-change-capsule.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeList": {
+      "schemaVersion": "workspai.proof-carrying-change-list.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-list.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeCapsuleValidation": {
+      "schemaVersion": "workspai.proof-carrying-change-capsule-validation.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-capsule-validation.v1.json",
+      "publication": "json-schema"
+    },
+    "proofCarryingChangeCapsuleExport": {
+      "schemaVersion": "workspai.proof-carrying-change-capsule-export.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-capsule-export.v1.json",
       "publication": "json-schema"
     },
     "workspaceIntelligenceArchitecture": {
@@ -321,6 +381,26 @@
       "contractPath": "contracts/cli-log-event.v1.json",
       "publication": "json-schema"
     },
+    "workspaceActivityEvent": {
+      "schemaVersion": "workspace-activity-event.v1",
+      "contractPath": "contracts/workspace-activity-event.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceActivityMonitorSnapshot": {
+      "schemaVersion": "workspace-activity-monitor-snapshot.v1",
+      "contractPath": "contracts/workspace-activity-monitor-snapshot.v1.json",
+      "publication": "capability-contract"
+    },
+    "workspaceActivityMonitorFleet": {
+      "schemaVersion": "workspace-activity-monitor-fleet.v1",
+      "contractPath": "contracts/workspace-activity-monitor-fleet.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceActivityBoard": {
+      "schemaVersion": "workspace-activity-board.v1",
+      "contractPath": "contracts/workspace-activity-board.v1.json",
+      "publication": "json-schema"
+    },
     "freshnessMetadata": {
       "schemaVersion": "rapidkit-freshness-metadata-v1",
       "contractPath": null,
@@ -386,6 +466,11 @@
       "contractPath": "contracts/workspace-intelligence/workspace-graph-token-efficiency.v1.json",
       "publication": "json-schema"
     },
+    "workspaceIntelligenceBenchmark": {
+      "schemaVersion": "workspace-intelligence-benchmark.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json",
+      "publication": "json-schema"
+    },
     "modelUsageEvent": {
       "schemaVersion": "model-usage-event.v1",
       "contractPath": "contracts/workspace-intelligence/model-usage-event.v1.json",
@@ -410,6 +495,36 @@
       "schemaVersion": "workspai-agent-customization-pack-capabilities.v1",
       "contractPath": "contracts/agent-customization-pack.v1.json",
       "publication": "capability-contract"
+    },
+    "agentFrameworkCapabilities": {
+      "schemaVersion": "workspai.agent-framework-capabilities.v1",
+      "contractPath": "contracts/agent-framework-capabilities.v1.json",
+      "publication": "capability-contract"
+    },
+    "agentFrameworkAdapterManifest": {
+      "schemaVersion": "workspai.agent-framework-adapter-manifest.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkConformanceReport": {
+      "schemaVersion": "workspai.agent-framework-conformance-report.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-conformance-report.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkChangePlan": {
+      "schemaVersion": "workspai.agent-framework-change-plan.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-change-plan.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkOwnershipReceipt": {
+      "schemaVersion": "workspai.agent-framework-ownership-receipt.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkAdmissionCandidate": {
+      "schemaVersion": "workspai.agent-framework-admission-candidate.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json",
+      "publication": "json-schema"
     },
     "agentCustomizationPackReport": {
       "schemaVersion": "rapidkit-agent-customization-pack.v1",

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/predicted-architecture-change.v1.json",
+  "title": "Workspai Predicted Architecture Change",
+  "type": "object",
+  "required": ["schemaVersion", "changeId", "goalId", "generatedAt", "baselineGeneration", "nonCanonical", "proofEligible", "operations", "assumptions", "predictedRisk"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.predicted-architecture-change.v1" },
+    "changeId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "goalId": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "baselineGeneration": { "$ref": "decision-event.v1.json#/$defs/sha256" },
+    "nonCanonical": { "const": true },
+    "proofEligible": { "const": false },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["operation", "targetKind", "targetId", "rationale", "confidence"],
+        "properties": {
+          "operation": { "enum": ["add", "remove", "change"] },
+          "targetKind": { "enum": ["entity", "relation", "proof", "artifact"] },
+          "targetId": { "type": "string", "minLength": 1 },
+          "rationale": { "type": "string", "minLength": 1 },
+          "confidence": { "enum": ["high", "medium", "low"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "assumptions": { "type": "array", "items": { "type": "string" } },
+    "predictedRisk": { "enum": ["none", "low", "medium", "high"] }
+  },
+  "additionalProperties": false
+}

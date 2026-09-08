@@ -21,6 +21,7 @@ import { buildWorkspaceModel, type WorkspaceModelProject } from './workspace-mod
 import { runWorkspaceStage } from './workspace-run.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
+import { resolveWorkspaceRegistrationName } from './workspace-marker.js';
 
 export const VERIFIED_GOAL_SCHEMA_VERSION = 'workspai.verified-goal.v1' as const;
 export const VERIFIED_GOAL_STATUS_SCHEMA_VERSION =
@@ -1001,7 +1002,10 @@ export async function planVerifiedGoal(
     fingerprint,
     createdAt: now,
     updatedAt: now,
-    workspace: { name: path.basename(workspacePath), path: workspacePath },
+    workspace: {
+      name: await resolveWorkspaceRegistrationName(workspacePath),
+      path: workspacePath,
+    },
     scope,
     kind: options.kind,
     summary: summaryFor({ kind: options.kind, scope, target, runtime: options.runtime }),

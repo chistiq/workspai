@@ -5,6 +5,7 @@ import {
   type CreatePlannerStatus,
 } from '../utils/create-planner-capabilities.js';
 import { listInteractiveKits } from '../utils/kit-registry.js';
+import { listAgentFrameworkProjectKits } from '../agent-frameworks/project-kits.js';
 import { WORKSPACE_PROFILE_DEFINITIONS } from '../workspace-profile-compatibility.js';
 
 export const CREATE_PLANNER_CAPABILITIES_SCHEMA_VERSION = 'rapidkit-create-planner-capabilities-v1';
@@ -81,6 +82,18 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
     moduleSupport: kit.moduleSupport,
     workspacePythonEngine: kit.workspacePythonEngine,
   }));
+  const agentNative = listAgentFrameworkProjectKits().map((kit) => ({
+    id: kit.id,
+    runtime: kit.runtime,
+    framework: 'microsoft-agent-framework',
+    plannerFramework: 'microsoft-agent-framework',
+    category: 'agent',
+    owner: 'workspai',
+    stability: 'stable',
+    versionPolicy: 'tested-baseline' as const,
+    moduleSupport: false,
+    workspacePythonEngine: 'none' as const,
+  }));
   const existingRuntimeSignals = ['php', 'ruby', 'rust', 'elixir', 'clojure', 'scala', 'kotlin'];
 
   return {
@@ -102,7 +115,7 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
           'The project enters Workspace Intelligence through import/adopt, not native create.',
       },
     },
-    nativeCreate: [...backendNative],
+    nativeCreate: [...backendNative, ...agentNative],
     officialCreate: OFFICIAL_CREATE_CANDIDATES.map((candidate) => ({
       ...candidate,
       category: candidate.id.startsWith('frontend.')

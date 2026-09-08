@@ -25,13 +25,15 @@ exclude the canonical marker.
 These paths are relative to each registered project root, not the workspace
 root:
 
-| Artifact                                       | Writer                                                                            | Schema / format             | Portability and reader purpose                                                        |
-| ---------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------- |
-| `.workspai/workspace-link.local.json`          | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1` | Machine-local absolute binding; always gitignored and never an agent evidence payload |
-| `.workspai/agent-entry.v1.json`                | Project lens reconciliation and `workspace agent-sync --write`                    | `workspai.agent-entry.v1`   | Portable host-discovery, canonical read-order, authority, and integrity contract      |
-| `.workspai/reports/project-context-agent.json` | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`  | Portable bounded model/graph/proof projection for project-local agents                |
-| `.workspai/PROJECT-GROUNDING.md`               | Project lens reconciliation                                                       | Markdown                    | Portable human/agent entry guide with path-free workspace references                  |
-| `AGENTS.md` managed section                    | Project lens reconciliation in `managed` mode                                     | Managed Markdown block      | Preserves user content and routes compatible agents to project/workspace evidence     |
+| Artifact                                                   | Writer                                                                            | Schema / format                        | Portability and reader purpose                                                         |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------- |
+| `.workspai/workspace-link.local.json`                      | `adopt`, `import`, project creation, `workspace sync`, `project workspace relink` | `project-workspace-link.v1`            | Machine-local absolute binding; always gitignored and never an agent evidence payload  |
+| `.workspai/agent-entry.v1.json`                            | Project lens reconciliation and `workspace agent-sync --write`                    | `workspai.agent-entry.v1`              | Portable host-discovery, canonical read-order, authority, and integrity contract       |
+| `.workspai/reports/project-context-agent.json`             | Project lens reconciliation and `workspace agent-sync --write`                    | `project-context-agent.v1`             | Portable bounded model/graph/proof projection for project-local agents                 |
+| `.workspai/reports/project-knowledge-graph-reference.json` | Workspace Model publication                                                       | `project-knowledge-graph-reference.v1` | Small portable reference whose projection hash is verified against the canonical graph |
+| `.workspai/PROJECT-GROUNDING.md`                           | Project lens reconciliation                                                       | Markdown                               | Portable human/agent entry guide with path-free workspace references                   |
+| `.agents/skills/workspai-*/SKILL.md`                       | Project lens reconciliation                                                       | Agent Skill                            | Project-native wrappers that resolve canonical workspace playbooks without local paths |
+| `AGENTS.md` managed section                                | Project lens reconciliation in `managed` mode                                     | Managed Markdown block                 | Preserves user content and routes compatible agents to project/workspace evidence      |
 
 The project link is validated against the canonical workspace contract and a
 SHA-256 binding over workspace identity, project identity, portable relative
@@ -40,13 +42,20 @@ absolute paths before writing. `managed`, `local`, and `off` grounding modes
 control portable project surfaces and converge by removing stale managed
 sections and ignore rules during transitions; they never make the
 machine-local link publishable. The context is bounded but not count-only: it
-includes topology, API/deployment/test surfaces, blockers, portable proofs,
-and model/graph freshness for the selected project.
+includes compact topology, representative API/deployment/test surfaces,
+blockers, portable proof locators, and model/graph freshness for the selected
+project. Complete graph evidence is retrieved through bounded search instead
+of duplicated into every project.
 
 `agent bootstrap --json` and `project agent-entry verify --json` emit a
 non-persisted `workspai.agent-bootstrap-receipt.v1` payload. The receipt proves
 the selected host route, contract validity, integrity, persisted and live
 freshness, and active Goal bindings without exposing the machine-local link.
+Its top-level status covers agent grounding only; project-environment and
+release readiness are emitted as separate dimensions so consumers cannot treat
+successful grounding as release approval. The receipt exposes distinct project
+reference and workspace graph paths and blocks when the project reference hash
+is not the exact current canonical projection.
 
 ## Naming conventions
 
@@ -58,24 +67,31 @@ freshness, and active Goal bindings without exposing the machine-local link.
 
 ## Governance evidence loop
 
-| Command                              | Primary artifact                                            | Schema version                              | JSON Schema                                                             |
-| ------------------------------------ | ----------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
-| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`              | `contracts/doctor-workspace-evidence.v1.json`                           |
-| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`                | `contracts/doctor-project-evidence.v1.json`                             |
-| `project coverage`                   | `.workspai/reports/project-test-coverage-last-run.json`     | `workspai.project-test-coverage.v1`         | `contracts/project-test-coverage.v1.json`                               |
-| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`                | `contracts/doctor-remediation-plan.v2.json`                             |
-| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1`             | `contracts/workspace-intelligence/doctor-fix-result.v1.json`            |
-| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`              | `contracts/artifact-remediation-plan.v1.json`                           |
-| `workspace repair *`                 | `.workspai/reports/workspace-repair-last-run.json`          | `workspai.workspace-repair-transaction.v1`  | `contracts/workspace-intelligence/workspace-repair-transaction.v1.json` |
-| `workspace repair capabilities`      | CLI capability output                                       | `workspai.workspace-repair-capabilities.v1` | `contracts/workspace-repair-capabilities.v1.json`                       |
-| `goal <intent>`                      | `.workspai/reports/goal-pack-last-run.json`                 | `workspai.goal-pack.v1`                     | `contracts/workspace-intelligence/goal-pack.v1.json`                    |
-| `goal <intent>` / lifecycle options  | `.workspai/goals/index.json`                                | `workspai.goal-index.v1`                    | `contracts/workspace-intelligence/goal-index.v1.json`                   |
-| `goal --status/--list/... --json`    | stdout                                                      | `workspai.goal-lifecycle-result.v1`         | `contracts/workspace-intelligence/goal-lifecycle-result.v1.json`        |
-| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`                       | `contracts/analyze-last-run.v1.json`                                    |
-| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`                      | `contracts/release-readiness.v1.json`                                   |
-| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`                      | `contracts/pipeline-last-run.v1.json`                                   |
-| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`                      | `contracts/autopilot-release.v1.json`                                   |
-|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)                       | `contracts/autopilot-release.v1.json`                                   |
+| Command                              | Primary artifact                                            | Schema version                                | JSON Schema                                                                         |
+| ------------------------------------ | ----------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `doctor workspace`                   | `.workspai/reports/doctor-last-run.json`                    | `doctor-workspace-evidence-v1`                | `contracts/doctor-workspace-evidence.v1.json`                                       |
+| `doctor project`                     | `.workspai/reports/doctor-project-last-run.json`            | `doctor-project-evidence-v1`                  | `contracts/doctor-project-evidence.v1.json`                                         |
+| `project coverage`                   | `.workspai/reports/project-test-coverage-last-run.json`     | `workspai.project-test-coverage.v1`           | `contracts/project-test-coverage.v1.json`                                           |
+| `doctor * --plan`                    | `.workspai/reports/doctor-remediation-plan-last-run.json`   | `doctor-remediation-plan-v2`                  | `contracts/doctor-remediation-plan.v2.json`                                         |
+| `doctor * --fix/--apply`             | `.workspai/reports/doctor-fix-result-last-run.json`         | `rapidkit-doctor-fix-result-v1`               | `contracts/workspace-intelligence/doctor-fix-result.v1.json`                        |
+| `workspace remediation-plan --write` | `.workspai/reports/artifact-remediation-plan-last-run.json` | `artifact-remediation-plan-v1`                | `contracts/artifact-remediation-plan.v1.json`                                       |
+| `workspace repair *`                 | `.workspai/reports/workspace-repair-last-run.json`          | `workspai.workspace-repair-transaction.v1`    | `contracts/workspace-intelligence/workspace-repair-transaction.v1.json`             |
+| `workspace repair capabilities`      | CLI capability output                                       | `workspai.workspace-repair-capabilities.v1`   | `contracts/workspace-repair-capabilities.v1.json`                                   |
+| `goal <intent>`                      | `.workspai/reports/goal-pack-last-run.json`                 | `workspai.goal-pack.v1`                       | `contracts/workspace-intelligence/goal-pack.v1.json`                                |
+| `goal <intent>` / lifecycle options  | `.workspai/goals/index.json`                                | `workspai.goal-index.v1`                      | `contracts/workspace-intelligence/goal-index.v1.json`                               |
+| `goal --status/--list/... --json`    | stdout                                                      | `workspai.goal-lifecycle-result.v1`           | `contracts/workspace-intelligence/goal-lifecycle-result.v1.json`                    |
+| `change begin`                       | `.workspai/changes/<change-id>/lease.json`                  | `workspai.architecture-change-lease.v1`       | `contracts/workspace-intelligence/architecture-change-lease.v1.json`                |
+| `change *`                           | `.workspai/decisions/<change-id>/transaction.json`          | `workspai.decision-transaction.v1`            | `contracts/workspace-intelligence/decision-transaction.v1.json`                     |
+| `change *`                           | `.workspai/decisions/<change-id>/checkpoint.json`           | `workspai.decision-checkpoint.v1`             | `contracts/workspace-intelligence/decision-checkpoint.v1.json`                      |
+| `change predict`                     | `.workspai/changes/<change-id>/predicted-overlay.json`      | `workspai.predicted-architecture-change.v1`   | `contracts/workspace-intelligence/predicted-architecture-change.v1.json`            |
+| `change verify`                      | `.workspai/changes/<change-id>/actual-overlay.json`         | `workspace-knowledge-graph-change-overlay.v1` | `contracts/workspace-intelligence/workspace-knowledge-graph-change-overlay.v1.json` |
+| `change verify`                      | `.workspai/changes/<change-id>/architecture-surprises.json` | `workspai.architecture-surprise-report.v1`    | `contracts/workspace-intelligence/architecture-surprise-report.v1.json`             |
+| `change *`                           | `.workspai/changes/<change-id>/capsule.json`                | `workspai.proof-carrying-change-capsule.v1`   | `contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json`            |
+| `analyze`                            | `.workspai/reports/analyze-last-run.json`                   | `rapidkit-analyze-v1`                         | `contracts/analyze-last-run.v1.json`                                                |
+| `readiness`                          | `.workspai/reports/release-readiness-last-run.json`         | `release-readiness-v1`                        | `contracts/release-readiness.v1.json`                                               |
+| `pipeline`                           | `.workspai/reports/pipeline-last-run.json`                  | `rapidkit-pipeline-v1`                        | `contracts/pipeline-last-run.v1.json`                                               |
+| `autopilot release`                  | `.workspai/reports/autopilot-release-last-run.json`         | `autopilot-release-v1`                        | `contracts/autopilot-release.v1.json`                                               |
+|                                      | `.workspai/reports/autopilot-release.json`                  | (alias, same payload)                         | `contracts/autopilot-release.v1.json`                                               |
 
 Side/cache (not gates): `.workspai/reports/doctor-workspace-cache.json` (`doctor-workspace-cache-v2`).
 
@@ -86,6 +102,18 @@ verification gates. Only CLI-owned verified-goal and Repair Engine evidence may
 authorize mutation or claim completion.
 The sibling `.workspai/goals/index.json` is the canonical active-goal discovery
 and lifecycle registry; consumers must not infer activity from directory order.
+
+Proof-Carrying Change uses the append-only JSONL event stream at
+`.workspai/decisions/<change-id>/events.jsonl` as authority. The transaction and
+checkpoint are replay-derived projections, while the capsule composes intent,
+baseline, typed effects, re-observed architecture, independent verification,
+and remaining uncertainty. The private
+`.workspai/changes/<change-id>/private/baseline-graph.json` materialization is a
+hash-bound local cache used to calculate the actual delta after the canonical
+Graph advances; it is non-authoritative and must not be treated as a portable
+consumer artifact. `change list --json` is the stable discovery surface for
+IDEs and automation, so consumers must not infer the active or latest change
+from directory order.
 
 Doctor Studio handoff:
 `doctor-remediation-plan-v2` (`contracts/doctor-remediation-plan.v2.json`) is emitted in JSON
@@ -104,7 +132,10 @@ handoff for governance artifacts outside Doctor: Bootstrap compliance, Analyze, 
 Pipeline, Workspace Run, Workspace Verify, and Doctor plan bridging. Consumers should ask npm for
 this plan before inventing per-card repair logic. The plan carries ordered actions, safe file
 operations where deterministic, refresh/verify commands, risk, approval state, and rollback
-strategy.
+strategy. Each action can also declare typed executable/action requirements and a retry boundary.
+The root `execution` projection identifies actions eligible in the current environment and one
+canonical next action, so IDEs do not infer readiness from array order. Missing host tools produce
+guidance plus blocked downstream actions; they are never advertised as executable.
 
 When `doctor project` runs inside a workspace, the project-local report is written beside the
 project and the workspace receives both a latest alias and a collision-safe project copy under
@@ -123,10 +154,12 @@ Entries beginning with `reports/` are relative to `.workspai/`; paths such as
 | Command                                         | Artifact                                                                                                                     | Schema                                 | Contract file                                                                |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
 | `workspace model --write`                       | `workspace-model.json`                                                                                                       | `workspace-model.v1`                   | `contracts/workspace-intelligence/workspace-model.v1.json`                   |
-| `workspace model --write`                       | `workspace-knowledge-graph.json`                                                                                             | `workspace-knowledge-graph.v1`         | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json`         |
+| `workspace model --write`                       | `workspace-knowledge-graph.json` (canonical workspace aggregate)                                                             | `workspace-knowledge-graph.v1`         | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json`         |
+| `workspace model --write`                       | Project-local `.workspai/reports/project-knowledge-graph-reference.json`                                                     | `project-knowledge-graph-reference.v1` | `contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json` |
 | `workspace snapshot`                            | `workspace-model-snapshot.json`                                                                                              | `workspace-model-snapshot.v1`          | `contracts/workspace-intelligence/workspace-model-snapshot.v1.json`          |
 | `workspace diff`                                | `workspace-model-diff-last-run.json`                                                                                         | `workspace-model-diff.v1`              | `contracts/workspace-intelligence/workspace-model-diff.v1.json`              |
 | `workspace impact --from <diff>`                | `workspace-impact-last-run.json`                                                                                             | `workspace-impact.v1`                  | `contracts/workspace-intelligence/workspace-impact.v1.json`                  |
+| `workspace graph benchmark-suite --write`       | `workspace-intelligence-benchmark-last-run.json`                                                                             | `workspace-intelligence-benchmark.v1`  | `contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json`  |
 | `analyze --json`                                | `analyze-last-run.json`                                                                                                      | `rapidkit-analyze-v1`                  | `contracts/analyze-last-run.v1.json`                                         |
 | `workspace verify`                              | `workspace-verify-last-run.json`                                                                                             | `workspace-verify.v1`                  | `contracts/workspace-intelligence/workspace-verify.v1.json`                  |
 | `workspace context --write`                     | `workspace-context-agent.json`                                                                                               | `workspace-context.v1`                 | `contracts/workspace-intelligence/workspace-context.v1.json`                 |
@@ -152,10 +185,15 @@ status/exit coherence, hard-failure skip propagation, and the aggregate verdict.
 See [Unified Workspace Intelligence Runner](../workspace-intelligence-runner.md)
 for the normative user and integration semantics.
 
-`workspace-model.json` and `workspace-knowledge-graph.json` are published under
-one workspace lock as a rollback-capable artifact transaction. Individual file
-replacement is atomic, and a partial set failure restores both preimages. The
-model is canonical; the graph is derived and cannot mutate it during the run.
+`workspace-model.json`, the canonical workspace `workspace-knowledge-graph.json`,
+and each registered project's compact
+`.workspai/reports/project-knowledge-graph-reference.json` are published under
+one workspace lock as a rollback-capable multi-root artifact transaction.
+Individual replacement is atomic, and a partial set failure restores every
+preimage. Each reference integrity-binds the exact project projection and points
+to the canonical aggregate through a portable `workspace:` URI, avoiding graph
+duplication in every linked repository. The model remains canonical and the
+graph remains derived.
 The graph contract fixes `source.kind` to `workspace-model`,
 `source.artifact` to `.workspai/reports/workspace-model.json`, and `source.hash`
 to the model's stable structural SHA-256. Current-state consumers must reject a
@@ -397,9 +435,10 @@ Separate from the on-disk artifacts above, Workspai CLI emits a structured
 **NDJSON log stream on stderr** when `--log-format json` (or `RAPIDKIT_LOG_FORMAT=json`)
 is set. This is the deterministic progress/outcome channel for IDEs and CI.
 
-| Stream                  | Schema version     | Contract file                     | Doc                                                  |
-| ----------------------- | ------------------ | --------------------------------- | ---------------------------------------------------- |
-| CLI log events (stderr) | `cli-log-event-v1` | `contracts/cli-log-event.v1.json` | [CLI_LOG_EVENT_STREAM.md](./CLI_LOG_EVENT_STREAM.md) |
+| Stream                                      | Schema version                | Contract file                                | Doc                                                     |
+| ------------------------------------------- | ----------------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| CLI log events (stderr)                     | `cli-log-event-v1`            | `contracts/cli-log-event.v1.json`            | [CLI_LOG_EVENT_STREAM.md](./CLI_LOG_EVENT_STREAM.md)    |
+| Live activity events (machine-local NDJSON) | `workspace-activity-event.v1` | `contracts/workspace-activity-event.v1.json` | [Workspai Live Activity](../workspace-live-activity.md) |
 
 **Channel rule:** command **results** go to stdout (`--json`); **progress/lifecycle**
 events go to stderr (`--log-format json`). The two never mix.
@@ -431,8 +470,9 @@ canonical file. Legacy files remain readable during the compatibility window.
 2. **Workspace Intelligence chain:** run `workspace intelligence run --for-agent generic --strict --json` to preserve Model → Diff → Impact → Doctor + Contract Verify + Analyze → Readiness → Verify → Context → Agent Sync → Explain. `pipeline` is the broader governance/release orchestrator and `autopilot` is a separate release surface; neither redefines the canonical chain. Use `pipeline-last-run.json` only for the pipeline orchestration summary.
 3. **Do not** use `workspace.json.projects` (removed in schema 1.0).
 4. Prefer `schemaVersion` constants in each artifact; legacy `v1` on readiness is accepted when reading old reports.
-5. **Agent retrieval:** start with `AGENTS.md` and `.workspai/reports/INDEX.json`, then use `workspace graph search <query> --limit <n> --json` or MCP `searchWorkspaceGraph` for question-sized facts. Use `--scope project:<name>` when the task has one registered project boundary, inspect `budget.omitted` before assuming the result is complete, and follow returned proof paths to source evidence. Read the full context, model, or graph only when the bounded result is insufficient.
+5. **Agent retrieval:** inside an adopted project, start with `.workspai/agent-entry.v1.json` (or the host projection that routes to it), then read `.workspai/reports/project-context-agent.json`; its `intelligence.projection` states exactly how much representative graph data was bounded. At workspace scope, start with `AGENTS.md` and `.workspai/reports/INDEX.json`. In either scope, use `workspace graph search <query> --limit <n> --json` or MCP `searchWorkspaceGraph` for question-sized facts. Use `--scope project:<name>` for one registered project, inspect `budget.omitted` before assuming completeness, and follow proof paths to source evidence. Read the full context, model, or graph only when the bounded result is insufficient.
 6. **Agent customization state:** use `.workspai/reports/agent-customization-pack.json` to inspect generated surfaces and drift; regenerate with `workspace agent-sync --write --refresh-context --preset enterprise`.
+7. **Operational Skill selection:** use `.workspai/reports/workspace-skills-index.json`. Its `selection.decisions` distinguishes evidence-backed generated Skills from suppressed candidates and records scoped projects and supporting signals. A missing specialized Skill means the current canonical evidence did not prove that capability; it is not permission to assume one.
 
 ## Agent customization files (repo hooks)
 
@@ -443,32 +483,34 @@ failure, all touched files are restored; an interrupted transaction is recovered
 before the next agent-sync. `agent-customization-pack.json` is written last and
 serves as the completed-generation marker.
 
-| Path                                                                    | Consumer                                                       |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `AGENTS.md`                                                             | Copilot, Cursor, Claude Code, Codex, Grok (open standard)      |
-| `.github/copilot-instructions.md`                                       | GitHub Copilot / VS Code Chat                                  |
-| `.github/instructions/workspai-workspace.instructions.md`               | Copilot workspace scope and command discipline                 |
-| `.github/instructions/workspai-evidence.instructions.md`                | Copilot scoped `.workspai/**` and compatibility evidence rules |
-| `.github/prompts/workspai-diagnose.prompt.md`                           | Copilot prompt library                                         |
-| `.github/prompts/workspai-repair.prompt.md`                             | Copilot repair workflow prompt                                 |
-| `.github/prompts/workspai-release-readiness.prompt.md`                  | Copilot release readiness workflow prompt                      |
-| `.github/prompts/workspai-project-onboard.prompt.md`                    | Copilot project onboarding workflow prompt                     |
-| `.github/prompts/workspai-adopt-project.prompt.md`                      | Copilot adopt/import workflow prompt                           |
-| `.github/skills/workspai-grounding/SKILL.md`                            | Copilot skills                                                 |
-| `.github/skills/workspai-workspace-intelligence/SKILL.md`               | Enterprise Workspace Intelligence skill                        |
-| `.github/skills/workspai-workspace-intelligence/resources/mcp-tools.md` | MCP tool and evidence-retrieval reference                      |
-| `.github/agents/workspai-advisor.agent.md`                              | Read-only workspace advisor agent                              |
-| `.github/agents/workspai-repair.agent.md`                               | Blocker repair agent                                           |
-| `.github/agents/workspai-release.agent.md`                              | Release safety agent                                           |
-| `.github/agents/workspai-project-onboarder.agent.md`                    | Project onboarding agent                                       |
-| `.cursor/rules/workspai-grounding.mdc`                                  | Cursor always-on rule                                          |
-| `CLAUDE.md`                                                             | Claude Code (imports `@AGENTS.md`)                             |
-| `.claude/rules/workspai-evidence.md`                                    | Claude Code scoped evidence rule                               |
-| `.claude/rules/rapidkit-evidence.md`                                    | Legacy compatibility alias pointing to the canonical rule      |
-| `.workspai/AGENT-GROUNDING.md`                                          | Tool-agnostic operator doc                                     |
-| `.workspai/reports/agent-customization-pack.json`                       | Versioned output inventory, target matrix, drift state         |
-| `.workspai/reports/workspai-mcp-design.json`                            | Read-mostly MCP-ready design manifest                          |
-| `.vscode/workspai-agent-hooks.json`                                     | Optional advisory VS Code agent hooks (`--experimental-hooks`) |
+| Path                                                                    | Consumer                                                                                               |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `AGENTS.md`                                                             | Copilot, Cursor, Claude Code, Codex, Grok (open standard)                                              |
+| `.agents/skills/workspai-grounding/SKILL.md`                            | Provider-neutral Agent Skills grounding                                                                |
+| `.agents/skills/workspai-*/SKILL.md`                                    | Generated workspace operational skills                                                                 |
+| `.github/copilot-instructions.md`                                       | GitHub Copilot / VS Code Chat                                                                          |
+| `.github/instructions/workspai-workspace.instructions.md`               | Copilot workspace scope and command discipline                                                         |
+| `.github/instructions/workspai-evidence.instructions.md`                | Copilot scoped `.workspai/**` and compatibility evidence rules                                         |
+| `.github/prompts/workspai-diagnose.prompt.md`                           | Copilot prompt library                                                                                 |
+| `.github/prompts/workspai-repair.prompt.md`                             | Copilot repair workflow prompt                                                                         |
+| `.github/prompts/workspai-release-readiness.prompt.md`                  | Copilot release readiness workflow prompt                                                              |
+| `.github/prompts/workspai-project-onboard.prompt.md`                    | Copilot project onboarding workflow prompt                                                             |
+| `.github/prompts/workspai-adopt-project.prompt.md`                      | Copilot adopt/import workflow prompt                                                                   |
+| `.github/skills/workspai-grounding/SKILL.md`                            | Copilot skills                                                                                         |
+| `.github/skills/workspai-workspace-intelligence/SKILL.md`               | Enterprise Workspace Intelligence skill                                                                |
+| `.github/skills/workspai-workspace-intelligence/resources/mcp-tools.md` | MCP tool and evidence-retrieval reference                                                              |
+| `.github/agents/workspai-advisor.agent.md`                              | Read-only workspace advisor agent                                                                      |
+| `.github/agents/workspai-repair.agent.md`                               | Blocker repair agent                                                                                   |
+| `.github/agents/workspai-release.agent.md`                              | Release safety agent                                                                                   |
+| `.github/agents/workspai-project-onboarder.agent.md`                    | Project onboarding agent                                                                               |
+| `.cursor/rules/workspai-grounding.mdc`                                  | Cursor always-on rule                                                                                  |
+| `CLAUDE.md`                                                             | Claude Code (imports `@AGENTS.md`)                                                                     |
+| `.claude/rules/workspai-evidence.md`                                    | Claude Code scoped evidence rule                                                                       |
+| `.claude/rules/rapidkit-evidence.md`                                    | Legacy compatibility alias pointing to the canonical rule                                              |
+| `.workspai/AGENT-GROUNDING.md`                                          | Tool-agnostic operator doc                                                                             |
+| `.workspai/reports/agent-customization-pack.json`                       | Versioned output inventory, target matrix, drift state                                                 |
+| `.workspai/reports/workspai-mcp-design.json`                            | Implemented read-mostly MCP runtime manifest, served/planned tool inventory, and protocol capabilities |
+| `.vscode/workspai-agent-hooks.json`                                     | Optional advisory VS Code agent hooks (`--experimental-hooks`)                                         |
 
 Some `rapidkit-*` prompt, skill, Cursor, MCP-design, and hook paths remain available for older consumers during the rebrand window. New consumers should use the `workspai-*` paths first.
 

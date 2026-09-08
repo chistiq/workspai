@@ -21,6 +21,13 @@ Checks host prerequisites:
 - pipx (optional)
 - RapidKit Core availability
 - Go (optional)
+- Windows `workspai` PATH resolution and npm-shim precedence
+
+The PATH check is reported as typed Doctor evidence instead of running during
+package installation. A normal `npm install -g workspai` therefore requires no
+install-script authorization. On Windows, a shadowed npm shim is an advisory:
+Doctor reports the active executable, the ordered matches, and the bounded
+`npx --yes workspai <command>` fallback without mutating PATH.
 
 ### 2) Workspace Check
 
@@ -178,6 +185,12 @@ library, SDK, platform, plugin, or monorepo). Service-only checks such as a
 runtime health endpoint, database migrations, or an executable boot entrypoint
 are retained as explicit `not-applicable` evidence for non-deployable
 archetypes instead of becoming false warnings.
+
+Frontend application-only probes follow the same rule. Framework config,
+application source-tree, and application script checks are `not-applicable` for
+libraries, SDKs, platforms, plugins, and monorepo roots. Tooling dependencies at
+a private workspace root therefore do not create a false frontend application
+or an irrelevant repair such as adding an application test script.
 
 The default terminal view is summary-first and uses portable boundaries such
 as `$WORKSPACE`, `$PROJECT`, and `external/<project>`. `--verbose` expands all
@@ -574,6 +587,13 @@ CI, and agents can reason about consistently across frontend and backend stacks:
 These probes are intentionally evidence-first. Missing optional surfaces are surfaced as warnings
 or manual repair capabilities, while deterministic repairs are promoted into `--fix` only when the
 change is safe enough for Doctor to apply with approval and post-fix verification.
+
+Runtime-dependent repairs are executable only when the required host tool can
+actually launch from the governed working directory. Doctor and the Repair
+executor use the same probe for Node, Python, Go, JVM, Rust, .NET, PHP, Ruby,
+and other supported runtimes. An unavailable executable is represented as a
+typed prerequisite with a blocking reason and retry policy; dependent setup or
+dependency steps remain blocked until fresh evidence proves the prerequisite.
 
 Workspace scans are bounded and cache-safe. Doctor fingerprints manifests plus relevant source,
 test, and module trees, includes content hashes for small files, writes cache artifacts atomically,

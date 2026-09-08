@@ -12,8 +12,9 @@ import { execa } from 'execa';
 import { getVersion } from '../update-checker.js';
 import { buildCleanGitEnv, isInsideExistingGitWorktree } from '../utils/git-worktree.js';
 import { toPascalCase, writeGeneratorFile } from './go-kit-common.js';
+import { buildNativeKitDependabotYml, NATIVE_KIT_BASELINES } from './native-kit-baselines.js';
 
-export const DEFAULT_DOTNET_TARGET_FRAMEWORK = 'net8.0';
+export const DEFAULT_DOTNET_TARGET_FRAMEWORK = NATIVE_KIT_BASELINES.dotnet.targetFramework;
 export const DEFAULT_DOTNET_PORT = '8080';
 
 export interface DotnetWebApiCleanVariables {
@@ -98,8 +99,8 @@ function csproj(v: Required<DotnetWebApiCleanVariables>): string {
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.14" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="${NATIVE_KIT_BASELINES.dotnet.aspnetPatch}" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="${NATIVE_KIT_BASELINES.dotnet.swashbuckle}" />
   </ItemGroup>
 </Project>
 `;
@@ -115,11 +116,11 @@ function testCsproj(v: Required<DotnetWebApiCleanVariables>): string {
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.14" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
-    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="${NATIVE_KIT_BASELINES.dotnet.aspnetPatch}" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="${NATIVE_KIT_BASELINES.dotnet.testSdk}" />
+    <PackageReference Include="xunit" Version="${NATIVE_KIT_BASELINES.dotnet.xunit}" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="${NATIVE_KIT_BASELINES.dotnet.xunitRunner}" />
+    <PackageReference Include="coverlet.collector" Version="${NATIVE_KIT_BASELINES.dotnet.coverlet}" />
   </ItemGroup>
 
   <ItemGroup>
@@ -330,7 +331,7 @@ function appsettings(v: Required<DotnetWebApiCleanVariables>): string {
 }
 
 function dockerfile(v: Required<DotnetWebApiCleanVariables>): string {
-  return `FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+  return `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY src/*.csproj ./src/
 COPY tests/*.csproj ./tests/
@@ -338,7 +339,7 @@ RUN dotnet restore ./src/${v.project_name}.csproj
 COPY . .
 RUN dotnet publish ./src/${v.project_name}.csproj -c Release -o /app/publish --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends curl \\
@@ -346,6 +347,7 @@ RUN apt-get update \\
 ENV ASPNETCORE_URLS=http://+:${v.port}
 COPY --from=build /app/publish .
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -fsS http://localhost:${v.port}/health/live || exit 1
+USER $APP_UID
 ENTRYPOINT ["dotnet", "${v.root_namespace}.dll"]
 `;
 }
@@ -476,6 +478,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: \${{ matrix.os }}
@@ -484,10 +489,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@${NATIVE_KIT_BASELINES.actions.checkout}
+      - uses: actions/setup-dotnet@${NATIVE_KIT_BASELINES.actions.setupDotnet}
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: ${NATIVE_KIT_BASELINES.dotnet.sdkChannel}
       - name: Restore
         run: |
           dotnet restore src/${v.project_name}.csproj
@@ -498,6 +503,8 @@ jobs:
           dotnet format tests/${v.project_name}.Tests.csproj --verify-no-changes
       - name: Build
         run: dotnet build tests/${v.project_name}.Tests.csproj -c Release --no-restore
+      - name: Vulnerability audit
+        run: dotnet list tests/${v.project_name}.Tests.csproj package --vulnerable --include-transitive
       - name: Test
         run: dotnet test tests/${v.project_name}.Tests.csproj -c Release --no-build --collect:"XPlat Code Coverage"
 `;
@@ -621,7 +628,7 @@ async function warnIfDotnetMissing(projectPath: string): Promise<void> {
   } catch {
     console.log(
       chalk.yellow(
-        '⚠  .NET SDK not found in PATH - project scaffolded, but init/build need .NET 8+'
+        `⚠  .NET SDK not found in PATH - project scaffolded, but init/build need ${DEFAULT_DOTNET_TARGET_FRAMEWORK}`
       )
     );
     console.log(chalk.gray('   Install: https://dotnet.microsoft.com/download'));
@@ -711,6 +718,10 @@ export async function generateDotnetWebApiCleanKit(
     `ASPNETCORE_ENVIRONMENT=Development\nPORT=${v.port}\n`
   );
   await writeGeneratorFile(path.join(projectPath, '.github', 'workflows', 'ci.yml'), ciWorkflow(v));
+  await writeGeneratorFile(
+    path.join(projectPath, '.github', 'dependabot.yml'),
+    buildNativeKitDependabotYml('nuget')
+  );
   await writeGeneratorFile(path.join(projectPath, '.workspai', 'context.json'), contextJson());
   await writeGeneratorFile(
     path.join(projectPath, '.workspai', 'project.json'),

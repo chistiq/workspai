@@ -13,17 +13,14 @@ const tempDirs: string[] = [];
 
 async function createProject(
   metadata: Record<string, unknown>,
-  files: Record<string, string> = {}
+  files: Record<string, string> = {},
+  context: Record<string, unknown> = { engine: 'npm' }
 ): Promise<string> {
   const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rk-command-capabilities-'));
   tempDirs.push(projectRoot);
   await fs.ensureDir(path.join(projectRoot, '.rapidkit'));
   await fs.writeJson(path.join(projectRoot, '.rapidkit', 'project.json'), metadata, { spaces: 2 });
-  await fs.writeJson(
-    path.join(projectRoot, '.rapidkit', 'context.json'),
-    { engine: 'npm' },
-    { spaces: 2 }
-  );
+  await fs.writeJson(path.join(projectRoot, '.rapidkit', 'context.json'), context, { spaces: 2 });
   for (const [relativePath, content] of Object.entries(files)) {
     const target = path.join(projectRoot, relativePath);
     await fs.ensureDir(path.dirname(target));
@@ -40,6 +37,31 @@ afterEach(async () => {
 });
 
 describe('project command capabilities', () => {
+  it('preserves the Poetry engine emitted by Python project generation', async () => {
+    const projectRoot = await createProject(
+      { kit_name: 'fastapi.standard', runtime: 'python' },
+      { 'pyproject.toml': '[tool.poetry]\nname = "service"\nversion = "0.1.0"\n' },
+      { engine: 'poetry' }
+    );
+
+    const capabilities = resolveProjectCommandCapabilities(projectRoot);
+
+    expect(capabilities.engine).toBe('poetry');
+    expect(capabilities.runtime).toBe('python');
+    expect(capabilities.lifecycleCoverage).toBe('complete');
+  });
+
+  it('reports the npm wrapper as owner of the project command surface', async () => {
+    const projectRoot = await createProject({ runtime: 'python', framework: 'fastapi' });
+    const capabilities = resolveProjectCommandCapabilities(projectRoot);
+
+    expect(capabilities.commandMap.project).toMatchObject({
+      owner: 'npm',
+      status: 'supported',
+    });
+    expect(capabilities.commandMap.project.reason).toContain('delegates only Core-specific');
+  });
+
   it('keeps Core module/template commands available for Core-backed Python projects', async () => {
     const projectRoot = await createProject({
       kit_name: 'fastapi.standard',
@@ -289,7 +311,47 @@ describe('project command capabilities', () => {
     ]);
     expect(capabilities.compositeRuntime).toBe(true);
     expect(capabilities.lifecycleCoverage).toBe('primary-runtime-only');
+    expect(capabilities.fleetStages).toEqual(expect.arrayContaining(['init', 'test', 'build']));
+    expect(capabilities.fleetStages).not.toContain('start');
     expect(capabilities.commandMap.build.reason).toContain('primary dotnet adapter');
-    expect(capabilities.commandMap.build.reason).toContain('explicit project boundaries');
+    expect(capabilities.commandMap.build.reason).toContain('workspace fleet planning');
+  });
+
+  it('exposes only root-declared Bun lifecycle scripts inside a composite boundary', async () => {
+    const projectRoot = await createProject(
+      {
+        runtime: 'bun',
+        framework: 'bun',
+        module_support: false,
+      },
+      {
+        'package.json': JSON.stringify({
+          packageManager: 'bun@1.3.14',
+          scripts: {
+            dev: 'bun src/index.ts',
+            test: 'bun test',
+            lint: 'oxlint',
+          },
+        }),
+        'bun.lock': '',
+        'packages/sdk/package.json': JSON.stringify({ name: '@example/sdk' }),
+      }
+    );
+
+    const capabilities = resolveProjectCommandCapabilities(projectRoot);
+
+    expect(capabilities.runtimeCandidates).toEqual(['bun', 'node']);
+    expect(capabilities.lifecycleCoverage).toBe('primary-runtime-only');
+    expect(capabilities.commandMap.dev).toMatchObject({
+      status: 'supported',
+      executionScope: 'local-only',
+    });
+    expect(capabilities.commandMap.test).toMatchObject({
+      status: 'supported',
+      fleetEligible: true,
+    });
+    expect(capabilities.commandMap.lint).toMatchObject({ status: 'supported' });
+    expect(capabilities.commandMap.build).toMatchObject({ status: 'unsupported' });
+    expect(capabilities.commandMap.dev.reason).toContain('primary bun adapter');
   });
 });

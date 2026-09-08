@@ -5,7 +5,536 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.64.0 (August 22, 2026)
+## Latest Release: v0.75.1 (September 8, 2026)
+
+### Safer Adoption and Reliable Agent Evidence
+
+Workspai 0.75.1 improves adoption recovery, source provenance, and governed
+agent attachment for existing repositories without changing public contracts.
+
+**What's New:**
+
+- Choose a safe parent workspace during interactive adoption; automation
+  retains its existing managed-default behavior.
+- Bootstrap an explicitly selected empty workspace directory, with rollback
+  if adoption fails and no conversion of unrelated non-empty directories.
+- Follow adoption progress without polluting JSON or non-interactive output.
+- Request lifecycle help without starting runtime commands or readiness writes.
+- Keep generated files identifiable even without optional polyglot analysis,
+  preserving authored-source search priority.
+- Use portable evidence paths for Agent Framework plans and effect receipts
+  in externally adopted projects.
+- Keep cross-platform adoption verification stable across canonical macOS path
+  aliases and transient Windows filesystem locks.
+
+**Compatibility:** Existing commands, schema versions, managed-default
+automation, and framework admission policy remain supported. No upstream
+framework kit or application dependency is rewritten.
+
+**Publication status:** Released September 8, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.75.1
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.75.1/packages/cli/releases/RELEASE_NOTES_v0.75.1.md)
+
+---
+
+## v0.75.0 (September 6, 2026)
+
+### Governed Agent Framework Workspaces
+
+Workspai 0.75.0 introduces a governed, framework-neutral foundation for AI
+agent projects and admits Microsoft Agent Framework projects for Python and
+.NET through the same Model, Graph, Goal, Proof-Carrying Change, lifecycle, and
+verification boundaries used by the rest of the Workspace.
+
+**What's New:**
+
+- Create Microsoft Agent Framework Python and .NET projects from the dedicated
+  AI Agent category without installing dependencies or calling a model.
+- Plan, attach, and apply framework integrations through scoped Goals,
+  authorization, managed-file ownership, typed effects, and PCC evidence.
+- Resolve only release-admitted framework versions backed by an exact
+  cross-platform conformance receipt; upstream discovery proposes updates but
+  cannot silently promote them.
+- Model nested agent runtimes as real Python and .NET lifecycle units, with
+  deterministic build, test, and start capabilities based on authored
+  evidence.
+- Preserve byte-accurate PCC baselines so Graph provider churn is not reported
+  as a user file mutation, while real additions, edits, and deletions remain
+  fail-closed.
+- Preserve actionable lifecycle diagnostics across nested package-manager
+  processes and provide the exact native rerun command when a tool emits no
+  capturable output.
+
+**Compatibility:** Existing Model, Graph, Goal, Decisions, PCC, Live, MCP,
+Repair, Doctor, Snapshot, and agent contracts remain supported. Agent Framework
+support is additive. Existing projects and official framework kits are not
+rewritten, and no public command or canonical artifact path is removed.
+
+**Publication status:** Released September 6, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.75.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.75.0/packages/cli/releases/RELEASE_NOTES_v0.75.0.md)
+
+---
+
+## v0.74.0 (September 5, 2026)
+
+### Proof-backed Polyglot Workspace Execution
+
+Workspai 0.74.0 hardens the complete Model-to-Graph-to-Goal-to-PCC lifecycle
+across adopted and generated polyglot workspaces. Native execution, canonical
+project identity, recovery snapshots, health evidence, and consumer outputs now
+share one verified boundary and preserve real host or dependency blockers.
+
+**What's New:**
+
+- Bounded native lifecycle execution reports actual exit codes, terminates
+  timed-out process trees, and preserves actionable missing-toolchain evidence.
+- Canonical workspace identity now remains consistent from an adopted external
+  project through Doctor, Goals, repair, snapshots, recovery, and agent output.
+- Analyze and Doctor share cross-language health-surface evidence across Go,
+  Python, Rust, .NET, and supported JavaScript service patterns.
+- Graph retrieval uses authored subject evidence, stable language affinity, and
+  lifecycle-aware ranking while rejecting generic keyword distractors.
+- Goal and proof-carrying change qualification covers authorization, effects,
+  re-observation, verification, and publication-safety evidence.
+- Consumer output keeps unmeasured efficiency unknown and no longer publishes
+  stale fixed AI-provider price estimates.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, Doctor, Snapshot, and agent contracts remain supported. No
+public command, schema version, or canonical artifact path is removed. Stricter
+identity validation may reject ambiguous registry aliases and workspace-escape
+paths that older versions accepted implicitly.
+
+**Publication status:** Released September 5, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.74.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.74.0/packages/cli/releases/RELEASE_NOTES_v0.74.0.md)
+
+---
+
+## v0.73.0 (September 4, 2026)
+
+### Reliable Polyglot Intelligence and Bounded Agent Context
+
+Workspai 0.73.0 strengthens the complete adoption-to-agent loop across large
+and nested polyglot repositories. Framework detection, project topology, Graph
+retrieval, Goal and Change addressing, and bounded consumer context remain
+consistent when repositories overlap, callers run outside project directories,
+or canonical Graph evidence contains more findings than an agent lens can hold.
+
+**Publication status:** Released September 4, 2026.
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.73.0/packages/cli/releases/RELEASE_NOTES_v0.73.0.md)
+
+---
+
+## v0.72.1 (September 1, 2026)
+
+### Script-Free Installation and Typed CLI Resolution
+
+Workspai 0.72.1 removes consumer install lifecycle hooks so npm 11 global
+installation remains clean under its secure script-authorization defaults. The
+Windows PATH precedence check now runs as typed Doctor evidence instead of
+during package installation.
+
+**What's New:**
+
+- `npm install -g workspai` no longer requests `allowScripts` authorization for
+  Workspai-owned install or prepare hooks.
+- Windows Doctor evidence distinguishes a canonical npm shim, a shadowed shim,
+  an unresolved command, and an npm prefix that could not be verified.
+- System, workspace, and project Doctor JSON expose the active PATH target,
+  ordered command candidates, npm global prefix, and bounded recovery guidance.
+- CLI resolution participates in Doctor scoring, receipts, drift comparison,
+  and human output without changing non-Windows readiness.
+- Workspace Doctor JSON now includes the Go system check consistently with its
+  evidence artifact.
+- Package publication gates reject future consumer lifecycle scripts and the
+  removed installation-only helpers.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, Doctor, and agent contracts remain supported. Doctor fields
+are additive, and no public command, flag, or artifact path is removed.
+
+**Publication status:** Released September 1, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.72.1
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.72.1/packages/cli/releases/RELEASE_NOTES_v0.72.1.md)
+
+---
+
+## v0.72.0 (September 1, 2026)
+
+### Runtime-Truth Repair and Workspace-Aware Qualification
+
+Workspai 0.72.0 makes repair eligibility a proven property of the current
+environment, collapses polyglot lifecycle execution to real workspace ownership
+boundaries, and improves architecture retrieval and Doctor applicability in
+large framework monorepos.
+
+**What's New:**
+
+- Repair plans expose typed executable requirements, launchability, blocking
+  reasons, retry boundaries, and one canonical next action for CLI, Studio, and
+  agent consumers.
+- Missing host runtimes block dependent remediation steps before execution and
+  cannot trigger a same-generation retry loop.
+- Node, pnpm, and Cargo workspace manifests own their matching members, avoiding
+  duplicate install and fetch commands across a monorepo.
+- Nested registered projects are not executed again through an aggregate parent,
+  and embedded eval, benchmark, test-data, and fixture manifests are excluded
+  from lifecycle discovery.
+- Framework detection no longer promotes a private workspace root from
+  tooling-only development dependencies, while Workspai-managed linked metadata
+  is refreshed when canonical detection changes.
+- Graph retrieval resolves evidence and paths inside the requested project scope
+  and prefers authored source over compiled, generated, vendored, fixture, and
+  test-data matches unless the query explicitly requests those surfaces.
+- Doctor records frontend application-only probes as not applicable for
+  libraries, SDKs, platforms, plugins, and monorepo roots instead of proposing
+  irrelevant application repairs.
+- Strict PCC verification exits with the documented evidence-blocked status
+  when the change remains blocked.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, and agent contracts remain supported. The new remediation
+fields are additive. No public command, flag, or artifact path is removed.
+
+**Publication status:** Released September 1, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.72.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.72.0/packages/cli/releases/RELEASE_NOTES_v0.72.0.md)
+
+---
+
+## v0.71.0 (August 31, 2026)
+
+### Governed Startup and Enterprise Native Kit Baselines
+
+Workspai 0.71.0 keeps governed Goal and Proof-Carrying Change startup stable
+across runtime-owned observation, makes cold polyglot initialization observable
+and runtime-aware, and promotes every npm-owned native generator onto one
+reviewed enterprise baseline.
+
+**What's New:**
+
+- The `.workspai-workspace` operational marker no longer participates in Graph
+  input identity.
+- Generated GitHub agent definitions remain downstream consumers rather than
+  circular Graph inputs.
+- Git, non-Git, and Goal-to-PCC regressions prove that runtime observation does
+  not create a false `live-input-mismatch` while real source changes remain
+  freshness-sensitive.
+- Goal lifecycle results preserve their canonical Repair and PCC transaction
+  links instead of rejecting a valid activated Goal as an unknown schema shape.
+- Workspace `init` reports the command that actually ran, streams progress, and
+  applies bounded runtime-aware cold-start budgets rather than a universal
+  two-minute timeout.
+- Go Fiber, Go Gin, Spring Boot, .NET Web API, and Rust Axum kits now consume a
+  centralized, tested runtime and dependency baseline instead of drifting
+  independently.
+- Generated native projects include pinned CI toolchains, non-root containers,
+  Dependabot coverage, health tests, and ecosystem-appropriate security or
+  supply-chain gates.
+
+**Compatibility:** Existing version-one Model, Graph, Goal, Decisions, PCC,
+Live, MCP, Repair, and agent contracts remain supported. No command, flag,
+schema, or artifact path is removed.
+
+**Publication status:** Released August 31, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.71.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.71.0/packages/cli/releases/RELEASE_NOTES_v0.71.0.md)
+
+---
+
+## v0.70.0 (August 31, 2026)
+
+### Deletion-Aware Change Assurance and Contributor-Ready Qualification
+
+Workspai 0.70.0 makes deleted artifacts first-class Proof-Carrying Change
+evidence, reconciles overlapping Graph labels without duplicate effect
+receipts, strengthens nested polyglot readiness decisions, and gives
+contributors a bounded route from task selection to file-aware validation.
+
+**What's New:**
+
+- Deterministic deletion tombstones that remain valid only while the governed
+  artifact is absent and invalidate a capsule if it reappears.
+- Safe physical-identity reconciliation for aggregate and nested Graph labels
+  that refer to one contained source artifact.
+- Scope-aware Goal readiness and explicit multi-runtime aggregate analysis that
+  prevent unrelated evidence from becoming a false blocker.
+- A 23-command isolated real-repository qualification including Model, Graph,
+  Doctor, agent grounding, verification, exports, and Live Board activity.
+- A Contribution Hub and read-only `contributor:plan` repository tool for
+  bounded applicant routing and file-aware validation.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, Repair, Skill, project-entry, Live, Decisions, and PCC contracts
+remain supported. Deletion references are additive and optional. No public
+command is removed.
+
+**Publication status:** Released August 31, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.70.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.70.0/packages/cli/releases/RELEASE_NOTES_v0.70.0.md)
+
+---
+
+## v0.69.0 (August 30, 2026)
+
+### Proof-Carrying Changes and Tamper-Evident Agent Assurance
+
+Workspai 0.69.0 gives source-changing agents a verifiable path from Goal-bound
+intent to a sealed change capsule. The runtime pins the exact architecture
+baseline, separates prediction from proof, authorizes bounded effects, records
+what actually happened, re-observes the Graph, and requires independent
+verification before it can claim closure.
+
+**What's New:**
+
+- A complete `workspai change` lifecycle for begin, discovery, prediction,
+  authorization, receipts, verification, explanation, resume, abort, validation,
+  and portable export.
+- A digest-linked Decisions ledger with deterministic replay, checkpoints,
+  optimistic concurrency, durable blocked states, and tamper detection.
+- Exact predicted-versus-actual Graph overlays and surprise reports that never
+  promote model prediction into verification evidence.
+- Versioned capsule, operation, list, validation, and export contracts shared by
+  CLI, CI, IDE, agent grounding, Live correlation, and read-only MCP consumers.
+- Safer linked-project evidence, more precise Graph retrieval, canonical nested
+  runtime identities, and authored project names in Fleet and Live reports.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, Repair, Skill, project-entry, and Live contracts remain supported.
+PCC and Decisions contracts are additive, Graph overlay changes retain their v1
+shape, and no public command is removed.
+
+**Publication status:** Released August 30, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.69.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.69.0/packages/cli/releases/RELEASE_NOTES_v0.69.0.md)
+
+---
+
+## v0.68.0 (August 29, 2026)
+
+### Revision-Bound Live Evidence and Governed Agent Recovery
+
+Workspai 0.68.0 connects observed execution with canonical workspace evidence
+through bounded, typed references that preserve revision identity without
+turning activity into verification authority. It also strengthens linked-project
+repair planning for CLI, IDE, and agent consumers.
+
+**What's New:**
+
+- Typed Live evidence bindings for artifacts, projects, Graph entities,
+  relations, and proofs across event, monitor, and Board projections.
+- Exact `graphSourceHash` identity on bounded Graph search results for
+  revision-safe IDE overlays and agent correlation.
+- Conservative artifact-to-stage attribution that refuses to fabricate a link
+  during concurrent or ambiguous execution.
+- Deterministic validation, deduplication, ordering, and bounded propagation of
+  evidence references through the Live projection pipeline.
+- Workspace-scoped Repair actions remain available when their blocker evidence
+  identifies an affected linked project.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, Repair, Skill, project-entry, and Live contracts remain supported.
+All new evidence-binding and Graph revision fields are additive and optional for
+older producers. No public command is removed.
+
+**Publication status:** Released August 29, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.68.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.68.0/packages/cli/releases/RELEASE_NOTES_v0.68.0.md)
+
+---
+
+## Latest Release: v0.67.0 (August 29, 2026)
+
+### Live Workspace Operations and Measurable Agent Efficiency
+
+Workspai 0.67.0 publishes stable Live activity projections and a deterministic,
+provenance-aware benchmark for bounded agent retrieval. It also strengthens
+natural-language Graph relevance, evidence-derived Skill explanations, provider
+adapter reconciliation, and repeatable real-repository qualification.
+
+**What's New:**
+
+- Versioned monitor, fleet, and Board activity contracts for terminal, IDE,
+  dashboard, automation, and social-capture consumers.
+- A five-scenario `agent-core.v1` Graph benchmark with explicit estimated,
+  measured, mixed, and unavailable token provenance.
+- Qualifier-aware natural-language search that prevents generic architecture
+  terms from outranking exact project subjects.
+- Evidence-consistent polyglot Skills and duplicate-free reconciliation of
+  repository-authored agent imports.
+- A 58-command enterprise qualification gate validated on the 12-runtime
+  OpenTelemetry Demo architecture, including Live SVG capture and all project
+  consumer entry points.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, repair, Skill, project-entry, and Live behaviors remain supported.
+The activity projection and benchmark contracts are additive. No public command
+is removed.
+
+**Publication status:** Released August 29, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.67.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.67.0/packages/cli/releases/RELEASE_NOTES_v0.67.0.md)
+
+---
+
+## Latest Release: v0.66.0 (August 28, 2026)
+
+### Evidence-Driven Agent Operations and Portable Project Graphs
+
+Workspai 0.66.0 turns adopted repositories into more precise, portable, and
+operational agent environments. Each project receives its own verified Graph
+projection and only the Skills its evidence can justify, while the canonical
+workspace retains the complete aggregate Model and Graph for cross-project
+reasoning.
+
+**What's New:**
+
+- Project-owned Graph artifacts with exact freshness, integrity, rollback, and
+  workspace-aggregate references across linked and nested projects.
+- Evidence-driven operational Skills that explain why they exist, expose
+  bounded commands and Graph queries, and suppress irrelevant workflows.
+- Adaptive, stratified project lenses that preserve high-value architecture
+  evidence without letting large API or symbol surfaces dominate context.
+- Modern and legacy MCP interoperability with structured content, stable
+  schemas, explicit protocol errors, and proof-backed Graph retrieval.
+- Broader polyglot lifecycle and framework discovery plus hardened concurrent,
+  cross-platform adoption, caching, qualification, and runtime diagnostics.
+
+**Compatibility:** Existing version-one Workspace Intelligence, Model, Graph,
+Goal, MCP, and agent-entry contracts remain supported. New project Graph
+references, Skill decisions, MCP fields, and evidence summaries are additive.
+No public command is removed.
+
+**Publication status:** Released August 28, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.66.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.66.0/packages/cli/releases/RELEASE_NOTES_v0.66.0.md)
+
+---
+
+## v0.65.0 (August 24, 2026)
+
+### Evidence-Bound Project Intelligence and Repair Qualification
+
+Workspai 0.65.0 strengthens the complete path from repository adoption to an
+agent-ready, verifiable workspace. Project identity, lifecycle, tests,
+governance, runtime topology, and Goal context are now derived through shared
+evidence rules that remain accurate across application, library, platform,
+extension, native, and polyglot repositories.
+
+**What's New:**
+
+- Higher-fidelity project taxonomy and lifecycle discovery for Node.js, Go,
+  JVM, native, generated, aggregate, and mixed-runtime repositories.
+- Proof-backed runtime API registration, explicit implementation-versus-
+  registration coverage, proof-bounded source call binding, incremental project-
+  scope reuse, and entity-kind-filtered Graph retrieval.
+- Canonical CI, release, and ownership governance shared by the workspace
+  contract, Model, Graph, Analyze, project lens, and agent context.
+- Portable test-surface evidence used consistently by Doctor, Analyze,
+  Readiness, Goal Packs, and runtime capabilities.
+- A contract-enforced repair qualification matrix covering every supported
+  adapter, scope, failure family, and terminal recovery path.
+- Stronger Goal retrieval diversity, cache invalidation, canonical symlink-safe
+  adoption rollback, and real-repository qualification guarantees.
+
+**Compatibility:** Existing CLI commands and version-one Workspace
+Intelligence contracts remain supported. New governance, test-surface, Graph,
+and repair-qualification fields are additive. No public command is removed.
+
+**Publication status:** Released August 24, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.65.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.65.0/packages/cli/releases/RELEASE_NOTES_v0.65.0.md)
+
+---
+
+## v0.64.0 (August 22, 2026)
 
 ### Platform-Aware Creation and Polyglot Intelligence Fidelity
 

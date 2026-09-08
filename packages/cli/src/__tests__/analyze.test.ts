@@ -15,6 +15,168 @@ const createTempDir = async (): Promise<string> => {
 };
 
 describe('analyze command', () => {
+  it('reports every runtime and Rails health evidence for a managed polyglot application', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'application');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'app', 'controllers'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'workhorse'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'spec'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({
+        name: 'application',
+        kind: 'frontend',
+        runtime: 'node',
+        framework: 'vue',
+        adoption: { managed_by: 'workspai', mode: 'linked' },
+      })
+    );
+    await fs.writeFile(path.join(projectDir, 'Gemfile'), "gem 'rails'\n");
+    await fs.writeFile(
+      path.join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'assets', dependencies: { vue: '^3.0.0' } })
+    );
+    await fs.writeFile(path.join(projectDir, 'workhorse', 'go.mod'), 'module example.test/app\n');
+    await fs.writeFile(
+      path.join(projectDir, 'app', 'controllers', 'health_controller.rb'),
+      'class HealthController; end\n'
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'spec', 'health_spec.rb'),
+      'describe :health do; end\n'
+    );
+    await fs.writeFile(path.join(projectDir, '.gitlab-ci.yml'), 'test:\n  script: echo ok\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.summary.runtimeCount).toBe(3);
+    expect(report.runtimes).toEqual({ ruby: 1, go: 1, node: 1 });
+    expect(report.projects[0]).toMatchObject({
+      runtime: 'ruby',
+      runtimeCandidates: ['ruby', 'go', 'node'],
+      framework: 'rails',
+      hasHealthEndpoint: true,
+    });
+    expect(report.findings.map((finding) => finding.id)).not.toContain('project.health.missing');
+  });
+
+  it('treats a multi-runtime aggregate boundary as observed architecture, not an unknown-stack blocker', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'sdk-platform');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'go'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, 'python'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({
+        name: 'sdk-platform',
+        kind: 'platform',
+        runtime: 'unknown',
+        framework: 'unknown',
+        adoption: { managed_by: 'workspai', mode: 'linked' },
+      })
+    );
+    await fs.writeFile(path.join(projectDir, 'go', 'go.mod'), 'module example.test/sdk\n');
+    await fs.writeFile(
+      path.join(projectDir, 'python', 'pyproject.toml'),
+      '[project]\nname = "sdk-platform"\n'
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0]).toMatchObject({
+      framework: 'unknown',
+      runtimeCandidates: ['go', 'python'],
+    });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({ id: 'project.stack.aggregate', severity: 'info' })
+    );
+    expect(report.findings.map((item) => item.id)).not.toContain('project.stack.unknown');
+    expect(report.summary.verdict).not.toBe('blocked');
+  });
+
+  it('recognizes nested tests and avoids deployment findings for package workspaces', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'polyglot-library');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'polyglot-library', kind: 'library', runtime: 'rust' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'Cargo.toml'),
+      '[workspace]\nmembers = ["crates/core"]\n'
+    );
+    await fs.mkdir(path.join(projectDir, 'crates', 'core', 'tests'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'crates', 'core', 'tests', 'parser.rs'), '#[test]\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0].hasTests).toBe(true);
+    expect(report.findings.map((finding) => finding.id)).not.toEqual(
+      expect.arrayContaining([
+        'project.tests.missing',
+        'project.env.example.missing',
+        'project.health.missing',
+        'project.container.missing',
+      ])
+    );
+  });
+
+  it('recognizes an isolated agent environment example without requiring a root secret file', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'agent-app');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({
+        name: 'agent-app',
+        kind: 'agent',
+        runtime: 'python',
+        framework: 'microsoft-agent-framework',
+        contracts: { env: ['FOUNDRY_PROJECT_ENDPOINT'] },
+      })
+    );
+    await fs.mkdir(path.join(projectDir, 'agents', 'primary'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\n'
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'agents', 'primary', '.env.example'),
+      'FOUNDRY_PROJECT_ENDPOINT=https://example.invalid\n'
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0]?.hasEnvExample).toBe(true);
+    expect(report.findings.map((finding) => finding.id)).not.toContain(
+      'project.env.example.missing'
+    );
+    expect(report.findings.map((finding) => finding.id)).not.toContain('project.container.missing');
+  });
+
   it('generates a workspace analysis report with project health and CI detection', async () => {
     const workspaceDir = await createTempDir();
     const projectDir = path.join(workspaceDir, 'service-a');
@@ -53,12 +215,164 @@ describe('analyze command', () => {
     const report = await runAnalyze({ workspacePath: workspaceDir });
 
     expect(report.workspaceDetected).toBe(true);
+    expect(report.summary).toMatchObject({
+      statusScope: 'source-structure',
+      releaseReadiness: 'not-evaluated',
+    });
     expect(report.profile).toBe('polyglot');
     expect(report.summary.projectCount).toBe(1);
     expect(report.projects[0].hasCiConfig).toBe(true);
     expect(report.projects[0].hasHealthEndpoint).toBe(true);
     expect(report.findings.some((item) => item.id === 'project.ci.missing')).toBe(false);
     expect(report.findings.some((item) => item.id === 'project.health.missing')).toBe(false);
+  });
+
+  it('recognizes nested and inline health/test surfaces in native services', async () => {
+    const workspaceDir = await createTempDir();
+    const rustDir = path.join(workspaceDir, 'rust-api');
+    const goDir = path.join(workspaceDir, 'go-api');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' })
+    );
+    for (const [projectDir, metadata] of [
+      [rustDir, { name: 'rust-api', runtime: 'rust', framework: 'axum' }],
+      [goDir, { name: 'go-api', runtime: 'go', framework: 'gogin' }],
+    ] as const) {
+      await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, '.workspai', 'project.json'),
+        JSON.stringify(metadata)
+      );
+    }
+    await fs.writeFile(path.join(rustDir, 'Cargo.toml'), '[package]\nname = "rust-api"\n');
+    await fs.mkdir(path.join(rustDir, 'src'), { recursive: true });
+    await fs.writeFile(
+      path.join(rustDir, 'src', 'main.rs'),
+      'fn app() { Router::new().route("/health", get(health)); }\n#[cfg(test)]\nmod tests {}\n'
+    );
+    await fs.writeFile(path.join(goDir, 'go.mod'), 'module example.test/go-api\n');
+    await fs.mkdir(path.join(goDir, 'internal', 'handlers'), { recursive: true });
+    await fs.writeFile(
+      path.join(goDir, 'internal', 'handlers', 'health.go'),
+      'package handlers\n// @Router /health [get]\n'
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+    const rust = report.projects.find((project) => project.name === 'rust-api');
+    const go = report.projects.find((project) => project.name === 'go-api');
+    expect(rust).toMatchObject({ hasTests: true, hasHealthEndpoint: true });
+    expect(go).toMatchObject({ hasHealthEndpoint: true });
+    expect(report.findings.filter((item) => item.id === 'project.health.missing')).toHaveLength(0);
+  });
+
+  it('does not invent dotenv or HTTP health contracts for a generic Python application', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'python-platform');
+    await fs.mkdir(path.join(workspaceDir, '.workspai', 'reports'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'minimal' })
+    );
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'reports', 'workspace-knowledge-graph.json'),
+      '{}\n'
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'python-platform', runtime: 'python', framework: 'python' })
+    );
+    await fs.writeFile(
+      path.join(projectDir, 'pyproject.toml'),
+      '[project]\nname = "python-platform"\n'
+    );
+    await fs.writeFile(path.join(projectDir, 'Dockerfile'), 'FROM python:3.14\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.findings.map((item) => item.id)).not.toEqual(
+      expect.arrayContaining(['project.env.example.missing', 'project.health.missing'])
+    );
+    expect(report.nextActions.join('\n')).not.toContain('workspace-dependency-graph.json');
+    expect(report.nextActions.join('\n')).not.toContain('workspace model --write');
+  });
+
+  it('recognizes repository-authored Prow jobs as external CI evidence', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'go-platform');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.json'),
+      JSON.stringify({ profile: 'polyglot' }, null, 2)
+    );
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'go-platform', runtime: 'go', kind: 'platform' }, null, 2)
+    );
+    await fs.writeFile(path.join(projectDir, 'go.mod'), 'module example.com/platform\n');
+    await fs.mkdir(path.join(projectDir, 'prow'), { recursive: true });
+    await fs.writeFile(path.join(projectDir, 'prow', 'presubmit.sh'), '#!/usr/bin/env bash\n');
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0].hasCiConfig).toBe(true);
+    expect(report.findings.some((item) => item.id === 'project.ci.missing')).toBe(false);
+  });
+
+  it('accepts authoritative external CI governance without inventing repository files', async () => {
+    const workspaceDir = await createTempDir();
+    const projectDir = path.join(workspaceDir, 'externally-governed');
+    await fs.mkdir(path.join(workspaceDir, '.workspai'), { recursive: true });
+    await fs.mkdir(path.join(projectDir, '.workspai'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.workspai', 'project.json'),
+      JSON.stringify({ name: 'externally-governed', runtime: 'go', kind: 'platform' })
+    );
+    await fs.writeFile(path.join(projectDir, 'go.mod'), 'module example.com/platform\n');
+    await fs.writeFile(
+      path.join(workspaceDir, '.workspai', 'workspace.contract.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'rapidkit.workspace.contract',
+        generatedAt: '2026-08-24T00:00:00.000Z',
+        workspace: { name: 'platform' },
+        projects: [
+          {
+            slug: 'externally-governed',
+            relativePath: 'externally-governed',
+            modules: [],
+            ports: [],
+            contracts: {
+              owns: [],
+              apis: [],
+              publishes: [],
+              consumes: [],
+              dependsOn: [],
+              env: [],
+            },
+            governance: {
+              ci: {
+                mode: 'external',
+                provider: 'central-prow',
+                reference: 'https://example.test/ci/platform',
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const report = await runAnalyze({ workspacePath: workspaceDir });
+
+    expect(report.projects[0].hasCiConfig).toBe(false);
+    expect(report.projects[0].governance.ci).toMatchObject({
+      status: 'external-declared',
+      provider: 'central-prow',
+    });
+    expect(report.findings.some((item) => item.id === 'project.ci.missing')).toBe(false);
   });
 
   it('analyzes adopted external projects registered by the workspace', async () => {
@@ -227,7 +541,11 @@ describe('analyze command', () => {
     );
     await fs.writeFile(
       path.join(projectDir, 'package.json'),
-      JSON.stringify({ name: 'service-b', scripts: {} }, null, 2)
+      JSON.stringify(
+        { name: 'service-b', scripts: {}, dependencies: { dotenv: '^16.0.0' } },
+        null,
+        2
+      )
     );
     await fs.writeFile(path.join(projectDir, 'src', 'index.ts'), 'export const app = true;');
 

@@ -5,6 +5,7 @@ import fsExtra from 'fs-extra';
 import type { Dirent } from 'fs';
 import path from 'path';
 import { logger } from './logger.js';
+import { emitActivityBlock } from './activity/activity-runtime.js';
 import { prompt } from './cli-ui/prompts.js';
 import { readImportedProjectsRegistry } from './imported-projects-registry.js';
 import { buildCleanGitEnv } from './utils/git-worktree.js';
@@ -21,6 +22,8 @@ import {
 import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
+  hasNativeWorkspaceTopology,
+  isWorkspaiManagedLinkedProjectMetadata,
   type BackendFrameworkDetection,
   type BackendPlatformKey,
   type BackendImportStack,
@@ -59,8 +62,9 @@ import {
   projectMetadataCandidates,
   workspaceMetadataCandidates,
 } from './utils/workspace-paths.js';
-import { readWorkspaceMarker } from './workspace-marker.js';
+import { readWorkspaceMarker, resolveWorkspaceRegistrationName } from './workspace-marker.js';
 import { getProbeTimeoutMs } from './utils/command-timeouts.js';
+import { executableAvailable } from './utils/executable-availability.js';
 import {
   buildDoctorFixExecutionResult,
   DOCTOR_FIX_VERIFY_RECOMMENDED,
@@ -77,9 +81,13 @@ import {
   buildDependencyMaterializationRepairCapability,
   parseDoctorRepairOperation,
 } from './utils/doctor-repair-capabilities.js';
-import { buildEnterpriseSurfaceProbes } from './utils/doctor-surface-probes.js';
+import {
+  buildEnterpriseSurfaceProbes,
+  detectProjectContainerSurface,
+} from './utils/doctor-surface-probes.js';
 import { historyEntryFromDoctorFixResult, recordWorkspaceHistory } from './workspace-history.js';
 import { findWorkspaceRootUp, isWorkspaceShellDirectory } from './utils/workspace-root.js';
+import { detectProjectTestSurface } from './utils/project-test-surface.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
@@ -94,8 +102,14 @@ import { buildDoctorGraphDiagnosis } from './utils/doctor-graph-diagnosis.js';
 import type { DoctorGraphDiagnosis } from './contracts/doctor-graph-diagnosis-contract.js';
 import { DOCTOR_SUMMARY_SCHEMA_VERSION } from './contracts/doctor-summary-contract.js';
 import { buildDoctorDiagnosis, type DoctorDiagnosis } from './doctor/index.js';
+import { detectProjectHealthSurface } from './utils/project-health-surface.js';
 import { inferWorkspaceProjectKind } from './utils/project-kind.js';
 import { resolveWorkspaceRegisteredProjects } from './utils/workspace-registry-summary.js';
+import { evaluatePythonVersionConstraint } from './utils/python-version-constraint.js';
+import {
+  checkCliResolution,
+  type CliResolutionDiagnostic,
+} from './utils/cli-resolution-diagnostic.js';
 
 export const DOCTOR_WORKSPACE_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor;
 
@@ -218,15 +232,36 @@ function contextualizeDoctorSystemChecks(
     pipx: HealthCheckResult;
     go: HealthCheckResult;
     rapidkitCore: HealthCheckResult;
+    cliResolution: CliResolutionDiagnostic;
   },
   projects: ProjectHealth[]
 ): typeof checks {
   const hasPythonProject = projects.some((project) => project.runtimeFamily === 'python');
   const hasGoProject = projects.some((project) => project.runtimeFamily === 'go');
+  const incompatiblePythonProject = projects.find(
+    (project) => project.pythonRequirement?.satisfied === false
+  );
+  const unverifiablePythonProject = projects.find(
+    (project) => project.pythonRequirement?.satisfied === null
+  );
+  const contextualPython = incompatiblePythonProject?.pythonRequirement
+    ? {
+        ...checks.python,
+        status: 'error' as const,
+        message: `Python ${incompatiblePythonProject.pythonRequirement.detectedVersion ?? 'unknown'} does not satisfy ${incompatiblePythonProject.pythonRequirement.specifier}`,
+        details: `Project ${incompatiblePythonProject.name} declares requires-python ${incompatiblePythonProject.pythonRequirement.specifier}.`,
+      }
+    : unverifiablePythonProject?.pythonRequirement
+      ? {
+          ...checks.python,
+          status: checks.python.status === 'error' ? ('error' as const) : ('warn' as const),
+          details: `Project ${unverifiablePythonProject.name} declares requires-python ${unverifiablePythonProject.pythonRequirement.specifier}, but compatibility could not be evaluated.`,
+        }
+      : checks.python;
   return {
     ...checks,
     python: hasPythonProject
-      ? checks.python
+      ? contextualPython
       : optionalizeHealthCheck(
           checks.python,
           'Python is optional because this scope has no detected Python project.'
@@ -252,6 +287,7 @@ function contextualizeDoctorSystemChecks(
 }
 
 type DetectedFramework =
+  | 'Microsoft Agent Framework'
   | 'FastAPI'
   | 'Django'
   | 'Flask'
@@ -317,7 +353,16 @@ type ProjectRuntimeFamily =
   | 'c'
   | 'cpp'
   | 'unknown';
-type ProjectKind = 'backend' | 'frontend' | 'desktop' | 'extension' | 'fullstack' | 'generic';
+type ProjectKind =
+  | 'backend'
+  | 'agent'
+  | 'frontend'
+  | 'desktop'
+  | 'extension'
+  | 'fullstack'
+  | 'platform'
+  | 'library'
+  | 'generic';
 type ProjectArchetype =
   'application' | 'service' | 'library' | 'sdk' | 'platform' | 'plugin' | 'monorepo' | 'unknown';
 type FrameworkConfidence = 'high' | 'medium' | 'low';
@@ -363,6 +408,12 @@ interface ProjectHealth {
   commandCapabilities?: ProjectCommandCapabilities;
   graphDiagnosis?: DoctorGraphDiagnosis;
   diagnosis?: DoctorDiagnosis;
+  /** Internal project/runtime compatibility used to contextualize host checks. */
+  pythonRequirement?: {
+    specifier: string;
+    detectedVersion?: string;
+    satisfied: boolean | null;
+  };
   /** Internal scan control; removed before evidence serialization. */
   _freshDependencyAudit?: boolean;
 }
@@ -520,6 +571,7 @@ interface WorkspaceHealth {
   pipx: HealthCheckResult;
   go: HealthCheckResult;
   rapidkitCore: HealthCheckResult;
+  cliResolution: CliResolutionDiagnostic;
   projects: ProjectHealth[];
   healthScore?: HealthScore;
   coreVersion?: string;
@@ -545,6 +597,7 @@ interface ProjectHealthEnvelope {
   pipx: HealthCheckResult;
   go: HealthCheckResult;
   rapidkitCore: HealthCheckResult;
+  cliResolution: CliResolutionDiagnostic;
   project: ProjectHealth;
   healthScore: HealthScore;
   evidencePath?: string;
@@ -599,7 +652,7 @@ interface DoctorDriftDelta {
   netIssueDelta: number;
   scoreDeltaPercent: number | null;
   systemStatusChanges: Array<{
-    id: 'python' | 'poetry' | 'pipx' | 'go' | 'rapidkitCore';
+    id: 'python' | 'poetry' | 'pipx' | 'go' | 'rapidkitCore' | 'cliResolution';
     from: HealthCheckResult['status'];
     to: HealthCheckResult['status'];
   }>;
@@ -668,6 +721,7 @@ type DoctorEvidenceLike = {
     pipx?: HealthCheckResult;
     go?: HealthCheckResult;
     rapidkitCore?: HealthCheckResult;
+    cliResolution?: CliResolutionDiagnostic;
   };
 };
 
@@ -675,7 +729,7 @@ const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
 // Bump whenever project diagnosis or executable-remediation semantics change.
 // This keeps unchanged source trees from reusing evidence produced by an older
 // Doctor policy after a CLI upgrade.
-const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v3';
+const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v5';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
@@ -1149,6 +1203,7 @@ function collectSystemStatusChanges(
     pipx: HealthCheckResult;
     go: HealthCheckResult;
     rapidkitCore: HealthCheckResult;
+    cliResolution: CliResolutionDiagnostic;
   }
 ): DoctorDriftDelta['systemStatusChanges'] {
   if (!previous?.system) {
@@ -1164,6 +1219,7 @@ function collectSystemStatusChanges(
     { id: 'pipx', current: current.pipx },
     { id: 'go', current: current.go },
     { id: 'rapidkitCore', current: current.rapidkitCore },
+    { id: 'cliResolution', current: current.cliResolution },
   ];
 
   const changes: DoctorDriftDelta['systemStatusChanges'] = [];
@@ -1252,6 +1308,7 @@ function buildWorkspaceDriftDelta(
       pipx: health.pipx,
       go: health.go,
       rapidkitCore: health.rapidkitCore,
+      cliResolution: health.cliResolution,
     }),
     regressedProjects: Array.from(regressedProjects).sort(),
     improvedProjects: Array.from(improvedProjects).sort(),
@@ -1298,6 +1355,7 @@ function buildProjectDriftDelta(
       pipx: envelope.pipx,
       go: envelope.go,
       rapidkitCore: envelope.rapidkitCore,
+      cliResolution: envelope.cliResolution,
     }),
     regressedProjects: newIssueCount > 0 ? [projectKey] : [],
     improvedProjects: resolvedIssueCount > 0 ? [projectKey] : [],
@@ -1348,18 +1406,61 @@ function buildProjectFixCommand(projectPath: string, command: string): string {
 
 function buildPythonDependencyInstallFixCommand(input: {
   projectPath: string;
-  manager: 'poetry' | 'uv' | 'venv';
+  manager: 'project-script' | 'poetry' | 'uv' | 'venv';
+  projectScript?: string;
+  uvProject?: string;
 }): string {
+  if (input.manager === 'project-script' && input.projectScript) {
+    return buildProjectFixCommand(input.projectPath, input.projectScript);
+  }
   if (input.manager === 'poetry') {
     return buildProjectFixCommand(input.projectPath, 'poetry install --no-root');
   }
   if (input.manager === 'uv') {
-    return buildProjectFixCommand(input.projectPath, 'uv sync');
+    return buildProjectFixCommand(
+      input.projectPath,
+      input.uvProject ? `uv sync --project ${input.uvProject}` : 'uv sync'
+    );
   }
   return buildProjectFixCommand(
     input.projectPath,
     isWindowsPlatform() ? 'py -3 -m venv .venv' : 'python3 -m venv .venv'
   );
+}
+
+async function findPythonProjectSetupScript(projectPath: string): Promise<string | undefined> {
+  const candidates = isWindowsPlatform()
+    ? [
+        'script/setup.cmd',
+        'script/setup.ps1',
+        'scripts/setup.cmd',
+        'scripts/setup.ps1',
+        'script/setup',
+        'scripts/setup',
+        'bin/setup',
+      ]
+    : ['script/setup', 'scripts/setup', 'bin/setup'];
+  for (const candidate of candidates) {
+    if (await fsExtra.pathExists(path.join(projectPath, candidate))) return candidate;
+  }
+  return undefined;
+}
+
+async function detectPythonInterpreterVersion(interpreter?: string): Promise<string | undefined> {
+  const candidates = interpreter ? [interpreter] : getPythonCommandCandidates();
+  for (const executable of candidates) {
+    try {
+      const args = executable === 'py' ? ['-3', '--version'] : ['--version'];
+      const result = await execa(executable, args, { timeout: 3000, reject: false });
+      const match = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.match(
+        /Python\s+(\d+\.\d+(?:\.\d+)?)/i
+      );
+      if (match) return match[1];
+    } catch {
+      // Continue through the project and platform interpreter candidates.
+    }
+  }
+  return undefined;
 }
 
 function supportTierForFramework(framework: DetectedFramework): FrameworkSupportTier {
@@ -1399,6 +1500,10 @@ function supportTierForFramework(framework: DetectedFramework): FrameworkSupport
 }
 
 function kindForFramework(framework: DetectedFramework): ProjectKind {
+  if (framework === 'Microsoft Agent Framework') {
+    return 'agent';
+  }
+
   if (framework === 'Tauri' || framework === 'Electron') {
     return 'desktop';
   }
@@ -1581,6 +1686,8 @@ function toDoctorRuntimeFamily(runtime: BackendRuntimeFamily): ProjectRuntimeFam
 
 function toDoctorFramework(detection: BackendFrameworkDetection): DetectedFramework {
   switch (detection.key) {
+    case 'microsoft-agent-framework':
+      return 'Microsoft Agent Framework';
     case 'fastapi':
       return 'FastAPI';
     case 'django':
@@ -1725,13 +1832,15 @@ function applyBackendFrameworkDetection(
   health.frameworkConfidence = detection.confidence;
   health.supportTier = detection.supportTier;
   health.projectKind =
-    detection.key === 'tauri' || detection.key === 'electron'
-      ? 'desktop'
-      : detection.key === 'vscode-extension'
-        ? 'extension'
-        : isGenericBackendDetection(detection)
-          ? 'generic'
-          : 'backend';
+    detection.key === 'microsoft-agent-framework'
+      ? 'agent'
+      : detection.key === 'tauri' || detection.key === 'electron'
+        ? 'desktop'
+        : detection.key === 'vscode-extension'
+          ? 'extension'
+          : isGenericBackendDetection(detection)
+            ? 'generic'
+            : 'backend';
   health.runtimeFamily = toDoctorRuntimeFamily(detection.runtime);
 }
 
@@ -2196,6 +2305,7 @@ async function writeDoctorEvidence(
       health.pipx,
       health.go,
       health.rapidkitCore,
+      health.cliResolution,
     ]);
     const payload = withGovernanceRunMetadata(
       {
@@ -2216,6 +2326,7 @@ async function writeDoctorEvidence(
           pipx: health.pipx,
           go: health.go,
           rapidkitCore: health.rapidkitCore,
+          cliResolution: health.cliResolution,
           versions: {
             core: health.coreVersion,
             npm: health.npmVersion,
@@ -2266,16 +2377,18 @@ async function collectSystemChecks(workspacePath: string = process.cwd()): Promi
   pipx: HealthCheckResult;
   go: HealthCheckResult;
   rapidkitCore: HealthCheckResult;
+  cliResolution: CliResolutionDiagnostic;
 }> {
-  const [python, poetry, pipx, go, rapidkitCore] = await Promise.all([
+  const [python, poetry, pipx, go, rapidkitCore, cliResolution] = await Promise.all([
     checkPython(),
     checkPoetry(),
     checkPipx(),
     checkGo(),
     checkRapidKitCore(workspacePath),
+    checkCliResolution(),
   ]);
 
-  return { python, poetry, pipx, go, rapidkitCore };
+  return { python, poetry, pipx, go, rapidkitCore, cliResolution };
 }
 
 async function checkPython(): Promise<HealthCheckResult> {
@@ -2685,8 +2798,11 @@ async function performCommonChecks(
   packageJsonData?: Record<string, unknown> | null
 ): Promise<void> {
   // Docker check
-  const dockerfilePath = path.join(projectPath, 'Dockerfile');
-  health.hasDocker = await fsExtra.pathExists(dockerfilePath);
+  const containerSurface = await detectProjectContainerSurface(projectPath);
+  health.hasDocker =
+    containerSurface.rootDockerfile ||
+    containerSurface.nestedDockerfile ||
+    containerSurface.compose;
 
   // Tests check
   const testsPath = path.join(projectPath, 'tests');
@@ -2745,7 +2861,8 @@ async function performCommonChecks(
     }
   }
 
-  health.hasTests = hasTestDir || hasGoTests;
+  const portableTestSurface = await detectProjectTestSurface(projectPath);
+  health.hasTests = hasTestDir || hasGoTests || portableTestSurface.detected;
   if ((health.runtimeFamily === 'node' || health.runtimeFamily === 'bun') && !health.hasTests) {
     health.hasTests = await detectNodeTestSurface(projectPath, packageJsonData);
   }
@@ -2831,6 +2948,23 @@ function parsePipPackageList(output: string): Array<{ name?: string }> | null {
   }
 }
 
+export function pythonPackageListProvesDependencies(
+  packages: Array<{ name?: string }> | null,
+  frameworkImport: string
+): boolean {
+  const ignored = new Set(['pip', 'setuptools', 'wheel']);
+  const requiredDistribution = frameworkImport.split('.')[0].replaceAll('_', '-').toLowerCase();
+  return (
+    packages?.some((pkg) => {
+      if (typeof pkg.name !== 'string') return false;
+      const packageName = pkg.name.replaceAll('_', '-').toLowerCase();
+      return requiredDistribution
+        ? packageName === requiredDistribution
+        : !ignored.has(packageName);
+    }) ?? false
+  );
+}
+
 async function inspectPythonEnvironment(input: {
   environmentPath: string;
   frameworkImport: string;
@@ -2874,11 +3008,15 @@ async function inspectPythonEnvironment(input: {
         reject: false,
       });
       const packages = parsePipPackageList(`${result.stdout ?? ''}\n${result.stderr ?? ''}`);
-      const ignored = new Set(['pip', 'setuptools', 'wheel']);
-      const dependenciesInstalled =
-        packages?.some(
-          (pkg) => typeof pkg.name === 'string' && !ignored.has(pkg.name.toLowerCase())
-        ) ?? false;
+      // A partially-created environment often contains transitive packaging
+      // libraries even though the application's framework was never
+      // installed. Those packages do not prove dependency materialization.
+      // When a framework import is known, require its distribution metadata as
+      // the portable fallback after the import probe fails.
+      const dependenciesInstalled = pythonPackageListProvesDependencies(
+        packages,
+        input.frameworkImport
+      );
       return { interpreter, coreVersion, dependenciesInstalled };
     } catch {
       return { interpreter, coreVersion, dependenciesInstalled: false };
@@ -2938,7 +3076,8 @@ async function resolvePoetryEnvironmentPath(projectPath: string): Promise<string
 async function resolvePythonProjectEnvironment(
   projectPath: string,
   frameworkImport: string,
-  usesPoetry: boolean
+  usesPoetry: boolean,
+  runtimeRoot?: string
 ): Promise<{
   environmentPath?: string;
   interpreter?: string;
@@ -2954,6 +3093,19 @@ async function resolvePythonProjectEnvironment(
         frameworkImport,
       })),
     };
+  }
+
+  if (runtimeRoot) {
+    const runtimeEnvironmentPath = path.join(projectPath, runtimeRoot, '.venv');
+    if (await fsExtra.pathExists(runtimeEnvironmentPath)) {
+      return {
+        environmentPath: runtimeEnvironmentPath,
+        ...(await inspectPythonEnvironment({
+          environmentPath: runtimeEnvironmentPath,
+          frameworkImport,
+        })),
+      };
+    }
   }
 
   if (usesPoetry) {
@@ -3396,10 +3548,11 @@ async function appendRuntimeAdapterProbes(
   const adapter = portableAdapters[runtime];
   if (!adapter) return;
 
-  const dependencyContractExists = await anyRelativePathExists(
-    projectPath,
-    adapter.dependencyMarkers
-  );
+  const nativeWorkspaceContract =
+    (runtime === 'c' || runtime === 'cpp') && hasNativeWorkspaceTopology(projectPath);
+  const dependencyContractExists =
+    nativeWorkspaceContract ||
+    (await anyRelativePathExists(projectPath, adapter.dependencyMarkers));
   pushProjectProbe(health, {
     id: `adapter-${runtime}-dependency-contract`,
     label: adapter.dependencyLabel,
@@ -3407,7 +3560,9 @@ async function appendRuntimeAdapterProbes(
     severity: 'warn',
     scope: 'project-scoped',
     reason: dependencyContractExists
-      ? `${adapter.dependencyLabel} detected.`
+      ? nativeWorkspaceContract
+        ? `${adapter.dependencyLabel} detected across multiple native workspace components.`
+        : `${adapter.dependencyLabel} detected.`
       : `${adapter.dependencyLabel} is missing.`,
     recommendation: dependencyContractExists
       ? undefined
@@ -3645,22 +3800,7 @@ async function appendBuiltInBackendProbes(
         : 'Add migration tooling baseline (migrations dir or runtime-native migration config).',
   });
 
-  const healthMarkers = [
-    'src/health',
-    'src/healthcheck',
-    'src/main/resources/application.yml',
-    'src/main/resources/application.properties',
-    'app/health.py',
-    'routes/health.ts',
-    'routes/health.js',
-  ];
-  let hasHealthSurface = false;
-  for (const marker of healthMarkers) {
-    if (await fsExtra.pathExists(path.join(projectPath, marker))) {
-      hasHealthSurface = true;
-      break;
-    }
-  }
+  const hasHealthSurface = await detectProjectHealthSurface(projectPath);
 
   const healthIntent =
     hasHealthSurface ||
@@ -3886,8 +4026,19 @@ async function checkProjectUnnormalized(
         continue;
       }
       projectJsonData = await fsExtra.readJson(projectJsonPath);
+      const canonicalProjectName =
+        typeof projectJsonData?.name === 'string'
+          ? projectJsonData.name
+          : typeof projectJsonData?.slug === 'string'
+            ? projectJsonData.slug
+            : undefined;
+      if (canonicalProjectName?.trim()) {
+        health.name = canonicalProjectName.trim();
+      }
       // Support both 'kit' (legacy) and 'kit_name' (new generator) fields
-      const kitValue = (projectJsonData?.kit_name || projectJsonData?.kit) as string | undefined;
+      const kitValue = isWorkspaiManagedLinkedProjectMetadata(projectJsonData)
+        ? undefined
+        : ((projectJsonData?.kit_name || projectJsonData?.kit) as string | undefined);
       if (kitValue) {
         health.kit = kitValue;
       }
@@ -3952,22 +4103,6 @@ async function checkProjectUnnormalized(
   const isScalaProject = await fsExtra.pathExists(buildSbtPath);
   const isDenoProject =
     (await fsExtra.pathExists(denoJsonPath)) || (await fsExtra.pathExists(denoJsoncPath));
-  let isDotnetProject = projectJsonData?.runtime === 'dotnet';
-  try {
-    isDotnetProject =
-      isDotnetProject ||
-      (await hasFileWithSuffixWithinDepth(projectPath, '.csproj', 3)) ||
-      (await hasFileWithSuffixWithinDepth(projectPath, '.sln', 2));
-  } catch {
-    isDotnetProject = projectJsonData?.runtime === 'dotnet';
-  }
-
-  const isGoProject =
-    (await fsExtra.pathExists(goModPath)) ||
-    projectJsonData?.runtime === 'go' ||
-    (typeof projectJsonData?.kit_name === 'string' &&
-      ((projectJsonData.kit_name as string).startsWith('gofiber') ||
-        (projectJsonData.kit_name as string).startsWith('gogin')));
 
   const isBunProject =
     isNodeProject &&
@@ -4003,18 +4138,11 @@ async function checkProjectUnnormalized(
   const isCompositeContainerBoundary =
     !hasRootRuntimeManifest && nestedRuntimeCandidates.length >= 2;
 
-  const kotlinBuildPath = path.join(projectPath, 'build.gradle.kts');
-  const isKotlinProject =
-    projectJsonData?.runtime === 'kotlin' ||
-    (await fsExtra.pathExists(path.join(projectPath, 'settings.gradle.kts'))) ||
-    ((await fsExtra.pathExists(kotlinBuildPath)) &&
-      ((await findFileByName(projectPath, { suffix: '.kt', under: ['src', '.'] })) ||
-        (await readFileIfExists(kotlinBuildPath)).includes('kotlin')));
-
   const primaryBackendDetection = detectBackendFrameworkFromProject(
     projectPath,
     projectJsonData ?? null
   );
+  const primaryRuntime = primaryBackendDetection.runtime;
 
   if (isCompositeContainerBoundary) {
     applyBackendFrameworkDetection(health, primaryBackendDetection);
@@ -4060,7 +4188,7 @@ async function checkProjectUnnormalized(
   }
 
   // Go project checks (Fiber or Gin)
-  if (isGoProject) {
+  if (primaryRuntime === 'go') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4096,13 +4224,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  const isJavaProject =
-    (!isKotlinProject && (await fsExtra.pathExists(pomXmlPath))) ||
-    projectJsonData?.runtime === 'java' ||
-    (typeof projectJsonData?.kit_name === 'string' &&
-      (projectJsonData.kit_name as string).startsWith('springboot'));
-
-  if (isKotlinProject) {
+  if (primaryRuntime === 'kotlin') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4135,7 +4257,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isJavaProject) {
+  if (primaryRuntime === 'java') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4244,7 +4366,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isRustProject) {
+  if (primaryRuntime === 'rust') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4272,7 +4394,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isElixirProject) {
+  if (primaryRuntime === 'elixir') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4300,7 +4422,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isClojureProject) {
+  if (primaryRuntime === 'clojure') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4334,7 +4456,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isScalaProject) {
+  if (primaryRuntime === 'scala') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4360,7 +4482,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isDenoProject) {
+  if (primaryRuntime === 'deno') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4380,7 +4502,7 @@ async function checkProjectUnnormalized(
   }
 
   // Node.js project checks
-  if (isNodeProject) {
+  if (primaryRuntime === 'node' || primaryRuntime === 'bun') {
     let packageJsonData: Record<string, unknown> | null = null;
     try {
       packageJsonData = await fsExtra.readJson(packageJsonPath);
@@ -4541,35 +4663,116 @@ async function checkProjectUnnormalized(
   }
 
   // Python/FastAPI project checks
-  if (isPythonProject) {
-    const pythonDetection = await detectPythonFramework(projectPath, projectJsonData);
-    applyFrameworkMetadata(health, pythonDetection.framework, pythonDetection.confidence);
+  if (primaryRuntime === 'python') {
+    if (primaryBackendDetection.key === 'microsoft-agent-framework') {
+      applyBackendFrameworkDetection(health, primaryBackendDetection);
+    } else {
+      const pythonDetection = await detectPythonFramework(projectPath, projectJsonData);
+      applyFrameworkMetadata(health, pythonDetection.framework, pythonDetection.confidence);
+    }
 
     let frameworkImport = 'fastapi';
     if (health.framework === 'Django') frameworkImport = 'django';
     else if (health.framework === 'Flask') frameworkImport = 'flask';
     else if (health.framework === 'Python') frameworkImport = '';
+    else if (health.framework === 'Microsoft Agent Framework') {
+      frameworkImport = 'agent-framework-core';
+    }
 
-    const pyprojectText = await readFileIfExists(pyprojectTomlPath);
+    const agentRuntimeRoot =
+      health.framework === 'Microsoft Agent Framework' ? 'agents/primary' : undefined;
+    const pythonManifestPath = agentRuntimeRoot
+      ? path.join(projectPath, agentRuntimeRoot, 'pyproject.toml')
+      : pyprojectTomlPath;
+    const pyprojectText = await readFileIfExists(pythonManifestPath);
     const usesPoetry = /\[tool\.poetry\]/.test(pyprojectText);
-    const pythonEnvironmentManager: 'poetry' | 'uv' | 'venv' = usesPoetry
-      ? 'poetry'
-      : (await fsExtra.pathExists(path.join(projectPath, 'uv.lock')))
+    const projectSetupScript = await findPythonProjectSetupScript(projectPath);
+    const pythonEnvironmentManager: 'project-script' | 'poetry' | 'uv' | 'venv' = projectSetupScript
+      ? 'project-script'
+      : agentRuntimeRoot
         ? 'uv'
-        : 'venv';
+        : usesPoetry
+          ? 'poetry'
+          : (await fsExtra.pathExists(path.join(projectPath, 'uv.lock')))
+            ? 'uv'
+            : 'venv';
     const pythonDependencyFixCommand = buildPythonDependencyInstallFixCommand({
       projectPath,
       manager: pythonEnvironmentManager,
+      ...(projectSetupScript ? { projectScript: projectSetupScript } : {}),
+      ...(agentRuntimeRoot ? { uvProject: agentRuntimeRoot } : {}),
     });
     const environment = await resolvePythonProjectEnvironment(
       projectPath,
       frameworkImport,
-      usesPoetry
+      usesPoetry,
+      agentRuntimeRoot
     );
     health.venvActive = Boolean(environment.environmentPath);
     health.depsInstalled = environment.dependenciesInstalled;
     health.coreInstalled = Boolean(environment.coreVersion);
     health.coreVersion = environment.coreVersion;
+
+    const requiresPython = pyprojectText.match(/^\s*requires-python\s*=\s*["']([^"']+)["']/m)?.[1];
+    if (requiresPython) {
+      const detectedPythonVersion = await detectPythonInterpreterVersion(environment.interpreter);
+      const compatibility = detectedPythonVersion
+        ? evaluatePythonVersionConstraint(detectedPythonVersion, requiresPython)
+        : {
+            version: 'unknown',
+            specifier: requiresPython,
+            satisfied: null,
+            unsupportedSpecifiers: [] as string[],
+          };
+      health.pythonRequirement = {
+        specifier: requiresPython,
+        ...(detectedPythonVersion ? { detectedVersion: detectedPythonVersion } : {}),
+        satisfied: compatibility.satisfied,
+      };
+      if (compatibility.satisfied === false) {
+        const reason = `Python ${compatibility.version} does not satisfy requires-python ${requiresPython}`;
+        health.issues.push(reason);
+        pushProjectProbe(health, {
+          id: 'runtime-python-version',
+          label: 'Python project version compatibility',
+          status: 'fail',
+          severity: 'error',
+          scope: 'project-scoped',
+          reason,
+          recommendation: projectSetupScript
+            ? `Install a compatible Python interpreter, then run the repository-authored ${projectSetupScript} setup command.`
+            : 'Install a Python interpreter satisfying requires-python, then materialize the project environment.',
+          issueClass: 'runtime',
+          operationalImpact: 'release-risk',
+        });
+      } else if (compatibility.satisfied === null) {
+        pushProjectProbe(health, {
+          id: 'runtime-python-version',
+          label: 'Python project version compatibility',
+          status: 'warn',
+          severity: 'warn',
+          scope: 'project-scoped',
+          reason: detectedPythonVersion
+            ? `Python ${detectedPythonVersion} could not be evaluated against requires-python ${requiresPython}.`
+            : `No executable Python version could be verified against requires-python ${requiresPython}.`,
+          recommendation:
+            'Verify the selected project interpreter against the complete requires-python constraint before setup or release.',
+          issueClass: 'runtime',
+          operationalImpact: 'ci-risk',
+        });
+      } else {
+        pushProjectProbe(health, {
+          id: 'runtime-python-version',
+          label: 'Python project version compatibility',
+          status: 'pass',
+          severity: 'info',
+          scope: 'project-scoped',
+          reason: `Python ${compatibility.version} satisfies requires-python ${requiresPython}.`,
+          issueClass: 'runtime',
+          operationalImpact: 'none',
+        });
+      }
+    }
 
     if (!environment.environmentPath) {
       health.issues.push('Virtual environment not created');
@@ -4628,7 +4831,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isPhpProject) {
+  if (primaryRuntime === 'php') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4653,7 +4856,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isRubyProject) {
+  if (primaryRuntime === 'ruby') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4679,7 +4882,7 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  if (isDotnetProject) {
+  if (primaryRuntime === 'dotnet') {
     applyBackendFrameworkDetection(
       health,
       detectBackendFrameworkFromProject(projectPath, projectJsonData ?? null)
@@ -4689,14 +4892,25 @@ async function checkProjectUnnormalized(
 
     const objPath = path.join(projectPath, 'obj');
     const srcObjPath = path.join(projectPath, 'src', 'obj');
+    const agentObjPath = path.join(projectPath, 'agents', 'primary', 'obj');
+    const agentTestObjPath = path.join(projectPath, 'agents', 'primary', 'tests', 'obj');
     const packagesLockPath = path.join(projectPath, 'packages.lock.json');
     health.depsInstalled =
       (await fsExtra.pathExists(objPath)) ||
       (await fsExtra.pathExists(srcObjPath)) ||
+      (await fsExtra.pathExists(agentObjPath)) ||
+      (await fsExtra.pathExists(agentTestObjPath)) ||
       (await fsExtra.pathExists(packagesLockPath));
     if (!health.depsInstalled) {
       health.issues.push('.NET restore/build artifacts not found');
-      health.fixCommands?.push(buildProjectFixCommand(projectPath, 'dotnet restore'));
+      health.fixCommands?.push(
+        buildProjectFixCommand(
+          projectPath,
+          health.framework === 'Microsoft Agent Framework'
+            ? 'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file'
+            : 'dotnet restore'
+        )
+      );
     }
 
     const envPath = path.join(projectPath, '.env');
@@ -4728,9 +4942,27 @@ async function checkProjectUnnormalized(
     return health;
   }
 
-  // If runtime markers are absent, return basic health
+  // Absence of a recognized runtime marker is uncertainty, not proof that the
+  // repository is broken. Documentation, agent-plugin, infrastructure, policy,
+  // and other runtime-neutral repositories are valid adopted projects. Keep
+  // the framework/runtime explicitly unknown and surface an advisory so strict
+  // consumers cannot claim runtime coverage, while avoiding a false blocking
+  // legacy issue with no causal repair.
   applyFrameworkMetadata(health, 'Unknown', 'low');
-  health.issues.push('Unknown project type (no recognized runtime marker files)');
+  pushProjectProbe(health, {
+    id: 'runtime-classification',
+    label: 'Runtime classification',
+    status: 'warn',
+    severity: 'warn',
+    scope: 'project-scoped',
+    applicability: 'unknown',
+    issueClass: 'runtime',
+    operationalImpact: 'developer-friction',
+    reason:
+      'No recognized runtime marker files were found. Doctor is applying runtime-neutral checks without claiming runtime-specific coverage.',
+    recommendation:
+      'If this repository executes code, add or configure its canonical runtime/build manifest; otherwise retain it as an observed runtime-neutral project.',
+  });
 
   await performCommonChecks(projectPath, health);
   await appendEnterpriseSurfaceProbes(projectPath, health);
@@ -4816,6 +5048,14 @@ async function detectProjectArchetype(
   health: ProjectHealth
 ): Promise<ProjectArchetype> {
   if (health.projectKind === 'extension') return 'plugin';
+  if (health.projectKind === 'agent') return 'application';
+  if (health.projectKind === 'platform') {
+    const packageJson = await fsExtra
+      .readJson(path.join(projectPath, 'package.json'))
+      .catch(() => null);
+    return packageJson?.workspaces ? 'monorepo' : 'platform';
+  }
+  if (health.projectKind === 'library') return 'library';
   if (
     health.projectKind === 'frontend' ||
     health.projectKind === 'desktop' ||
@@ -4877,14 +5117,26 @@ function applyArchetypeApplicability(project: ProjectHealth): void {
     project.probes = probes.filter((_, index) => !duplicateConfigIndexes.includes(index));
   }
 
-  const nonDeployable = new Set<ProjectArchetype>(['library', 'sdk', 'platform', 'plugin']);
+  const nonDeployable = new Set<ProjectArchetype>([
+    'library',
+    'sdk',
+    'platform',
+    'plugin',
+    'monorepo',
+  ]);
   if (!project.projectArchetype || !nonDeployable.has(project.projectArchetype)) return;
 
   const suppressedCommands = new Set<string>();
   project.probes = (project.probes ?? []).map((probe) => {
+    const isFrontendApplicationOnly =
+      probe.id === 'frontend-framework-config' ||
+      probe.id === 'frontend-source-tree' ||
+      probe.id.startsWith('frontend-script-');
     const isDeployableOnly =
       probe.id === 'migration-surface' ||
       probe.id === 'runtime-health-surface' ||
+      probe.id === 'surface-kubernetes-readiness' ||
+      isFrontendApplicationOnly ||
       probe.id.endsWith('-boot-entrypoint') ||
       (probe.id === 'runtime-security-tooling' &&
         project.probes?.some((candidate) => candidate.id === 'surface-security-hygiene')) ||
@@ -4949,13 +5201,21 @@ async function checkProject(
     });
   }
   const canonicalKind = await inferWorkspaceProjectKind(projectPath);
-  if (canonicalKind === 'backend' || canonicalKind === 'service' || canonicalKind === 'worker') {
+  if (canonicalKind === 'agent') {
+    health.projectKind = 'agent';
+  } else if (
+    canonicalKind === 'backend' ||
+    canonicalKind === 'service' ||
+    canonicalKind === 'worker'
+  ) {
     health.projectKind = 'backend';
   } else if (
     canonicalKind === 'frontend' ||
     canonicalKind === 'desktop' ||
     canonicalKind === 'extension'
   ) {
+    health.projectKind = canonicalKind;
+  } else if (canonicalKind === 'platform' || canonicalKind === 'library') {
     health.projectKind = canonicalKind;
   } else if (!health.projectKind) {
     health.projectKind = 'generic';
@@ -4997,53 +5257,6 @@ async function listDirectories(basePath: string): Promise<string[]> {
       return [];
     }
   }
-}
-
-async function hasFileWithSuffixWithinDepth(
-  basePath: string,
-  suffix: string,
-  maxDepth: number
-): Promise<boolean> {
-  const queue: Array<{ dir: string; depth: number }> = [{ dir: basePath, depth: 0 }];
-  const ignoredDirs = new Set([
-    '.git',
-    '.workspai',
-    '.rapidkit',
-    'node_modules',
-    'bin',
-    'obj',
-    'target',
-  ]);
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || current.depth > maxDepth) {
-      continue;
-    }
-
-    let entries;
-    try {
-      entries = await fsExtra.readdir(current.dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.toLowerCase().endsWith(suffix.toLowerCase())) {
-        return true;
-      }
-
-      if (
-        entry.isDirectory() &&
-        !ignoredDirs.has(entry.name) &&
-        !isPythonVirtualEnvironmentDirectory(entry.name)
-      ) {
-        queue.push({ dir: path.join(current.dir, entry.name), depth: current.depth + 1 });
-      }
-    }
-  }
-
-  return false;
 }
 
 async function hasRapidkitProjectMarkers(projectPath: string): Promise<boolean> {
@@ -5590,6 +5803,7 @@ async function getWorkspaceHealth(
     pipx: systemHealth.pipx,
     go: systemHealth.go,
     rapidkitCore: systemHealth.rapidkitCore,
+    cliResolution: systemHealth.cliResolution,
     projects: [],
     policyProfile,
   };
@@ -5651,6 +5865,7 @@ async function getWorkspaceHealth(
       pipx: health.pipx,
       go: health.go,
       rapidkitCore: health.rapidkitCore,
+      cliResolution: health.cliResolution,
     },
     health.projects
   );
@@ -5659,6 +5874,7 @@ async function getWorkspaceHealth(
   health.pipx = contextualSystemHealth.pipx;
   health.go = contextualSystemHealth.go;
   health.rapidkitCore = contextualSystemHealth.rapidkitCore;
+  health.cliResolution = contextualSystemHealth.cliResolution;
 
   await Promise.all(
     health.projects.map(async (projectHealth) => {
@@ -5674,7 +5890,14 @@ async function getWorkspaceHealth(
   );
 
   // Calculate health score
-  const healthChecks = [health.python, health.poetry, health.pipx, health.go, health.rapidkitCore];
+  const healthChecks = [
+    health.python,
+    health.poetry,
+    health.pipx,
+    health.go,
+    health.rapidkitCore,
+    health.cliResolution,
+  ];
   health.healthScore = calculateHealthScore(healthChecks, health.projects);
   health.scoreBreakdown = buildScoreBreakdown(
     [
@@ -5683,6 +5906,7 @@ async function getWorkspaceHealth(
       { id: 'system-pipx', label: 'pipx', result: health.pipx },
       { id: 'system-go', label: 'Go', result: health.go },
       { id: 'system-rapidkit-core', label: 'RapidKit Core', result: health.rapidkitCore },
+      { id: 'system-cli-resolution', label: 'CLI resolution', result: health.cliResolution },
     ],
     health.projects,
     { includeWorkspaceAggregateRules: true }
@@ -5722,7 +5946,14 @@ async function getWorkspaceHealth(
       healthScore: health.healthScore,
       freshness: health.evidenceFreshness,
       evidencePath: health.evidencePath,
-      systemChecks: [health.python, health.poetry, health.pipx, health.go, health.rapidkitCore],
+      systemChecks: [
+        health.python,
+        health.poetry,
+        health.pipx,
+        health.go,
+        health.rapidkitCore,
+        health.cliResolution,
+      ],
     })
   );
 
@@ -5811,7 +6042,14 @@ async function writeProjectDoctorEvidence(
     const probeSummary = buildDoctorProbeSummary(envelope.project);
     const counts = buildDoctorCountSummary(
       [envelope.project],
-      [envelope.python, envelope.poetry, envelope.pipx, envelope.go, envelope.rapidkitCore]
+      [
+        envelope.python,
+        envelope.poetry,
+        envelope.pipx,
+        envelope.go,
+        envelope.rapidkitCore,
+        envelope.cliResolution,
+      ]
     );
     const payload = withGovernanceRunMetadata(
       {
@@ -5830,6 +6068,7 @@ async function writeProjectDoctorEvidence(
           pipx: envelope.pipx,
           go: envelope.go,
           rapidkitCore: envelope.rapidkitCore,
+          cliResolution: envelope.cliResolution,
         },
         project: envelope.project,
         driftDelta: envelope.driftDelta,
@@ -5917,6 +6156,17 @@ function buildDoctorReceiptPayload(input: {
         ...(finding.repair.capabilityId ? { capabilityId: finding.repair.capabilityId } : {}),
       }))
   );
+  const repairableBlockingFindings = input.projects.reduce(
+    (count, project) =>
+      count +
+      (project.diagnosis?.findings ?? []).filter(
+        (finding) =>
+          finding.status === 'blocking' &&
+          (finding.repair.disposition === 'automatic' ||
+            finding.repair.disposition === 'approval-required')
+      ).length,
+    0
+  );
   const verdict =
     input.healthScore?.verdict ??
     (counts.blockingCauses > 0
@@ -5931,7 +6181,7 @@ function buildDoctorReceiptPayload(input: {
           reason: 'Doctor evidence is stale or has unknown freshness.',
           commands: [`npx workspai doctor ${input.scopeKind} --fresh --json=summary`],
         }
-      : counts.blockingCauses > 0 && counts.repairableFindings > 0
+      : counts.blockingCauses > 0 && repairableBlockingFindings > 0
         ? {
             action: 'repair',
             reason: 'At least one blocking cause has a typed repair capability.',
@@ -6102,6 +6352,7 @@ async function getProjectHealthEnvelope(
       contextualSystemHealth.pipx,
       contextualSystemHealth.go,
       contextualSystemHealth.rapidkitCore,
+      contextualSystemHealth.cliResolution,
     ],
     [projectHealth]
   );
@@ -6115,6 +6366,7 @@ async function getProjectHealthEnvelope(
     pipx: contextualSystemHealth.pipx,
     go: contextualSystemHealth.go,
     rapidkitCore: contextualSystemHealth.rapidkitCore,
+    cliResolution: contextualSystemHealth.cliResolution,
     project: projectHealth,
     healthScore,
     policyProfile,
@@ -6127,6 +6379,7 @@ async function getProjectHealthEnvelope(
       { id: 'system-pipx', label: 'pipx', result: envelope.pipx },
       { id: 'system-go', label: 'Go', result: envelope.go },
       { id: 'system-rapidkit-core', label: 'RapidKit Core', result: envelope.rapidkitCore },
+      { id: 'system-cli-resolution', label: 'CLI resolution', result: envelope.cliResolution },
     ],
     [envelope.project]
   );
@@ -6172,6 +6425,7 @@ async function getProjectHealthEnvelope(
         envelope.pipx,
         envelope.go,
         envelope.rapidkitCore,
+        envelope.cliResolution,
       ],
     }),
     workspacePath && path.resolve(workspacePath) !== path.resolve(projectPath) ? [projectPath] : []
@@ -6701,8 +6955,27 @@ function parseDependencySyncFix(
       args: ['install', '--no-root'],
     },
     { pattern: 'poetry\\s+lock', command: 'poetry', args: ['lock'] },
+    {
+      pattern: 'uv\\s+lock\\s+--project\\s+agents/primary',
+      command: 'uv',
+      args: ['lock', '--project', 'agents/primary'],
+    },
+    {
+      pattern: 'uv\\s+sync\\s+--project\\s+agents/primary',
+      command: 'uv',
+      args: ['sync', '--project', 'agents/primary'],
+    },
     { pattern: 'uv\\s+lock', command: 'uv', args: ['lock'] },
     { pattern: 'uv\\s+sync', command: 'uv', args: ['sync'] },
+    { pattern: '(?:\\.\\/)?script\\/setup', command: 'script/setup', args: [] },
+    { pattern: '(?:\\.\\/)?scripts\\/setup', command: 'scripts/setup', args: [] },
+    { pattern: '(?:\\.\\/)?bin\\/setup', command: 'bin/setup', args: [] },
+    { pattern: 'script[\\\\/]setup\\.cmd', command: 'script/setup.cmd', args: [] },
+    { pattern: 'scripts[\\\\/]setup\\.cmd', command: 'scripts/setup.cmd', args: [] },
+    { pattern: 'script[\\\\/]setup\\.ps1', command: 'script/setup.ps1', args: [] },
+    { pattern: 'scripts[\\\\/]setup\\.ps1', command: 'scripts/setup.ps1', args: [] },
+    { pattern: 'script\\\\setup\\.cmd', command: 'script\\setup.cmd', args: [] },
+    { pattern: 'scripts\\\\setup\\.cmd', command: 'scripts\\setup.cmd', args: [] },
     {
       pattern: 'python3\\s+-m\\s+venv\\s+\\.venv',
       command: 'python3',
@@ -6725,6 +6998,12 @@ function parseDependencySyncFix(
     },
     { pattern: 'composer\\s+install', command: 'composer', args: ['install'] },
     { pattern: 'bundle\\s+install', command: 'bundle', args: ['install'] },
+    {
+      pattern:
+        'dotnet\\s+restore\\s+agents/primary/tests/Primary\\.Tests\\.csproj\\s+--use-lock-file',
+      command: 'dotnet',
+      args: ['restore', 'agents/primary/tests/Primary.Tests.csproj', '--use-lock-file'],
+    },
     { pattern: 'dotnet\\s+restore', command: 'dotnet', args: ['restore'] },
     { pattern: 'cargo\\s+fetch', command: 'cargo', args: ['fetch'] },
     { pattern: 'mix\\s+deps\\.get', command: 'mix', args: ['deps.get'] },
@@ -6824,7 +7103,10 @@ function parseDependencySyncFix(
   return null;
 }
 
-function dependencyMaterializationMetadata(executableValue: string): {
+function dependencyMaterializationMetadata(
+  executableValue: string,
+  args: string[] = []
+): {
   ecosystem: string;
   files: string[];
 } {
@@ -6832,6 +7114,22 @@ function dependencyMaterializationMetadata(executableValue: string): {
     .basename(executableValue.replaceAll('\\', '/'))
     .toLowerCase()
     .replace(/\.(?:cmd|bat)$/i, '');
+  if (
+    /(?:^|\/)(?:script\/setup|scripts\/setup|bin\/setup)(?:\.cmd|\.ps1)?$/iu.test(
+      executableValue.replaceAll('\\', '/')
+    )
+  ) {
+    return {
+      ecosystem: 'python',
+      files: [
+        'pyproject.toml',
+        'poetry.lock',
+        'uv.lock',
+        'requirements.txt',
+        executableValue.replaceAll('\\', '/'),
+      ],
+    };
+  }
   if (['npm', 'pnpm', 'yarn', 'bun'].includes(executable)) {
     return {
       ecosystem: executable,
@@ -6847,6 +7145,18 @@ function dependencyMaterializationMetadata(executableValue: string): {
     };
   }
   if (['poetry', 'uv', 'pip', 'pip3', 'python', 'python3', 'py'].includes(executable)) {
+    const projectFlag = args.indexOf('--project');
+    if (executable === 'uv' && projectFlag >= 0 && args[projectFlag + 1]) {
+      const projectRoot = args[projectFlag + 1].replaceAll('\\', '/').replace(/\/$/u, '');
+      return {
+        ecosystem: 'uv',
+        files: [
+          `${projectRoot}/pyproject.toml`,
+          `${projectRoot}/uv.lock`,
+          `${projectRoot}/requirements.txt`,
+        ],
+      };
+    }
     return {
       ecosystem: executable === 'uv' ? 'uv' : executable === 'poetry' ? 'poetry' : 'python',
       files: ['pyproject.toml', 'poetry.lock', 'uv.lock', 'requirements.txt'],
@@ -6858,8 +7168,20 @@ function dependencyMaterializationMetadata(executableValue: string): {
     return { ecosystem: 'composer', files: ['composer.json', 'composer.lock'] };
   if (executable === 'bundle') return { ecosystem: 'bundler', files: ['Gemfile', 'Gemfile.lock'] };
   if (executable === 'mix') return { ecosystem: 'mix', files: ['mix.exs', 'mix.lock'] };
-  if (executable === 'dotnet')
-    return { ecosystem: 'dotnet', files: ['Directory.Packages.props', 'packages.lock.json'] };
+  if (executable === 'dotnet') {
+    const projectFile = args.find((arg) => /\.(?:cs|fs|vb)proj$/iu.test(arg));
+    const projectRoot = projectFile ? path.posix.dirname(projectFile.replaceAll('\\', '/')) : null;
+    return {
+      ecosystem: 'dotnet',
+      files: projectRoot
+        ? [
+            projectFile as string,
+            `${projectRoot}/Directory.Packages.props`,
+            `${projectRoot}/packages.lock.json`,
+          ]
+        : ['Directory.Packages.props', 'packages.lock.json'],
+    };
+  }
   if (executable === 'clojure' || executable === 'lein')
     return { ecosystem: 'clojure', files: ['deps.edn', 'project.clj'] };
   if (executable === 'sbt') return { ecosystem: 'sbt', files: ['build.sbt'] };
@@ -6891,7 +7213,7 @@ function attachDependencyMaterializationCapabilities(health: ProjectHealth): voi
     // failure. The ProjectHealth state and the typed diagnosis must describe
     // the same observable runtime state.
     if (health.depsInstalled && !materializationIssue) continue;
-    const metadata = dependencyMaterializationMetadata(parsed.command);
+    const metadata = dependencyMaterializationMetadata(parsed.command, parsed.args);
     const capability = buildDependencyMaterializationRepairCapability({
       issueId: 'runtime-dependency-materialization',
       title: `Install ${metadata.ecosystem} dependencies`,
@@ -8014,6 +8336,7 @@ async function buildRemediationPlan(
   const baseSteps = dedupedSteps;
 
   let goToolchainAvailable: boolean | null = null;
+  const executableAvailability = new Map<string, boolean>();
   const steps: PlannedFixStep[] = [];
   let executableSteps = 0;
   let safe = 0;
@@ -8024,8 +8347,22 @@ async function buildRemediationPlan(
     const { project, step, command } = item;
     let executableInCurrentEnvironment = step.executable;
     let blockedReason: string | undefined;
+    const capability = item.capability ?? findRepairCapabilityForCommand(project, command);
 
-    if (step.kind === 'go-mod-tidy') {
+    if (executableInCurrentEnvironment && capability?.invocation) {
+      const cwd = capability.invocation.cwd;
+      const executable = capability.invocation.executable;
+      const key = `${cwd}\0${executable}`;
+      let available = executableAvailability.get(key);
+      if (available === undefined) {
+        available = await executableAvailable({ executable, cwd });
+        executableAvailability.set(key, available);
+      }
+      if (!available) {
+        executableInCurrentEnvironment = false;
+        blockedReason = `Required executable is unavailable: ${executable}`;
+      }
+    } else if (step.kind === 'go-mod-tidy') {
       if (goToolchainAvailable === null) {
         goToolchainAvailable = await canRunGoModTidy();
       }
@@ -8035,7 +8372,6 @@ async function buildRemediationPlan(
       }
     }
 
-    const capability = item.capability ?? findRepairCapabilityForCommand(project, command);
     const probe = item.probe ?? findProbeForRepairCapability(project, capability);
     const diagnosisFinding = probe
       ? project.diagnosis?.findings.find((finding) => finding.probeId === probe.id)
@@ -9048,6 +9384,28 @@ export async function runDoctor(
     profile?: string;
   } = {}
 ): Promise<number> {
+  const doctorBlock = (
+    blockId: 'doctor.observe' | 'doctor.diagnose' | 'doctor.plan' | 'doctor.verify',
+    status: 'running' | 'succeeded' | 'warned' | 'failed',
+    message: string
+  ): void => {
+    emitActivityBlock({ blockId, status, message, component: 'doctor' });
+  };
+  const completeObservation = (
+    scope: string,
+    score?: { errors?: number; warnings?: number }
+  ): void => {
+    doctorBlock('doctor.observe', 'succeeded', `${scope} evidence collected`);
+    doctorBlock('doctor.diagnose', 'running', `Diagnosing ${scope.toLowerCase()} health`);
+    const hasFindings = Number(score?.errors ?? 0) > 0 || Number(score?.warnings ?? 0) > 0;
+    doctorBlock(
+      'doctor.diagnose',
+      hasFindings ? 'warned' : 'succeeded',
+      hasFindings ? `${scope} diagnosis completed with findings` : `${scope} diagnosis completed`
+    );
+  };
+  doctorBlock('doctor.observe', 'running', 'Collecting health evidence');
+
   const policyProfile = resolveDoctorPolicyProfile({
     profile: options.profile,
     strict: options.strict,
@@ -9099,6 +9457,7 @@ export async function runDoctor(
       policyProfile,
       options.fresh === true
     );
+    completeObservation('Workspace', health.healthScore);
 
     if (!options.json) {
       if (health.projectScanCached) {
@@ -9120,6 +9479,9 @@ export async function runDoctor(
     // JSON output mode
     if (options.json) {
       let fixResult: DoctorFixExecutionResult | undefined;
+      if (options.plan || options.fix || options.apply) {
+        doctorBlock('doctor.plan', 'running', 'Building governed remediation plan');
+      }
       const remediationPlan =
         options.plan || options.fix || options.apply
           ? await buildRemediationPlan(health.projects, policyProfile.name)
@@ -9127,6 +9489,9 @@ export async function runDoctor(
       const remediationPlanPath = remediationPlan
         ? await writeDoctorRemediationPlanArtifact(workspacePath, remediationPlan)
         : undefined;
+      if (options.plan || options.fix || options.apply) {
+        doctorBlock('doctor.plan', 'succeeded', 'Governed remediation plan ready');
+      }
       let fixResultPath: string | undefined;
 
       if ((options.fix || options.apply) && !options.plan) {
@@ -9141,7 +9506,13 @@ export async function runDoctor(
             remainingBlockers: [],
             verifyRecommended: DOCTOR_FIX_VERIFY_RECOMMENDED,
           });
+        doctorBlock('doctor.verify', 'running', 'Verifying workspace after remediation');
         health = await getWorkspaceHealth(workspacePath, false, policyProfile, true);
+        doctorBlock(
+          'doctor.verify',
+          'succeeded',
+          'Post-remediation workspace verification completed'
+        );
         fixResult = {
           ...fixResult,
           remainingBlockers: collectDoctorRemainingBlockersFromHealth(health.projects),
@@ -9165,6 +9536,7 @@ export async function runDoctor(
         health.pipx,
         health.go,
         health.rapidkitCore,
+        health.cliResolution,
       ]);
       const output = {
         contract: getDoctorContractMetadata(),
@@ -9185,7 +9557,9 @@ export async function runDoctor(
           python: health.python,
           poetry: health.poetry,
           pipx: health.pipx,
+          go: health.go,
           rapidkitCore: health.rapidkitCore,
+          cliResolution: health.cliResolution,
           versions: {
             core: health.coreVersion,
             npm: health.npmVersion,
@@ -9276,6 +9650,7 @@ export async function runDoctor(
       health.pipx,
       health.go,
       health.rapidkitCore,
+      health.cliResolution,
     ]);
     const headlineVerdict = health.healthScore?.verdict ?? 'passed';
     const verdictIcon =
@@ -9314,6 +9689,7 @@ export async function runDoctor(
       [health.pipx, 'pipx'],
       [health.go, 'Go'],
       [health.rapidkitCore, 'RapidKit Core'],
+      [health.cliResolution, 'CLI resolution'],
     ];
     const visibleWorkspaceSystemTools = options.verbose
       ? workspaceSystemTools
@@ -9383,6 +9759,7 @@ export async function runDoctor(
 
       // Plan or execute fixes when requested
       if (options.plan) {
+        doctorBlock('doctor.plan', 'running', 'Building governed remediation plan');
         await executeFixCommands(health.projects, false, {
           planOnly: true,
           json: options.json,
@@ -9390,20 +9767,29 @@ export async function runDoctor(
           artifactRoot: workspacePath,
           historyScope: 'workspace',
         });
+        doctorBlock('doctor.plan', 'succeeded', 'Governed remediation plan ready');
       } else if (options.fix || options.apply) {
+        doctorBlock('doctor.plan', 'running', 'Planning governed remediation');
         await executeFixCommands(health.projects, true, {
           skipConfirmation: options.apply === true,
           policyProfile: policyProfile.name,
           artifactRoot: workspacePath,
           historyScope: 'workspace',
         });
+        doctorBlock('doctor.plan', 'succeeded', 'Governed remediation executed');
 
         if (!options.json) {
+          doctorBlock('doctor.verify', 'running', 'Verifying workspace after remediation');
           const refreshedHealth = await getWorkspaceHealth(
             workspacePath,
             false,
             policyProfile,
             true
+          );
+          doctorBlock(
+            'doctor.verify',
+            'succeeded',
+            'Post-remediation workspace verification completed'
           );
           const refreshedTotalIssues = refreshedHealth.projects
             .map(buildDoctorProbeSummary)
@@ -9535,12 +9921,16 @@ export async function runDoctor(
       policyProfile,
       options.fresh === true
     );
+    completeObservation('Project', envelope.healthScore);
     const reportedWorkspacePath = envelope.workspacePath
       ? normalizeReportedPath(envelope.workspacePath)
       : null;
 
     if (options.json) {
       let fixResult: DoctorFixExecutionResult | undefined;
+      if (options.plan || options.fix || options.apply) {
+        doctorBlock('doctor.plan', 'running', 'Building governed remediation plan');
+      }
       const remediationPlan =
         options.plan || options.fix || options.apply
           ? await buildRemediationPlan([envelope.project], policyProfile.name)
@@ -9554,6 +9944,9 @@ export async function runDoctor(
             projectArtifactMirrors
           )
         : undefined;
+      if (options.plan || options.fix || options.apply) {
+        doctorBlock('doctor.plan', 'succeeded', 'Governed remediation plan ready');
+      }
       let fixResultPath: string | undefined;
 
       if ((options.fix || options.apply) && !options.plan) {
@@ -9568,7 +9961,13 @@ export async function runDoctor(
             remainingBlockers: [],
             verifyRecommended: DOCTOR_FIX_VERIFY_RECOMMENDED,
           });
+        doctorBlock('doctor.verify', 'running', 'Verifying project after remediation');
         envelope = await getProjectHealthEnvelope(projectPath, policyProfile, true);
+        doctorBlock(
+          'doctor.verify',
+          'succeeded',
+          'Post-remediation project verification completed'
+        );
         fixResult = {
           ...fixResult,
           remainingBlockers: collectDoctorRemainingBlockersFromHealth([envelope.project]),
@@ -9585,7 +9984,14 @@ export async function runDoctor(
       const probeSummary = buildDoctorProbeSummary(envelope.project);
       const counts = buildDoctorCountSummary(
         [envelope.project],
-        [envelope.python, envelope.poetry, envelope.pipx, envelope.go, envelope.rapidkitCore]
+        [
+          envelope.python,
+          envelope.poetry,
+          envelope.pipx,
+          envelope.go,
+          envelope.rapidkitCore,
+          envelope.cliResolution,
+        ]
       );
       const output = {
         contract: getDoctorContractMetadata(),
@@ -9593,7 +9999,7 @@ export async function runDoctor(
         scope: 'project',
         workspace: reportedWorkspacePath
           ? {
-              name: path.basename(reportedWorkspacePath),
+              name: await resolveWorkspaceRegistrationName(reportedWorkspacePath),
               path: reportedWorkspacePath,
             }
           : null,
@@ -9611,6 +10017,7 @@ export async function runDoctor(
           pipx: envelope.pipx,
           go: envelope.go,
           rapidkitCore: envelope.rapidkitCore,
+          cliResolution: envelope.cliResolution,
         },
         summary: {
           counts,
@@ -9718,6 +10125,7 @@ export async function runDoctor(
       [envelope.pipx, 'pipx'],
       [envelope.go, 'Go'],
       [envelope.rapidkitCore, 'RapidKit Core'],
+      [envelope.cliResolution, 'CLI resolution'],
     ];
     const visibleProjectSystemTools = options.verbose
       ? projectSystemTools
@@ -9761,6 +10169,7 @@ export async function runDoctor(
           path.resolve(envelope.workspacePath) !== path.resolve(projectPath)
             ? [projectPath]
             : [];
+        doctorBlock('doctor.plan', 'running', 'Building governed remediation plan');
         await executeFixCommands([envelope.project], false, {
           planOnly: true,
           json: options.json,
@@ -9769,6 +10178,7 @@ export async function runDoctor(
           artifactMirrorRoots: projectArtifactMirrors,
           historyScope: 'project',
         });
+        doctorBlock('doctor.plan', 'succeeded', 'Governed remediation plan ready');
       } else if (options.fix || options.apply) {
         const projectArtifactRoot = envelope.workspacePath ?? projectPath;
         const projectArtifactMirrors =
@@ -9776,6 +10186,7 @@ export async function runDoctor(
           path.resolve(envelope.workspacePath) !== path.resolve(projectPath)
             ? [projectPath]
             : [];
+        doctorBlock('doctor.plan', 'running', 'Planning governed remediation');
         await executeFixCommands([envelope.project], true, {
           skipConfirmation: options.apply === true,
           policyProfile: policyProfile.name,
@@ -9783,6 +10194,13 @@ export async function runDoctor(
           artifactMirrorRoots: projectArtifactMirrors,
           historyScope: 'project',
         });
+        doctorBlock('doctor.plan', 'succeeded', 'Governed remediation executed');
+        doctorBlock('doctor.verify', 'running', 'Verifying project after remediation');
+        doctorBlock(
+          'doctor.verify',
+          'succeeded',
+          'Post-remediation project verification completed'
+        );
       } else if (issueCount > 0) {
         console.log(chalk.bold.cyan('\nNext action:'));
         console.log(chalk.white('   workspai doctor project --plan'));
@@ -9801,8 +10219,10 @@ export async function runDoctor(
     const pipx = systemChecks.pipx;
     const go = systemChecks.go;
     const core = systemChecks.rapidkitCore;
-    const checks = [python, poetry, pipx, go, core];
+    const cliResolution = systemChecks.cliResolution;
+    const checks = [python, poetry, pipx, go, core, cliResolution];
     const healthScore = calculateHealthScore(checks, []);
+    completeObservation('System', healthScore);
     const systemErrors = [python, core].filter((c) => c.status === 'error').length;
 
     if (options.json) {
@@ -9821,6 +10241,7 @@ export async function runDoctor(
           pipx,
           go,
           rapidkitCore: core,
+          cliResolution,
         },
         summary: {
           totalChecks: checks.length,
@@ -9840,9 +10261,14 @@ export async function runDoctor(
                 verdict: healthScore.verdict,
                 counts,
                 system: Object.fromEntries(
-                  Object.entries({ python, poetry, pipx, go, rapidkitCore: core }).map(
-                    ([id, check]) => [id, { status: check.status, message: check.message }]
-                  )
+                  Object.entries({
+                    python,
+                    poetry,
+                    pipx,
+                    go,
+                    rapidkitCore: core,
+                    cliResolution,
+                  }).map(([id, check]) => [id, { status: check.status, message: check.message }])
                 ),
                 nextActions: output.nextActions,
               }
@@ -9859,6 +10285,9 @@ export async function runDoctor(
     renderHealthCheck(pipx, 'pipx');
     renderHealthCheck(go, 'Go');
     renderHealthCheck(core, 'RapidKit Core');
+    if (cliResolution.applicability !== 'not-applicable') {
+      renderHealthCheck(cliResolution, 'CLI resolution');
+    }
 
     const hasErrors = [python, core].some((c) => c.status === 'error');
 

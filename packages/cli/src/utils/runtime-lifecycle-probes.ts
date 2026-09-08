@@ -10,6 +10,8 @@ import {
   resolveNodeLifecycleScript,
   type NodeLifecycleCommand,
 } from './node-lifecycle-scripts.js';
+import { resolveGoRunTarget } from './go-lifecycle.js';
+import { hasMakefileTarget } from './lifecycle-makefile.js';
 
 export type LifecycleProbeCommand = Exclude<RuntimeCommand, 'help'>;
 
@@ -28,13 +30,6 @@ function readTextIfExists(target: string): string {
   } catch {
     return '';
   }
-}
-
-function hasMakefileTarget(projectRoot: string, target: string): boolean {
-  const makefile = readTextIfExists(path.join(projectRoot, 'Makefile'));
-  if (!makefile) return false;
-  const pattern = new RegExp(`^${target}\\s*:`);
-  return pattern.test(makefile);
 }
 
 function hasNestedCsproj(projectRoot: string): boolean {
@@ -70,17 +65,29 @@ function probePython(projectRoot: string, command: LifecycleProbeCommand): boole
     pathExists(path.join(projectRoot, 'requirements.txt')) ||
     pathExists(path.join(projectRoot, 'requirements.in'));
   const hasManagePy = pathExists(path.join(projectRoot, 'manage.py'));
+  const hasCoreProjectCli =
+    pathExists(path.join(projectRoot, '.workspai', 'cli.py')) ||
+    pathExists(path.join(projectRoot, '.rapidkit', 'cli.py'));
+  const pyproject = readTextIfExists(path.join(projectRoot, 'pyproject.toml'));
+  const hasTests =
+    pathExists(path.join(projectRoot, 'tests')) ||
+    pathExists(path.join(projectRoot, 'test')) ||
+    /\[tool\.pytest/i.test(pyproject);
+  const hasBuildSystem = /^\s*\[build-system\]\s*$/m.test(pyproject);
+  const hasStartScript =
+    /^\s*\[(?:project\.scripts|tool\.poetry\.scripts)\]\s*$/m.test(pyproject) &&
+    /^\s*(?:start|serve)\s*=/m.test(pyproject);
 
   switch (command) {
     case 'init':
       return hasPyProject || hasRequirements;
     case 'dev':
     case 'start':
-      return hasPyProject || hasManagePy || hasRequirements;
+      return hasManagePy || hasStartScript || hasCoreProjectCli;
     case 'test':
-      return hasPyProject || hasRequirements || pathExists(path.join(projectRoot, 'tests'));
+      return hasTests || hasCoreProjectCli;
     case 'build':
-      return hasPyProject || hasRequirements;
+      return hasBuildSystem || hasCoreProjectCli;
     case 'lint':
     case 'format':
       return (
@@ -103,17 +110,13 @@ function probeGo(projectRoot: string, command: LifecycleProbeCommand): boolean {
     case 'init':
       return true;
     case 'dev':
-      return hasMakefileTarget(projectRoot, 'run') || pathExists(path.join(projectRoot, 'main.go'));
+      return hasMakefileTarget(projectRoot, 'run') || resolveGoRunTarget(projectRoot) !== null;
     case 'test':
       return true;
     case 'build':
       return true;
     case 'start':
-      return (
-        hasMakefileTarget(projectRoot, 'run') ||
-        pathExists(path.join(projectRoot, 'main.go')) ||
-        pathExists(path.join(projectRoot, 'cmd'))
-      );
+      return hasMakefileTarget(projectRoot, 'run') || resolveGoRunTarget(projectRoot) !== null;
     case 'lint':
       return (
         pathExists(path.join(projectRoot, '.golangci.yml')) ||
@@ -121,38 +124,58 @@ function probeGo(projectRoot: string, command: LifecycleProbeCommand): boolean {
         hasMakefileTarget(projectRoot, 'lint')
       );
     case 'format':
-      return hasMakefileTarget(projectRoot, 'fmt') || hasMakefileTarget(projectRoot, 'format');
+      return true;
     default:
       return false;
   }
 }
 
-function probeJava(projectRoot: string, command: LifecycleProbeCommand): boolean {
+function probeJava(
+  projectRoot: string,
+  command: LifecycleProbeCommand,
+  framework?: string
+): boolean {
   const hasMaven = pathExists(path.join(projectRoot, 'pom.xml'));
   const hasGradle =
     pathExists(path.join(projectRoot, 'build.gradle')) ||
     pathExists(path.join(projectRoot, 'build.gradle.kts'));
   if (!hasMaven && !hasGradle) return false;
+  const pom = readTextIfExists(path.join(projectRoot, 'pom.xml'));
+  const gradle = [
+    readTextIfExists(path.join(projectRoot, 'build.gradle')),
+    readTextIfExists(path.join(projectRoot, 'build.gradle.kts')),
+  ].join('\n');
+  const hasSpringBootRunner =
+    framework === 'springboot' ||
+    pom.includes('spring-boot-maven-plugin') ||
+    /org\.springframework\.boot|id\s*\(?\s*['"]org\.springframework\.boot['"]/u.test(gradle);
+  const hasRunnableJar =
+    hasSpringBootRunner ||
+    /<mainClass>\s*[^<]+\s*<\/mainClass>/iu.test(pom) ||
+    /\bmainClass(?:Name)?\s*(?:=|\.)/u.test(gradle);
 
   switch (command) {
     case 'init':
     case 'test':
     case 'build':
-    case 'dev':
-    case 'start':
       return true;
+    case 'dev':
+      return hasSpringBootRunner;
+    case 'start':
+      return hasRunnableJar;
     case 'lint':
       return (
         hasMakefileTarget(projectRoot, 'lint') ||
-        readTextIfExists(path.join(projectRoot, 'pom.xml')).includes('checkstyle') ||
-        readTextIfExists(path.join(projectRoot, 'build.gradle')).includes('checkstyle') ||
-        readTextIfExists(path.join(projectRoot, 'build.gradle.kts')).includes('checkstyle')
+        pom.includes('checkstyle') ||
+        pom.includes('spotless-maven-plugin') ||
+        gradle.includes('checkstyle') ||
+        gradle.includes('spotless')
       );
     case 'format':
       return (
         hasMakefileTarget(projectRoot, 'format') ||
-        readTextIfExists(path.join(projectRoot, 'build.gradle')).includes('spotless') ||
-        readTextIfExists(path.join(projectRoot, 'build.gradle.kts')).includes('spotless')
+        pom.includes('spotless-maven-plugin') ||
+        gradle.includes('spotless')
       );
     default:
       return false;
@@ -163,13 +186,43 @@ function probeDotnet(projectRoot: string, command: LifecycleProbeCommand): boole
   const hasProjectFile = hasNestedCsproj(projectRoot);
   if (!hasProjectFile) return false;
 
+  const projectFiles: string[] = [];
+  const visit = (directory: string): void => {
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (['.git', '.workspai', 'bin', 'obj', 'node_modules'].includes(entry.name)) continue;
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (/\.(?:cs|fs|vb)proj$/i.test(entry.name)) projectFiles.push(target);
+    }
+  };
+  visit(projectRoot);
+  const contents = projectFiles.map(readTextIfExists);
+  const hasTestProject = contents.some(
+    (value) =>
+      /<IsTestProject>\s*true\s*<\/IsTestProject>/i.test(value) ||
+      /Microsoft\.NET\.Test\.Sdk/i.test(value)
+  );
+  const hasRunnableProject = contents.some(
+    (value) =>
+      /Microsoft\.NET\.Sdk\.Web/i.test(value) ||
+      /<OutputType>\s*(?:Exe|WinExe)\s*<\/OutputType>/i.test(value)
+  );
+
   switch (command) {
     case 'init':
-    case 'dev':
-    case 'test':
     case 'build':
-    case 'start':
       return true;
+    case 'dev':
+    case 'start':
+      return hasRunnableProject;
+    case 'test':
+      return hasTestProject;
     case 'lint':
       return (
         hasMakefileTarget(projectRoot, 'lint') ||
@@ -227,6 +280,7 @@ function probeManifestRuntime(
     case 'bun':
       if (
         pathExists(path.join(projectRoot, 'bunfig.toml')) ||
+        pathExists(path.join(projectRoot, '.bunfig.toml')) ||
         pathExists(path.join(projectRoot, 'bun.lock'))
       ) {
         return (
@@ -284,11 +338,23 @@ function probePhp(projectRoot: string, command: LifecycleProbeCommand): boolean 
 }
 
 function probeRust(projectRoot: string, command: LifecycleProbeCommand): boolean {
-  if (!pathExists(path.join(projectRoot, 'Cargo.toml'))) return false;
+  const manifestPath = path.join(projectRoot, 'Cargo.toml');
+  if (!pathExists(manifestPath)) return false;
+
+  if (command === 'dev' || command === 'start') {
+    const manifest = readTextIfExists(manifestPath);
+    const hasPackage = /^\s*\[package\]\s*$/m.test(manifest);
+    if (!hasPackage) return false;
+
+    const hasExplicitBinary = /^\s*\[\[bin\]\]\s*$/m.test(manifest);
+    const autoBinariesDisabled = /^\s*autobins\s*=\s*false\s*(?:#.*)?$/m.test(manifest);
+    const hasDefaultBinary =
+      !autoBinariesDisabled && pathExists(path.join(projectRoot, 'src', 'main.rs'));
+    return hasExplicitBinary || hasDefaultBinary;
+  }
+
   return (
     command === 'init' ||
-    command === 'dev' ||
-    command === 'start' ||
     command === 'build' ||
     command === 'test' ||
     command === 'lint' ||
@@ -313,12 +379,14 @@ export function isRuntimeLifecycleCommandAvailable(
   switch (runtime) {
     case 'node':
       return probeNode(projectRoot, command, framework);
+    case 'bun':
+      return probeNode(projectRoot, command, framework);
     case 'python':
       return probePython(projectRoot, command);
     case 'go':
       return probeGo(projectRoot, command);
     case 'java':
-      return probeJava(projectRoot, command);
+      return probeJava(projectRoot, command, framework);
     case 'dotnet':
       return probeDotnet(projectRoot, command);
     case 'rust':

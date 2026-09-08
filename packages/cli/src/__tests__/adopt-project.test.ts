@@ -58,6 +58,22 @@ afterEach(async () => {
 });
 
 describe('adopt-project', () => {
+  it('retains the canonical marker name when the workspace directory has a different name', async () => {
+    const workspacePath = await makeWorkspace();
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'canonical-workspace',
+    });
+    const projectPath = await makeTempDir('rapidkit-adopt-canonical-workspace-');
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), { name: 'service' });
+
+    const adopted = await adoptProjectIntoWorkspace({ workspacePath, source: projectPath });
+
+    await expect(fsExtra.readJson(adopted.adoptJsonPath)).resolves.toMatchObject({
+      workspace: { name: 'canonical-workspace' },
+    });
+  });
+
   it('adopts an existing local project without moving source files', async () => {
     const workspacePath = await makeWorkspace();
     const projectPath = await makeTempDir('rapidkit-adopt-source-');
@@ -185,6 +201,42 @@ describe('adopt-project', () => {
     });
   });
 
+  it('adopts a native component workspace as a C++ platform despite Python tooling', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = await makeTempDir('rapidkit-adopt-native-workspace-');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[project]\nname = "repository-tooling"\n'
+    );
+    for (const component of ['compiler', 'linker', 'runtime']) {
+      await fsExtra.outputFile(
+        path.join(projectPath, component, 'CMakeLists.txt'),
+        `project(${component} CXX)\n`
+      );
+      await fsExtra.outputFile(
+        path.join(projectPath, component, 'lib', `${component}.cpp`),
+        `int ${component}_entry() { return 0; }\n`
+      );
+    }
+
+    const adopted = await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      name: 'native-platform',
+    });
+
+    expect(adopted).toMatchObject({
+      runtime: 'cpp',
+      framework: 'cpp',
+      confidence: 'high',
+    });
+    expect(adopted.runtimeCandidates).toEqual(['cpp', 'python']);
+    expect(await fsExtra.readJson(adopted.projectJsonPath)).toMatchObject({
+      kind: 'platform',
+      category: 'platform',
+    });
+  });
+
   it('previews adoption without writing metadata in dry-run mode', async () => {
     const workspacePath = await makeWorkspace();
     const projectPath = await makeTempDir('rapidkit-adopt-dry-source-');
@@ -259,6 +311,43 @@ describe('adopt-project', () => {
       profile: 'node-only',
       recommended_profile: 'polyglot',
       recommended_command: 'npx workspai bootstrap --profile polyglot',
+    });
+  });
+
+  it('keeps detected application runtime ahead of repository-level infrastructure markers', async () => {
+    const workspacePath = await makeWorkspace();
+    const projectPath = await makeTempDir('rapidkit-adopt-composite-fastapi-source-');
+    await fsExtra.writeFile(path.join(projectPath, 'requirements.txt'), 'fastapi\nuvicorn\n');
+    await fsExtra.writeFile(path.join(projectPath, 'Dockerfile'), 'FROM python:3.13-slim\n');
+    await fsExtra.writeFile(path.join(projectPath, 'docker-compose.yml'), 'services: {}\n');
+
+    const adopted = await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      name: 'composite-api',
+    });
+
+    const projectJson = await fsExtra.readJson(adopted.projectJsonPath);
+    expect(projectJson).toMatchObject({
+      kind: 'backend',
+      runtime: 'python',
+      framework: 'fastapi',
+    });
+    const model = await buildWorkspaceModel({ workspacePath });
+    expect(model.projects).toEqual([
+      expect.objectContaining({ name: 'composite-api', kind: 'backend', runtime: 'python' }),
+    ]);
+
+    await fsExtra.writeJson(adopted.projectJsonPath, { ...projectJson, kind: 'infra' });
+    await adoptProjectIntoWorkspace({
+      workspacePath,
+      source: projectPath,
+      name: 'composite-api',
+    });
+    expect(await fsExtra.readJson(adopted.projectJsonPath)).toMatchObject({
+      kind: 'backend',
+      runtime: 'python',
+      framework: 'fastapi',
     });
   });
 
@@ -552,24 +641,31 @@ describe('adopt-project', () => {
       return;
     }
 
+    const snapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath);
     const adopted = await adoptProjectIntoWorkspace({
       workspacePath,
       source: projectPath,
       projectGrounding: 'managed',
+      rollbackSnapshot: snapshot,
     });
 
     expect((await fsExtra.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
     expect(await fsExtra.readlink(path.join(projectPath, 'AGENTS.md'))).toBe('.rules');
-    expect(await fsExtra.readFile(path.join(projectPath, '.rules'), 'utf8')).toBe(authoredRules);
+    const groundedRules = await fsExtra.readFile(path.join(projectPath, '.rules'), 'utf8');
+    expect(groundedRules).toContain(authoredRules.trim());
+    expect(groundedRules).toContain('WORKSPAI:PROJECT-GROUNDING:START');
     expect(
       await fsExtra.pathExists(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))
     ).toBe(true);
-    const snapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath);
     expect(snapshot.files.find((file) => file.path.endsWith('AGENTS.md'))).toMatchObject({
       preserve: 'symbolic-link',
     });
+    expect(snapshot.files.find((file) => file.path.endsWith('.rules'))?.contents?.toString()).toBe(
+      authoredRules
+    );
     await cleanupAdoptedProjectImport(workspacePath, projectPath, snapshot);
     expect((await fsExtra.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+    expect(await fsExtra.readFile(path.join(projectPath, '.rules'), 'utf8')).toBe(authoredRules);
     expect(adopted.effects.repositoryControlFiles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

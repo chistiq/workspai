@@ -41,7 +41,10 @@ const CATEGORY_RULES: ReadonlyArray<{
   },
   {
     category: 'performance',
-    patterns: [/\b(?:performance|latency|throughput|memory|cpu|optimi[sz]e|faster|slower)\b/i],
+    patterns: [
+      /\b(?:performance|latency|throughput|cpu|optimi[sz]e|faster|slower)\b/i,
+      /\b(?:memory\s+(?:allocation|consumption|footprint|leak|pressure|usage)|out[ -]of[ -]memory|heap|ram)\b/i,
+    ],
   },
   {
     category: 'refactor',
@@ -53,7 +56,9 @@ const CATEGORY_RULES: ReadonlyArray<{
   },
   {
     category: 'feature-change',
-    patterns: [/\b(?:add|build|create|implement|introduce|support)\b/i],
+    patterns: [
+      /\b(?:add|build|create|enforce|enhance|harden|implement|improve|introduce|support)\b/i,
+    ],
   },
   {
     category: 'system-understanding',
@@ -83,7 +88,9 @@ function normalizedIntent(raw: string): string {
 }
 
 function coverageTarget(intent: string): number | null {
-  const match = intent.match(/\b(?:coverage\D{0,24})?(100|\d{1,2})(?:\.\d+)?\s*%/i);
+  const match = intent.match(
+    /\b(?:coverage\D{0,24})?((?:100(?:\.0+)?|\d{1,2}(?:\.\d+)?))\s*(?:%|percent(?:age)?(?:\s+points?)?)/i
+  );
   if (!match || !/coverage/i.test(intent)) return null;
   const value = Number(match[1]);
   return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
@@ -128,9 +135,15 @@ export function compileGoalIntent(
   } = {}
 ): CompiledGoalIntent {
   const original = normalizedIntent(raw);
-  const matches = CATEGORY_RULES.filter((rule) =>
+  const detectedMatches = CATEGORY_RULES.filter((rule) =>
     rule.patterns.some((pattern) => pattern.test(original))
   ).map((rule) => rule.category);
+  // Feature verbs such as improve, implement, or harden are broad action
+  // signals. When a more specific objective class is present, that class owns
+  // retrieval and verification instead of creating a false confirmation gate.
+  const matches = detectedMatches.some((match) => match !== 'feature-change')
+    ? detectedMatches.filter((match) => match !== 'feature-change')
+    : detectedMatches;
   const category = matches[0] ?? 'feature-change';
   const target = coverageTarget(original);
   const requestedRuntimes = coverageRuntime(original);

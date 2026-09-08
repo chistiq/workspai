@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   WORKSPACE_REPAIR_ADAPTER_CAPABILITIES,
+  WORKSPACE_REPAIR_FAILURE_FAMILIES,
+  WORKSPACE_REPAIR_FAILURE_RECOVERY_POLICY,
+  WORKSPACE_REPAIR_QUALIFICATION_SCOPES,
+  WORKSPACE_REPAIR_RECOVERY_PATHS,
   buildWorkspaceRepairCapabilitiesContract,
+  validateWorkspaceRepairQualificationMatrix,
   type WorkspaceRepairAdapterId,
 } from '../contracts/workspace-repair-capabilities-contract.js';
 import { inspectWorkspaceRepairCapabilities } from '../workspace-repair-engine.js';
@@ -62,6 +67,25 @@ describe('Workspace Repair capability contract', () => {
       contract.adapters.length
     );
     expect(contract.adapters).toEqual(WORKSPACE_REPAIR_ADAPTER_CAPABILITIES);
+    expect(validateWorkspaceRepairQualificationMatrix()).toEqual([]);
+    expect(contract.qualificationMatrix).toMatchObject({
+      schemaVersion: 'workspai.workspace-repair-qualification-matrix.v1',
+      status: 'contract-enforced',
+      dimensions: {
+        adapters: WORKSPACE_REPAIR_ADAPTER_CAPABILITIES.map((adapter) => adapter.id),
+        scopes: WORKSPACE_REPAIR_QUALIFICATION_SCOPES,
+        failureFamilies: WORKSPACE_REPAIR_FAILURE_FAMILIES,
+        recoveryPaths: WORKSPACE_REPAIR_RECOVERY_PATHS,
+        failureRecoveryPolicy: WORKSPACE_REPAIR_FAILURE_RECOVERY_POLICY,
+      },
+      invariants: {
+        everyAdapterDeclaresClosureStages: true,
+        everyFailureTerminates: true,
+        everyMutationIsCheckpointed: true,
+        workspaceAndProjectScopesUseTheSameEngine: true,
+        linkedProjectsRemainBoundaryChecked: true,
+      },
+    });
     for (const adapter of contract.adapters) {
       expect(adapter.manifests.length).toBeGreaterThan(0);
       expect(adapter.requiredToolFamilies.length).toBeGreaterThan(0);
@@ -101,6 +125,21 @@ describe('Workspace Repair capability contract', () => {
     }
   });
 
+  it('recognizes the XML solution format as a root-owned dotnet boundary', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-dotnet-slnx-')
+    );
+    roots.push(workspacePath);
+    await fsExtra.outputFile(path.join(workspacePath, 'sdk', 'Sdk.slnx'), '<Solution />\n');
+
+    const report = await inspectWorkspaceRepairCapabilities({
+      workspacePath,
+      projectPath: 'sdk',
+    });
+
+    expect(report.inspection?.detectedAdapters).toEqual(['dotnet']);
+  });
+
   it('reports every adapter in a genuinely multi-runtime project instead of selecting the first', async () => {
     const workspacePath = await fsExtra.mkdtemp(
       path.join(os.tmpdir(), 'workspai-repair-polyglot-')
@@ -119,6 +158,33 @@ describe('Workspace Repair capability contract', () => {
     });
 
     expect(report.inspection?.detectedAdapters).toEqual(['node', 'python', 'go']);
+  });
+
+  it('detects repair adapters at nested polyglot lifecycle boundaries', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-nested-polyglot-')
+    );
+    roots.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, 'platform', 'package.json'), {});
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'platform', 'services', 'checkout', 'go.mod'),
+      'module example.test/checkout\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'platform', 'services', 'shipping', 'Cargo.toml'),
+      '[package]\nname="shipping"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'platform', 'services', 'fraud', 'build.gradle.kts'),
+      'plugins { kotlin("jvm") }\n'
+    );
+
+    const report = await inspectWorkspaceRepairCapabilities({
+      workspacePath,
+      projectPath: 'platform',
+    });
+
+    expect(report.inspection?.detectedAdapters).toEqual(['node', 'go', 'rust', 'jvm-gradle']);
   });
 
   it('resolves a registered project reference, including an external project, before inspection', async () => {
@@ -150,6 +216,11 @@ describe('Workspace Repair capability contract', () => {
     });
     await expect(
       inspectWorkspaceRepairCapabilities({ workspacePath, project: 'external-api' })
+    ).resolves.toMatchObject({
+      inspection: { projectPath: 'external-api', detectedAdapters: ['go'] },
+    });
+    await expect(
+      inspectWorkspaceRepairCapabilities({ workspacePath, projectPath: externalRoot })
     ).resolves.toMatchObject({
       inspection: { projectPath: 'external-api', detectedAdapters: ['go'] },
     });

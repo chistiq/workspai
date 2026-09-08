@@ -84,6 +84,133 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(output).not.toContain('Usage: rapidkit create project');
   });
 
+  it('blocks an existing Python Core project target before bridge delegation', async () => {
+    const existingProject = path.join(tmpDir, 'signal-api');
+    await fsExtra.ensureDir(existingProject);
+    await fsExtra.writeFile(path.join(existingProject, 'existing.txt'), 'preserve me');
+    const resolveSpy = vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
+    const runSpy = vi.spyOn(coreExec, 'runCoreRapidkit').mockResolvedValue(0 as any);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const code = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'fastapi.standard',
+      'signal-api',
+    ]);
+
+    expect(code).toBe(1);
+    expect(resolveSpy).not.toHaveBeenCalled();
+    expect(runSpy).not.toHaveBeenCalled();
+    expect(await fsExtra.readFile(path.join(existingProject, 'existing.txt'), 'utf8')).toBe(
+      'preserve me'
+    );
+    const output = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+    expect(output).toContain('Project "signal-api" already exists');
+    expect(output).toContain(existingProject);
+    expect(output).not.toContain('Traceback');
+    expect(output).not.toContain('rm -rf');
+  });
+
+  it('creates a governed agent project through the admitted scaffold lifecycle', async () => {
+    await create.createProject('agent-workspace', {
+      parentDirectory: tmpDir,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+      yes: true,
+    });
+    const workspacePath = path.join(tmpDir, 'agent-workspace');
+    process.chdir(workspacePath);
+
+    const code = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'agent.microsoft.python',
+      'support-agent',
+      '--agent-name',
+      'triage',
+      '--skip-git',
+      '--yes',
+    ]);
+
+    expect(code).toBe(0);
+    const projectPath = path.join(workspacePath, 'support-agent');
+    expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'triage', 'main.py'))).toBe(
+      true
+    );
+    expect(
+      await fsExtra.pathExists(
+        path.join(workspacePath, '.workspai', 'agent-frameworks', 'ownership')
+      )
+    ).toBe(true);
+    const contract = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'workspace.contract.json')
+    );
+    expect(contract.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: 'support-agent', runtime: 'python' }),
+      ])
+    );
+  }, 60_000);
+
+  it('rolls back project registration when the governed scaffold cannot be planned', async () => {
+    await create.createProject('agent-workspace', {
+      parentDirectory: tmpDir,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+      yes: true,
+    });
+    const workspacePath = path.join(tmpDir, 'agent-workspace');
+    process.chdir(workspacePath);
+
+    const code = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'agent.microsoft.python',
+      'broken-agent',
+      '--agent-name',
+      '---',
+      '--skip-git',
+      '--yes',
+    ]);
+
+    expect(code).toBe(1);
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'broken-agent'))).toBe(false);
+    const contract = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'workspace.contract.json')
+    );
+    expect(contract.projects).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ slug: 'broken-agent' })])
+    );
+  }, 60_000);
+
+  it('maps explicit --skip-install to the core scaffold-only contract', async () => {
+    vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
+    const runSpy = vi.spyOn(coreExec, 'runCoreRapidkit').mockResolvedValue(1 as any);
+
+    const code = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'nestjs.standard',
+      'api',
+      '--skip-install',
+    ]);
+
+    expect(code).toBe(1);
+    expect(runSpy).toHaveBeenCalledWith(
+      expect.arrayContaining(['create', 'project', 'nestjs.standard', 'api', '--skip-essentials']),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          RAPIDKIT_SKIP_LOCKS: '1',
+          RAPIDKIT_GENERATE_LOCKS: '0',
+        }),
+      })
+    );
+    expect(runSpy.mock.calls[0][0]).not.toContain('--skip-install');
+  });
+
   it('preserves Python-core --output while filtering wrapper-only create project flags', async () => {
     const registerSpy = vi.spyOn(create, 'registerWorkspaceAtPath').mockResolvedValue();
     const resolveSpy = vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
@@ -115,6 +242,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
       'demo',
       '--output',
       'services',
+      '--skip-essentials',
     ]);
   });
 
@@ -252,6 +380,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
   it('creates a VS Code extension in a current-folder workspace without Python installation', async () => {
     const promptSpy = vi
       .spyOn(cliPrompts, 'prompt')
+      .mockResolvedValueOnce({ kitCategory: 'extension' })
       .mockResolvedValueOnce({ kitChoice: 'extension.vscode' })
       .mockResolvedValueOnce({ projectName: 'saas-extension' })
       .mockResolvedValueOnce({ workspaceMode: 'current' });
@@ -272,7 +401,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
 
     try {
       expect(await index.handleCreateOrFallback(['create', 'project'])).toBe(0);
-      expect(promptSpy).toHaveBeenCalledTimes(3);
+      expect(promptSpy).toHaveBeenCalledTimes(4);
       expect(registerSpy).toHaveBeenCalledWith(
         process.cwd(),
         expect.not.objectContaining({ installPythonEngine: true })
@@ -372,6 +501,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
   it('prompts for target on `create` and supports choosing project', async () => {
     vi.spyOn(cliPrompts, 'prompt')
       .mockResolvedValueOnce({ createTarget: 'project' })
+      .mockResolvedValueOnce({ kitCategory: 'backend' })
       .mockResolvedValueOnce({ kitChoice: 'fastapi.standard' })
       .mockResolvedValueOnce({ projectName: 'demo' });
 
@@ -568,6 +698,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     const promptSpy = vi
       .spyOn(cliPrompts, 'prompt')
       .mockResolvedValueOnce({ createTarget: 'project' })
+      .mockResolvedValueOnce({ kitCategory: 'backend' })
       .mockResolvedValueOnce({ kitChoice: 'gogin.standard' })
       .mockResolvedValueOnce({ projectName: 'interactive-gin-api' })
       .mockResolvedValueOnce({ workspaceMode: 'none' });
@@ -619,6 +750,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     const promptSpy = vi
       .spyOn(cliPrompts, 'prompt')
       .mockResolvedValueOnce({ createTarget: 'project' })
+      .mockResolvedValueOnce({ kitCategory: 'frontend' })
       .mockResolvedValueOnce({ kitChoice: 'frontend.nextjs' })
       .mockResolvedValueOnce({ projectName: 'interactive-next-app' })
       .mockResolvedValueOnce({ workspaceMode: 'none' });

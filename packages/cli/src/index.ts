@@ -2,8 +2,12 @@
 
 import { Command, Option } from 'commander';
 import chalk from 'chalk';
-import { prompt, showIntro } from './cli-ui/index.js';
-import { buildKitPickerChoices } from './cli-ui/kit-picker-choices.js';
+import { createUiSpinner, prompt, showIntro } from './cli-ui/index.js';
+import {
+  buildKitCategoryChoices,
+  buildKitPickerChoices,
+  type CreateKitCategoryId,
+} from './cli-ui/kit-picker-choices.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
@@ -42,6 +46,19 @@ import { registerConfigCommands } from './commands/config.js';
 import { registerAICommands } from './commands/ai.js';
 import { registerProductCommands } from './commands/product.js';
 import { registerInfraCommands } from './commands/infra.js';
+import { registerChangeCommands } from './commands/change.js';
+import { registerAgentFrameworkCommands } from './commands/agent-framework.js';
+import {
+  applyPreparedAgentFrameworkAttachment,
+  initializeAgentFrameworkProjectRoot,
+  isAgentFrameworkProjectKit,
+  prepareAgentFrameworkAttachment,
+  resolveAgentFrameworkProjectKit,
+} from './agent-frameworks/index.js';
+import {
+  WORKSPACE_REPAIR_DECISIONS,
+  type WorkspaceRepairDecision,
+} from './contracts/workspace-repair-transaction-contract.js';
 import { getRuntimeAdapter } from './runtime-adapters/index.js';
 import type { CommandResult } from './runtime-adapters/types.js';
 import { Cache } from './utils/cache.js';
@@ -61,17 +78,26 @@ import {
   isWrapperLifecycleCommand,
 } from './utils/cli-lifecycle-contract.js';
 import { findRapidkitProjectRoot } from './utils/project-command-capabilities.js';
+import { missingShellActivationDiagnostic } from './utils/shell-activation-diagnostics.js';
 import { canonicalizeProjectMetadata } from './utils/project-metadata.js';
 import {
   ProjectWorkspaceResolutionError,
   repairProjectWorkspaceLink,
   resolveProjectWorkspaceSync,
 } from './project-workspace-link.js';
+import { resolveCliActivityBlueprint } from './activity/cli-activity-blueprints.js';
+import { emitActivityBlock } from './activity/activity-runtime.js';
 import {
   resolveGovernanceRunId,
   withGovernanceRunMetadata,
 } from './utils/governance-report-metadata.js';
 import { hasNpmRuntimeExecutor } from './utils/runtime-executors.js';
+import {
+  PROJECT_AGENT_ADAPTER_ENTRY_FILES,
+  PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  type AgentBootstrapReceipt,
+} from './project-agent-entry.js';
+import type { WorkspaceConsumerArtifactSyncResult } from './utils/workspace-onboarding.js';
 
 export { PROJECT_COMMANDS_CORE_FALLBACK } from './utils/cli-lifecycle-contract.js';
 import {
@@ -85,7 +111,11 @@ import {
   WORKSPACE_INTELLIGENCE_SUBCOMMANDS,
   WORKSPACE_SUBCOMMANDS,
 } from './utils/workspace-command-surface.js';
-import { emitWorkspacePhase } from './observability/cli-progress.js';
+import {
+  createCliSpinner,
+  emitWorkspacePhase,
+  type CliSpinnerHandle,
+} from './observability/cli-progress.js';
 import {
   getPublishedContractCatalog,
   getPublishedContractVersions,
@@ -148,7 +178,19 @@ import {
   captureAdoptProjectRollbackSnapshot,
   type AdoptProjectRollbackSnapshot,
 } from './adopt-project.js';
-import type { ProjectGroundingMode } from './project-intelligence-lens.js';
+import {
+  buildAdoptOutsideWorkspacePromptChoices,
+  defaultAdoptOutsideWorkspacePromptIndex,
+  resolveAdoptOutsideWorkspaceChoice,
+  resolveExplicitAdoptWorkspaceTarget,
+  resolveOutsideWorkspaceAdoptTarget,
+  type AdoptOutsideWorkspaceMode,
+  type AdoptWorkspaceResolutionMode,
+} from './adopt-workspace-resolution.js';
+import {
+  resolveProjectPortableSkillTransactionPaths,
+  type ProjectGroundingMode,
+} from './project-intelligence-lens.js';
 import {
   assertProjectWorkspaceResolutionContract,
   type ProjectWorkspaceResolutionContract,
@@ -187,10 +229,13 @@ import {
   isWindowsPlatform,
 } from './utils/platform-capabilities.js';
 import {
+  LEGACY_RAPIDKIT_METADATA_DIR,
   MANAGED_DEFAULT_WORKSPACE_LABEL,
   PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
   PROJECT_GROUNDING_RELATIVE_PATH,
+  PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
+  WORKSPAI_METADATA_DIR,
   findExistingWorkspacePath,
   getCanonicalWorkspacesDirectory,
   projectMetadataCandidates,
@@ -219,6 +264,7 @@ import {
   createLifecycleTransaction,
   recoverActiveLifecycleTransactions,
 } from './utils/lifecycle-transaction.js';
+import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   resolveLegacyWorkspaceArtifactPath,
   resolveWorkspaceArtifactPath,
@@ -446,6 +492,18 @@ export async function commandAvailable(command: string, cwd: string): Promise<bo
   return code === 0;
 }
 
+async function commandAvailableQuiet(command: string, cwd: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(command, ['--version'], {
+      cwd,
+      stdio: 'ignore',
+      env: buildDelegationEnvForInit(),
+    });
+    child.once('error', () => resolve(false));
+    child.once('close', (code) => resolve(code === 0));
+  });
+}
+
 type InferredRuntime = 'python' | 'node' | 'go' | 'java' | 'dotnet' | 'rust' | 'php' | null;
 
 export async function inferRuntimeByFiles(targetPath: string): Promise<InferredRuntime> {
@@ -579,19 +637,30 @@ export async function ensurePythonProjectUsesLocalVenv(
     if (venvCode !== 0) return venvCode;
   }
 
-  const hasPoetry = (await runCommand('poetry', ['--version'], projectPath)) === 0;
-  if (!hasPoetry) {
+  const localPoetry =
+    process.platform === 'win32'
+      ? path.join(projectPath, '.venv', 'Scripts', 'poetry.exe')
+      : path.join(projectPath, '.venv', 'bin', 'poetry');
+  const systemPoetryAvailable = dependencies.runCommand
+    ? (await runCommand('poetry', ['--version'], projectPath)) === 0
+    : await commandAvailableQuiet('poetry', projectPath);
+  const poetryCommand = (await fsExtra.pathExists(localPoetry))
+    ? localPoetry
+    : systemPoetryAvailable
+      ? 'poetry'
+      : null;
+  if (!poetryCommand) {
     return 0;
   }
 
   const configCode = await runCommand(
-    'poetry',
+    poetryCommand,
     ['config', 'virtualenvs.in-project', 'true', '--local'],
     projectPath
   );
   if (configCode !== 0) return configCode;
 
-  const envUseCode = await runCommand('poetry', ['env', 'use', localVenvPython], projectPath);
+  const envUseCode = await runCommand(poetryCommand, ['env', 'use', localVenvPython], projectPath);
   if (envUseCode !== 0) return envUseCode;
 
   return 0;
@@ -727,7 +796,10 @@ export function validateNpmKitFlags(kitId: string, args: readonly string[]): str
   return null;
 }
 
-async function prepareOutsideWorkspaceCreate(args: string[]): Promise<void> {
+async function prepareOutsideWorkspaceCreate(
+  args: string[],
+  options: { requireWorkspace?: boolean } = {}
+): Promise<void> {
   if (
     args.includes('--dry-run') ||
     args.includes('--no-workspace') ||
@@ -765,10 +837,14 @@ async function prepareOutsideWorkspaceCreate(args: string[]): Promise<void> {
           name: 'Turn the current folder into a workspace',
           value: 'current',
         },
-        {
-          name: 'Create it without workspace management',
-          value: 'none',
-        },
+        ...(options.requireWorkspace
+          ? []
+          : [
+              {
+                name: 'Create it without workspace management',
+                value: 'none',
+              },
+            ]),
       ],
       default: 1,
     },
@@ -786,7 +862,57 @@ async function prepareOutsideWorkspaceCreate(args: string[]): Promise<void> {
   }
 }
 
+async function prepareOutsideWorkspaceAdopt(
+  sourcePath: string,
+  options: {
+    json?: boolean;
+    explicitWorkspace?: boolean;
+  }
+): Promise<AdoptOutsideWorkspaceMode | undefined> {
+  if (options.json || options.explicitWorkspace || findWorkspaceUp(sourcePath)) {
+    return undefined;
+  }
+
+  if (!process.stdin.isTTY) {
+    return undefined;
+  }
+
+  const choice = await resolveAdoptOutsideWorkspaceChoice({ sourcePath });
+  if (!choice.parentEligible) return undefined;
+  const promptChoices = buildAdoptOutsideWorkspacePromptChoices();
+  const { workspaceMode } = (await prompt([
+    {
+      type: 'rawlist',
+      name: 'workspaceMode',
+      message: 'This project is outside a Workspai workspace. How should it be managed?',
+      choices: promptChoices,
+      default: defaultAdoptOutsideWorkspacePromptIndex(),
+    },
+  ])) as { workspaceMode: AdoptOutsideWorkspaceMode };
+
+  return workspaceMode;
+}
+
+async function bootstrapAdoptWorkspaceTarget(
+  workspacePath: string,
+  transaction: ProjectLifecycleTransaction
+): Promise<void> {
+  const { registerWorkspaceAtPath } = await import('./create.js');
+  await registerWorkspaceAtPath(workspacePath, {
+    skipGit: true,
+    yes: true,
+    testMode:
+      process.env.VITEST === 'true' ||
+      process.env.VITEST === '1' ||
+      process.env.NODE_ENV === 'test',
+    userConfig: await loadUserConfig(),
+    lifecycleTransaction: transaction,
+  });
+}
+
 interface ProjectLifecycleTransaction {
+  captureFile(filePath: string): Promise<void>;
+  captureOwnedTree(treePath: string): Promise<boolean>;
   commit(): Promise<void>;
   rollback(): Promise<void>;
   registerCompensation(compensation: () => void | Promise<void>): void;
@@ -861,22 +987,64 @@ async function beginProjectLifecycleTransaction(
     files.add(path.join(options.projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH));
     files.add(path.join(options.projectPath, PROJECT_GROUNDING_RELATIVE_PATH));
     files.add(path.join(options.projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH));
+    files.add(path.join(options.projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH));
+    files.add(path.join(options.projectPath, PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH));
+    for (const adapterPath of PROJECT_AGENT_ADAPTER_ENTRY_FILES) {
+      files.add(path.join(options.projectPath, adapterPath));
+    }
+    for (const skillPath of await resolveProjectPortableSkillTransactionPaths({
+      workspacePath,
+      projectPath: options.projectPath,
+    })) {
+      files.add(skillPath);
+    }
     files.add(path.join(options.projectPath, 'AGENTS.md'));
     files.add(path.join(options.projectPath, '.gitignore'));
   }
 
   try {
+    const capturedFiles = new Set<string>();
+    const projectPath = options.projectPath;
     for (const filePath of files) {
-      const isProjectAgentsPath =
-        options.projectPath && filePath === path.join(options.projectPath, 'AGENTS.md');
-      const stat = isProjectAgentsPath
+      const isProjectAgentEntryPath =
+        projectPath &&
+        (filePath === path.join(projectPath, 'AGENTS.md') ||
+          PROJECT_AGENT_ADAPTER_ENTRY_FILES.some(
+            (entryPath) => filePath === path.join(projectPath, entryPath)
+          ));
+      const stat = isProjectAgentEntryPath
         ? await fsExtra.lstat(filePath).catch((error) => {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
             throw error;
           })
         : null;
-      if (stat?.isSymbolicLink()) continue;
-      await transaction.captureFile(filePath);
+      let capturePath = filePath;
+      if (stat?.isSymbolicLink() && projectPath) {
+        const resolved = await resolveRepositoryLocalSymlinkFile(projectPath, filePath);
+        // Unsafe links are rejected later by the project grounding writer. Do not
+        // make the lifecycle journal follow or capture them first.
+        if (!resolved) continue;
+        capturePath = resolved;
+      }
+      if (capturedFiles.has(capturePath)) continue;
+      await transaction.captureFile(capturePath);
+      capturedFiles.add(capturePath);
+    }
+    if (projectPath) {
+      for (const projectManagedDirectory of [
+        WORKSPAI_METADATA_DIR,
+        LEGACY_RAPIDKIT_METADATA_DIR,
+        '.agents',
+        '.amazonq',
+        '.claude',
+        '.cursor',
+        '.github',
+        '.grok',
+        '.vscode',
+        '.windsurf',
+      ]) {
+        await transaction.captureOwnedTree(path.join(projectPath, projectManagedDirectory));
+      }
     }
     if (options.ownedDestination) {
       await transaction.captureOwnedTree(options.ownedDestination);
@@ -886,6 +1054,8 @@ async function beginProjectLifecycleTransaction(
     }
     let finished = false;
     return {
+      captureFile: (filePath) => transaction.captureFile(filePath),
+      captureOwnedTree: (treePath) => transaction.captureOwnedTree(treePath),
       registerCompensation: (compensation) => transaction.registerCompensation(compensation),
       commit: async () => {
         if (finished) return;
@@ -928,7 +1098,13 @@ async function rollbackProjectLifecycleTransaction(
 async function finalizeCreatedProjectWorkspace(
   args: string[],
   projectPath: string,
-  projectName: string
+  projectName: string,
+  options: {
+    beforeCommit?: (context: {
+      workspacePath: string;
+      registerCompensation: ProjectLifecycleTransaction['registerCompensation'];
+    }) => Promise<void>;
+  } = {}
 ): Promise<string | undefined> {
   if (args.includes('--no-workspace') || args.includes('--dry-run')) {
     return undefined;
@@ -976,7 +1152,11 @@ async function finalizeCreatedProjectWorkspace(
     const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
       await import('./workspace.js');
     const { syncWorkspaceContract } = await import('./utils/workspace-contract.js');
-    await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
+    const { resolveWorkspaceRegistrationName } = await import('./workspace-marker.js');
+    await registerWorkspaceStrict(
+      workspacePath,
+      await resolveWorkspaceRegistrationName(workspacePath)
+    );
     await registerProjectInWorkspaceStrict(workspacePath, projectName, projectPath);
     await syncWorkspaceContract({ workspacePath, strict: true });
     const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
@@ -988,6 +1168,10 @@ async function finalizeCreatedProjectWorkspace(
       mode: 'managed',
     });
     await syncWorkspaceContractAfterProjectChange(workspacePath, { strict: true });
+    await options.beforeCommit?.({
+      workspacePath,
+      registerCompensation: transaction.registerCompensation,
+    });
     await transaction.commit();
   } catch (error) {
     await rollbackProjectLifecycleTransaction(transaction, error);
@@ -1006,6 +1190,115 @@ async function finalizeCreatedProjectWorkspace(
   }
 
   return workspacePath;
+}
+
+async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
+  if (args[0] !== 'create' || args[1] !== 'project') return 1;
+  const kit = resolveAgentFrameworkProjectKit(args[2]);
+  if (!kit) return 1;
+  const projectName = args[3];
+  if (!projectName) {
+    process.stderr.write(
+      `Usage: workspai create project ${kit.id} <name> [--agent-name <name>] [--output <dir>] [--dry-run]\n`
+    );
+    return 1;
+  }
+  if (args.includes('--no-workspace')) {
+    process.stderr.write('Agent framework projects require Workspai workspace governance.\n');
+    return 1;
+  }
+  try {
+    validateProjectName(projectName);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+  const outputDir = readFlagValue(args, '--output') || process.cwd();
+  const projectPath = path.resolve(outputDir, projectName);
+  const instanceName = readFlagValue(args, '--agent-name')?.trim() || 'primary';
+  const grantedBy = readFlagValue(args, '--granted-by')?.trim() || 'operator';
+  if (args.includes('--dry-run')) {
+    console.log(chalk.bold(`\nAI Agent · ${kit.label}`));
+    console.log(chalk.gray(`   Target: ${projectPath}`));
+    console.log(chalk.gray(`   Agent: ${instanceName}`));
+    console.log(
+      chalk.gray('   Plan: register project, create Goal/PCC, then apply admitted scaffold')
+    );
+    console.log(chalk.gray('   Dry run: no files or workspace evidence will be changed.'));
+    return 0;
+  }
+  if (await fsExtra.pathExists(projectPath)) {
+    process.stderr.write(`❌ Directory "${projectPath}" already exists\n`);
+    return 1;
+  }
+  let ownsProjectPath = false;
+  let frameworkResult: Awaited<ReturnType<typeof applyPreparedAgentFrameworkAttachment>> | null =
+    null;
+  try {
+    await fsExtra.ensureDir(path.dirname(projectPath));
+    await initializeAgentFrameworkProjectRoot({ projectPath, projectName, kit });
+    ownsProjectPath = true;
+    await finalizeCreatedProjectWorkspace(args, projectPath, projectName, {
+      beforeCommit: async ({ workspacePath, registerCompensation }) => {
+        const prepared = await prepareAgentFrameworkAttachment({
+          workspacePath,
+          project: projectName,
+          runtime: kit.runtime,
+          instanceName,
+          mode: 'scaffold',
+          intent: `Create ${projectName} as a governed ${kit.label} project`,
+        });
+        registerCompensation(async () => {
+          const { abortProofCarryingChange } = await import('./proof-carrying-change.js');
+          await abortProofCarryingChange({
+            workspacePath,
+            changeId: prepared.changeId,
+            reason: 'Agent framework project creation transaction rolled back.',
+            actorId: 'workspai-agent-framework',
+          }).catch(() => undefined);
+        });
+        if (prepared.status !== 'planned') {
+          throw new Error(
+            `Agent framework scaffold is ${prepared.status}: ${prepared.blockers.join(' ')}`
+          );
+        }
+        const applied = await applyPreparedAgentFrameworkAttachment({ prepared, grantedBy });
+        frameworkResult = applied;
+        registerCompensation(() =>
+          fsExtra.remove(path.join(workspacePath, applied.ownershipReceipt))
+        );
+      },
+    });
+    if (!args.includes('--skip-git') && !args.includes('--no-git')) {
+      const { initializeStandaloneGitRepository } = await import('./create.js');
+      await initializeStandaloneGitRepository(
+        projectPath,
+        createUiSpinner('Preparing git repository', {
+          component: 'create.agent-framework',
+          phase: 'git-init',
+          metadata: { projectName, kit: kit.id },
+        }),
+        'chore: initialize Workspai agent project'
+      );
+    }
+    console.log(chalk.green(`✔ Governed ${kit.label} project created at ${projectPath}`));
+    console.log(chalk.gray('   Dependencies were not installed and no model was called.'));
+    const completed = frameworkResult as Awaited<
+      ReturnType<typeof applyPreparedAgentFrameworkAttachment>
+    > | null;
+    if (completed) {
+      console.log(chalk.gray(`   Change: ${completed.changeId}`));
+      console.log(chalk.gray(`   Ownership: ${completed.ownershipReceipt}`));
+      for (const action of completed.nextActions) console.log(chalk.gray(`   Next: ${action}`));
+    }
+    return 0;
+  } catch (error) {
+    if (ownsProjectPath) await fsExtra.remove(projectPath).catch(() => undefined);
+    process.stderr.write(
+      `Workspai ${kit.id} generator failed: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+    return 1;
+  }
 }
 
 async function runNpmBackedKitCreate(args: string[]): Promise<number> {
@@ -1279,6 +1572,7 @@ Examples:
   npx workspai create project rust.axum api --skip-install
   npx workspai create project desktop.tauri desktop-app
   npx workspai create project extension.vscode editor-tools --skip-install
+  npx workspai create project agent.microsoft.python support-agent --skip-git
 
 Common kits:
   fastapi.standard      Python API via RapidKit Core bridge
@@ -1293,7 +1587,14 @@ Common kits:
   desktop.tauri         Desktop Tauri app
   desktop.electron      Desktop Electron Forge app
   extension.vscode      VS Code extension
+  agent.microsoft.python Microsoft Agent Framework · Python
+  agent.microsoft.dotnet Microsoft Agent Framework · .NET
   php.laravel           Backend Laravel application
+
+Interactive selection:
+  Workspai first asks what you are building, then shows only kits in that category.
+  Backend, Frontend, Desktop, AI Agent, Extension, and Gaming are stable category ids;
+  categories without an admitted kit are hidden until a compatible kit is available.
 
 Options:
   --output <dir>        Parent directory for the project
@@ -1669,16 +1970,25 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         if (process.stdin.isTTY) {
           showIntro('create project');
         }
+        const { kitCategory } = (await prompt([
+          {
+            type: 'rawlist',
+            name: 'kitCategory',
+            message: 'What are you building?',
+            choices: buildKitCategoryChoices(),
+          },
+        ])) as { kitCategory: CreateKitCategoryId };
         const { kitChoice } = (await prompt([
           {
             type: 'rawlist',
             name: 'kitChoice',
             message: 'Select a kit to scaffold:',
-            choices: buildKitPickerChoices(),
+            choices: buildKitPickerChoices(kitCategory),
           },
         ])) as { kitChoice: string };
 
         if (
+          isAgentFrameworkProjectKit(kitChoice) ||
           isNpmBackedKit(kitChoice) ||
           isFrontendProjectKit(kitChoice) ||
           isOfficialProjectKit(kitChoice)
@@ -1699,11 +2009,13 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
             return 1;
           }
           await prepareOutsideWorkspaceCreate(normalizedArgs);
-          const code = isFrontendProjectKit(kitChoice)
-            ? await runFrontendProjectCreate(normalizedArgs)
-            : isOfficialProjectKit(kitChoice)
-              ? await runOfficialProjectCreate(normalizedArgs)
-              : await runNpmBackedKitCreate(normalizedArgs);
+          const code = isAgentFrameworkProjectKit(kitChoice)
+            ? await runAgentFrameworkProjectCreate(normalizedArgs)
+            : isFrontendProjectKit(kitChoice)
+              ? await runFrontendProjectCreate(normalizedArgs)
+              : isOfficialProjectKit(kitChoice)
+                ? await runOfficialProjectCreate(normalizedArgs)
+                : await runNpmBackedKitCreate(normalizedArgs);
           return code;
         }
 
@@ -1723,6 +2035,10 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       }
 
       const requestedKit = args[2];
+      if (isAgentFrameworkProjectKit(requestedKit)) {
+        await prepareOutsideWorkspaceCreate(args, { requireWorkspace: true });
+        return await runAgentFrameworkProjectCreate(args);
+      }
       const capability = resolveCreatePlannerCapability({
         kitId: requestedKit,
         framework: requestedKit,
@@ -1767,6 +2083,25 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         return 0;
       }
 
+      // Python Core correctly refuses to scaffold over an existing directory,
+      // but that collision is part of the Workspai create contract and should
+      // be rejected before delegation. Apart from avoiding a noisy Python
+      // traceback, this keeps every create backend consistent and guarantees
+      // that an existing project is never partially touched by the bridge.
+      const bridgeProjectName = args[3];
+      const bridgeOutputDir = readFlagValue(args, '--output') || process.cwd();
+      const bridgeProjectPath = bridgeProjectName
+        ? path.resolve(bridgeOutputDir, bridgeProjectName)
+        : undefined;
+      if (bridgeProjectPath && (await fsExtra.pathExists(bridgeProjectPath))) {
+        process.stderr.write(`❌ Project "${bridgeProjectName}" already exists.\n`);
+        process.stderr.write(`   Target: ${bridgeProjectPath}\n`);
+        process.stderr.write(
+          '💡 Choose a different name, or inspect and move/remove the existing directory first.\n'
+        );
+        return 1;
+      }
+
       // Filter wrapper-only flags from args forwarded to the Python core engine
       const filteredArgs = args.filter((a) => {
         const key = a.split('=')[0];
@@ -1774,11 +2109,15 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       });
 
       // Map wrapper flags to Python-core/environment equivalents when forwarding.
-      // NOTE: --skip-essentials controls core module injection and is conceptually
-      // different from dependency/lock behavior; do not auto-map from workspace mode.
+      // An explicit --skip-install promises a scaffold-only operation, so it must
+      // suppress both dependency/lock work and the core's post-scaffold modules.
+      // Workspace fast mode alone still defers only dependency/lock work.
       const forwardedArgs = [...filteredArgs];
       const workspacePathForCreate = findWorkspaceUp(process.cwd());
       const explicitSkipInstallRequested = args.includes('--skip-install');
+      if (explicitSkipInstallRequested && !forwardedArgs.includes('--skip-essentials')) {
+        forwardedArgs.push('--skip-essentials');
+      }
       const skipLockGenerationRequested = explicitSkipInstallRequested || !!workspacePathForCreate;
 
       const createEnv = skipLockGenerationRequested
@@ -1910,6 +2249,7 @@ const NPM_ONLY_PARSE_DIRECT_COMMANDS = [
   'import',
   'adopt',
   'snapshot',
+  'live',
   'ai',
   'config',
   'product',
@@ -2280,10 +2620,10 @@ function resolveWorkspaceForIngestion(startPath: string): {
 async function syncWorkspaceContractAfterProjectChange(
   workspacePath: string,
   options?: { silent?: boolean; strict?: boolean }
-): Promise<void> {
+): Promise<WorkspaceConsumerArtifactSyncResult | null> {
   try {
     const { syncWorkspaceConsumerArtifacts } = await import('./utils/workspace-onboarding.js');
-    await syncWorkspaceConsumerArtifacts(workspacePath, { silent: options?.silent });
+    return await syncWorkspaceConsumerArtifacts(workspacePath, { silent: options?.silent });
   } catch (error) {
     if (options?.strict) {
       throw error;
@@ -2296,6 +2636,7 @@ async function syncWorkspaceContractAfterProjectChange(
         )
       );
     }
+    return null;
   }
 }
 
@@ -2633,10 +2974,17 @@ export async function runCommandInCwd(
     process.argv.includes('--json') ||
     process.env.RAPIDKIT_WORKSPACE_RUN_CHILD === '1' ||
     process.env.RAPIDKIT_SUPPRESS_RUN_COMMAND_OUTPUT === '1';
-  const inheritChildOutput =
-    !captureForStructuredParent &&
+  const isPackageLifecycleCommand =
     command === 'npm' &&
     (commandArgs[0] === 'run' || commandArgs[0] === 'run-script' || commandArgs[0] === 'install');
+  // During `workspace run`, this CLI is already captured by the orchestrator.
+  // Let package-manager descendants inherit that outer pipe directly. Some
+  // interactive build tools intentionally emit nothing into a second nested
+  // pipe, which previously discarded their only actionable failure message.
+  const inheritIntoWorkspaceRunCapture =
+    process.env.RAPIDKIT_WORKSPACE_RUN_CHILD === '1' && isPackageLifecycleCommand;
+  const inheritChildOutput =
+    inheritIntoWorkspaceRunCapture || (!captureForStructuredParent && isPackageLifecycleCommand);
   const readNpmFailureLogExcerpt = (): string => {
     const cacheDir = spawnEnv.npm_config_cache;
     if (!cacheDir) return '';
@@ -2772,7 +3120,12 @@ export async function runCommandInCwd(
       const stdout = Buffer.concat(stdoutChunks);
       const stderr = Buffer.concat(stderrChunks);
       const npmFailureExcerpt =
-        code && code !== 0 && stdout.length === 0 && stderr.length === 0 && command === 'npm'
+        !inheritChildOutput &&
+        code &&
+        code !== 0 &&
+        stdout.length === 0 &&
+        stderr.length === 0 &&
+        command === 'npm'
           ? readNpmFailureLogExcerpt()
           : '';
       if (shouldDebugWorkspaiArgs()) {
@@ -3012,7 +3365,11 @@ export async function handleImportCommand(
         }
         const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
           await import('./workspace.js');
-        await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
+        const { resolveWorkspaceRegistrationName } = await import('./workspace-marker.js');
+        await registerWorkspaceStrict(
+          workspacePath,
+          await resolveWorkspaceRegistrationName(workspacePath)
+        );
         await registerProjectInWorkspaceStrict(
           workspacePath,
           importedProject.name,
@@ -3059,6 +3416,13 @@ export async function handleImportCommand(
       console.log(
         chalk.yellow(
           `ℹ Imported outside a workspace, so Workspai used the default workspace: ${workspacePath}`
+        )
+      );
+    }
+    if (createdDefaultWorkspace) {
+      console.log(
+        chalk.green(
+          `✓ Workspace ready · 1 registered project · model + graph + agent grounding sealed`
         )
       );
     }
@@ -3133,17 +3497,56 @@ export async function handleAdoptCommand(
     ) => Promise<void>;
   }
 ): Promise<number> {
+  let adoptSpinner: CliSpinnerHandle | undefined;
+  let activeAdoptBlock: string | undefined;
+  const startAdoptBlock = (blockId: string, message: string): void => {
+    activeAdoptBlock = blockId;
+    if (adoptSpinner) adoptSpinner.text = message;
+    emitActivityBlock({ blockId, status: 'running', message, component: 'adopt' });
+  };
+  const completeAdoptBlock = (blockId: string, message: string): void => {
+    emitActivityBlock({ blockId, status: 'succeeded', message, component: 'adopt' });
+    if (activeAdoptBlock === blockId) activeAdoptBlock = undefined;
+  };
+  const skipAdoptBlock = (blockId: string, message: string): void => {
+    emitActivityBlock({ blockId, status: 'skipped', message, component: 'adopt' });
+  };
+  const failActiveAdoptBlock = (message: string): void => {
+    if (!activeAdoptBlock) return;
+    emitActivityBlock({
+      blockId: activeAdoptBlock,
+      status: 'failed',
+      message,
+      component: 'adopt',
+    });
+    activeAdoptBlock = undefined;
+  };
+
+  startAdoptBlock('adopt.resolve', 'Resolving project and workspace');
   const sourcePath = path.resolve(source || process.cwd());
   const explicitWorkspace = options.workspace ? path.resolve(options.workspace) : null;
-  const ingestionResolution = explicitWorkspace
-    ? { workspacePath: explicitWorkspace, error: null }
-    : resolveWorkspaceForIngestion(process.cwd());
-  let workspacePath = ingestionResolution.workspacePath;
+  let workspacePath: string | null = null;
+  let workspaceResolution: AdoptWorkspaceResolutionMode = 'nearest';
   let usedDefaultWorkspace = false;
   let createdDefaultWorkspace = false;
   let willCreateDefaultWorkspace = false;
+  let willBootstrapWorkspace = false;
+  let bootstrappedWorkspace = false;
+  let bootstrapTargetPath: string | null = null;
+
+  let ingestionResolution = explicitWorkspace
+    ? { workspacePath: null as string | null, error: null }
+    : resolveWorkspaceForIngestion(process.cwd());
+
+  // Preserve the current-workspace ownership rule for external adoption, but
+  // when the caller is outside every workspace resolve an already-linked or
+  // physically contained source from the source itself.
+  if (!explicitWorkspace && !ingestionResolution.error && !ingestionResolution.workspacePath) {
+    ingestionResolution = resolveWorkspaceForIngestion(sourcePath);
+  }
 
   if (ingestionResolution.error) {
+    failActiveAdoptBlock(ingestionResolution.error.message);
     if (options.json) {
       console.log(
         JSON.stringify(
@@ -3164,31 +3567,93 @@ export async function handleAdoptCommand(
   }
 
   if (explicitWorkspace) {
-    if (!hasWorkspaceRootMarkers(explicitWorkspace)) {
-      const message = `Workspace path is not a valid Workspai workspace: ${explicitWorkspace}`;
+    const explicitResolution = await resolveExplicitAdoptWorkspaceTarget(explicitWorkspace, {
+      dryRun: options.dryRun,
+    });
+    if (!explicitResolution.ok) {
+      failActiveAdoptBlock(explicitResolution.message);
       if (options.json) {
-        console.log(JSON.stringify({ error: message }, null, 2));
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'adopt',
+              code: explicitResolution.code,
+              message: explicitResolution.message,
+            }),
+            null,
+            2
+          )
+        );
       } else {
-        console.log(chalk.red(`❌ ${message}`));
+        console.log(chalk.red(`❌ ${explicitResolution.message}`));
       }
       return 1;
     }
-  } else if (!workspacePath || !hasWorkspaceRootMarkers(workspacePath)) {
-    const defaultWorkspacePath = resolveManagedDefaultImportWorkspacePath();
-    workspacePath = defaultWorkspacePath;
-    usedDefaultWorkspace = true;
-    willCreateDefaultWorkspace = options.dryRun !== true;
+    ({
+      workspacePath,
+      resolution: workspaceResolution,
+      usedDefaultWorkspace,
+      willCreateDefaultWorkspace,
+      willBootstrapWorkspace,
+      bootstrapTargetPath,
+    } = explicitResolution.result);
+  } else if (
+    ingestionResolution.workspacePath &&
+    hasWorkspaceRootMarkers(ingestionResolution.workspacePath)
+  ) {
+    workspacePath = ingestionResolution.workspacePath;
+    workspaceResolution = 'nearest';
+  } else {
+    const outsideWorkspaceMode = await prepareOutsideWorkspaceAdopt(sourcePath, {
+      json: options.json,
+      explicitWorkspace: false,
+    });
+
+    const outsideResolution = await resolveOutsideWorkspaceAdoptTarget({
+      sourcePath,
+      outsideWorkspaceMode,
+      dryRun: options.dryRun,
+    });
+    if (!outsideResolution.ok) {
+      failActiveAdoptBlock(outsideResolution.message);
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'adopt',
+              code: outsideResolution.code,
+              message: outsideResolution.message,
+            }),
+            null,
+            2
+          )
+        );
+      } else {
+        console.log(chalk.red(`❌ ${outsideResolution.message}`));
+      }
+      return 1;
+    }
+
+    ({
+      workspacePath,
+      resolution: workspaceResolution,
+      usedDefaultWorkspace,
+      willCreateDefaultWorkspace,
+      willBootstrapWorkspace,
+      bootstrapTargetPath,
+    } = outsideResolution.result);
   }
 
-  const allowsUncreatedDefaultWorkspace =
-    usedDefaultWorkspace &&
-    workspacePath !== null &&
-    (options.dryRun === true || willCreateDefaultWorkspace);
-  if (
-    !workspacePath ||
-    (!hasWorkspaceRootMarkers(workspacePath) && !allowsUncreatedDefaultWorkspace)
-  ) {
+  const wouldBootstrapWorkspace =
+    workspaceResolution === 'explicit-bootstrap' || workspaceResolution === 'parent-bootstrap';
+  const allowsUncreatedWorkspace =
+    (usedDefaultWorkspace && (options.dryRun === true || willCreateDefaultWorkspace)) ||
+    (wouldBootstrapWorkspace && (options.dryRun === true || willBootstrapWorkspace)) ||
+    (workspacePath !== null && hasWorkspaceRootMarkers(workspacePath));
+
+  if (!workspacePath || (!hasWorkspaceRootMarkers(workspacePath) && !allowsUncreatedWorkspace)) {
     const message = 'Not inside a Workspai workspace';
+    failActiveAdoptBlock(message);
     if (options.json) {
       console.log(JSON.stringify({ error: message }, null, 2));
     } else {
@@ -3207,11 +3672,14 @@ export async function handleAdoptCommand(
       process.env.NODE_ENV === 'test');
 
   let transaction: ProjectLifecycleTransaction | undefined;
+  let consumerSyncResult: WorkspaceConsumerArtifactSyncResult | null = null;
+  let bootstrapReceipt: AgentBootstrapReceipt | null = null;
   try {
     if (options.dryRun !== true) {
       transaction = await beginProjectLifecycleTransaction(workspacePath, {
         projectPath: sourcePath,
-        ownedWorkspace: willCreateDefaultWorkspace ? workspacePath : undefined,
+        ownedWorkspace:
+          willCreateDefaultWorkspace || willBootstrapWorkspace ? workspacePath : undefined,
       });
       if (willCreateDefaultWorkspace) {
         const ensuredWorkspace = await ensureManagedDefaultImportWorkspace({
@@ -3220,7 +3688,23 @@ export async function handleAdoptCommand(
         workspacePath = ensuredWorkspace.workspacePath;
         createdDefaultWorkspace = ensuredWorkspace.created;
       }
+      if (willBootstrapWorkspace && bootstrapTargetPath) {
+        await bootstrapAdoptWorkspaceTarget(bootstrapTargetPath, transaction);
+        bootstrappedWorkspace = true;
+      }
     }
+    if (!options.json && process.stdout.isTTY) {
+      adoptSpinner = createCliSpinner('Analyzing project for adoption', {
+        component: 'adopt',
+        phase: 'adopt.lifecycle',
+        metadata: {
+          dryRun: options.dryRun === true,
+          workspaceResolution,
+        },
+      });
+    }
+    completeAdoptBlock('adopt.resolve', 'Project and workspace resolved');
+    startAdoptBlock('adopt.detect', 'Detecting architecture and adoption effects');
     const rollbackSnapshot = await captureAdoptProjectRollbackSnapshot(workspacePath, sourcePath);
 
     const adoptedProject = await adoptProjectIntoWorkspace({
@@ -3232,6 +3716,7 @@ export async function handleAdoptCommand(
       projectGrounding: options.projectGrounding,
       rollbackSnapshot,
     });
+    completeAdoptBlock('adopt.detect', 'Architecture and adoption effects detected');
     const projectWorkspaceCommand = 'npx workspai project workspace status --json';
     const existingProjectResolution =
       options.dryRun === true ? resolveProjectWorkspaceSync({ startPath: sourcePath }) : null;
@@ -3243,6 +3728,7 @@ export async function handleAdoptCommand(
           path.resolve(existingProjectResolution.projectPath) === sourcePath));
 
     if (options.dryRun !== true) {
+      startAdoptBlock('adopt.link', 'Linking project to workspace');
       try {
         if (
           dependencies?.registerWorkspace ||
@@ -3265,7 +3751,11 @@ export async function handleAdoptCommand(
         } else {
           const { registerProjectInWorkspaceStrict, registerWorkspaceStrict } =
             await import('./workspace.js');
-          await registerWorkspaceStrict(workspacePath, path.basename(workspacePath));
+          const { resolveWorkspaceRegistrationName } = await import('./workspace-marker.js');
+          await registerWorkspaceStrict(
+            workspacePath,
+            await resolveWorkspaceRegistrationName(workspacePath)
+          );
           await registerProjectInWorkspaceStrict(
             workspacePath,
             adoptedProject.name,
@@ -3275,8 +3765,34 @@ export async function handleAdoptCommand(
             throw new Error('forced sync failure for command-level adopt rollback test');
           }
         }
+        completeAdoptBlock('adopt.link', 'Project linked to workspace');
+        startAdoptBlock('adopt.publish', 'Sealing workspace intelligence');
+        consumerSyncResult = await syncWorkspaceContractAfterProjectChange(workspacePath, {
+          silent: options.json,
+          strict: true,
+        });
+        if (!consumerSyncResult?.freshnessSealed) {
+          throw new Error('Workspace consumer artifacts were generated without a freshness seal.');
+        }
+        completeAdoptBlock('adopt.publish', 'Workspace intelligence freshness sealed');
+        startAdoptBlock('adopt.ground', 'Building the project agent entry');
+        const { buildAgentBootstrapReceipt } = await import('./project-agent-entry.js');
+        bootstrapReceipt = await buildAgentBootstrapReceipt({
+          startPath: sourcePath,
+          forAgent: 'generic',
+          validateLiveInputs: true,
+        });
+        if (bootstrapReceipt.status === 'blocked') {
+          const failedChecks = bootstrapReceipt.checks
+            .filter((check) => check.status === 'failed')
+            .map((check) => `${check.id}: ${check.message}`)
+            .join('; ');
+          throw new Error(
+            `Adopted project did not produce a usable agent-grounding route${failedChecks ? ` (${failedChecks})` : '; inspect the bootstrap checks.'}`
+          );
+        }
         await transaction?.commit();
-        await syncWorkspaceContractAfterProjectChange(workspacePath, { silent: options.json });
+        completeAdoptBlock('adopt.ground', 'Project agent entry is ready');
       } catch (syncError) {
         if (transaction) {
           try {
@@ -3289,21 +3805,31 @@ export async function handleAdoptCommand(
           `Workspace sync failed after adopt and adoption metadata was rolled back: ${syncError instanceof Error ? syncError.message : String(syncError)}`
         );
       }
+    } else {
+      skipAdoptBlock('adopt.link', 'Dry run: workspace link not written');
+      skipAdoptBlock('adopt.publish', 'Dry run: workspace intelligence not published');
+      skipAdoptBlock('adopt.ground', 'Dry run: project agent entry not written');
     }
+
+    adoptSpinner?.succeed(
+      options.dryRun === true ? 'Adoption preview ready' : 'Project adoption ready'
+    );
+    adoptSpinner = undefined;
 
     if (options.json) {
       console.log(
         JSON.stringify(
           {
             workspacePath,
-            workspaceResolution: usedDefaultWorkspace
-              ? 'default-auto'
-              : explicitWorkspace
-                ? 'explicit'
-                : 'nearest',
+            workspaceResolution,
             defaultWorkspaceCreated: usedDefaultWorkspace ? createdDefaultWorkspace : false,
+            workspaceBootstrapped: bootstrappedWorkspace,
             wouldCreateDefaultWorkspace:
               usedDefaultWorkspace && options.dryRun === true
+                ? !hasWorkspaceRootMarkers(workspacePath)
+                : false,
+            wouldBootstrapWorkspace:
+              wouldBootstrapWorkspace && options.dryRun === true
                 ? !hasWorkspaceRootMarkers(workspacePath)
                 : false,
             projectWorkspaceCommand,
@@ -3311,6 +3837,15 @@ export async function handleAdoptCommand(
             dryRun: options.dryRun === true,
             plan: adoptedProject.ingestionPlan,
             adoptedProject,
+            consumerArtifacts:
+              options.dryRun === true || !consumerSyncResult
+                ? null
+                : {
+                    freshnessSealed: consumerSyncResult.freshnessSealed,
+                    reconciledAfterGrounding: consumerSyncResult.reconciledAfterGrounding,
+                    warnings: consumerSyncResult.warnings,
+                  },
+            agentBootstrap: bootstrapReceipt,
           },
           null,
           2
@@ -3323,6 +3858,15 @@ export async function handleAdoptCommand(
       console.log(
         chalk.yellow(
           `ℹ Adopted outside a workspace, so Workspai used the default workspace: ${workspacePath}`
+        )
+      );
+    } else if (bootstrappedWorkspace) {
+      console.log(chalk.green(`✔ Workspace bootstrapped at: ${workspacePath}`));
+    }
+    if (createdDefaultWorkspace && options.dryRun !== true) {
+      console.log(
+        chalk.green(
+          `✓ Workspace ready · 1 registered project · model + graph + agent grounding sealed`
         )
       );
     }
@@ -3365,6 +3909,16 @@ export async function handleAdoptCommand(
       console.log(
         chalk.gray(`   Workspai commands now resolve this workspace directly from the project.`)
       );
+      console.log(
+        chalk.gray(
+          `   Consumer evidence: ${consumerSyncResult?.freshnessSealed ? 'freshness sealed' : 'not sealed'}${consumerSyncResult?.reconciledAfterGrounding ? ' after grounding reconciliation' : ''}.`
+        )
+      );
+      console.log(
+        chalk.gray(
+          `   Agent grounding: ${bootstrapReceipt?.status ?? 'unknown'}; project environment: ${bootstrapReceipt?.readiness.projectEnvironment ?? 'unknown'}; release: ${bootstrapReceipt?.readiness.release ?? 'not-verified'}.`
+        )
+      );
       console.log(chalk.gray(`   Check: ${projectWorkspaceCommand}`));
       console.log(
         chalk.gray(
@@ -3384,6 +3938,9 @@ export async function handleAdoptCommand(
       }
     }
     const message = error instanceof Error ? error.message : String(error);
+    failActiveAdoptBlock(message);
+    adoptSpinner?.fail('Project adoption failed');
+    adoptSpinner = undefined;
     if (options.json) {
       console.log(JSON.stringify({ error: message }, null, 2));
     } else {
@@ -3656,6 +4213,7 @@ async function ensureManagedDefaultImportWorkspace(options: { silent?: boolean }
         skipGit: true,
         yes: true,
         userConfig: await loadUserConfig(),
+        suppressReceipt: true,
       });
     } finally {
       if (options.silent) {
@@ -6212,7 +6770,9 @@ export async function handleInitCommand(args: string[]): Promise<number> {
           affected: false,
           blastRadius: false,
           parallel: false,
-          continueOnError: false,
+          // Full workspace init is an inventory operation as well as an
+          // installer: collect every unavailable runtime in one report.
+          continueOnError: true,
           strict: false,
           json: false,
           enforceGates: false,
@@ -6702,6 +7262,7 @@ export async function shouldForwardToCore(args: string[]): Promise<boolean> {
     first === '--help' ||
     first === '-h' ||
     first === 'help' ||
+    first === 'version' ||
     first === '--version' ||
     first === '-V' ||
     first === '-v'
@@ -6762,6 +7323,125 @@ Discover more:
   https://workspai.dev             Guides, contracts, and examples
 `
 );
+
+program
+  .command('live [target]')
+  .description('Open a live cross-terminal execution graph for Workspai activity')
+  .option('--global', 'Monitor activity across all local Workspai projects and workspaces')
+  .option('--run <runId>', 'Show only one activity run')
+  .option('--once', 'Render one snapshot and exit')
+  .option('--json', 'Emit monitor snapshots as JSON')
+  .addOption(
+    new Option('--projection <projection>', 'JSON projection: monitor or renderer-neutral board')
+      .choices(['monitor', 'board'])
+      .default('monitor')
+  )
+  .option('--refresh-ms <milliseconds>', 'Live refresh interval (100-5000ms)', '250')
+  .option('--max-runs <count>', 'Maximum runs rendered in the terminal', '6')
+  .option('--max-scopes <count>', 'Maximum local scopes discovered by --global', '12')
+  .option('--classic', 'Use the compatibility line-oriented renderer')
+  .option('--no-color', 'Disable terminal colors')
+  .option('--no-motion', 'Disable animated flow indicators')
+  .option('--ascii', 'Use ASCII-only symbols and connectors')
+  .option('--accessible', 'Use a stable screen-reader-friendly linear view')
+  .option('--capture <file>', 'Write a deterministic product-ready SVG snapshot and exit')
+  .option('--capture-preset <preset>', 'Capture size: github, linkedin, x, square, wide', 'github')
+  .option('--capture-theme <theme>', 'Capture theme: obsidian, light, mono', 'obsidian')
+  .option(
+    '--no-capture-redact',
+    'Keep local workspace, project, run and argument labels in capture'
+  )
+  .option('--replay <runId>', 'Replay a durable activity run with pause and step controls')
+  .option('--replay-speed <multiplier>', 'Replay speed from 0.25 to 64', '4')
+  .action(
+    async (
+      target: string | undefined,
+      options: {
+        run?: string;
+        once?: boolean;
+        json?: boolean;
+        projection?: 'monitor' | 'board';
+        refreshMs?: string;
+        maxRuns?: string;
+        classic?: boolean;
+        color?: boolean;
+        motion?: boolean;
+        ascii?: boolean;
+        accessible?: boolean;
+        global?: boolean;
+        maxScopes?: string;
+        capture?: string;
+        capturePreset?: string;
+        captureTheme?: string;
+        captureRedact?: boolean;
+        replay?: string;
+        replaySpeed?: string;
+      }
+    ) => {
+      const refreshMs = Number.parseInt(options.refreshMs ?? '250', 10);
+      const maxRuns = Number.parseInt(options.maxRuns ?? '6', 10);
+      const maxScopes = Number.parseInt(options.maxScopes ?? '12', 10);
+      const replaySpeed = Number.parseFloat(options.replaySpeed ?? '4');
+      if (!Number.isFinite(refreshMs) || refreshMs < 100 || refreshMs > 5_000) {
+        throw new Error('--refresh-ms must be an integer from 100 to 5000.');
+      }
+      if (!Number.isFinite(maxRuns) || maxRuns < 1 || maxRuns > 50) {
+        throw new Error('--max-runs must be an integer from 1 to 50.');
+      }
+      if (!Number.isFinite(maxScopes) || maxScopes < 1 || maxScopes > 50) {
+        throw new Error('--max-scopes must be an integer from 1 to 50.');
+      }
+      if (!Number.isFinite(replaySpeed) || replaySpeed < 0.25 || replaySpeed > 64) {
+        throw new Error('--replay-speed must be a number from 0.25 to 64.');
+      }
+      if (options.projection === 'board' && options.json !== true) {
+        throw new Error('--projection board requires --json.');
+      }
+      if (options.projection === 'board' && options.capture) {
+        throw new Error(
+          '--projection board cannot be combined with --capture; capture already uses the Activity Board internally.'
+        );
+      }
+      if (options.global === true && target) {
+        throw new Error('A target path cannot be combined with --global.');
+      }
+      if (options.replay && options.global === true) {
+        throw new Error('--replay cannot be combined with --global.');
+      }
+      if (options.replay && options.capture) {
+        throw new Error('--replay cannot be combined with --capture.');
+      }
+      if (!['github', 'linkedin', 'x', 'square', 'wide'].includes(options.capturePreset ?? '')) {
+        throw new Error('--capture-preset must be github, linkedin, x, square, or wide.');
+      }
+      if (!['obsidian', 'light', 'mono'].includes(options.captureTheme ?? '')) {
+        throw new Error('--capture-theme must be obsidian, light, or mono.');
+      }
+      const { runLiveCommand } = await import('./live-command.js');
+      await runLiveCommand({
+        targetPath: target,
+        runId: options.run,
+        once: options.once === true,
+        json: options.json === true,
+        projection: options.projection ?? 'monitor',
+        refreshMs,
+        maxRuns,
+        classic: options.classic === true,
+        color: options.color === false ? false : undefined,
+        motion: options.motion === false ? false : undefined,
+        ascii: options.ascii === true ? true : undefined,
+        accessible: options.accessible === true,
+        global: options.global === true,
+        maxScopes,
+        capturePath: options.capture,
+        capturePreset: options.capturePreset as 'github' | 'linkedin' | 'x' | 'square' | 'wide',
+        captureTheme: options.captureTheme as 'obsidian' | 'light' | 'mono',
+        captureRedact: options.captureRedact !== false,
+        replayRunId: options.replay,
+        replaySpeed,
+      });
+    }
+  );
 
 // Main command: npx workspai <name> (legacy: npx rapidkit <name>)
 program
@@ -7132,6 +7812,7 @@ program
 
 // Register AI commands
 registerAICommands(program);
+registerChangeCommands(program);
 
 // Register Product Factory commands
 registerProductCommands(program);
@@ -7253,7 +7934,7 @@ program
     const candidate = findActivationCandidate(cwd);
     // If we didn't find either context.json or an activation candidate, bail
     if (!ctxFile && !candidate) {
-      console.log(chalk.yellow('No Workspai project found in this directory'));
+      console.log(chalk.yellow(missingShellActivationDiagnostic(cwd)));
       process.exit(1);
     }
 
@@ -7468,7 +8149,10 @@ program
   .description(
     'Adopt an existing local project into a Workspai workspace without moving or copying source'
   )
-  .option('--workspace <path>', 'Workspace root path (defaults to nearest or managed default)')
+  .option(
+    '--workspace <path>',
+    'Workspace root path (valid workspace, or an existing empty directory to bootstrap)'
+  )
   .option('--name <projectName>', 'Override adopted project name')
   .option(
     '--enable-modules',
@@ -8076,6 +8760,8 @@ agentCommand
         operation: 'agent bootstrap',
       })
   );
+
+registerAgentFrameworkCommands(agentCommand);
 
 const projectCommand = program
   .command('project')
@@ -8748,7 +9434,15 @@ program
   .option('--write', 'Write workspace intelligence artifact to .workspai/reports')
   .option('--include-evidence', 'Read status metadata from referenced evidence reports')
   .option('--scan-depth <count>', 'Observable project discovery depth for large monorepos')
+  .option(
+    '--graph-inventory-limit <count>',
+    'Emergency per-project Graph inventory bound (default 500000, maximum 2000000)'
+  )
+  .option('--graph-semantic-budget <count>', 'Per-project adaptive semantic scan budget override')
+  .option('--graph-deep-budget <count>', 'Per-project adaptive deep-provider budget override')
+  .option('--graph-source-budget <count>', 'Per-project source extraction budget override')
   .option('--limit <count>', 'Bound graph search results (default 12, maximum 100)')
+  .option('--kind <kind>', 'Limit graph search to one canonical entity kind')
   .option(
     '--refresh-graph',
     'Bypass the compatible persisted knowledge graph and rebuild from live workspace sources'
@@ -8825,6 +9519,7 @@ program
   .option('--blast-radius', 'Include downstream dependents from workspace dependency graph')
   .option('--since <ref>', 'Git ref for affected calculation (default: HEAD~1)')
   .option('--parallel', 'Run project stages in parallel')
+  .option('--plan', 'Resolve runtime units and lifecycle commands without executing them')
   .option(
     '--runtime <runtime>',
     'Limit workspace run or a test-coverage Goal to one detected runtime family'
@@ -8849,13 +9544,7 @@ program
   .option('--approved-by <actor>', 'Local actor approving the immutable repair plan')
   .addOption(
     new Option('--decision <choice>', 'Resolve a decision-required repair transaction').choices([
-      'approve-guarded',
-      'approve-invasive',
-      'allow-breaking',
-      'allow-force',
-      'manual-repair',
-      'rollback',
-      'cancel',
+      ...WORKSPACE_REPAIR_DECISIONS,
     ])
   )
   .addOption(
@@ -8904,7 +9593,12 @@ See the command reference for action-specific required inputs and output artifac
       write?: boolean;
       includeEvidence?: boolean;
       scanDepth?: string;
+      graphInventoryLimit?: string;
+      graphSemanticBudget?: string;
+      graphDeepBudget?: string;
+      graphSourceBudget?: string;
       limit?: string;
+      kind?: string;
       forAgent?: string | boolean;
       agentSync?: boolean;
       noAgentSync?: boolean;
@@ -8952,14 +9646,7 @@ See the command reference for action-specific required inputs and output artifac
       proposal?: string;
       transaction?: string;
       approvedBy?: string;
-      decision?:
-        | 'approve-guarded'
-        | 'approve-invasive'
-        | 'allow-breaking'
-        | 'allow-force'
-        | 'manual-repair'
-        | 'rollback'
-        | 'cancel';
+      decision?: WorkspaceRepairDecision;
       maxRisk?: 'safe' | 'guarded' | 'invasive';
       autoRollback?: boolean;
       build?: boolean;
@@ -9044,6 +9731,56 @@ See the command reference for action-specific required inputs and output artifac
       const parsed = Number.parseInt(actionOptions.scanDepth, 10);
       return Number.isFinite(parsed) ? parsed : undefined;
     };
+    const workspaceGraphBudget = (
+      value: string | undefined,
+      flag: string,
+      maximum: number
+    ): number | undefined => {
+      if (value === undefined) return undefined;
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > maximum) {
+        throw new Error(`${flag} must be an integer between 1 and ${maximum}.`);
+      }
+      return parsed;
+    };
+    const workspaceGraphBudgets = () => ({
+      ...(actionOptions.graphInventoryLimit !== undefined
+        ? {
+            inventoryFileLimitPerProject: workspaceGraphBudget(
+              actionOptions.graphInventoryLimit,
+              '--graph-inventory-limit',
+              2_000_000
+            ),
+          }
+        : {}),
+      ...(actionOptions.graphSemanticBudget !== undefined
+        ? {
+            semanticFilesPerProject: workspaceGraphBudget(
+              actionOptions.graphSemanticBudget,
+              '--graph-semantic-budget',
+              250_000
+            ),
+          }
+        : {}),
+      ...(actionOptions.graphDeepBudget !== undefined
+        ? {
+            maxFilesPerProject: workspaceGraphBudget(
+              actionOptions.graphDeepBudget,
+              '--graph-deep-budget',
+              100_000
+            ),
+          }
+        : {}),
+      ...(actionOptions.graphSourceBudget !== undefined
+        ? {
+            sourceFilesPerProject: workspaceGraphBudget(
+              actionOptions.graphSourceBudget,
+              '--graph-source-budget',
+              50_000
+            ),
+          }
+        : {}),
+    });
     const parseArchiveByteSize = (raw: string | undefined, flag: string): number | undefined => {
       if (!raw) return undefined;
       const match = raw
@@ -9313,15 +10050,19 @@ See the command reference for action-specific required inputs and output artifac
       } = await import('./workspace-repair-engine.js');
       if (repairAction === 'capabilities') {
         let workspacePath: string | undefined;
+        let resolvedProjectPath: string | undefined;
         if (actionOptions.workspace) {
           workspacePath = requireWorkspaceRootForAction('repair capabilities');
         } else {
           try {
-            const resolved = resolveProjectWorkspaceSync({
+            const resolution = resolveProjectWorkspaceSync({
               startPath: process.cwd(),
               strict: false,
-            })?.workspacePath;
-            if (resolved && hasWorkspaceRootMarkers(resolved)) workspacePath = resolved;
+            });
+            if (resolution && hasWorkspaceRootMarkers(resolution.workspacePath)) {
+              workspacePath = resolution.workspacePath;
+              resolvedProjectPath = resolution.projectPath ?? undefined;
+            }
           } catch {
             // Capability discovery is intentionally available without a
             // workspace. Resolution errors only suppress optional local
@@ -9333,6 +10074,7 @@ See the command reference for action-specific required inputs and output artifac
             ? {
                 workspacePath,
                 project: actionOptions.project,
+                projectPath: actionOptions.project ? undefined : resolvedProjectPath,
               }
             : actionOptions.project
               ? { project: actionOptions.project }
@@ -9961,7 +10703,53 @@ See the command reference for action-specific required inputs and output artifac
       const { buildGraphEmit, renderGraphDot, renderGraphMermaid, explainGraphNode } =
         await import('./workspace-graph.js');
       const mode = (subaction || 'emit').toLowerCase();
-      const persistedReadModes = new Set(['benchmark', 'entities', 'evidence', 'path', 'search']);
+      const supportedGraphModes = [
+        'emit',
+        'dot',
+        'mermaid',
+        'jsonld',
+        'graphml',
+        'gexf',
+        'explain',
+        'entities',
+        'search',
+        'benchmark',
+        'benchmark-suite',
+        'evidence',
+        'path',
+        'overlay',
+      ] as const;
+      if (!supportedGraphModes.includes(mode as (typeof supportedGraphModes)[number])) {
+        const message = `Unknown workspace graph mode '${mode}'.`;
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: `workspace graph ${mode}`,
+                code: 'workspace.graph.mode.unsupported',
+                message,
+                exitCode: 2,
+                context: { mode, supportedModes: supportedGraphModes },
+                examples: ['workspai workspace graph emit --json'],
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(`❌ ${message}`));
+          console.log(chalk.gray(`   Supported: ${supportedGraphModes.join(', ')}`));
+        }
+        process.exit(2);
+      }
+      const persistedReadModes = new Set([
+        'benchmark',
+        'benchmark-suite',
+        'entities',
+        'evidence',
+        'path',
+        'search',
+      ]);
       const forceGraphRefresh =
         actionOptions.refreshGraph === true || hasRawFlag('--refresh-graph');
       const snapshot =
@@ -10020,6 +10808,7 @@ See the command reference for action-specific required inputs and output artifac
           // Observed workspaces can still produce a knowledge graph without an authored contract.
         }
         return buildWorkspaceKnowledgeGraph({
+          ...workspaceGraphBudgets(),
           workspacePath,
           workspace: {
             name: model.workspace.name,
@@ -10032,6 +10821,9 @@ See the command reference for action-specific required inputs and output artifac
             runtime: project.runtime,
             runtimeCandidates: project.runtimeCandidates,
             framework: project.framework,
+            kind: project.kind,
+            category: project.category,
+            ...(project.governance ? { governance: project.governance } : {}),
             ...(project.kit ? { kit: project.kit } : {}),
           })),
           projectTopology: graph,
@@ -10191,15 +10983,38 @@ See the command reference for action-specific required inputs and output artifac
       if (mode === 'entities') {
         const knowledgeGraph = await buildKnowledgeGraph();
         const { queryKnowledgeEntities } = await import('./workspace-knowledge-graph-query.js');
-        const entities = queryKnowledgeEntities(knowledgeGraph, key);
+        const requestedKind = (key || actionOptions.kind || '').trim() || undefined;
+        if (requestedKind) {
+          const { WORKSPACE_KNOWLEDGE_ENTITY_KINDS } =
+            await import('./contracts/workspace-knowledge-graph-contract.js');
+          if (!WORKSPACE_KNOWLEDGE_ENTITY_KINDS.includes(requestedKind as never)) {
+            console.log(chalk.red(`❌ Unknown graph entity kind: ${requestedKind}`));
+            console.log(chalk.gray(`   Supported: ${WORKSPACE_KNOWLEDGE_ENTITY_KINDS.join(', ')}`));
+            process.exit(1);
+          }
+        }
+        const projectId = actionOptions.scope?.startsWith('project:')
+          ? actionOptions.scope.slice('project:'.length).trim()
+          : undefined;
+        const allEntities = queryKnowledgeEntities(knowledgeGraph, requestedKind, projectId);
+        const rawLimit = actionOptions.limit ?? rawFlagValue('--limit');
+        const limit = rawLimit === undefined ? undefined : Number.parseInt(rawLimit, 10);
+        if (limit !== undefined && (!Number.isFinite(limit) || limit < 1 || limit > 100)) {
+          console.log(chalk.red('❌ --limit must be an integer between 1 and 100.'));
+          process.exit(1);
+        }
+        const entities = limit === undefined ? allEntities : allEntities.slice(0, limit);
         if (actionOptions.json) {
           console.log(
             JSON.stringify(
               {
                 schemaVersion: knowledgeGraph.schemaVersion,
                 generatedAt: knowledgeGraph.generatedAt,
-                kind: key ?? null,
+                kind: requestedKind ?? null,
+                ...(projectId ? { projectId } : {}),
                 count: entities.length,
+                totalMatches: allEntities.length,
+                truncated: entities.length < allEntities.length,
                 entities,
               },
               null,
@@ -10208,11 +11023,95 @@ See the command reference for action-specific required inputs and output artifac
           );
           return;
         }
-        console.log(chalk.green(`✔ Workspace graph entities${key ? `: ${key}` : ''}`));
-        console.log(chalk.gray(`   Count: ${entities.length}`));
+        console.log(
+          chalk.green(`✔ Workspace graph entities${requestedKind ? `: ${requestedKind}` : ''}`)
+        );
+        console.log(
+          chalk.gray(
+            `   Count: ${entities.length}/${allEntities.length}${entities.length < allEntities.length ? ' (bounded)' : ''}`
+          )
+        );
         for (const entity of entities) {
           console.log(chalk.gray(`   • ${entity.kind}: ${entity.label} [${entity.id}]`));
         }
+        return;
+      }
+
+      if (mode === 'benchmark-suite') {
+        const suiteId = (key || 'agent-core.v1').trim();
+        const {
+          WORKSPACE_INTELLIGENCE_BENCHMARK_REPORT_PATH,
+          WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES,
+          buildWorkspaceIntelligenceBenchmark,
+          writeWorkspaceIntelligenceBenchmark,
+        } = await import('./workspace-intelligence-benchmark.js');
+        if (!(suiteId in WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES)) {
+          console.log(chalk.red(`❌ Unknown benchmark suite: ${suiteId}`));
+          console.log(
+            chalk.gray(
+              `   Supported: ${Object.keys(WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES).join(', ')}`
+            )
+          );
+          process.exit(2);
+        }
+        const limitValue = Number.parseInt(
+          actionOptions.limit ?? rawFlagValue('--limit') ?? '12',
+          10
+        );
+        if (!Number.isFinite(limitValue) || limitValue < 1 || limitValue > 100) {
+          console.log(chalk.red('❌ --limit must be an integer between 1 and 100.'));
+          process.exit(1);
+        }
+        const knowledgeGraph = await buildKnowledgeGraph();
+        const report = await buildWorkspaceIntelligenceBenchmark({
+          workspacePath,
+          graph: knowledgeGraph,
+          suite: suiteId as keyof typeof WORKSPACE_INTELLIGENCE_BENCHMARK_SUITES,
+          limit: limitValue,
+          ...(actionOptions.from ? { baselineEvaluationPath: actionOptions.from } : {}),
+        });
+        const writeRequested =
+          actionOptions.write === true || hasRawFlag('--write') || Boolean(workspaceOutputPath());
+        const outputPath = writeRequested
+          ? await writeWorkspaceIntelligenceBenchmark(
+              workspacePath,
+              report,
+              workspaceOutputPath() ?? WORKSPACE_INTELLIGENCE_BENCHMARK_REPORT_PATH
+            )
+          : undefined;
+        if (actionOptions.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationSuccess('workspace graph benchmark-suite', report, outputPath),
+              null,
+              2
+            )
+          );
+          return;
+        }
+        console.log(chalk.green(`✔ Workspace Intelligence benchmark: ${report.suite.title}`));
+        console.log(
+          chalk.gray(
+            `   Scenarios: ${report.retrievalSummary.matchedScenarioCount}/${report.retrievalSummary.scenarioCount} matched · ${report.retrievalSummary.status}`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Median estimated retrieval: ${report.retrievalSummary.medianRetrievalEstimatedTokens} tokens · p95 ${report.retrievalSummary.p95RetrievalEstimatedTokens}`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Median estimated payload reduction: ${report.retrievalSummary.medianEstimatedReductionPercent}%`
+          )
+        );
+        console.log(
+          chalk.gray(
+            `   Model evaluation: ${report.evaluation.availability} (${report.evaluation.provenance})`
+          )
+        );
+        console.log(chalk.yellow(`   ${report.methodology.claimBoundary}`));
+        if (outputPath) console.log(chalk.gray(`   Written: ${outputPath}`));
         return;
       }
 
@@ -10270,9 +11169,20 @@ See the command reference for action-specific required inputs and output artifac
         const projectId = actionOptions.scope?.startsWith('project:')
           ? actionOptions.scope.slice('project:'.length).trim()
           : undefined;
+        const requestedKind = actionOptions.kind ? String(actionOptions.kind).trim() : undefined;
+        if (requestedKind) {
+          const { WORKSPACE_KNOWLEDGE_ENTITY_KINDS } =
+            await import('./contracts/workspace-knowledge-graph-contract.js');
+          if (!WORKSPACE_KNOWLEDGE_ENTITY_KINDS.includes(requestedKind as never)) {
+            console.log(chalk.red(`❌ Unknown graph entity kind: ${requestedKind}`));
+            console.log(chalk.gray(`   Supported: ${WORKSPACE_KNOWLEDGE_ENTITY_KINDS.join(', ')}`));
+            process.exit(1);
+          }
+        }
         const result = searchKnowledgeGraph(knowledgeGraph, {
           query,
           limit: limitValue,
+          ...(requestedKind ? { kind: requestedKind } : {}),
           ...(projectId ? { projectId } : {}),
           projection: 'agent',
         });
@@ -10300,7 +11210,10 @@ See the command reference for action-specific required inputs and output artifac
         }
         const knowledgeGraph = await buildKnowledgeGraph();
         const { queryKnowledgeEvidence } = await import('./workspace-knowledge-graph-query.js');
-        const result = queryKnowledgeEvidence(knowledgeGraph, query);
+        const projectId = actionOptions.scope?.startsWith('project:')
+          ? actionOptions.scope.slice('project:'.length).trim()
+          : undefined;
+        const result = queryKnowledgeEvidence(knowledgeGraph, query, projectId);
         if (actionOptions.json) {
           console.log(JSON.stringify(result, null, 2));
         } else if (result.found) {
@@ -10338,7 +11251,10 @@ See the command reference for action-specific required inputs and output artifac
         }
         const knowledgeGraph = await buildKnowledgeGraph();
         const { queryKnowledgePath } = await import('./workspace-knowledge-graph-query.js');
-        const result = queryKnowledgePath(knowledgeGraph, from, to);
+        const projectId = actionOptions.scope?.startsWith('project:')
+          ? actionOptions.scope.slice('project:'.length).trim()
+          : undefined;
+        const result = queryKnowledgePath(knowledgeGraph, from, to, projectId);
         if (actionOptions.json) {
           console.log(JSON.stringify(result, null, 2));
         } else if (result.found) {
@@ -10441,7 +11357,13 @@ See the command reference for action-specific required inputs and output artifac
       }
 
       const emit = buildGraphEmit(graph);
-      const knowledgeGraph = await buildKnowledgeGraph();
+      const { writeWorkspaceModel } = await import('./workspace-model.js');
+      await writeWorkspaceModel(model, workspacePath, {
+        refreshKnowledgeGraph: forceGraphRefresh,
+      });
+      const knowledgeGraph = (await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+      )) as Awaited<ReturnType<typeof buildKnowledgeGraph>>;
       const payload = { ...emit, knowledgeGraph };
       const output = workspaceOutputPath();
       if (output) {
@@ -10494,6 +11416,31 @@ See the command reference for action-specific required inputs and output artifac
           `   Knowledge: ${knowledgeGraph.quality.entityCount} entities · ${knowledgeGraph.quality.relationCount} relations · ${knowledgeGraph.quality.proofCount} proofs · ${knowledgeGraph.providers.length} providers`
         )
       );
+      const truncatedGraphScopes = (knowledgeGraph.source.inputs?.scopes ?? []).filter(
+        (scope) => scope.truncated
+      );
+      const completeness = knowledgeGraph.quality.completeness;
+      if (truncatedGraphScopes.length > 0) {
+        console.log(
+          chalk.yellow(
+            `   Inventory: emergency-bounded — ${truncatedGraphScopes.map((scope) => `${scope.kind}:${scope.id} indexed ${scope.fileCount}/${scope.eligibleFileCountExact === false ? 'at-least-' : ''}${scope.eligibleFileCount ?? scope.fileCount} eligible files`).join(', ')}`
+          )
+        );
+      } else {
+        console.log(
+          chalk.gray(
+            `   Inventory: complete — ${completeness?.inventory.indexedFiles ?? (knowledgeGraph.source.inputs?.scopes ?? []).reduce((count, scope) => count + scope.fileCount, 0)} eligible files indexed across ${completeness?.inventory.scopeCount ?? (knowledgeGraph.source.inputs?.scopes ?? []).length} scope(s)`
+          )
+        );
+      }
+      if (completeness) {
+        const providerText = `${completeness.providers.complete} complete · ${completeness.providers.bounded} adaptive-bounded · ${completeness.providers.notApplicable} not-applicable · ${completeness.providers.failed} failed`;
+        console.log(
+          completeness.status === 'complete'
+            ? chalk.gray(`   Provider coverage: ${providerText}`)
+            : chalk.yellow(`   Provider coverage: ${providerText}`)
+        );
+      }
       console.log(
         chalk.gray(
           '   Query: workspace graph search <query> | entities [kind] | path <from> <to> | evidence <entity-or-relation> | overlay --from <graph.json>'
@@ -10558,6 +11505,7 @@ See the command reference for action-specific required inputs and output artifac
                 // Observed workspaces remain valid graph-stream sources.
               }
               const graph = await buildWorkspaceKnowledgeGraph({
+                ...workspaceGraphBudgets(),
                 workspacePath,
                 workspace: {
                   name: model.workspace.name,
@@ -10734,13 +11682,15 @@ See the command reference for action-specific required inputs and output artifac
       const {
         buildWorkspaceContractGraph,
         readWorkspaceContract,
+        syncWorkspaceContract,
         verifyWorkspaceContract,
         writeWorkspaceContract,
         WORKSPACE_CONTRACT_PATH,
       } = await import('./utils/workspace-contract.js');
       const contractAction = subaction || 'inspect';
       const requestedOutput = workspaceOutputPath();
-      const contractPath = contractAction === 'graph' ? undefined : requestedOutput;
+      const contractPath =
+        contractAction === 'graph' || contractAction === 'sync' ? undefined : requestedOutput;
 
       try {
         if (contractAction === 'init') {
@@ -10768,6 +11718,22 @@ See the command reference for action-specific required inputs and output artifac
           console.log(chalk.gray(`   Workspace: ${result.contract.workspace.name}`));
           console.log(chalk.gray(`   Projects: ${result.contract.projects.length}`));
           console.log(chalk.gray(`   Schema: v${result.contract.schemaVersion}`));
+          return;
+        }
+
+        if (contractAction === 'sync') {
+          const result = await syncWorkspaceContract({
+            workspacePath,
+            strict: actionOptions.strict === true || hasRawFlag('--strict'),
+          });
+          if (actionOptions.json) {
+            console.log(JSON.stringify(result, null, 2));
+            return;
+          }
+          console.log(chalk.green(`✔ Workspace contract synchronized: ${result.contractPath}`));
+          console.log(chalk.gray(`   Projects: ${result.contract.projects.length}`));
+          console.log(chalk.gray(`   Added: ${result.addedProjects.join(', ') || 'none'}`));
+          console.log(chalk.gray(`   Updated: ${result.updatedProjects.join(', ') || 'none'}`));
           return;
         }
 
@@ -10901,7 +11867,7 @@ See the command reference for action-specific required inputs and output artifac
         console.log(chalk.red(`❌ Unknown workspace contract action: ${contractAction}`));
         console.log(
           chalk.white(
-            `   npx workspai workspace contract init|inspect|verify|graph [--output ${WORKSPACE_CONTRACT_PATH}]`
+            `   npx workspai workspace contract init|inspect|sync|verify|graph [--output ${WORKSPACE_CONTRACT_PATH}]`
           )
         );
         process.exit(1);
@@ -12148,6 +13114,7 @@ export function printHelp() {
   line('npx workspai doctor workspace --json', 'Diagnose projects and workspace health');
   line('npx workspai project coverage --run --target 80 --json', 'Measure one project');
   line('npx workspai workspace explain <target> --write --json', 'Explain a blocker or project');
+  line('npx workspai live .', 'Watch every Workspai run and active architecture block live');
   line('npx workspai readiness --strict --json', 'Evaluate release readiness');
   line('npx workspai pipeline --strict --json', 'Run the broader governance and release loop');
 
@@ -12355,17 +13322,20 @@ export async function bootstrapCli(): Promise<void> {
   forceBlockingCliOutput();
   installSynchronousPipeWrites();
   installCliProcessExitHook();
+
+  // Resolve observability flags before the activity run is opened so the
+  // command identity excludes renderer/logging-only arguments.
+  normalizeObservabilityInvocation(process.argv);
   initializeCliRunContext({
     argv: process.argv,
     cwd: process.cwd(),
     rapidkitVersion: getVersion(),
+    activityBlueprint: resolveCliActivityBlueprint(process.argv.slice(2)),
   });
 
   // Make `--log-format json`/`--log-json` sticky via env and strip them from argv
   // so commander-parsed commands (e.g. `workspace`) don't reject them as unknown
   // options before the structured log stream can run.
-  normalizeObservabilityInvocation(process.argv);
-
   const preArgs = process.argv.slice(2);
   const preFirst = preArgs[0];
   const preCwd = process.cwd();
@@ -12382,6 +13352,24 @@ export async function bootstrapCli(): Promise<void> {
   const shouldRenderCustomRootHelp =
     preArgs.length === 0 ||
     (preArgs.length === 1 && (preFirst === '--help' || preFirst === '-h' || preFirst === 'help'));
+  const isPositionalVersionInvocation =
+    preFirst === 'version' &&
+    preArgs.slice(1).every((arg) => arg === '--json' || arg === '--no-color');
+
+  // Wrapper lifecycle commands bypass Commander. Handle help before runtime
+  // detection, readiness writes or delegation can execute a project command.
+  if (
+    isWrapperLifecycleCommand(preFirst) &&
+    preArgs
+      .slice(1, preArgs.indexOf('--') < 0 ? undefined : preArgs.indexOf('--'))
+      .some((arg) => arg === '--help' || arg === '-h')
+  ) {
+    await writeStdoutAndExit(
+      `Workspai ${preFirst}\n\nUsage: workspai ${preFirst}\n\nRun the project's ${preFirst} command through its runtime adapter.\n` +
+        'Run workspai project commands --json to inspect project capabilities.\n' +
+        'Run workspai workspace run --help for fleet execution and planning.\n'
+    );
+  }
 
   if (isWorkspaceActionHelpRequest(preArgs)) {
     await writeStdoutAndExit(`${renderWorkspaceActionHelp(preArgs[1])}\n`);
@@ -12394,7 +13382,8 @@ export async function bootstrapCli(): Promise<void> {
   }
 
   if (
-    preArgs.some((arg) => arg === '--version' || arg === '-V' || arg === '-v') &&
+    (isPositionalVersionInvocation ||
+      preArgs.some((arg) => arg === '--version' || arg === '-V' || arg === '-v')) &&
     !preArgs.some((arg) => arg === '--help' || arg === '-h' || arg === 'help')
   ) {
     if (preArgs.includes('--json')) {
@@ -12429,7 +13418,10 @@ export async function bootstrapCli(): Promise<void> {
   } else if (shouldParseNpmOnlyDirectly || shouldKeepNpmOwnedCommandLocal) {
     program
       .parseAsync()
-      .then(() => exitAfterOutputFlush(0))
+      .then(() => {
+        const requestedExitCode = Number(process.exitCode ?? 0);
+        return exitAfterOutputFlush(Number.isInteger(requestedExitCode) ? requestedExitCode : 1);
+      })
       .catch((error) => {
         const detail =
           shouldDebugWorkspaiArgs() && error instanceof Error && error.stack

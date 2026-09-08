@@ -5,8 +5,9 @@ remain the release gates. Real-world qualification complements them by running
 the installed CLI against explicitly selected reference repositories through
 local, network-free Git snapshots
 without installing dependencies or executing project lifecycle commands.
-Every isolated workspace also receives a private `WORKSPAI_STATE_DIR` beneath
-`--run-root`; qualification cannot read or update the user's canonical registry,
+Every isolated workspace also receives private `WORKSPAI_STATE_DIR` and
+`WORKSPAI_ACTIVITY_STATE_DIR` roots beneath `--run-root`; qualification cannot
+read or update the user's canonical registry, activity journals, transaction
 journals, or legacy registry mirror.
 
 ## Isolated and cumulative layouts
@@ -66,6 +67,17 @@ npm run test:real-world:enterprise -- \
   --report "$QUALIFICATION_ROOT/enterprise-command-surface.json"
 ```
 
+The enterprise harness resolves a real project from the graph, workspace
+contract, model, or imported-project registry. It never assumes a fixture
+project name. Snapshot names are unique per run, so the harness can be repeated
+against the same isolated workspace without creating a false lifecycle failure.
+Graph queries may target either managed or linked projects. Project archive and
+delete dry runs use a separate lifecycle target and are emitted only for a
+managed project physically contained by the workspace. When a workspace has
+only linked external projects, the report records
+`coverage.projectLifecycle: skipped-no-managed-project`; it does not misreport
+that safety boundary as a command failure.
+
 ## Safety and interpretation
 
 - Reference repositories are cloned locally with `git clone --shared`; no
@@ -82,18 +94,27 @@ npm run test:real-world:enterprise -- \
 - Dependency installation, project build/test/start/init, infrastructure
   mutation, publication, and model network calls are not permitted.
 - Agent customization and destructive project operations are dry-run only.
+- Runtime candidates describe observed nested composition; the authoritative
+  project runtime controls repair-adapter assertions. An aggregate boundary with
+  runtime `unknown` therefore follows the governed manual-repair path instead of
+  promoting its first nested runtime candidate. Analyze reports a confirmed
+  multi-runtime aggregate as informational architecture rather than an
+  unknown-stack blocker.
 - Goal qualification publishes one system-understanding Goal inside the
   isolated test workspace, validates its lifecycle binding, and previews
   runtime-specific coverage and release-readiness goals without executing
   project tests or mutating project source.
-- Exit codes `1` and `2` may be valid domain outcomes when their documented JSON
-  contracts parse successfully; unexpected process, timeout, buffer, or schema
-  failures fail qualification.
+- Exit codes `1` and `2` are accepted only for commands whose contract explicitly
+  permits a governed block and only when the JSON payload contains a recognized
+  blocked/not-ready outcome. Graph lookup, project lifecycle, process, timeout,
+  buffer, malformed JSON, and schema failures fail qualification.
 - A real repository warning remains evidence, not a CLI defect. Fix the CLI only
   when detection, classification, contract, portability, or command semantics
   are wrong.
 - Full graphs belong in `--output` artifacts. Agents and IDEs consume bounded
   `search`, `entities`, `evidence`, and `path` results.
+- Every qualification also reads the renderer-neutral Live Board projection
+  from its isolated activity state and requires at least one observed CLI run.
 
 These suites are explicit and opt-in because they require local reference
 repositories. They do not replace cross-platform CI fixtures or release gates.

@@ -74,6 +74,34 @@ function normalizeArtifactPath(artifactPath: string): string {
 const S = WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS;
 const WORKSPACE_ARTIFACT_PATTERN_CONTRACTS = [
   {
+    pattern: /^\.workspai\/decisions\/change-[^/]+\/transaction\.json$/,
+    canonicalPath: S.decisionTransaction.artifactPath,
+  },
+  {
+    pattern: /^\.workspai\/decisions\/change-[^/]+\/checkpoint\.json$/,
+    canonicalPath: S.decisionCheckpoint.artifactPath,
+  },
+  {
+    pattern: /^\.workspai\/changes\/change-[^/]+\/lease\.json$/,
+    canonicalPath: S.architectureChangeLease.artifactPath,
+  },
+  {
+    pattern: /^\.workspai\/changes\/change-[^/]+\/predicted-overlay\.json$/,
+    canonicalPath: S.predictedArchitectureChange.artifactPath,
+  },
+  {
+    pattern: /^\.workspai\/changes\/change-[^/]+\/actual-overlay\.json$/,
+    canonicalPath: S.actualArchitectureChange.artifactPath,
+  },
+  {
+    pattern: /^\.workspai\/changes\/change-[^/]+\/architecture-surprises\.json$/,
+    canonicalPath: S.architectureSurpriseReport.artifactPath,
+  },
+  {
+    pattern: /^\.workspai\/changes\/change-[^/]+\/capsule\.json$/,
+    canonicalPath: S.proofCarryingChangeCapsule.artifactPath,
+  },
+  {
     pattern: /^\.workspai\/reports\/bootstrap-compliance-[^/]+\.json$/,
     canonicalPath: S.bootstrapCompliance.artifactPath,
   },

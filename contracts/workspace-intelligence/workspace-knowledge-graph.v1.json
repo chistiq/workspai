@@ -50,7 +50,15 @@
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["kind", "id", "strategy", "hash", "fileCount", "fileLimit", "truncated"],
+                "required": [
+                  "kind",
+                  "id",
+                  "strategy",
+                  "hash",
+                  "fileCount",
+                  "fileLimit",
+                  "truncated"
+                ],
                 "properties": {
                   "kind": { "enum": ["workspace", "project"] },
                   "id": { "type": "string", "minLength": 1 },
@@ -58,7 +66,33 @@
                   "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
                   "fileCount": { "type": "integer", "minimum": 0 },
                   "fileLimit": { "type": "integer", "minimum": 1 },
-                  "truncated": { "type": "boolean" }
+                  "truncated": { "type": "boolean" },
+                  "eligibleFileCount": { "type": "integer", "minimum": 0 },
+                  "eligibleFileCountExact": { "type": "boolean" },
+                  "inventoryMode": { "enum": ["complete", "emergency-bounded"] },
+                  "inventoryStrategy": {
+                    "enum": ["git-index-worktree-v1", "filesystem-bfs-v1"]
+                  },
+                  "selection": {
+                    "type": "object",
+                    "required": [
+                      "strategy",
+                      "semanticFileCount",
+                      "semanticFileBudget",
+                      "deepFileCount",
+                      "deepFileBudget",
+                      "sourceExtractionFileBudget"
+                    ],
+                    "properties": {
+                      "strategy": { "const": "component-language-round-robin-v1" },
+                      "semanticFileCount": { "type": "integer", "minimum": 0 },
+                      "semanticFileBudget": { "type": "integer", "minimum": 1 },
+                      "deepFileCount": { "type": "integer", "minimum": 0 },
+                      "deepFileBudget": { "type": "integer", "minimum": 1 },
+                      "sourceExtractionFileBudget": { "type": "integer", "minimum": 1 }
+                    },
+                    "additionalProperties": false
+                  }
                 },
                 "additionalProperties": false
               }
@@ -252,7 +286,37 @@
           "discoveredEntities": { "type": "integer", "minimum": 0 },
           "discoveredRelations": { "type": "integer", "minimum": 0 },
           "proofCount": { "type": "integer", "minimum": 0 },
-          "diagnostics": { "type": "array", "items": { "type": "string" } }
+          "diagnostics": { "type": "array", "items": { "type": "string" } },
+          "inputCoverage": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "scope",
+                "scopeId",
+                "tier",
+                "status",
+                "eligibleFiles",
+                "suppliedFiles",
+                "selectionStrategy"
+              ],
+              "properties": {
+                "scope": { "enum": ["workspace", "project"] },
+                "scopeId": { "type": "string", "minLength": 1 },
+                "tier": {
+                  "enum": ["complete-inventory", "adaptive-semantic", "adaptive-deep", "derived"]
+                },
+                "status": { "enum": ["complete", "bounded", "not-applicable"] },
+                "eligibleFiles": { "type": "integer", "minimum": 0 },
+                "suppliedFiles": { "type": "integer", "minimum": 0 },
+                "fileBudget": { "type": "integer", "minimum": 1 },
+                "selectionStrategy": {
+                  "enum": ["complete", "component-language-round-robin-v1", "derived"]
+                }
+              },
+              "additionalProperties": false
+            }
+          }
         },
         "additionalProperties": false
       }
@@ -284,15 +348,56 @@
           "type": "object",
           "required": [
             "apiImplementation",
+            "apiRuntimeRegistration",
             "projectTests",
             "projectDeployment",
             "projectOwnership"
           ],
           "properties": {
             "apiImplementation": { "$ref": "#/$defs/bindingCoverage" },
+            "apiRuntimeRegistration": { "$ref": "#/$defs/bindingCoverage" },
             "projectTests": { "$ref": "#/$defs/bindingCoverage" },
             "projectDeployment": { "$ref": "#/$defs/bindingCoverage" },
             "projectOwnership": { "$ref": "#/$defs/bindingCoverage" }
+          },
+          "additionalProperties": false
+        },
+        "completeness": {
+          "type": "object",
+          "required": ["status", "inventory", "providers"],
+          "properties": {
+            "status": { "enum": ["complete", "bounded"] },
+            "inventory": {
+              "type": "object",
+              "required": [
+                "scopeCount",
+                "completeScopes",
+                "boundedScopes",
+                "eligibleFiles",
+                "indexedFiles",
+                "eligibleFileCountExact"
+              ],
+              "properties": {
+                "scopeCount": { "type": "integer", "minimum": 0 },
+                "completeScopes": { "type": "integer", "minimum": 0 },
+                "boundedScopes": { "type": "integer", "minimum": 0 },
+                "eligibleFiles": { "type": "integer", "minimum": 0 },
+                "indexedFiles": { "type": "integer", "minimum": 0 },
+                "eligibleFileCountExact": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            },
+            "providers": {
+              "type": "object",
+              "required": ["complete", "bounded", "notApplicable", "failed"],
+              "properties": {
+                "complete": { "type": "integer", "minimum": 0 },
+                "bounded": { "type": "integer", "minimum": 0 },
+                "notApplicable": { "type": "integer", "minimum": 0 },
+                "failed": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         },

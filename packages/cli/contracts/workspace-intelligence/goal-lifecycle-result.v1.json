@@ -132,6 +132,25 @@
         "agentHandoff": { "type": "string" },
         "verifiedGoalId": { "type": "string" },
         "repairTransactionId": { "type": "string" },
+        "repairTransactionIds": {
+          "type": "array",
+          "maxItems": 25,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "changeTransactionId": {
+          "type": "string",
+          "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$"
+        },
+        "changeTransactionIds": {
+          "type": "array",
+          "maxItems": 25,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$"
+          }
+        },
         "verificationReceipt": {
           "type": "object",
           "required": [

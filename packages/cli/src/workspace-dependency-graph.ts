@@ -181,6 +181,18 @@ function ownerOfPath(index: ProjectIndex, absolutePath: string): string | null {
   return null;
 }
 
+function directoryContains(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function projectBoundariesOverlap(index: ProjectIndex, firstId: string, secondId: string): boolean {
+  const first = index.idToDir.get(firstId);
+  const second = index.idToDir.get(secondId);
+  if (!first || !second) return false;
+  return directoryContains(first, second) || directoryContains(second, first);
+}
+
 async function readJson(filePath: string): Promise<Record<string, unknown> | null> {
   try {
     if (!(await fsExtra.pathExists(filePath))) {
@@ -284,7 +296,12 @@ async function inferPythonPathDeps(
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     const target = ownerOfPath(index, path.resolve(dir, match[1]));
-    if (!target || target === fromId || seen.has(target)) {
+    if (
+      !target ||
+      target === fromId ||
+      projectBoundariesOverlap(index, fromId, target) ||
+      seen.has(target)
+    ) {
       continue;
     }
     seen.add(target);
@@ -321,7 +338,12 @@ async function inferGoReplaceDeps(
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     const target = ownerOfPath(index, path.resolve(dir, match[1]));
-    if (!target || target === fromId || seen.has(target)) {
+    if (
+      !target ||
+      target === fromId ||
+      projectBoundariesOverlap(index, fromId, target) ||
+      seen.has(target)
+    ) {
       continue;
     }
     seen.add(target);
@@ -344,7 +366,11 @@ async function inferGoReplaceDeps(
 
 // --- Source 2: cross-boundary source imports -----------------------------------
 
-async function collectSourceFiles(dir: string, max: number): Promise<string[]> {
+async function collectSourceFiles(
+  dir: string,
+  max: number,
+  excludedProjectDirectories: ReadonlySet<string> = new Set()
+): Promise<string[]> {
   const files: string[] = [];
   const queue: string[] = [dir];
   while (queue.length > 0 && files.length < max) {
@@ -362,7 +388,9 @@ async function collectSourceFiles(dir: string, max: number): Promise<string[]> {
     const localFiles: string[] = [];
     for (const entry of entries) {
       if (entry.isDirectory()) {
+        const childDirectory = path.resolve(current, entry.name);
         if (
+          excludedProjectDirectories.has(childDirectory) ||
           IMPORT_SCAN_SKIP_DIRS.has(entry.name) ||
           isPythonVirtualEnvironmentDirectory(entry.name) ||
           entry.name.startsWith('.')
@@ -429,7 +457,14 @@ async function inferCodeImportEdges(
     if (onlyFrom && !onlyFrom.has(fromId)) {
       continue;
     }
-    const files = await collectSourceFiles(dir, maxFilesPerProject);
+    const nestedProjectDirectories = new Set(
+      [...index.idToDir.entries()]
+        .filter(([candidateId, candidateDirectory]) => {
+          return candidateId !== fromId && directoryContains(dir, candidateDirectory);
+        })
+        .map(([, candidateDirectory]) => path.resolve(candidateDirectory))
+    );
+    const files = await collectSourceFiles(dir, maxFilesPerProject, nestedProjectDirectories);
     for (const file of files) {
       const stat = await fsExtra.stat(file).catch(() => null);
       if (!stat || stat.size > MAX_IMPORT_FILE_BYTES) {
@@ -442,7 +477,7 @@ async function inferCodeImportEdges(
       for (const spec of extractRelativeSpecifiers(content)) {
         const resolved = path.resolve(path.dirname(file), spec);
         const owner = ownerOfPath(index, resolved);
-        if (!owner || owner === fromId) {
+        if (!owner || owner === fromId || projectBoundariesOverlap(index, fromId, owner)) {
           continue;
         }
         const key = `${fromId}\u0000${owner}`;
@@ -847,7 +882,11 @@ function buildOperationalProfiles(
       reasons.push(`${lowConfidenceEdges} low-confidence inferred edge(s) need review`);
     }
     if (incidentEdges.length === 0) {
-      reasons.push('No dependency evidence connected to this project yet');
+      reasons.push(
+        nodes.length === 1
+          ? 'Single-project workspace; inter-project dependency edges are not applicable'
+          : 'No dependency evidence connected to this project yet'
+      );
     }
 
     const normalizedScore = clampScore(score);
@@ -948,7 +987,7 @@ function buildGraphDiagnostics(
         'Run graph explain, add workspace contract relationships, or define manual graph overrides for operational dependencies that code imports cannot reveal.',
       nodeIds: orphanIds,
     });
-  } else if (stats.orphanCount > 0) {
+  } else if (stats.nodeCount > 1 && stats.orphanCount > 0) {
     diagnostics.push({
       code: 'graph.orphans.detected',
       severity: 'warning',

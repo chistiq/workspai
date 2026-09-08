@@ -1928,6 +1928,42 @@ export interface WorkspaceShareOptions {
   includeBlueprint?: boolean;
 }
 
+type WorkspaceShareProjectCandidate = {
+  projectPath: string;
+  name?: string;
+  relativePath?: string;
+  runtime?: string;
+  kit?: string;
+  modules?: string[];
+};
+
+function workspaceContractProjects(payload: unknown): Array<Record<string, unknown>> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  const projects = (payload as Record<string, unknown>).projects;
+  return Array.isArray(projects)
+    ? projects.filter(
+        (project): project is Record<string, unknown> =>
+          Boolean(project) && typeof project === 'object' && !Array.isArray(project)
+      )
+    : [];
+}
+
+function portableShareContract(payload: unknown, includePaths: boolean): unknown {
+  if (includePaths || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+  const contract = structuredClone(payload as Record<string, unknown>);
+  if (Array.isArray(contract.projects)) {
+    contract.projects = contract.projects.map((project) => {
+      if (!project || typeof project !== 'object' || Array.isArray(project)) return project;
+      const portableProject = { ...(project as Record<string, unknown>) };
+      delete portableProject.externalPath;
+      return portableProject;
+    });
+  }
+  return contract;
+}
+
 async function readJsonIfExists(filePath: string): Promise<unknown | null> {
   try {
     const raw = await fs.readFile(filePath, 'utf8');
@@ -1998,14 +2034,50 @@ export async function createWorkspaceShareBundle(
       ? workspaceMeta.rapidkit_version
       : undefined;
 
+  const workspaceContractRaw = await readFirstJsonIfExists(
+    workspaceMetadataCandidates(normalizedWorkspacePath, 'workspace.contract.json')
+  );
+  const workspaceContract = portableShareContract(workspaceContractRaw, includePaths);
   const projectPaths = await discoverWorkspaceProjects(normalizedWorkspacePath);
+  const projectCandidates = new Map<string, WorkspaceShareProjectCandidate>();
+  for (const projectPath of projectPaths) {
+    projectCandidates.set(path.resolve(projectPath), { projectPath: path.resolve(projectPath) });
+  }
+  for (const project of workspaceContractProjects(workspaceContractRaw)) {
+    const externalPath =
+      typeof project.externalPath === 'string' ? project.externalPath.trim() : '';
+    const relativePath =
+      typeof project.relativePath === 'string' ? project.relativePath.trim() : '';
+    if (!externalPath && !relativePath) continue;
+    const projectPath = path.resolve(normalizedWorkspacePath, externalPath || relativePath);
+    const existing = projectCandidates.get(projectPath);
+    projectCandidates.set(projectPath, {
+      projectPath,
+      name:
+        typeof project.slug === 'string' && project.slug.trim()
+          ? project.slug.trim()
+          : existing?.name,
+      relativePath: relativePath || existing?.relativePath,
+      runtime:
+        typeof project.runtime === 'string' && project.runtime.trim()
+          ? project.runtime.trim()
+          : existing?.runtime,
+      kit:
+        typeof project.kit === 'string' && project.kit.trim() ? project.kit.trim() : existing?.kit,
+      modules: Array.isArray(project.modules)
+        ? project.modules.filter((item): item is string => typeof item === 'string')
+        : existing?.modules,
+    });
+  }
   const projects: WorkspaceShareProject[] = [];
 
-  for (const projectPath of projectPaths) {
+  for (const candidate of projectCandidates.values()) {
+    const projectPath = candidate.projectPath;
     const projectMeta = (await readFirstJsonIfExists(
       projectMetadataCandidates(projectPath, 'project.json')
     )) as Record<string, unknown> | null;
-    const projectRelativePath = path.relative(normalizedWorkspacePath, projectPath) || '.';
+    const projectRelativePath =
+      candidate.relativePath || path.relative(normalizedWorkspacePath, projectPath) || '.';
     const projectReportsDir = path.dirname(
       projectMetadataCandidates(projectPath, path.join('reports', 'placeholder'))[0]
     );
@@ -2014,13 +2086,13 @@ export async function createWorkspaceShareBundle(
     );
 
     const projectEntry: WorkspaceShareProject = {
-      name: path.basename(projectPath),
+      name: candidate.name || path.basename(projectPath),
       relative_path: projectRelativePath,
-      runtime: typeof projectMeta?.runtime === 'string' ? projectMeta.runtime : undefined,
-      kit_name: typeof projectMeta?.kit_name === 'string' ? projectMeta.kit_name : undefined,
+      runtime: typeof projectMeta?.runtime === 'string' ? projectMeta.runtime : candidate.runtime,
+      kit_name: typeof projectMeta?.kit_name === 'string' ? projectMeta.kit_name : candidate.kit,
       modules: Array.isArray(projectMeta?.modules)
         ? projectMeta.modules.filter((item): item is string => typeof item === 'string')
-        : undefined,
+        : candidate.modules,
     };
 
     if (includePaths) {
@@ -2053,10 +2125,6 @@ export async function createWorkspaceShareBundle(
     ...(await listReportJsonFiles(workspaceReportsDirs[0])),
     ...(await listReportJsonFiles(workspaceReportsDirs[1])),
   ].filter((file, index, all) => all.indexOf(file) === index);
-  const workspaceContract = await readFirstJsonIfExists(
-    workspaceMetadataCandidates(normalizedWorkspacePath, 'workspace.contract.json')
-  );
-
   const bundle: WorkspaceShareBundle = {
     schema_version: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaceShareBundle.schemaVersion,
     generated_at: new Date().toISOString(),

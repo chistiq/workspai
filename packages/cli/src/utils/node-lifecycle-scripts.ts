@@ -23,11 +23,11 @@ const NODE_LIFECYCLE_COMMANDS: NodeLifecycleCommand[] = [
 ];
 
 const GENERIC_SCRIPT_CANDIDATES: Record<NodeLifecycleCommand, string[]> = {
-  dev: ['dev', 'start:dev'],
+  dev: ['dev', 'start:dev', 'watch'],
   start: ['start', 'start:prod', 'preview'],
-  build: ['build'],
+  build: ['build', 'compile'],
   test: ['test', 'test:unit', 'test:ci'],
-  lint: ['lint'],
+  lint: ['lint', 'eslint'],
   format: ['format', 'prettier'],
 };
 

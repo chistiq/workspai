@@ -123,6 +123,60 @@ describe('createWorkspaceShareBundle', () => {
     expect(bundle.projects[0].doctor_report).toBeUndefined();
   });
 
+  it('includes adopted external projects through portable contract paths without leaking host paths', async () => {
+    const externalProject = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspace-share-external-')
+    );
+    try {
+      await fsExtra.outputJson(path.join(externalProject, '.workspai', 'project.json'), {
+        name: 'search-platform',
+        runtime: 'java',
+        kit_name: 'adopted.java',
+      });
+      await fsExtra.outputJson(path.join(testDir, '.workspai', 'workspace.contract.json'), {
+        schemaVersion: 1,
+        kind: 'rapidkit.workspace.contract',
+        workspace: { name: 'external-ws' },
+        projects: [
+          {
+            slug: 'search-platform',
+            relativePath: 'external/search-platform',
+            externalPath: externalProject,
+            source: 'adopted-local',
+            runtime: 'java',
+            kit: 'adopted.java',
+            modules: [],
+            ports: [],
+            contracts: {
+              owns: [],
+              apis: [],
+              publishes: [],
+              consumes: [],
+              dependsOn: [],
+              env: [],
+            },
+          },
+        ],
+      });
+
+      const outputPath = await createWorkspaceShareBundle(testDir);
+      const bundle = await fsExtra.readJson(outputPath);
+
+      expect(bundle.summary.project_count).toBe(1);
+      expect(bundle.projects[0]).toMatchObject({
+        name: 'search-platform',
+        relative_path: 'external/search-platform',
+        runtime: 'java',
+        kit_name: 'adopted.java',
+      });
+      expect(bundle.projects[0].absolute_path).toBeUndefined();
+      expect(bundle.contract.projects[0].externalPath).toBeUndefined();
+      expect(JSON.stringify(bundle)).not.toContain(externalProject);
+    } finally {
+      await fsExtra.remove(externalProject);
+    }
+  });
+
   it('supports excluding the reproducibility blueprint', async () => {
     const projectPath = path.join(testDir, 'worker-service');
 

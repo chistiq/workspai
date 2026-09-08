@@ -3,7 +3,7 @@ import fsExtra from 'fs-extra';
 
 import {
   buildOperationalSkillsCatalogSection,
-  buildWorkspaceOperationalSkills,
+  buildWorkspaceOperationalSkillsPlan,
   hydrateOperationalPrompts,
   WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER,
   writeWorkspaceOperationalSkills,
@@ -73,6 +73,9 @@ import {
 } from './utils/lifecycle-transaction.js';
 import { readWorkspaceContract } from './utils/workspace-contract.js';
 import { firstExistingWorkspaceArtifactPath } from './utils/artifact-path-compat.js';
+import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
+import { assertWorkspaceKnowledgeGraphSourceBinding } from './workspace-knowledge-graph.js';
+import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   buildWorkspaceModel,
   WORKSPACE_MODEL_REPORT_PATH,
@@ -559,6 +562,16 @@ function targetEnabledForCopilot(selected: Set<AgentGroundingTarget>): boolean {
   return targetEnabled(selected, 'copilot') || targetEnabled(selected, 'vscode');
 }
 
+function portableAgentSkillsEnabled(selected: Set<AgentGroundingTarget>): boolean {
+  return (
+    targetEnabled(selected, 'agents') ||
+    targetEnabled(selected, 'codex') ||
+    targetEnabled(selected, 'kimi') ||
+    targetEnabled(selected, 'grok') ||
+    targetEnabled(selected, 'orca')
+  );
+}
+
 function projectHostSelected(selected: Set<AgentGroundingTarget>, host: AgentEntryHostId): boolean {
   if (host === 'generic') return targetEnabled(selected, 'agents');
   if (host === 'copilot') return targetEnabledForCopilot(selected);
@@ -642,7 +655,7 @@ function inferOutputTargets(relativePath: string): AgentGroundingTarget[] {
   if (relativePath === '.windsurfrules' || relativePath.startsWith('.windsurf/'))
     return ['windsurf'];
   if (relativePath.startsWith('.grok/')) return ['grok'];
-  if (relativePath.startsWith('.agents/')) return ['codex', 'kimi', 'grok', 'orca'];
+  if (relativePath.startsWith('.agents/')) return ['agents', 'codex', 'kimi', 'grok', 'orca'];
   if (relativePath === 'AGENTS.md' || relativePath.startsWith('.rapidkit/')) {
     return [
       'agents',
@@ -718,6 +731,31 @@ async function resolveModelForAgentSync(
     workspacePath,
     includeEvidence: true,
   });
+}
+
+async function resolveGraphForOperationalSkills(
+  workspacePath: string,
+  model: WorkspaceModel
+): Promise<WorkspaceKnowledgeGraph | null> {
+  const graphPath = await firstExistingWorkspaceArtifactPath(
+    workspacePath,
+    WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+  );
+  if (!graphPath) return null;
+  try {
+    const raw = (await fsExtra.readJson(graphPath)) as Record<string, unknown>;
+    assertWorkspaceArtifactContract(
+      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      raw,
+      graphPath
+    );
+    const graph = raw as WorkspaceKnowledgeGraph;
+    if (graph.proofs.some((proof) => proof.freshness === 'stale')) return null;
+    assertWorkspaceKnowledgeGraphSourceBinding(graph, model);
+    return graph;
+  } catch {
+    return null;
+  }
 }
 
 function isSafeWorkspaceRelativePath(relativePath: string): boolean {
@@ -873,6 +911,12 @@ function buildAgentsMarkdown(input: {
     '6. Use the Goal Pack retrieval queries, `workspace graph search <query> --limit 12 --json`, or MCP `searchWorkspaceGraph` before loading the full graph.',
     '',
     'Do **not** full-repo scan or inject the complete graph when a bounded query can answer the task.',
+    '',
+    '## Proof-carrying mutations',
+    '',
+    'For source-changing work, use the active Goal Pack command `beginChange` before the first mutation.',
+    'Prediction is planning input, never proof. Execute only explicitly authorized effect classes, record typed effect receipts, then run `workspai change verify --change <id> --json`.',
+    'A task is not complete until its capsule is sealed or its remaining uncertainty is reported.',
     '',
     '## Regenerate intelligence',
     '',
@@ -1502,7 +1546,7 @@ function buildMcpToolsResource(): string {
     lines: [
       'Workspai MCP is a read-mostly bridge over contract-validated workspace artifacts.',
       '',
-      'Candidate read tools:',
+      'Served read tools:',
       `- \`getWorkspaceModel\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}\`.`,
       `- \`getWorkspaceKnowledgeGraph\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}\`.`,
       `- \`getWorkspaceEvaluation\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.evaluationLastRun}\` (or the live evaluation when requested).`,
@@ -1517,9 +1561,14 @@ function buildMcpToolsResource(): string {
       '- `getArtifact` — read one explicit artifact path inside the workspace root.',
       `- \`listOperationalSkills\` — read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}\`.`,
       '- `getWorkspaceExplain` — read/build workspace explain for release-blocked or project scope.',
-      '- `refreshWorkspaceIntelligence` — explicit user-approved refresh command only.',
+      '- `listProofCarryingChanges` — list change lifecycle, assurance, blockers, and integrity.',
+      '- `getProofCarryingChange` — inspect one ledger-derived change capsule.',
+      '- `validateProofCarryingChange` — replay and validate one capsule and its evidence bindings.',
       '',
-      'Write or repair tools require explicit approval boundaries and are intentionally not part of the first read-mostly design.',
+      'Planned, not served:',
+      '- `refreshWorkspaceIntelligence` — requires an explicit approval boundary before it can become an MCP write tool.',
+      '',
+      'The server supports legacy initialize-era clients and the 2026-07-28 stateless discovery era. Tool results include text plus structured content; actionable execution failures are returned as tool errors.',
     ],
   });
 }
@@ -1530,8 +1579,22 @@ function buildMcpDesignManifest(input: { workspaceRef: string; generatedAt: stri
       schemaVersion: WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.workspaiMcpDesign.schemaVersion,
       generatedAt: input.generatedAt,
       workspaceRoot: input.workspaceRef,
-      status: 'design-only',
+      status: 'implemented',
       mode: 'read-mostly',
+      runtime: {
+        command: displayRapidkitCommand('workspace mcp serve'),
+        transport: 'stdio-jsonrpc',
+        lifecycle: 'dual-era',
+        supportedProtocolVersions: [
+          '2024-11-05',
+          '2025-03-26',
+          '2025-06-18',
+          '2025-11-25',
+          '2026-07-28',
+        ],
+        structuredContent: true,
+        toolExecutionErrors: true,
+      },
       safety: {
         writeToolsEnabled: false,
         approvalRequiredForRefresh: true,
@@ -1623,10 +1686,32 @@ function buildMcpDesignManifest(input: { workspaceRef: string; generatedAt: stri
           mutates: false,
         },
         {
+          name: 'listProofCarryingChanges',
+          reads: ['.workspai/changes/*', '.workspai/decisions/*'],
+          mutates: false,
+        },
+        {
+          name: 'getProofCarryingChange',
+          reads: ['.workspai/changes/<change-id>/*', '.workspai/decisions/<change-id>/*'],
+          mutates: false,
+        },
+        {
+          name: 'validateProofCarryingChange',
+          reads: [
+            '.workspai/changes/<change-id>/*',
+            '.workspai/decisions/<change-id>/*',
+            'capsule-referenced evidence artifacts',
+          ],
+          mutates: false,
+        },
+      ],
+      plannedTools: [
+        {
           name: 'refreshWorkspaceIntelligence',
           command: displayRapidkitCommand('workspace agent-sync --write --refresh-context'),
           mutates: true,
           approvalRequired: true,
+          availability: 'not-served',
         },
       ],
     },
@@ -1764,6 +1849,8 @@ function buildPortableGroundingSkill(input: {
     'description: Load Workspai workspace intelligence reports before diagnosing or changing code',
     '---',
     '',
+    '<!-- WORKSPAI:GENERATED-PORTABLE-SKILL -->',
+    '',
     '# Workspai grounding',
     '',
     'Use when the user asks about workspace health, release gates, doctor/pipeline failures, or project structure.',
@@ -1836,6 +1923,30 @@ async function writeTextFile(
   return 'written';
 }
 
+async function writePortableSkillFile(input: {
+  workspacePath: string;
+  relativePath: string;
+  content: string;
+  write: boolean;
+}): Promise<'written' | 'skipped'> {
+  if (!input.write) return 'skipped';
+  const absolutePath = path.join(input.workspacePath, input.relativePath);
+  const safeAbsolutePath = await assertSafeAgentOutputPath(input.workspacePath, absolutePath);
+  if (await fsExtra.pathExists(safeAbsolutePath)) {
+    const existing = await fsExtra.readFile(safeAbsolutePath, 'utf8');
+    const isManaged =
+      existing.includes(WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER) ||
+      existing.includes('<!-- WORKSPAI:GENERATED-PORTABLE-SKILL -->') ||
+      (existing.includes('name: workspai-grounding') &&
+        existing.includes('# Workspai grounding') &&
+        existing.includes('workspace agent-sync --write --refresh-context'));
+    if (!isManaged) return 'skipped';
+  }
+  await fsExtra.ensureDir(path.dirname(safeAbsolutePath));
+  await fsExtra.writeFile(safeAbsolutePath, input.content, 'utf8');
+  return 'written';
+}
+
 async function writeManagedMarkdownFile(input: {
   workspacePath: string;
   absolutePath: string;
@@ -1883,8 +1994,9 @@ async function writeImportedAgentAdapter(input: {
 async function assertSafeAgentOutputPath(
   workspacePathInput: string,
   absolutePathInput: string
-): Promise<void> {
+): Promise<string> {
   const workspacePath = path.resolve(workspacePathInput);
+  const canonicalWorkspacePath = await fsExtra.realpath(workspacePath).catch(() => workspacePath);
   const absolutePath = path.resolve(absolutePathInput);
   const relativePath = path.relative(workspacePath, absolutePath);
   if (
@@ -1903,12 +2015,34 @@ async function assertSafeAgentOutputPath(
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
     });
-    if (!stat) return;
+    if (!stat) return path.join(current, ...segments.slice(index + 1));
     const isTarget = index === segments.length - 1;
-    if (stat.isSymbolicLink() || (isTarget ? !stat.isFile() : !stat.isDirectory())) {
+    if (stat.isSymbolicLink()) {
+      if (isTarget) {
+        throw new Error(
+          `Agent output path is blocked by authored repository state: ${relativePath}`
+        );
+      }
+      const resolved = await fsExtra.realpath(current);
+      const resolvedRelative = path.relative(canonicalWorkspacePath, resolved);
+      const remainsInsideWorkspace =
+        resolvedRelative !== '..' &&
+        !resolvedRelative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(resolvedRelative);
+      const resolvedStat = await fsExtra.stat(resolved);
+      if (!remainsInsideWorkspace || !resolvedStat.isDirectory()) {
+        throw new Error(
+          `Agent output path is blocked by authored repository state: ${relativePath}`
+        );
+      }
+      current = resolved;
+      continue;
+    }
+    if (isTarget ? !stat.isFile() : !stat.isDirectory()) {
       throw new Error(`Agent output path is blocked by authored repository state: ${relativePath}`);
     }
   }
+  return current;
 }
 
 export function parseAgentGroundingTargets(input?: string): AgentGroundingTarget[] | undefined {
@@ -2047,32 +2181,50 @@ async function syncWorkspaceAgentGroundingUnsafe(
   } catch {
     contract = null;
   }
-  const operationalSkills = buildWorkspaceOperationalSkills({
+  const graph = await resolveGraphForOperationalSkills(workspacePath, model);
+  const operationalSkillPlan = buildWorkspaceOperationalSkillsPlan({
     workspacePath,
     model,
     context,
     contract,
+    graph,
     generatedAt: now,
   });
+  const operationalSkills = operationalSkillPlan.skills;
   const skillsWrite = await writeWorkspaceOperationalSkills({
     workspacePath,
     skills: operationalSkills,
     generatedAt: now.toISOString(),
     write,
+    decisions: operationalSkillPlan.decisions,
   });
   for (const skill of skillsWrite.skills) {
     record(write ? 'written' : 'skipped', skill.canonicalPath);
     for (const portable of portableOperationalSkillPaths(skill.skillId)) {
-      if (!targetEnabled(selectedTargets, portable.target)) continue;
+      if (
+        portable.target === 'agents'
+          ? !portableAgentSkillsEnabled(selectedTargets)
+          : !targetEnabled(selectedTargets, portable.target)
+      )
+        continue;
       record(
-        await writeTextFile(path.join(workspacePath, portable.path), skill.markdown, write),
+        await writePortableSkillFile({
+          workspacePath,
+          relativePath: portable.path,
+          content: skill.markdown,
+          write,
+        }),
         portable.path
       );
     }
   }
   for (const skillId of skillsWrite.removedSkillIds) {
     for (const portable of portableOperationalSkillPaths(skillId)) {
-      if (!targetEnabled(selectedTargets, portable.target) || !write) continue;
+      const enabled =
+        portable.target === 'agents'
+          ? portableAgentSkillsEnabled(selectedTargets)
+          : targetEnabled(selectedTargets, portable.target);
+      if (!enabled || !write) continue;
       await removeManagedPortableOperationalSkill(workspacePath, portable.path);
     }
   }
@@ -2260,13 +2412,14 @@ async function syncWorkspaceAgentGroundingUnsafe(
     );
   }
 
-  if (targetEnabled(selectedTargets, 'codex')) {
+  if (portableAgentSkillsEnabled(selectedTargets)) {
     record(
-      await writeTextFile(
-        path.join(workspacePath, WORKSPAI_AGENTS_GROUNDING_SKILL_PATH),
-        buildPortableGroundingSkill({ index, context, model }),
-        write
-      ),
+      await writePortableSkillFile({
+        workspacePath,
+        relativePath: WORKSPAI_AGENTS_GROUNDING_SKILL_PATH,
+        content: buildPortableGroundingSkill({ index, context, model }),
+        write,
+      }),
       WORKSPAI_AGENTS_GROUNDING_SKILL_PATH
     );
   }
@@ -2857,6 +3010,7 @@ export async function syncWorkspaceAgentGrounding(
       await transaction.captureFile(absolutePath);
     }
     const projectTargets = await resolveWorkspaceProjectLensTargets(workspacePath);
+    const capturedProjectFiles = new Set<string>();
     for (const project of projectTargets.resolved) {
       for (const relativePath of [
         PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
@@ -2867,7 +3021,7 @@ export async function syncWorkspaceAgentGrounding(
         'AGENTS.md',
         '.gitignore',
       ]) {
-        const absolutePath = path.join(project.projectPath, relativePath);
+        let absolutePath = path.join(project.projectPath, relativePath);
         const preservesAuthoredSymlink =
           relativePath === 'AGENTS.md' ||
           PROJECT_AGENT_ADAPTER_ENTRY_FILES.some((entryPath) => entryPath === relativePath);
@@ -2876,11 +3030,20 @@ export async function syncWorkspaceAgentGrounding(
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
             throw error;
           });
-          // Project grounding treats provider entry symlinks as authored
-          // repository state. Do not follow, replace, or snapshot their target.
-          if (stat?.isSymbolicLink()) continue;
+          // Never replace a provider symlink. A regular repository-local target
+          // may receive a bounded managed block, so checkpoint that actual file.
+          if (stat?.isSymbolicLink()) {
+            const targetPath = await resolveRepositoryLocalSymlinkFile(
+              project.projectPath,
+              absolutePath
+            );
+            if (!targetPath) continue;
+            absolutePath = targetPath;
+          }
         }
+        if (capturedProjectFiles.has(absolutePath)) continue;
         await transaction.captureFile(absolutePath);
+        capturedProjectFiles.add(absolutePath);
       }
     }
     const result = await syncWorkspaceAgentGroundingUnsafe(options);

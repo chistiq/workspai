@@ -65,6 +65,7 @@ describe('generateSpringBootKit', () => {
       'docker-compose.yml',
       '.env.example',
       'scripts/perf-smoke.sh',
+      '.github/dependabot.yml',
       '.workspai/project.json',
       '.workspai/context.json',
       '.workspai/project.json',
@@ -106,6 +107,9 @@ describe('generateSpringBootKit', () => {
     expect(pomXml).toContain('<artifactId>maven-enforcer-plugin</artifactId>');
     expect(pomXml).toContain('<artifactId>dependency-check-maven</artifactId>');
     expect(pomXml).toContain('<artifactId>cyclonedx-maven-plugin</artifactId>');
+    expect(pomXml).toContain('<version>3.5.16</version>');
+    expect(pomXml).toContain('<springdoc.version>2.9.0</springdoc.version>');
+    expect(pomXml).toContain('<version>12.2.2</version>');
 
     const projectJson = JSON.parse(
       await fs.readFile(path.join(projectPath, '.workspai', 'project.json'), 'utf8')
@@ -153,10 +157,12 @@ describe('generateSpringBootKit', () => {
     expect(dockerfile).toContain('FROM maven:3.9.9-eclipse-temurin-21 AS build');
     expect(dockerfile).toContain('RUN mvn -B -q -DskipTests dependency:go-offline');
     expect(dockerfile).toContain('FROM eclipse-temurin:21-jre');
+    expect(dockerfile).toContain('USER 10001');
+    expect(dockerfile).toContain('ENTRYPOINT ["java", "-jar", "/app/app.jar"]');
     expect(dockerfile).not.toContain('maven: 3.9.9 - eclipse - temurin - 21');
 
     const envExample = await fs.readFile(path.join(projectPath, '.env.example'), 'utf8');
-    expect(envExample).toContain('JAVA_OPTS=-Xms256m -Xmx512m');
+    expect(envExample).toContain('JAVA_TOOL_OPTIONS=-Xms256m -Xmx512m');
     expect(envExample).not.toContain('JAVA_OPTS = -Xms256m - Xmx512m');
 
     const exceptionHandler = await fs.readFile(
@@ -169,11 +175,23 @@ describe('generateSpringBootKit', () => {
     expect(exceptionHandler).toContain('ResponseEntity<Map<String, Object>>');
     expect(exceptionHandler).not.toContain('ResponseEntity<Map<String, Object >>');
 
+    const controllerTest = await fs.readFile(
+      path.join(
+        projectPath,
+        'src/test/java/com/workspai/apps/quality/guard/service/api/http/SystemInfoControllerTest.java'
+      ),
+      'utf8'
+    );
+    expect(controllerTest).toContain('@MockitoBean');
+    expect(controllerTest).not.toContain('@MockBean');
+
     const ciWorkflow = await fs.readFile(
       path.join(projectPath, '.github/workflows/ci.yml'),
       'utf8'
     );
     expect(ciWorkflow).toContain('matrix:');
+    expect(ciWorkflow).toContain('permissions:\n  contents: read');
+    expect(ciWorkflow).toContain("java: ['21', '25']");
     expect(ciWorkflow).toContain('os: [ubuntu-latest, windows-latest]');
     expect(ciWorkflow).toContain('Generate Maven Wrapper (Unix)');
     expect(ciWorkflow).toContain('Generate Maven Wrapper (Windows)');
@@ -189,7 +207,7 @@ describe('generateSpringBootKit', () => {
     expect(ciWorkflow).toContain('./mvnw -B verify');
     expect(ciWorkflow).toContain('.\\mvnw.cmd -B verify');
     expect(ciWorkflow).toMatch(
-      /^(\s*)- uses: actions\/setup-java@v4\n\1  with:\n\1    distribution: temurin/m
+      /^(\s*)- uses: actions\/setup-java@v6\n\1  with:\n\1    distribution: temurin/m
     );
     expect(ciWorkflow).toMatch(
       /^(\s*)- name: Upload SBOM\n\1  if: always\(\)\n\1  uses: actions\/upload-artifact@v4\n\1  with:/m

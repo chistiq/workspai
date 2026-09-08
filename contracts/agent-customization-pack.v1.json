@@ -52,9 +52,10 @@
       ]
     },
     "agents": {
-      "meaning": "Generate portable AGENTS.md grounding for any agent.",
+      "meaning": "Generate portable AGENTS.md grounding and .agents/skills projections.",
       "outputFamilies": [
-        "portable"
+        "portable",
+        "skills"
       ]
     },
     "copilot": {
@@ -281,6 +282,7 @@
       ".workspai/skills/"
     ],
     "l2PrefixedMirrorRoots": [
+      ".agents/",
       ".github/",
       ".cursor/",
       ".claude/",

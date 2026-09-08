@@ -8,6 +8,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
+import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
 import { assertWorkspaceArtifactContract } from './contracts/artifact-contract-registry.js';
 import { inspectGoalLifecycle } from './goal-lifecycle.js';
 import {
@@ -17,6 +18,10 @@ import {
 import type { ProjectContextAgent } from './project-intelligence-lens.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
+import {
+  projectWorkspaceKnowledgeGraph,
+  type ProjectKnowledgeGraphReference,
+} from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson } from './workspace-model-hash.js';
 
 export const PROJECT_AGENT_ENTRY_SCHEMA_VERSION =
@@ -82,9 +87,12 @@ export interface ProjectAgentEntryManifest {
   canonical: {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
     projectGrounding: '.workspai/PROJECT-GROUNDING.md';
+    projectKnowledgeGraph: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
     goalIndex: `workspace:${typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
+    workspaceModel: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`;
+    knowledgeGraph: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`;
     workspaceSkillsIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`;
     boundedGraphSearch: 'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
   };
@@ -121,6 +129,13 @@ export interface AgentBootstrapReceipt {
   generatedAt: string;
   receiptId: string;
   status: AgentEntryHostStatus;
+  statusScope: 'agent-grounding';
+  readiness: {
+    agentGrounding: AgentEntryHostStatus;
+    architectureEvidence: AgentEntryHostStatus;
+    projectEnvironment: 'ready' | 'degraded' | 'blocked';
+    release: 'not-verified' | 'degraded' | 'blocked';
+  };
   requestedAgent: string;
   resolvedHost: AgentEntryHostId | 'all';
   project: {
@@ -146,8 +161,11 @@ export interface AgentBootstrapReceipt {
   };
   canonicalEvidence: {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
+    projectKnowledgeGraph: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
     workspaceIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`;
     workspaceContext: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`;
+    workspaceModel: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.model}`;
+    knowledgeGraph: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}`;
     workspaceSkillsIndex: `workspace:${typeof WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`;
     boundedGraphSearch: 'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
     modelFreshness: ProjectContextAgent['intelligence']['freshness']['model'];
@@ -244,9 +262,12 @@ export function buildProjectAgentEntryManifest(input: {
     canonical: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
       projectGrounding: '.workspai/PROJECT-GROUNDING.md',
+      projectKnowledgeGraph: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference,
       goalIndex: `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
+      workspaceModel: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}` as const,
+      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}` as const,
       workspaceSkillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}` as const,
       boundedGraphSearch:
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json' as const,
@@ -261,8 +282,6 @@ export function buildProjectAgentEntryManifest(input: {
         'command:workspai project workspace status --json',
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
         `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}`,
-        `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}`,
         `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`,
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
         'source:targeted-live-files',
@@ -499,8 +518,56 @@ export async function buildAgentBootstrapReceipt(input: {
       : `Canonical evidence failed contract validation: ${invalidCanonical.join(', ')}.`
   );
 
+  const projectGraphRelativePath = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
+  const projectGraphPath = path.join(projectPath, projectGraphRelativePath);
+  let projectGraphStatus: AgentEntryCheckStatus = 'failed';
+  let projectGraphMessage = 'The project Knowledge Graph reference is missing.';
+  if (fs.existsSync(projectGraphPath) && canonicalGraph) {
+    try {
+      const projectGraphReference = JSON.parse(
+        await fsp.readFile(projectGraphPath, 'utf8')
+      ) as ProjectKnowledgeGraphReference;
+      assertWorkspaceArtifactContract(
+        projectGraphRelativePath,
+        projectGraphReference,
+        projectGraphRelativePath
+      );
+      const expectedGraph = projectWorkspaceKnowledgeGraph(
+        canonicalGraph as unknown as WorkspaceKnowledgeGraph,
+        context.project.name
+      );
+      const { integrity: _integrity, ...referencePayload } = projectGraphReference;
+      const canonicalSource = canonicalGraph.source as Record<string, unknown> | undefined;
+      const validReference =
+        projectGraphReference.project.name === context.project.name &&
+        projectGraphReference.canonical.sourceHash === canonicalSource?.hash &&
+        projectGraphReference.canonical.projectionHash === hashCanonicalJson(expectedGraph) &&
+        projectGraphReference.integrity.payloadHash === hashCanonicalJson(referencePayload);
+      if (validReference) {
+        projectGraphStatus = 'passed';
+        projectGraphMessage =
+          'The project reference integrity-binds the exact current projection of canonical workspace evidence.';
+      } else {
+        projectGraphMessage =
+          'The project Knowledge Graph reference is stale or does not match the canonical project projection.';
+      }
+    } catch {
+      projectGraphMessage =
+        'The project Knowledge Graph reference failed schema or integrity validation.';
+    }
+  }
+  check(
+    'project-knowledge-graph',
+    projectGraphStatus,
+    projectGraphMessage,
+    projectGraphRelativePath
+  );
+
   const modelWorkspace = canonicalModel?.workspace as Record<string, unknown> | undefined;
   const graphWorkspace = canonicalGraph?.workspace as Record<string, unknown> | undefined;
+  const graphEntities = Array.isArray(canonicalGraph?.entities)
+    ? (canonicalGraph.entities as Array<Record<string, unknown>>)
+    : [];
   const modelProjects = Array.isArray(canonicalModel?.projects)
     ? (canonicalModel.projects as Array<Record<string, unknown>>)
     : [];
@@ -508,13 +575,14 @@ export async function buildAgentBootstrapReceipt(input: {
     invalidCanonical.length === 0 &&
     modelWorkspace?.name === context.workspace.name &&
     graphWorkspace?.name === context.workspace.name &&
-    modelProjects.some((project) => project.name === context.project.name);
+    modelProjects.some((project) => project.name === context.project.name) &&
+    graphEntities.some((entity) => entity.projectId === context.project.name);
   check(
     'canonical-project-membership',
     canonicalMembershipValid ? 'passed' : 'failed',
     canonicalMembershipValid
       ? 'The project and workspace identities agree across the entry, Model, and Graph.'
-      : 'The project or workspace identity is missing or inconsistent in canonical evidence.'
+      : `The project or workspace identity is missing or inconsistent in canonical evidence (entry workspace=${context.workspace.name}, model workspace=${String(modelWorkspace?.name ?? 'missing')}, graph workspace=${String(graphWorkspace?.name ?? 'missing')}, entry project=${context.project.name}, model projects=${modelProjects.map((project) => String(project.name ?? 'missing')).join(',') || 'missing'}, graph projects=${[...new Set(graphEntities.map((entity) => entity.projectId).filter((projectId): projectId is string => typeof projectId === 'string'))].join(',') || 'missing'}).`
   );
 
   const freshnessStatus: AgentEntryCheckStatus =
@@ -651,13 +719,18 @@ export async function buildAgentBootstrapReceipt(input: {
         } else {
           goalRecoveryActions.push('workspai goal --status --json');
         }
+        const blocksCurrentProject = !activeGoal.present || activeGoal.appliesToProject;
         check(
           'active-goal',
-          'failed',
+          blocksCurrentProject ? 'failed' : 'warning',
           stale
-            ? 'The selected Goal Pack is present but stale; regenerate it against current canonical evidence before acting.'
+            ? blocksCurrentProject
+              ? 'The selected Goal Pack is present but stale; regenerate it against current canonical evidence before acting.'
+              : 'The selected Goal Pack is stale, but it does not apply to this project; current project evidence remains usable while the Goal is refreshed for its own scope.'
             : activeGoal.present
-              ? 'The selected Goal Pack is present but its canonical binding or handoff is invalid.'
+              ? blocksCurrentProject
+                ? 'The selected Goal Pack is present but its canonical binding or handoff is invalid.'
+                : 'The selected Goal Pack has an invalid canonical binding, but it does not apply to this project; current project evidence remains usable while the Goal is repaired for its own scope.'
               : 'The Goal index could not be validated.'
         );
       }
@@ -665,12 +738,33 @@ export async function buildAgentBootstrapReceipt(input: {
     check('active-goal', 'passed', 'No Goal index is present for this workspace.');
   }
 
-  const evidenceStatus: AgentEntryHostStatus = checks.some((item) => item.status === 'failed')
+  const architectureChecks = checks.filter((item) => item.id !== 'active-goal');
+  const architectureEvidenceStatus: AgentEntryHostStatus = architectureChecks.some(
+    (item) => item.status === 'failed'
+  )
     ? 'blocked'
-    : checks.some((item) => item.status === 'warning')
+    : architectureChecks.some((item) => item.status === 'warning')
       ? 'degraded'
       : 'ready';
-  const status = mergedStatus([runtimeHostStatus, evidenceStatus]);
+  const goalStatus: AgentEntryHostStatus = checks.some(
+    (item) => item.id === 'active-goal' && item.status === 'failed'
+  )
+    ? 'blocked'
+    : checks.some((item) => item.id === 'active-goal' && item.status === 'warning')
+      ? 'degraded'
+      : 'ready';
+  const status = mergedStatus([runtimeHostStatus, architectureEvidenceStatus, goalStatus]);
+  const projectEnvironment = context.blockers.some((blocker) => blocker.severity === 'error')
+    ? ('blocked' as const)
+    : context.blockers.length > 0
+      ? ('degraded' as const)
+      : ('ready' as const);
+  const releaseReadiness =
+    projectEnvironment === 'blocked'
+      ? ('blocked' as const)
+      : projectEnvironment === 'degraded'
+        ? ('degraded' as const)
+        : ('not-verified' as const);
   const resolvedBootstrapCommand = `command:workspai agent bootstrap --for-agent ${resolvedHost} --strict --json`;
   const requiredReadOrder = manifest.protocol.requiredReadOrder.map((entry) =>
     entry === 'command:workspai agent bootstrap --for-agent generic --strict --json'
@@ -681,6 +775,13 @@ export async function buildAgentBootstrapReceipt(input: {
     schemaVersion: AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
     generatedAt: (input.now ?? new Date()).toISOString(),
     status,
+    statusScope: 'agent-grounding' as const,
+    readiness: {
+      agentGrounding: status,
+      architectureEvidence: architectureEvidenceStatus,
+      projectEnvironment,
+      release: releaseReadiness,
+    },
     requestedAgent,
     resolvedHost,
     project: {
@@ -706,13 +807,16 @@ export async function buildAgentBootstrapReceipt(input: {
     },
     canonicalEvidence: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
+      projectKnowledgeGraph: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference,
       workspaceIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}` as const,
       workspaceContext: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}` as const,
+      workspaceModel: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.model}` as const,
+      knowledgeGraph: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph}` as const,
       workspaceSkillsIndex: `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}` as const,
       boundedGraphSearch:
         'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json' as const,
-      modelFreshness: context.intelligence.freshness.model,
-      graphFreshness: context.intelligence.freshness.graph,
+      modelFreshness: liveInputsValidated ? 'fresh' : context.intelligence.freshness.model,
+      graphFreshness: liveInputsValidated ? 'fresh' : context.intelligence.freshness.graph,
       graphMatchesModel: context.intelligence.freshness.graphMatchesModel,
       liveInputsValidated,
       blockerCount: context.blockers.length,
@@ -721,7 +825,9 @@ export async function buildAgentBootstrapReceipt(input: {
     requiredReadOrder,
     claims: {
       architecture:
-        status === 'ready' ? ('allowed-with-citations' as const) : ('prohibited' as const),
+        architectureEvidenceStatus === 'ready'
+          ? ('allowed-with-citations' as const)
+          : ('prohibited' as const),
       sourceInspection: 'bounded-and-targeted' as const,
       sourceMutation: 'governed-cli-transaction-only' as const,
       verification: 'cli-evidence-only' as const,
@@ -733,6 +839,14 @@ export async function buildAgentBootstrapReceipt(input: {
             ...(activeGoal.present && activeGoal.appliesToProject && activeGoal.agentHandoff
               ? [`read:${activeGoal.agentHandoff}`]
               : []),
+            ...(projectEnvironment === 'blocked'
+              ? [
+                  'workspai doctor project --json',
+                  'workspai workspace explain release-blocked --json',
+                ]
+              : projectEnvironment === 'degraded'
+                ? ['workspai doctor project --json']
+                : []),
             `workspai workspace graph search <task-query> --scope project:${context.project.name} --limit 12 --json`,
             'inspect only the returned proof paths and target source files',
           ]

@@ -31,7 +31,20 @@
           "runtime": { "type": "string", "minLength": 1 },
           "framework": { "type": "string", "minLength": 1 },
           "kit": { "type": "string", "minLength": 1 },
-          "modules": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+          "governance": {
+            "type": "object",
+            "properties": {
+              "ci": { "$ref": "#/$defs/governanceControl" },
+              "release": { "$ref": "#/$defs/governanceControl" },
+              "ownership": { "$ref": "#/$defs/governanceControl" }
+            },
+            "additionalProperties": false
+          },
+          "modules": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
           "ports": {
             "type": "array",
             "items": {
@@ -49,7 +62,11 @@
             "type": "object",
             "required": ["owns", "apis", "publishes", "consumes", "dependsOn", "env"],
             "properties": {
-              "owns": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+              "owns": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              },
               "apis": {
                 "type": "array",
                 "items": {
@@ -62,16 +79,44 @@
                   "additionalProperties": false
                 }
               },
-              "publishes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-              "consumes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-              "dependsOn": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-              "env": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" }, "uniqueItems": true }
+              "publishes": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              },
+              "consumes": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              },
+              "env": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" },
+                "uniqueItems": true
+              }
             },
             "additionalProperties": false
           }
         },
         "additionalProperties": false
       }
+    }
+  },
+  "$defs": {
+    "governanceControl": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["repository", "external"] },
+        "provider": { "type": "string", "minLength": 1 },
+        "reference": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

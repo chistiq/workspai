@@ -16,9 +16,11 @@ import {
 } from './utils/project-kind.js';
 import { resolveWorkspaceProjectPaths } from './utils/workspace-project-paths.js';
 import { assertSafeProjectMetadataDirectories } from './utils/project-metadata-path-safety.js';
+import { resolveRepositoryLocalSymlinkFile } from './utils/repository-local-symlink.js';
 import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
+  isWorkspaiManagedLinkedProjectMetadata,
   type BackendConfidence,
   type BackendImportStack,
   type BackendRuntimeFamily,
@@ -28,6 +30,7 @@ import {
   hasWorkspaceRootMarkers,
   PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
   PROJECT_GROUNDING_RELATIVE_PATH,
+  PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
   projectMetadataCandidates,
   projectMetadataPath,
@@ -56,6 +59,7 @@ import {
   type AdoptProjectEffects,
   type IngestionPlan,
 } from './contracts/ingestion-contract.js';
+import { resolveWorkspaceRegistrationName } from './workspace-marker.js';
 
 export interface AdoptProjectOptions {
   workspacePath: string;
@@ -122,6 +126,7 @@ function buildAdoptProjectEffects(mode: ProjectGroundingMode): AdoptProjectEffec
             PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH,
             PROJECT_GROUNDING_RELATIVE_PATH,
             PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+            PROJECT_KNOWLEDGE_GRAPH_REFERENCE_RELATIVE_PATH,
           ]),
     ],
     repositoryControlFiles: [
@@ -137,6 +142,12 @@ function buildAdoptProjectEffects(mode: ProjectGroundingMode): AdoptProjectEffec
               action: 'reconcile' as const,
               condition:
                 'managed grounding is enabled and the path is a regular file; authored deletions and symbolic links are preserved',
+            },
+            {
+              path: '.agents/skills/workspai-*/SKILL.md',
+              action: 'reconcile' as const,
+              condition:
+                'managed provider-neutral Skill discovery is enabled; authored collisions and unsafe symbolic links are preserved',
             },
             ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((adapterPath) => ({
               path: adapterPath,
@@ -197,12 +208,6 @@ async function readExistingProjectJson(
   return null;
 }
 
-function isWorkspaiManagedAdoption(projectJson: Record<string, unknown> | null): boolean {
-  if (!projectJson?.adoption || typeof projectJson.adoption !== 'object') return false;
-  const adoption = projectJson.adoption as Record<string, unknown>;
-  return adoption.managed_by === 'workspai' && adoption.mode === 'linked';
-}
-
 async function hasUnsafeProjectParent(projectPath: string, filePath: string): Promise<boolean> {
   const relativePath = path.relative(projectPath, filePath);
   if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) return true;
@@ -238,6 +243,43 @@ async function captureMissingAdapterDirectories(projectPath: string): Promise<st
   return rulesStat ? [] : [rulesPath];
 }
 
+async function adoptSnapshotFilePaths(
+  workspacePath: string,
+  projectPath: string
+): Promise<string[]> {
+  const projectProviderPaths = [
+    path.join(projectPath, 'AGENTS.md'),
+    ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((relativePath) =>
+      path.join(projectPath, relativePath)
+    ),
+  ];
+  const repositoryLocalTargets: string[] = [];
+  for (const providerPath of projectProviderPaths) {
+    const stat = await fsExtra.lstat(providerPath).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat?.isSymbolicLink()) continue;
+    const targetPath = await resolveRepositoryLocalSymlinkFile(projectPath, providerPath);
+    if (!targetPath) continue;
+    repositoryLocalTargets.push(targetPath);
+  }
+
+  return [
+    projectMetadataPath(projectPath, 'project.json'),
+    projectMetadataPath(projectPath, 'adopt.json'),
+    projectMetadataPath(projectPath, 'adopt-readiness.json'),
+    path.join(projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
+    path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH),
+    ...projectProviderPaths,
+    ...repositoryLocalTargets,
+    path.join(projectPath, '.gitignore'),
+    workspaceMetadataPath(workspacePath, 'imported-projects.json'),
+  ].filter((filePath, index, paths) => paths.indexOf(filePath) === index);
+}
+
 export async function captureAdoptProjectRollbackSnapshot(
   workspacePath: string,
   projectPath: string
@@ -245,21 +287,7 @@ export async function captureAdoptProjectRollbackSnapshot(
   const resolvedWorkspacePath = path.resolve(workspacePath);
   const resolvedProjectPath = path.resolve(projectPath);
   await assertSafeProjectMetadataDirectories(resolvedProjectPath);
-  const filePaths = [
-    projectMetadataPath(resolvedProjectPath, 'project.json'),
-    projectMetadataPath(resolvedProjectPath, 'adopt.json'),
-    projectMetadataPath(resolvedProjectPath, 'adopt-readiness.json'),
-    path.join(resolvedProjectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
-    path.join(resolvedProjectPath, PROJECT_GROUNDING_RELATIVE_PATH),
-    path.join(resolvedProjectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
-    path.join(resolvedProjectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH),
-    path.join(resolvedProjectPath, 'AGENTS.md'),
-    ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((relativePath) =>
-      path.join(resolvedProjectPath, relativePath)
-    ),
-    path.join(resolvedProjectPath, '.gitignore'),
-    workspaceMetadataPath(resolvedWorkspacePath, 'imported-projects.json'),
-  ];
+  const filePaths = await adoptSnapshotFilePaths(resolvedWorkspacePath, resolvedProjectPath);
 
   return {
     workspacePath: resolvedWorkspacePath,
@@ -289,26 +317,14 @@ export async function captureAdoptProjectRollbackSnapshot(
   };
 }
 
-function assertMatchingRollbackSnapshot(
+async function assertMatchingRollbackSnapshot(
   snapshot: AdoptProjectRollbackSnapshot,
   workspacePath: string,
   projectPath: string
-): void {
-  const expectedPaths = [
-    projectMetadataPath(projectPath, 'project.json'),
-    projectMetadataPath(projectPath, 'adopt.json'),
-    projectMetadataPath(projectPath, 'adopt-readiness.json'),
-    path.join(projectPath, PROJECT_WORKSPACE_LINK_RELATIVE_PATH),
-    path.join(projectPath, PROJECT_GROUNDING_RELATIVE_PATH),
-    path.join(projectPath, PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH),
-    path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH),
-    path.join(projectPath, 'AGENTS.md'),
-    ...PROJECT_AGENT_ADAPTER_ENTRY_FILES.map((relativePath) =>
-      path.join(projectPath, relativePath)
-    ),
-    path.join(projectPath, '.gitignore'),
-    workspaceMetadataPath(workspacePath, 'imported-projects.json'),
-  ].map((filePath) => path.resolve(filePath));
+): Promise<void> {
+  const expectedPaths = (await adoptSnapshotFilePaths(workspacePath, projectPath)).map((filePath) =>
+    path.resolve(filePath)
+  );
   const allowedAdapterDirectories = new Set(
     ['.amazonq', '.amazonq/rules'].map((relativePath) => path.resolve(projectPath, relativePath))
   );
@@ -418,7 +434,7 @@ export async function cleanupAdoptedProjectImport(
   snapshot: AdoptProjectRollbackSnapshot
 ): Promise<void> {
   await assertSafeProjectMetadataDirectories(projectPath);
-  assertMatchingRollbackSnapshot(snapshot, workspacePath, projectPath);
+  await assertMatchingRollbackSnapshot(snapshot, workspacePath, projectPath);
   const failures: unknown[] = [];
   for (const file of snapshot.files) {
     try {
@@ -468,10 +484,10 @@ export async function adoptProjectIntoWorkspace(
   const rollbackSnapshot =
     options.rollbackSnapshot ??
     (await captureAdoptProjectRollbackSnapshot(workspacePath, projectPath));
-  assertMatchingRollbackSnapshot(rollbackSnapshot, workspacePath, projectPath);
+  await assertMatchingRollbackSnapshot(rollbackSnapshot, workspacePath, projectPath);
 
   const existingProjectJson = await readExistingProjectJson(projectPath);
-  const refreshManagedDetection = isWorkspaiManagedAdoption(existingProjectJson);
+  const refreshManagedDetection = isWorkspaiManagedLinkedProjectMetadata(existingProjectJson);
   // Re-adoption must re-observe source markers instead of pinning a previous
   // Workspai-generated runtime/framework hint forever. Authored project
   // metadata remains authoritative; only managed linked adoption is refreshed.
@@ -485,7 +501,16 @@ export async function adoptProjectIntoWorkspace(
     ...nestedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
   ].filter((runtime, index, values) => runtime !== 'unknown' && values.indexOf(runtime) === index);
   if (runtimeCandidates.length === 0) runtimeCandidates.push('unknown');
-  const projectKind = await inferWorkspaceProjectKind(projectPath, existingProjectJson);
+  const projectKind = await inferWorkspaceProjectKind(
+    projectPath,
+    // Bypass the managed project.json kind emitted by an older adoption so a
+    // fresh observation can correct stale runtime-derived classification.
+    refreshManagedDetection ? {} : existingProjectJson,
+    {
+      runtime: detection.runtime,
+      framework: detection.key,
+    }
+  );
   const projectName =
     normalizeProjectName(
       options.name ||
@@ -522,6 +547,7 @@ export async function adoptProjectIntoWorkspace(
     profile: workspaceProfile,
     runtimes: await collectWorkspaceProfileRuntimes(workspacePath, {
       additionalRuntimes: runtimeCandidates,
+      excludeProjectPath: projectPath,
     }),
     mode: profilePolicyMode,
   });
@@ -545,6 +571,7 @@ export async function adoptProjectIntoWorkspace(
     moduleSupport,
     adoptedAt,
   });
+  const workspaceName = await resolveWorkspaceRegistrationName(workspacePath);
   const adoptPayload = {
     schema_version: '1.0',
     kind: 'workspai.adopted_project',
@@ -552,7 +579,7 @@ export async function adoptProjectIntoWorkspace(
     managed_by: 'workspai',
     mode: 'linked',
     workspace: {
-      name: path.basename(workspacePath),
+      name: workspaceName,
       contract: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
     },
     project: {

@@ -1,8 +1,10 @@
 import path from 'path';
+import { emitActivityArtifact } from '../activity/activity-runtime.js';
 import { randomUUID } from 'node:crypto';
-import { open } from 'node:fs/promises';
+import { copyFile, link, open } from 'node:fs/promises';
 import fsExtra from 'fs-extra';
 import { assertWorkspaceArtifactContract } from '../contracts/artifact-contract-registry.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 import { toLegacyRapidkitArtifactPath, toWorkspaiArtifactPath } from './workspace-paths.js';
 
 function assertWorkspaceContainedPath(workspacePath: string, relativePath: string): string {
@@ -21,6 +23,230 @@ function assertWorkspaceContainedPath(workspacePath: string, relativePath: strin
 
 export function resolveWorkspaceArtifactPath(workspacePath: string, relativePath: string): string {
   return assertWorkspaceContainedPath(workspacePath, toWorkspaiArtifactPath(relativePath));
+}
+
+/**
+ * Resolve an existing artifact only after its real path and filesystem kind
+ * have been proven to remain inside the canonical workspace root.
+ */
+export async function resolveContainedWorkspaceArtifactPath(
+  workspacePath: string,
+  relativePath: string,
+  kind: 'file' | 'directory' = 'file'
+): Promise<string | null> {
+  const root = path.resolve(workspacePath);
+  const target = resolveWorkspaceArtifactPath(root, relativePath);
+  if (!(await fsExtra.pathExists(root)) || !(await fsExtra.pathExists(target))) {
+    return null;
+  }
+  const [realRoot, realTarget, stat] = await Promise.all([
+    fsExtra.realpath(root),
+    fsExtra.realpath(target),
+    fsExtra.stat(target),
+  ]);
+  const relative = path.relative(realRoot, realTarget);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`Workspace artifact resolves outside workspace root: ${relativePath}`);
+  }
+  const expectedKind = kind === 'file' ? stat.isFile() : stat.isDirectory();
+  if (!expectedKind) {
+    throw new Error(`Workspace artifact is not a regular ${kind}: ${relativePath}`);
+  }
+  return realTarget;
+}
+
+/**
+ * Resolve a portable evidence path from either the workspace itself or one of
+ * the adopted external project roots explicitly declared by the canonical
+ * workspace contract. External paths never come from the caller: the logical
+ * `external/<project>/...` prefix is mapped through `relativePath` and the
+ * contract-owned absolute root, then realpath containment and regular-file
+ * checks are applied before the path is returned.
+ */
+export async function resolvePortableWorkspaceEvidencePath(
+  workspacePath: string,
+  artifact: string
+): Promise<string | null> {
+  const normalizedArtifact = artifact.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalizedArtifact || path.isAbsolute(normalizedArtifact)) return null;
+
+  const local = await resolveContainedWorkspaceArtifactPath(workspacePath, normalizedArtifact);
+  if (local) return local;
+
+  const canonicalContractPath = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
+  for (const relativeContractPath of [
+    canonicalContractPath,
+    toLegacyRapidkitArtifactPath(canonicalContractPath),
+  ]) {
+    const contractPath = await resolveContainedWorkspaceArtifactPath(
+      workspacePath,
+      relativeContractPath
+    );
+    if (!contractPath) continue;
+    let projects: Array<{ relativePath?: unknown; externalPath?: unknown }> = [];
+    try {
+      const contract = (await fsExtra.readJson(contractPath)) as {
+        projects?: Array<{ relativePath?: unknown; externalPath?: unknown }>;
+      };
+      projects = contract.projects ?? [];
+    } catch {
+      return null;
+    }
+
+    const candidates = projects
+      .filter(
+        (project): project is { relativePath: string; externalPath: string } =>
+          typeof project.relativePath === 'string' &&
+          typeof project.externalPath === 'string' &&
+          path.isAbsolute(project.externalPath)
+      )
+      .map((project) => ({
+        prefix: project.relativePath.replace(/\\/g, '/').replace(/\/$/, ''),
+        root: path.resolve(project.externalPath),
+      }))
+      .filter(({ prefix }) => normalizedArtifact.startsWith(`${prefix}/`))
+      .sort((left, right) => right.prefix.length - left.prefix.length);
+
+    for (const candidate of candidates) {
+      const relativeArtifact = normalizedArtifact.slice(candidate.prefix.length + 1);
+      const target = path.resolve(candidate.root, relativeArtifact);
+      const lexicalRelative = path.relative(candidate.root, target);
+      if (
+        !lexicalRelative ||
+        lexicalRelative === '..' ||
+        lexicalRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(lexicalRelative) ||
+        !(await fsExtra.pathExists(candidate.root)) ||
+        !(await fsExtra.pathExists(target))
+      ) {
+        continue;
+      }
+      const [realRoot, realTarget, stat] = await Promise.all([
+        fsExtra.realpath(candidate.root),
+        fsExtra.realpath(target),
+        fsExtra.stat(target),
+      ]);
+      const realRelative = path.relative(realRoot, realTarget);
+      if (
+        realRelative === '..' ||
+        realRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(realRelative)
+      ) {
+        throw new Error(`External evidence resolves outside its contracted root: ${artifact}`);
+      }
+      if (!stat.isFile()) {
+        throw new Error(`External evidence is not a regular file: ${artifact}`);
+      }
+      return realTarget;
+    }
+    return null;
+  }
+  return null;
+}
+
+async function resolveContainedCandidatePath(
+  rootPath: string,
+  relativePath: string,
+  escapeMessage: string
+): Promise<string | null> {
+  const root = path.resolve(rootPath);
+  const target = path.resolve(root, relativePath);
+  const lexicalRelative = path.relative(root, target);
+  if (
+    !lexicalRelative ||
+    lexicalRelative === '..' ||
+    lexicalRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(lexicalRelative) ||
+    !(await fsExtra.pathExists(root))
+  ) {
+    return null;
+  }
+
+  const realRoot = await fsExtra.realpath(root);
+  let existingAncestor = target;
+  while (!(await fsExtra.pathExists(existingAncestor))) {
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) return null;
+    existingAncestor = parent;
+  }
+  const realAncestor = await fsExtra.realpath(existingAncestor);
+  const realRelative = path.relative(realRoot, realAncestor);
+  if (
+    realRelative === '..' ||
+    realRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(realRelative)
+  ) {
+    throw new Error(escapeMessage);
+  }
+  return target;
+}
+
+/**
+ * Resolve a portable evidence identity whose target may no longer exist.
+ * The nearest existing ancestor is realpath-checked, so a missing leaf cannot
+ * use an authored symlink parent to escape the workspace or contracted project.
+ */
+export async function resolvePortableWorkspaceEvidenceCandidatePath(
+  workspacePath: string,
+  artifact: string
+): Promise<string | null> {
+  const normalizedArtifact = artifact.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalizedArtifact || path.isAbsolute(normalizedArtifact)) return null;
+
+  const canonicalContractPath = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
+  for (const relativeContractPath of [
+    canonicalContractPath,
+    toLegacyRapidkitArtifactPath(canonicalContractPath),
+  ]) {
+    const contractPath = await resolveContainedWorkspaceArtifactPath(
+      workspacePath,
+      relativeContractPath
+    );
+    if (!contractPath) continue;
+    let projects: Array<{ relativePath?: unknown; externalPath?: unknown }> = [];
+    try {
+      const contract = (await fsExtra.readJson(contractPath)) as {
+        projects?: Array<{ relativePath?: unknown; externalPath?: unknown }>;
+      };
+      projects = contract.projects ?? [];
+    } catch {
+      return null;
+    }
+
+    const candidates = projects
+      .filter(
+        (project): project is { relativePath: string; externalPath: string } =>
+          typeof project.relativePath === 'string' &&
+          typeof project.externalPath === 'string' &&
+          path.isAbsolute(project.externalPath)
+      )
+      .map((project) => ({
+        prefix: project.relativePath.replace(/\\/g, '/').replace(/\/$/, ''),
+        root: path.resolve(project.externalPath),
+      }))
+      .filter(({ prefix }) => normalizedArtifact.startsWith(`${prefix}/`))
+      .sort((left, right) => right.prefix.length - left.prefix.length);
+
+    if (candidates.length > 0) {
+      for (const candidate of candidates) {
+        const relativeArtifact = normalizedArtifact.slice(candidate.prefix.length + 1);
+        const resolved = await resolveContainedCandidatePath(
+          candidate.root,
+          relativeArtifact,
+          `External evidence candidate resolves outside its contracted root: ${artifact}`
+        );
+        if (resolved) return resolved;
+      }
+      return null;
+    }
+    break;
+  }
+
+  return resolveContainedCandidatePath(
+    workspacePath,
+    normalizedArtifact,
+    `Workspace evidence candidate resolves outside workspace root: ${artifact}`
+  );
 }
 
 export function resolveLegacyWorkspaceArtifactPath(
@@ -291,6 +517,8 @@ export async function writeWorkspaceArtifactJson(
     fsExtra.writeJson(temporaryPath, payload, { spaces: 2 })
   );
 
+  emitActivityArtifact({ workspacePath, relativePath });
+
   return primaryPath;
 }
 
@@ -299,10 +527,32 @@ export async function writeWorkspaceArtifactJsonSet(
   lockRelativePath: string,
   artifacts: readonly { relativePath: string; payload: unknown }[]
 ): Promise<string[]> {
+  return writeWorkspaceArtifactJsonSetAcrossRoots(
+    workspacePath,
+    lockRelativePath,
+    artifacts.map((artifact) => ({
+      rootPath: workspacePath,
+      ...artifact,
+    }))
+  );
+}
+
+/**
+ * Publish one logical artifact revision across the workspace root and any
+ * project roots. All targets are validated against their own containment root,
+ * serialized under the workspace lock, and restored to their exact preimages
+ * when any replacement fails.
+ */
+export async function writeWorkspaceArtifactJsonSetAcrossRoots(
+  workspacePath: string,
+  lockRelativePath: string,
+  artifacts: readonly { rootPath: string; relativePath: string; payload: unknown }[]
+): Promise<string[]> {
   if (artifacts.length === 0) return [];
   const normalized = artifacts.map((artifact) => ({
     ...artifact,
-    path: resolveWorkspaceArtifactPath(workspacePath, artifact.relativePath),
+    rootPath: path.resolve(artifact.rootPath),
+    path: resolveWorkspaceArtifactPath(artifact.rootPath, artifact.relativePath),
   }));
   const duplicate = normalized.find(
     (artifact, index) =>
@@ -315,17 +565,45 @@ export async function writeWorkspaceArtifactJsonSet(
   }
 
   return withWorkspaceArtifactLock(workspacePath, lockRelativePath, async () => {
-    const preimages = await Promise.all(
-      normalized.map(async (artifact) => ({
-        path: artifact.path,
-        exists: await fsExtra.pathExists(artifact.path),
-        contents: await fsExtra.readFile(artifact.path).catch(() => null),
-      }))
-    );
+    const transactionId = randomUUID();
+    const preimages: Array<{
+      path: string;
+      rootPath: string;
+      exists: boolean;
+      backupPath: string | null;
+    }> = [];
     try {
+      for (const artifact of normalized) {
+        const exists = await fsExtra.pathExists(artifact.path);
+        const preimage = {
+          path: artifact.path,
+          rootPath: artifact.rootPath,
+          exists,
+          backupPath: null as string | null,
+        };
+        preimages.push(preimage);
+        if (exists) {
+          const backupPath = `${artifact.path}.${process.pid}.${transactionId}.rollback`;
+          await assertExistingArtifactIsContained(artifact.rootPath, artifact.path);
+          try {
+            try {
+              await link(artifact.path, backupPath);
+            } catch {
+              // Hard links keep large graph rollback preimages constant-space on
+              // supporting filesystems. Copy is the portable cross-device and
+              // Windows fallback.
+              await copyFile(artifact.path, backupPath);
+            }
+            preimage.backupPath = backupPath;
+          } catch (error) {
+            await fsExtra.remove(backupPath).catch(() => undefined);
+            throw error;
+          }
+        }
+      }
       for (let index = 0; index < normalized.length; index += 1) {
         const artifact = normalized[index];
-        await replaceArtifactAtomically(workspacePath, artifact.path, (temporaryPath) =>
+        await replaceArtifactAtomically(artifact.rootPath, artifact.path, (temporaryPath) =>
           fsExtra.writeJson(temporaryPath, artifact.payload, { spaces: 2 })
         );
         const failAfter = Number(process.env.WORKSPAI_TEST_FAIL_ARTIFACT_SET_AFTER ?? 0);
@@ -333,16 +611,23 @@ export async function writeWorkspaceArtifactJsonSet(
           throw new Error(`Injected artifact-set failure after ${failAfter} write(s).`);
         }
       }
+      for (const artifact of normalized) {
+        emitActivityArtifact({
+          workspacePath: artifact.rootPath,
+          relativePath: artifact.relativePath,
+        });
+      }
       return normalized.map((artifact) => artifact.path);
     } catch (error) {
       const restorations = await Promise.allSettled(
         preimages.map(async (preimage) => {
-          if (!preimage.exists || preimage.contents === null) {
+          if (!preimage.exists) {
             await fsExtra.remove(preimage.path);
             return;
           }
-          await replaceArtifactAtomically(workspacePath, preimage.path, (temporaryPath) =>
-            fsExtra.writeFile(temporaryPath, preimage.contents as Buffer)
+          if (!preimage.backupPath) return;
+          await replaceArtifactAtomically(preimage.rootPath, preimage.path, (temporaryPath) =>
+            copyFile(preimage.backupPath as string, temporaryPath)
           );
         })
       );
@@ -356,6 +641,14 @@ export async function writeWorkspaceArtifactJsonSet(
         );
       }
       throw error;
+    } finally {
+      await Promise.all(
+        preimages.map((preimage) =>
+          preimage.backupPath
+            ? fsExtra.remove(preimage.backupPath).catch(() => undefined)
+            : Promise.resolve()
+        )
+      );
     }
   });
 }
@@ -370,6 +663,8 @@ export async function writeWorkspaceArtifactText(
   await replaceArtifactAtomically(workspacePath, primaryPath, (temporaryPath) =>
     fsExtra.writeFile(temporaryPath, payload, 'utf-8')
   );
+
+  emitActivityArtifact({ workspacePath, relativePath });
 
   return primaryPath;
 }

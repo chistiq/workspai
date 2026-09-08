@@ -1,50 +1,176 @@
 name: Official Generator Smoke
-run-name: Official Generator Smoke · ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.generators == '' && 'full' || 'targeted') || github.event_name == 'schedule' && 'full' || 'primary' }}
+run-name: Official Generator Smoke · ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.execute != 'true' && 'contract-only' || github.event.inputs.generators != '' && 'targeted' || github.event.inputs.matrix_mode) || github.event_name == 'schedule' && 'full' || 'primary' }}
 
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "packages/cli/src/frontend-project.ts"
+      - "packages/cli/src/official-project.ts"
+      - "packages/cli/src/generators/**"
+      - "packages/cli/src/utils/create-planner-capabilities.ts"
+      - "packages/cli/src/utils/kit-registry.ts"
+      - "packages/cli/contracts/create-planner-capabilities.v1.json"
+      - "contracts/create-planner-capabilities.v1.json"
+      - "packages/cli/scripts/smoke-**-generators.mjs"
+      - "packages/cli/scripts/check-generator-smoke-coverage.mjs"
+      - "packages/cli/scripts/enterprise-package-smoke.mjs"
+      - "packages/cli/scripts/runtime-acceptance-matrix.mjs"
+      - "packages/cli/package.json"
+      - "package-lock.json"
+      - ".github/workflows/frontend-generator-smoke.yml"
+      - ".github/workflows/release-npm-manual.yml"
   pull_request:
     branches: [main, develop]
     paths:
-      - 'packages/cli/src/frontend-project.ts'
-      - 'packages/cli/src/official-project.ts'
-      - 'packages/cli/src/generators/**'
-      - 'packages/cli/src/utils/create-planner-capabilities.ts'
-      - 'packages/cli/src/utils/kit-registry.ts'
-      - 'packages/cli/contracts/create-planner-capabilities.v1.json'
-      - 'contracts/create-planner-capabilities.v1.json'
-      - 'packages/cli/scripts/smoke-**-generators.mjs'
-      - 'packages/cli/scripts/check-generator-smoke-coverage.mjs'
-      - 'packages/cli/scripts/enterprise-package-smoke.mjs'
-      - 'packages/cli/scripts/runtime-acceptance-matrix.mjs'
-      - 'packages/cli/package.json'
-      - 'package-lock.json'
-      - '.github/workflows/frontend-generator-smoke.yml'
+      - "packages/cli/src/frontend-project.ts"
+      - "packages/cli/src/official-project.ts"
+      - "packages/cli/src/generators/**"
+      - "packages/cli/src/utils/create-planner-capabilities.ts"
+      - "packages/cli/src/utils/kit-registry.ts"
+      - "packages/cli/contracts/create-planner-capabilities.v1.json"
+      - "contracts/create-planner-capabilities.v1.json"
+      - "packages/cli/scripts/smoke-**-generators.mjs"
+      - "packages/cli/scripts/check-generator-smoke-coverage.mjs"
+      - "packages/cli/scripts/enterprise-package-smoke.mjs"
+      - "packages/cli/scripts/runtime-acceptance-matrix.mjs"
+      - "packages/cli/package.json"
+      - "package-lock.json"
+      - ".github/workflows/frontend-generator-smoke.yml"
+      - ".github/workflows/release-npm-manual.yml"
   workflow_dispatch:
     inputs:
+      matrix_mode:
+        description: "Operating-system coverage for the selected generators"
+        required: true
+        type: choice
+        options:
+          - primary
+          - full
+        default: primary
       generators:
-        description: 'Comma-separated contracted generator IDs, or empty for all'
+        description: "Comma-separated contracted generator IDs, or empty for all"
         required: false
-        default: ''
+        default: ""
       execute:
-        description: 'Run official generators instead of contract-only dry runs'
+        description: "Run official generators instead of contract-only dry runs"
         required: true
         type: boolean
         default: true
   schedule:
-    - cron: '17 9 * * 1'
+    - cron: "17 9 * * 1"
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: official-generator-smoke-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  impact:
+    name: Select affected generators
+    runs-on: ubuntu-latest
+    outputs:
+      generators: ${{ steps.plan.outputs.generators }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      run_official: ${{ steps.plan.outputs.run_official }}
+      run_native: ${{ steps.plan.outputs.run_native }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Classify generator impact
+        id: changes
+        if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            all:
+              - 'packages/cli/src/utils/create-planner-capabilities.ts'
+              - 'packages/cli/contracts/create-planner-capabilities.v1.json'
+              - 'contracts/create-planner-capabilities.v1.json'
+              - 'packages/cli/scripts/smoke-official-generators.mjs'
+              - 'packages/cli/scripts/check-generator-smoke-coverage.mjs'
+              - 'packages/cli/package.json'
+              - 'package-lock.json'
+              - '.github/workflows/frontend-generator-smoke.yml'
+              - '.github/workflows/release-npm-manual.yml'
+            frontend:
+              - 'packages/cli/src/frontend-project.ts'
+            platform:
+              - 'packages/cli/src/official-project.ts'
+            native:
+              - 'packages/cli/src/generators/**'
+              - 'packages/cli/src/utils/kit-registry.ts'
+              - 'packages/cli/scripts/enterprise-package-smoke.mjs'
+              - 'packages/cli/scripts/runtime-acceptance-matrix.mjs'
+
+      - name: Build affected matrix from canonical contract
+        id: plan
+        working-directory: packages/cli
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MATRIX_MODE: ${{ github.event.inputs.matrix_mode || 'primary' }}
+          REQUESTED_GENERATORS: ${{ github.event.inputs.generators || '' }}
+          ALL_CHANGED: ${{ steps.changes.outputs.all || 'false' }}
+          FRONTEND_CHANGED: ${{ steps.changes.outputs.frontend || 'false' }}
+          PLATFORM_CHANGED: ${{ steps.changes.outputs.platform || 'false' }}
+          NATIVE_CHANGED: ${{ steps.changes.outputs.native || 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MODE="primary"
+          RUN_NATIVE="false"
+          SELECT_ARGS=()
+
+          if [[ "$EVENT_NAME" == "schedule" ]]; then
+            MODE="full"
+            RUN_NATIVE="true"
+            SELECT_ARGS=(--groups all)
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            MODE="$REQUESTED_MATRIX_MODE"
+            RUN_NATIVE="true"
+            if [[ -n "$REQUESTED_GENERATORS" ]]; then
+              SELECT_ARGS=(--generators "$REQUESTED_GENERATORS")
+            else
+              SELECT_ARGS=(--groups all)
+            fi
+          elif [[ "$ALL_CHANGED" == "true" ]]; then
+            RUN_NATIVE="true"
+            SELECT_ARGS=(--groups all)
+          else
+            GROUPS=()
+            [[ "$FRONTEND_CHANGED" == "true" ]] && GROUPS+=(frontend)
+            [[ "$PLATFORM_CHANGED" == "true" ]] && GROUPS+=(platform)
+            [[ "$NATIVE_CHANGED" == "true" ]] && RUN_NATIVE="true"
+            if (( ${#GROUPS[@]} > 0 )); then
+              GROUP_LIST="$(IFS=,; echo "${GROUPS[*]}")"
+              SELECT_ARGS=(--groups "$GROUP_LIST")
+            fi
+          fi
+
+          if (( ${#SELECT_ARGS[@]} == 0 )); then
+            echo 'generators=' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            echo 'run_official=false' >> "$GITHUB_OUTPUT"
+          else
+            SELECTED_JSON="$(node scripts/smoke-official-generators.mjs --list "${SELECT_ARGS[@]}")"
+            SELECTED_CSV="$(node -e 'const values=JSON.parse(process.argv[1]); process.stdout.write(values.join(","))' "$SELECTED_JSON")"
+            MATRIX="$(node scripts/smoke-official-generators.mjs --matrix --matrix-mode "$MODE" "${SELECT_ARGS[@]}")"
+            echo "generators=$SELECTED_CSV" >> "$GITHUB_OUTPUT"
+            echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+            echo 'run_official=true' >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "run_native=$RUN_NATIVE" >> "$GITHUB_OUTPUT"
+
   contract:
     name: Contract coverage and dry runs
+    needs: impact
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -55,7 +181,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.15.0'
+          node-version: "24.15.0"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -66,60 +192,35 @@ jobs:
         run: npm --workspace workspai run check:generator-smoke-coverage
 
       - name: Dry-run every available official generator
+        if: ${{ needs.impact.outputs.run_official == 'true' }}
         env:
-          RAPIDKIT_OFFICIAL_GENERATORS: ${{ github.event.inputs.generators || '' }}
+          RAPIDKIT_OFFICIAL_GENERATORS: ${{ needs.impact.outputs.generators }}
           RAPIDKIT_OFFICIAL_GENERATOR_REPORT: ${{ runner.temp }}/official-generator-contract-report.json
         run: npm --workspace workspai run smoke:official-generators
 
       - name: Verify native generator artifact coverage
+        if: ${{ needs.impact.outputs.run_native == 'true' }}
         run: npm --workspace workspai run smoke:enterprise-package
 
       - name: Upload contract smoke report
-        if: ${{ always() }}
+        if: ${{ always() && needs.impact.outputs.run_official == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: official-generator-contract-report
           path: ${{ runner.temp }}/official-generator-contract-report.json
           if-no-files-found: warn
 
-  matrix:
-    name: Build network matrix
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.execute == 'true' }}
-    runs-on: ubuntu-latest
-    outputs:
-      generators: ${{ steps.plan.outputs.generators }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build matrix from canonical contract
-        id: plan
-        working-directory: packages/cli
-        env:
-          GENERATORS: ${{ github.event.inputs.generators || '' }}
-          EVENT_NAME: ${{ github.event_name }}
-        shell: bash
-        run: |
-          MATRIX_MODE="primary"
-          if [[ "$EVENT_NAME" == "schedule" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            MATRIX_MODE="full"
-          fi
-          MATRIX="$(node scripts/smoke-official-generators.mjs --matrix --matrix-mode "$MATRIX_MODE" --generators "$GENERATORS")"
-          echo "mode=$MATRIX_MODE"
-          echo "generators=$MATRIX" >> "$GITHUB_OUTPUT"
-
   network:
     name: ${{ matrix.generator }} (${{ matrix.os }})
-    needs: [contract, matrix]
-    if: ${{ needs.matrix.result == 'success' }}
+    needs: [impact, contract]
+    if: ${{ needs.contract.result == 'success' && needs.impact.outputs.run_official == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.execute == 'true') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
     strategy:
       fail-fast: false
       max-parallel: 8
-      matrix: ${{ fromJSON(needs.matrix.outputs.generators) }}
+      matrix: ${{ fromJSON(needs.impact.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -128,7 +229,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.15.0'
+          node-version: "24.15.0"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -156,7 +257,7 @@ jobs:
         if: ${{ matrix.generator == 'php.laravel' }}
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: "8.4"
           extensions: fileinfo
           tools: composer
           coverage: none
@@ -175,7 +276,7 @@ jobs:
         env:
           COMPOSER_CACHE_DIR: ${{ runner.temp }}/composer-cache
           RAPIDKIT_OFFICIAL_GENERATOR_SMOKE: network
-          RAPIDKIT_OFFICIAL_GENERATOR_TIMEOUT_MS: '600000'
+          RAPIDKIT_OFFICIAL_GENERATOR_TIMEOUT_MS: "600000"
           RAPIDKIT_OFFICIAL_GENERATOR_REPORT: ${{ runner.temp }}/official-generator-smoke-report.json
           RAPIDKIT_OFFICIAL_GENERATOR_WORKSPACE_ROOT: ${{ github.workspace }}/.official-generator-smoke
         run: npm --workspace workspai run smoke:official-generators:network -- --generators "${{ matrix.generator }}"

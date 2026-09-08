@@ -6,8 +6,11 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import {
   assertQualificationReportIsPublicationSafe,
+  canonicalQualificationWorkspaceName,
   createQualificationCommandRecord,
   isQualificationCommandAccepted,
+  qualificationPrimaryRuntime,
+  repairAdaptersForQualificationBoundary,
 } from './qualification-publication-safety.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -23,7 +26,9 @@ const projectNames = (args.projects ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-const sharedWorkspaceName = args.sharedWorkspace ? slug(args.sharedWorkspace) : null;
+const sharedWorkspaceName = args.sharedWorkspace
+  ? canonicalQualificationWorkspaceName(args.sharedWorkspace)
+  : null;
 const sourceMode = args.sourceMode ?? 'snapshot';
 const isolatedStateRoot = path.join(runRoot, 'state');
 
@@ -64,7 +69,7 @@ const report = {
 
 for (const [projectIndex, projectName] of projectNames.entries()) {
   const sourceProjectPath = path.join(referenceRoot, projectName);
-  const workspaceName = sharedWorkspaceName ?? slug(projectName);
+  const workspaceName = sharedWorkspaceName ?? canonicalQualificationWorkspaceName(projectName);
   const workspacePath = path.join(runRoot, workspaceName);
   const project = {
     id: `project-${String(projectIndex + 1).padStart(3, '0')}`,
@@ -164,6 +169,7 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     writeReport();
     continue;
   }
+  const canonicalProjectName = adoptedProject?.name ?? projectName.toLowerCase();
   project.assertions.push(
     assertion(
       'adopt.runtime-composition',
@@ -229,6 +235,28 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
       'The canonical chain must retain model and agent-context stages on blocked repositories.'
     )
   );
+  const modelArtifact = readJsonFile(
+    path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
+  );
+  const qualifiedProjectModel = modelArtifact?.projects?.find(
+    (candidate) => candidate?.name === canonicalProjectName
+  );
+  project.assertions.push(
+    assertion(
+      'model.governance-truth-contract',
+      modelArtifact?.schemaVersion === 'workspace-model.v1' &&
+        ['repository', 'external-declared', 'external-observed', 'unknown'].includes(
+          qualifiedProjectModel?.governance?.ci?.status
+        ) &&
+        ['repository', 'external-declared', 'external-observed', 'unknown'].includes(
+          qualifiedProjectModel?.governance?.release?.status
+        ) &&
+        ['repository', 'external-declared', 'external-observed', 'unknown'].includes(
+          qualifiedProjectModel?.governance?.ownership?.status
+        ),
+      'Every qualified project must publish explicit CI, release, and ownership truth without treating unknown external systems as repository evidence.'
+    )
+  );
   const graphArtifact = readJsonFile(
     path.join(workspacePath, '.workspai', 'reports', 'workspace-knowledge-graph.json')
   );
@@ -246,6 +274,56 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
           serializedGraphArtifact.includes(candidate)
         ),
       'The canonical graph must remain proof-carrying, portable, secret-free, and free of failed providers or machine-local paths.'
+    )
+  );
+
+  const repairCapabilities = run(project, {
+    id: 'workspace.repair-capabilities',
+    cwd: workspacePath,
+    argv: ['workspace', 'repair', 'capabilities', '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 60_000,
+  });
+  const repairMatrix = repairCapabilities.json?.qualificationMatrix;
+  project.assertions.push(
+    assertion(
+      'repair.qualification-matrix-contract',
+      repairCapabilities.json?.schemaVersion === 'workspai.workspace-repair-capabilities.v1' &&
+        repairMatrix?.status === 'contract-enforced' &&
+        repairMatrix?.dimensions?.adapters?.length >= 13 &&
+        repairMatrix?.dimensions?.scopes?.length >= 4 &&
+        repairMatrix?.dimensions?.failureFamilies?.length >= 10 &&
+        repairMatrix?.dimensions?.recoveryPaths?.length >= 6 &&
+        repairMatrix?.invariants?.everyAdapterDeclaresClosureStages === true &&
+        repairMatrix?.invariants?.everyFailureTerminates === true &&
+        repairMatrix?.invariants?.everyMutationIsCheckpointed === true,
+      'Repair qualification must expose the complete adapter, scope, failure, recovery, and closure matrix used by every consumer.'
+    )
+  );
+  const scopedRepairCapabilities = run(project, {
+    id: 'workspace.repair-capabilities-project',
+    cwd: workspacePath,
+    argv: ['workspace', 'repair', 'capabilities', '--project', canonicalProjectName, '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 60_000,
+  });
+  const detectedRepairAdapters = scopedRepairCapabilities.json?.inspection?.detectedAdapters;
+  const primaryRuntime = qualificationPrimaryRuntime(adoptedProject);
+  const primaryRepairAdapters = repairAdaptersForQualificationBoundary(primaryRuntime, projectPath);
+  project.assertions.push(
+    assertion(
+      'repair.runtime-adapter-detection',
+      Array.isArray(detectedRepairAdapters) &&
+        detectedRepairAdapters.every((adapter) =>
+          repairMatrix?.dimensions?.adapters?.includes(adapter)
+        ) &&
+        (detectedRepairAdapters.length > 0
+          ? primaryRepairAdapters.length === 0 ||
+            primaryRepairAdapters.some((adapter) => detectedRepairAdapters.includes(adapter))
+          : primaryRepairAdapters.length === 0 &&
+            repairMatrix?.dimensions?.failureRecoveryPolicy?.['unsupported-runtime'] ===
+              'manual-repair'),
+      'Every real project must resolve its canonical repair adapter, or explicitly terminate through the governed unsupported-runtime manual-repair path.'
     )
   );
 
@@ -474,6 +552,24 @@ for (const [projectIndex, projectName] of projectNames.entries()) {
     timeoutMs: 600_000,
   });
 
+  const liveBoard = run(project, {
+    id: 'workspace.live-board',
+    cwd: workspacePath,
+    argv: ['live', '--once', '--projection', 'board', '--json'],
+    acceptedExitCodes: [0],
+    timeoutMs: 120_000,
+  });
+  project.assertions.push(
+    assertion(
+      'live.activity-contract',
+      liveBoard.json?.schemaVersion === 'workspace-activity-board.v1' &&
+        liveBoard.json?.scopeCount >= 1 &&
+        Array.isArray(liveBoard.json?.runs) &&
+        liveBoard.json.runs.length > 0,
+      'The isolated qualification must retain renderer-neutral Live activity for observed CLI runs.'
+    )
+  );
+
   const commandFailures = project.commands.filter((command) => !command.accepted);
   const assertionFailures = project.assertions.filter((item) => !item.passed);
   project.status =
@@ -515,6 +611,7 @@ function run(project, spec) {
     env: {
       ...process.env,
       WORKSPAI_STATE_DIR: isolatedStateDirectory,
+      WORKSPAI_ACTIVITY_STATE_DIR: path.join(isolatedStateDirectory, 'activity'),
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },
@@ -618,15 +715,6 @@ function prepareSourceSnapshot({ sourceProjectPath, runRoot, projectId }) {
     shell: false,
   });
   return verified.status === 0 ? snapshotPath : null;
-}
-
-function slug(value) {
-  const normalized = String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[._-]+|[._-]+$/g, '');
-  return normalized || 'qualified-project';
 }
 
 function writeReport() {

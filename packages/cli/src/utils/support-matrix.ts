@@ -3,6 +3,7 @@ import type {
   BackendRuntimeFamily,
   BackendSupportTier,
 } from './backend-framework-contract.js';
+import { getBackendFrameworkContract } from './backend-framework-contract.js';
 import type { RuntimeCommand } from './runtime-adapters.js';
 
 export type RapidKitSupportTier = BackendSupportTier;
@@ -197,10 +198,13 @@ export const RUNTIME_SUPPORT_MATRIX: Record<string, RuntimeSupportMatrixEntry> =
     tier: 'observed',
     scaffoldSupport: false,
     importSupport: true,
-    lifecycleCommands: ['help'],
+    lifecycleCommands: ['init', 'dev', 'start', 'build', 'test', 'lint', 'format', 'help'],
     moduleCommands: false,
     doctorSupport: 'observed',
-    notes: ['Bun projects are importable and governed as observed projects until a kit exists.'],
+    notes: [
+      'Bun projects are importable and governed as observed projects until a kit exists.',
+      'Declared package scripts execute through the Bun-aware npm wrapper; undeclared lifecycle commands remain unavailable.',
+    ],
   },
   c: {
     runtime: 'c',
@@ -241,58 +245,12 @@ export const RUNTIME_SUPPORT_MATRIX: Record<string, RuntimeSupportMatrixEntry> =
   },
 };
 
-const FIRST_CLASS_FRAMEWORKS: BackendPlatformKey[] = ['fastapi', 'nestjs'];
-
-const EXTENDED_FRAMEWORKS: BackendPlatformKey[] = [
-  'django',
-  'flask',
-  'nextjs',
-  'remix',
-  'nuxt',
-  'react',
-  'vite',
-  'vue',
-  'sveltekit',
-  'svelte',
-  'angular',
-  'astro',
-  'solid',
-  'express',
-  'fastify',
-  'koa',
-  'echo',
-  'gofiber',
-  'gogin',
-  'springboot',
-  'dotnet',
-  'laravel',
-  'symfony',
-  'rails',
-  'sinatra',
-  'actix',
-  'axum',
-  'rocket',
-  'phoenix',
-  'clojure',
-  'scala',
-  'kotlin',
-  'deno',
-  'bun',
-  'tauri',
-  'electron',
-  'vscode-extension',
-  'c',
-  'cpp',
-];
-
 export function getRuntimeSupport(runtime: string | undefined): RuntimeSupportMatrixEntry {
   return RUNTIME_SUPPORT_MATRIX[runtime || 'unknown'] ?? RUNTIME_SUPPORT_MATRIX.unknown;
 }
 
 export function getFrameworkSupportTier(framework: BackendPlatformKey): RapidKitSupportTier {
-  if (FIRST_CLASS_FRAMEWORKS.includes(framework)) return 'first-class';
-  if (EXTENDED_FRAMEWORKS.includes(framework)) return 'extended';
-  return 'observed';
+  return getBackendFrameworkContract(framework).supportTier;
 }
 
 export function isLifecycleCommandSupportedForRuntime(

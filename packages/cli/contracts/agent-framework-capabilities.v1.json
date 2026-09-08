@@ -1,0 +1,454 @@
+{
+  "schemaVersion": "workspai.agent-framework-capabilities.v1",
+  "protocolVersion": "workspai.agent-framework-adapter-protocol.v1",
+  "positioning": {
+    "kit": "A user-facing, versioned scaffold that may select one framework adapter.",
+    "adapter": "A framework-specific implementation of this contract shared by create and attach flows.",
+    "framework": "The owner of agent execution, runtime state, conversations, tools, memory, and orchestration.",
+    "modelProvider": "An independently selected model service or local runtime; it is not the framework identity."
+  },
+  "authorities": {
+    "workspai": [
+      "workspace model and graph truth",
+      "bounded context and evidence generation",
+      "Goal and impact scope",
+      "mutation admission and proof-carrying change state",
+      "canonical verification and evidence sealing",
+      "managed-file ownership policy"
+    ],
+    "framework": [
+      "agent and workflow execution",
+      "conversation, memory, checkpoint, and runtime state",
+      "model invocation and framework-native tool dispatch",
+      "channels, schedules, handoffs, and framework telemetry"
+    ],
+    "human": [
+      "risk approval",
+      "scope expansion decisions",
+      "secret and network grants"
+    ],
+    "forbiddenForAdapter": [
+      "invent or mutate canonical Model or Graph truth",
+      "turn inferred framework output into verification evidence",
+      "apply source mutations outside the Workspai PCC or Repair admission boundary",
+      "persist secrets, unrestricted model output, or absolute machine paths in portable artifacts",
+      "overwrite user-authored files without an owned-file or managed-section lease"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "single-agent",
+      "meaning": "Run one agent through a declared model and bounded tool surface.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "multi-agent",
+      "meaning": "Coordinate multiple named agents without hiding their ownership or handoffs.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "typed-tools",
+      "meaning": "Expose tools with machine-validatable input and output contracts.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "skills",
+      "meaning": "Load bounded procedures or reusable instructions on demand.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "handoffs",
+      "meaning": "Transfer work between agents with explicit state and responsibility.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "explicit-workflows",
+      "meaning": "Execute a declared graph or ordered workflow rather than an opaque loop.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "streaming",
+      "meaning": "Stream typed runtime events or model output.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "background-execution",
+      "meaning": "Continue bounded work outside an attached interactive request.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "durable-execution",
+      "meaning": "Persist enough runtime state to survive process interruption.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "human-in-the-loop",
+      "meaning": "Pause at a declared boundary and resume from an explicit human decision.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "conversation-state",
+      "meaning": "Own framework conversation or thread state without becoming workspace truth.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "memory",
+      "meaning": "Provide framework memory with explicit scope, persistence, and retention semantics.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "checkpoints",
+      "meaning": "Persist resumable workflow checkpoints.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "resume",
+      "meaning": "Resume a prior run without silently replaying admitted effects.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "schedules",
+      "meaning": "Trigger declared work on a schedule.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "channels",
+      "meaning": "Receive and send messages through declared external channels.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "mcp-client",
+      "meaning": "Consume MCP tools through an explicitly configured client boundary.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "mcp-server",
+      "meaning": "Expose framework capabilities through an MCP server boundary.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "telemetry",
+      "meaning": "Emit correlated, redacted runtime telemetry.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "evaluations",
+      "meaning": "Run repeatable agent or workflow evaluations with recorded evidence.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "provider-neutral-models",
+      "meaning": "Select among multiple model providers through a stable client boundary.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "local-models",
+      "meaning": "Use a declared local model provider without claiming offline execution by default.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "local-execution",
+      "meaning": "Run the framework on the user machine.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "self-hosting",
+      "meaning": "Run on infrastructure controlled by the user or organization.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    },
+    {
+      "id": "managed-hosting",
+      "meaning": "Deploy to an upstream or third-party managed runtime.",
+      "allowedSupport": [
+        "native",
+        "adapter-provided",
+        "conditional",
+        "unsupported"
+      ],
+      "evidenceRequired": true
+    }
+  ],
+  "adapterOperations": [
+    {
+      "id": "detect",
+      "mode": "read-only",
+      "directSourceMutationAllowed": false
+    },
+    {
+      "id": "plan-scaffold",
+      "mode": "plan-only",
+      "directSourceMutationAllowed": false
+    },
+    {
+      "id": "plan-attach",
+      "mode": "plan-only",
+      "directSourceMutationAllowed": false
+    },
+    {
+      "id": "render-managed-files",
+      "mode": "render-only",
+      "directSourceMutationAllowed": false
+    },
+    {
+      "id": "project-context",
+      "mode": "resolve-only",
+      "directSourceMutationAllowed": false
+    },
+    {
+      "id": "validate",
+      "mode": "read-only",
+      "directSourceMutationAllowed": false
+    },
+    {
+      "id": "resolve-runtime",
+      "mode": "resolve-only",
+      "directSourceMutationAllowed": false
+    }
+  ],
+  "detection": {
+    "authoredEvidenceRequired": true,
+    "generatedEvidenceCanConfirmButCannotSelect": true,
+    "literalContentMatchingOnly": true,
+    "boundedFileReads": true,
+    "ambiguousMatchesFailClosed": true
+  },
+  "lifecycle": [
+    {
+      "id": "understand",
+      "owner": "workspai-cli",
+      "mutation": "none"
+    },
+    {
+      "id": "impact",
+      "owner": "workspai-cli",
+      "mutation": "none"
+    },
+    {
+      "id": "propose",
+      "owner": "framework",
+      "mutation": "proposal-only"
+    },
+    {
+      "id": "approve",
+      "owner": "human-or-policy",
+      "mutation": "authorization-only"
+    },
+    {
+      "id": "execute",
+      "owner": "workspai-cli",
+      "mutation": "authorized-effects-only"
+    },
+    {
+      "id": "verify",
+      "owner": "workspai-cli",
+      "mutation": "none"
+    },
+    {
+      "id": "seal",
+      "owner": "workspai-cli",
+      "mutation": "canonical-evidence-only"
+    }
+  ],
+  "kitRelationship": {
+    "rule": "An agent project kit declares one primary framework adapter. A workspace may host multiple separately scoped adapter instances, and cross-framework bridges must be explicit. The same adapters are reusable by existing-project attach flows.",
+    "workspaceAllowsMultipleScopedAdapters": true,
+    "implicitCrossFrameworkBridgeAllowed": false,
+    "frameworkIsNotModelProvider": true,
+    "frameworkIsNotProjectRuntime": true,
+    "noCoreBranchingByFrameworkId": true
+  },
+  "versioning": {
+    "adapterProtocol": "SemVer-compatible immutable v1 envelope; breaking fields require v2.",
+    "upstreamFramework": "Agent framework kits select the latest admitted baseline, never an unchecked latest registry release. Discovery and candidate pull requests are automatic; promotion requires complete cross-platform conformance and human merge review.",
+    "stability": {
+      "experimental": "Contract exploration only; not advertised as usable.",
+      "preview": "Usable only with explicit preview selection and complete required conformance.",
+      "stable": "All required conformance checks pass on the claimed platform and runtime matrix.",
+      "compatibility": "Supported for migration or maintained upstream lines; never the default new-project choice.",
+      "deprecated": "Discovery and migration guidance only; new scaffold is forbidden."
+    }
+  },
+  "security": {
+    "defaults": [
+      "Network, generated-code execution, secrets, and mutating tools are not implicitly granted.",
+      "Framework runtime state is untrusted input to canonical Workspai evidence producers.",
+      "All paths are relative, containment-checked, symlink-aware, and bound to an authorized project root.",
+      "Portable artifacts contain references or bounded projections, never raw secret-bearing sessions.",
+      "Framework dependencies are pinned by a tested-baseline policy and audited before admission.",
+      "Stable and preview release channels remain explicit and cannot be silently interchanged.",
+      "Scheduled update automation executes trusted default-branch code, opens review-only pull requests, and never merges candidates."
+    ]
+  },
+  "publication": {
+    "manifestSchema": "contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json",
+    "conformanceSchema": "contracts/workspace-intelligence/agent-framework-conformance-report.v1.json",
+    "changePlanSchema": "contracts/workspace-intelligence/agent-framework-change-plan.v1.json",
+    "ownershipReceiptSchema": "contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json",
+    "admissionCandidateSchema": "contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json",
+    "requiredChecks": [
+      "manifest-schema",
+      "protocol-version",
+      "capability-truth",
+      "detection-positive",
+      "detection-negative",
+      "scaffold-plan-safety",
+      "attach-plan-safety",
+      "managed-file-ownership",
+      "user-file-preservation",
+      "path-containment",
+      "secret-non-persistence",
+      "context-generation-binding",
+      "mutation-gateway",
+      "verification-binding",
+      "failure-isolation",
+      "idempotency",
+      "offline-posture",
+      "cross-platform-paths"
+    ],
+    "stableAdmission": "A stable adapter requires one passed instance of every required check for each advertised platform/runtime lane and no blockers."
+  }
+}

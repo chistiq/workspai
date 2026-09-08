@@ -7,6 +7,595 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Added an explicit manual `primary` or `full` official-generator matrix choice;
+  an all-generator executed `primary` run for the exact commit can satisfy the
+  release gate, while targeted and contract-only runs remain ineligible.
+
+## [0.75.1] - 2026-09-08
+
+### Changed
+
+- Handle lifecycle help before runtime probes, readiness writes or command
+  execution, including when the project toolchain is unavailable.
+- Mark generated source provenance during source extraction even when optional
+  polyglot analysis is unavailable, preserving authored-source search priority.
+- Let enterprise qualification preserve committed changes instead of attempting
+  invalid resume/abort transitions on terminal transactions.
+- Bind agent framework plans and effect receipts to portable artifact identities
+  for adopted external projects while keeping managed writes in the project root.
+- Stabilize cross-platform adoption integration coverage by restoring the real
+  working directory, comparing canonical filesystem identity on macOS, and
+  retrying only transient Windows filesystem locks during cleanup.
+- Made interactive adoption outside a workspace offer a safe parent-workspace
+  bootstrap only when the parent contains exactly the project being adopted;
+  automation retains the managed-default behavior.
+- Allowed `adopt --workspace <path>` to bootstrap an existing empty directory,
+  while rejecting every non-empty non-workspace target without modification.
+- Joined workspace bootstrap and adoption into one recoverable lifecycle so a
+  later registry, Model, Graph, consumer-sync, or grounding failure restores
+  both workspace and project preimages.
+- Added a minimal interactive adoption progress indicator that follows the
+  detect, link, intelligence-publish, and agent-grounding phases while keeping
+  JSON and non-interactive output unchanged.
+
+## [0.75.0] - 2026-09-06
+
+### Added
+
+- Added a framework-neutral Agent Framework Adapter Contract with explicit
+  capability declarations, authority boundaries, version-pinned manifests,
+  secure managed-file rules, and mandatory conformance evidence. No concrete
+  agent framework adapter or scaffold is advertised by this contract-only
+  foundation.
+- Added a bounded manifest loader, typed authored-evidence detection for npm,
+  PyPI, and NuGet projects, an ambiguity-safe adapter registry, and exact
+  platform/runtime/framework-version conformance admission. Discovery never
+  executes adapter packages or treats generated Workspai files as authored
+  framework evidence.
+- Added preview Microsoft Agent Framework adapters for Python 1.17 and .NET
+  1.20 with deterministic scaffold/attach plans, ownership-safe rendering,
+  secret-reference enforcement, runtime resolution, and independent validation.
+  Selection fails closed unless every advertised conformance lane supplies
+  digest-bound passing evidence for the exact shipped manifest.
+- Added a six-lane Microsoft adapter conformance workflow that emits auditable
+  per-check evidence even for blocked lanes, compiles the pinned Python and
+  .NET projects on Linux, macOS, and Windows, and rejects incomplete,
+  duplicated, stale-manifest, or evidence-missing report sets before admission.
+- Added a PCC-backed agent-framework lifecycle that binds the exact project,
+  adapter version, managed paths, and content digests before authorization,
+  writes only after an explicit filesystem grant, and records portable effect
+  and ownership receipts for safe idempotent refreshes.
+- Added a review-pending admission candidate that binds the complete six-lane
+  framework matrix, source commit, reports, and evidence files by SHA-256.
+- Pinned Python conformance to the reproducible 3.10.11 cross-platform binary
+  baseline and suppressed secondary artifact-upload failures when runtime setup
+  prevents the conformance step from starting.
+- Added a centralized `latest-admitted` Agent Framework version policy and a
+  weekly PyPI/NuGet discovery workflow. New upstream releases automatically
+  refresh a review-only candidate pull request and dispatch the full
+  cross-platform admission matrix; stable and preview lanes remain independent
+  and no candidate is merged automatically.
+- Strengthened framework admission from compile/import coverage to a
+  deterministic, credentialless context-to-agent-to-response lifecycle on every
+  supported runtime and operating-system lane.
+- Split interactive project creation into category and kit selection, with
+  reserved Agent and Gaming categories that remain hidden until an admitted
+  kit is actually available.
+- Added `agent framework list`, `plan`, `attach`, and `apply` as the first
+  user-facing Microsoft Agent Framework integration. Attach requests now become
+  a scoped Goal and hash-bound Proof-Carrying Change; project files are written
+  only after an explicit filesystem approval, while installs, credentials, and
+  provider calls remain outside the implicit effect boundary.
+- Added release-admitted `agent.microsoft.python` and
+  `agent.microsoft.dotnet` project kits. Their scaffold runs inside project
+  registration, Goal, PCC, ownership-receipt, and rollback boundaries instead
+  of bypassing the governed attach lifecycle.
+- Bound selectable built-in adapters to a reviewed release-admission receipt
+  containing the exact adapter manifest, framework baseline, source commit, CI
+  run, runtime, and platform matrix. Any drift fails closed, and version-update
+  pull requests refresh the receipt only after all six conformance lanes pass.
+
+### Changed
+
+- Model admitted agent projects as an additive `agent` category while
+  preserving Microsoft Agent Framework as the canonical identity across its
+  Python and .NET runtimes. Preview projects emitted as generic workers migrate
+  during modeling without rewriting user files.
+- Publish agent kits in the native Create capability contract and generate one
+  authoritative runtime manifest per instance, eliminating empty root
+  manifests and phantom lifecycle units.
+- Derive Python and .NET lifecycle claims from executable evidence; Python main
+  modules gain deterministic compile and run stages, .NET console projects gain
+  a run stage, and test support is not claimed without a test surface or an
+  owned Core project runner.
+- Execute independent same-runtime manifests as separate Workspace Run units
+  instead of collapsing them into one root wrapper command.
+- Generate credentialless context-boundary tests and environment-name examples
+  for both agent kits. Python lifecycle plans select the platform Python 3
+  launcher and use standard-library `unittest` unless pytest ownership is
+  explicitly observed; .NET exposes a dedicated test project.
+- Ignore only the exact empty root manifests emitted by older Workspai agent
+  kits when a real `agents/primary` runtime exists. Any user edit restores the
+  root as an independent lifecycle unit.
+
+### Fixed
+
+- Keep generated .NET agent tests outside the primary executable's compile
+  glob, configure their dedicated xUnit project for Microsoft Testing Platform,
+  and verify the entrypoint-to-context-loader binding across separate files.
+- Run the bundle-size release gate in the CLI workspace and validate governed
+  agent kits at their canonical nested runtime boundaries, keeping the official
+  monorepo release dry-run aligned with the shipped project architecture.
+- Materialize raw-byte hashes for physical artifacts in immutable PCC
+  baselines, so provider, entity, and relation churn cannot be mistaken for a
+  user file mutation while real additions, edits, and deletions remain
+  fail-closed.
+- Preserve actionable lifecycle failure evidence across nested Workspace Run
+  and package-manager processes, classify external resource failures as
+  dependency failures when native output is available, and provide the exact
+  native rerun command when an interactive tool emits no capturable output.
+- Reject an existing Python Core project target at the Workspai boundary before
+  delegation, preserving the existing directory and replacing the internal
+  Python traceback with a concise path-aware recovery message.
+- Bind a framework-neutral architecture prediction into every planned adapter
+  PCC, distinguish byte changes from relation-only Graph changes, and exclude
+  concurrent mutations outside a project-scoped Change from receipt coverage.
+- Abort generated Change evidence and cancel its generated Goal when planning
+  is blocked or idempotently produces no work, and reject path-shaped agent
+  names before lifecycle evidence is created.
+- Preserve project-boundary metadata while building the Model so parent
+  metadata and runtime heuristics cannot erase an authored framework identity.
+- Add actionable install, verify, run, environment, and governance instructions
+  to generated Python and .NET agent project READMEs.
+- Scope PCC architecture overlays as well as receipt coverage to the immutable
+  project or project-set lease, and treat Graph facts derived from a predicted
+  artifact mutation as expected rather than independent surprise noise.
+- Snapshot Workspace Verify evidence inside each Change before binding its
+  receipt, so a later unrelated verification run cannot invalidate an older
+  proof-carrying capsule through the mutable `last-run` pointer.
+- Recognize bounded nested environment examples during Analyze so isolated
+  agent instances do not receive a false missing-environment finding or need
+  to duplicate secret-name documentation at the project root. Avoid
+  recommending a container for local agent projects that do not declare a
+  service deployment boundary.
+- Keep Doctor aligned with Model and Analyze for governed agent projects:
+  preserve their framework, runtime, agent kind, and application archetype;
+  discover nested environment and dependency contracts; and target Python and
+  .NET repair commands at the owned `agents/primary` runtime.
+
+## [0.74.0] - 2026-09-05
+
+### Added
+
+- Added shared, cross-language health-surface discovery so Analyze, Doctor,
+  Graph, and consumer evidence agree on health endpoints across Go, Python,
+  Rust, .NET, and supported JavaScript frameworks.
+- Extended enterprise workspace qualification to cover the complete Goal and
+  proof-carrying change lifecycle, derive coverage only from completed checks,
+  and prevent internal qualification paths from entering published artifacts.
+
+### Changed
+
+- Execute polyglot lifecycle stages through bounded native child processes,
+  preserve process exit semantics, report timeouts as exit 124, and avoid
+  duplicate ownership-level execution for nested Go and CMake projects.
+- Resolve registered project identities, `infra`, snapshots, repair
+  capabilities, and lifecycle targets through canonical workspace bindings,
+  including callers that start inside an adopted external project.
+- Preserve canonical contracts, registries, policy and toolchain inputs, and
+  external-project identities in recovery snapshots.
+- Make Graph retrieval use authored subject evidence and language affinity,
+  reject generic distractors, prioritize lifecycle evidence for build queries,
+  and keep short terms and multi-language Goal constraints unambiguous.
+- Keep token-efficiency claims unknown without a usable model measurement and
+  remove stale fixed provider-price estimates from `workspai ai info`.
+
+### Fixed
+
+- Accept the documented `--runtime` selector for verified test-coverage goals
+  and keep the generated CLI/extension command contracts aligned.
+- Reject ambiguous registry aliases and project paths that escape a workspace
+  through symlinks, while preserving marker-defined identity across adoption,
+  contracts, Doctor, Goals, remediation, snapshots, and agent evidence.
+- Keep automatically observed nested manifests inside their managed aggregate
+  project boundary. Explicitly registered nested projects remain independent
+  and read their own metadata, preventing parent identity/runtime leakage and
+  self-invalidating Graph fingerprints during adoption.
+- Classify missing CMake packages as dependency failures and make runtime
+  contract acceptance remain offline-safe instead of timing out while probing
+  optional Python Core catalog commands.
+- Prevent generated Goal evidence and workspace snapshots from invalidating
+  their own Graph fingerprints during verification.
+
+## [0.73.0] - 2026-09-04
+
+### Added
+
+- Added a machine-readable contributor issue registry and a freshness gate that
+  keeps maintainer-routed work aligned with live GitHub issue state.
+- Added path-aware CI classification so documentation-only changes retain fast,
+  required validation without starting unrelated heavyweight matrices.
+
+### Changed
+
+- Made Node.js Graph queries cover authored JavaScript and TypeScript while
+  treating runtime words as scope constraints rather than relevance evidence.
+- Made natural-language Graph ranking prefer direct authored identities over
+  incidental attributes and generated artifacts, with stable handling for
+  common conversational and plural forms.
+- Made explicit Workspace, Goal, and Change scopes callable from CI, IDE, MCP,
+  and other consumers without requiring their process to enter the project
+  directory first.
+- Made official generator smoke validation reuse a proven daily primary result
+  while retaining manual, scheduled, and relevant-change execution paths.
+- Limited Project Agent Context diagnostics to its existing contract budget,
+  preserving the canonical full set and reporting how many findings remain in
+  the Workspace Knowledge Graph.
+
+### Fixed
+
+- Prevented Vitest scripts and stale managed adoption metadata from
+  misclassifying a Node.js SDK as a Vite application.
+- Prevented aggregate repositories and their registered nested projects from
+  producing artificial dependency cycles through overlapping source scans.
+- Invalidated stale Doctor project-scan evidence after framework and diagnostic
+  semantics change.
+- Prevented large repositories with more than 16 Graph diagnostics from
+  failing adoption while generating the bounded project context artifact.
+
+### Security
+
+- Updated `fast-uri` to the patched release and applied explicit least-privilege
+  permissions to remaining CI workflows.
+- Excluded bot-authored pull requests from contributor welcome messaging and
+  retained safe `pull_request_target` boundaries.
+
+## [0.72.1] - 2026-09-01
+
+### Changed
+
+- Moved Windows `workspai` PATH precedence diagnostics into typed Doctor
+  evidence so npm 11 can install the CLI without requesting install-script
+  authorization.
+
+### Fixed
+
+- Removed package-level `postinstall` and redundant Husky `prepare` hooks that
+  caused npm 11 to emit an `allowScripts` warning. Repository Git hooks remain
+  owned by the monorepo root and are not consumer installation behavior.
+- Prevented a failed Windows `where.exe` or npm-prefix probe from rejecting the
+  entire Doctor command; probe failure now becomes explicit unverified
+  evidence.
+
+## [0.72.0] - 2026-09-01
+
+### Added
+
+- Added typed executable requirements, current-environment launchability,
+  blocked reasons, retry boundaries, and canonical next-action projections to
+  remediation plans.
+- Added workspace ownership discovery for npm, pnpm, and Cargo lifecycle units.
+
+### Changed
+
+- Made Doctor and Repair share one executable launchability probe across
+  supported runtimes, preventing unavailable host tools from entering an
+  executable remediation path.
+- Made workspace lifecycle planning collapse matching members under their
+  owning workspace manifest and exclude embedded eval, benchmark, test-data,
+  and fixture packages.
+- Made Graph retrieval prefer authored source and resolve exact evidence and
+  path targets inside the requested project scope.
+- Made frontend application probes explicitly not applicable to library, SDK,
+  platform, plugin, and monorepo archetypes.
+- Made strict PCC verification return the evidence-blocked exit status when
+  independent verification cannot close the change.
+
+### Fixed
+
+- Prevented aggregate projects from executing an explicitly registered nested
+  project a second time.
+- Prevented tooling-only development dependencies at private workspace roots
+  from becoming false application framework detections.
+- Prevented a missing runtime from producing repeated same-generation Repair
+  plans that cannot execute.
+
+## [0.71.0] - 2026-08-31
+
+### Added
+
+- Added one executable baseline registry for the npm-owned Go Fiber, Go Gin,
+  Spring Boot, .NET Web API, and Rust Axum generators.
+- Added generated Dependabot coverage for native package ecosystems and GitHub
+  Actions, plus pinned toolchains and non-root runtime containers.
+
+### Changed
+
+- Updated owned native kits to reviewed Go 1.26, Spring Boot 3.5, Java 21,
+  .NET 10 LTS, Rust 1.98, edition 2024, and current compatible framework and
+  test dependencies.
+- Made cold workspace initialization stream the executor that actually ran and
+  use bounded runtime-aware budgets while preserving explicit timeout policy.
+- Extended Goal lifecycle projections with their canonical Repair and PCC
+  transaction links.
+- Simplified the primary onboarding documentation around the complete
+  adopt-to-verify loop, restored Live and Workspace Run discovery, and made the
+  command reference explicit for PCC inspection/export and Graph benchmark
+  suites.
+
+### Fixed
+
+- Prevented runtime-owned `.workspai-workspace` telemetry from invalidating the
+  canonical Graph, immutable Goal binding, or PCC lease before an approved
+  effect executes.
+- Prevented generated GitHub agent definitions from becoming circular Graph
+  inputs while preserving freshness for real repository source changes.
+- Prevented an expected missing system Poetry executable from becoming stale
+  blocker evidence when a project-local Poetry bootstrap is available.
+
+## [0.70.0] - 2026-08-31
+
+### Added
+
+- Added typed deletion tombstones to PCC effect receipts and capsules so
+  deleted artifacts remain independently checkable and artifact resurrection
+  invalidates prior assurance.
+- Added a repository Contribution Hub, skill-routed applicant and lifecycle
+  messages, and a read-only `contributor:plan` that derives validation gates
+  from changed files without entering the published CLI package.
+- Added Live Board activity validation to the isolated 23-command real-world
+  qualification gate.
+
+### Changed
+
+- Made PCC effect coverage reconcile overlapping aggregate and nested Graph
+  labels through their contained physical target instead of requiring
+  duplicate receipts for one mutation.
+- Made Analyze report a deliberate multi-runtime aggregate boundary as
+  informational rather than failing it as an unknown backend stack.
+- Made agent bootstrap keep architecture evidence independent from an unrelated
+  stale or invalid Goal while retaining a degraded Goal advisory.
+- Updated contributor welcome, pull-request, merge, follow-up, issue, and
+  validation guidance around bounded tasks and GitHub-owned acceptance criteria.
+
+### Fixed
+
+- Prevented a successful deletion from becoming unverifiable merely because
+  the deleted file cannot provide an ordinary live-file digest.
+- Prevented a recreated deleted artifact from passing capsule validation.
+- Prevented a stale Goal scoped to one project from rolling back valid adoption
+  or prohibiting architecture claims for an unrelated nested project.
+- Prevented isolated qualification Activity state from escaping its disposable
+  run root or producing an empty Live Board.
+
+## [0.69.0] - 2026-08-30
+
+### Added
+
+- Added the Proof-Carrying Change lifecycle, including Goal-bound architecture
+  leases, noncanonical predictions, bounded effect authorization, typed effect
+  and verification receipts, fresh Graph observation, surprise reports, and
+  validated portable capsules.
+- Added an extraction-safe Decisions kernel with digest-linked events,
+  replay-derived transaction projections, optimistic concurrency guards,
+  checkpoints, durable blocked states, explicit resume, and evidence-preserving
+  abort behavior.
+- Added the `change begin`, `list`, `predict`, `authorize`, `resume`, `effect
+record`, `verification record`, `status`, `explain`, `verify`, `abort`, and
+  `capsule validate|export` command surfaces with versioned JSON contracts.
+- Added read-only MCP discovery, inspection, and validation tools for
+  Proof-Carrying Changes without exposing mutation or authorization over MCP.
+
+### Changed
+
+- Made Goal lifecycle verification accept a current sealed change capsule as a
+  sanctioned architecture transition while preserving existing Repair and
+  verified-Goal paths.
+- Made generated agent grounding require a Goal-bound change before source
+  mutation and distinguish prediction, observed effects, and independent proof.
+- Made Graph change overlays report only artifacts backed by actual proof
+  deltas, preventing unchanged shared manifests from appearing as mutations.
+- Made polyglot runtime-unit identities canonical for nested manifests and made
+  Workspace Run preserve the authored project name in Fleet and Live evidence.
+
+### Fixed
+
+- Prevented generic relationship words such as `connect`, `application`, and
+  `integration` from displacing the named subject of a bounded Graph query.
+- Prevented capsule evidence from escaping the workspace or a contract-declared
+  linked project through absolute paths, symlinks, or non-file targets.
+- Preserved the real command exit code when the npm-owned CLI path completes,
+  allowing CI and automation to fail closed on PCC and other command errors.
+
+## [0.68.0] - 2026-08-29
+
+### Added
+
+- Added bounded, typed evidence bindings to Live activity events, monitor
+  snapshots, and Board projections for artifacts, projects, Graph entities,
+  Graph relations, and proofs.
+- Added the canonical Graph source hash to bounded Knowledge Graph search
+  results so IDE and agent consumers can correlate identities with the exact
+  revision that authored them.
+
+### Changed
+
+- Made authoritative artifact publication automatically emit an output evidence
+  binding while attributing it to a stage only when the producer supplies the
+  stage or exactly one non-root stage is active.
+- Made activity projection validate, deduplicate, deterministically order, and
+  bound evidence bindings without promoting observational activity into
+  verification evidence.
+- Made workspace repair planning preserve workspace-owned actions when a linked
+  project is selected, while still using project identity to disambiguate
+  project-owned actions.
+
+### Fixed
+
+- Prevented concurrent or ambiguous activity stages from receiving fabricated
+  artifact-to-stage correlations.
+- Prevented Graph identities returned by bounded search from being overlaid on
+  a different canonical Graph revision.
+- Prevented a workspace-scoped repair action from disappearing solely because
+  its blocker evidence identifies an affected linked project.
+
+## [0.67.0] - 2026-08-29
+
+### Added
+
+- Added versioned Live monitor snapshot, fleet, and renderer-neutral Board JSON
+  contracts, including `live --once --json --projection board`.
+- Added `workspace graph benchmark-suite agent-core.v1 --write --json` with five
+  deterministic engineering scenarios, retrieval percentiles, exact-target
+  coverage, baseline comparison, and explicit token-measurement provenance.
+- Added Live monitor, Board, social SVG capture, benchmark-suite, canonical
+  Intelligence loop, and project consumer verification to the enterprise
+  real-repository qualification matrix.
+
+### Changed
+
+- Made natural-language Graph ranking require generic architecture intent boosts
+  to retain a distinguishing query term when one is present.
+- Made generated polyglot Skills retain the exact canonical model signal and
+  scoped projects that justified their generation.
+- Made the enterprise qualification runner classify strict Intelligence results
+  as governed outcomes, preserve Doctor summary mode, support typed non-JSON
+  commands, and verify adopted-project consumer entry points.
+- Added content-addressed caching for repeat pre-push runtime-contract and
+  official-generator dry-run gates while retaining fail-closed invalidation.
+
+### Fixed
+
+- Prevented a generic schema, service, or pipeline boost from outranking an
+  authored artifact that matches the user's complete project-specific subject.
+- Prevented project provider adapters from duplicating an existing authored
+  `AGENTS.md` import while preserving the Workspai-managed host binding.
+- Prevented generated high-confidence polyglot Skill decisions from carrying an
+  empty signal list or a contradictory unsupported-capability explanation.
+
+## [0.66.0] - 2026-08-28
+
+### Added
+
+- Added project-owned Knowledge Graph artifacts at each registered project's
+  `.workspai/reports/workspace-knowledge-graph.json`, while preserving the
+  complete workspace aggregate for cross-project consumers.
+- Expanded evidence-backed lifecycle planning to Bun, Deno, Kotlin, Scala,
+  Clojure, PHP, Ruby, and Elixir projects, including nested runtime units in
+  polyglot repositories.
+
+### Fixed
+
+- Made Workspace Model publication atomically commit or roll back the model,
+  workspace graph aggregate, and every project graph shard across nested and
+  external project roots. Project shards retain only project-owned evidence and
+  directly connected boundary entities, preventing full graphs from unrelated
+  projects from being copied into the project.
+- Made generated project context, agent-entry manifests, and bootstrap receipts
+  distinguish the project-owned graph from the workspace aggregate. Agent
+  bootstrap now blocks architecture claims when the local graph is missing,
+  invalid, stale, tampered, or not the exact canonical project projection.
+- Made `workspace graph emit` publish the canonical Workspace Model, aggregate
+  Graph, and project Graph projections together; `--refresh-graph` now bypasses
+  semantic Graph reuse instead of returning a transient, unpublished result.
+- Recognized legacy Compose v1 service maps without weakening modern Compose
+  reserved-key handling, so provider applicability cannot silently produce an
+  empty topology, and discarded unresolved `depends_on` evidence instead of
+  publishing orphan Graph proofs.
+- Registered and contract-tested `--plan` and `--runtime` for `workspace run`,
+  allowing runtime-unit plans to be inspected without executing project code.
+- Accepted natural-language and decimal coverage targets such as `80 percent`
+  and `82.5 percentage points` in Goal intent compilation.
+- Kept read-only Graph retrieval cryptographically fresh while replacing full
+  tracked-file walks with an exact Git index, worktree-diff, and safe untracked
+  content fast path; uncertain and non-Git scopes still use complete scanning.
+- Separated GraphQL executable documents from server schema contracts in the
+  Knowledge Graph. Queries and fragments are now proof-backed consumer symbols
+  instead of fabricated APIs, runtime-registration coverage is limited to
+  explicitly runtime-served surfaces, and Rails route mounts are recognized.
+
+## [0.65.0] - 2026-08-24
+
+### Added
+
+- Added proof-bounded runtime-generated API registration bindings with separate
+  runtime-registration and endpoint-implementation coverage.
+- Added repository, declared-external, observed-external, and unknown CI,
+  release, and ownership governance profiles to the workspace contract, Model,
+  Graph, facts, Analyze, project lens, and agent context.
+- Added a portable project test-surface detector and runtime-aware Go lifecycle
+  discovery for test, build, run, lint, format, and dependency commands.
+- Added contract-enforced repair qualification across 13 runtime adapters, four
+  workspace/project boundary types, ten failure families, and six terminal
+  recovery paths.
+- Added `workspace graph search --kind <entity-kind>` for precise bounded
+  retrieval by canonical entity kind.
+- Added proof-bounded source-symbol call binding across same-file and proven
+  local-import boundaries, leaving ambiguous dispatch explicit for compiler or
+  language-server adapters.
+- Added project-scope incremental Knowledge Graph reuse based on live input
+  fingerprints, with full workspace-control re-evaluation and an auditable
+  cache provider receipt.
+
+### Changed
+
+- Expanded project classification for platforms, libraries, extensions,
+  desktop applications, multi-command Go repositories, JVM aggregators, and
+  native projects with language-binding ecosystems without relying on a
+  repository-specific patch.
+- Enriched the Workspace Model and Knowledge Graph with runtime units, test
+  surfaces, lifecycle capabilities, governance controls, API registration,
+  ownership, generated-source, package, and cross-project evidence.
+- Made Goal grounding scope-aware and diversity-preserving so project names and
+  generic objective words do not crowd source, package, test, lifecycle, and
+  API evidence out of the bounded Goal Pack.
+- Made Doctor, Analyze, and Readiness apply deployability, health, environment,
+  dependency, test, and governance checks according to the detected project
+  kind and proven runtime surface.
+- Expanded isolated real-world qualification to assert deterministic Model,
+  Graph, Doctor, Analyze, Goal, consumer artifact, and publication-safety
+  behavior across large polyglot repositories.
+- Clarified the canonical workspace and project-local metadata boundaries in
+  the README files and added an actual Workspace Graph preview.
+- Extended real-world qualification with collision-resistant canonical
+  workspace names and project-scoped repair-adapter validation against the
+  complete governed runtime matrix.
+- Expanded runtime-generated API registration recognition for Next.js route
+  manifests/modules and JVM REST action and handler registries.
+
+### Fixed
+
+- Made adoption snapshots include every generated agent entry and repository-
+  local symlink target, and require rollback snapshots to match the exact
+  canonical file set before restoration.
+- Prevented runtime-neutral repositories from becoming false blocking Doctor
+  failures while retaining an explicit advisory that runtime coverage is not
+  proven.
+- Prevented library, platform, plugin, SDK, and monorepo projects from receiving
+  service-only deployment, health, migration, or environment requirements.
+- Corrected Node, Go, JVM, native, and mixed-runtime lifecycle inference so
+  incidental tooling and nested fixtures do not become the primary project
+  identity or executable surface.
+- Invalidated Workspace Model caches by semantic producer revision so local
+  candidates and backports cannot reuse structurally valid but semantically
+  obsolete project models under an unchanged package version.
+- Bounded dynamic route discovery by runtime, production surface, filename, and
+  per-API evidence limits to prevent generic framework symbols from inflating
+  topology coverage.
+- Excluded shared contract APIs without project ownership from project-local
+  runtime-registration coverage, preserving honest coverage on shared-schema
+  repositories.
+- Prevented generated agent entry projections from becoming Graph source
+  evidence or invalidating the Graph that produced them.
+- Made large-repository Graph generation and freshness validation hash the
+  exact same bounded inventory, including architecture manifests retained
+  beyond the ordinary source scan limit.
+- Preserved repository-authored provider symlinks across canonical path aliases
+  while publishing each bounded project-grounding and host-entry block exactly
+  once into a safe repository-local regular-file target.
+
 ## [0.64.0] - 2026-08-22
 
 ### Added

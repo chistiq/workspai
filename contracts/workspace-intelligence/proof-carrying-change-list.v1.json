@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/proof-carrying-change-list.v1.json",
+  "title": "Workspai Proof-Carrying Change List",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "workspace", "changes", "summary"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.proof-carrying-change-list.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "workspace": {
+      "type": "object",
+      "required": ["name"],
+      "properties": { "name": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "changeId",
+          "goalId",
+          "state",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "scope",
+          "assurance",
+          "blockers",
+          "capsuleArtifact",
+          "valid",
+          "errors"
+        ],
+        "properties": {
+          "changeId": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+          "goalId": { "type": ["string", "null"] },
+          "state": { "type": ["string", "null"] },
+          "status": { "enum": ["open", "blocked", "verified", "sealed", "aborted", "invalid"] },
+          "createdAt": {
+            "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+          },
+          "updatedAt": {
+            "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+          },
+          "scope": {
+            "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/scope" }, { "type": "null" }]
+          },
+          "assurance": {
+            "type": "object",
+            "required": ["passed", "total"],
+            "properties": {
+              "passed": { "type": "integer", "minimum": 0 },
+              "total": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          },
+          "blockers": { "type": "array", "items": { "type": "string" } },
+          "capsuleArtifact": { "type": "string", "minLength": 1 },
+          "valid": { "type": "boolean" },
+          "errors": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "open", "blocked", "sealed", "aborted", "invalid"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "open": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 },
+        "sealed": { "type": "integer", "minimum": 0 },
+        "aborted": { "type": "integer", "minimum": 0 },
+        "invalid": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

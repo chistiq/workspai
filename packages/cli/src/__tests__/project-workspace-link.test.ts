@@ -17,17 +17,42 @@ import {
 } from '../project-workspace-link.js';
 import {
   buildProjectContextAgent,
+  selectBoundedProjectLensEntities,
   syncProjectIntelligenceLens,
 } from '../project-intelligence-lens.js';
+import type { WorkspaceKnowledgeEntity } from '../contracts/workspace-knowledge-graph-contract.js';
 import {
   buildAgentBootstrapReceipt,
   PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+  WORKSPAI_AGENT_ENTRY_END,
+  WORKSPAI_AGENT_ENTRY_START,
 } from '../project-agent-entry.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
 import type { WorkspaceModel } from '../workspace-model.js';
 import { normalizeRegistryPath } from '../utils/registry-path.js';
+import { resolveRepositoryLocalSymlinkFile } from '../utils/repository-local-symlink.js';
 
 const cleanup: string[] = [];
+
+function lensEntity(
+  kind: WorkspaceKnowledgeEntity['kind'],
+  index: number
+): WorkspaceKnowledgeEntity {
+  return {
+    id: `${kind}:${index}`,
+    kind,
+    label: `${kind}-${index.toString().padStart(2, '0')}`,
+    projectId: 'web',
+    identity: {
+      key: `${kind}:${index}`,
+      scope: 'project',
+      aliases: [],
+      fingerprint: index.toString(16).padStart(64, '0'),
+    },
+    attributes: {},
+    proofIds: [],
+  };
+}
 
 async function fixture(input: { workspaceName?: string; projectName?: string } = {}) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'workspai-project-link-'));
@@ -86,6 +111,98 @@ afterEach(async () => {
 });
 
 describe('project workspace binding', () => {
+  it('stratifies the bounded project lens so late architectural kinds cannot starve', () => {
+    const kinds: WorkspaceKnowledgeEntity['kind'][] = [
+      'language',
+      'service',
+      'api',
+      'endpoint',
+      'schema',
+      'protocol',
+      'runtime-unit',
+      'lifecycle-stage',
+      'deployment',
+      'test-suite',
+      'decision',
+    ];
+    const entities = kinds.flatMap((kind) =>
+      Array.from({ length: 8 }, (_, index) => lensEntity(kind, index))
+    );
+
+    const projection = selectBoundedProjectLensEntities(entities);
+    const selectedKinds = new Set(projection.entities.map((entity) => entity.kind));
+
+    expect(projection.entities.length).toBeLessThanOrEqual(48);
+    expect(projection.selectedBytes).toBeLessThanOrEqual(12 * 1024);
+    expect(selectedKinds).toEqual(new Set(kinds));
+    expect(projection.omittedByKind).toMatchObject({
+      service: expect.any(Number),
+      deployment: expect.any(Number),
+      'test-suite': expect.any(Number),
+      decision: expect.any(Number),
+    });
+  });
+
+  it('uses the newest canonical Doctor evidence in the portable project lens', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fsp.writeFile(
+      path.join(reportsPath, 'doctor-project-last-run.json'),
+      `${JSON.stringify({
+        generatedAt: '2026-07-27T00:00:00.000Z',
+        projectName: 'web',
+        project: {
+          name: 'web',
+          diagnosis: {
+            findings: [
+              {
+                id: 'stale-runtime',
+                status: 'advisory',
+                symptom: 'Stale runtime composition.',
+              },
+            ],
+          },
+        },
+      })}\n`
+    );
+    await fsp.writeFile(
+      path.join(reportsPath, 'doctor-last-run.json'),
+      `${JSON.stringify({
+        generatedAt: '2026-07-27T00:05:00.000Z',
+        projects: [
+          {
+            name: 'web',
+            diagnosis: {
+              findings: [
+                {
+                  id: 'current-security',
+                  status: 'advisory',
+                  symptom: 'Current security evidence is incomplete.',
+                },
+              ],
+            },
+          },
+        ],
+      })}\n`
+    );
+
+    const context = await buildProjectContextAgent({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      now: new Date('2026-07-27T00:06:00.000Z'),
+    });
+
+    expect(context.blockers).toEqual([
+      expect.objectContaining({
+        code: 'current-security',
+        message: 'Current security evidence is incomplete.',
+      }),
+    ]);
+    expect(JSON.stringify(context.blockers)).not.toContain('Stale runtime composition');
+  });
+
   it('validates the public project workspace resolution result contract', () => {
     const payload: ProjectWorkspaceResolutionContract = {
       schemaVersion: 'project-workspace-resolution.v1',
@@ -472,7 +589,11 @@ describe('project workspace binding', () => {
           portable: true,
           secretValuesEmitted: false,
         },
-        diagnostics: [],
+        diagnostics: Array.from({ length: 24 }, (_, index) => ({
+          code: `graph.large-repository-${index.toString().padStart(2, '0')}`,
+          severity: 'warning',
+          message: `Large repository diagnostic ${index}`,
+        })),
       })}\n`
     );
 
@@ -495,6 +616,7 @@ describe('project workspace binding', () => {
     expect(result.writtenFiles).toEqual(
       expect.arrayContaining([
         PROJECT_AGENT_ENTRY_RELATIVE_PATH,
+        '.agents/skills/workspai-grounding/SKILL.md',
         'CLAUDE.md',
         'GEMINI.md',
         'QWEN.md',
@@ -507,6 +629,10 @@ describe('project workspace binding', () => {
     });
     expect(JSON.stringify(context)).not.toContain(workspacePath);
     expect(JSON.stringify(context)).not.toContain(projectPath);
+    expect(Buffer.byteLength(JSON.stringify(context))).toBeLessThan(32 * 1024);
+    expect(context.agentRouting.requiredReadOrder).not.toContain(
+      'workspace:.workspai/reports/workspace-context-agent.json'
+    );
     expect(context.intelligence).toMatchObject({
       entityCount: 107,
       relationCount: 1,
@@ -521,6 +647,14 @@ describe('project workspace binding', () => {
     expect(context.project.runtimeCandidates).toEqual(['node', 'python']);
     expect(context.intelligence.languages).toEqual({
       typescript: { fileCount: 1, symbolCount: 0, generatedFileCount: 1 },
+    });
+    expect(context.intelligence.diagnostics).toHaveLength(16);
+    expect(context.intelligence.diagnostics.at(0)?.code).toBe('graph.large-repository-00');
+    expect(context.intelligence.diagnostics.at(-1)).toMatchObject({
+      code: 'project.context.diagnostics-truncated',
+      severity: 'info',
+      message:
+        '9 additional diagnostic(s) remain available in the canonical Workspace Knowledge Graph.',
     });
     expect(context.workspace.access).toMatchObject({
       localBinding: '.workspai/workspace-link.local.json',
@@ -594,6 +728,13 @@ describe('project workspace binding', () => {
     );
     expect(agents).not.toContain('<!-- RAPIDKIT:AGENT-GROUNDING:START -->');
     expect(fs.existsSync(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))).toBe(true);
+    const portableSkill = await fsp.readFile(
+      path.join(projectPath, '.agents/skills/workspai-grounding/SKILL.md'),
+      'utf8'
+    );
+    expect(portableSkill).toContain('WORKSPAI:GENERATED-PROJECT-SKILL');
+    expect(portableSkill).toContain('workspai agent bootstrap --for-agent generic');
+    expect(portableSkill).not.toContain(workspacePath);
     const entry = JSON.parse(
       await fsp.readFile(path.join(projectPath, PROJECT_AGENT_ENTRY_RELATIVE_PATH), 'utf8')
     ) as {
@@ -630,7 +771,11 @@ describe('project workspace binding', () => {
     expect(entry.hosts).toHaveLength(11);
     expect(entry.hosts).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'codex', status: 'ready', entryFiles: ['AGENTS.md'] }),
+        expect.objectContaining({
+          id: 'codex',
+          status: 'ready',
+          entryFiles: ['AGENTS.md', '.agents/skills/workspai-grounding/SKILL.md'],
+        }),
         expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
         expect.objectContaining({ id: 'gemini', status: 'ready', entryFiles: ['GEMINI.md'] }),
         expect.objectContaining({ id: 'qwen', status: 'ready', entryFiles: ['QWEN.md'] }),
@@ -672,6 +817,13 @@ describe('project workspace binding', () => {
     expect(receipt).toMatchObject({
       schemaVersion: 'workspai.agent-bootstrap-receipt.v1',
       status: 'blocked',
+      statusScope: 'agent-grounding',
+      readiness: {
+        agentGrounding: 'blocked',
+        architectureEvidence: 'blocked',
+        projectEnvironment: 'ready',
+        release: 'not-verified',
+      },
       resolvedHost: 'claude',
       entry: { hostStatus: 'ready', entryFiles: ['CLAUDE.md'] },
       claims: { architecture: 'prohibited' },
@@ -851,6 +1003,166 @@ describe('project workspace binding', () => {
     );
   });
 
+  it('inherits shared repository-local AGENTS grounding without adding a self-import', async (context) => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'shared-agent-rules-workspace',
+    });
+    const rulesPath = path.join(projectPath, '.rules');
+    await fsp.writeFile(rulesPath, '# Repository rules\n\nKeep this guidance.\n');
+    try {
+      await fsp.symlink('.rules', path.join(projectPath, 'AGENTS.md'));
+      await fsp.symlink('.rules', path.join(projectPath, 'CLAUDE.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const first = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect((await fsp.lstat(path.join(projectPath, 'AGENTS.md'))).isSymbolicLink()).toBe(true);
+    expect((await fsp.lstat(path.join(projectPath, 'CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    const rules = await fsp.readFile(rulesPath, 'utf8');
+    expect(rules).toContain('# Repository rules');
+    expect(rules.match(/WORKSPAI:PROJECT-GROUNDING:START/g)).toHaveLength(1);
+    expect(rules).not.toContain('WORKSPAI:AGENT-ENTRY:START');
+    expect(rules).not.toContain('@AGENTS.md');
+    expect(first.hostCoverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'codex',
+          status: 'ready',
+          entryFiles: ['AGENTS.md', '.agents/skills/workspai-grounding/SKILL.md'],
+        }),
+        expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
+      ])
+    );
+  });
+
+  it('does not duplicate an authored Claude import of AGENTS.md', async () => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'authored-claude-import-workspace',
+    });
+    await fsp.writeFile(
+      path.join(projectPath, 'CLAUDE.md'),
+      '# Repository Claude rules\n\n@AGENTS.md\n'
+    );
+
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    const claude = await fsp.readFile(path.join(projectPath, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('# Repository Claude rules');
+    expect(claude.match(/^@AGENTS\.md$/gmu)).toHaveLength(1);
+    expect(claude).toContain(WORKSPAI_AGENT_ENTRY_START);
+    expect(claude).toContain('Workspai host binding · claude');
+  });
+
+  it('removes a legacy Claude self-import when CLAUDE.md aliases AGENTS.md', async (context) => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'claude-agents-alias-workspace',
+    });
+    const agentsPath = path.join(projectPath, 'AGENTS.md');
+    await fsp.writeFile(
+      agentsPath,
+      `# Repository rules\n\n${WORKSPAI_AGENT_ENTRY_START}\n@AGENTS.md\n\n# Workspai host binding · claude\n${WORKSPAI_AGENT_ENTRY_END}\n`
+    );
+    try {
+      await fsp.symlink('AGENTS.md', path.join(projectPath, 'CLAUDE.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    const agents = await fsp.readFile(agentsPath, 'utf8');
+    expect(agents).toContain('# Repository rules');
+    expect(agents.match(/WORKSPAI:PROJECT-GROUNDING:START/g)).toHaveLength(1);
+    expect(agents).not.toContain('WORKSPAI:AGENT-ENTRY:START');
+    expect(agents).not.toContain('@AGENTS.md');
+    expect((await fsp.lstat(path.join(projectPath, 'CLAUDE.md'))).isSymbolicLink()).toBe(true);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'claude', status: 'ready' })])
+    );
+  });
+
+  it('accepts a local symlink target when the project root uses an alias path', async (context) => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'workspai-project-alias-'));
+    cleanup.push(root);
+    const canonicalProjectPath = path.join(root, 'canonical-project');
+    const aliasProjectPath = path.join(root, 'project-alias');
+    await fsp.mkdir(canonicalProjectPath, { recursive: true });
+    await fsp.writeFile(path.join(canonicalProjectPath, '.rules'), '# Repository rules\n');
+    try {
+      await fsp.symlink('.rules', path.join(canonicalProjectPath, 'AGENTS.md'));
+      await fsp.symlink(canonicalProjectPath, aliasProjectPath, 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const resolvedTarget = await resolveRepositoryLocalSymlinkFile(
+      aliasProjectPath,
+      path.join(aliasProjectPath, 'AGENTS.md')
+    );
+    expect(resolvedTarget).not.toBeNull();
+    await expect(fsp.readFile(resolvedTarget as string, 'utf8')).resolves.toBe(
+      '# Repository rules\n'
+    );
+    expect((await fsp.stat(resolvedTarget as string)).isFile()).toBe(true);
+  });
+
+  it('never follows an AGENTS symlink outside the adopted project boundary', async (context) => {
+    const { root, workspacePath, projectPath } = await fixture({
+      workspaceName: 'external-agent-rules-workspace',
+    });
+    const outsideRules = path.join(root, 'outside-rules.md');
+    await fsp.writeFile(outsideRules, '# Outside rules\n');
+    try {
+      await fsp.symlink(outsideRules, path.join(projectPath, 'AGENTS.md'));
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(await fsp.readFile(outsideRules, 'utf8')).toBe('# Outside rules\n');
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'codex', status: 'blocked' })])
+    );
+  });
+
   it('blocks a nested provider adapter when its repository parent is a symbolic link', async (context) => {
     const { root, workspacePath, projectPath } = await fixture({
       workspaceName: 'adapter-safety-workspace',
@@ -879,6 +1191,97 @@ describe('project workspace binding', () => {
           id: 'amazon-q',
           status: 'blocked',
           reason: expect.stringContaining('unsafe repository-authored parent'),
+        }),
+      ])
+    );
+  });
+
+  it('preserves an authored project Skill even when it uses a Workspai name', async () => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'authored-project-skill-workspace',
+    });
+    const skillPath = path.join(projectPath, '.agents', 'skills', 'workspai-grounding', 'SKILL.md');
+    const authored = '---\nname: workspai-grounding\n---\n\n# Team-owned workflow\n';
+    await fsp.mkdir(path.dirname(skillPath), { recursive: true });
+    await fsp.writeFile(skillPath, authored);
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(await fsp.readFile(skillPath, 'utf8')).toBe(authored);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'codex',
+          status: 'degraded',
+          reason: expect.stringContaining('authored Skill'),
+        }),
+      ])
+    );
+  });
+
+  it('supports a repository-local .agents/skills mirror without escaping the project', async (context) => {
+    const { workspacePath, projectPath } = await fixture({
+      workspaceName: 'project-skill-mirror-workspace',
+    });
+    const sharedSkills = path.join(projectPath, '.claude', 'skills');
+    await fsp.mkdir(path.join(projectPath, '.agents'), { recursive: true });
+    await fsp.mkdir(sharedSkills, { recursive: true });
+    try {
+      await fsp.symlink(
+        path.join('..', '.claude', 'skills'),
+        path.join(projectPath, '.agents', 'skills'),
+        'dir'
+      );
+    } catch {
+      context.skip();
+      return;
+    }
+
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(fs.existsSync(path.join(sharedSkills, 'workspai-grounding', 'SKILL.md'))).toBe(true);
+  });
+
+  it('blocks a project .agents symlink that leaves the repository', async (context) => {
+    const { root, workspacePath, projectPath } = await fixture({
+      workspaceName: 'project-skill-escape-workspace',
+    });
+    const outsidePath = path.join(root, 'outside-agent-skills');
+    await fsp.mkdir(outsidePath, { recursive: true });
+    try {
+      await fsp.symlink(outsidePath, path.join(projectPath, '.agents'), 'dir');
+    } catch {
+      context.skip();
+      return;
+    }
+
+    const result = await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+
+    expect(await fsp.readdir(outsidePath)).toEqual([]);
+    expect(result.hostCoverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'codex',
+          status: 'blocked',
+          reason: expect.stringContaining('blocked by authored state'),
         }),
       ])
     );

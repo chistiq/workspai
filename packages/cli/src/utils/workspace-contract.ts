@@ -35,6 +35,11 @@ import {
 } from '../contracts/workspace-dependency-graph-contract.js';
 import type { WorkspaceKnowledgeGraph } from '../contracts/workspace-knowledge-graph-contract.js';
 import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
+import {
+  detectBackendFrameworkFromProject,
+  isWorkspaiManagedLinkedProjectMetadata,
+} from './backend-framework-contract.js';
+import { readWorkspaceMarker } from '../workspace-marker.js';
 
 export const WORKSPACE_CONTRACT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
 export const WORKSPACE_CONTRACT_VERIFY_REPORT_PATH =
@@ -74,6 +79,16 @@ export interface WorkspaceContractProject {
   runtime?: string;
   framework?: string;
   kit?: string;
+  governance?: Partial<
+    Record<
+      'ci' | 'release' | 'ownership',
+      {
+        mode: 'repository' | 'external';
+        provider?: string;
+        reference?: string;
+      }
+    >
+  >;
   modules: string[];
   ports: WorkspaceContractPort[];
   contracts: {
@@ -345,6 +360,8 @@ async function readWorkspaceMetadata(
       // Try the next metadata generation.
     }
   }
+  const marker = await readWorkspaceMarker(workspacePath);
+  if (marker?.name?.trim()) return { name: marker.name.trim() };
   return { name: path.basename(workspacePath) };
 }
 
@@ -444,9 +461,13 @@ function mergeProjectContract(
   const existingPorts = existing?.ports || [];
   const discoveredPorts = discovered.ports || [];
   const nonServiceExtension = (discovered.kit || '').toLowerCase().includes('vscode-extension');
+  // Any source-bearing record is a managed discovery projection; source-less
+  // records are the authored contract authority. An internal linked adoption
+  // used to be labeled `workspace`, so allow it to migrate to adopted-local
+  // and refresh derived runtime identity on the first re-adopt as well.
   const refreshAdoptedPorts =
-    discovered.source === 'adopted-local' && existing?.source === 'adopted-local';
-  const refreshAdoptedMetadata = refreshAdoptedPorts;
+    discovered.source === 'adopted-local' && existing?.source !== undefined;
+  const refreshManagedMetadata = discovered.source !== undefined && existing?.source !== undefined;
   const selectedPorts =
     nonServiceExtension && discoveredPorts.length === 0
       ? []
@@ -501,11 +522,11 @@ function mergeProjectContract(
     externalPath: preserveExistingIdentity
       ? existing?.externalPath || discovered.externalPath
       : discovered.externalPath,
-    runtime: refreshAdoptedMetadata ? discovered.runtime : existing?.runtime || discovered.runtime,
-    framework: refreshAdoptedMetadata
+    runtime: refreshManagedMetadata ? discovered.runtime : existing?.runtime || discovered.runtime,
+    framework: refreshManagedMetadata
       ? discovered.framework
       : existing?.framework || discovered.framework,
-    kit: refreshAdoptedMetadata ? discovered.kit : existing?.kit || discovered.kit,
+    kit: refreshManagedMetadata ? discovered.kit : existing?.kit || discovered.kit,
     modules: existing?.modules?.length ? existing.modules : discovered.modules,
     ports,
     contracts: {
@@ -530,6 +551,9 @@ export async function buildWorkspaceContract(input: {
   const workspace = await readWorkspaceMetadata(workspacePath);
   const projectJsonFiles = await discoverProjectJsonFiles(workspacePath);
   const importedProjects = await readImportedProjectsRegistry(workspacePath);
+  const importedProjectsByPath = new Map(
+    importedProjects.map((project) => [path.resolve(project.path), project] as const)
+  );
   const externalProjectJsonFiles: Array<{
     projectJsonPath: string;
     registryEntry: ImportedProjectRegistryEntry;
@@ -552,7 +576,12 @@ export async function buildWorkspaceContract(input: {
     projectJsonPath: string;
     registryEntry?: ImportedProjectRegistryEntry;
   }> = [
-    ...projectJsonFiles.map((projectJsonPath) => ({ projectJsonPath })),
+    ...projectJsonFiles.map((projectJsonPath) => ({
+      projectJsonPath,
+      registryEntry: importedProjectsByPath.get(
+        path.resolve(path.dirname(path.dirname(projectJsonPath)))
+      ),
+    })),
     ...externalProjectJsonFiles,
   ];
 
@@ -569,12 +598,26 @@ export async function buildWorkspaceContract(input: {
       ? `external/${contractSlug}`
       : discoveredRelativePath || contractSlug;
     const payload = (await fsExtra.readJson(projectJsonPath)) as Record<string, unknown>;
-    const kit =
+    const metadataKit =
       (typeof payload.kit_name === 'string' && payload.kit_name) ||
       (typeof payload.kit === 'string' && payload.kit) ||
       undefined;
-    const framework =
-      (typeof payload.framework === 'string' && payload.framework) || projectKindFromKit(kit);
+    const managedMetadata = isWorkspaiManagedLinkedProjectMetadata(payload);
+    const liveDetection = managedMetadata
+      ? detectBackendFrameworkFromProject(projectPath, payload)
+      : undefined;
+    const hasLiveDetection = liveDetection !== undefined && liveDetection.key !== 'unknown';
+    const runtime = hasLiveDetection
+      ? liveDetection.runtime
+      : typeof payload.runtime === 'string'
+        ? payload.runtime
+        : undefined;
+    const framework = hasLiveDetection
+      ? liveDetection.key
+      : (typeof payload.framework === 'string' && payload.framework) ||
+        projectKindFromKit(metadataKit);
+    const kitPrefix = registryEntry?.relationship === 'adopted' ? 'adopted' : 'imported';
+    const kit = hasLiveDetection ? `${kitPrefix}.${liveDetection.key}` : metadataKit;
 
     projects.push({
       slug: registryEntry?.name || relativePath || path.basename(projectPath),
@@ -582,7 +625,7 @@ export async function buildWorkspaceContract(input: {
       source: registryEntry?.source ?? 'workspace',
       relationship: registryEntry?.relationship,
       externalPath: isExternalProject ? projectPath : undefined,
-      runtime: typeof payload.runtime === 'string' ? payload.runtime : undefined,
+      runtime,
       framework,
       kit,
       modules: normalizeStringArray(payload.modules),

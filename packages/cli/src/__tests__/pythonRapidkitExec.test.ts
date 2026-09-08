@@ -202,13 +202,44 @@ rapidkit deploy
   });
 
   describe('ensureBridgeVenv', () => {
+    it('accepts the distribution console entrypoint when no rapidkit module exists', async () => {
+      mockFs.pathExists.mockResolvedValue(true);
+      mockExeca.mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+        stderr: '',
+      });
+
+      const health = await bridge.__test__.probeBridgeVenvHealth('/tmp/workspai-core');
+
+      expect(health.healthy).toBe(true);
+      expect(mockExeca).toHaveBeenCalledTimes(1);
+      expect(mockExeca.mock.calls[0][1]).toEqual(['--version', '--json']);
+    });
+
+    it('falls back to module execution for older Core distributions', async () => {
+      mockFs.pathExists.mockResolvedValue(true);
+      mockExeca
+        .mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'broken entrypoint' })
+        .mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version: '0.5.0' }),
+          stderr: '',
+        });
+
+      const health = await bridge.__test__.probeBridgeVenvHealth('/tmp/workspai-core');
+
+      expect(health.healthy).toBe(true);
+      expect(mockExeca.mock.calls[1][1]).toEqual(['-m', 'rapidkit', '--version', '--json']);
+    });
+
     it('returns existing python if venv already exists', async () => {
       // Mock that venv python already exists
       mockFs.pathExists.mockResolvedValue(true);
       // Mock probe check: rapidkit is installed in venv
       mockExeca.mockResolvedValueOnce({
         exitCode: 0,
-        stdout: '1',
+        stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
         stderr: '',
       } as any);
 
@@ -250,7 +281,13 @@ rapidkit deploy
         // pip check succeeds
         .mockResolvedValueOnce({ exitCode: 0, stdout: 'pip 24', stderr: '' })
         // core install succeeds
-        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' });
+        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
+        // installed Core passes the executable health contract
+        .mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+          stderr: '',
+        });
 
       const py = await bridge.__test__.ensureBridgeVenvFromCandidates();
       expect(py).toContain('python');
@@ -271,7 +308,12 @@ rapidkit deploy
         .mockResolvedValueOnce({ exitCode: 0, stdout: 'Python 3.12', stderr: '' })
         .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
         .mockResolvedValueOnce({ exitCode: 0, stdout: 'pip 24', stderr: '' })
-        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' });
+        .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
+        .mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+          stderr: '',
+        });
 
       await bridge.__test__.ensureBridgeVenvFromCandidates();
 
@@ -659,17 +701,13 @@ describe('getCoreTopLevelCommands', () => {
     expect(res.has('list')).toBe(true);
   });
 
-  it('parses commands from --help output', async () => {
-    mockExeca.mockResolvedValue({
-      exitCode: 0,
-      stdout: `
+  it('parses commands from --help output', () => {
+    const help = `
 Commands:
   list
   run
-`,
-    });
-
-    const res = await bridge.getCoreTopLevelCommands();
+`;
+    const res = bridge.__test__.parseCoreCommandsFromHelp(help);
     expect(res.has('list')).toBe(true);
     expect(res.has('run')).toBe(true);
   });
@@ -708,20 +746,15 @@ Commands:
     expect(res.size).toBeGreaterThan(0);
   });
 
-  it('handles multiple command formats', async () => {
-    mockFs.pathExists.mockResolvedValue(false);
-    mockExeca.mockResolvedValue({
-      exitCode: 0,
-      stdout: `
+  it('handles multiple command formats', () => {
+    const help = `
 rapidkit create
 rapidkit deploy
 Commands:
   list
   run
-`,
-    });
-
-    const res = await bridge.getCoreTopLevelCommands();
+`;
+    const res = bridge.__test__.parseCoreCommandsFromHelp(help);
     expect(res.has('create')).toBe(true);
     expect(res.has('deploy')).toBe(true);
     expect(res.has('list')).toBe(true);

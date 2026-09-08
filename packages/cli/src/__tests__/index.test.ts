@@ -74,16 +74,44 @@ async function execa(
 const CLI_PATH = ensureDistBuilt('CLI entry point tests');
 let TEST_DIR: string;
 
+async function removeTestDirectory(target: string): Promise<void> {
+  await fs.rm(target, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
+}
+
 describe('CLI Entry Point', () => {
   beforeEach(async () => {
     TEST_DIR = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-cli-index-test-'));
   });
 
   afterEach(async () => {
-    await fs.remove(TEST_DIR);
+    await removeTestDirectory(TEST_DIR);
   });
 
   describe('Version and Help', () => {
+    it.each(['build', 'dev', 'start', 'test', 'lint', 'format'])(
+      'renders %s help without probing tools or mutating a project',
+      async (command) => {
+        await fs.writeFile(path.join(TEST_DIR, 'go.mod'), 'module example.test/demo\n\ngo 1.22\n');
+        const before = await fs.readdir(TEST_DIR);
+        for (const flag of ['--help', '-h']) {
+          const result = await execa(process.execPath, [CLI_PATH, command, flag], {
+            cwd: TEST_DIR,
+            env: { ...process.env, PATH: '', WORKSPAI_STATE_DIR: path.join(TEST_DIR, 'state') },
+          });
+          expect(result.exitCode).toBe(0);
+          expect(result.stdout).toContain(`Usage: workspai ${command}`);
+          expect(result.stdout).not.toContain('readiness');
+          expect(await fs.readdir(TEST_DIR)).toEqual(before);
+        }
+      },
+      15000
+    );
+
     it('should display version with --version flag', async () => {
       const { stdout } = await execa('node', [CLI_PATH, '--version']);
       expect(stdout).toMatch(/\d+\.\d+\.\d+/);
@@ -217,7 +245,7 @@ describe('CLI Entry Point', () => {
 
       const graph = await execa('node', [CLI_PATH, 'workspace', 'graph', '--help']);
       expect(graph.stdout).toContain(
-        'emit | explain | entities | search | evidence | path | overlay | benchmark | dot | mermaid | jsonld | graphml | gexf'
+        'emit | explain | entities | search | evidence | path | overlay | benchmark | benchmark-suite | dot | mermaid | jsonld | graphml | gexf'
       );
       expect(graph.stdout).toContain('workspai workspace graph [mode] [query|from] [to] [--json]');
     });
@@ -731,10 +759,10 @@ describe('CLI Entry Point', () => {
           }),
         ]);
       } finally {
-        await fs.remove(workspaceRoot);
-        await fs.remove(sourceDir);
+        await removeTestDirectory(workspaceRoot);
+        await removeTestDirectory(sourceDir);
       }
-    }, 20000);
+    });
 
     it('should register the workspace before registering an adopted project', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-adopt-register-'));
@@ -789,6 +817,15 @@ describe('CLI Entry Point', () => {
           adoptedProject: { name: string; path: string; stack: string };
           projectWorkspaceCommand: string;
           commandsResolveWorkspaceFromProject: boolean;
+          consumerArtifacts: {
+            freshnessSealed: boolean;
+            reconciledAfterGrounding: boolean;
+          };
+          agentBootstrap: {
+            status: string;
+            statusScope: string;
+            readiness: { release: string };
+          };
         };
         expect(payload.projectWorkspaceCommand).toBe(
           'npx workspai project workspace status --json'
@@ -798,6 +835,12 @@ describe('CLI Entry Point', () => {
           name: 'web',
           path: sourceDir,
           stack: 'nextjs',
+        });
+        expect(payload.consumerArtifacts).toMatchObject({ freshnessSealed: true });
+        expect(payload.agentBootstrap).toMatchObject({
+          status: 'ready',
+          statusScope: 'agent-grounding',
+          readiness: { release: 'not-verified' },
         });
       } finally {
         consoleLog.mockRestore();
@@ -1199,6 +1242,52 @@ describe('CLI Entry Point', () => {
       });
     }, 30000);
 
+    it('accepts plan and runtime flags for workspace run without executing the lifecycle command', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-run-plan-'));
+      const projectRoot = path.join(workspaceRoot, 'api');
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+      await fs.outputJson(path.join(projectRoot, 'package.json'), {
+        name: 'api',
+        scripts: { test: 'node --version' },
+      });
+      await fs.outputJson(path.join(projectRoot, '.workspai', 'project.json'), {
+        name: 'api',
+        runtime: 'node',
+        kit_name: 'node',
+      });
+      await fs.outputJson(path.join(projectRoot, '.workspai', 'context.json'), {
+        engine: 'npm',
+        runtime: 'node',
+        commands: { test: 'node --version' },
+      });
+
+      const result = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'workspace',
+          'run',
+          'test',
+          '--scope',
+          'project:api',
+          '--plan',
+          '--runtime',
+          'node',
+          '--json',
+          '--no-gates',
+        ],
+        { cwd: workspaceRoot }
+      );
+      const report = JSON.parse(result.stdout);
+      expect(report).toMatchObject({
+        stage: 'test',
+        options: { planOnly: true, runtime: 'node' },
+        summary: { selectedCount: 1, failed: 0 },
+      });
+      expect(report.projects[0]).toMatchObject({ projectName: 'api', status: 'skipped' });
+      expect(report.projects[0].reason).toContain('plan only');
+    }, 30000);
+
     it('rejects invalid max-workers with a structured JSON error', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-workers-invalid-'));
       await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
@@ -1290,10 +1379,45 @@ describe('CLI Entry Point', () => {
 
       const search = await execa(
         'node',
-        [CLI_PATH, 'workspace', 'graph', 'search', 'project', '--limit', '1', '--json'],
+        [
+          CLI_PATH,
+          'workspace',
+          'graph',
+          'search',
+          'project',
+          '--kind',
+          'project',
+          '--limit',
+          '1',
+          '--json',
+        ],
         { cwd: workspaceRoot, reject: false }
       );
       expect(search.stdout).not.toContain('workspace.option.unsupported');
+      expect(JSON.parse(search.stdout)).toMatchObject({ kind: 'project' });
+
+      const entities = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'workspace',
+          'graph',
+          'entities',
+          '--kind',
+          'workspace',
+          '--limit',
+          '1',
+          '--json',
+        ],
+        { cwd: workspaceRoot, reject: false }
+      );
+      expect(entities.stdout).not.toContain('workspace.option.unsupported');
+      expect(JSON.parse(entities.stdout)).toMatchObject({
+        kind: 'workspace',
+        count: 1,
+        totalMatches: 1,
+        truncated: false,
+      });
 
       const overlay = await execa(
         'node',
@@ -1301,6 +1425,54 @@ describe('CLI Entry Point', () => {
         { cwd: workspaceRoot, reject: false }
       );
       expect(overlay.stdout).not.toContain('workspace.option.unsupported');
+    });
+
+    it('allows the documented runtime selector for test-coverage goals', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-goal-runtime-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+
+      const result = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'workspace',
+          'goal',
+          'plan',
+          'test-coverage',
+          '--runtime',
+          'go',
+          '--target',
+          '80',
+          '--json',
+        ],
+        { cwd: workspaceRoot, reject: false }
+      );
+
+      expect(result.stdout).not.toContain('workspace.option.unsupported');
+    });
+
+    it('rejects unknown graph modes before building or emitting the graph', async () => {
+      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-graph-unknown-'));
+      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');
+
+      const result = await execa('node', [CLI_PATH, 'workspace', 'graph', 'validate', '--json'], {
+        cwd: workspaceRoot,
+        reject: false,
+      });
+
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'workspace graph validate',
+        status: 'error',
+        exitCode: 2,
+        error: { code: 'workspace.graph.mode.unsupported' },
+        context: {
+          mode: 'validate',
+          supportedModes: expect.arrayContaining(['emit', 'search', 'overlay']),
+        },
+      });
+      expect(result.stdout.length).toBeLessThan(5000);
     });
 
     it('writes dependency graph renderers to --output with a structured receipt', async () => {
@@ -1361,6 +1533,15 @@ describe('CLI Entry Point', () => {
         graph: { schemaVersion: 'workspace-dependency-graph.v1' },
         knowledgeGraph: { schemaVersion: 'workspace-knowledge-graph.v1' },
       });
+      const canonicalGraph = await fs.readJson(
+        path.join(workspaceRoot, '.workspai', 'reports', 'workspace-knowledge-graph.json')
+      );
+      const canonicalModel = await fs.readJson(
+        path.join(workspaceRoot, '.workspai', 'reports', 'workspace-model.json')
+      );
+      expect(canonicalGraph).toEqual(artifact.knowledgeGraph);
+      expect(canonicalGraph.source.hash).toBeDefined();
+      expect(canonicalModel.schemaVersion).toBe('workspace-model.v1');
     });
 
     it('writes the rich contract graph to --output with a bounded JSON receipt', async () => {

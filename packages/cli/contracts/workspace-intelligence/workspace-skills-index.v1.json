@@ -21,6 +21,40 @@
         },
         "additionalProperties": false
       }
+    },
+    "selection": {
+      "type": "object",
+      "required": ["generatedCount", "suppressedCount", "decisions"],
+      "properties": {
+        "generatedCount": { "type": "integer", "minimum": 0 },
+        "suppressedCount": { "type": "integer", "minimum": 0 },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "skillId",
+              "title",
+              "status",
+              "confidence",
+              "reasons",
+              "signals",
+              "scopedProjects"
+            ],
+            "properties": {
+              "skillId": { "type": "string", "minLength": 1 },
+              "title": { "type": "string" },
+              "status": { "enum": ["generated", "suppressed"] },
+              "confidence": { "enum": ["high", "medium"] },
+              "reasons": { "type": "array", "items": { "type": "string" } },
+              "signals": { "type": "array", "items": { "type": "string" } },
+              "scopedProjects": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -47,6 +47,21 @@ describe('Doctor Command', () => {
     expect(typeof runDoctor).toBe('function');
   }, 15_000);
 
+  it('does not treat a partially-created Python environment as materialized', async () => {
+    const { pythonPackageListProvesDependencies } = await import('../doctor.js');
+
+    expect(
+      pythonPackageListProvesDependencies(
+        [{ name: 'pip' }, { name: 'anyio' }, { name: 'pydantic-core' }],
+        'fastapi'
+      )
+    ).toBe(false);
+    expect(
+      pythonPackageListProvesDependencies([{ name: 'FastAPI' }, { name: 'pip' }], 'fastapi')
+    ).toBe(true);
+    expect(pythonPackageListProvesDependencies([{ name: 'requests' }], '')).toBe(true);
+  });
+
   it('should fail doctor apply exit code when a fix execution fails', async () => {
     const { computeDoctorFixAwareExitCode } = await import('../doctor.js');
 
@@ -911,10 +926,26 @@ describe('Doctor Command', () => {
       expect(payload.system.python.details).toContain('no detected Python project');
       expect(payload.system.rapidkitCore).toMatchObject({ status: 'warn' });
       expect(payload.system.rapidkitCore.details).toContain('optional engine');
-      expect(payload.healthScore).toMatchObject({ errors: 0, verdict: 'passed' });
+      const expectedCliResolution =
+        process.platform === 'win32'
+          ? {
+              status: 'warn',
+              applicability: 'applicable',
+              resolutionStatus: 'unverified',
+            }
+          : {
+              status: 'ok',
+              applicability: 'not-applicable',
+              resolutionStatus: 'not-applicable',
+            };
+      expect(payload.system.cliResolution).toMatchObject(expectedCliResolution);
+      expect(payload.healthScore).toMatchObject({
+        errors: 0,
+        verdict: process.platform === 'win32' ? 'attention' : 'passed',
+      });
       expect(payload.healthScore.presentation).toMatchObject({
-        diagnosticPassRatePercent: null,
-        notApplicableChecks: 5,
+        diagnosticPassRatePercent: process.platform === 'win32' ? 0 : null,
+        notApplicableChecks: process.platform === 'win32' ? 5 : 6,
       });
     } finally {
       process.chdir(originalCwd);
@@ -922,6 +953,147 @@ describe('Doctor Command', () => {
       else process.env.HOME = originalHome;
       logSpy.mockRestore();
       await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('treats an adopted runtime-neutral repository as observed evidence instead of a blocker', async () => {
+    const projectPath = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-observed-project-'))
+    );
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'agent-plugin-catalog',
+      runtime: 'unknown',
+      framework: 'unknown',
+      kit: 'adopted.unknown',
+      support_tier: 'observed',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'README.md'), '# Agent plugin catalog\n');
+    await fsExtra.ensureDir(path.join(projectPath, '.claude-plugin'));
+    await fsExtra.writeJSON(path.join(projectPath, '.claude-plugin', 'plugin.json'), {
+      name: 'agent-plugin-catalog',
+      version: '1.0.0',
+    });
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+
+      expect(payload.project.framework).toBe('Unknown');
+      expect(payload.project.runtimeFamily).toBe('unknown');
+      expect(payload.project.issues).not.toContain(
+        'Unknown project type (no recognized runtime marker files)'
+      );
+      expect(payload.project.probes).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-classification',
+          status: 'warn',
+          applicability: 'unknown',
+        })
+      );
+      expect(payload.project.diagnosis.findings).toContainEqual(
+        expect.objectContaining({
+          probeId: 'runtime-classification',
+          status: 'advisory',
+          issueClass: 'runtime',
+        })
+      );
+      expect(payload.project.diagnosis.findings).not.toContainEqual(
+        expect.objectContaining({
+          status: 'blocking',
+          symptom: expect.stringContaining('Unknown project type'),
+        })
+      );
+      expect(payload.project.verdict).toBe('attention');
+
+      const receipt = await fsExtra.readJSON(
+        path.join(projectPath, '.workspai', 'reports', 'doctor-receipt-last-run.json')
+      );
+      expect(receipt.verdict).toBe('attention');
+      expect(receipt.next).toMatchObject({ action: 'review' });
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(projectPath);
+    }
+  });
+
+  it('does not advertise repair when only an advisory has an executable capability', async () => {
+    const projectPath = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-causal-receipt-'))
+    );
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'causal-receipt',
+      runtime: 'node',
+      framework: 'node',
+    });
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'causal-receipt',
+      version: '1.0.0',
+      scripts: { dev: 'node src.js', build: 'node --check src.js', test: 'vitest run' },
+      dependencies: { express: '^5.1.0' },
+    });
+    await fsExtra.writeJSON(path.join(projectPath, 'package-lock.json'), {
+      name: 'causal-receipt',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: { '': { name: 'causal-receipt', version: '1.0.0' } },
+    });
+    await fsExtra.ensureDir(path.join(projectPath, 'node_modules', 'express'));
+    await fsExtra.writeJSON(path.join(projectPath, 'node_modules', 'express', 'package.json'), {
+      name: 'express',
+      version: '5.1.0',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'src.js'), 'export {};\n');
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'doctor.probes.json'), {
+      probes: [
+        {
+          id: 'required-governance-contract',
+          label: 'Required governance contract',
+          severity: 'error',
+          allOfPaths: ['GOVERNANCE.md'],
+          recommendation: 'Add the reviewed governance contract.',
+        },
+      ],
+    });
+
+    mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const receipt = await fsExtra.readJSON(
+        path.join(projectPath, '.workspai', 'reports', 'doctor-receipt-last-run.json')
+      );
+      expect(receipt.counts.blockingCauses).toBeGreaterThan(0);
+      expect(receipt.counts.repairableFindings).toBeGreaterThan(0);
+      expect(receipt.blockers).toContainEqual(
+        expect.objectContaining({
+          repairDisposition: 'unavailable',
+          symptom: expect.stringContaining('Custom probe failed'),
+        })
+      );
+      expect(receipt.next).toMatchObject({
+        action: 'review',
+        reason: expect.stringContaining('no automatic typed repair'),
+      });
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(projectPath);
     }
   });
 
@@ -2263,6 +2435,7 @@ describe('Doctor Command', () => {
     });
     await fsExtra.writeFile(path.join(projectPath, 'go.mod'), 'module example.com/go-api\n');
     await fsExtra.writeFile(path.join(projectPath, 'go.sum'), '');
+    await fsExtra.writeFile(path.join(projectPath, 'Makefile'), '.PHONY:\n');
     await fsExtra.writeFile(path.join(projectPath, '.gitignore'), '.env\n.env.*\n!.env.example\n');
 
     mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
@@ -2883,6 +3056,10 @@ describe('Doctor Command', () => {
     await fsExtra.ensureDir(path.join(projectPath, 'src'));
     await fsExtra.ensureDir(path.join(projectPath, 'include'));
     await fsExtra.ensureDir(path.join(projectPath, 'bindings'));
+    await fsExtra.outputFile(
+      path.join(projectPath, 'k8s', 'deployment.yaml'),
+      'apiVersion: apps/v1\nkind: Deployment\n'
+    );
     await fsExtra.writeFile(path.join(projectPath, 'CMakeLists.txt'), 'project(polyglot_core)\n');
     await fsExtra.writeFile(
       path.join(projectPath, 'src', 'core.cpp'),
@@ -2909,6 +3086,11 @@ describe('Doctor Command', () => {
         .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
       const payload = JSON.parse(jsonLine);
       expect(payload.project.projectArchetype).toBe('platform');
+      expect(
+        payload.project.probes.find(
+          (probe: { id: string }) => probe.id === 'surface-kubernetes-readiness'
+        )
+      ).toMatchObject({ status: 'pass', applicability: 'not-applicable' });
       for (const probeId of [
         'surface-env-contract',
         'migration-surface',
@@ -2929,6 +3111,61 @@ describe('Doctor Command', () => {
       ).toHaveLength(0);
       expect(payload.healthScore.presentation.policy).toBe('doctor-multi-axis-v1');
       expect(payload.healthScore.presentation.notApplicableChecks).toBeGreaterThan(0);
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('does not apply frontend application repairs to a framework platform workspace', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-framework-'));
+    await fsExtra.outputJSON(path.join(tempRoot, 'package.json'), {
+      name: 'framework-platform',
+      private: true,
+      workspaces: ['packages/*'],
+      scripts: {
+        build: 'turbo build',
+        'framework-smoke': 'next dev',
+      },
+      devDependencies: { next: '^16.0.0', turbo: '^2.0.0' },
+    });
+    await fsExtra.outputFile(path.join(tempRoot, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    await fsExtra.outputFile(
+      path.join(tempRoot, 'Cargo.toml'),
+      '[workspace]\nmembers=["crates/core"]\n'
+    );
+    await fsExtra.outputFile(
+      path.join(tempRoot, 'crates', 'core', 'Cargo.toml'),
+      '[package]\nname="core"\nversion="0.1.0"\n'
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+      expect(payload.project.projectArchetype).toBe('monorepo');
+      for (const probeId of [
+        'frontend-framework-config',
+        'frontend-source-tree',
+        'frontend-script-dev',
+        'frontend-script-build',
+        'frontend-script-test',
+        'frontend-script-lint',
+      ]) {
+        expect(
+          payload.project.probes.find((probe: { id?: string }) => probe.id === probeId)
+        ).toMatchObject({ status: 'pass', applicability: 'not-applicable' });
+      }
+      expect(payload.project.fixCommands).not.toContainEqual(
+        expect.stringContaining('npm pkg set')
+      );
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();
@@ -3013,6 +3250,58 @@ describe('Doctor Command', () => {
       process.chdir(originalCwd);
       logSpy.mockRestore();
       await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('routes a managed Rails application with frontend tooling to the Ruby adapter', async () => {
+    const projectPath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-doctor-managed-rails-')
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'Gemfile'),
+      "source 'https://rubygems.org'\ngem 'rails'\n"
+    );
+    await fsExtra.outputFile(path.join(projectPath, 'Gemfile.lock'), 'GEM\n');
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'rails-assets',
+      dependencies: { vue: '^3.0.0' },
+    });
+    await fsExtra.outputJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'managed-rails',
+      kind: 'frontend',
+      runtime: 'node',
+      framework: 'vue',
+      kit_name: 'adopted.vue',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+
+      expect(payload.project).toMatchObject({
+        runtimeFamily: 'ruby',
+        framework: 'Ruby on Rails',
+        projectKind: 'backend',
+      });
+      expect(payload.project.kit).toBeUndefined();
+      expect(payload.project.probes).not.toContainEqual(
+        expect.objectContaining({ id: 'runtime-node-dev-script' })
+      );
+      expect(payload.project.issues).not.toContain(
+        'Dependencies not installed (node_modules empty or missing)'
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(projectPath);
     }
   });
 
@@ -3186,6 +3475,93 @@ describe('Doctor Command', () => {
       expect(bootProbe).toBeDefined();
       expect(bootProbe.status).toBe('pass');
       expect(bootProbe.reason).toBe(canary.passReason);
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('keeps governed nested Python agent identity and environment evidence consistent', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-agent-'));
+    const projectPath = path.join(tempRoot, 'apex-agent');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'apex-agent',
+      generated_by: 'workspai',
+      kind: 'agent',
+      runtime: 'python',
+      framework: 'microsoft-agent-framework',
+      kit: 'agent.microsoft.python',
+      contracts: { env: ['FOUNDRY_PROJECT_ENDPOINT'] },
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[project]\nname = "apex-agent"\nrequires-python = ">=3.10"\ndependencies = []\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\ndependencies = ["agent-framework-core==1.17.0"]\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', '.env.example'),
+      'FOUNDRY_PROJECT_ENDPOINT=\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'tests', 'test_context.py'),
+      'import unittest\n'
+    );
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: '', exitCode: 0 } as any;
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(projectPath);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true, fresh: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as
+        string | undefined;
+      const payload = JSON.parse(jsonLine ?? '{}');
+      expect(payload.project).toMatchObject({
+        framework: 'Microsoft Agent Framework',
+        frameworkKey: 'microsoft-agent-framework',
+        runtimeFamily: 'python',
+        projectKind: 'agent',
+        projectArchetype: 'application',
+      });
+      expect(
+        payload.project.fixCommands.some((command: string) =>
+          command.includes('uv sync --project agents/primary')
+        )
+      ).toBe(true);
+      const dependencyMaterialization = payload.project.repairCapabilities.find(
+        (capability: { id?: string }) =>
+          capability.id === 'runtime-dependency-materialization.dependency-materialization'
+      );
+      expect(dependencyMaterialization).toMatchObject({
+        invocation: {
+          executable: 'uv',
+          args: ['sync', '--project', 'agents/primary'],
+        },
+      });
+      expect(
+        dependencyMaterialization.files.map((file: string) => file.replaceAll('\\', '/'))
+      ).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('agents/primary/pyproject.toml'),
+          expect.stringContaining('agents/primary/uv.lock'),
+        ])
+      );
+      expect(
+        payload.project.probes.find((probe: { id?: string }) => probe.id === 'surface-env-contract')
+      ).toMatchObject({ status: 'pass', applicability: 'applicable' });
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();
@@ -4691,6 +5067,77 @@ describe('Doctor Command', () => {
           repair: expect.objectContaining({
             capabilityId: 'runtime-dependency-materialization.dependency-materialization',
             disposition: 'approval-required',
+          }),
+        })
+      );
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('honors requires-python and repository-authored setup commands', async () => {
+    const tempRoot = await fsExtra.realpath(
+      await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-python-requirement-'))
+    );
+    await fsExtra.ensureDir(path.join(tempRoot, '.workspai'));
+    await fsExtra.writeJSON(path.join(tempRoot, '.workspai', 'project.json'), {
+      name: 'python-platform',
+      runtime: 'python',
+      framework: 'python',
+    });
+    await fsExtra.writeFile(
+      path.join(tempRoot, 'pyproject.toml'),
+      '[project]\nname = "python-platform"\nversion = "0.1.0"\nrequires-python = ">=3.14.2"\n'
+    );
+    const setupPath = path.join(tempRoot, 'script', 'setup');
+    await fsExtra.outputFile(setupPath, '#!/bin/sh\nexit 0\n');
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.13.5', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: 'not found', exitCode: 1 } as any;
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(tempRoot);
+      const { runDoctor } = await import('../doctor.js');
+      await runDoctor({ project: true, json: true });
+      const jsonLine = logSpy.mock.calls
+        .map((call) => call[0])
+        .find((msg) => typeof msg === 'string' && msg.trim().startsWith('{')) as string;
+      const payload = JSON.parse(jsonLine);
+
+      expect(payload.project.name).toBe('python-platform');
+      expect(payload.system.python).toMatchObject({
+        status: 'error',
+        message: 'Python 3.13.5 does not satisfy >=3.14.2',
+      });
+      expect(payload.project.issues).toContain(
+        'Python 3.13.5 does not satisfy requires-python >=3.14.2'
+      );
+      expect(payload.project.probes).toContainEqual(
+        expect.objectContaining({ id: 'runtime-python-version', status: 'fail' })
+      );
+      expect(payload.project.fixCommands).toContainEqual(expect.stringContaining('script/setup'));
+      expect(payload.project.fixCommands).not.toContainEqual(
+        expect.stringContaining('python3 -m venv')
+      );
+      expect(payload.project.repairCapabilities).toContainEqual(
+        expect.objectContaining({
+          id: 'runtime-dependency-materialization.dependency-materialization',
+          invocation: expect.objectContaining({
+            cwd: tempRoot,
+            executable: 'script/setup',
+            args: [],
+          }),
+          transaction: expect.objectContaining({
+            kind: 'dependency-materialization',
+            ecosystem: 'python',
           }),
         })
       );

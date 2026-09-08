@@ -2,6 +2,7 @@ import { execa } from 'execa';
 import fsExtra from 'fs-extra';
 import { createHash } from 'node:crypto';
 import path from 'path';
+import { detectNodePackageManager } from './node-package-manager.js';
 
 export const DOCTOR_DEPENDENCY_AUDIT_RUNTIMES = [
   'node',
@@ -1051,24 +1052,22 @@ async function resolveAuditPlan(
     };
   }
   if (runtime === 'node') {
-    if (
-      (await pathExists(projectPath, 'bun.lock')) ||
-      (await pathExists(projectPath, 'bun.lockb'))
-    ) {
+    const packageManager = detectNodePackageManager(projectPath);
+    if (packageManager === 'bun') {
       return {
         ecosystem: 'npm',
         tool: 'bun audit',
         invocation: { cwd: projectPath, executable: 'bun', args: ['audit', '--json'] },
       };
     }
-    if (await pathExists(projectPath, 'pnpm-lock.yaml')) {
+    if (packageManager === 'pnpm') {
       return {
         ecosystem: 'npm',
         tool: 'pnpm audit',
         invocation: { cwd: projectPath, executable: 'pnpm', args: ['audit', '--json'] },
       };
     }
-    if (await pathExists(projectPath, 'yarn.lock')) {
+    if (packageManager === 'yarn') {
       const yarnBerry = await pathExists(projectPath, '.yarnrc.yml');
       return {
         ecosystem: 'npm',

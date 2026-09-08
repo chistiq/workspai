@@ -172,10 +172,18 @@ describe('npm publish contract', () => {
   });
 
   it('keeps npm-only contributor enforcement out of consumer install lifecycles', () => {
+    const rootPackage = JSON.parse(
+      fs.readFileSync(path.join(monorepoRoot, 'package.json'), 'utf8')
+    ) as { scripts?: Record<string, string> };
+
     expect(packageJson.scripts?.preinstall).toBeUndefined();
     expect(packageJson.scripts?.['check:package-manager']).toBe(
       'node scripts/enforce-package-manager.cjs'
     );
+    expect(packageJson.scripts?.['contributor:plan']).toBeUndefined();
+    expect(rootPackage.scripts?.['contributor:plan']).toBe('node scripts/contributor-plan.mjs');
+    expect(fs.existsSync(path.join(monorepoRoot, 'scripts/contributor-plan.mjs'))).toBe(true);
+    expect(isPublishedByFiles('scripts/contributor-plan.mjs')).toBe(false);
     expect(packageJson.scripts?.validate).toContain('run check:package-manager');
     expect(packageJson.scripts?.quality).toContain('run check:package-manager');
 
@@ -236,9 +244,12 @@ describe('npm publish contract', () => {
     expect(packageJson.scripts?.quality).toContain('corepack npm run security');
   });
 
-  it('ships and runs a Windows CLI resolution guard on install', () => {
-    expect(packageJson.files).toContain('scripts/check-cli-resolution.cjs');
-    expect(packageJson.scripts?.postinstall).toBe('node scripts/check-cli-resolution.cjs');
+  it('keeps consumer installation free of lifecycle scripts', () => {
+    expect(packageJson.files).not.toContain('scripts/check-cli-resolution.cjs');
+    expect(packageJson.scripts).not.toHaveProperty('preinstall');
+    expect(packageJson.scripts).not.toHaveProperty('install');
+    expect(packageJson.scripts).not.toHaveProperty('postinstall');
+    expect(packageJson.scripts).not.toHaveProperty('prepare');
   });
 
   it('publishes enterprise-critical runtime assets used by create and AI surfaces', () => {
@@ -318,8 +329,12 @@ describe('npm publish contract', () => {
       ...readme.matchAll(/!\[[^\]]+\]\((https:\/\/raw\.githubusercontent\.com\/[^)]+)\)/g),
     ].map((match) => match[1]);
 
-    expect(rawImageUrls).toContain(
-      'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/From%20Code%20to%20Shared%20Understanding.png'
+    expect(rawImageUrls).toEqual(
+      expect.arrayContaining([
+        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif',
+        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif',
+        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspace-graph.gif',
+      ])
     );
     expect(packageJson.repository?.url).toBe('git+https://github.com/chistiq/workspai.git');
     expect(packageJson.author).toBe('Chistiq');

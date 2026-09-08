@@ -40,6 +40,77 @@ export type WorkspaceRepairAdapterCapability = {
   limitation?: string;
 };
 
+export const WORKSPACE_REPAIR_QUALIFICATION_SCOPES = [
+  'project',
+  'workspace',
+  'linked-project',
+  'polyglot-project',
+] as const;
+
+export const WORKSPACE_REPAIR_FAILURE_FAMILIES = [
+  'missing-tool',
+  'stale-evidence',
+  'missing-artifact',
+  'no-op-proposal',
+  'source-drift',
+  'validation-failure',
+  'producer-failure',
+  'provider-outage',
+  'interrupted-rollback',
+  'unsupported-runtime',
+] as const;
+
+export const WORKSPACE_REPAIR_RECOVERY_PATHS = [
+  'automatic-refresh',
+  'bounded-replan',
+  'decision-required',
+  'checkpoint-rollback',
+  'durable-resume',
+  'manual-repair',
+] as const;
+
+export const WORKSPACE_REPAIR_FAILURE_RECOVERY_POLICY: Record<
+  (typeof WORKSPACE_REPAIR_FAILURE_FAMILIES)[number],
+  (typeof WORKSPACE_REPAIR_RECOVERY_PATHS)[number]
+> = {
+  'missing-tool': 'decision-required',
+  'stale-evidence': 'automatic-refresh',
+  'missing-artifact': 'automatic-refresh',
+  'no-op-proposal': 'bounded-replan',
+  'source-drift': 'bounded-replan',
+  'validation-failure': 'checkpoint-rollback',
+  'producer-failure': 'bounded-replan',
+  'provider-outage': 'durable-resume',
+  'interrupted-rollback': 'durable-resume',
+  'unsupported-runtime': 'manual-repair',
+};
+
+export function validateWorkspaceRepairQualificationMatrix(): string[] {
+  const violations: string[] = [];
+  const adapterIds = WORKSPACE_REPAIR_ADAPTER_CAPABILITIES.map((adapter) => adapter.id);
+  if (new Set(adapterIds).size !== adapterIds.length) violations.push('adapter ids are not unique');
+  if (WORKSPACE_REPAIR_QUALIFICATION_SCOPES.length < 4)
+    violations.push('scope matrix is incomplete');
+  if (WORKSPACE_REPAIR_FAILURE_FAMILIES.length < 10) {
+    violations.push('failure-family matrix is incomplete');
+  }
+  if (WORKSPACE_REPAIR_RECOVERY_PATHS.length < 6) {
+    violations.push('recovery-path matrix is incomplete');
+  }
+  for (const failureFamily of WORKSPACE_REPAIR_FAILURE_FAMILIES) {
+    const recovery = WORKSPACE_REPAIR_FAILURE_RECOVERY_POLICY[failureFamily];
+    if (!WORKSPACE_REPAIR_RECOVERY_PATHS.includes(recovery)) {
+      violations.push(`${failureFamily} has no bounded recovery policy`);
+    }
+  }
+  for (const adapter of WORKSPACE_REPAIR_ADAPTER_CAPABILITIES) {
+    for (const stage of ['reconcile', 'audit', 'test', 'build'] as const) {
+      if (!adapter.stages[stage]) violations.push(`${adapter.id}.${stage} is undeclared`);
+    }
+  }
+  return violations;
+}
+
 /**
  * Canonical adapter inventory for the CLI-owned repair engine.
  *
@@ -213,6 +284,12 @@ export const WORKSPACE_REPAIR_ADAPTER_CAPABILITIES: readonly WorkspaceRepairAdap
 ] as const;
 
 export function buildWorkspaceRepairCapabilitiesContract() {
+  const qualificationViolations = validateWorkspaceRepairQualificationMatrix();
+  if (qualificationViolations.length > 0) {
+    throw new Error(
+      `Workspace Repair qualification matrix is incomplete: ${qualificationViolations.join('; ')}`
+    );
+  }
   return {
     schemaVersion: WORKSPACE_REPAIR_CAPABILITIES_SCHEMA_VERSION,
     owner: 'Workspai CLI',
@@ -234,6 +311,10 @@ export function buildWorkspaceRepairCapabilitiesContract() {
     invariants: {
       multiAdapterProjects: true,
       missingTools: 'decision-required',
+      missingToolSameGenerationRetry: false,
+      missingToolResumeBoundary: 'environment-change-and-fresh-plan',
+      plannerExecutorAvailabilityProbe: 'shared-launchability-check',
+      setupInstallsHostRuntimes: false,
       unsupportedEcosystems: 'decision-required',
       silentFallbackToModelExecution: false,
       mutationAuthority: 'cli-only',
@@ -285,6 +366,26 @@ export function buildWorkspaceRepairCapabilitiesContract() {
         transaction: WORKSPACE_REPAIR_TRANSACTION_SCHEMA_VERSION,
       },
       transientPaths: ['.workspai/repair/inbox/*.json', '.workspai/repair/engine.lock'],
+    },
+    qualificationMatrix: {
+      schemaVersion: 'workspai.workspace-repair-qualification-matrix.v1',
+      status: 'contract-enforced',
+      dimensions: {
+        adapters: WORKSPACE_REPAIR_ADAPTER_CAPABILITIES.map((adapter) => adapter.id),
+        scopes: WORKSPACE_REPAIR_QUALIFICATION_SCOPES,
+        failureFamilies: WORKSPACE_REPAIR_FAILURE_FAMILIES,
+        recoveryPaths: WORKSPACE_REPAIR_RECOVERY_PATHS,
+        failureRecoveryPolicy: WORKSPACE_REPAIR_FAILURE_RECOVERY_POLICY,
+      },
+      invariants: {
+        everyAdapterDeclaresClosureStages: true,
+        everyFailureTerminates: true,
+        everyMutationIsCheckpointed: true,
+        workspaceAndProjectScopesUseTheSameEngine: true,
+        linkedProjectsRemainBoundaryChecked: true,
+        missingToolsBlockExecutionBeforeApproval: true,
+        polyglotActionsDeclareIndependentExecutablePrerequisites: true,
+      },
     },
     adapters: WORKSPACE_REPAIR_ADAPTER_CAPABILITIES,
   };

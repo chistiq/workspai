@@ -13,11 +13,12 @@ import {
   resolvePackageRunnerInvocation,
   shouldUseShellExecution,
 } from '../utils/platform-capabilities.js';
+import { formatNodeScriptCommand } from '../utils/node-package-manager.js';
 import { workspaceMetadataCandidates } from '../utils/workspace-paths.js';
 
 export type NodeCommandRunner = (command: string, args: string[], cwd: string) => Promise<number>;
 
-type PackageManager = 'npm' | 'pnpm' | 'yarn';
+type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 export class NodeRuntimeAdapter implements RuntimeAdapter {
   readonly runtime = 'node' as const;
@@ -92,6 +93,7 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
 
     const originalNpmCache = process.env.npm_config_cache;
     const originalStoreDir = process.env.npm_config_store_dir;
+    const originalBunCache = process.env.BUN_INSTALL_CACHE_DIR;
     const originalDependencyMode = process.env.RAPIDKIT_DEP_SHARING_MODE;
     const originalWorkspacePath = process.env.RAPIDKIT_WORKSPACE_PATH;
 
@@ -100,7 +102,9 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
       process.env.RAPIDKIT_WORKSPACE_PATH = workspace;
     }
 
-    if (runtime === 'pnpm') {
+    if (runtime === 'bun') {
+      process.env.BUN_INSTALL_CACHE_DIR = path.join(basePath, 'bun-cache');
+    } else if (runtime === 'pnpm') {
       process.env.npm_config_store_dir = path.join(basePath, 'pnpm-store');
       process.env.npm_config_cache = path.join(basePath, 'pnpm-cache');
     } else if (runtime === 'yarn') {
@@ -116,6 +120,9 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
       if (typeof originalStoreDir === 'undefined') delete process.env.npm_config_store_dir;
       else process.env.npm_config_store_dir = originalStoreDir;
 
+      if (typeof originalBunCache === 'undefined') delete process.env.BUN_INSTALL_CACHE_DIR;
+      else process.env.BUN_INSTALL_CACHE_DIR = originalBunCache;
+
       if (typeof originalDependencyMode === 'undefined')
         delete process.env.RAPIDKIT_DEP_SHARING_MODE;
       else process.env.RAPIDKIT_DEP_SHARING_MODE = originalDependencyMode;
@@ -126,6 +133,12 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
   }
 
   private detectPackageManager(projectPath: string): PackageManager {
+    if (
+      fs.existsSync(path.join(projectPath, 'bun.lock')) ||
+      fs.existsSync(path.join(projectPath, 'bun.lockb'))
+    ) {
+      return 'bun';
+    }
     if (fs.existsSync(path.join(projectPath, 'package-lock.json'))) return 'npm';
     if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return 'pnpm';
     if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) return 'yarn';
@@ -139,6 +152,8 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
   private hasPinnedPackageManager(projectPath: string): boolean {
     return (
       fs.existsSync(path.join(projectPath, 'package-lock.json')) ||
+      fs.existsSync(path.join(projectPath, 'bun.lock')) ||
+      fs.existsSync(path.join(projectPath, 'bun.lockb')) ||
       fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml')) ||
       fs.existsSync(path.join(projectPath, 'yarn.lock'))
     );
@@ -150,7 +165,7 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
       return [preferred];
     }
 
-    const candidates: PackageManager[] = ['npm', 'pnpm', 'yarn'];
+    const candidates: PackageManager[] = ['npm', 'pnpm', 'yarn', 'bun'];
     return [
       preferred,
       ...candidates.filter(
@@ -191,7 +206,12 @@ export class NodeRuntimeAdapter implements RuntimeAdapter {
         return lastResult;
       }
     }
-    return lastResult;
+    return {
+      ...lastResult,
+      message:
+        lastResult.message ??
+        `Node lifecycle script failed. Re-run \`${formatNodeScriptCommand(projectPath, scriptName)}\` in ${projectPath} to inspect the native tool output.`,
+    };
   }
 
   private async runLifecycle(

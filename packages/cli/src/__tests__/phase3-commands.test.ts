@@ -12,6 +12,7 @@ const adapterDoctorHints = vi.fn();
 const getRuntimeAdapterMock = vi.fn();
 const areRuntimeAdaptersEnabledMock = vi.fn();
 const cacheClearMock = vi.fn();
+const PHASE3_COMMAND_TIMEOUT_MS = process.platform === 'win32' ? 60_000 : 15_000;
 
 vi.mock('../runtime-adapters/index.js', () => ({
   getRuntimeAdapter: getRuntimeAdapterMock,
@@ -70,7 +71,7 @@ describe('Phase 3 command contract handlers', () => {
     delete process.env.RAPIDKIT_ENV;
   });
 
-  describe('bootstrap', { timeout: 15000 }, () => {
+  describe('bootstrap', { timeout: PHASE3_COMMAND_TIMEOUT_MS }, () => {
     let stdinIsTty: PropertyDescriptor | undefined;
     let stdoutIsTty: PropertyDescriptor | undefined;
 

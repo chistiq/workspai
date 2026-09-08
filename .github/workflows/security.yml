@@ -2,6 +2,7 @@ name: Security Audit
 
 permissions:
   contents: read
+  pull-requests: read
   security-events: write
 
 on:
@@ -9,57 +10,88 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch:
   schedule:
     # Run security audit daily at 2 AM UTC
-    - cron: '0 2 * * *'
+    - cron: "0 2 * * *"
 
 jobs:
   security:
+    name: Security Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Detect security-impacting changes
+        id: changes
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            security:
+              - 'package.json'
+              - 'package-lock.json'
+              - 'packages/**/package.json'
+              - 'packages/**/*.js'
+              - 'packages/**/*.cjs'
+              - 'packages/**/*.mjs'
+              - 'packages/**/*.ts'
+              - 'scripts/**/*.js'
+              - 'scripts/**/*.cjs'
+              - 'scripts/**/*.mjs'
+              - '.github/workflows/security.yml'
+
       - name: Initialize CodeQL
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
 
       - name: Dependency review
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.changes.outputs.security == 'true'
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
 
       - name: Setup Node.js
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         run: npm ci
 
       - name: Block high and critical npm vulnerabilities
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         run: npm audit --audit-level=high
 
       - name: Generate CycloneDX-compatible npm SBOM
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         run: npm sbom --sbom-format cyclonedx > workspai-sbom.cdx.json
 
       - name: Analyze source with CodeQL
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         uses: github/codeql-action/analyze@v3
 
       - name: Run dependency check
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         run: |
           npm install -g npm-check-updates
           ncu --errorLevel 2
         continue-on-error: true
 
       - name: Check for outdated dependencies
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         run: npm outdated || true
 
       - name: Generate security report
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         run: |
           echo "# Security Audit Report" > security-report.md
           echo "" >> security-report.md
@@ -71,6 +103,7 @@ jobs:
           npm outdated >> security-report.md || true
 
       - name: Upload security report
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: security-report
@@ -78,8 +111,13 @@ jobs:
           retention-days: 30
 
       - name: Upload SBOM
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.changes.outputs.security == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: workspai-sbom
           path: workspai-sbom.cdx.json
           retention-days: 90
+
+      - name: Record docs-only security decision
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && steps.changes.outputs.security != 'true'
+        run: echo "No security-impacting files changed; scheduled scans remain authoritative."

@@ -1,5 +1,6 @@
 import { listFrontendGenerators } from '../frontend-project.js';
 import { listOfficialProjectGenerators } from '../official-project.js';
+import { listAgentFrameworkProjectKits } from '../agent-frameworks/project-kits.js';
 import { listInteractiveKits, normalizeKitId } from './kit-registry.js';
 
 export type CreatePlannerLane = 'native' | 'official' | 'existing';
@@ -32,7 +33,10 @@ export interface CreatePlannerCapability {
   reason: string;
 }
 
-const NATIVE_CREATE_KITS = new Set(listInteractiveKits().map((kit) => kit.id));
+const NATIVE_CREATE_KITS = new Set([
+  ...listInteractiveKits().map((kit) => kit.id),
+  ...listAgentFrameworkProjectKits().map((kit) => kit.id),
+]);
 
 export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
   ...listFrontendGenerators().map((definition) => ({

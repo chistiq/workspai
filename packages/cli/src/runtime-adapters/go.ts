@@ -3,6 +3,7 @@ import fs from 'fs';
 import type { CommandResult, RuntimeAdapter } from './types.js';
 import { isWindowsPlatform } from '../utils/platform-capabilities.js';
 import { hasMakefileTarget } from '../utils/lifecycle-makefile.js';
+import { resolveGoRunTarget } from '../utils/go-lifecycle.js';
 import { workspaceMetadataCandidates } from '../utils/workspace-paths.js';
 
 export type GoCommandRunner = (command: string, args: string[], cwd: string) => Promise<number>;
@@ -28,32 +29,6 @@ export class GoRuntimeAdapter implements RuntimeAdapter {
       message:
         'Go toolchain is not installed or not available on PATH. Install Go from https://go.dev/dl/ and retry.',
     };
-  }
-
-  private findGoRunTarget(projectPath: string): string {
-    const directMain = path.join(projectPath, 'main.go');
-    if (fs.existsSync(directMain)) {
-      return './main.go';
-    }
-
-    const cmdPath = path.join(projectPath, 'cmd');
-    try {
-      const cmdEntries = fs
-        .readdirSync(cmdPath, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-        .sort();
-
-      for (const entryName of cmdEntries) {
-        if (fs.existsSync(path.join(cmdPath, entryName, 'main.go'))) {
-          return `./cmd/${entryName}`;
-        }
-      }
-    } catch {
-      // Fall back below.
-    }
-
-    return './.';
   }
 
   private findWorkspaceRoot(startPath: string): string | null {
@@ -163,10 +138,22 @@ export class GoRuntimeAdapter implements RuntimeAdapter {
         if (prereq) return prereq;
 
         const makefilePath = path.join(projectPath, 'Makefile');
-        if (!isWindowsPlatform() && fs.existsSync(makefilePath)) {
+        if (
+          !isWindowsPlatform() &&
+          fs.existsSync(makefilePath) &&
+          hasMakefileTarget(projectPath, 'run')
+        ) {
           return this.run('make', ['run'], projectPath);
         }
-        return this.run('go', ['run', this.findGoRunTarget(projectPath)], projectPath);
+        const runTarget = resolveGoRunTarget(projectPath);
+        if (!runTarget) {
+          return {
+            exitCode: 1,
+            message:
+              'No unambiguous Go run target was detected. Add a root main package, keep one cmd/<name>/main.go target, or declare a Makefile run target.',
+          };
+        }
+        return this.run('go', ['run', runTarget], projectPath);
       })();
     });
   }
@@ -201,7 +188,15 @@ export class GoRuntimeAdapter implements RuntimeAdapter {
       const prereq = await this.ensureGoInstalled(projectPath);
       if (prereq) return prereq;
 
-      return this.run('go', ['run', this.findGoRunTarget(projectPath)], projectPath);
+      const runTarget = resolveGoRunTarget(projectPath);
+      if (!runTarget) {
+        return {
+          exitCode: 1,
+          message:
+            'No unambiguous Go start target was detected. Add a root main package, keep one cmd/<name>/main.go target, declare a Makefile run target, or provide the built server binary.',
+        };
+      }
+      return this.run('go', ['run', runTarget], projectPath);
     });
   }
 

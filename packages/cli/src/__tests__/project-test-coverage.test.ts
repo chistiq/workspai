@@ -293,6 +293,45 @@ describe('project test coverage evidence', () => {
     assertCoverageContract(nativeResult);
   });
 
+  it('keeps a native root authoritative over a secondary Python binding manifest', async () => {
+    const native = await fixture('native-with-python-binding');
+    await fs.writeFile(
+      path.join(native.project, 'CMakeLists.txt'),
+      'project(native LANGUAGES CXX)\n'
+    );
+    await fs.writeFile(
+      path.join(native.project, 'pyproject.toml'),
+      '[project]\nname = "bindings"\n'
+    );
+    await fs.ensureDir(path.join(native.project, 'src', 'core'));
+    await fs.writeFile(
+      path.join(native.project, 'src', 'core', 'main.cc'),
+      'int main() { return 0; }\n'
+    );
+
+    const result = await collectProjectTestCoverage({ projectPath: native.project, target: 80 });
+
+    expect(result).toMatchObject({
+      runtime: 'cpp',
+      runner: 'CTest/LLVM coverage',
+      status: 'unavailable',
+    });
+    assertCoverageContract(result);
+  });
+
+  it('detects coverage capability from a gemspec-only Ruby project root', async () => {
+    const ruby = await fixture('ruby-gem');
+    await fs.writeFile(
+      path.join(ruby.project, 'example.gemspec'),
+      'Gem::Specification.new { |spec| spec.name = "example" }\n'
+    );
+
+    const result = await collectProjectTestCoverage({ projectPath: ruby.project, target: 80 });
+
+    expect(result).toMatchObject({ runtime: 'ruby', runner: 'simplecov', status: 'unavailable' });
+    assertCoverageContract(result);
+  });
+
   it('does not mistake a Gradle Kotlin build script for Kotlin application source', async () => {
     const { project } = await fixture('java-gradle-api');
     await fs.writeFile(path.join(project, 'build.gradle.kts'), 'plugins { java }\n');

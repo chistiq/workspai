@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { Stats } from 'node:fs';
 import { hostname } from 'node:os';
 import path from 'node:path';
 
 import { execa } from 'execa';
 import fsExtra from 'fs-extra';
+import { buildPolyglotLifecyclePlan } from './polyglot-lifecycle-plan.js';
 
 import {
   buildArtifactRemediationPlan,
@@ -58,6 +58,8 @@ import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { inspectGoalLifecycle, linkGoalRepairTransaction } from './goal-lifecycle.js';
 import { withWorkspaceArtifactLock } from './utils/artifact-path-compat.js';
 import { readWorkspaceContract } from './utils/workspace-contract.js';
+import { emitActivityBlock, emitWorkspaceActivity } from './activity/activity-runtime.js';
+import { executableAvailable } from './utils/executable-availability.js';
 
 const REPAIR_ROOT = '.workspai/repair';
 const TRANSACTION_FILE = 'transaction.json';
@@ -673,14 +675,52 @@ function event(
   message: string,
   options: { stageId?: string; status?: string; now?: () => Date } = {}
 ): void {
-  transaction.events.push({
+  const repairEvent = {
     sequence: transaction.events.length + 1,
     at: iso(options.now),
     type,
     ...(options.stageId ? { stageId: options.stageId } : {}),
     ...(options.status ? { status: options.status } : {}),
     message,
-  });
+  };
+  transaction.events.push(repairEvent);
+
+  const rawStatus = options.status ?? type;
+  const status =
+    type === 'failed' || rawStatus === 'failed'
+      ? 'failed'
+      : type === 'cancelled'
+        ? 'cancelled'
+        : type === 'closed' || rawStatus === 'passed' || rawStatus === 'completed'
+          ? 'succeeded'
+          : type === 'rollback'
+            ? 'rolled-back'
+            : rawStatus === 'blocked'
+              ? 'blocked'
+              : 'running';
+  if (options.stageId) {
+    emitActivityBlock({
+      blockId: `repair.${options.stageId}`,
+      status,
+      message,
+      component: 'workspace-repair',
+      attributes: { transactionId: transaction.transactionId, repairEventType: type },
+    });
+  } else {
+    emitWorkspaceActivity({
+      kind:
+        status === 'failed'
+          ? 'operation.failed'
+          : status === 'succeeded' || status === 'rolled-back'
+            ? 'operation.completed'
+            : 'operation.started',
+      status,
+      component: 'workspace-repair',
+      message,
+      correlationId: transaction.transactionId,
+      attributes: { repairEventType: type },
+    });
+  }
 }
 
 async function saveTransaction(
@@ -757,13 +797,15 @@ async function actionProjectRoot(
 function invocation(input: {
   workspacePath: string;
   projectPath: string;
+  projectReference?: string;
   executable: string;
   args: string[];
   purpose: WorkspaceRepairInvocation['purpose'];
   timeoutMs?: number;
 }): WorkspaceRepairInvocation {
   return {
-    cwd: portable(input.workspacePath, input.projectPath, input.projectPath),
+    cwd:
+      input.projectReference ?? portable(input.workspacePath, input.projectPath, input.projectPath),
     executable: input.executable,
     args: [...input.args],
     purpose: input.purpose,
@@ -790,52 +832,6 @@ function scriptInvocation(input: {
   return invocation({ ...input, executable: input.manager, args, purpose: input.purpose });
 }
 
-function pathExecutableCandidates(executable: string): string[] {
-  const extensions =
-    process.platform === 'win32'
-      ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
-          .split(';')
-          .filter(Boolean)
-          .map((entry) => entry.toLowerCase())
-      : [''];
-  const hasExtension = path.extname(executable).length > 0;
-  return (process.env.PATH ?? '')
-    .split(path.delimiter)
-    .filter(Boolean)
-    .flatMap((directory) =>
-      hasExtension
-        ? [path.join(directory, executable)]
-        : extensions.map((extension) => path.join(directory, `${executable}${extension}`))
-    );
-}
-
-function isRunnableFile(stat: Stats | undefined): boolean {
-  if (!stat?.isFile()) return false;
-  // Windows determines executability from PATHEXT. POSIX wrappers and local
-  // tools must carry at least one execute bit; merely existing is not enough
-  // to satisfy a repair precondition.
-  return process.platform === 'win32' || (stat.mode & 0o111) !== 0;
-}
-
-async function executableLaunches(executable: string, cwd: string): Promise<boolean> {
-  try {
-    const result = await execa(executable, ['--version'], {
-      cwd,
-      shell: false,
-      reject: false,
-      timeout: 5_000,
-      maxBuffer: 64 * 1024,
-      stdin: 'ignore',
-    });
-    // A non-zero version response still proves that the OS could launch the
-    // executable. A missing binary or broken shebang/interpreter has no exit
-    // code and must fail the repair precondition before checkpoint capture.
-    return result.exitCode !== undefined && result.exitCode !== null;
-  } catch {
-    return false;
-  }
-}
-
 async function invocationToolAvailable(input: {
   workspacePath: string;
   invocation: WorkspaceRepairInvocation;
@@ -850,17 +846,7 @@ async function invocationToolAvailable(input: {
   if (input.toolAvailable) {
     return input.toolAvailable(input.invocation.executable, cwd);
   }
-  const executable = input.invocation.executable;
-  if (path.isAbsolute(executable) || /^\.{1,2}[\\/]/.test(executable)) {
-    const candidate = path.isAbsolute(executable) ? executable : path.resolve(cwd, executable);
-    const stat = await fsExtra.stat(candidate).catch(() => undefined);
-    return isRunnableFile(stat) && executableLaunches(candidate, cwd);
-  }
-  for (const candidate of pathExecutableCandidates(executable)) {
-    const stat = await fsExtra.stat(candidate).catch(() => undefined);
-    if (isRunnableFile(stat) && (await executableLaunches(candidate, cwd))) return true;
-  }
-  return false;
+  return executableAvailable({ executable: input.invocation.executable, cwd });
 }
 
 async function toolPreconditions(input: {
@@ -1823,12 +1809,16 @@ async function detectWorkspaceRepairAdapterIds(
   if (await exists('Gemfile')) detected.push('ruby-bundler');
   if (await exists('mix.exs')) detected.push('elixir-mix');
   if ((await exists('deno.json')) || (await exists('deno.jsonc'))) detected.push('deno');
-  if (entries.some((file) => /\.(?:cs|fs|vb)proj$|\.sln$/i.test(file))) detected.push('dotnet');
+  if (entries.some((file) => /\.(?:cs|fs|vb)proj$|\.slnx?$/i.test(file))) detected.push('dotnet');
   if (await exists('pom.xml')) detected.push('jvm-maven');
   if ((await exists('build.gradle.kts')) || (await exists('build.gradle')))
     detected.push('jvm-gradle');
   if ((await exists('deps.edn')) || (await exists('project.clj'))) detected.push('clojure');
   if (await exists('build.sbt')) detected.push('scala-sbt');
+  for (const unit of buildPolyglotLifecyclePlan(projectPath).units) {
+    const adapterId = adapterIdForEcosystem(unit.ecosystem);
+    if (adapterId) detected.push(adapterId);
+  }
   const order = new Map(
     WORKSPACE_REPAIR_ADAPTER_CAPABILITIES.map((capability, index) => [capability.id, index])
   );
@@ -1954,6 +1944,22 @@ async function dependencyStagePlan(
   combined.stages = [...new Map(combined.stages.map((stage) => [stage.id, stage])).values()];
   combined.checkpointFiles = [...new Set(combined.checkpointFiles)].sort();
   combined.blockers = [...new Set(combined.blockers)];
+  const generatedProjectReference = portable(input.workspacePath, projectPath, projectPath);
+  if (generatedProjectReference !== relativeProject) {
+    const rebase = (value: string): string =>
+      value === generatedProjectReference
+        ? relativeProject
+        : value.startsWith(`${generatedProjectReference}/`)
+          ? `${relativeProject}/${value.slice(generatedProjectReference.length + 1)}`
+          : value;
+    combined.stages = combined.stages.map((stage) => ({
+      ...stage,
+      ...(stage.invocation
+        ? { invocation: { ...stage.invocation, cwd: rebase(stage.invocation.cwd) } }
+        : {}),
+    }));
+    combined.checkpointFiles = combined.checkpointFiles.map(rebase);
+  }
   const deferredStageExecutables = new Set<string>();
 
   if (input.action.transaction?.kind === 'dependency-materialization') {
@@ -2090,10 +2096,20 @@ export async function inspectWorkspaceRepairCapabilities(
     inspectionPath = matches[0].name;
   } else {
     projectPath = path.resolve(workspacePath, input.projectPath ?? '.');
-    if (!inside(workspacePath, projectPath)) {
-      throw new Error('Repair capability inspection project path escapes the workspace.');
+    if (inside(workspacePath, projectPath)) {
+      inspectionPath = portable(workspacePath, projectPath);
+    } else {
+      const targets = await resolveWorkspaceProjectLensTargets(workspacePath);
+      const match = targets.resolved.find(
+        (target) => path.resolve(target.projectPath) === projectPath
+      );
+      if (!match) {
+        throw new Error(
+          'Repair capability inspection external project is not registered in the workspace.'
+        );
+      }
+      inspectionPath = match.name;
     }
-    inspectionPath = portable(workspacePath, projectPath);
   }
   return {
     ...contract,
@@ -2210,6 +2226,7 @@ async function actionInvocation(
   return invocation({
     workspacePath,
     projectPath,
+    projectReference: externalProjectReference(action.projectPath ?? '')?.root,
     executable: action.invocation.executable,
     args: action.invocation.args,
     purpose: 'repair',
@@ -2702,10 +2719,17 @@ export async function planWorkspaceRepair(
     workspacePath,
     includeAbsolutePaths: false,
     ciMode: true,
+    toolAvailable: dependencies.toolAvailable,
   });
   const candidatePool = sourcePlan.actions
     .filter((action) => action.cardId === input.cardId)
-    .filter((action) => !input.projectName || action.projectName === input.projectName)
+    // Workspace-scoped cards may still identify the affected linked project
+    // in their evidence. Keep workspace-owned actions eligible while using
+    // projectName only to disambiguate actions that are actually project-owned.
+    .filter(
+      (action) =>
+        !input.projectName || !action.projectName || action.projectName === input.projectName
+    )
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
   const candidates = input.actionId
     ? candidatePool.filter((action) => action.id === input.actionId)
@@ -2799,6 +2823,7 @@ export async function planWorkspaceRepair(
   const dependencyFiles: string[] = [];
   const adapterEvaluations: WorkspaceRepairAdapterEvaluation[] = [];
   const decisionReasons: string[] = [];
+  const unstructuredExecutableActionIds: string[] = [];
   const decisionOptions = new Set<
     NonNullable<WorkspaceRepairTransaction['decision']>['options'][number]
   >(['replan', 'manual-repair', 'cancel']);
@@ -2813,8 +2838,13 @@ export async function planWorkspaceRepair(
     if (action.status === 'blocked' || action.status === 'guidance-only') {
       decisionReasons.push(`${action.id} is ${action.status}: ${action.blocker}`);
     }
-    if (!operation && !structuredInvocation) {
+    if (
+      !operation &&
+      !structuredInvocation &&
+      (action.mode === 'run-command' || action.mode === 'edit-file')
+    ) {
       decisionReasons.push(`${action.id} has no typed operation or structured invocation.`);
+      unstructuredExecutableActionIds.push(action.id);
     }
     if (structuredInvocation) {
       try {
@@ -2900,10 +2930,11 @@ export async function planWorkspaceRepair(
   });
   preconditions.push({
     id: 'structured-execution',
-    status: stages.some((stage) => stage.required && stage.status === 'blocked')
-      ? 'failed'
-      : 'passed',
-    message: 'Every executable stage must use a typed operation or structured invocation.',
+    status: unstructuredExecutableActionIds.length > 0 ? 'failed' : 'passed',
+    message:
+      unstructuredExecutableActionIds.length > 0
+        ? `Executable actions without typed execution: ${unstructuredExecutableActionIds.join(', ')}.`
+        : 'Every executable action uses a typed operation or structured invocation.',
   });
   preconditions.push({
     id: 'checkpoint-boundary',
@@ -5005,17 +5036,6 @@ export async function decideWorkspaceRepair(
     );
   }
   const source = await readSourcePlan(workspacePath, input.transactionId);
-  transaction.state = 'cancelled';
-  transaction.approval.status =
-    transaction.approval.status === 'approved' ? 'expired' : transaction.approval.status;
-  event(
-    transaction,
-    'decision',
-    `The user selected ${input.decision}; a fresh immutable plan and approval are required.`,
-    { status: 'superseded', now: dependencies.now }
-  );
-  await saveTransaction(workspacePath, transaction, dependencies.now);
-
   const nextPolicy = {
     maxRisk:
       input.decision === 'approve-invasive'
@@ -5027,25 +5047,49 @@ export async function decideWorkspaceRepair(
     allowBreaking: transaction.policy.allowBreaking || input.decision === 'allow-breaking',
     autoRollback: transaction.policy.autoRollback,
   };
-  if (isWorkspaceRepairProposal(source)) {
-    return planWorkspaceRepairProposal(
-      { workspacePath, proposal: source, ...nextPolicy },
+  const planReplacement = async (): Promise<WorkspaceRepairTransaction> => {
+    if (isWorkspaceRepairProposal(source)) {
+      return planWorkspaceRepairProposal(
+        { workspacePath, proposal: source, ...nextPolicy },
+        dependencies
+      );
+    }
+    const actionIds = transaction.target.actionIds.map((id) =>
+      id.startsWith('action:') ? id.slice('action:'.length) : id
+    );
+    return planWorkspaceRepair(
+      {
+        workspacePath,
+        cardId: transaction.target.cardId,
+        ...(actionIds.length === 1 ? { actionId: actionIds[0] } : {}),
+        projectName: transaction.target.projectName,
+        ...nextPolicy,
+      },
       dependencies
     );
+  };
+  const missingExecutableDecision = transaction.decision.causes?.some(
+    (cause) => cause.kind === 'missing-executable'
+  );
+  const replacement =
+    input.decision === 'replan' && missingExecutableDecision ? await planReplacement() : undefined;
+  if (replacement?.transactionId === transaction.transactionId) {
+    // The shared planner/executor probe still sees the identical missing tool.
+    // Preserve the durable decision instead of manufacturing a new generation.
+    return transaction;
   }
-  const actionIds = transaction.target.actionIds.map((id) =>
-    id.startsWith('action:') ? id.slice('action:'.length) : id
+
+  transaction.state = 'cancelled';
+  transaction.approval.status =
+    transaction.approval.status === 'approved' ? 'expired' : transaction.approval.status;
+  event(
+    transaction,
+    'decision',
+    `The user selected ${input.decision}; a fresh immutable plan and approval are required.`,
+    { status: 'superseded', now: dependencies.now }
   );
-  return planWorkspaceRepair(
-    {
-      workspacePath,
-      cardId: transaction.target.cardId,
-      ...(actionIds.length === 1 ? { actionId: actionIds[0] } : {}),
-      projectName: transaction.target.projectName,
-      ...nextPolicy,
-    },
-    dependencies
-  );
+  await saveTransaction(workspacePath, transaction, dependencies.now);
+  return replacement ?? planReplacement();
 }
 
 export async function listWorkspaceRepairTransactions(

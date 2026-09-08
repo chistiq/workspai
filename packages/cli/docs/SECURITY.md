@@ -1,70 +1,27 @@
 # Security Policy
 
-## Supported Versions
+The canonical Workspai security policy defines supported versions, private
+reporting channels, response expectations, coordinated disclosure, and safe
+research guidance:
 
-During the `0.x` phase, only the latest published minor line receives security
-fixes. Check the [npm package](https://www.npmjs.com/package/workspai) and
-[changelog](../CHANGELOG.md) for the current supported line; older minor lines
-are unsupported.
+[Read the canonical security policy](https://github.com/chistiq/workspai/security/policy)
 
-## Known Security Considerations
+Do not report a suspected vulnerability through a public issue, discussion, or
+pull request. Use a
+[private GitHub security advisory](https://github.com/chistiq/workspai/security/advisories/new)
+or email [security@workspai.dev](mailto:security@workspai.dev).
 
-### Development Dependencies
-
-Our CI/CD pipeline may report moderate severity vulnerabilities in development dependencies (vitest, vite, esbuild). These packages are:
-
-- ✅ **Only used during development and testing**
-- ✅ **Not included in the published npm package**
-- ✅ **Not shipped to end users**
-- ✅ **Do not affect runtime security**
-
-The published package only includes runtime dependencies required for workspace creation.
-
-### Production Dependencies
-
-We actively monitor and address any security vulnerabilities in production dependencies that are shipped with the package.
-
-## Reporting a Vulnerability
-
-If you discover a security vulnerability in Workspai, please report it by emailing **security@workspai.dev** or opening a private security advisory on GitHub.
-
-Please include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if available)
-
-We will respond within 48 hours and work to address critical issues as quickly as possible.
-
-## Security Best Practices
+## CLI Security Practices
 
 When using Workspai:
 
-1. **Keep dependencies updated**: Run `npm update` regularly
-2. **Review generated code**: Always review the workspace structure before deployment
-3. **Use official releases**: Install from npm registry, not from git directly
-4. **Verify package integrity**: Use `npm audit` on your generated project
-5. **Treat executable config as code**: Prefer `workspai.config.json`; only use
+1. Keep Workspai and generated dependencies updated.
+2. Review generated source and configuration before deployment.
+3. Install official releases from the npm registry.
+4. Run the ecosystem-appropriate audit tools on generated projects.
+5. Treat executable configuration as code. Prefer `workspai.config.json`; use
    `--trust-config` after reviewing JavaScript configuration.
-6. **Keep remote archives public-network-only**: Private and loopback archive
+6. Keep remote archives public-network-only. Private and loopback archive
    URLs are rejected unless `--allow-private-network` is explicitly supplied.
-7. **Constrain mirror targets**: Artifact targets are restricted to the managed
+7. Keep mirror targets constrained. Artifact targets are restricted to the managed
    mirror directory and are committed only after integrity/policy verification.
-
-## Security Scanning
-
-We use:
-- GitHub Security Advisories
-- npm audit (production dependencies)
-- CodeQL static analysis
-- Pull-request dependency review
-- CycloneDX SBOM generation
-- Dependabot for automated updates
-- Regular manual security reviews
-
-## Updates
-
-Security updates are released as patch versions on the latest `0.x` minor line and announced in:
-- GitHub Releases
-- CHANGELOG.md
-- npm package updates

@@ -47,6 +47,32 @@ describe('previously low-coverage utility boundaries', () => {
     expect(formatNodeInstallCommand(root)).toBe('bun install');
   });
 
+  it('honors the declared package manager without confusing a supplemental Bun runtime', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-declared-package-manager-'));
+    roots.push(root);
+    await fs.writeFile(
+      path.join(root, 'package.json'),
+      JSON.stringify({ packageManager: 'pnpm@10.33.0+sha512.test' })
+    );
+    await fs.writeFile(path.join(root, '.bunfig.toml'), '[install.lockfile]\nsave = false\n');
+    expect(detectNodePackageManager(root)).toBe('pnpm');
+    expect(formatNodeInstallCommand(root)).toBe('pnpm install');
+
+    await fs.writeFile(
+      path.join(root, 'package.json'),
+      JSON.stringify({ packageManager: 'yarn@4' })
+    );
+    await fs.writeFile(path.join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    expect(detectNodePackageManager(root)).toBe('yarn');
+  });
+
+  it('uses a pnpm workspace marker when an intentionally lockfile-free monorepo has no declaration', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-pnpm-workspace-manager-'));
+    roots.push(root);
+    await fs.writeFile(path.join(root, 'pnpm-workspace.yaml'), 'lockfile: false\n');
+    expect(detectNodePackageManager(root)).toBe('pnpm');
+  });
+
   it('builds, sanitizes, emits, and resets structured CLI log events', () => {
     setCliRunId('run-1');
     expect(getCliRunId()).toBe('run-1');

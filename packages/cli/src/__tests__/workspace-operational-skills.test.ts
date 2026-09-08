@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WORKSPACE_SKILLS_INDEX_PATH } from '../contracts/workspace-artifact-paths.js';
 import { WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION } from '../contracts/workspace-skills-index-contract.js';
 import {
-  BUILTIN_OPERATIONAL_SKILL_IDS,
   buildWorkspaceOperationalSkills,
+  buildWorkspaceOperationalSkillsPlan,
   writeWorkspaceOperationalSkills,
 } from '../workspace-operational-skills.js';
 import { buildWorkspaceModel } from '../workspace-model.js';
@@ -28,31 +28,32 @@ afterEach(async () => {
 });
 
 describe('workspace operational skills (Phase 4.A)', () => {
-  it('builds all builtin skills with rapidkit-* ids and canonical paths', async () => {
+  it('suppresses unsupported builtin skills when the workspace has no project evidence', async () => {
     const model = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
-    const skills = buildWorkspaceOperationalSkills({ workspacePath, model });
+    const plan = buildWorkspaceOperationalSkillsPlan({ workspacePath, model });
 
-    expect(skills).toHaveLength(BUILTIN_OPERATIONAL_SKILL_IDS.length);
-    for (const skill of skills) {
-      expect(skill.skillId).toMatch(/^workspai-/);
-      expect(skill.canonicalPath).toBe(`.workspai/skills/${skill.skillId}.md`);
-      expect(skill.markdown).toContain(`name: ${skill.skillId}`);
-      expect(skill.markdown).toContain('## Answer contract');
-    }
+    expect(plan.skills.map((skill) => skill.skillId)).toEqual(['workspai-release-readiness']);
+    expect(plan.decisions).toHaveLength(5);
+    expect(plan.decisions.filter((decision) => decision.status === 'suppressed')).toHaveLength(4);
+    expect(
+      plan.decisions.find((decision) => decision.skillId === 'workspai-diagnose-api-failure')
+        ?.reasons
+    ).toContain('No authoritative workspace signal proves this capability is present.');
   });
 
   it('writes skills and index on agent-sync path', async () => {
     const model = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
-    const skills = buildWorkspaceOperationalSkills({ workspacePath, model });
+    const plan = buildWorkspaceOperationalSkillsPlan({ workspacePath, model });
     const result = await writeWorkspaceOperationalSkills({
       workspacePath,
-      skills,
+      skills: plan.skills,
+      decisions: plan.decisions,
       generatedAt: new Date().toISOString(),
       write: true,
     });
 
     expect(result.writtenPaths).toContain(WORKSPACE_SKILLS_INDEX_PATH);
-    for (const skill of skills) {
+    for (const skill of plan.skills) {
       expect(result.writtenPaths).toContain(skill.canonicalPath);
       const absolute = path.join(workspacePath, skill.canonicalPath);
       expect(await fsExtra.pathExists(absolute)).toBe(true);
@@ -60,7 +61,8 @@ describe('workspace operational skills (Phase 4.A)', () => {
 
     const index = await fsExtra.readJson(path.join(workspacePath, WORKSPACE_SKILLS_INDEX_PATH));
     expect(index.schemaVersion).toBe(WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION);
-    expect(index.skills).toHaveLength(BUILTIN_OPERATIONAL_SKILL_IDS.length);
+    expect(index.skills).toHaveLength(1);
+    expect(index.selection).toMatchObject({ generatedCount: 1, suppressedCount: 4 });
   });
 
   it('produces deterministic skill hashes for identical inputs (4.24)', async () => {
@@ -88,7 +90,7 @@ describe('workspace operational skills (Phase 4.A)', () => {
           name: 'api',
           runtime: 'python',
           commands: { supported: ['test'] },
-          importantFiles: ['pyproject.toml'],
+          importantFiles: ['pyproject.toml', 'src/utilities/openapi.py'],
         },
       ],
     } as unknown as typeof base;
@@ -107,6 +109,112 @@ describe('workspace operational skills (Phase 4.A)', () => {
     expect(
       skills.find((skill) => skill.skillId === 'workspai-node-runtime-validation')?.scopedProjects
     ).toEqual(['web']);
+    expect(ids).not.toContain('workspai-diagnose-api-failure');
+    expect(ids).not.toContain('workspai-safe-schema-migration');
+    expect(ids).not.toContain('workspai-rename-contract');
+    expect(
+      skills.find((skill) => skill.skillId === 'workspai-dependency-upgrade')?.markdown
+    ).toContain('artifact:pyproject.toml');
+  });
+
+  it('materializes specialized API, schema, and contract skills only from matching evidence', async () => {
+    const base = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
+    const model = {
+      ...base,
+      projects: [
+        {
+          name: 'orders',
+          runtime: 'node',
+          runtimeCandidates: ['node'],
+          framework: 'nestjs',
+          confidence: 'high',
+          commands: { supported: ['build', 'test'] },
+          importantFiles: ['package.json', 'openapi.yaml', 'prisma/schema.prisma'],
+        },
+      ],
+    } as unknown as typeof base;
+    const contract = {
+      projects: [
+        {
+          slug: 'orders',
+          ports: [{ name: 'http', port: 3000, protocol: 'http' }],
+          contracts: {
+            owns: ['order-v1'],
+            publishes: ['order.created'],
+            consumes: [],
+            apis: [{ name: 'orders', basePath: '/orders' }],
+          },
+        },
+      ],
+    } as unknown as NonNullable<
+      Parameters<typeof buildWorkspaceOperationalSkillsPlan>[0]['contract']
+    >;
+
+    const plan = buildWorkspaceOperationalSkillsPlan({ workspacePath, model, contract });
+    const ids = plan.skills.map((skill) => skill.skillId);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'workspai-diagnose-api-failure',
+        'workspai-safe-schema-migration',
+        'workspai-dependency-upgrade',
+        'workspai-rename-contract',
+      ])
+    );
+    const apiSkill = plan.skills.find((skill) => skill.skillId === 'workspai-diagnose-api-failure');
+    expect(apiSkill?.scopedProjects).toEqual(['orders']);
+    expect(apiSkill?.markdown).toContain('contract:api:orders:/orders');
+    expect(apiSkill?.markdown).toContain('Registered lifecycle commands: `build`, `test`.');
+    expect(
+      plan.decisions.find((decision) => decision.skillId === 'workspai-safe-schema-migration')
+    ).toMatchObject({ status: 'generated', confidence: 'high', scopedProjects: ['orders'] });
+  });
+
+  it('derives every runtime skill and polyglot validation from one composite project', async () => {
+    const base = await buildWorkspaceModel({ workspacePath, includeEvidence: false });
+    const model = {
+      ...base,
+      projects: [
+        {
+          name: 'runtime-platform',
+          runtime: 'rust',
+          runtimeCandidates: ['rust', 'node', 'deno'],
+          commands: { supported: ['test'] },
+          importantFiles: ['Cargo.toml', 'deno.json'],
+        },
+      ],
+    } as unknown as typeof base;
+
+    const skills = buildWorkspaceOperationalSkills({ workspacePath, model });
+    const ids = skills.map((skill) => skill.skillId);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'workspai-rust-runtime-validation',
+        'workspai-node-runtime-validation',
+        'workspai-deno-runtime-validation',
+        'workspai-polyglot-change-validation',
+      ])
+    );
+    expect(
+      skills.find((skill) => skill.skillId === 'workspai-deno-runtime-validation')?.scopedProjects
+    ).toEqual(['runtime-platform']);
+    expect(
+      skills.find((skill) => skill.skillId === 'workspai-deno-runtime-validation')?.markdown
+    ).toContain(
+      'for a composite secondary boundary, inspect its manifest and Graph proofs instead of assuming the primary adapter covers it'
+    );
+    const polyglotDecision = buildWorkspaceOperationalSkillsPlan({
+      workspacePath,
+      model,
+    }).decisions.find((decision) => decision.skillId === 'workspai-polyglot-change-validation');
+    expect(polyglotDecision).toMatchObject({
+      status: 'generated',
+      confidence: 'high',
+      reasons: ['The canonical workspace model directly derived this capability.'],
+      scopedProjects: ['runtime-platform'],
+    });
+    expect(polyglotDecision?.signals).toContain(
+      'model:project:runtime-platform:workspai-polyglot-change-validation'
+    );
   });
 
   it('reconciles only stale Workspai-generated skills and preserves authored files', async () => {

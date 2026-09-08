@@ -78,6 +78,11 @@ describe('Runtime Adapters', () => {
       const run = vi.fn().mockResolvedValue(0);
       const adapter = new GoRuntimeAdapter(run);
       vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      vi.spyOn(fs, 'readFileSync').mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const normalized = normalizePath(String(p));
+        if (normalized.endsWith('/Makefile')) return '.PHONY: run\nrun:\n\tgo run ./cmd/server\n';
+        return '';
+      });
 
       const result = await adapter.runDev('/tmp/project');
 
@@ -85,15 +90,16 @@ describe('Runtime Adapters', () => {
       expect(run).toHaveBeenCalledWith('make', ['run'], '/tmp/project');
     });
 
-    it('falls back to go run when Makefile is missing', async () => {
+    it('refuses to guess a Go run target when no runnable package is present', async () => {
       const run = vi.fn().mockResolvedValue(0);
       const adapter = new GoRuntimeAdapter(run);
       vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
       const result = await adapter.runDev('/tmp/project');
 
-      expect(result.exitCode).toBe(0);
-      expect(run).toHaveBeenCalledWith('go', ['run', './.'], '/tmp/project');
+      expect(result.exitCode).toBe(1);
+      expect(result.message).toContain('No unambiguous Go run target');
+      expect(run).not.toHaveBeenCalledWith('go', expect.arrayContaining(['run']), '/tmp/project');
     });
 
     it('uses native Go commands instead of Make on Windows', async () => {
@@ -101,13 +107,18 @@ describe('Runtime Adapters', () => {
       const run = vi.fn().mockResolvedValue(0);
       const adapter = new GoRuntimeAdapter(run);
       vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      vi.spyOn(fs, 'readFileSync').mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const normalized = normalizePath(String(p));
+        if (normalized.endsWith('/main.go')) return 'package main\nfunc main() {}\n';
+        return '';
+      });
 
       await adapter.runDev('/tmp/project');
       await adapter.runLint('/tmp/project');
       await adapter.runFormat('/tmp/project');
 
       expect(run).not.toHaveBeenCalledWith('make', expect.any(Array), '/tmp/project');
-      expect(run).toHaveBeenCalledWith('go', ['run', './main.go'], '/tmp/project');
+      expect(run).toHaveBeenCalledWith('go', ['run', './.'], '/tmp/project');
       expect(run).toHaveBeenCalledWith('golangci-lint', ['run', './...'], '/tmp/project');
       expect(run).toHaveBeenCalledWith('go', ['fmt', './...'], '/tmp/project');
     });
@@ -120,6 +131,11 @@ describe('Runtime Adapters', () => {
         return (
           normalized.endsWith('/tmp/project/cmd') || normalized.endsWith('/cmd/server/main.go')
         );
+      });
+      vi.spyOn(fs, 'readFileSync').mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const normalized = normalizePath(String(p));
+        if (normalized.endsWith('/cmd/server/main.go')) return 'package main\nfunc main() {}\n';
+        return '';
       });
       vi.spyOn(fs, 'readdirSync').mockImplementation((p: fs.PathLike, options?: unknown) => {
         const normalized = normalizePath(String(p));
@@ -181,7 +197,10 @@ describe('Runtime Adapters', () => {
     it('runs test/build/start commands via go adapter branches', async () => {
       const run = vi.fn().mockResolvedValue(0);
       const adapter = new GoRuntimeAdapter(run);
-      vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+      vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) =>
+        normalizePath(String(p)).endsWith('/main.go')
+      );
+      vi.spyOn(fs, 'readFileSync').mockReturnValue('package main\nfunc main() {}\n');
 
       await adapter.runTest('/tmp/project');
       await adapter.runBuild('/tmp/project');
@@ -1398,6 +1417,40 @@ describe('Runtime Adapters', () => {
 
       expect(result.exitCode).toBe(0);
       expect(run).toHaveBeenCalledWith('yarn', ['run', 'build'], '/tmp/node-project');
+    });
+
+    it('returns an actionable native command when a lifecycle script fails silently', async () => {
+      const run = vi.fn().mockResolvedValue(1);
+      const adapter = new NodeRuntimeAdapter(run);
+      mockNodePackageScripts('/tmp/node-project', { build: 'next build' }, 'package-lock.json');
+
+      const result = await adapter.runBuild('/tmp/node-project');
+
+      expect(result).toMatchObject({
+        exitCode: 1,
+        message: expect.stringContaining('npm run build'),
+      });
+      expect(result.message).toContain('/tmp/node-project');
+    });
+
+    it('uses Bun for a Bun-locked package script and restores its cache environment', async () => {
+      process.env.RAPIDKIT_DEP_SHARING_MODE = 'shared-runtime-caches';
+      process.env.RAPIDKIT_WORKSPACE_PATH = '/tmp/workspace';
+      let seenCache = '';
+      const run = vi.fn().mockImplementation(async (command: string) => {
+        expect(command).toBe('bun');
+        seenCache = process.env.BUN_INSTALL_CACHE_DIR || '';
+        return 0;
+      });
+      const adapter = new NodeRuntimeAdapter(run);
+      mockNodePackageScripts('/tmp/node-project', { test: 'bun test' }, 'bun.lock');
+
+      const result = await adapter.runTest('/tmp/node-project');
+
+      expect(result.exitCode).toBe(0);
+      expect(run).toHaveBeenCalledWith('bun', ['run', 'test'], '/tmp/node-project');
+      expect(normalizePath(seenCache)).toContain('/tmp/workspace/.workspai/cache/node/bun-cache');
+      expect(process.env.BUN_INSTALL_CACHE_DIR).toBeUndefined();
     });
 
     it('uses workspace-shared node cache with prefer-offline in shared modes', async () => {

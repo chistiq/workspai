@@ -45,9 +45,32 @@ describe('workspace mcp serve (4.19)', () => {
         'searchWorkspaceGraph',
         'getWorkspaceGraphEvidence',
         'findWorkspaceGraphPath',
+        'listProofCarryingChanges',
+        'getProofCarryingChange',
+        'validateProofCarryingChange',
       ])
     );
     expect(names).not.toContain('refreshWorkspaceIntelligence');
+  });
+
+  it('exposes proof-carrying changes through read-only contract tools', async () => {
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'mcp-pcc-test',
+    });
+
+    await expect(
+      invokeMcpToolForTest(workspacePath, 'listProofCarryingChanges')
+    ).resolves.toMatchObject({
+      schemaVersion: 'workspai.proof-carrying-change-list.v1',
+      workspace: { name: 'mcp-pcc-test' },
+      changes: [],
+      summary: { total: 0, invalid: 0 },
+    });
+    await expect(
+      invokeMcpToolForTest(workspacePath, 'getProofCarryingChange', {
+        changeId: 'change-missing1',
+      })
+    ).rejects.toThrow(/missing or unsupported/i);
   });
 
   it('serves the same contract-validated evaluation artifact used by IDE dashboards', async () => {
@@ -275,6 +298,14 @@ describe('workspace mcp blockers aggregation', () => {
     const requests = [
       '',
       '{invalid-json',
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'discover',
+        method: 'server/discover',
+        params: {
+          _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' },
+        },
+      }),
       JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
       JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
       JSON.stringify({ jsonrpc: '2.0', id: 'tools', method: 'tools/list' }),
@@ -300,6 +331,16 @@ describe('workspace mcp blockers aggregation', () => {
         params: { name: 'unknownTool', arguments: 'invalid' },
       }),
       JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'unsupported/method' }),
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: {
+          name: 'getArtifact',
+          arguments: { relativePath: '../secret.json' },
+          _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' },
+        },
+      }),
     ];
     const stdin = Readable.from(`${requests.join('\n')}\n`);
     const stdinSpy = vi.spyOn(process, 'stdin', 'get').mockReturnValue(stdin as never);
@@ -318,6 +359,14 @@ describe('workspace mcp blockers aggregation', () => {
 
     const responses = writes.map((line) => JSON.parse(line) as Record<string, any>);
     expect(responses[0].error.message).toBe('Invalid JSON-RPC request');
+    expect(responses[0].error.code).toBe(-32700);
+    expect(responses.find((response) => response.id === 'discover')?.result).toMatchObject({
+      resultType: 'complete',
+      supportedVersions: ['2026-07-28'],
+      _meta: {
+        'io.modelcontextprotocol/serverInfo': { name: 'workspai-workspace-mcp' },
+      },
+    });
     expect(responses.find((response) => response.id === 1)?.result.serverInfo.name).toBe(
       'workspai-workspace-mcp'
     );
@@ -325,12 +374,26 @@ describe('workspace mcp blockers aggregation', () => {
       WORKSPACE_MCP_READ_TOOLS.length
     );
     expect(responses.find((response) => response.id === 2)?.result.isError).toBe(false);
+    expect(responses.find((response) => response.id === 2)?.result.structuredContent).toEqual({
+      data: { source: 'rpc' },
+    });
     expect(responses.find((response) => response.id === 3)?.result.isError).toBe(true);
     expect(responses.find((response) => response.id === 4)?.error.message).toBe(
       'Unknown tool: unknownTool'
     );
+    expect(responses.find((response) => response.id === 4)?.error.code).toBe(-32602);
     expect(responses.find((response) => response.id === 5)?.error.message).toBe(
       'Unsupported method: unsupported/method'
     );
+    expect(responses.find((response) => response.id === 5)?.error.code).toBe(-32601);
+    expect(responses.find((response) => response.id === 6)?.result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: { code: 'tool_execution_failed', message: expect.stringMatching(/Unsafe/) },
+      },
+      _meta: {
+        'io.modelcontextprotocol/serverInfo': { name: 'workspai-workspace-mcp' },
+      },
+    });
   });
 });

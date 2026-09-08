@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "workspai.agent-framework-release-admissions.v1",
+  "reviewedAt": "2026-09-06T12:10:00.000Z",
+  "source": {
+    "repository": "chistiq/workspai",
+    "commit": "e69b7d4fa83042c87a035219af1f7468383b3cb8",
+    "workflowRunId": 34032050630,
+    "workflowUrl": "https://github.com/chistiq/workspai/actions/runs/34032050630",
+    "conclusion": "success"
+  },
+  "adapters": [
+    {
+      "id": "microsoft-agent-framework-python",
+      "version": "0.1.0",
+      "manifestSha256": "a9532e2119aa13d0810e00f0b12824e2f1cabeb4aef85c79ab57613ab5c7035a",
+      "frameworkVersion": "1.17.0",
+      "runtime": "python",
+      "platforms": ["linux", "darwin", "win32"]
+    },
+    {
+      "id": "microsoft-agent-framework-dotnet",
+      "version": "0.1.0",
+      "manifestSha256": "57fc941e8616ac657326204fad1f30c86c715c12397e5e69b1583647ddcec87f",
+      "frameworkVersion": "1.20.0",
+      "runtime": "dotnet",
+      "platforms": ["linux", "darwin", "win32"]
+    }
+  ]
+}

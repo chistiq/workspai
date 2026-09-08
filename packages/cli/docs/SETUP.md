@@ -83,7 +83,17 @@ Bridge + Core integration:
 - `RAPIDKIT_CORE_PYTHON_PACKAGE` — override Core install target
 - `RAPIDKIT_BRIDGE_FORCE_VENV=1` — force cached bridge venv
 - `RAPIDKIT_BRIDGE_UPGRADE_PIP=1` — upgrade pip in bridge venv
+- `RAPIDKIT_BRIDGE_LOCK_TIMEOUT_MS` — maximum wait for another process that is
+  preparing the same cached bridge (default: 10 minutes)
+- `RAPIDKIT_BRIDGE_LOCK_STALE_MS` — stale-owner recovery threshold (default: 15
+  minutes and always longer than the configured lock timeout)
 - `XDG_CACHE_HOME` — bridge cache root
+
+Bridge creation is serialized across processes. A cached environment is reused
+only after `rapidkit --version --json` satisfies the executable Core contract;
+an incomplete or unhealthy environment is discarded and rebuilt under the
+same lock. This makes concurrent first-use from terminals, IDEs, agents, and CI
+workers safe without requiring a global Python installation.
 
 Scenario toggles: `RAPIDKIT_SCENARIO_FULL_BOOTSTRAP`, `RAPIDKIT_SCENARIO_WORKSPACE_CREATE`
 

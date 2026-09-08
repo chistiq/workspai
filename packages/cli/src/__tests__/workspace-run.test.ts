@@ -12,7 +12,7 @@ vi.mock('execa', () => {
 });
 
 import { execa } from 'execa';
-import { runWorkspaceStage } from '../workspace-run';
+import { resolveWorkspaceRunStageTimeoutMs, runWorkspaceStage } from '../workspace-run';
 
 async function createProject(workspacePath: string, relPath: string) {
   const projectPath = path.join(workspacePath, relPath);
@@ -63,6 +63,20 @@ describe('workspace-run', { timeout: 30_000 }, () => {
   });
 
   // ─── existing tests ────────────────────────────────────────────────────────
+
+  it('uses runtime-aware cold-init budgets while preserving an explicit override', () => {
+    expect(resolveWorkspaceRunStageTimeoutMs('init', 'python')).toBe(600_000);
+    expect(resolveWorkspaceRunStageTimeoutMs('init', 'dotnet')).toBe(600_000);
+    expect(resolveWorkspaceRunStageTimeoutMs('init', 'node')).toBe(300_000);
+    expect(resolveWorkspaceRunStageTimeoutMs('test', 'python')).toBe(90_000);
+
+    process.env.RAPIDKIT_WORKSPACE_RUN_STAGE_TIMEOUT_MS = '4567';
+    try {
+      expect(resolveWorkspaceRunStageTimeoutMs('init', 'python')).toBe(4567);
+    } finally {
+      delete process.env.RAPIDKIT_WORKSPACE_RUN_STAGE_TIMEOUT_MS;
+    }
+  });
 
   it('runs only affected projects when --affected is enabled', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
@@ -159,16 +173,158 @@ describe('workspace-run', { timeout: 30_000 }, () => {
 
     expect(report.summary.selectedCount).toBe(1);
     expect(report.options).toMatchObject({ planOnly: true, runtime: null });
+    expect(report.projects[0]?.projectName).toBe('linked-sdk');
     expect(report.projects[0]?.runtimeExecutions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ runtime: 'go', command: 'go test ./...', status: 'planned' }),
-        expect.objectContaining({ runtime: 'node', command: 'npm run test', status: 'planned' }),
+        expect.objectContaining({
+          unitId: 'go:go:go.mod',
+          runtime: 'go',
+          command: 'go test ./...',
+          status: 'planned',
+        }),
+        expect.objectContaining({
+          unitId: 'node:node:package.json',
+          runtime: 'node',
+          command: 'npm run test',
+          status: 'planned',
+        }),
       ])
     );
     expect(execaMock).not.toHaveBeenCalled();
 
     await fsExtra.remove(workspacePath);
     await fsExtra.remove(projectPath);
+  });
+
+  it('reports the wrapper command that a single-runtime plan will actually execute', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-plan-'));
+    const projectPath = await createProjectWithoutContext(workspacePath, 'go-api');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'go-api',
+      runtime: 'go',
+      framework: 'gogin',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.test/go-api\n');
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      scope: 'project:go-api',
+      planOnly: true,
+      json: true,
+    });
+
+    expect(report.projects.find((item) => item.selected)?.runtimeExecutions?.[0]).toMatchObject({
+      runtime: 'go',
+      command: 'rapidkit test',
+      status: 'planned',
+    });
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('lets the Go runtime adapter resolve start from source without requiring a stale app binary', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-go-start-'));
+    const projectPath = await createProjectWithoutContext(workspacePath, 'go-api');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'go-api',
+      runtime: 'go',
+      framework: 'gogin',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.test/go-api\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'cmd', 'server', 'main.go'),
+      'package main\nfunc main() {}\n'
+    );
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    let settleStart:
+      ((value: { exitCode: number; stdout: string; stderr: string }) => void) | null = null;
+    const startProcess = new Promise<{ exitCode: number; stdout: string; stderr: string }>(
+      (resolve) => {
+        settleStart = resolve;
+      }
+    ) as Promise<{ exitCode: number; stdout: string; stderr: string }> & {
+      kill: ReturnType<typeof vi.fn>;
+    };
+    startProcess.kill = vi.fn(() => {
+      settleStart?.({ exitCode: 143, stdout: 'listening', stderr: '' });
+      return true;
+    });
+    execaMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'which')
+        return Promise.resolve({ exitCode: 0, stdout: '/usr/bin/go', stderr: '' });
+      if (args.includes('start')) return startProcess;
+      return Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' });
+    });
+    process.env.WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS = '10';
+
+    try {
+      const report = await runWorkspaceStage({
+        workspacePath,
+        stage: 'start',
+        scope: 'project:go-api',
+        enforceGates: false,
+        json: true,
+      });
+
+      expect(report.summary).toMatchObject({ passed: 1, failed: 0, exitCode: 0 });
+      expect(report.projects.find((item) => item.selected)).toMatchObject({
+        executionCommand: 'rapidkit start',
+        status: 'passed',
+      });
+      expect(startProcess.kill).toHaveBeenCalledTimes(1);
+      expect(execaMock).not.toHaveBeenCalledWith('which', ['./app'], expect.anything());
+    } finally {
+      delete process.env.WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS;
+      await fsExtra.remove(workspacePath);
+    }
+  });
+
+  it('assigns nested runtime units to the most specific selected project boundary', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-overlap-run-model-'));
+    const rootProject = path.join(workspacePath, 'repo');
+    const childProject = path.join(rootProject, 'services', 'api');
+    await fsExtra.outputJson(path.join(rootProject, '.workspai', 'project.json'), {
+      name: 'repo',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(rootProject, 'package.json'), {
+      scripts: { build: 'node root.js' },
+    });
+    await fsExtra.outputJson(path.join(childProject, '.workspai', 'project.json'), {
+      name: 'api',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(childProject, 'package.json'), {
+      scripts: { build: 'node api.js' },
+    });
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json'),
+      {
+        projects: [
+          { name: 'repo', path: 'repo' },
+          { name: 'api', path: 'repo/services/api' },
+        ],
+      }
+    );
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      planOnly: true,
+      json: true,
+    });
+    const rootResult = report.projects.find((project) => project.projectName === 'repo');
+    const childResult = report.projects.find((project) => project.projectName === 'api');
+
+    expect(rootResult?.runtimeExecutions?.map((execution) => execution.manifest)).toEqual([
+      'package.json',
+    ]);
+    expect(childResult?.runtimeExecutions?.map((execution) => execution.manifest)).toEqual([
+      'package.json',
+    ]);
+
+    await fsExtra.remove(workspacePath);
   });
 
   it('executes every manifest-backed runtime unit in a polyglot project', async () => {
@@ -182,7 +338,7 @@ describe('workspace-run', { timeout: 30_000 }, () => {
       scripts: { build: 'node -e "process.exit(0)"' },
     });
     await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
-    noGateMock();
+    const execaMock = noGateMock();
 
     const report = await runWorkspaceStage({
       workspacePath,
@@ -198,6 +354,152 @@ describe('workspace-run', { timeout: 30_000 }, () => {
         expect.objectContaining({ runtime: 'node', command: 'npm run build', status: 'passed' }),
       ])
     );
+    expect(execaMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(['go', ['build', './...']]),
+        expect.arrayContaining(['npm', ['run', 'build']]),
+      ])
+    );
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('keeps a single nested runtime unit at its owning directory', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-nested-agent-run-'));
+    const projectPath = path.join(workspacePath, 'agent-app');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'agent-app',
+      runtime: 'python',
+      framework: 'microsoft-agent-framework',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'main.py'),
+      'print("ok")\n'
+    );
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      planOnly: true,
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.runtimeExecutions).toEqual([
+      expect.objectContaining({
+        root: 'agents/primary',
+        command: `${process.platform === 'win32' ? 'python' : 'python3'} -m compileall .`,
+      }),
+    ]);
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('propagates a runtime-unit timeout category to the project result', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-polyglot-timeout-'));
+    const projectPath = path.join(workspacePath, 'sdk');
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      scripts: { build: 'node -e "process.exit(0)"' },
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (cmd: string, args: string[]) => {
+      if ((cmd === 'go' && args.includes('build')) || cmd.includes('go build')) {
+        return { exitCode: null, timedOut: true, stdout: '', stderr: '' };
+      }
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      enforceGates: false,
+      json: true,
+    });
+    const failedUnit = report.projects[0]?.runtimeExecutions?.find(
+      (execution) => execution.status === 'failed'
+    );
+
+    expect(failedUnit?.errorCategory).toBe('timeout');
+    expect(failedUnit?.failureDiagnostic).toMatchObject({ timedOut: true, category: 'timeout' });
+    expect(report.projects[0]?.errorCategory).toBe('timeout');
+    expect(report.projects[0]?.failureDiagnostic).toMatchObject({
+      timedOut: true,
+      category: 'timeout',
+    });
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('reports an empty Go test module as skipped instead of a product failure', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-go-tools-test-'));
+    const projectPath = path.join(workspacePath, 'tools');
+    await fsExtra.outputFile(path.join(projectPath, 'go.mod'), 'module example.test/tools\n');
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (cmd: string, args: string[]) => {
+      if (cmd === 'go' && args[0] === 'test') {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: 'go: warning: "./..." matched no packages\nno packages to test',
+        };
+      }
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      runtime: 'go',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.runtimeExecutions?.[0]).toMatchObject({
+      runtime: 'go',
+      status: 'skipped',
+      exitCode: 0,
+    });
+    expect(report.projects[0]).toMatchObject({ status: 'skipped', exitCode: 0 });
+    expect(report.summary).toMatchObject({ passed: 0, failed: 0, skipped: 1, exitCode: 0 });
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('separates a tool-reported network timeout from the Workspai process timeout', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-wrapper-timeout-'));
+    const projectPath = path.join(workspacePath, 'service');
+    await fsExtra.outputFile(path.join(projectPath, 'build.gradle'), 'plugins { id "java" }\n');
+    await fsExtra.outputFile(path.join(projectPath, 'gradlew'), '#!/bin/sh\n');
+    await fsExtra.chmod(path.join(projectPath, 'gradlew'), 0o755);
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (cmd: string, args: string[]) => {
+      if (cmd === './gradlew' && args[0] === 'test') {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr:
+            'Downloading distribution failed: java.net.SocketTimeoutException: Read timed out',
+        };
+      }
+      return { exitCode: 0, stdout: 'ok', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      runtime: 'java',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.failureDiagnostic).toMatchObject({
+      category: 'timeout',
+      timedOut: false,
+    });
 
     await fsExtra.remove(workspacePath);
   });
@@ -1039,6 +1341,49 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(workspacePath);
   });
 
+  it('preserves the actionable root cause of a noisy build failure', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
+    await createProject(workspacePath, 'web');
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args.includes('build')) {
+        return {
+          exitCode: 1,
+          stdout: [
+            'Creating an optimized production build ...',
+            'Turbopack build encountered 2 warnings:',
+            'Warning: Error while requesting resource',
+            'Build error occurred',
+            'Error: Turbopack build failed with 2 errors:',
+            'Failed to fetch Geist from Google Fonts.',
+            '12 verbose cwd /workspace/web',
+            '13 verbose os Linux',
+            '14 verbose node v24.0.0',
+            '15 verbose npm v11.0.0',
+            '16 verbose exit 1',
+            '17 verbose code 1',
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      return { exitCode: 0, stdout: '{}', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.projects[0]?.errorCategory).toBe('dependency');
+    expect(report.projects[0]?.reason).toContain('Failed to fetch Geist');
+    expect(report.projects[0]?.failureDiagnostic?.outputExcerpt).toContain(
+      'Failed to fetch Geist from Google Fonts.'
+    );
+    await fsExtra.remove(workspacePath);
+  });
+
   it('runs python wrapper test when pytest exists only in the project venv', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
     const projectPath = path.join(workspacePath, 'atlas-api');
@@ -1124,6 +1469,16 @@ describe('workspace-run', { timeout: 30_000 }, () => {
 
     expect(dotnetReport?.status).toBe('failed');
     expect(nodeReport?.status).toBe('passed');
+    expect(dotnetReport?.runtimeExecutions?.[0]).toMatchObject({
+      command: 'rapidkit init',
+      status: 'failed',
+      exitCode: 127,
+    });
+    expect(nodeReport?.runtimeExecutions?.[0]).toMatchObject({
+      command: 'rapidkit init',
+      status: 'passed',
+      exitCode: 0,
+    });
     expect(report.summary.failed).toBe(1);
     expect(report.summary.passed).toBe(1);
     expect(report.summary.skipped).toBe(0);

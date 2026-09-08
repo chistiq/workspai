@@ -14,11 +14,16 @@ import {
   restoreArchivedProject,
   restoreWorkspaceSnapshot,
 } from '../workspace-snapshot.js';
+import { writeProjectWorkspaceLink } from '../project-workspace-link.js';
 
 describe('workspace-snapshot lifecycle', () => {
   let workspacePath: string;
+  let originalCwd: string;
+  let externalProjectPath: string | null;
 
   beforeEach(async () => {
+    originalCwd = process.cwd();
+    externalProjectPath = null;
     workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rapidkit-snapshot-ws-'));
     await fsExtra.writeFile(path.join(workspacePath, '.rapidkit-workspace'), '{}');
     await fsExtra.outputJson(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
@@ -36,9 +41,73 @@ describe('workspace-snapshot lifecycle', () => {
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
+    if (externalProjectPath && (await fsExtra.pathExists(externalProjectPath))) {
+      await fsExtra.remove(externalProjectPath);
+    }
     if (workspacePath && (await fsExtra.pathExists(workspacePath))) {
       await fsExtra.remove(workspacePath);
     }
+  });
+
+  it('creates, lists, and inspects snapshots from an adopted external project', async () => {
+    externalProjectPath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'rapidkit-snapshot-adopted-')
+    );
+    await fsExtra.outputFile(path.join(workspacePath, '.workspai-workspace'), 'workspace\n');
+    await fsExtra.outputJson(path.join(externalProjectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'external-service',
+      runtime: 'go',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'snapshot-workspace', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'external-service',
+          relativePath: 'external/external-service',
+          externalPath: externalProjectPath,
+          relationship: 'adopted',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: [],
+            env: [],
+          },
+        },
+      ],
+    });
+    await writeProjectWorkspaceLink({
+      workspacePath,
+      projectPath: externalProjectPath,
+      projectName: 'external-service',
+      relationship: 'adopted',
+    });
+    process.chdir(externalProjectPath);
+
+    const created = await createWorkspaceSnapshot({ name: 'from-adopted-project' });
+    expect(created.manifest.workspaceName).toBe('snapshot-workspace');
+    expect(created.manifest.projects).toContainEqual({
+      name: 'external-service',
+      relativePath: 'external/external-service',
+    });
+    expect(
+      await fsExtra.pathExists(
+        path.join(created.snapshotPath, 'files', '.workspai', 'workspace.contract.json')
+      )
+    ).toBe(true);
+    expect((await listWorkspaceSnapshots()).map((snapshot) => snapshot.name)).toContain(
+      'from-adopted-project'
+    );
+    await expect(inspectWorkspaceSnapshot({ name: 'from-adopted-project' })).resolves.toMatchObject(
+      { manifest: { name: 'from-adopted-project' } }
+    );
   });
 
   it('creates and lists metadata snapshots without copying project source files', async () => {
@@ -228,6 +297,84 @@ describe('workspace-snapshot lifecycle', () => {
     await expect(
       restoreArchivedProject({ workspacePath, archive: 'missing-archive', dryRun: true })
     ).rejects.toThrow('Archived project not found');
+  });
+
+  it('resolves registered names independently of their directory basename for both dry-runs', async () => {
+    const projectPath = path.join(workspacePath, 'orders');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai/imported-projects.json'), {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      projects: [
+        {
+          name: 'service-alias',
+          confidence: 'high',
+          path: projectPath,
+          relativePath: 'orders',
+          stack: 'node',
+          source: 'adopted-local',
+          relationship: 'adopted',
+          importedAt: new Date().toISOString(),
+        },
+      ],
+    });
+    for (const operation of [archiveWorkspaceProject, deleteWorkspaceProject]) {
+      expect(
+        await operation({ workspacePath, project: 'service-alias', dryRun: true })
+      ).toMatchObject({ projectPath, dryRun: true });
+    }
+    expect(await fsExtra.pathExists(path.join(projectPath, 'package.json'))).toBe(true);
+    const registryPath = path.join(workspacePath, '.workspai/imported-projects.json');
+    const registry = await fsExtra.readJson(registryPath);
+    await fsExtra.ensureDir(path.join(workspacePath, 'second-service'));
+    registry.projects.push({
+      ...registry.projects[0],
+      path: path.join(workspacePath, 'second-service'),
+      relativePath: 'second-service',
+    });
+    await fsExtra.writeJson(registryPath, registry);
+    await expect(
+      archiveWorkspaceProject({ workspacePath, project: 'service-alias', dryRun: true })
+    ).rejects.toThrow('ambiguous');
+  });
+
+  it('rejects a directory symlink escaping the workspace even for a dry-run', async () => {
+    const external = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'lifecycle-external-'));
+    try {
+      await fsExtra.ensureSymlink(external, path.join(workspacePath, 'escape'), 'junction');
+      await expect(
+        archiveWorkspaceProject({ workspacePath, project: 'escape', dryRun: true })
+      ).rejects.toThrow('not a directory contained by the workspace');
+    } finally {
+      await fsExtra.remove(external);
+    }
+  });
+
+  it('explains the lifecycle boundary for a registered external project', async () => {
+    const externalPath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-linked-project-'));
+    try {
+      await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'imported-projects.json'), {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        projects: [
+          {
+            name: 'linked-sdk',
+            path: externalPath,
+            relativePath: 'external/linked-sdk',
+            stack: 'unknown',
+            confidence: 'low',
+            source: 'adopted-local',
+            relationship: 'adopted',
+            importedAt: new Date().toISOString(),
+          },
+        ],
+      });
+
+      await expect(
+        archiveWorkspaceProject({ workspacePath, project: 'linked-sdk', dryRun: true })
+      ).rejects.toThrow(/linked external project.*Only managed projects/s);
+    } finally {
+      await fsExtra.remove(externalPath);
+    }
   });
 
   it('refuses reserved archive manifest collisions without moving project data', async () => {

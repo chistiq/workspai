@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/decision-transaction.v1.json",
+  "title": "Workspai Decision Transaction Projection",
+  "type": "object",
+  "required": ["schemaVersion", "id", "purpose", "createdAt", "updatedAt", "state", "generation", "eventCount", "eventHeadDigest", "intent", "requiredCriteria", "scope", "evidence", "plans", "authorization", "effects", "verifications", "blockers"],
+  "properties": {
+    "schemaVersion": { "const": "workspai.decision-transaction.v1" },
+    "id": { "type": "string", "pattern": "^change-[a-z0-9][a-z0-9-]{7,95}$" },
+    "purpose": { "const": "proof-carrying-change" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "state": { "enum": ["draft", "scoped", "evidence-ready", "authorized", "executing", "verifying", "awaiting-human", "blocked", "committed", "rejected", "aborted", "superseded"] },
+    "generation": { "type": "integer", "minimum": 1 },
+    "eventCount": { "type": "integer", "minimum": 1 },
+    "eventHeadDigest": { "$ref": "decision-event.v1.json#/$defs/sha256" },
+    "intent": { "$ref": "decision-event.v1.json#/$defs/artifactReference" },
+    "requiredCriteria": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "scope": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/scope" }, { "type": "null" }] },
+    "evidence": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/artifactReference" } },
+    "plans": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/artifactReference" } },
+    "authorization": { "oneOf": [{ "$ref": "decision-event.v1.json#/$defs/authorization" }, { "type": "null" }] },
+    "effects": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/effectReceipt" } },
+    "verifications": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/verificationReceipt" } },
+    "blockers": { "type": "array", "items": { "$ref": "decision-event.v1.json#/$defs/blocker" } },
+    "terminalReason": { "type": "string" }
+  },
+  "additionalProperties": false
+}

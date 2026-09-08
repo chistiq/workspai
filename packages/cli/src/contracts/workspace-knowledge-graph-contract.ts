@@ -138,6 +138,23 @@ export type WorkspaceKnowledgeProviderRun = {
   discoveredRelations: number;
   proofCount: number;
   diagnostics: string[];
+  /**
+   * Input-surface coverage is separate from provider execution success. A
+   * provider can execute successfully over an intentionally bounded semantic
+   * window without claiming exhaustive project coverage.
+   */
+  inputCoverage?: WorkspaceKnowledgeProviderInputCoverage[];
+};
+
+export type WorkspaceKnowledgeProviderInputCoverage = {
+  scope: 'workspace' | 'project';
+  scopeId: string;
+  tier: 'complete-inventory' | 'adaptive-semantic' | 'adaptive-deep' | 'derived';
+  status: 'complete' | 'bounded' | 'not-applicable';
+  eligibleFiles: number;
+  suppliedFiles: number;
+  fileBudget?: number;
+  selectionStrategy: 'complete' | 'component-language-round-robin-v1' | 'derived';
 };
 
 export type WorkspaceKnowledgeDiagnostic = {
@@ -165,6 +182,20 @@ export type WorkspaceKnowledgeGraphInputScope = {
   fileCount: number;
   fileLimit: number;
   truncated: boolean;
+  /** Exact eligible file population before the emergency safety bound. */
+  eligibleFileCount?: number;
+  /** False only when a non-Git fallback stopped at the emergency bound. */
+  eligibleFileCountExact?: boolean;
+  inventoryMode?: 'complete' | 'emergency-bounded';
+  inventoryStrategy?: 'git-index-worktree-v1' | 'filesystem-bfs-v1';
+  selection?: {
+    strategy: 'component-language-round-robin-v1';
+    semanticFileCount: number;
+    semanticFileBudget: number;
+    deepFileCount: number;
+    deepFileBudget: number;
+    sourceExtractionFileBudget: number;
+  };
 };
 
 export type WorkspaceKnowledgeGraphInputFingerprint = {
@@ -187,9 +218,9 @@ export type WorkspaceKnowledgeGraph = {
     /** SHA-256 of the model's stable structural projection, not its raw file bytes. */
     hash: string;
     /**
-     * Content fingerprint of the exact bounded filesystem inventories consumed
-     * by graph providers. Older v1 artifacts can omit it, but are never eligible
-     * for the persisted retrieval fast path.
+     * Content fingerprint of the complete eligible path inventory, subject only
+     * to an explicitly reported emergency safety boundary. Older v1 artifacts
+     * can omit it, but are never eligible for the persisted retrieval fast path.
      */
     inputs?: WorkspaceKnowledgeGraphInputFingerprint;
   };
@@ -211,9 +242,27 @@ export type WorkspaceKnowledgeGraph = {
     unknownCount: number;
     bindingCoverage?: {
       apiImplementation: WorkspaceKnowledgeBindingCoverage;
+      apiRuntimeRegistration: WorkspaceKnowledgeBindingCoverage;
       projectTests: WorkspaceKnowledgeBindingCoverage;
       projectDeployment: WorkspaceKnowledgeBindingCoverage;
       projectOwnership: WorkspaceKnowledgeBindingCoverage;
+    };
+    completeness?: {
+      status: 'complete' | 'bounded';
+      inventory: {
+        scopeCount: number;
+        completeScopes: number;
+        boundedScopes: number;
+        eligibleFiles: number;
+        indexedFiles: number;
+        eligibleFileCountExact: boolean;
+      };
+      providers: {
+        complete: number;
+        bounded: number;
+        notApplicable: number;
+        failed: number;
+      };
     };
     portable: boolean;
     secretValuesEmitted: false;

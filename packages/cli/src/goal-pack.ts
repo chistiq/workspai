@@ -62,6 +62,73 @@ const GOAL_COVERAGE_RUNTIMES = new Set<Exclude<ProjectCoverageRuntime, 'unknown'
   'c',
   'cpp',
 ]);
+
+function scopeFocusedRetrievalQueries(
+  statement: string,
+  projectNames: readonly string[]
+): string[] {
+  const tokens = statement.match(/[A-Za-z0-9][A-Za-z0-9+#.%_-]*/g) ?? [];
+  const normalizedProjectNames = new Set(
+    projectNames
+      .map((name) => name.toLocaleLowerCase('en-US').replace(/[^a-z0-9]/g, ''))
+      .filter(Boolean)
+  );
+  const retained: string[] = [];
+  for (let index = 0; index < tokens.length;) {
+    let matchedLength = 0;
+    for (let length = Math.min(4, tokens.length - index); length >= 1; length -= 1) {
+      const candidate = tokens
+        .slice(index, index + length)
+        .join('')
+        .toLocaleLowerCase('en-US')
+        .replace(/[^a-z0-9]/g, '');
+      if (normalizedProjectNames.has(candidate)) {
+        matchedLength = length;
+        break;
+      }
+    }
+    if (matchedLength > 0) {
+      index += matchedLength;
+      continue;
+    }
+    retained.push(tokens[index]);
+    index += 1;
+  }
+  const explicitConstraintIndex = retained.findIndex((token, index) => {
+    const current = token.toLocaleLowerCase('en-US');
+    const next = retained[index + 1]?.toLocaleLowerCase('en-US');
+    return (
+      (current === 'without' &&
+        ['breaking', 'changing', 'modifying', 'removing'].includes(next ?? '')) ||
+      (current === 'while' && ['keeping', 'maintaining', 'preserving'].includes(next ?? ''))
+    );
+  });
+  const focused =
+    explicitConstraintIndex >= 2 ? retained.slice(0, explicitConstraintIndex) : retained;
+  // Keep the complete statement when scope removal would leave an ambiguous
+  // one-word search. The Goal scope is already immutable; removing its name is
+  // a ranking aid, never a reason to discard the user's actual objective.
+  const primary = focused.length >= 2 ? focused.join(' ') : statement;
+  if (explicitConstraintIndex < 2) return [primary];
+
+  const constraintContext = retained
+    .slice(explicitConstraintIndex)
+    .filter(
+      (token) =>
+        ![
+          'without',
+          'while',
+          'breaking',
+          'changing',
+          'modifying',
+          'removing',
+          'keeping',
+          'maintaining',
+          'preserving',
+        ].includes(token.toLocaleLowerCase('en-US'))
+    );
+  return constraintContext.length > 0 ? [primary, constraintContext.join(' ')] : [primary];
+}
 export type PlanGoalPackOptions = {
   startPath: string;
   intent: string;
@@ -356,6 +423,29 @@ function graphBaselineForScope(
   };
 }
 
+function diversifyGoalRetrievalCandidates(
+  entities: WorkspaceKnowledgeGraph['entities']
+): WorkspaceKnowledgeGraph['entities'] {
+  const byKind = new Map<string, WorkspaceKnowledgeGraph['entities']>();
+  for (const entity of entities) {
+    const candidates = byKind.get(entity.kind) ?? [];
+    candidates.push(entity);
+    byKind.set(entity.kind, candidates);
+  }
+  const diversified: WorkspaceKnowledgeGraph['entities'] = [];
+  for (
+    let offset = 0;
+    [...byKind.values()].some((candidates) => offset < candidates.length);
+    offset += 1
+  ) {
+    for (const candidates of byKind.values()) {
+      const candidate = candidates[offset];
+      if (candidate) diversified.push(candidate);
+    }
+  }
+  return diversified;
+}
+
 async function buildGoalPreflight(input: {
   workspacePath: string;
   projects: WorkspaceModelProject[];
@@ -477,18 +567,58 @@ async function buildGoalPreflight(input: {
     }
   }
 
-  const queries = retrievalQueriesForGoal(input.intent);
-  const queryMatches = queries.map((query) => {
-    const perProject = input.projects.map(
-      (project) =>
+  const baseQueries = retrievalQueriesForGoal(input.intent);
+  const queries = [
+    ...scopeFocusedRetrievalQueries(
+      baseQueries[0],
+      input.projects.map((project) => project.name)
+    ),
+    ...baseQueries.slice(1),
+  ]
+    .filter((query, index, all) => all.indexOf(query) === index)
+    .slice(0, 3);
+  const queryMatches = queries.map((query, queryIndex) => {
+    const retrievalTermCount = query.match(/[A-Za-z0-9][A-Za-z0-9+#.%_-]*/g)?.length ?? 0;
+    const minimumTermMatches = queryIndex === 0 && retrievalTermCount >= 4 ? 2 : 1;
+    const perProject = input.projects.map((project) => {
+      const search = (kind?: string) =>
         searchKnowledgeGraph(input.graph, {
           query,
           projectId: project.name,
-          limit: 20,
+          ...(kind ? { kind } : {}),
+          // Retrieve a wider bounded candidate pool before applying kind
+          // diversity. Otherwise a large authored API can spend the entire
+          // Goal budget on near-identical endpoints and hide source, package,
+          // test, and lifecycle evidence that the agent needs to act safely.
+          limit: 60,
           relationsPerEntity: 0,
-          minimumTermMatches: 2,
-        }).entities
-    );
+          // Long natural-language Goals contain generic outcome words. Requiring
+          // two matches prevents a lone word such as "public" or "improve" from
+          // outranking the causal subject, while short Goals retain one-term
+          // recall and the graph search still applies inverse document frequency.
+          // The primary objective remains precision-biased. Secondary queries
+          // are already bounded causal clauses (for example compatibility
+          // constraints), so one strongly matching entity must remain visible.
+          minimumTermMatches,
+        }).entities;
+      const broad = search();
+      const scopedKinds = [
+        ...new Set(
+          input.graph.entities
+            .filter(
+              (entity) =>
+                entity.projectId === project.name ||
+                (entity.projectId === undefined && entity.identity.scope === 'workspace')
+            )
+            .map((entity) => entity.kind)
+        ),
+      ];
+      const kindBounded = scopedKinds.flatMap((kind) => search(kind).slice(0, 8));
+      const merged = [...broad, ...kindBounded];
+      return merged.filter(
+        (entity, index) => merged.findIndex((candidate) => candidate.id === entity.id) === index
+      );
+    });
     const merged: (typeof input.graph.entities)[number][] = [];
     const seen = new Set<string>();
     for (let offset = 0; perProject.some((entities) => offset < entities.length); offset += 1) {
@@ -499,7 +629,7 @@ async function buildGoalPreflight(input: {
         merged.push(entity);
       }
     }
-    return merged;
+    return diversifyGoalRetrievalCandidates(merged);
   });
   const fallbackKinds: Record<typeof input.intent.category, string[]> = {
     'test-coverage': ['test-suite'],
@@ -633,6 +763,10 @@ function upsertGoalIndex(index: GoalIndex, goal: GoalPack, updatedAt: string): G
     ...(existing?.repairTransactionIds
       ? { repairTransactionIds: existing.repairTransactionIds }
       : {}),
+    ...(existing?.changeTransactionId ? { changeTransactionId: existing.changeTransactionId } : {}),
+    ...(existing?.changeTransactionIds
+      ? { changeTransactionIds: existing.changeTransactionIds }
+      : {}),
     ...(existing?.verificationReceipt ? { verificationReceipt: existing.verificationReceipt } : {}),
   };
   return {
@@ -662,7 +796,10 @@ export async function planGoalPack(options: PlanGoalPackOptions): Promise<PlanGo
     startPath: path.resolve(options.startPath),
     explicitWorkspacePath: options.workspacePath,
     strict: true,
-    requireProjectMembership: true,
+    // An explicit scope is resolved against the canonical Workspace Model and
+    // does not depend on the caller's cwd. This is required by CI, IDE, and MCP
+    // consumers that invoke a project-scoped Goal from outside that project.
+    requireProjectMembership: !options.scope?.trim(),
   });
   if (!resolution) throw new Error('No canonical Workspai workspace could be resolved.');
   const workspacePath = path.resolve(resolution.workspacePath);

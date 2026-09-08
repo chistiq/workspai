@@ -45,10 +45,13 @@ chain still preserves portable entry coverage for every supported host.
 
 Workspai writes a portable entry contract at
 `.workspai/agent-entry.v1.json`, a bounded project lens at
-`.workspai/reports/project-context-agent.json`, and host adapters when project
-grounding is managed.
+`.workspai/reports/project-context-agent.json`, an integrity-bound graph reference,
+project-local `.agents/skills/workspai-*` wrappers, and host adapters when project
+grounding is managed. The wrappers contain no machine-local workspace path and
+resolve their canonical playbook through the project bootstrap contract.
 
-The shared context is intentionally compact. A complete Model or Graph export
+The mandatory project context is intentionally compact. Workspace-wide context,
+the evidence index, and a complete Model or Graph export
 is validated as canonical evidence but is not injected into first-contact
 instructions. Agents retrieve task-specific, proof-backed slices through graph
 search and only open the returned proof paths.
@@ -89,12 +92,22 @@ provider-neutral bootstrap command; each runtime receipt replaces that step in
 `requiredReadOrder` with the resolved host (or `all` for a complete host audit),
 so a consumer is never routed back through the wrong adapter.
 
+The top-level `status` is explicitly scoped by `statusScope: agent-grounding`.
+It must not be interpreted as project setup or release readiness. The
+`readiness` object reports those dimensions separately: agent grounding,
+architecture evidence, project environment, and release. A clean bootstrap can
+therefore be `ready` while release remains `not-verified`, or while previously
+recorded Doctor findings make the project environment `degraded` or `blocked`.
+When live input validation succeeds, the receipt reports Model and Graph
+freshness as `fresh`; fact-level TTL and verify-before-use semantics remain in
+their individual evidence records and do not weaken structural freshness.
+
 The Workspace Model and complete Knowledge Graph are validated by the receipt,
 but are deliberately **not** part of `requiredReadOrder`. They are on-demand
 deep-evidence artifacts: load them only for an explicit full export, offline
 audit, or a task that cannot be answered from the project lens, bounded context,
 and task-scoped Graph query. This keeps first contact bounded on large workspaces.
-The compact Workspace Skills index *is* part of the route: use it to select one
+The compact Workspace Skills index _is_ part of the route: use it to select one
 relevant playbook, rather than loading every Skill or asking the model to infer
 an operational procedure from raw source alone.
 
@@ -154,7 +167,8 @@ stale workspace evidence with an unbounded repository scan.
 | Host                                                     | Project discovery surface                                |
 | -------------------------------------------------------- | -------------------------------------------------------- |
 | Generic and unsupported model-only clients               | `.workspai/PROJECT-GROUNDING.md` plus explicit bootstrap |
-| Codex, Kimi Code, GitHub Copilot, Cursor, Windsurf, Grok | `AGENTS.md`                                              |
+| Codex, Kimi Code, Grok                                  | `AGENTS.md` plus `.agents/skills/workspai-grounding/SKILL.md` |
+| GitHub Copilot, Cursor, Windsurf                        | `AGENTS.md` plus their generated host adapter when available  |
 | Claude Code                                              | `CLAUDE.md` adapter                                      |
 | Gemini CLI                                               | `GEMINI.md` adapter                                      |
 | Qwen Code                                                | `QWEN.md` adapter                                        |
@@ -190,8 +204,9 @@ coverage. It does not replace the file to make a check pass.
 Agent-sync derives operational playbooks from the detected workspace: runtime
 validation is generated per detected runtime, and polyglot, test-evidence, and
 delivery playbooks appear only when their supporting signals exist. The
-canonical inventory remains under `.workspai/skills/`; standard portable
-projections use `skills/<skill-name>/SKILL.md` with YAML frontmatter for hosts
+canonical inventory remains under `.workspai/skills/`; the provider-neutral
+projection uses `.agents/skills/<skill-name>/SKILL.md`, while provider mirrors
+use their documented `skills/<skill-name>/SKILL.md` roots with YAML frontmatter for hosts
 that implement Agent Skills. A host without a documented Skills surface still
 receives its native adapter and the portable canonical-first entry contract.
 Agent-sync reconciles only Skill files marked as Workspai-generated, so a

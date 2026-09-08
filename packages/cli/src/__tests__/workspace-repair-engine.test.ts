@@ -89,6 +89,37 @@ afterEach(async () => {
 });
 
 describe('Workspace Repair Engine', () => {
+  it('keeps workspace-owned repair actions when a linked project target is supplied', async () => {
+    const { workspacePath } = await workspaceFixture();
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-run-last.json'),
+      {
+        schemaVersion: 'workspace-run-evidence-v1',
+        generatedAt: '2026-08-29T12:00:00.000Z',
+        workspacePath,
+        latestStage: 'test',
+        stages: {
+          test: {
+            stage: 'test',
+            generatedAt: '2026-08-29T12:00:00.000Z',
+            workspacePath,
+            projects: [{ project: 'grpc', status: 'failed' }],
+          },
+        },
+      }
+    );
+
+    const planned = await planWorkspaceRepair({
+      workspacePath,
+      cardId: 'workspaceRun',
+      projectName: 'grpc',
+    });
+
+    expect(planned.target.actionIds).toEqual(['workspaceRun.refresh.1']);
+    expect(planned.state).toBe('decision-required');
+    expect(planned.decision?.reason).not.toContain('No governed remediation action matches');
+  });
+
   it('plans and executes one portable causal target for a registered external project', async () => {
     const { workspacePath } = await workspaceFixture();
     const externalProject = await fsExtra.mkdtemp(
@@ -171,6 +202,97 @@ describe('Workspace Repair Engine', () => {
     expect(await fsExtra.readFile(path.join(externalProject, '.env.example'), 'utf8')).toBe(
       'APP_ENV=test\n'
     );
+  });
+
+  it('uses the canonical external project reference for dependency adapter invocations', async () => {
+    const { workspacePath } = await workspaceFixture();
+    const externalProject = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-repair-external-dependency-')
+    );
+    roots.push(externalProject);
+    await fsExtra.writeJson(path.join(externalProject, 'package.json'), {
+      name: 'external-api',
+      scripts: { test: 'node --test', build: 'node --check index.js' },
+    });
+    await fsExtra.writeFile(path.join(externalProject, 'index.js'), 'export const ready = true;\n');
+    await fsExtra.writeJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      projects: [
+        {
+          slug: 'external-api',
+          relativePath: 'external/external-api',
+          externalPath: externalProject,
+          source: 'adopted-local',
+          relationship: 'adopted',
+        },
+      ],
+    });
+    await fsExtra.writeJson(
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-last-run.json'),
+      {
+        projects: [
+          {
+            name: 'external-api',
+            path: externalProject,
+            issues: ['Dependencies are not materialized'],
+            repairCapabilities: [
+              {
+                id: 'runtime-dependency-materialization.dependency-materialization',
+                issueId: 'runtime-dependency-materialization',
+                title: 'Install npm dependencies',
+                status: 'available',
+                fixKind: 'dependency-sync',
+                risk: 'guarded',
+                canAutoFix: true,
+                canEditFiles: false,
+                files: [path.join(externalProject, 'package.json')],
+                command: 'npm install',
+                invocation: { cwd: externalProject, executable: 'npm', args: ['install'] },
+                transaction: {
+                  schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+                  kind: 'dependency-materialization',
+                  state: 'planned',
+                  projectPath: externalProject,
+                  ecosystem: 'npm',
+                  sourceMutationRequired: false,
+                  observableState: 'runtime-dependency-tree',
+                  requiredStages: ['reconcile', 'test', 'build'],
+                  completion: {
+                    manifestLockConsistent: true,
+                    installedTreePresent: true,
+                    declaredTestsPass: true,
+                    declaredBuildPass: true,
+                    canonicalVerificationRequired: true,
+                  },
+                },
+                reason: 'The installed dependency tree is missing.',
+              },
+            ],
+          },
+        ],
+      }
+    );
+
+    const planned = await planWorkspaceRepair(
+      { workspacePath, cardId: 'doctor', projectName: 'external-api' },
+      { toolAvailable: async () => false }
+    );
+
+    expect(planned.target.projectPath).toBe('external/external-api');
+    expect(planned.adapterEvaluations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ projectPath: 'external/external-api', adapterId: 'node' }),
+      ])
+    );
+    expect(
+      planned.stages.filter((stage) => stage.invocation).map((stage) => stage.invocation?.cwd)
+    ).toEqual(['external/external-api', 'external/external-api', 'external/external-api']);
+    expect(planned.preconditions.map((entry) => entry.id)).not.toContain(
+      `tool:external/${path.basename(externalProject)}:npm`
+    );
+    expect(planned.preconditions).toContainEqual(
+      expect.objectContaining({ id: 'structured-execution', status: 'passed' })
+    );
+    expect(JSON.stringify(planned)).not.toContain(externalProject);
   });
 
   it('selects a safe actionable advisory before manual guidance when no blocker exists', async () => {
@@ -745,6 +867,27 @@ describe('Workspace Repair Engine', () => {
         executable: 'npm',
       })
     );
+    const unchangedReplan = await decideWorkspaceRepair(
+      {
+        workspacePath,
+        transactionId: missingToolPlan.transactionId,
+        decision: 'replan',
+      },
+      { toolAvailable: async () => false }
+    );
+    expect(unchangedReplan.transactionId).toBe(missingToolPlan.transactionId);
+    expect(unchangedReplan.state).toBe('decision-required');
+
+    const recoveredReplan = await decideWorkspaceRepair(
+      {
+        workspacePath,
+        transactionId: missingToolPlan.transactionId,
+        decision: 'replan',
+      },
+      { toolAvailable: async () => true }
+    );
+    expect(recoveredReplan.transactionId).not.toBe(missingToolPlan.transactionId);
+    expect(recoveredReplan.state).toBe('awaiting-approval');
     await approveWorkspaceRepair({ workspacePath, transactionId: planned.transactionId });
     const purposes: string[] = [];
     const completed = await executeWorkspaceRepair(

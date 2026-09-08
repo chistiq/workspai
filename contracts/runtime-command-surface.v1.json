@@ -49,8 +49,10 @@
     "import",
     "adopt",
     "goal",
+    "change",
     "agent",
     "snapshot",
+    "live",
     "bootstrap",
     "setup",
     "cache",
@@ -86,6 +88,30 @@
       "bootstrap"
     ],
     [
+      "agent",
+      "framework"
+    ],
+    [
+      "agent",
+      "framework",
+      "list"
+    ],
+    [
+      "agent",
+      "framework",
+      "plan"
+    ],
+    [
+      "agent",
+      "framework",
+      "attach"
+    ],
+    [
+      "agent",
+      "framework",
+      "apply"
+    ],
+    [
       "config",
       "ai"
     ],
@@ -100,6 +126,74 @@
     [
       "config",
       "show"
+    ],
+    [
+      "change",
+      "begin"
+    ],
+    [
+      "change",
+      "list"
+    ],
+    [
+      "change",
+      "predict"
+    ],
+    [
+      "change",
+      "authorize"
+    ],
+    [
+      "change",
+      "resume"
+    ],
+    [
+      "change",
+      "effect"
+    ],
+    [
+      "change",
+      "effect",
+      "record"
+    ],
+    [
+      "change",
+      "verification"
+    ],
+    [
+      "change",
+      "verification",
+      "record"
+    ],
+    [
+      "change",
+      "status"
+    ],
+    [
+      "change",
+      "explain"
+    ],
+    [
+      "change",
+      "verify"
+    ],
+    [
+      "change",
+      "abort"
+    ],
+    [
+      "change",
+      "capsule"
+    ],
+    [
+      "change",
+      "capsule",
+      "validate"
+    ],
+    [
+      "change",
+      "capsule",
+      "export"
     ],
     [
       "infra",
@@ -210,6 +304,50 @@
       ]
     },
     {
+      "invocation": "agent framework",
+      "summary": "Inspect release-admitted agent framework runtimes and their governed project integration commands.",
+      "canonicalArgv": [
+        "agent",
+        "framework"
+      ]
+    },
+    {
+      "invocation": "agent framework apply",
+      "summary": "Apply an already authorized hash-bound agent framework plan and record file digests plus an ownership receipt.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "apply"
+      ]
+    },
+    {
+      "invocation": "agent framework attach",
+      "summary": "Plan, explicitly authorize, and write only Workspai-owned agent files while preserving project dependencies and user-authored content.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "attach"
+      ]
+    },
+    {
+      "invocation": "agent framework list",
+      "summary": "List exact tested framework baselines and whether their reviewed cross-platform admission remains current.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "list"
+      ]
+    },
+    {
+      "invocation": "agent framework plan",
+      "summary": "Bind an isolated agent attachment plan to a Goal, canonical architecture generation, and Proof-Carrying Change without writing project files.",
+      "canonicalArgv": [
+        "agent",
+        "framework",
+        "plan"
+      ]
+    },
+    {
       "invocation": "ai",
       "summary": "Manage AI configuration, recommendations, and embedding operations for the active workspace.",
       "canonicalArgv": [
@@ -297,6 +435,145 @@
       "summary": "Inspect or clear Workspai cache entries used by workspace and project operations.",
       "canonicalArgv": [
         "cache"
+      ]
+    },
+    {
+      "invocation": "change",
+      "summary": "Compose Goal intent, architecture generations, typed effects, independent verification, and uncertainty into a tamper-evident change capsule.",
+      "canonicalArgv": [
+        "change"
+      ]
+    },
+    {
+      "invocation": "change abort",
+      "summary": "Terminate an open decision transaction with a durable reason while preserving its evidence history.",
+      "canonicalArgv": [
+        "change",
+        "abort"
+      ]
+    },
+    {
+      "invocation": "change authorize",
+      "summary": "Grant explicit bounded effect classes before any mutation receipt can enter the decision ledger.",
+      "canonicalArgv": [
+        "change",
+        "authorize"
+      ]
+    },
+    {
+      "invocation": "change begin",
+      "summary": "Begin a decision transaction by pinning an immutable Goal Pack and exact Model, Graph, and live-input generation.",
+      "canonicalArgv": [
+        "change",
+        "begin"
+      ]
+    },
+    {
+      "invocation": "change capsule",
+      "summary": "Inspect the validation and export command group for change capsules.",
+      "canonicalArgv": [
+        "change",
+        "capsule"
+      ]
+    },
+    {
+      "invocation": "change capsule export",
+      "summary": "Export a validated portable capsule manifest to a workspace-contained destination.",
+      "canonicalArgv": [
+        "change",
+        "capsule",
+        "export"
+      ]
+    },
+    {
+      "invocation": "change capsule validate",
+      "summary": "Validate capsule integrity, decision-head binding, baseline materialization, and referenced local evidence.",
+      "canonicalArgv": [
+        "change",
+        "capsule",
+        "validate"
+      ]
+    },
+    {
+      "invocation": "change effect",
+      "summary": "Inspect the typed effect-receipt command group for proof-carrying changes.",
+      "canonicalArgv": [
+        "change",
+        "effect"
+      ]
+    },
+    {
+      "invocation": "change effect record",
+      "summary": "Record an idempotent observed effect receipt without treating model intent or prediction as execution proof.",
+      "canonicalArgv": [
+        "change",
+        "effect",
+        "record"
+      ]
+    },
+    {
+      "invocation": "change explain",
+      "summary": "Explain the evidence chain and safe next actions for an open, blocked, or sealed change.",
+      "canonicalArgv": [
+        "change",
+        "explain"
+      ]
+    },
+    {
+      "invocation": "change list",
+      "summary": "Discover open, blocked, sealed, aborted, and invalid change capsules with integrity and assurance summaries.",
+      "canonicalArgv": [
+        "change",
+        "list"
+      ]
+    },
+    {
+      "invocation": "change predict",
+      "summary": "Attach a bounded noncanonical architecture prediction that is explicitly ineligible as proof.",
+      "canonicalArgv": [
+        "change",
+        "predict"
+      ]
+    },
+    {
+      "invocation": "change resume",
+      "summary": "Resume a blocked or human-paused transaction into an explicit bounded state with a durable human reason.",
+      "canonicalArgv": [
+        "change",
+        "resume"
+      ]
+    },
+    {
+      "invocation": "change status",
+      "summary": "Read the derived decision state, assurance coverage, blockers, and remaining uncertainty.",
+      "canonicalArgv": [
+        "change",
+        "status"
+      ]
+    },
+    {
+      "invocation": "change verification",
+      "summary": "Inspect the independent Goal-criterion verification receipt command group.",
+      "canonicalArgv": [
+        "change",
+        "verification"
+      ]
+    },
+    {
+      "invocation": "change verification record",
+      "summary": "Admit a typed verification receipt only when it binds the current Model, Graph, effect head, and immutable Goal criterion.",
+      "canonicalArgv": [
+        "change",
+        "verification",
+        "record"
+      ]
+    },
+    {
+      "invocation": "change verify",
+      "summary": "Refresh canonical architecture, derive the actual Graph delta, compare prediction with observation, and run independent verification.",
+      "canonicalArgv": [
+        "change",
+        "verify"
       ]
     },
     {
@@ -556,6 +833,32 @@
       "canonicalArgv": [
         "list"
       ]
+    },
+    {
+      "invocation": "live",
+      "summary": "Render the versioned cross-terminal execution graph for Workspai runs in the current project or workspace.",
+      "canonicalArgv": [
+        "live",
+        "--once",
+        "--json",
+        "--projection",
+        "board"
+      ],
+      "output": {
+        "defaultFormat": "human-or-json",
+        "modes": [
+          {
+            "selector": "--once --json --projection monitor",
+            "format": "json",
+            "mediaType": "application/json"
+          },
+          {
+            "selector": "--once --json --projection board",
+            "format": "json",
+            "mediaType": "application/json"
+          }
+        ]
+      }
     },
     {
       "invocation": "merge",
@@ -1170,6 +1473,11 @@
             "mediaType": "application/json"
           },
           {
+            "selector": "benchmark-suite agent-core.v1 --write --json",
+            "format": "json",
+            "mediaType": "application/json"
+          },
+          {
             "selector": "emit --json",
             "format": "json",
             "mediaType": "application/json"
@@ -1226,6 +1534,16 @@
           }
         ]
       }
+    },
+    {
+      "invocation": "workspace graph benchmark-suite --write",
+      "summary": "Run the fixed multi-scenario retrieval suite, preserve estimate-versus-measurement provenance, and publish the benchmark artifact.",
+      "canonicalArgv": [
+        "workspace",
+        "graph",
+        "benchmark-suite",
+        "--write"
+      ]
     },
     {
       "invocation": "workspace hydrate",
@@ -1848,6 +2166,80 @@
       ]
     },
     {
+      "artifactPath": ".workspai/decisions/change-id/transaction.json",
+      "schemaVersion": "workspai.decision-transaction.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-transaction.v1.json",
+      "producerCommands": [
+        [
+          "change"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/decisions/change-id/checkpoint.json",
+      "schemaVersion": "workspai.decision-checkpoint.v1",
+      "contractPath": "contracts/workspace-intelligence/decision-checkpoint.v1.json",
+      "producerCommands": [
+        [
+          "change"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/changes/change-id/lease.json",
+      "schemaVersion": "workspai.architecture-change-lease.v1",
+      "contractPath": "contracts/workspace-intelligence/architecture-change-lease.v1.json",
+      "producerCommands": [
+        [
+          "change",
+          "begin"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/changes/change-id/predicted-overlay.json",
+      "schemaVersion": "workspai.predicted-architecture-change.v1",
+      "contractPath": "contracts/workspace-intelligence/predicted-architecture-change.v1.json",
+      "producerCommands": [
+        [
+          "change",
+          "predict"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/changes/change-id/actual-overlay.json",
+      "schemaVersion": "workspace-knowledge-graph-change-overlay.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-knowledge-graph-change-overlay.v1.json",
+      "producerCommands": [
+        [
+          "change",
+          "verify"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/changes/change-id/architecture-surprises.json",
+      "schemaVersion": "workspai.architecture-surprise-report.v1",
+      "contractPath": "contracts/workspace-intelligence/architecture-surprise-report.v1.json",
+      "producerCommands": [
+        [
+          "change",
+          "verify"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/changes/change-id/capsule.json",
+      "schemaVersion": "workspai.proof-carrying-change-capsule.v1",
+      "contractPath": "contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json",
+      "producerCommands": [
+        [
+          "change"
+        ]
+      ]
+    },
+    {
       "artifactPath": ".workspai/goals/index.json",
       "schemaVersion": "workspai.goal-index.v1",
       "contractPath": "contracts/workspace-intelligence/goal-index.v1.json",
@@ -1898,6 +2290,32 @@
           "workspace",
           "agent-sync",
           "--write"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/reports/project-knowledge-graph-reference.json",
+      "schemaVersion": "project-knowledge-graph-reference.v1",
+      "contractPath": "contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json",
+      "producerCommands": [
+        [
+          "adopt"
+        ],
+        [
+          "import"
+        ],
+        [
+          "workspace",
+          "model"
+        ],
+        [
+          "workspace",
+          "sync"
+        ],
+        [
+          "workspace",
+          "intelligence",
+          "run"
         ]
       ]
     },
@@ -2181,6 +2599,19 @@
         [
           "workspace",
           "agent-sync",
+          "--write"
+        ]
+      ]
+    },
+    {
+      "artifactPath": ".workspai/reports/workspace-intelligence-benchmark-last-run.json",
+      "schemaVersion": "workspace-intelligence-benchmark.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json",
+      "producerCommands": [
+        [
+          "workspace",
+          "graph",
+          "benchmark-suite",
           "--write"
         ]
       ]
@@ -2612,7 +3043,7 @@
     },
     {
       "id": "goal",
-      "usage": "workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--target <percent>] [--json]",
+      "usage": "workspai workspace goal <plan|status|verify> <kind|goal-id> [--scope <scope>] [--runtime <runtime>] [--target <percent>] [--json]",
       "summary": "Plan, resume, and evidence-verify a durable engineering goal for people and agents.",
       "options": [
         {
@@ -2626,6 +3057,10 @@
         {
           "flag": "--scope",
           "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--runtime",
+          "description": "Select the runtime measured by a test-coverage goal."
         },
         {
           "flag": "--target",
@@ -2665,14 +3100,14 @@
       "examples": [
         "workspai workspace goal plan release-readiness --json",
         "workspai workspace goal plan dependency-security --scope project:api --json",
-        "workspai workspace goal plan test-coverage --scope project:web --target 75 --json",
+        "workspai workspace goal plan test-coverage --scope project:web --runtime node --target 75 --json",
         "workspai workspace goal verify <goal-id> --json"
       ]
     },
     {
       "id": "graph",
       "usage": "workspai workspace graph [mode] [query|from] [to] [--json]",
-      "summary": "Build, query, prove, compare, or export the workspace graph.",
+      "summary": "Query and export the canonical Knowledge Graph; explain, dot, and mermaid target the project dependency topology.",
       "options": [
         {
           "flag": "--workspace",
@@ -2695,6 +3130,10 @@
           "description": "Bound graph query results (1–100)."
         },
         {
+          "flag": "--kind",
+          "description": "Limit graph entity search to one canonical entity kind."
+        },
+        {
           "flag": "--refresh-graph",
           "description": "Bypass the compatible persisted graph and rebuild from live sources."
         },
@@ -2713,6 +3152,10 @@
         {
           "flag": "--scope",
           "description": "Limit the operation to a bounded scope such as project:<name>."
+        },
+        {
+          "flag": "--write",
+          "description": "Persist the command artifact under .workspai/reports."
         }
       ],
       "subactions": [
@@ -2724,6 +3167,7 @@
         "path",
         "overlay",
         "benchmark",
+        "benchmark-suite",
         "dot",
         "mermaid",
         "jsonld",
@@ -2732,8 +3176,9 @@
       ],
       "artifact": null,
       "examples": [
-        "workspai workspace graph search \"authentication endpoint\" --limit 12 --json",
+        "workspai workspace graph search \"authentication endpoint\" --kind endpoint --limit 12 --json",
         "workspai workspace graph evidence \"GET /users\" --json",
+        "workspai workspace graph benchmark-suite agent-core.v1 --write --json",
         "workspai workspace graph mermaid"
       ]
     },
@@ -3209,8 +3654,8 @@
     },
     {
       "id": "contract",
-      "usage": "workspai workspace contract [init|inspect|verify|graph] [--strict] [--json]",
-      "summary": "Create, inspect, verify, or project the workspace contract.",
+      "usage": "workspai workspace contract [init|inspect|sync|verify|graph] [--strict] [--json]",
+      "summary": "Create, inspect, synchronize, verify, or project the workspace contract.",
       "options": [
         {
           "flag": "--workspace",
@@ -3236,11 +3681,13 @@
       "subactions": [
         "init",
         "inspect",
+        "sync",
         "verify",
         "graph"
       ],
       "artifact": ".workspai/workspace.contract.json",
       "examples": [
+        "workspai workspace contract sync --strict --json",
         "workspai workspace contract verify --strict --json",
         "workspai workspace contract graph --json"
       ]
@@ -3493,6 +3940,14 @@
           "description": "Limit the operation to a bounded scope such as project:<name>."
         },
         {
+          "flag": "--plan",
+          "description": "Resolve lifecycle commands without executing project code."
+        },
+        {
+          "flag": "--runtime",
+          "description": "Limit lifecycle planning or execution to one detected runtime family."
+        },
+        {
           "flag": "--affected",
           "description": "Run only projects affected by the selected Git change."
         },
@@ -3538,6 +3993,7 @@
       ],
       "artifact": ".workspai/reports/workspace-run-last.json",
       "examples": [
+        "workspai workspace run test --scope project:api --plan --runtime ruby --json",
         "workspai workspace run test --affected --blast-radius --strict",
         "workspai workspace run build --parallel --max-workers 4 --json"
       ]
@@ -3913,7 +4369,9 @@
       "gofiber.standard",
       "gogin.standard",
       "dotnet.webapi.clean",
-      "rust.axum"
+      "rust.axum",
+      "agent.microsoft.python",
+      "agent.microsoft.dotnet"
     ],
     "officialCreate": [
       "frontend.nextjs",
@@ -4133,6 +4591,13 @@
       "moduleCommands": false,
       "doctor": "observed",
       "lifecycleCommands": [
+        "init",
+        "dev",
+        "start",
+        "build",
+        "test",
+        "lint",
+        "format",
         "help"
       ]
     },

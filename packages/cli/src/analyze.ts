@@ -3,6 +3,7 @@ import path from 'path';
 import chalk from 'chalk';
 import {
   detectBackendFrameworkFromProject,
+  detectNestedRuntimeCandidatesFromProject,
   detectRuntimeCandidatesFromProject,
   type BackendRuntimeFamily,
 } from './utils/backend-framework-contract.js';
@@ -23,6 +24,18 @@ import {
   projectMetadataCandidates,
   workspaceMetadataCandidates,
 } from './utils/workspace-paths.js';
+import { inferWorkspaceProjectKind } from './utils/project-kind.js';
+import { detectProjectTestSurface } from './utils/project-test-surface.js';
+import { detectProjectHealthSurface } from './utils/project-health-surface.js';
+import {
+  detectProjectGovernance,
+  type ProjectGovernanceProfile,
+} from './utils/project-governance.js';
+import {
+  readWorkspaceContract,
+  type WorkspaceContract,
+  type WorkspaceContractProject,
+} from './utils/workspace-contract.js';
 
 export type AnalyzeSeverity = 'info' | 'warn' | 'fail';
 
@@ -42,6 +55,7 @@ export interface AnalyzeProject {
   path: string;
   relativePath: string;
   runtime: BackendRuntimeFamily;
+  runtimeCandidates: BackendRuntimeFamily[];
   framework: string;
   confidence: string;
   supportTier: string;
@@ -50,6 +64,7 @@ export interface AnalyzeProject {
   hasDockerfile: boolean;
   hasEnvExample: boolean;
   hasCiConfig: boolean;
+  governance: ProjectGovernanceProfile;
   hasHealthEndpoint: boolean;
   scripts: string[];
   findings: AnalyzeFinding[];
@@ -75,6 +90,8 @@ export interface AnalyzeReport {
   workspaceDetected: boolean;
   profile: string | null;
   summary: {
+    statusScope: 'source-structure';
+    releaseReadiness: 'not-evaluated';
     score: number;
     verdict: 'ready' | 'needs-attention' | 'blocked';
     projectCount: number;
@@ -222,6 +239,35 @@ async function hasAnyPath(projectPath: string, candidates: string[]): Promise<bo
   return false;
 }
 
+async function hasNestedNamedPath(
+  projectPath: string,
+  names: ReadonlySet<string>,
+  maxDepth = 4
+): Promise<boolean> {
+  const visit = async (directory: string, depth: number): Promise<boolean> => {
+    if (depth > maxDepth) return false;
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && names.has(entry.name.toLowerCase())) return true;
+      if (
+        entry.isDirectory() &&
+        !entry.isSymbolicLink() &&
+        !PROJECT_SKIP_DIRS.has(entry.name) &&
+        (await visit(path.join(directory, entry.name), depth + 1))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return visit(projectPath, 0);
+}
+
 async function hasAnyAbsolutePath(candidates: string[]): Promise<boolean> {
   for (const candidate of candidates) {
     if (await pathExists(candidate)) {
@@ -229,30 +275,6 @@ async function hasAnyAbsolutePath(candidates: string[]): Promise<boolean> {
     }
   }
   return false;
-}
-
-async function hasCiConfiguration(projectPath: string): Promise<boolean> {
-  if (
-    await hasAnyPath(projectPath, [
-      '.gitlab-ci.yml',
-      '.circleci/config.yml',
-      'azure-pipelines.yml',
-      'bitbucket-pipelines.yml',
-      'cloudbuild.yaml',
-    ])
-  ) {
-    return true;
-  }
-  try {
-    const workflows = await fs.promises.readdir(path.join(projectPath, '.github', 'workflows'), {
-      withFileTypes: true,
-    });
-    return workflows.some(
-      (entry) => entry.isFile() && /\.(?:ya?ml)$/i.test(entry.name) && !entry.name.startsWith('.')
-    );
-  } catch {
-    return false;
-  }
 }
 
 async function readFirstJsonObject(candidates: string[]): Promise<Record<string, unknown> | null> {
@@ -265,52 +287,39 @@ async function readFirstJsonObject(candidates: string[]): Promise<Record<string,
   return null;
 }
 
-async function hasHealthEndpoint(projectPath: string): Promise<boolean> {
-  const candidatePaths = [
-    'health',
-    'health.ts',
-    'health.js',
-    'health.py',
-    'health.go',
-    'health.kt',
-    'health.rb',
-    'health.php',
-    'healthcheck',
-    'health-check',
-    'src/health.ts',
-    'src/health.js',
-    'src/health.py',
-    'src/health.go',
-    'src/health.kt',
-    'src/health.rb',
-    'src/health.php',
-    'src/healthcheck.ts',
-    'src/healthcheck.js',
-    'src/liveness.ts',
-    'src/readiness.ts',
-    'src/ping.ts',
-  ];
-  return hasAnyPath(projectPath, candidatePaths);
+async function hasEnvironmentContractIntent(
+  projectPath: string,
+  projectJson: Record<string, unknown> | null
+): Promise<boolean> {
+  if (await hasAnyPath(projectPath, ['.env', '.env.local'])) return true;
+  const contracts =
+    projectJson?.contracts && typeof projectJson.contracts === 'object'
+      ? (projectJson.contracts as Record<string, unknown>)
+      : null;
+  if (Array.isArray(contracts?.env) && contracts.env.length > 0) return true;
+
+  const packageJson = await readJsonObject(path.join(projectPath, 'package.json'));
+  const dependencies = {
+    ...((packageJson?.dependencies as Record<string, unknown> | undefined) ?? {}),
+    ...((packageJson?.devDependencies as Record<string, unknown> | undefined) ?? {}),
+  };
+  if (Object.keys(dependencies).some((name) => /^(?:dotenv|dotenv-flow|env-cmd)$/iu.test(name))) {
+    return true;
+  }
+
+  const pyproject = await readText(path.join(projectPath, 'pyproject.toml'));
+  if (/\b(?:python-dotenv|pydantic-settings)\b/iu.test(pyproject)) return true;
+  const compose = [
+    await readText(path.join(projectPath, 'compose.yaml')),
+    await readText(path.join(projectPath, 'compose.yml')),
+    await readText(path.join(projectPath, 'docker-compose.yml')),
+    await readText(path.join(projectPath, 'docker-compose.yaml')),
+  ].join('\n');
+  return /^\s*(?:env_file|environment)\s*:/imu.test(compose);
 }
 
 async function hasTestFiles(projectPath: string): Promise<boolean> {
-  const direct = await hasAnyPath(projectPath, [
-    'tests',
-    'test',
-    '__tests__',
-    'src/__tests__',
-    'pytest.ini',
-    'vitest.config.ts',
-    'jest.config.ts',
-  ]);
-  if (direct) return true;
-
-  const packageJson = await readJsonObject(path.join(projectPath, 'package.json'));
-  const scripts =
-    packageJson?.scripts && typeof packageJson.scripts === 'object'
-      ? (packageJson.scripts as Record<string, unknown>)
-      : {};
-  return typeof scripts.test === 'string' && scripts.test.trim().length > 0;
+  return (await detectProjectTestSurface(projectPath)).detected;
 }
 
 async function readScripts(projectPath: string): Promise<string[]> {
@@ -351,14 +360,36 @@ function scoreProject(findings: AnalyzeFinding[]): number {
   return Math.max(0, 100 - penalty);
 }
 
-async function analyzeProject(workspacePath: string, projectPath: string): Promise<AnalyzeProject> {
+async function analyzeProject(
+  workspacePath: string,
+  projectPath: string,
+  contractProject?: WorkspaceContractProject
+): Promise<AnalyzeProject> {
   const projectJson = await readFirstJsonObject(
     projectMetadataCandidates(projectPath, 'project.json')
   );
   const detection = detectBackendFrameworkFromProject(projectPath, projectJson);
-  const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  const detectedRuntimeCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
   const runtime =
-    detection.runtime === 'unknown' ? runtimeCandidates[0] || 'unknown' : detection.runtime;
+    detection.runtime === 'unknown' ? detectedRuntimeCandidates[0] || 'unknown' : detection.runtime;
+  const runtimeCandidates = [
+    runtime,
+    ...detectedRuntimeCandidates.filter((candidate) => candidate !== runtime),
+  ];
+  const isMultiRuntimeAggregate =
+    detection.key === 'unknown' &&
+    new Set(runtimeCandidates.filter((candidate) => candidate !== 'unknown')).size > 1;
+  const projectKind = await inferWorkspaceProjectKind(projectPath, projectJson, {
+    runtime,
+    framework: detection.key,
+  });
+  const requiresDeploymentSurface = ['backend', 'service', 'worker', 'agent'].includes(projectKind);
+  const requiresContainerSurface = ['backend', 'service', 'worker'].includes(projectKind);
+  const requiresHttpHealthSurface =
+    requiresDeploymentSurface &&
+    /^(?:fastapi|django|flask|nestjs|express|fastify|springboot|gofiber|gogin|dotnet-webapi|laravel|rails|phoenix|axum|actix|rocket)$/u.test(
+      detection.key
+    );
   const relativePath = normalizeRelative(workspacePath, projectPath);
   const target = relativePath;
   const scripts = await readScripts(projectPath);
@@ -368,24 +399,33 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
   ]);
   const hasTests = await hasTestFiles(projectPath);
   const hasDockerfile = await hasAnyPath(projectPath, ['Dockerfile', 'dockerfile']);
-  const hasEnvExample = await hasAnyPath(projectPath, [
-    '.env.example',
-    'env.example',
-    'config/env.example',
-  ]);
-  const hasCiConfig = await hasCiConfiguration(projectPath);
-  const hasHealthEndpointFlag = await hasHealthEndpoint(projectPath);
+  const hasEnvExample =
+    (await hasAnyPath(projectPath, ['.env.example', 'env.example', 'config/env.example'])) ||
+    (await hasNestedNamedPath(projectPath, new Set(['.env.example', 'env.example'])));
+  const hasEnvContractIntent = await hasEnvironmentContractIntent(projectPath, projectJson);
+  const governance = await detectProjectGovernance({
+    projectPath,
+    declaration: contractProject?.governance,
+  });
+  const hasCiConfig = governance.ci.status === 'repository';
+  const hasHealthEndpointFlag = await detectProjectHealthSurface(projectPath);
 
   const findings: AnalyzeFinding[] = [];
   if (detection.key === 'unknown') {
     findings.push(
       finding(
-        'project.stack.unknown',
-        'fail',
+        isMultiRuntimeAggregate ? 'project.stack.aggregate' : 'project.stack.unknown',
+        isMultiRuntimeAggregate ? 'info' : 'fail',
         target,
-        'Project stack is unknown',
-        'Workspai cannot confidently classify this backend project.',
-        'Add .workspai/project.json metadata or import the project with `workspai import`.'
+        isMultiRuntimeAggregate
+          ? 'Multi-runtime aggregate boundary detected'
+          : 'Project stack is unknown',
+        isMultiRuntimeAggregate
+          ? `Workspai detected multiple runtimes (${runtimeCandidates.join(', ')}) and intentionally did not promote one nested framework as the aggregate project identity.`
+          : 'Workspai cannot confidently classify this backend project.',
+        isMultiRuntimeAggregate
+          ? 'Adopt independently operated nested projects when they need separate lifecycle, ownership, or release evidence.'
+          : 'Add .workspai/project.json metadata or import the project with `workspai import`.'
       )
     );
   }
@@ -413,7 +453,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
       )
     );
   }
-  if (!hasEnvExample) {
+  if (requiresDeploymentSurface && hasEnvContractIntent && !hasEnvExample) {
     findings.push(
       finding(
         'project.env.example.missing',
@@ -426,20 +466,31 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
       )
     );
   }
-  if (!hasCiConfig) {
+  if (governance.ci.status === 'unknown') {
     findings.push(
       finding(
         'project.ci.missing',
         'warn',
         target,
-        'Continuous integration is missing',
-        'No recognized CI/CD configuration file was detected for this project.',
-        'Add CI configuration so tests and checks run automatically for every change.',
+        'CI governance is not proven',
+        'No repository CI surface or canonical external CI declaration was found for this project.',
+        'Add repository CI configuration or declare the external CI authority in the workspace contract.',
         ['.github/workflows/ci.yml']
       )
     );
+  } else if (governance.ci.status === 'external-observed') {
+    findings.push(
+      finding(
+        'project.ci.external-observed',
+        'info',
+        target,
+        'Continuous integration appears externally managed',
+        `Repository documentation references an external CI control plane (${governance.ci.evidence.join(', ')}).`,
+        'Declare the external CI provider in the canonical workspace contract when authoritative release gating depends on it.'
+      )
+    );
   }
-  if (!hasHealthEndpointFlag) {
+  if (requiresHttpHealthSurface && !hasHealthEndpointFlag) {
     findings.push(
       finding(
         'project.health.missing',
@@ -451,7 +502,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
       )
     );
   }
-  if (!hasDockerfile) {
+  if (requiresContainerSurface && !hasDockerfile) {
     findings.push(
       finding(
         'project.container.missing',
@@ -473,6 +524,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
     path: projectPath,
     relativePath,
     runtime,
+    runtimeCandidates,
     framework: detection.key,
     confidence: detection.confidence,
     supportTier: detection.supportTier,
@@ -481,6 +533,7 @@ async function analyzeProject(workspacePath: string, projectPath: string): Promi
     hasDockerfile,
     hasEnvExample,
     hasCiConfig,
+    governance,
     hasHealthEndpoint: hasHealthEndpointFlag,
     scripts,
     findings,
@@ -584,7 +637,7 @@ function summarizeFindings(findings: AnalyzeFinding[]): {
 function buildNextActions(report: {
   findings: AnalyzeFinding[];
   projectCount: number;
-  hasGraph: boolean;
+  hasCanonicalGraph: boolean;
   workspaceDetected: boolean;
 }): string[] {
   if (report.projectCount === 0) {
@@ -624,9 +677,9 @@ function buildNextActions(report: {
       'Add a health/readiness endpoint so runtime probes and deployment checks can verify service health.'
     );
   }
-  if (!report.hasGraph) {
+  if (!report.hasCanonicalGraph) {
     actions.push(
-      'Create `.workspai/workspace-dependency-graph.json` or use analyze output as the first graph seed.'
+      'Generate canonical topology with `workspai workspace model --write --include-evidence`.'
     );
   }
   actions.push('Run `workspai autopilot release --mode audit --json` before release.');
@@ -642,8 +695,20 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
   const workspaceDetected = hasWorkspaceRootMarkers(workspacePath);
   const profile = await readWorkspaceProfile(workspacePath);
   const projectPaths = await discoverProjects(workspacePath);
+  let workspaceContract: WorkspaceContract | undefined;
+  try {
+    workspaceContract = (await readWorkspaceContract({ workspacePath })).contract;
+  } catch {
+    // Observed repositories without a canonical contract remain analyzable.
+  }
   const projects = await Promise.all(
-    projectPaths.map((projectPath) => analyzeProject(workspacePath, projectPath))
+    projectPaths.map((projectPath) => {
+      const contractProject = workspaceContract?.projects.find((project) => {
+        const declaredPath = project.externalPath ?? project.relativePath;
+        return path.resolve(workspacePath, declaredPath) === path.resolve(projectPath);
+      });
+      return analyzeProject(workspacePath, projectPath, contractProject);
+    })
   );
   const dependencyEdges = await buildDependencyGraph(projects);
   const dependencyImpact = computeDependencyImpact(projects, dependencyEdges);
@@ -678,7 +743,9 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
   const findingSummary = summarizeFindings(findings);
   const runtimes: Record<string, number> = {};
   for (const project of projects) {
-    runtimes[project.runtime] = (runtimes[project.runtime] || 0) + 1;
+    for (const runtime of project.runtimeCandidates) {
+      runtimes[runtime] = (runtimes[runtime] || 0) + 1;
+    }
   }
 
   const projectScore =
@@ -709,6 +776,8 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
     workspaceDetected,
     profile,
     summary: {
+      statusScope: 'source-structure',
+      releaseReadiness: 'not-evaluated',
       score,
       verdict,
       projectCount: projects.length,
@@ -726,7 +795,9 @@ export async function runAnalyze(options: AnalyzeOptions = {}): Promise<AnalyzeR
     nextActions: buildNextActions({
       findings,
       projectCount: projects.length,
-      hasGraph: dependencyEdges.length > 0,
+      hasCanonicalGraph: await pathExists(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+      ),
       workspaceDetected,
     }),
     enterpriseControls: {
@@ -782,8 +853,9 @@ export function printAnalyzeReport(report: AnalyzeReport): void {
   console.log(chalk.bold('\nWorkspai Workspace Analysis\n'));
   console.log(chalk.cyan('Workspace:'), report.workspacePath);
   console.log(chalk.cyan('Profile:'), report.profile || 'not configured');
-  console.log(chalk.cyan('Score:'), `${report.summary.score}/100`);
-  console.log(chalk.cyan('Verdict:'), verdictColor(report.summary.verdict));
+  console.log(chalk.cyan('Source score:'), `${report.summary.score}/100`);
+  console.log(chalk.cyan('Source verdict:'), verdictColor(report.summary.verdict));
+  console.log(chalk.cyan('Release readiness:'), report.summary.releaseReadiness);
   console.log(
     chalk.gray(
       `Projects: ${report.summary.projectCount}, runtimes: ${report.summary.runtimeCount}, findings: ${report.summary.findings.fail} fail / ${report.summary.findings.warn} warn / ${report.summary.findings.info} info`

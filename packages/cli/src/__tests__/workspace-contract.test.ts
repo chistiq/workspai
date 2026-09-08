@@ -62,6 +62,18 @@ describe('workspace contract registry', () => {
     });
   });
 
+  it('uses the canonical marker identity when no workspace manifest exists', async () => {
+    const workspacePath = await makeTempDir('rk-contract-marker-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai-workspace'), {
+      signature: 'RAPIDKIT_WORKSPACE',
+      name: 'logical-workspace-name',
+    });
+
+    const contract = await buildWorkspaceContract({ workspacePath });
+
+    expect(contract.workspace.name).toBe('logical-workspace-name');
+  });
+
   it('discovers context.json-only projects when building a workspace contract', async () => {
     const workspacePath = await makeTempDir('rk-contract-context-');
     await fsExtra.outputJson(path.join(workspacePath, 'web-ui', '.rapidkit', 'context.json'), {
@@ -79,6 +91,68 @@ describe('workspace contract registry', () => {
       runtime: 'node',
       framework: 'vite',
       kit: 'vite.standard',
+    });
+  });
+
+  it('refreshes Workspai-managed imported runtime identity from current manifests', async () => {
+    const workspacePath = await makeTempDir('rk-contract-import-refresh-');
+    const projectPath = path.join(workspacePath, 'ruby-tools');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'ruby-tools.gemspec'),
+      'Gem::Specification.new'
+    );
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      runtime: 'unknown',
+      framework: 'unknown',
+      kit: 'imported.unknown',
+      kit_name: 'imported.unknown',
+      import: { managed_by: 'workspai', source_type: 'local-folder' },
+    });
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'ruby-tools',
+        path: projectPath,
+        relativePath: 'ruby-tools',
+        relationship: 'imported',
+        source: 'local-folder',
+        stack: 'unknown',
+        runtime: 'unknown',
+        framework: 'unknown',
+        frameworkDisplayName: 'Unknown',
+        supportTier: 'observed',
+        moduleSupport: false,
+        confidence: 'low',
+        importedAt: '2026-08-28T00:00:00.000Z',
+      },
+    ]);
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-08-28T00:00:00.000Z',
+      workspace: { name: 'refresh-ws' },
+      projects: [
+        {
+          slug: 'ruby-tools',
+          relativePath: 'ruby-tools',
+          source: 'local-folder',
+          relationship: 'imported',
+          runtime: 'unknown',
+          framework: 'unknown',
+          kit: 'imported.unknown',
+          modules: [],
+          ports: [],
+          contracts: { owns: [], apis: [], publishes: [], consumes: [], dependsOn: [], env: [] },
+        },
+      ],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+
+    expect(result.updatedProjects).toContain('ruby-tools');
+    expect(result.contract.projects[0]).toMatchObject({
+      runtime: 'ruby',
+      framework: 'ruby',
+      kit: 'imported.ruby',
     });
   });
 
@@ -568,6 +642,68 @@ describe('workspace contract registry', () => {
       kit: 'adopted.cpp',
     });
     expect(result.updatedProjects).toEqual(['native-service']);
+  });
+
+  it('migrates an internal linked adoption from workspace source without preserving stale identity', async () => {
+    const workspacePath = await makeTempDir('rk-contract-refresh-internal-ws-');
+    const projectPath = path.join(workspacePath, 'application');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'refresh-internal-ws',
+    });
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'application',
+      runtime: 'ruby',
+      framework: 'rails',
+      kit_name: 'adopted.rails',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'application',
+        path: projectPath,
+        relativePath: 'application',
+        relationship: 'adopted',
+        source: 'adopted-local',
+        stack: 'rails',
+        runtime: 'ruby',
+        framework: 'rails',
+        frameworkDisplayName: 'Ruby on Rails',
+        supportTier: 'extended',
+        moduleSupport: false,
+        confidence: 'high',
+        importedAt: '2026-08-26T00:00:00.000Z',
+      },
+    ]);
+    await fsExtra.outputJson(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'refresh-internal-ws' },
+      projects: [
+        {
+          slug: 'application',
+          relativePath: 'application',
+          source: 'workspace',
+          runtime: 'node',
+          framework: 'vue',
+          kit: 'adopted.vue',
+          modules: [],
+          ports: [],
+          contracts: { owns: [], apis: [], publishes: [], consumes: [], dependsOn: [], env: [] },
+        },
+      ],
+    });
+
+    const result = await syncWorkspaceContract({ workspacePath });
+
+    expect(result.contract.projects[0]).toMatchObject({
+      source: 'adopted-local',
+      relationship: 'adopted',
+      relativePath: 'application',
+      runtime: 'ruby',
+      framework: 'rails',
+      kit: 'adopted.rails',
+    });
+    expect(result.updatedProjects).toEqual(['application']);
   });
 
   it('fails verification for colliding ports and unknown dependencies', async () => {

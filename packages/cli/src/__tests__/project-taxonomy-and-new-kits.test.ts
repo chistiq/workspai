@@ -37,6 +37,7 @@ describe('project taxonomy and expanded kit families', () => {
     expect(categorizeWorkspaceProjectKind('frontend')).toBe('frontend');
     expect(categorizeWorkspaceProjectKind('desktop')).toBe('desktop');
     expect(categorizeWorkspaceProjectKind('extension')).toBe('extension');
+    expect(categorizeWorkspaceProjectKind('platform')).toBe('platform');
     expect(categorizeWorkspaceProjectKind('service')).toBe('backend');
   });
 
@@ -55,6 +56,224 @@ describe('project taxonomy and expanded kit families', () => {
       contributes: { commands: [] },
     });
     expect(await inferWorkspaceProjectKind(extension)).toBe('extension');
+  });
+
+  it('does not classify a runtime-neutral package workspace as a backend service', async () => {
+    const library = await tempRoot('workspai-polyglot-library-kind-');
+    await fsExtra.outputJson(path.join(library, 'package.json'), {
+      name: 'bindings-root',
+      private: true,
+    });
+    await fsExtra.outputFile(
+      path.join(library, 'Cargo.toml'),
+      '[workspace]\nmembers = ["crates/core"]\n'
+    );
+
+    expect(
+      await inferWorkspaceProjectKind(library, {}, { runtime: 'rust', framework: 'rust' })
+    ).toBe('platform');
+
+    const service = await tempRoot('workspai-rust-service-kind-');
+    expect(
+      await inferWorkspaceProjectKind(service, {}, { runtime: 'rust', framework: 'axum' })
+    ).toBe('backend');
+  });
+
+  it('prefers authored workspace topology over an application framework hint', async () => {
+    const nodeWorkspace = await tempRoot('workspai-node-framework-workspace-kind-');
+    await fsExtra.outputJson(path.join(nodeWorkspace, 'package.json'), {
+      name: 'product-platform',
+      private: true,
+      workspaces: ['packages/*'],
+      devDependencies: { next: 'workspace:*', react: '^19.0.0' },
+    });
+
+    expect(
+      await inferWorkspaceProjectKind(
+        nodeWorkspace,
+        {},
+        {
+          runtime: 'node',
+          framework: 'nextjs',
+        }
+      )
+    ).toBe('platform');
+  });
+
+  it('classifies Go workspaces and multi-command roots as platforms', async () => {
+    const goWorkspace = await tempRoot('workspai-go-workspace-kind-');
+    await fsExtra.outputFile(path.join(goWorkspace, 'go.mod'), 'module example.com/platform\n');
+    await fsExtra.outputFile(path.join(goWorkspace, 'go.work'), 'go 1.24\nuse (\n  .\n)\n');
+    expect(
+      await inferWorkspaceProjectKind(goWorkspace, {}, { runtime: 'go', framework: 'go' })
+    ).toBe('platform');
+
+    const commandFleet = await tempRoot('workspai-go-command-fleet-kind-');
+    await fsExtra.outputFile(path.join(commandFleet, 'go.mod'), 'module example.com/fleet\n');
+    await fsExtra.outputFile(
+      path.join(commandFleet, 'control-plane', 'cmd', 'api', 'main.go'),
+      'package main\n'
+    );
+    await fsExtra.outputFile(
+      path.join(commandFleet, 'data-plane', 'cmd', 'controller', 'main.go'),
+      'package main\n'
+    );
+    await fsExtra.outputFile(
+      path.join(commandFleet, 'samples', 'demo', 'main.go'),
+      'package main\n'
+    );
+    expect(
+      await inferWorkspaceProjectKind(commandFleet, {}, { runtime: 'go', framework: 'go' })
+    ).toBe('platform');
+  });
+
+  it('classifies Maven and Gradle multi-module aggregators as platforms', async () => {
+    const maven = await tempRoot('workspai-maven-aggregator-kind-');
+    await fsExtra.outputFile(
+      path.join(maven, 'pom.xml'),
+      [
+        '<project>',
+        '  <packaging>pom</packaging>',
+        '  <modules>',
+        '    <module>community</module>',
+        '    <module>packaging</module>',
+        '  </modules>',
+        '</project>',
+      ].join('\n')
+    );
+    expect(await inferWorkspaceProjectKind(maven, {}, { runtime: 'java', framework: 'java' })).toBe(
+      'platform'
+    );
+
+    const gradle = await tempRoot('workspai-gradle-aggregator-kind-');
+    await fsExtra.outputFile(
+      path.join(gradle, 'settings.gradle.kts'),
+      'include(":core", ":server")\n'
+    );
+    await fsExtra.outputFile(path.join(gradle, 'build.gradle.kts'), 'plugins { java }\n');
+    expect(
+      await inferWorkspaceProjectKind(gradle, {}, { runtime: 'java', framework: 'java' })
+    ).toBe('platform');
+  });
+
+  it('classifies independently buildable Compose service fleets as platforms', async () => {
+    const serviceFleet = await tempRoot('workspai-compose-service-fleet-kind-');
+    await fsExtra.outputJson(path.join(serviceFleet, 'package.json'), {
+      name: 'service-fleet',
+      private: true,
+    });
+    await fsExtra.outputFile(
+      path.join(serviceFleet, 'compose.yaml'),
+      [
+        'services:',
+        '  frontend:',
+        '    build:',
+        '      context: .',
+        '      dockerfile: ./services/frontend/Dockerfile',
+        '    ports:',
+        '      - "3000:3000"',
+        '    depends_on:',
+        '      - checkout',
+        '  checkout:',
+        '    build:',
+        '      context: .',
+        '      dockerfile: ./services/checkout/Dockerfile',
+        '    ports:',
+        '      - "8080:8080"',
+        '  database:',
+        '    image: postgres:17',
+        '',
+      ].join('\n')
+    );
+
+    expect(
+      await inferWorkspaceProjectKind(serviceFleet, {}, { runtime: 'node', framework: 'node' })
+    ).toBe('platform');
+
+    const singleApplication = await tempRoot('workspai-compose-single-application-kind-');
+    await fsExtra.outputJson(path.join(singleApplication, 'package.json'), {
+      dependencies: { express: '^5.0.0' },
+    });
+    await fsExtra.outputFile(
+      path.join(singleApplication, 'compose.yaml'),
+      'services:\n  api:\n    build: .\n  database:\n    image: postgres:17\n'
+    );
+    expect(
+      await inferWorkspaceProjectKind(
+        singleApplication,
+        {},
+        {
+          runtime: 'node',
+          framework: 'express',
+        }
+      )
+    ).toBe('backend');
+
+    const buildMatrix = await tempRoot('workspai-compose-build-matrix-kind-');
+    await fsExtra.outputFile(path.join(buildMatrix, 'CMakeLists.txt'), 'project(example)\n');
+    await fsExtra.outputFile(path.join(buildMatrix, 'python', 'pyproject.toml'), '[project]\n');
+    await fsExtra.outputFile(path.join(buildMatrix, 'r', 'DESCRIPTION'), 'Package: example\n');
+    await fsExtra.outputFile(
+      path.join(buildMatrix, 'compose.yaml'),
+      [
+        'services:',
+        '  ubuntu-cpp:',
+        '    build:',
+        '      context: .',
+        '      dockerfile: ci/ubuntu-cpp.dockerfile',
+        '  alpine-cpp:',
+        '    build:',
+        '      context: .',
+        '      dockerfile: ci/alpine-cpp.dockerfile',
+        '',
+      ].join('\n')
+    );
+    expect(
+      await inferWorkspaceProjectKind(buildMatrix, {}, { runtime: 'cpp', framework: 'cpp' })
+    ).toBe('library');
+
+    const nativeApplication = await tempRoot('workspai-compose-native-application-kind-');
+    await fsExtra.outputFile(path.join(nativeApplication, 'CMakeLists.txt'), 'project(example)\n');
+    await fsExtra.outputFile(path.join(nativeApplication, 'tools', 'package.json'), '{}\n');
+    await fsExtra.outputFile(
+      path.join(nativeApplication, 'compose.yaml'),
+      'services:\n  build:\n    build: .\n'
+    );
+    expect(
+      await inferWorkspaceProjectKind(nativeApplication, {}, { runtime: 'cpp', framework: 'cpp' })
+    ).toBe('infra');
+  });
+
+  it('treats a Dockerfile as deployment evidence rather than an infrastructure identity', async () => {
+    const application = await tempRoot('workspai-dockerized-python-application-kind-');
+    await fsExtra.outputFile(path.join(application, 'pyproject.toml'), '[project]\nname = "api"\n');
+    await fsExtra.outputFile(path.join(application, 'Dockerfile'), 'FROM python:3.14\n');
+
+    expect(
+      await inferWorkspaceProjectKind(application, {}, { runtime: 'python', framework: 'python' })
+    ).toBe('backend');
+  });
+
+  it('classifies a sibling-component native monorepo as a platform', async () => {
+    const nativeWorkspace = await tempRoot('workspai-native-workspace-kind-');
+    await fsExtra.outputFile(
+      path.join(nativeWorkspace, 'pyproject.toml'),
+      '[project]\nname = "build-tooling"\n'
+    );
+    for (const component of ['compiler', 'linker', 'runtime']) {
+      await fsExtra.outputFile(
+        path.join(nativeWorkspace, component, 'CMakeLists.txt'),
+        `project(${component} CXX)\n`
+      );
+      await fsExtra.outputFile(
+        path.join(nativeWorkspace, component, 'lib', `${component}.cpp`),
+        `int ${component}_entry() { return 0; }\n`
+      );
+    }
+
+    expect(
+      await inferWorkspaceProjectKind(nativeWorkspace, {}, { runtime: 'cpp', framework: 'cpp' })
+    ).toBe('platform');
   });
 
   it('publishes deterministic official plans for every external generator', async () => {
@@ -269,6 +488,16 @@ describe('project taxonomy and expanded kit families', () => {
       kit: 'rust.axum',
     });
     expect(await inferWorkspaceProjectKind(project, metadata)).toBe('backend');
+    expect(await fsExtra.readFile(path.join(project, 'Cargo.toml'), 'utf8')).toContain(
+      'edition = "2024"'
+    );
+    expect(await fsExtra.readFile(path.join(project, 'Cargo.toml'), 'utf8')).toContain(
+      'axum = "0.8.9"'
+    );
+    expect(await fsExtra.readFile(path.join(project, 'rust-toolchain.toml'), 'utf8')).toContain(
+      'channel = "1.98.0"'
+    );
+    expect(await fsExtra.pathExists(path.join(project, '.github', 'dependabot.yml'))).toBe(true);
     expect(listAvailableRuntimeLifecycleCommands(project, 'rust', 'axum')).toEqual([
       'init',
       'dev',

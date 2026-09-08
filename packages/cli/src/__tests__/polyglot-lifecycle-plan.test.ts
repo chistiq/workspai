@@ -7,6 +7,7 @@ import { buildPolyglotLifecyclePlan } from '../polyglot-lifecycle-plan.js';
 
 describe('polyglot lifecycle plan', () => {
   const tempDirs: string[] = [];
+  const python = process.platform === 'win32' ? 'python' : 'python3';
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((directory) => fs.remove(directory)));
@@ -57,5 +58,390 @@ describe('polyglot lifecycle plan', () => {
         },
       ],
     });
+  });
+
+  it('executes a CMake add_subdirectory tree once while preserving independent builds', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-cmake-tree-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'service', 'CMakeLists.txt'),
+      'project(service C)\nadd_subdirectory("genproto")\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'service', 'genproto', 'CMakeLists.txt'),
+      'add_library(proto proto.c)\n'
+    );
+    await fs.outputFile(path.join(root, 'standalone', 'CMakeLists.txt'), 'project(standalone C)\n');
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['service', 'standalone']);
+  });
+
+  it('models a Gradle multi-project build once at its root while preserving other runtimes', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-gradle-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'settings.gradle'),
+      "include ':server', ':plugins:alpha'\n"
+    );
+    await fs.outputFile(path.join(root, 'build.gradle'), 'plugins { id "java" }\n');
+    await fs.outputFile(path.join(root, 'server', 'build.gradle'), 'plugins { id "java" }\n');
+    await fs.outputFile(
+      path.join(root, 'plugins', 'alpha', 'build.gradle'),
+      'plugins { id "java" }\n'
+    );
+    await fs.outputFile(path.join(root, 'native', 'Cargo.toml'), '[package]\nname = "native"\n');
+    await fs.outputFile(path.join(root, 'gradlew'), '#!/bin/sh\n');
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.polyglot).toBe(true);
+    expect(plan.runtimes).toEqual(['java', 'rust']);
+    expect(plan.units.map((unit) => `${unit.ecosystem}:${unit.root}`)).toEqual([
+      'gradle:.',
+      'cargo:native',
+    ]);
+    expect(plan.units.map((unit) => unit.id)).toEqual([
+      'java:.:build.gradle',
+      'rust:native:Cargo.toml',
+    ]);
+    expect(plan.units[0]?.stages[0]?.command).toBe('./gradlew dependencies');
+  });
+
+  it('keeps nested Gradle builds independent when no root settings boundary exists', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-gradle-independent-'));
+    tempDirs.push(root);
+    await fs.outputFile(path.join(root, 'service-a', 'build.gradle'), 'plugins { id "java" }\n');
+    await fs.outputFile(path.join(root, 'service-b', 'build.gradle.kts'), 'plugins { java }\n');
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['service-a', 'service-b']);
+  });
+
+  it('runs Node workspace installation at the owning root without swallowing independent packages', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-node-workspace-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputJson(path.join(root, 'package.json'), {
+      private: true,
+      packageManager: 'pnpm@10.0.0',
+      workspaces: ['packages/*'],
+      scripts: { build: 'turbo build' },
+    });
+    await fs.outputFile(path.join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    await fs.outputJson(path.join(root, 'packages', 'core', 'package.json'), {
+      name: '@example/core',
+      scripts: { build: 'tsc' },
+    });
+    await fs.outputJson(path.join(root, 'tools', 'release', 'package.json'), {
+      name: '@example/release-tool',
+      dependencies: { semver: '^7.0.0' },
+    });
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.', 'tools/release']);
+    expect(plan.units[0]?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'init', command: 'pnpm install' })
+    );
+    expect(plan.units[1]?.stages[0]?.command).toBe('npm install');
+  });
+
+  it('does not execute nested evaluation fixtures or metadata-only platform packages', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-fixture-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputJson(path.join(root, 'package.json'), {
+      private: true,
+      dependencies: { typescript: '^5.0.0' },
+    });
+    await fs.outputJson(path.join(root, 'evals', 'cases', 'migration', 'package.json'), {
+      dependencies: { next: '^16.0.0' },
+    });
+    await fs.outputJson(path.join(root, 'native', 'npm', 'linux-x64', 'package.json'), {
+      name: '@example/native-linux-x64',
+      files: ['binding.node'],
+      os: ['linux'],
+      cpu: ['x64'],
+    });
+    await fs.outputFile(
+      path.join(root, 'tests', 'fixtures', 'plugin', 'Cargo.toml'),
+      '[package]\nname="fixture-plugin"\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.']);
+  });
+
+  it('honors pnpm workspace includes and exclusions', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-pnpm-workspace-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputJson(path.join(root, 'package.json'), { private: true });
+    await fs.outputFile(
+      path.join(root, 'pnpm-workspace.yaml'),
+      "packages: ['apps/*', '!apps/standalone']\n"
+    );
+    await fs.outputJson(path.join(root, 'apps', 'web', 'package.json'), { name: 'web' });
+    await fs.outputJson(path.join(root, 'apps', 'standalone', 'package.json'), {
+      name: 'standalone',
+      dependencies: { fastify: '^5.0.0' },
+    });
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.', 'apps/standalone']);
+    expect(plan.units[0]?.stages[0]?.command).toBe('pnpm install');
+  });
+
+  it('runs Cargo workspace members through their owning workspace root', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-cargo-workspace-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'Cargo.toml'),
+      '[workspace]\ndefault-members = ["crates/standalone"]\nmembers = ["crates/*"]\nexclude = ["crates/standalone"]\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'crates', 'core', 'Cargo.toml'),
+      '[package]\nname="core"\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'crates', 'standalone', 'Cargo.toml'),
+      '[package]\nname="standalone"\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.map((unit) => unit.root)).toEqual(['.', 'crates/standalone']);
+    expect(plan.units.every((unit) => unit.stages[0]?.command === 'cargo fetch')).toBe(true);
+  });
+
+  it('models observed runtime manifests instead of dropping them from polyglot execution', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-observed-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(path.join(root, 'Gemfile'), "gem 'rails'\ngem 'rspec-rails'\n");
+    await fs.outputFile(path.join(root, 'bin', 'rails'), '#!/usr/bin/env ruby\n');
+    await fs.outputFile(path.join(root, 'spec', 'models', 'user_spec.rb'), 'RSpec.describe User\n');
+    await fs.outputJson(path.join(root, 'tools', 'composer.json'), {
+      scripts: { test: 'phpunit' },
+    });
+    await fs.outputFile(
+      path.join(root, 'services', 'events', 'mix.exs'),
+      'def project, do: [app: :events]\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'services', 'rules', 'deps.edn'),
+      '{:aliases {:test {}}}\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'services', 'analytics', 'build.sbt'),
+      'scalaVersion := "3.3.3"\n'
+    );
+    await fs.outputJson(path.join(root, 'edge', 'deno.json'), { tasks: { test: 'deno test' } });
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.runtimes).toEqual(['clojure', 'deno', 'elixir', 'php', 'ruby', 'scala']);
+    expect(plan.units.find((unit) => unit.runtime === 'ruby')).toMatchObject({
+      ecosystem: 'bundler',
+      manifest: 'Gemfile',
+      stages: expect.arrayContaining([
+        expect.objectContaining({ stage: 'test', command: 'bundle exec rspec' }),
+        expect.objectContaining({ stage: 'start', command: 'bundle exec rails server' }),
+      ]),
+    });
+    expect(plan.units.find((unit) => unit.runtime === 'php')?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'test', command: 'composer test' })
+    );
+  });
+
+  it('classifies Bun and Kotlin ownership without duplicating their shared manifests', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-shared-manifest-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputJson(path.join(root, 'web', 'package.json'), {
+      scripts: { test: 'bun test', build: 'bun build src.ts' },
+    });
+    await fs.outputFile(path.join(root, 'web', 'bun.lock'), '');
+    await fs.outputFile(
+      path.join(root, 'mobile', 'build.gradle.kts'),
+      'plugins { kotlin("jvm") version "2.0.0" }\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.runtimes).toEqual(['bun', 'kotlin']);
+    expect(plan.units.find((unit) => unit.runtime === 'bun')).toMatchObject({
+      ecosystem: 'bun',
+      stages: expect.arrayContaining([
+        expect.objectContaining({ stage: 'init', command: 'bun install' }),
+        expect.objectContaining({ stage: 'test', command: 'bun run test' }),
+      ]),
+    });
+  });
+
+  it('plans evidence-backed start commands and preserves the Python package manager', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-service-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(path.join(root, 'go-api', 'go.mod'), 'module example.test/go-api\n');
+    await fs.outputFile(
+      path.join(root, 'go-api', 'cmd', 'server', 'main.go'),
+      'package main\nfunc main() {}\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'python-api', 'pyproject.toml'),
+      [
+        '[tool.poetry]',
+        'name = "python-api"',
+        '[tool.poetry.scripts]',
+        'start = "src.cli:start"',
+        '[build-system]',
+        'requires = ["poetry-core"]',
+        '[tool.pytest.ini_options]',
+      ].join('\n')
+    );
+    await fs.outputFile(
+      path.join(root, 'dotnet-api', 'service.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(plan.units.find((unit) => unit.runtime === 'go')?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'start', command: 'go run ./cmd/server' })
+    );
+    expect(plan.units.find((unit) => unit.runtime === 'python')?.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: 'init', command: 'poetry install' }),
+        expect.objectContaining({ stage: 'test', command: 'poetry run pytest' }),
+        expect.objectContaining({ stage: 'build', command: 'poetry build' }),
+        expect.objectContaining({ stage: 'start', command: 'poetry run start' }),
+      ])
+    );
+    expect(plan.units.find((unit) => unit.runtime === 'dotnet')?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'start', command: 'dotnet run --project service.csproj' })
+    );
+  });
+
+  it('treats a manifest-backed Python main module as buildable and runnable', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-python-agent-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+    await fs.outputFile(path.join(root, 'agents', 'primary', 'main.py'), 'print("ready")\n');
+
+    expect(buildPolyglotLifecyclePlan(root).units[0]?.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: 'build', command: `${python} -m compileall .` }),
+        expect.objectContaining({ stage: 'start', command: `${python} main.py` }),
+      ])
+    );
+  });
+
+  it('uses dependency-free unittest unless the Python project proves pytest ownership', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-python-test-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'stdlib', 'pyproject.toml'),
+      '[project]\nname = "stdlib-tests"\nversion = "0.1.0"\n'
+    );
+    await fs.outputFile(path.join(root, 'stdlib', 'tests', 'test_context.py'), 'import unittest\n');
+    await fs.outputFile(
+      path.join(root, 'pytest-owned', 'pyproject.toml'),
+      '[project]\nname = "pytest-owned"\ndependencies = ["pytest==9.1.1"]\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'pytest-owned', 'tests', 'test_context.py'),
+      'def test_ok(): pass\n'
+    );
+
+    const plan = buildPolyglotLifecyclePlan(root);
+
+    expect(
+      plan.units
+        .find((unit) => unit.root === 'stdlib')
+        ?.stages.find((stage) => stage.stage === 'test')
+    ).toMatchObject({ command: `${python} -m unittest discover -s tests` });
+    expect(
+      plan.units
+        .find((unit) => unit.root === 'pytest-owned')
+        ?.stages.find((stage) => stage.stage === 'test')
+    ).toMatchObject({ command: `${python} -m pytest` });
+  });
+
+  it('treats a direct .NET test project as the only test execution boundary', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-dotnet-test-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'agents', 'primary', 'Primary.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>\n'
+    );
+    await fs.outputFile(
+      path.join(root, 'agents', 'primary', 'tests', 'Primary.Tests.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>\n'
+    );
+
+    const units = buildPolyglotLifecyclePlan(root).units;
+    expect(units.find((unit) => unit.root === 'agents/primary')?.stages).not.toContainEqual(
+      expect.objectContaining({ stage: 'test' })
+    );
+    expect(units.find((unit) => unit.root === 'agents/primary/tests')?.stages).toContainEqual(
+      expect.objectContaining({ stage: 'test', command: 'dotnet test Primary.Tests.csproj' })
+    );
+  });
+
+  it('ignores exact legacy agent-kit shell manifests without hiding authored root units', async () => {
+    const pythonRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-legacy-python-agent-lifecycle-')
+    );
+    const dotnetRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-legacy-dotnet-agent-lifecycle-')
+    );
+    tempDirs.push(pythonRoot, dotnetRoot);
+
+    await fs.outputJson(path.join(pythonRoot, '.workspai', 'project.json'), {
+      name: 'apex-app',
+      generated_by: 'workspai',
+      kit: 'agent.microsoft.python',
+    });
+    await fs.outputFile(
+      path.join(pythonRoot, 'pyproject.toml'),
+      '[project]\nname = "apex-app"\nversion = "0.1.0"\nrequires-python = ">=3.10"\ndependencies = []\n\n[tool.uv]\npackage = false\n'
+    );
+    await fs.outputFile(
+      path.join(pythonRoot, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+
+    await fs.outputJson(path.join(dotnetRoot, '.workspai', 'project.json'), {
+      name: 'radar-app',
+      generated_by: 'workspai',
+      kit_name: 'agent.microsoft.dotnet',
+    });
+    await fs.outputFile(
+      path.join(dotnetRoot, 'radar-app.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <ImplicitUsings>enable</ImplicitUsings>\n    <Nullable>enable</Nullable>\n  </PropertyGroup>\n</Project>\n'
+    );
+    await fs.outputFile(
+      path.join(dotnetRoot, 'agents', 'primary', 'Primary.csproj'),
+      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>\n'
+    );
+
+    expect(buildPolyglotLifecyclePlan(pythonRoot).units.map((unit) => unit.root)).toEqual([
+      'agents/primary',
+    ]);
+    expect(buildPolyglotLifecyclePlan(dotnetRoot).units.map((unit) => unit.root)).toEqual([
+      'agents/primary',
+    ]);
+
+    await fs.appendFile(
+      path.join(pythonRoot, 'pyproject.toml'),
+      '\n[project.scripts]\napp = "app:main"\n'
+    );
+    expect(buildPolyglotLifecyclePlan(pythonRoot).units.map((unit) => unit.root)).toEqual([
+      '.',
+      'agents/primary',
+    ]);
   });
 });

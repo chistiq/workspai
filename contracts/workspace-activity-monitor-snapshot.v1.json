@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/contracts/workspace-activity-monitor-snapshot.v1.json",
+  "title": "Workspai Activity Monitor Snapshot",
+  "description": "A deterministic local projection of durable Workspai activity journals. It is observational and is not verification evidence by itself.",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "scope", "runs", "diagnostics"],
+  "properties": {
+    "schemaVersion": { "const": "workspace-activity-monitor-snapshot.v1" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "runs": { "type": "array", "items": { "$ref": "#/$defs/run" } },
+    "diagnostics": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "status": {
+      "enum": [
+        "planned",
+        "running",
+        "succeeded",
+        "warned",
+        "blocked",
+        "failed",
+        "cancelled",
+        "skipped",
+        "rolled-back"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "required": ["kind", "id", "label", "portable"],
+      "properties": {
+        "kind": { "enum": ["ephemeral-project", "project", "workspace"] },
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "portable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "origin": {
+      "type": "object",
+      "required": ["id", "kind", "label"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["project", "workspace-root"] },
+        "label": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "progress": {
+      "type": "object",
+      "properties": {
+        "completed": { "type": "number", "minimum": 0 },
+        "total": { "type": "number", "minimum": 0 },
+        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "iteration": { "type": "number", "minimum": 0 },
+        "iterations": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "attempt": {
+      "type": "object",
+      "required": ["attempt", "status", "startedAt", "updatedAt"],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "status": { "$ref": "#/$defs/status" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "progress": { "$ref": "#/$defs/progress" },
+        "durationMs": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "evidenceBinding": {
+      "type": "object",
+      "required": ["kind", "ref", "role", "provenance"],
+      "properties": {
+        "kind": { "enum": ["artifact", "graph-entity", "graph-relation", "proof", "project"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["input", "output", "verification", "subject"] },
+        "provenance": { "enum": ["authoritative", "observed"] },
+        "graphSourceHash": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": { "enum": ["graph-entity", "graph-relation", "proof"] }
+            },
+            "required": ["kind"]
+          },
+          "then": { "required": ["graphSourceHash"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "block": {
+      "type": "object",
+      "required": ["id", "label", "status", "order", "updatedAt", "attempts"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/status" },
+        "order": { "type": "number" },
+        "parentId": { "type": "string", "minLength": 1 },
+        "progress": { "$ref": "#/$defs/progress" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "layoutHint": { "enum": ["source", "process", "gate", "sink"] },
+        "group": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "attempts": { "type": "array", "items": { "$ref": "#/$defs/attempt" } },
+        "evidenceBindings": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/evidenceBinding" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "fromBlockId", "toBlockId", "kind", "status", "order", "updatedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "fromBlockId": { "type": "string", "minLength": 1 },
+        "toBlockId": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["sequence", "parallel", "gate", "handoff"] },
+        "status": { "$ref": "#/$defs/status" },
+        "order": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "touch": {
+      "type": "object",
+      "required": ["locator", "at"],
+      "properties": {
+        "locator": { "type": "string" },
+        "operation": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["locator", "at"],
+      "properties": {
+        "locator": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "runId",
+        "command",
+        "status",
+        "startedAt",
+        "updatedAt",
+        "blocks",
+        "edges",
+        "touches",
+        "artifacts",
+        "warnings"
+      ],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "parentRunId": { "type": "string", "minLength": 1 },
+        "pid": { "type": "integer", "minimum": 1 },
+        "orphaned": { "type": "boolean" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "command": { "type": "array", "items": { "type": "string" } },
+        "status": { "$ref": "#/$defs/status" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "blocks": { "type": "array", "items": { "$ref": "#/$defs/block" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
+        "touches": { "type": "array", "items": { "$ref": "#/$defs/touch" } },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "evidenceBindings": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/evidenceBinding" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

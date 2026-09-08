@@ -29,6 +29,9 @@
           "enum": ["managed", "adopted", "imported", "linked", "restored"]
         },
         "contract": { "const": "workspace:.workspai/workspace.contract.json" },
+        "projectKnowledgeGraph": {
+          "const": ".workspai/reports/project-knowledge-graph-reference.json"
+        },
         "model": { "const": "workspace:.workspai/reports/workspace-model.json" },
         "knowledgeGraph": {
           "const": "workspace:.workspai/reports/workspace-knowledge-graph.json"
@@ -108,6 +111,7 @@
         "framework": { "type": "string" },
         "kit": { "type": "string" },
         "supportTier": { "type": "string" },
+        "governance": { "$ref": "#/$defs/projectGovernance" },
         "commands": {
           "type": "object",
           "required": ["supported", "unsupported", "fleetStages"],
@@ -139,6 +143,7 @@
         "relationsByKind",
         "languages",
         "semantic",
+        "projection",
         "relatedProjects",
         "freshness",
         "topology",
@@ -199,6 +204,41 @@
           },
           "additionalProperties": false
         },
+        "projection": {
+          "description": "Observable bounds for the representative entity projection. Counts remain exhaustive; omitted entities are available through bounded graph search.",
+          "type": "object",
+          "required": [
+            "mode",
+            "maxEntities",
+            "byteBudget",
+            "selectedBytes",
+            "eligibleCount",
+            "selectedCount",
+            "omittedCount",
+            "selectedByKind",
+            "omittedByKind",
+            "continuationCommand"
+          ],
+          "properties": {
+            "mode": { "const": "stratified-byte-bounded" },
+            "maxEntities": { "type": "integer", "minimum": 1 },
+            "byteBudget": { "type": "integer", "minimum": 1 },
+            "selectedBytes": { "type": "integer", "minimum": 0 },
+            "eligibleCount": { "type": "integer", "minimum": 0 },
+            "selectedCount": { "type": "integer", "minimum": 0 },
+            "omittedCount": { "type": "integer", "minimum": 0 },
+            "selectedByKind": {
+              "type": "object",
+              "additionalProperties": { "type": "integer", "minimum": 0 }
+            },
+            "omittedByKind": {
+              "type": "object",
+              "additionalProperties": { "type": "integer", "minimum": 1 }
+            },
+            "continuationCommand": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
         "relatedProjects": {
           "type": "array",
           "items": { "type": "string" },
@@ -222,12 +262,12 @@
             "dependencies": {
               "type": "array",
               "items": { "$ref": "#/$defs/topologyRelation" },
-              "maxItems": 128
+              "maxItems": 16
             },
             "dependents": {
               "type": "array",
               "items": { "$ref": "#/$defs/topologyRelation" },
-              "maxItems": 128
+              "maxItems": 16
             }
           },
           "additionalProperties": false
@@ -266,7 +306,7 @@
             "decisions": { "$ref": "#/$defs/entityList" },
             "ports": {
               "type": "array",
-              "maxItems": 32,
+              "maxItems": 8,
               "items": { "$ref": "#/$defs/port" }
             }
           },
@@ -274,6 +314,7 @@
         },
         "diagnostics": {
           "type": "array",
+          "maxItems": 16,
           "items": {
             "type": "object",
             "required": ["code", "severity", "message"],
@@ -293,23 +334,24 @@
       "type": "object",
       "required": ["readOrder", "projectProofArtifacts", "relations", "proofs"],
       "properties": {
-        "readOrder": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "readOrder": { "type": "array", "maxItems": 12, "items": { "type": "string" }, "uniqueItems": true },
         "projectProofArtifacts": {
           "type": "array",
           "items": {
             "type": "string",
             "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "maxItems": 24
         },
         "relations": {
           "type": "array",
-          "maxItems": 128,
+          "maxItems": 16,
           "items": { "$ref": "#/$defs/relation" }
         },
         "proofs": {
           "type": "array",
-          "maxItems": 128,
+          "maxItems": 16,
           "items": { "$ref": "#/$defs/proof" }
         }
       },
@@ -383,6 +425,7 @@
         "requiredReadOrder": {
           "type": "array",
           "minItems": 4,
+          "maxItems": 10,
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 }
         },
@@ -424,6 +467,34 @@
     }
   },
   "$defs": {
+    "governanceControl": {
+      "type": "object",
+      "required": ["status", "provider", "evidence", "reference"],
+      "properties": {
+        "status": {
+          "enum": ["repository", "external-declared", "external-observed", "unknown"]
+        },
+        "provider": { "type": ["string", "null"] },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "reference": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "projectGovernance": {
+      "type": "object",
+      "required": ["schemaVersion", "ci", "release", "ownership"],
+      "properties": {
+        "schemaVersion": { "const": "workspai.project-governance.v1" },
+        "ci": { "$ref": "#/$defs/governanceControl" },
+        "release": { "$ref": "#/$defs/governanceControl" },
+        "ownership": { "$ref": "#/$defs/governanceControl" }
+      },
+      "additionalProperties": false
+    },
     "portableString": {
       "type": "string",
       "not": { "pattern": "^(?:/|[A-Za-z]:[\\\\/])" }

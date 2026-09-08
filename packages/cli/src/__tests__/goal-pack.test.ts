@@ -9,6 +9,7 @@ import { planGoalPack } from '../goal-pack.js';
 import {
   buildGoalLifecycleResult,
   inspectGoalLifecycle,
+  linkGoalChangeTransaction,
   prepareGoalVerification,
   transitionGoalLifecycle,
   verifyGoalLifecycle,
@@ -148,6 +149,26 @@ afterEach(async () => {
 });
 
 describe('goal pack workspace adapter', () => {
+  it('resolves an explicit project scope independently of the caller cwd', async () => {
+    const { workspacePath } = await fixture();
+    const unrelatedPath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-goal-caller-'));
+    roots.push(unrelatedPath);
+
+    const result = await planGoalPack({
+      startPath: unrelatedPath,
+      workspacePath,
+      scope: 'project:api',
+      intent: 'Document retry behavior without changing runtime behavior',
+      dryRun: true,
+    });
+
+    expect(result.goalPack.scope).toMatchObject({
+      kind: 'project',
+      projects: ['api'],
+      selectionSource: 'explicit',
+    });
+  });
+
   it('requires an explicit bounded scope at a multi-project workspace root', async () => {
     const { workspacePath } = await fixture();
     await addFixtureProject({ workspacePath, name: 'worker', runtime: 'python' });
@@ -281,15 +302,105 @@ describe('goal pack workspace adapter', () => {
     const { projectPath } = await fixture();
     const result = await planGoalPack({
       startPath: projectPath,
-      intent: 'Improve retry backoff diagnostics',
+      intent: 'Improve API retry backoff diagnostics without changing public APIs',
       dryRun: true,
     });
 
     expect(result.goalPack.preflight.retrieval.queries[0]).toBe(
       'Improve retry backoff diagnostics'
     );
+    expect(result.goalPack.preflight.retrieval.queries[1]).toBe('public APIs');
     expect(result.goalPack.preflight.retrieval.anchors[0]?.label).toContain('retry-backoff');
     expect(result.goalPack.preflight.retrieval.status).toBe('partial');
+  });
+
+  it('preserves language-specific compatibility clauses in bounded Goal retrieval', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    await fsExtra.outputFile(
+      path.join(projectPath, 'bindings', 'bridge.py'),
+      'def bridge(): pass\n'
+    );
+    await fsExtra.outputFile(path.join(projectPath, 'bindings', 'bridge.rb'), 'def bridge; end\n');
+    await fsExtra.outputFile(
+      path.join(projectPath, 'bindings', 'bridge.R'),
+      'bridge <- function() {}\n'
+    );
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      includeAbsolutePaths: true,
+      now: new Date('2026-08-15T00:01:00.000Z'),
+    });
+    await writeWorkspaceModel(model, workspacePath);
+
+    const result = await planGoalPack({
+      startPath: projectPath,
+      intent:
+        'Improve C++ kernel performance while preserving Python, R, and Ruby binding compatibility',
+      dryRun: true,
+    });
+
+    expect(result.goalPack.preflight.retrieval.queries[0]).toBe('Improve C++ kernel performance');
+    expect(result.goalPack.preflight.retrieval.queries[1]).toBe(
+      'Python R and Ruby binding compatibility'
+    );
+    const labels = result.goalPack.preflight.retrieval.anchors.map((anchor) => anchor.label);
+    expect(labels).toEqual(expect.arrayContaining([expect.stringContaining('language: python')]));
+    expect(labels).toEqual(expect.arrayContaining([expect.stringContaining('language: r')]));
+    expect(labels).toEqual(expect.arrayContaining([expect.stringContaining('language: ruby')]));
+  });
+
+  it('keeps large API surfaces from crowding source evidence out of Goal retrieval', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const paths = Array.from({ length: 30 }, (_, index) => [
+      `  /api-server/admission-latency/policies/${index}:`,
+      '    get:',
+      `      operationId: getAdmissionPolicy${index}`,
+      '      responses:',
+      "        '200':",
+      '          description: ok',
+    ]).flat();
+    await fsExtra.outputFile(
+      path.join(projectPath, 'openapi.yaml'),
+      [
+        'openapi: 3.1.0',
+        'info:',
+        '  title: Admission API',
+        '  version: 1.0.0',
+        'paths:',
+        ...paths,
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'admission-api-server-latency.ts'),
+      'export const AdmissionApiServerLatency = 1;\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'src', 'controller-compatibility.ts'),
+      'export const ControllerCompatibility = true;\n'
+    );
+    const model = await buildWorkspaceModel({
+      workspacePath,
+      includeAbsolutePaths: true,
+      now: new Date('2026-08-15T00:02:00.000Z'),
+    });
+    await writeWorkspaceModel(model, workspacePath);
+
+    const result = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Reduce API server admission latency while preserving controller compatibility',
+      dryRun: true,
+    });
+
+    const anchors = result.goalPack.preflight.retrieval.anchors;
+    expect(anchors.length).toBeGreaterThanOrEqual(4);
+    expect(anchors.length).toBeLessThanOrEqual(20);
+    expect(
+      anchors.some((anchor) => anchor.kind === 'endpoint'),
+      JSON.stringify(anchors, null, 2)
+    ).toBe(true);
+    expect(anchors.some((anchor) => anchor.kind === 'symbol')).toBe(true);
+    expect(new Set(anchors.map((anchor) => anchor.kind)).size).toBeGreaterThan(1);
+    expect(anchors.filter((anchor) => anchor.kind === 'endpoint').length).toBeLessThan(15);
   });
 
   it('keeps Goal identity stable across an evidence-only Graph regeneration', async () => {
@@ -387,6 +498,39 @@ describe('goal pack workspace adapter', () => {
     expect(inspected.index.goals.find((goal) => goal.id === first.goalPack.id)?.lifecycle).toBe(
       'planned'
     );
+  });
+
+  it('publishes lifecycle results after PCC links the active Goal transaction', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Repair the active workspace blocker',
+    });
+    await linkGoalChangeTransaction({
+      workspacePath,
+      goalId: planned.goalPack.id,
+      changeId: 'change-12345678',
+    });
+
+    const inspected = await inspectGoalLifecycle({
+      workspacePath,
+      goalId: planned.goalPack.id,
+    });
+    expect(() =>
+      buildGoalLifecycleResult({
+        operation: 'status',
+        activeGoalId: inspected.index.activeGoalId,
+        goal: inspected.active,
+        goals: inspected.index.goals,
+        goalPack: inspected.goalPack,
+        verifiedGoalId: null,
+        verification: null,
+      })
+    ).not.toThrow();
+    expect(inspected.active).toMatchObject({
+      changeTransactionId: 'change-12345678',
+      changeTransactionIds: ['change-12345678'],
+    });
   });
 
   it('does not replace an active Goal with a plan that still needs confirmation', async () => {
@@ -528,6 +672,66 @@ describe('goal pack workspace adapter', () => {
       'export const changedOutsideVerification = true;\n'
     );
     await expect(inspectGoalLifecycle({ workspacePath })).rejects.toThrow('stale');
+  });
+
+  it('accepts coverage evidence regenerated by its own CLI verification receipt', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const coveragePath = path.join(projectPath, 'coverage', 'coverage-summary.json');
+    const coverage = (covered: number) => ({
+      total: {
+        lines: { total: 100, covered, skipped: 0, pct: covered },
+        statements: { total: 100, covered, skipped: 0, pct: covered },
+      },
+    });
+    await fsExtra.outputJson(coveragePath, coverage(50));
+    await fsExtra.outputFile(
+      path.join(projectPath, 'write-coverage.cjs'),
+      `require('fs').writeFileSync('coverage/coverage-summary.json', ${JSON.stringify(
+        JSON.stringify(coverage(85))
+      )});\n`
+    );
+    const packageJson = await fsExtra.readJson(path.join(projectPath, 'package.json'));
+    packageJson.scripts = {
+      ...packageJson.scripts,
+      'test:coverage': 'node write-coverage.cjs',
+      build: 'node -e "process.exit(0)"',
+    };
+    await fsExtra.writeJson(path.join(projectPath, 'package.json'), packageJson, { spaces: 2 });
+    await writeWorkspaceModel(
+      await buildWorkspaceModel({ workspacePath, includeAbsolutePaths: true }),
+      workspacePath
+    );
+
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Keep test coverage at or above 80 percent',
+      scope: 'project:api',
+      runtime: 'node',
+    });
+    const originalEvidenceHash = planned.goalPack.preflight.measurement.existingEvidence[0]?.sha256;
+    await prepareGoalVerification({ workspacePath, goalId: planned.goalPack.id });
+
+    const verified = await verifyGoalLifecycle({
+      workspacePath,
+      goalId: planned.goalPack.id,
+      run: true,
+    });
+    const currentEvidenceHash = createHash('sha256')
+      .update(await fsExtra.readFile(coveragePath))
+      .digest('hex');
+
+    expect(currentEvidenceHash).not.toBe(originalEvidenceHash);
+    expect(verified.goal.verificationReceipt).toBeDefined();
+    await expect(
+      inspectGoalLifecycle({ workspacePath, goalId: planned.goalPack.id })
+    ).resolves.toMatchObject({
+      active: {
+        verificationReceipt: {
+          modelHash: expect.any(String),
+          graphFingerprint: expect.any(String),
+        },
+      },
+    });
   });
 
   it('enforces the immutable Goal Pack verification-attempt budget', async () => {

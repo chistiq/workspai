@@ -113,7 +113,7 @@ echo "🔄 Regenerating version-derived contracts..."
 echo "🧪 Running quality checks..."
 "${NPM_CMD[@]}" run validate
 "${NPM_CMD[@]}" run build
-"${NPM_CMD[@]}" run bundle-size
+"${NPM_CMD[@]}" --workspace workspai run bundle-size
 echo "✅ Quality checks passed"
 
 PKG_NAME="$(node -p "require('./packages/cli/package.json').name")"

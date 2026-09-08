@@ -202,6 +202,7 @@ describe('small published contract boundaries', () => {
       { ...index, schemaVersion: 'bad' },
       { ...index, generatedAt: null },
       { ...index, skills: null },
+      { ...index, selection: {} },
     ])
       expect(isWorkspaceSkillsIndex(value)).toBe(false);
   });

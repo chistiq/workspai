@@ -5,7 +5,7 @@ import { readImportedProjectsRegistry } from './imported-projects-registry.js';
 import {
   detectBackendFrameworkFromProject,
   detectNestedRuntimeCandidatesFromProject,
-  detectRuntimeCandidatesFromProject,
+  isWorkspaiManagedLinkedProjectMetadata,
   type BackendConfidence,
   type BackendRuntimeFamily,
   type BackendSupportTier,
@@ -23,6 +23,10 @@ import {
 } from './utils/project-kind.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import {
+  detectProjectGovernance,
+  type ProjectGovernanceProfile,
+} from './utils/project-governance.js';
+import {
   resolveCreatePlannerCapability,
   type CreatePlannerCapability,
 } from './utils/create-planner-capabilities.js';
@@ -32,6 +36,7 @@ import {
   inferWorkspaceDependencyGraphIncremental,
 } from './workspace-dependency-graph.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
+import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
 import {
   computeModelInputsHash,
   computeProjectSignatures,
@@ -47,6 +52,7 @@ import {
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import { readWorkspaceContract, type WorkspaceContract } from './utils/workspace-contract.js';
 import { readRapidkitProjectJson } from './utils/runtime-detection.js';
+import { readProjectMetadata } from './utils/project-metadata.js';
 import { getRuntimeSupport } from './utils/support-matrix.js';
 import { discoverWorkspaceProjects } from './utils/workspace-discovery.js';
 import { readWorkspaceMarker } from './workspace-marker.js';
@@ -59,8 +65,13 @@ import {
 } from './contracts/fact-freshness-contract.js';
 import {
   firstExistingWorkspaceArtifactPath,
-  writeWorkspaceArtifactJsonSet,
+  writeWorkspaceArtifactJsonSetAcrossRoots,
 } from './utils/artifact-path-compat.js';
+import {
+  buildProjectKnowledgeGraphReference,
+  type ProjectKnowledgeGraphReference,
+  workspaceModelProjectRoot,
+} from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 
 export const WORKSPACE_MODEL_SCHEMA_VERSION = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.model;
@@ -108,6 +119,7 @@ export type WorkspaceModelProject = {
     map: Record<string, CommandCapability>;
   };
   importantFiles: string[];
+  governance?: ProjectGovernanceProfile;
   evidence: Record<string, WorkspaceModelEvidenceRef | null>;
   provenance: Record<string, string>;
 };
@@ -183,6 +195,7 @@ export type WorkspaceModel = {
     runtimes: string[];
     frameworks: string[];
     firstClassProjects: number;
+    extendedProjects: number;
     observedProjects: number;
   };
   facts?: WorkspaceFact[];
@@ -278,11 +291,15 @@ const OBSERVABLE_PROJECT_MARKERS = [
   'deno.jsonc',
   'bun.lock',
   'bun.lockb',
+  'bunfig.toml',
+  '.bunfig.toml',
   'deps.edn',
   'project.clj',
   'build.sbt',
   'docker-compose.yml',
   'docker-compose.yaml',
+  'compose.yml',
+  'compose.yaml',
   'terraform.tf',
 ];
 
@@ -455,13 +472,24 @@ async function collectImportantFiles(projectPath: string): Promise<string[]> {
     '.rapidkit/project.json',
     '.rapidkit/context.json',
     'package.json',
+    'product.json',
+    'tsconfig.json',
+    'pnpm-workspace.yaml',
+    'bunfig.toml',
+    '.bunfig.toml',
+    'nx.json',
+    'turbo.json',
     'pyproject.toml',
     'requirements.txt',
     'go.mod',
+    'go.work',
+    'go.work.sum',
     'pom.xml',
     'build.gradle',
     'build.gradle.kts',
     'Cargo.toml',
+    'rust-toolchain.toml',
+    'rust-toolchain',
     'CMakeLists.txt',
     'meson.build',
     'Makefile',
@@ -479,6 +507,9 @@ async function collectImportantFiles(projectPath: string): Promise<string[]> {
     'setup.cfg',
     'Dockerfile',
     'docker-compose.yml',
+    'docker-compose.yaml',
+    'compose.yml',
+    'compose.yaml',
     'README.md',
   ];
   const existing: string[] = [];
@@ -486,6 +517,101 @@ async function collectImportantFiles(projectPath: string): Promise<string[]> {
     if (await fsExtra.pathExists(path.join(projectPath, candidate))) {
       existing.push(candidate);
     }
+  }
+  const rootRuntimeManifests = new Set([
+    'package.json',
+    'pyproject.toml',
+    'go.mod',
+    'go.work',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'Cargo.toml',
+    'CMakeLists.txt',
+    'meson.build',
+    'composer.json',
+    'Gemfile',
+    'mix.exs',
+    'deno.json',
+  ]);
+  if (!existing.some((candidate) => rootRuntimeManifests.has(candidate))) {
+    const nestedCandidates: string[] = [];
+    const ignored = new Set([
+      '.git',
+      '.workspai',
+      '.rapidkit',
+      '.venv',
+      'build',
+      'dist',
+      'node_modules',
+      'target',
+      'third_party',
+      'vendor',
+    ]);
+    const isManifest = (name: string, parentName: string): boolean => {
+      const lower = name.toLowerCase();
+      return (
+        [
+          'package.json',
+          'pyproject.toml',
+          'go.mod',
+          'pom.xml',
+          'build.gradle',
+          'build.gradle.kts',
+          'cargo.toml',
+          'cmakelists.txt',
+          'meson.build',
+          'composer.json',
+          'gemfile',
+          'mix.exs',
+          'deno.json',
+        ].includes(lower) ||
+        lower.endsWith('.gemspec') ||
+        (lower === 'description' && parentName.toLowerCase() === 'r')
+      );
+    };
+    const visit = async (directory: string, depth: number): Promise<void> => {
+      if (depth > 3 || nestedCandidates.length >= 512) return;
+      const entries = await fsExtra.readdir(directory, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (nestedCandidates.length >= 512) return;
+        if (entry.isFile() && isManifest(entry.name, path.basename(directory))) {
+          nestedCandidates.push(
+            path.relative(projectPath, path.join(directory, entry.name)).split(path.sep).join('/')
+          );
+        } else if (entry.isDirectory() && !ignored.has(entry.name)) {
+          await visit(path.join(directory, entry.name), depth + 1);
+        }
+      }
+    };
+    await visit(projectPath, 0);
+    const candidatesByBoundary = new Map<string, string[]>();
+    for (const candidate of nestedCandidates) {
+      const boundary = candidate.split('/')[0];
+      const candidates = candidatesByBoundary.get(boundary) ?? [];
+      candidates.push(candidate);
+      candidatesByBoundary.set(boundary, candidates);
+    }
+    for (const candidates of candidatesByBoundary.values()) {
+      candidates.sort(
+        (left, right) =>
+          left.split('/').length - right.split('/').length || left.localeCompare(right)
+      );
+    }
+    const nested: string[] = [];
+    const boundaries = [...candidatesByBoundary.keys()].sort();
+    for (
+      let offset = 0;
+      nested.length < 16 &&
+      boundaries.some((boundary) => offset < (candidatesByBoundary.get(boundary)?.length ?? 0));
+      offset += 1
+    ) {
+      for (const boundary of boundaries) {
+        const candidate = candidatesByBoundary.get(boundary)?.[offset];
+        if (candidate && nested.length < 16) nested.push(candidate);
+      }
+    }
+    existing.push(...nested.filter((candidate) => !existing.includes(candidate)));
   }
   return existing;
 }
@@ -552,18 +678,32 @@ async function buildProjectModel(
     contractProject?: WorkspaceContract['projects'][number];
   }
 ): Promise<WorkspaceModelProject> {
-  const projectJson = readRapidkitProjectJson(projectPath);
-  const detection = detectBackendFrameworkFromProject(projectPath, projectJson);
+  // Discovery already resolved this project's boundary. Ancestor metadata
+  // belongs to another project, even when it contains this directory.
+  const projectJson = readRapidkitProjectJson(projectPath, { searchParents: false });
+  // Authored Workspai metadata is the canonical identity for native projects.
+  // Re-running source heuristics here used to erase multi-runtime framework
+  // identities (for example Microsoft Agent Framework became plain Python or
+  // .NET) even though the capability resolver had already read them correctly.
+  const metadata = readProjectMetadata(projectPath);
+  const detection =
+    metadata && !isWorkspaiManagedLinkedProjectMetadata(projectJson)
+      ? metadata.detection
+      : detectBackendFrameworkFromProject(projectPath, projectJson);
   const capabilities = resolveProjectCommandCapabilities(projectPath);
   const runtimeSupport = getRuntimeSupport(detection.runtime);
-  const kind = await inferWorkspaceProjectKind(projectPath, projectJson);
+  const kind = await inferWorkspaceProjectKind(projectPath, projectJson, {
+    runtime: detection.runtime,
+    framework: detection.key,
+  });
   const projectName = options.contractProject?.slug
     ? options.contractProject.slug
     : typeof projectJson?.name === 'string' && projectJson.name.trim()
       ? projectJson.name.trim()
       : path.basename(projectPath);
-  const kit =
-    typeof projectJson?.kit_name === 'string'
+  const kit = isWorkspaiManagedLinkedProjectMetadata(projectJson)
+    ? `adopted.${detection.key}`
+    : typeof projectJson?.kit_name === 'string'
       ? projectJson.kit_name
       : typeof projectJson?.kit === 'string'
         ? projectJson.kit
@@ -580,16 +720,19 @@ async function buildProjectModel(
     framework: detection.key,
     runtime: detection.runtime,
   });
-  const relativeProjectPath = path.relative(workspacePath, projectPath);
-  const isExternalProject =
-    relativeProjectPath === '..' || relativeProjectPath.startsWith(`..${path.sep}`);
-  const detectedRuntimeCandidates = isExternalProject
-    ? detectNestedRuntimeCandidatesFromProject(projectPath)
-    : detectRuntimeCandidatesFromProject(projectPath);
+  // Every registered project root is an authorized ownership boundary,
+  // regardless of whether it is physically inside or outside the workspace.
+  // Preserve bounded nested runtime surfaces for both layouts so moving the
+  // same project across that boundary cannot change its semantic model.
+  const detectedRuntimeCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
   const runtimeCandidates = [
     detection.runtime,
     ...detectedRuntimeCandidates.filter((runtime) => runtime !== detection.runtime),
   ];
+  const governance = await detectProjectGovernance({
+    projectPath,
+    declaration: options.contractProject?.governance,
+  });
 
   return {
     name: projectName,
@@ -620,6 +763,7 @@ async function buildProjectModel(
       map: capabilities.commandMap,
     },
     importantFiles: await collectImportantFiles(projectPath),
+    governance,
     evidence: await projectEvidenceRefs(workspacePath, projectPath, options.includeEvidence),
     provenance: {
       path: options.contractProject
@@ -629,6 +773,10 @@ async function buildProjectModel(
       framework: detection.source,
       commands: 'project command capability matrix',
       createCapability: 'create planner capability contract',
+      governance:
+        options.contractProject?.governance !== undefined
+          ? 'workspace contract declaration reconciled with repository evidence'
+          : 'repository and documented external governance discovery',
       evidence: 'project .workspai/reports',
     },
   };
@@ -663,6 +811,12 @@ function inferWorkspaceType(projects: WorkspaceModelProject[]): string {
   }
   if (categories.has('extension')) {
     return 'extension-workspace';
+  }
+  if (categories.has('agent')) {
+    return projects.length > 1 ? 'agent-platform-workspace' : 'agent-workspace';
+  }
+  if (categories.has('platform')) {
+    return 'platform-workspace';
   }
   if (categories.has('library')) {
     return 'library-workspace';
@@ -1152,7 +1306,27 @@ export function buildWorkspaceModelFacts(model: WorkspaceModel, now: Date): Work
           sourcePath: modelFactSourcePath([projectSource, 'commands', 'fleetStages']),
           reason: 'Safe command availability is derived from package and project command surfaces.',
         },
-      })
+      }),
+      ...(['ci', 'release', 'ownership'] as const).map((control) =>
+        buildWorkspaceFact({
+          id: `project.${project.name}.governance.${control}`,
+          label: `${project.name} ${control} governance`,
+          scope: 'policy',
+          project: project.name,
+          value: project.governance?.[control] ?? {
+            status: 'unknown',
+            provider: null,
+            evidence: [],
+            reference: null,
+          },
+          freshness: {
+            ...projectFreshness,
+            sourcePath: modelFactSourcePath([projectSource, 'governance', control]),
+            reason:
+              'Governance truth is reconciled from repository surfaces and explicit workspace contract declarations.',
+          },
+        })
+      )
     );
 
     for (const [key, ref] of Object.entries(project.evidence)) {
@@ -1210,14 +1384,7 @@ export function buildWorkspaceModelFacts(model: WorkspaceModel, now: Date): Work
   return facts;
 }
 
-export async function buildWorkspaceModel(
-  input: BuildWorkspaceModelOptions
-): Promise<WorkspaceModel> {
-  const workspacePath = path.resolve(input.workspacePath);
-  const includeAbsolutePaths = input.includeAbsolutePaths === true;
-  const includeEvidence = input.includeEvidence === true;
-  const observableScanDepth = resolveObservableScanDepth(input.observableScanDepth);
-  const now = input.now ?? new Date();
+async function discoverWorkspaceModelInputs(workspacePath: string, observableScanDepth: number) {
   const [
     marker,
     workspaceJson,
@@ -1237,18 +1404,42 @@ export async function buildWorkspaceModel(
   const contractProjectPaths = new Map<string, WorkspaceContract['projects'][number]>();
   for (const project of workspaceContract?.projects ?? []) {
     const projectPath = project.externalPath
-      ? path.resolve(project.externalPath)
+      ? path.resolve(workspacePath, project.externalPath)
       : path.resolve(workspacePath, project.relativePath);
     contractProjectPaths.set(projectPath, project);
   }
   const projectPaths = collectUniquePaths([
     ...rapidkitProjectPaths,
-    ...observableProjectPaths,
+    ...observableProjectPaths.filter(
+      (candidate) =>
+        !rapidkitProjectPaths.some((owner) => {
+          const relative = path.relative(owner, candidate);
+          return (
+            relative !== '' &&
+            relative !== '..' &&
+            !relative.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relative)
+          );
+        })
+    ),
     ...contractProjectPaths.keys(),
     ...importedProjects.map((project) =>
       path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
     ),
   ]);
+  return { marker, workspaceJson, workspaceContract, contractProjectPaths, projectPaths };
+}
+
+export async function buildWorkspaceModel(
+  input: BuildWorkspaceModelOptions
+): Promise<WorkspaceModel> {
+  const workspacePath = path.resolve(input.workspacePath);
+  const includeAbsolutePaths = input.includeAbsolutePaths === true;
+  const includeEvidence = input.includeEvidence === true;
+  const observableScanDepth = resolveObservableScanDepth(input.observableScanDepth);
+  const now = input.now ?? new Date();
+  const { marker, workspaceJson, workspaceContract, contractProjectPaths, projectPaths } =
+    await discoverWorkspaceModelInputs(workspacePath, observableScanDepth);
   const reuseProjectModels = input.reuseProjectModels;
   const projects = await Promise.all(
     projectPaths.map((projectPath) => {
@@ -1397,6 +1588,7 @@ export async function buildWorkspaceModel(
       frameworks,
       firstClassProjects: projects.filter((project) => project.supportTier === 'first-class')
         .length,
+      extendedProjects: projects.filter((project) => project.supportTier === 'extended').length,
       observedProjects: projects.filter((project) => project.supportTier === 'observed').length,
     },
   };
@@ -1444,21 +1636,10 @@ export async function buildWorkspaceModelCached(
   const observableScanDepth = resolveObservableScanDepth(input.observableScanDepth);
   const cliVersion = getRapidkitCliVersion();
 
-  const [marker, workspaceJson, importedProjects, rapidkitProjectPaths, observableProjectPaths] =
-    await Promise.all([
-      readWorkspaceMarker(workspacePath),
-      readWorkspaceJson(workspacePath),
-      readImportedProjectsRegistry(workspacePath),
-      discoverWorkspaceProjects(workspacePath, { descendIntoMatchedProjects: false }),
-      discoverObservableProjectRoots(workspacePath, observableScanDepth),
-    ]);
-  const projectPaths = collectUniquePaths([
-    ...rapidkitProjectPaths,
-    ...observableProjectPaths,
-    ...importedProjects.map((project) =>
-      path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
-    ),
-  ]);
+  const { marker, workspaceJson, projectPaths } = await discoverWorkspaceModelInputs(
+    workspacePath,
+    observableScanDepth
+  );
 
   const inputsHash = await computeModelInputsHash({
     workspacePath,
@@ -1549,21 +1730,10 @@ export async function buildWorkspaceModelIncremental(
   const cliVersion = getRapidkitCliVersion();
   const now = input.now ?? new Date();
 
-  const [marker, workspaceJson, importedProjects, rapidkitProjectPaths, observableProjectPaths] =
-    await Promise.all([
-      readWorkspaceMarker(workspacePath),
-      readWorkspaceJson(workspacePath),
-      readImportedProjectsRegistry(workspacePath),
-      discoverWorkspaceProjects(workspacePath, { descendIntoMatchedProjects: false }),
-      discoverObservableProjectRoots(workspacePath, observableScanDepth),
-    ]);
-  const projectPaths = collectUniquePaths([
-    ...rapidkitProjectPaths,
-    ...observableProjectPaths,
-    ...importedProjects.map((project) =>
-      path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
-    ),
-  ]);
+  const { marker, workspaceJson, projectPaths } = await discoverWorkspaceModelInputs(
+    workspacePath,
+    observableScanDepth
+  );
 
   const cached = await readWorkspaceModelCache(workspacePath);
   const buildFull = async (): Promise<{ model: WorkspaceModel; mode: 'full' }> => {
@@ -1786,11 +1956,18 @@ async function inferModelDependencyGraph(
 
 export async function writeWorkspaceModel(
   model: WorkspaceModel,
-  workspacePath: string
+  workspacePath: string,
+  options: { refreshKnowledgeGraph?: boolean } = {}
 ): Promise<string> {
   const contract = model.contracts.exists ? await loadWorkspaceContractSafely(workspacePath) : null;
   const { buildWorkspaceKnowledgeGraph } = await import('./workspace-knowledge-graph.js');
   const persistedModel = attachRunCorrelation(model);
+  const previousGraph = options.refreshKnowledgeGraph
+    ? null
+    : await fsExtra
+        .readJson(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph))
+        .then((value) => value as WorkspaceKnowledgeGraph)
+        .catch(() => null);
   const knowledgeGraph = await buildWorkspaceKnowledgeGraph({
     workspacePath,
     workspace: {
@@ -1806,6 +1983,7 @@ export async function writeWorkspaceModel(
       framework: project.framework,
       kind: project.kind,
       category: project.category,
+      ...(project.governance ? { governance: project.governance } : {}),
       ...(project.kit ? { kit: project.kit } : {}),
     })),
     projectTopology:
@@ -1822,14 +2000,58 @@ export async function writeWorkspaceModel(
       hashAlgorithm: 'sha256',
       hash: hashWorkspaceModel(persistedModel),
     },
+    previousGraph,
   });
-  const [, modelPath] = await writeWorkspaceArtifactJsonSet(
+  const projectGraphArtifacts: Array<{
+    rootPath: string;
+    relativePath: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference;
+    payload: ProjectKnowledgeGraphReference;
+  }> = [];
+  const projectIdsByPhysicalRoot = new Map<string, string>();
+  for (const project of model.projects) {
+    const projectRoot = workspaceModelProjectRoot(workspacePath, project);
+    const projectStat = await fsExtra.stat(projectRoot).catch(() => null);
+    if (!projectStat?.isDirectory()) continue;
+    const projectPhysicalRoot = await fsExtra.realpath(projectRoot);
+    const existingProjectId = projectIdsByPhysicalRoot.get(projectPhysicalRoot);
+    if (existingProjectId) {
+      throw new Error(
+        `Projects ${existingProjectId} and ${project.name} resolve to the same graph artifact root: ${projectRoot}`
+      );
+    }
+    projectIdsByPhysicalRoot.set(projectPhysicalRoot, project.name);
+    projectGraphArtifacts.push({
+      rootPath: projectRoot,
+      relativePath: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference,
+      payload: buildProjectKnowledgeGraphReference(knowledgeGraph, project.name),
+    });
+  }
+  const publishedPaths = await writeWorkspaceArtifactJsonSetAcrossRoots(
     workspacePath,
     WORKSPACE_MODEL_REPORT_PATH,
     [
-      { relativePath: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph, payload: knowledgeGraph },
-      { relativePath: WORKSPACE_MODEL_REPORT_PATH, payload: persistedModel },
+      {
+        rootPath: workspacePath,
+        relativePath: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+        payload: knowledgeGraph,
+      },
+      {
+        rootPath: workspacePath,
+        relativePath: WORKSPACE_MODEL_REPORT_PATH,
+        payload: persistedModel,
+      },
+      ...projectGraphArtifacts,
     ]
   );
-  return modelPath;
+  for (const artifact of projectGraphArtifacts) {
+    const legacyPath = path.join(
+      artifact.rootPath,
+      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+    );
+    const legacy = await fsExtra.readJson(legacyPath).catch(() => null);
+    if (legacy?.schemaVersion === WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.knowledgeGraph) {
+      await fsExtra.remove(legacyPath).catch(() => undefined);
+    }
+  }
+  return publishedPaths[1];
 }

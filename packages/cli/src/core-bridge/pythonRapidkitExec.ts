@@ -18,6 +18,7 @@ import {
   LEGACY_RAPIDKIT_WORKSPACE_MARKER,
   WORKSPAI_WORKSPACE_MARKER,
 } from '../utils/workspace-paths.js';
+import { withInterprocessLock } from '../utils/interprocess-lock.js';
 
 export type PythonCommand = string;
 
@@ -106,6 +107,8 @@ type BridgeErrorCode =
   | 'BRIDGE_PIP_BOOTSTRAP_FAILED'
   | 'BRIDGE_PIP_UPGRADE_FAILED'
   | 'BRIDGE_PIP_INSTALL_FAILED'
+  | 'BRIDGE_VENV_HEALTH_FAILED'
+  | 'BRIDGE_VENV_LOCK_FAILED'
   | 'BRIDGE_VENV_BOOTSTRAP_FAILED';
 
 class BridgeError extends Error {
@@ -155,6 +158,18 @@ function formatBridgeError(err: unknown): string {
           'Check your network/proxy, or install manually with: pipx install rapidkit-core.\n' +
           `Details: ${err.message}`
         );
+      case 'BRIDGE_VENV_LOCK_FAILED':
+        return (
+          'Workspai could not acquire the shared Python bridge bootstrap lock.\n' +
+          'Another Workspai process may still be preparing the environment; retry after it completes.\n' +
+          `Details: ${err.message}`
+        );
+      case 'BRIDGE_VENV_HEALTH_FAILED':
+        return (
+          'Workspai created the Python bridge environment, but its Core runtime health check failed.\n' +
+          'The incomplete bridge was discarded so the next run can rebuild it safely.\n' +
+          `Details: ${err.message}`
+        );
       default:
         return `Workspai bridge error: ${err.message}`;
     }
@@ -198,6 +213,43 @@ function bridgePython(venvDir: string): string {
 
 function bridgeRapidkitCli(venvDir: string): string {
   return getVenvRapidkitPath(venvDir);
+}
+
+async function probeBridgeVenvHealth(venvDir: string): Promise<{
+  healthy: boolean;
+  details: string;
+}> {
+  const probes: Array<{ cmd: string; args: string[] }> = [];
+  const cli = bridgeRapidkitCli(venvDir);
+  if (await fsExtra.pathExists(cli)) {
+    probes.push({ cmd: cli, args: ['--version', '--json'] });
+  }
+  probes.push({
+    cmd: bridgePython(venvDir),
+    args: ['-m', 'rapidkit', '--version', '--json'],
+  });
+
+  const failures: string[] = [];
+  for (const probe of probes) {
+    try {
+      const result = await execa(probe.cmd, probe.args, {
+        reject: false,
+        stdio: 'pipe',
+        timeout: 30_000,
+      });
+      if (result.exitCode === 0 && (await isCoreJsonVersion(result.stdout))) {
+        return { healthy: true, details: '' };
+      }
+      const output = [result.stdout, result.stderr]
+        .map((value) => (value ?? '').toString().trim())
+        .filter(Boolean)
+        .join('\n');
+      failures.push(output || `${probe.cmd} exited with ${String(result.exitCode)}`);
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  return { healthy: false, details: failures.join('\n') };
 }
 
 async function findUserLocalRapidkitRunner(
@@ -1207,6 +1259,30 @@ async function checkRapidkitCoreVersionCompatible(): Promise<RapidkitCoreVersion
 
 async function ensureBridgeVenv(pythonCmd: PythonCommand): Promise<string> {
   const desiredDir = bridgeVenvDir();
+  const timeoutMs = Math.max(
+    60_000,
+    Number(process.env.RAPIDKIT_BRIDGE_LOCK_TIMEOUT_MS ?? 10 * 60_000)
+  );
+  const staleMs = Math.max(
+    timeoutMs + 60_000,
+    Number(process.env.RAPIDKIT_BRIDGE_LOCK_STALE_MS ?? 15 * 60_000)
+  );
+
+  try {
+    return await withInterprocessLock(
+      `${desiredDir}.lock`,
+      () => ensureBridgeVenvLocked(pythonCmd),
+      { timeoutMs, staleMs, purpose: 'python-core-bridge-bootstrap' }
+    );
+  } catch (error) {
+    if (error instanceof BridgeError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new BridgeError('BRIDGE_VENV_LOCK_FAILED', message);
+  }
+}
+
+async function ensureBridgeVenvLocked(pythonCmd: PythonCommand): Promise<string> {
+  const desiredDir = bridgeVenvDir();
   const legacyDir = legacyBridgeVenvDir();
   const spec = coreInstallTarget();
   const candidates = [desiredDir];
@@ -1222,16 +1298,8 @@ async function ensureBridgeVenv(pythonCmd: PythonCommand): Promise<string> {
     if (!(await fsExtra.pathExists(py))) continue;
 
     try {
-      const probeResult = await execa(
-        py,
-        ['-c', "import importlib.util; print(1 if importlib.util.find_spec('rapidkit') else 0)"],
-        {
-          reject: false,
-          stdio: 'pipe',
-          timeout: 2000,
-        }
-      );
-      if (probeResult.exitCode === 0 && (probeResult.stdout ?? '').toString().trim() === '1') {
+      const health = await probeBridgeVenvHealth(venvDir);
+      if (health.healthy) {
         return py;
       }
       await fsExtra.remove(venvDir);
@@ -1247,7 +1315,6 @@ async function ensureBridgeVenv(pythonCmd: PythonCommand): Promise<string> {
     // Keep bootstrap noise out of stdout/stderr as much as possible.
     // Even if pip emits notices, we prefer them on stderr (and avoid them entirely when possible).
     PIP_DISABLE_PIP_VERSION_CHECK: '1',
-    PIP_NO_PYTHON_VERSION_WARNING: '1',
   };
 
   const retryCount = Math.max(0, Number(process.env.RAPIDKIT_BRIDGE_PIP_RETRY ?? '2'));
@@ -1362,6 +1429,15 @@ async function ensureBridgeVenv(pythonCmd: PythonCommand): Promise<string> {
       const msg = err instanceof Error ? err.message : String(err);
       throw new BridgeError('BRIDGE_PIP_INSTALL_FAILED', msg);
     }
+    const health = await probeBridgeVenvHealth(venvDir);
+    if (!health.healthy) {
+      await fsExtra.remove(venvDir);
+      throw new BridgeError(
+        'BRIDGE_VENV_HEALTH_FAILED',
+        health.details ||
+          'rapidkit --version --json did not return the expected Core version contract.'
+      );
+    }
     return vpy;
   } catch (e) {
     if (e instanceof BridgeError) throw e;
@@ -1462,8 +1538,8 @@ const KNOWN_CORE_ERRORS: Array<{
       const dir = path.basename(m[1]);
       return (
         `❌ Directory "${dir}" already exists.\n` +
-        `💡 Choose a different name, or remove the existing directory first:\n` +
-        `   rm -rf ${m[1]}`
+        `   Target: ${m[1]}\n` +
+        '💡 Choose a different name, or inspect and move/remove the existing directory first.'
       );
     },
   },
@@ -1866,6 +1942,7 @@ export const __test__ = {
   pythonCommandCandidates,
   pickSystemPython,
   ensureBridgeVenv,
+  probeBridgeVenvHealth,
   ensureBridgeVenvFromCandidates,
   parseCoreCommandsFromHelp,
   tryRapidkit,

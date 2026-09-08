@@ -1,5 +1,6 @@
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import fsExtra from 'fs-extra';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
@@ -18,6 +19,10 @@ import {
 import type { WorkspaceDependencyGraph } from '../contracts/workspace-dependency-graph-contract.js';
 import { buildWorkspaceKnowledgeGraphChangeOverlay } from '../workspace-knowledge-graph-change-overlay.js';
 import { buildWorkspaceGraphTokenEfficiencyReport } from '../workspace-graph-token-efficiency.js';
+import {
+  buildWorkspaceIntelligenceBenchmark,
+  writeWorkspaceIntelligenceBenchmark,
+} from '../workspace-intelligence-benchmark.js';
 import type { WorkspaceContract } from '../utils/workspace-contract.js';
 import { buildWorkspaceModel } from '../workspace-model.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
@@ -74,11 +79,19 @@ describe('workspace knowledge graph', () => {
     );
     await fsExtra.outputFile(
       path.join(root, 'api', 'src', 'health.controller.ts'),
-      "import { Controller, Get } from '@nestjs/common';\nimport { healthValue } from './health.service';\nexport class HealthController {\n  @Get('/health')\n  health() { return healthValue; }\n}\n"
+      "import { Controller, Get } from '@nestjs/common';\nimport { NestFactory } from '@nestjs/core';\nimport { healthValue } from './health.service';\nexport class HealthController {\n  @Get('/health')\n  health() { return healthValue(); }\n}\n"
     );
     await fsExtra.outputFile(
       path.join(root, 'api', 'src', 'health.service.ts'),
-      "export const healthValue = 'ok';\n"
+      "export function healthValue() { return 'ok'; }\n"
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', 'routes', 'users.ts'),
+      'export const usersOperation = { identifier: "listUsers", handler: listUsers };\n'
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', 'protocol', 'users.ts'),
+      'export const usersContract = { operationId: "listUsers" };\n'
     );
     await fsExtra.outputFile(
       path.join(root, 'api', '.rapidkit', 'vendor', 'generated.controller.ts'),
@@ -169,6 +182,23 @@ describe('workspace knowledge graph', () => {
         '  db:',
         '    image: postgres:17',
       ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'docker-compose.observability.yaml'),
+      [
+        'services:',
+        '  api:',
+        '    environment:',
+        '      - FEATURE_FLAG',
+        '  telemetry:',
+        '    image: platform/telemetry:latest',
+        '    depends_on:',
+        '      - api',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'compose.yml'),
+      ['legacy-cache:', '  image: redis:7', '  depends_on:', '    - api'].join('\n')
     );
     await fsExtra.outputFile(
       path.join(root, '.github', 'workflows', 'ci.yml'),
@@ -346,6 +376,7 @@ describe('workspace knowledge graph', () => {
     const result = searchKnowledgeGraph(graph, { query: 'health endpoint', limit: 2 });
 
     expect(result.schemaVersion).toBe('workspace-knowledge-search.v1');
+    expect(result.graphSourceHash).toBe(graph.source.hash);
     expect(result.entities.length).toBeLessThanOrEqual(2);
     expect(result.entities.some((entity) => /health/i.test(entity.label))).toBe(true);
     expect(result.proofs.length).toBeGreaterThan(0);
@@ -537,6 +568,77 @@ describe('workspace knowledge graph', () => {
     ).toBe(false);
   });
 
+  it('discovers nested VS Code extension manifests inside a platform project', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-vscode-platform-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'editor-platform' },
+      projects: [],
+    });
+    await fsExtra.outputJson(path.join(root, 'package.json'), {
+      name: 'editor-platform',
+      private: true,
+    });
+    await fsExtra.outputJson(path.join(root, 'extensions', 'git', 'package.json'), {
+      name: 'builtin-git',
+      engines: { vscode: '^1.100.0' },
+      contributes: {
+        commands: [{ command: 'git.openRepository', title: 'Open Repository' }],
+      },
+    });
+    await fsExtra.outputJson(path.join(root, 'extensions', 'plain-node', 'package.json'), {
+      name: 'plain-node-package',
+    });
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'editor-platform' },
+      projects: [
+        {
+          id: 'editor',
+          path: '.',
+          runtime: 'node',
+          framework: 'electron',
+        },
+      ],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.providers.find((provider) => provider.id === 'vscode-extension-manifest')
+    ).toMatchObject({ status: 'passed' });
+    expect(graph.entities.find((entity) => entity.label === 'builtin-git')).toMatchObject({
+      kind: 'package',
+      attributes: {
+        surface: 'vscode-extension',
+        extensionPath: 'extensions/git',
+        vscodeEngine: '^1.100.0',
+      },
+    });
+    expect(graph.entities.find((entity) => entity.label === 'git.openRepository')).toMatchObject({
+      kind: 'api',
+      attributes: { surface: 'vscode-command' },
+    });
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.label === 'plain-node-package' && entity.attributes.surface === 'vscode-extension'
+      )
+    ).toBe(false);
+    expect(
+      graph.relations.some(
+        (relation) =>
+          graph.entities.find((entity) => entity.id === relation.from)?.label === 'editor' &&
+          graph.entities.find((entity) => entity.id === relation.to)?.label === 'builtin-git' &&
+          relation.kind === 'contains'
+      )
+    ).toBe(true);
+  });
+
   it('models Python console scripts, resolves package imports, and excludes worked examples', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-python-project-'));
     tempDirs.push(root);
@@ -673,6 +775,100 @@ describe('workspace knowledge graph', () => {
     ).toBe(true);
   });
 
+  it('extracts proof-carrying HTTP routes from Go Gin, Rust Axum, and ASP.NET source', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-http-routes-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      workspace: { name: 'polyglot-http' },
+      projects: [],
+    });
+    await fsExtra.outputFile(
+      path.join(root, 'go-api', 'internal', 'server.go'),
+      [
+        'package server',
+        '// @Router /api/v1/health/live [get]',
+        'func routes(r *gin.Engine) {',
+        '  r.POST("/api/v1/jobs", createJob)',
+        '}',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'rust-api', 'src', 'main.rs'),
+      [
+        'use axum::{routing::get, Router};',
+        'fn app() -> Router {',
+        '  Router::new().route("/health", get(health))',
+        '}',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'dotnet-api', 'src', 'Program.cs'),
+      [
+        'var app = builder.Build();',
+        'app.MapHealthChecks("/health/live");',
+        'app.MapGet("/api/v1/info", () => Results.Ok());',
+      ].join('\n')
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'polyglot-http' },
+      projects: [
+        { id: 'go-api', path: 'go-api', runtime: 'go', framework: 'gin' },
+        { id: 'rust-api', path: 'rust-api', runtime: 'rust', framework: 'axum' },
+        { id: 'dotnet-api', path: 'dotnet-api', runtime: 'dotnet', framework: 'dotnet' },
+      ],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities
+        .filter((entity) => entity.kind === 'endpoint')
+        .map((entity) => `${entity.projectId}:${entity.label}`)
+        .sort()
+    ).toEqual([
+      'dotnet-api:GET /api/v1/info',
+      'dotnet-api:GET /health/live',
+      'go-api:GET /api/v1/health/live',
+      'go-api:POST /api/v1/jobs',
+      'rust-api:GET /health',
+    ]);
+    for (const endpoint of graph.entities.filter((entity) => entity.kind === 'endpoint')) {
+      const proof = graph.proofs.find((candidate) => endpoint.proofIds.includes(candidate.id));
+      expect(proof).toMatchObject({ provider: 'source-structure', trust: 'observed' });
+      expect(proof?.line).toBeGreaterThan(0);
+    }
+
+    const compound = searchKnowledgeGraph(graph, {
+      query: 'Where is the Axum router and health handler defined?',
+      projectId: 'rust-api',
+      limit: 5,
+    });
+    expect(compound.entities.map((entity) => entity.label)).toContain('GET /health');
+    expect(compound.proofs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ artifact: 'rust-api/src/main.rs', line: 3 }),
+      ])
+    );
+
+    const dotnet = searchKnowledgeGraph(graph, {
+      query: 'Where is the ASP.NET health endpoint mapped?',
+      projectId: 'dotnet-api',
+      limit: 5,
+    });
+    expect(dotnet.entities[0]?.label).toBe('GET /health/live');
+    expect(dotnet.entities.map((entity) => entity.label)).toContain('GET /health/live');
+    expect(dotnet.proofs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ artifact: 'dotnet-api/src/Program.cs', line: 2 }),
+      ])
+    );
+  });
+
   it('resolves local imports against the full fingerprint inventory beyond the extraction window', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-large-imports-'));
     tempDirs.push(root);
@@ -721,6 +917,249 @@ describe('workspace knowledge graph', () => {
         return String(target?.label).endsWith('src/zzz-target.ts');
       })
     ).toBe(true);
+  });
+
+  it('keeps the complete project inventory when adaptive deep providers are bounded', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-adaptive-inventory-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'platform', 'package.json'), {
+      name: '@example/platform',
+      workspaces: ['apps/*'],
+    });
+    await Promise.all(
+      Array.from({ length: 140 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(
+            root,
+            'platform',
+            'apps',
+            index % 2 === 0 ? 'api' : 'worker',
+            'src',
+            `unit-${String(index).padStart(3, '0')}.ts`
+          ),
+          `export const unit${index} = ${index};\n`
+        )
+      )
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'adaptive-inventory' },
+      projects: [
+        { id: 'platform', path: 'platform', runtime: 'node', framework: 'node', kind: 'platform' },
+      ],
+      projectTopology: topology(),
+      now: NOW,
+      maxFilesPerProject: 100,
+      semanticFilesPerProject: 100,
+      sourceFilesPerProject: 100,
+      source: modelSource(),
+    });
+
+    const scope = graph.source.inputs?.scopes.find(
+      (candidate) => candidate.kind === 'project' && candidate.id === 'platform'
+    );
+    expect(scope).toMatchObject({
+      fileCount: 141,
+      eligibleFileCount: 141,
+      eligibleFileCountExact: true,
+      inventoryMode: 'complete',
+      truncated: false,
+    });
+    expect(scope?.selection).toMatchObject({
+      strategy: 'component-language-round-robin-v1',
+      semanticFileCount: 100,
+      deepFileCount: 100,
+      sourceExtractionFileBudget: 100,
+    });
+    const language = graph.entities.find(
+      (entity) => entity.kind === 'language' && entity.attributes.language === 'typescript'
+    );
+    expect(language?.attributes.fileCount).toBe(140);
+    const sourceCoverage = graph.providers.find((provider) => provider.id === 'source-structure')
+      ?.inputCoverage?.[0];
+    expect(sourceCoverage).toMatchObject({
+      tier: 'adaptive-deep',
+      status: 'bounded',
+      eligibleFiles: 141,
+      suppliedFiles: 100,
+      fileBudget: 100,
+      selectionStrategy: 'component-language-round-robin-v1',
+    });
+    const extractedFiles = graph.entities
+      .filter((entity) => entity.kind === 'file')
+      .map((entity) => String(entity.attributes.artifact));
+    expect(extractedFiles.some((artifact) => artifact.includes('/apps/api/'))).toBe(true);
+    expect(extractedFiles.some((artifact) => artifact.includes('/apps/worker/'))).toBe(true);
+    expect(graph.quality.completeness).toMatchObject({
+      status: 'bounded',
+      inventory: { boundedScopes: 0, eligibleFileCountExact: true },
+      providers: { bounded: expect.any(Number), failed: 0 },
+    });
+  });
+
+  it('uses an explicit emergency inventory bound without silently claiming completeness', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-emergency-inventory-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'api', 'package.json'), { name: 'api' });
+    await Promise.all(
+      Array.from({ length: 130 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(root, 'api', 'src', `module-${String(index).padStart(3, '0')}.ts`),
+          `export const module${index} = ${index};\n`
+        )
+      )
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'emergency-inventory' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      inventoryFileLimitPerProject: 100,
+      source: modelSource(),
+    });
+
+    const scope = graph.source.inputs?.scopes.find(
+      (candidate) => candidate.kind === 'project' && candidate.id === 'api'
+    );
+    expect(scope).toMatchObject({
+      fileCount: 100,
+      eligibleFileCount: 101,
+      eligibleFileCountExact: false,
+      inventoryMode: 'emergency-bounded',
+      truncated: true,
+    });
+    expect(graph.quality.completeness?.inventory).toMatchObject({
+      boundedScopes: 1,
+      eligibleFileCountExact: false,
+    });
+    expect(
+      graph.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.input.project_file_limit_reached'
+      )
+    ).toBe(true);
+  });
+
+  it('inventories systems languages and compiler DSLs without unsafe generic parsing', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-language-inventory-'));
+    tempDirs.push(root);
+    const projectRoot = path.join(root, 'compiler');
+    const languageFiles: Record<string, string> = {
+      'frontend/lowering.f90': 'subroutine lower()\nend subroutine lower\n',
+      'ir/pipeline.ll': 'define i32 @main() { ret i32 0 }\n',
+      'dialects/ops.mlir': 'module {}\n',
+      'targets/instructions.td': 'def Instruction;\n',
+      'runtime/startup.S': '.text\n',
+      'bindings/api.mm': '@interface Api\n@end\n',
+      'shaders/pass.hlsl': 'float4 main() : SV_Target { return 0; }\n',
+    };
+    await Promise.all(
+      Object.entries(languageFiles).map(([relative, contents]) =>
+        fsExtra.outputFile(path.join(projectRoot, relative), contents)
+      )
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'language-inventory' },
+      projects: [{ id: 'compiler', path: 'compiler', runtime: 'cpp', framework: 'cpp' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const counts = Object.fromEntries(
+      graph.entities
+        .filter((entity) => entity.kind === 'language')
+        .map((entity) => [String(entity.attributes.language), entity.attributes.fileCount])
+    );
+    expect(counts).toMatchObject({
+      fortran: 1,
+      'llvm-ir': 1,
+      mlir: 1,
+      tablegen: 1,
+      assembly: 1,
+      'objective-cpp': 1,
+      hlsl: 1,
+    });
+    expect(graph.providers.find((provider) => provider.id === 'source-structure')?.status).toBe(
+      'skipped'
+    );
+  });
+
+  it('rejects tracked files replaced by worktree symlinks before provider reads', async () => {
+    if (process.platform === 'win32') return;
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-git-symlink-inventory-'));
+    const outsideRoot = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-git-symlink-target-')
+    );
+    tempDirs.push(root, outsideRoot);
+    const projectRoot = path.join(root, 'api');
+    const trackedPath = path.join(projectRoot, 'src', 'tracked.ts');
+    const outsidePath = path.join(outsideRoot, 'outside.ts');
+    await fsExtra.outputJson(path.join(projectRoot, 'package.json'), { name: 'api' });
+    await fsExtra.outputFile(trackedPath, 'export const safe = true;\n');
+    await fsExtra.outputFile(outsidePath, 'export const must_not_escape_project = true;\n');
+    execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['add', 'package.json', 'src/tracked.ts'], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    await fsExtra.remove(trackedPath);
+    await fsExtra.symlink(outsidePath, trackedPath);
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'git-symlink-inventory' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const scope = graph.source.inputs?.scopes.find(
+      (candidate) => candidate.kind === 'project' && candidate.id === 'api'
+    );
+    expect(scope).toMatchObject({ fileCount: 1, eligibleFileCount: 1, truncated: false });
+    expect(JSON.stringify(graph)).not.toContain('must_not_escape_project');
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.kind === 'file' && String(entity.attributes.artifact).endsWith('/src/tracked.ts')
+      )
+    ).toBe(false);
+  });
+
+  it('binds only unambiguous calls to locally imported source symbols', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-symbol-binding-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'service', 'package.json'), { name: 'service' });
+    await fsExtra.outputFile(
+      path.join(root, 'service', 'src', 'handler.ts'),
+      "import { loadUser } from './users';\nexport function handler() { return loadUser(); }\n"
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'service', 'src', 'users.ts'),
+      'export function loadUser() { return { id: 1 }; }\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'symbol-binding' },
+      projects: [{ id: 'service', path: 'service', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const call = graph.relations.find((relation) => relation.kind === 'calls');
+    expect(call).toBeDefined();
+    expect(graph.entities.find((entity) => entity.id === call?.to)?.label).toBe('loadUser');
+    expect(call?.trust).toBe('observed');
+    expect(call?.confidence).toBe('medium');
+    expect(call?.proofIds.length).toBeGreaterThan(0);
   });
 
   it('parses Python, Cargo, and Maven dependencies without manifest metadata pollution', async () => {
@@ -927,6 +1366,159 @@ describe('workspace knowledge graph', () => {
     ).toMatchObject({ label: 'generated.h.in' });
   });
 
+  it('resolves Cargo workspace package metadata and publishes the Rust toolchain contract', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-cargo-workspace-'));
+    tempDirs.push(root);
+    await fsExtra.outputFile(
+      path.join(root, 'Cargo.toml'),
+      [
+        '[workspace]',
+        'members = ["crates/editor"]',
+        '[workspace.package]',
+        'version = "2.0.0"',
+        'edition = "2024"',
+        'rust-version = "1.90"',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'crates', 'editor', 'Cargo.toml'),
+      [
+        '[package]',
+        'name = "editor"',
+        'version.workspace = true',
+        'edition.workspace = true',
+        'rust-version = { workspace = true }',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'rust-toolchain.toml'),
+      [
+        '[toolchain]',
+        'channel = "1.90.0"',
+        'profile = "minimal"',
+        'components = ["clippy", "rustfmt"]',
+        'targets = ["wasm32-wasip2", "x86_64-unknown-linux-musl"]',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'crates', 'editor', 'src', 'editor.rs'),
+      'pub struct Editor;\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'editor' },
+      projects: [{ id: 'editor', path: '.', runtime: 'rust', framework: 'rust' }],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities.find((entity) => entity.kind === 'package' && entity.label === 'editor')
+        ?.attributes
+    ).toMatchObject({ version: '2.0.0', edition: '2024', rustVersion: '1.90' });
+    const rust = graph.entities.find(
+      (entity) => entity.kind === 'language' && entity.attributes.language === 'rust'
+    );
+    expect(rust?.attributes).toMatchObject({
+      toolchainChannel: '1.90.0',
+      toolchainProfile: 'minimal',
+      toolchainComponents: ['clippy', 'rustfmt'],
+      toolchainTargets: ['wasm32-wasip2', 'x86_64-unknown-linux-musl'],
+    });
+    expect(
+      rust?.proofIds.some((proofId) =>
+        graph.proofs.some(
+          (proof) => proof.id === proofId && proof.artifact.endsWith('rust-toolchain.toml')
+        )
+      )
+    ).toBe(true);
+    expect(
+      graph.providers.find((provider) => provider.id === 'source-language-inventory')?.version
+    ).toBe('1.2.0');
+  });
+
+  it('keeps deep Go workspace manifests and membership beyond the ordinary file budget', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-go-workspace-graph-'));
+    tempDirs.push(root);
+    await Promise.all(
+      Array.from({ length: 140 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(root, `source-${String(index).padStart(3, '0')}.go`),
+          'package root\n'
+        )
+      )
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'go.work'),
+      ['go 1.24', 'use (', '  .', '  ./staging/alpha', '  ./staging/beta', ')'].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'go.mod'),
+      [
+        'module example.com/platform',
+        'go 1.24',
+        'require (',
+        '  example.com/alpha v0.0.0',
+        '  example.com/beta v0.0.0',
+        ')',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'staging', 'alpha', 'go.mod'),
+      'module example.com/alpha\ngo 1.24\nrequire example.com/beta v0.0.0\n'
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'staging', 'beta', 'go.mod'),
+      'module example.com/beta\ngo 1.24\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'go-platform' },
+      projects: [{ id: 'platform', path: '.', runtime: 'go', framework: 'go', kind: 'platform' }],
+      projectTopology: topology(),
+      maxFilesPerProject: 100,
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const packages = graph.entities.filter(
+      (entity) => entity.kind === 'package' && entity.attributes.ecosystem === 'go'
+    );
+    expect(packages.map((entity) => entity.label).sort()).toEqual([
+      'example.com/alpha',
+      'example.com/beta',
+      'example.com/platform',
+    ]);
+    const workspaceEntity = graph.entities.find(
+      (entity) => entity.kind === 'module' && entity.identity.aliases.includes('go.work')
+    );
+    expect(workspaceEntity?.attributes).toMatchObject({
+      ecosystem: 'go',
+      members: ['.', './staging/alpha', './staging/beta'],
+    });
+    expect(
+      graph.relations.filter(
+        (relation) =>
+          relation.from === workspaceEntity?.id &&
+          packages.some((candidate) => candidate.id === relation.to) &&
+          relation.kind === 'contains'
+      )
+    ).toHaveLength(3);
+    const rootPackage = packages.find((entity) => entity.label === 'example.com/platform');
+    const localDependencyTargets = graph.relations
+      .filter((relation) => relation.from === rootPackage?.id && relation.kind === 'depends-on')
+      .map((relation) => packages.find((candidate) => candidate.id === relation.to)?.label)
+      .filter(Boolean)
+      .sort();
+    expect(localDependencyTargets).toEqual(['example.com/alpha', 'example.com/beta']);
+    expect(
+      graph.proofs.some((proof) => proof.artifact.endsWith('/go.work') && proof.pointer === '/use')
+    ).toBe(true);
+  });
+
   it('models language roles, local Cargo dependencies, and Deno Rust-JS bridges', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-deno-bridge-'));
     tempDirs.push(root);
@@ -1012,6 +1604,14 @@ describe('workspace knowledge graph', () => {
           relation.to === packages.get('deno_core')?.id
       )
     ).toBe(true);
+    const protocolDeclaration = graph.entities.find(
+      (entity) => entity.kind === 'file' && entity.label.endsWith('src/protocol/users.ts')
+    );
+    expect(
+      graph.relations.some(
+        (relation) => relation.kind === 'implements' && relation.from === protocolDeclaration?.id
+      )
+    ).toBe(false);
     expect(graph.entities.some((entity) => entity.label === 'deno_core.workspace')).toBe(false);
     const bridge = graph.entities.find(
       (entity) => entity.kind === 'protocol' && entity.label.includes('deno_cron Rust JavaScript')
@@ -1218,6 +1818,208 @@ describe('workspace knowledge graph', () => {
     ).toBe(0);
   });
 
+  it('keeps named subjects ahead of generic relationship matches', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-generic-application-connection',
+        kind: 'file',
+        label: 'application/connection.ts',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:application/connection.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'generic-application-connection',
+        },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-zephyr-gate-bridge',
+        kind: 'module',
+        label: 'ZephyrGate connection bridge',
+        projectId: 'api',
+        identity: {
+          key: 'module:api:zephyr-gate-bridge',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'zephyr-gate-bridge',
+        },
+        attributes: {},
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'How does ZephyrGate connect to the application?',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('synthetic-zephyr-gate-bridge');
+    expect(
+      result.entities.some((entity) => entity.id === 'synthetic-generic-application-connection')
+    ).toBe(false);
+  });
+
+  it('does not confuse authentication with authorship while retaining auth identifiers', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities = ['authoredMetadata', 'authorName', 'authMiddleware', 'authorization'].map(
+      (label) => ({
+        id: label,
+        kind: 'symbol',
+        label,
+        projectId: 'api',
+        identity: { key: `symbol:api:${label}`, scope: 'project', aliases: [], fingerprint: label },
+        attributes: {},
+        proofIds: [],
+      })
+    );
+    for (const query of ['authentication', 'authenticate', 'auth']) {
+      const ids = searchKnowledgeGraph(graph, { query, limit: 8 }).entities.map(
+        (entity) => entity.id
+      );
+      expect(ids).not.toContain('authoredMetadata');
+      expect(ids).not.toContain('authorName');
+      expect(ids).toContain('authMiddleware');
+      expect(ids).toContain('authorization');
+    }
+    expect(
+      searchKnowledgeGraph(graph, { query: 'authoredMetadata', limit: 1 }).entities[0]?.id
+    ).toBe('authoredMetadata');
+  });
+
+  it('prefers authored source over compiled copies unless generated output is requested', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-authored-router',
+        kind: 'file',
+        label: 'src/server/router/request-routing.ts',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:src/server/router/request-routing.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'authored-router',
+        },
+        attributes: { artifact: 'src/server/router/request-routing.ts' },
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-compiled-router',
+        kind: 'file',
+        label: 'src/compiled/router/server-request-routing.development.js',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:src/compiled/router/server-request-routing.development.js',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'compiled-router',
+        },
+        attributes: { artifact: 'src/compiled/router/server-request-routing.development.js' },
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-fixture-router',
+        kind: 'file',
+        label: 'tests/__fixtures__/server-request-routing.development.ts',
+        projectId: 'api',
+        identity: {
+          key: 'file:api:tests/__fixtures__/server-request-routing.development.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'fixture-router',
+        },
+        attributes: { artifact: 'tests/__fixtures__/server-request-routing.development.ts' },
+        proofIds: [],
+      }
+    );
+
+    expect(
+      searchKnowledgeGraph(graph, {
+        query: 'development server request routing',
+        projectId: 'api',
+        limit: 5,
+      }).entities[0]?.id
+    ).toBe('synthetic-authored-router');
+    expect(
+      searchKnowledgeGraph(graph, {
+        query: 'compiled server request routing',
+        projectId: 'api',
+        limit: 5,
+      }).entities[0]?.id
+    ).toBe('synthetic-compiled-router');
+  });
+
+  it('marks generated files and symbols in a single-runtime project before optional deep analysis', async () => {
+    const root = await fixture();
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', 'records.ts'),
+      'export function recordsStore() { return []; }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(root, 'api', 'src', 'records_mock.ts'),
+      '// Code generated by FixtureGenerator. DO NOT EDIT.\nexport function recordsStoreMock() { return []; }\n'
+    );
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    const file = graph.entities.find(
+      (entity) => entity.kind === 'file' && entity.label.endsWith('/records_mock.ts')
+    );
+    const symbol = graph.entities.find((entity) => entity.label === 'recordsStoreMock');
+    expect(file?.attributes.generated).toBe(true);
+    expect(symbol?.attributes.generated).toBe(true);
+    expect(
+      graph.entities.find((entity) => entity.label === 'recordsStore')?.attributes.generated
+    ).not.toBe(true);
+    expect(
+      searchKnowledgeGraph(graph, { query: 'records store', projectId: 'api', limit: 5 })
+        .entities[0]?.attributes.generated
+    ).not.toBe(true);
+    expect(
+      searchKnowledgeGraph(graph, {
+        query: 'generated records store mock',
+        projectId: 'api',
+        limit: 10,
+      }).entities.some((entity) => entity.id === symbol?.id)
+    ).toBe(true);
+  });
+
   it('does not let a generic service intent outrank multi-term repository evidence', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -1270,6 +2072,161 @@ describe('workspace knowledge graph', () => {
 
     expect(result.entities[0]?.id).toBe('synthetic-extension-host-ipc');
     expect(result.entities.some((entity) => entity.id === 'synthetic-generic-service')).toBe(false);
+  });
+
+  it('does not let a generic schema intent outrank a matching authored document', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'synthetic-generic-schema',
+        kind: 'schema',
+        label: 'AddItemRequest',
+        projectId: 'api',
+        identity: {
+          key: 'protobuf-message:api:AddItemRequest',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'generic-schema',
+        },
+        attributes: { specification: 'protobuf' },
+        proofIds: [],
+      },
+      {
+        id: 'synthetic-telemetry-schema-document',
+        kind: 'document',
+        label: 'OpenTelemetry Demo Telemetry Schema',
+        projectId: 'api',
+        identity: {
+          key: 'document:api:telemetry-schema-readme',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'telemetry-schema-document',
+        },
+        attributes: { artifact: 'telemetry-schema/README.md' },
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'Where is the telemetry schema defined?',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('synthetic-telemetry-schema-document');
+  });
+
+  it('normalizes common engineering terms before ranking bounded evidence', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'auth-service-module',
+        kind: 'module',
+        label: 'auth-service',
+        projectId: 'api',
+        identity: {
+          key: 'module:api:auth-service',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'auth-service-module',
+        },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'generic-api-module',
+        kind: 'module',
+        label: 'analytics-api',
+        projectId: 'api',
+        identity: {
+          key: 'module:api:analytics-api',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'generic-api-module',
+        },
+        attributes: {},
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'improve authentication reliability verification',
+      projectId: 'api',
+      minimumTermMatches: 1,
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('auth-service-module');
+  });
+
+  it('retrieves bounded cross-cutting evidence for long architecture queries', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'compiler', path: 'api', runtime: 'cpp', framework: 'cpp' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'clang-ir-lowering',
+        kind: 'module',
+        label: 'ClangToLLVMIRLoweringPass',
+        projectId: 'compiler',
+        identity: {
+          key: 'module:compiler:clang-ir-lowering',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'clang-ir-lowering',
+        },
+        attributes: { language: 'cpp' },
+        proofIds: [],
+      },
+      {
+        id: 'optimization-pipeline',
+        kind: 'module',
+        label: 'OptimizationLevel pipeline',
+        projectId: 'compiler',
+        identity: {
+          key: 'module:compiler:optimization-pipeline',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'optimization-pipeline',
+        },
+        attributes: { language: 'cpp' },
+        proofIds: [],
+      }
+    );
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'Clang AST LLVM IR lowering optimization pass pipeline',
+      projectId: 'compiler',
+      limit: 12,
+    });
+
+    expect(result.entities.map((entity) => entity.id)).toEqual(
+      expect.arrayContaining(['clang-ir-lowering', 'optimization-pipeline'])
+    );
   });
 
   it('diversifies broad operational architecture searches across consumer surfaces', async () => {
@@ -1427,6 +2384,242 @@ describe('workspace knowledge graph', () => {
     expect(result.entities.some((entity) => entity.id === 'java-client')).toBe(false);
   });
 
+  it('treats Node.js as a JavaScript and TypeScript runtime family facet', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'sdk', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push(
+      {
+        id: 'typescript-session-events',
+        kind: 'file',
+        label: 'nodejs/src/session-events.ts',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:nodejs/src/session-events.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'typescript-session-events',
+        },
+        attributes: { language: 'typescript' },
+        proofIds: [],
+      },
+      {
+        id: 'javascript-release-script',
+        kind: 'file',
+        label: 'nodejs/scripts/release.js',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:nodejs/scripts/release.js',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'javascript-release-script',
+        },
+        attributes: { language: 'javascript' },
+        proofIds: [],
+      },
+      {
+        id: 'python-session-events',
+        kind: 'file',
+        label: 'python/session-events.py',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:python/session-events.py',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'python-session-events',
+        },
+        attributes: { language: 'python' },
+        proofIds: [],
+      },
+      {
+        id: 'generated-session-event-version',
+        kind: 'file',
+        label: 'nodejs/src/session-event-version.ts',
+        projectId: 'sdk',
+        identity: {
+          key: 'file:sdk:nodejs/src/session-event-version.ts',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'generated-session-event-version',
+        },
+        attributes: { language: 'typescript', generated: true },
+        proofIds: [],
+      }
+    );
+
+    for (const query of [
+      'Where is session event handling implemented in the Node.js SDK?',
+      'NodeJS session event handling',
+    ]) {
+      const result = searchKnowledgeGraph(graph, {
+        query,
+        projectId: 'sdk',
+        limit: 5,
+      });
+
+      expect(result.entities[0]?.id).toBe('typescript-session-events');
+      expect(result.entities.some((entity) => entity.id === 'javascript-release-script')).toBe(
+        false
+      );
+      expect(result.entities.some((entity) => entity.id === 'python-session-events')).toBe(false);
+      expect(result.entities[0]?.id).not.toBe('generated-session-event-version');
+    }
+  });
+
+  it('normalizes plural implementation nouns in conversational source questions', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'sdk', path: 'api', runtime: 'java', framework: 'java' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push({
+      id: 'java-tool-definition',
+      kind: 'symbol',
+      label: 'ToolDefinition',
+      projectId: 'sdk',
+      identity: {
+        key: 'symbol:sdk:src/main/java/rpc/ToolDefinition.java',
+        scope: 'project',
+        aliases: [],
+        fingerprint: 'java-tool-definition',
+      },
+      attributes: { language: 'java', symbolKind: 'type' },
+      proofIds: [],
+    });
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'Where are tools defined in the Java SDK?',
+      projectId: 'sdk',
+      limit: 5,
+    });
+
+    expect(result.entities[0]?.id).toBe('java-tool-definition');
+  });
+
+  it('uses source evidence to constrain service results by requested language', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'demo', path: 'api', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities = [
+      {
+        id: 'java-ad-service',
+        kind: 'service',
+        label: 'ad',
+        projectId: 'demo',
+        identity: { key: 'service:demo:ad', scope: 'project', aliases: [], fingerprint: 'ad' },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'python-recommendation-service',
+        kind: 'service',
+        label: 'recommendation',
+        projectId: 'demo',
+        identity: {
+          key: 'service:demo:recommendation',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'recommendation',
+        },
+        attributes: {},
+        proofIds: [],
+      },
+      {
+        id: 'java-ad-source',
+        kind: 'file',
+        label: 'src/ad/main/java/AdService.java',
+        projectId: 'demo',
+        identity: {
+          key: 'file:demo:src/ad/main/java/AdService.java',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'java-ad-source',
+        },
+        attributes: { language: 'java' },
+        proofIds: [],
+      },
+      {
+        id: 'python-recommendation-source',
+        kind: 'file',
+        label: 'src/recommendation/service.py',
+        projectId: 'demo',
+        identity: {
+          key: 'file:demo:src/recommendation/service.py',
+          scope: 'project',
+          aliases: [],
+          fingerprint: 'python-recommendation-source',
+        },
+        attributes: { language: 'python' },
+        proofIds: [],
+      },
+    ];
+
+    const ids = searchKnowledgeGraph(graph, {
+      query: 'Which services are implemented in Java?',
+      projectId: 'demo',
+      limit: 8,
+    }).entities.map((entity) => entity.id);
+
+    expect(ids).toContain('java-ad-service');
+    expect(ids).toContain('java-ad-source');
+    expect(ids).not.toContain('python-recommendation-service');
+    expect(ids).not.toContain('python-recommendation-source');
+  });
+
+  it('prioritizes build manifests when a caller asks how a named service is built', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'demo', path: 'api', runtime: 'rust', framework: 'rust' }],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+    graph.entities.push({
+      id: 'shipping-build-manifest',
+      kind: 'file',
+      label: 'src/shipping/Cargo.toml',
+      projectId: 'demo',
+      identity: {
+        key: 'file:demo:src/shipping/Cargo.toml',
+        scope: 'project',
+        aliases: [],
+        fingerprint: 'shipping-build-manifest',
+      },
+      attributes: {},
+      proofIds: [],
+    });
+
+    const result = searchKnowledgeGraph(graph, {
+      query: 'How is the shipping service built?',
+      projectId: 'demo',
+      limit: 8,
+    });
+
+    expect(result.entities[0]?.id).toBe('shipping-build-manifest');
+  });
+
   it('hard-bounds every high-cardinality field in the agent search projection', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -1518,6 +2711,12 @@ describe('workspace knowledge graph', () => {
     expect(frontendScope.entities.map((entity) => entity.kind)).toEqual(
       expect.arrayContaining(['api', 'schema'])
     );
+    expect(graph.quality.bindingCoverage?.apiRuntimeRegistration).toMatchObject({
+      eligibleCount: 0,
+      boundCount: 0,
+      unknownCount: 0,
+      coverageRatio: null,
+    });
   });
 
   it('keeps conflicting protobuf definitions as explicit variants instead of merging attributes', async () => {
@@ -1558,7 +2757,7 @@ describe('workspace knowledge graph', () => {
   it('distinguishes non-applicable providers from applicable providers with empty output', async () => {
     const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-provider-quality-'));
     tempDirs.push(root);
-    await fsExtra.outputFile(path.join(root, '.github', 'CODEOWNERS'), '# no owners declared\n');
+    await fsExtra.outputFile(path.join(root, '.gitlab', 'CODEOWNERS'), '# no owners declared\n');
     const graph = await buildWorkspaceKnowledgeGraph({
       workspacePath: root,
       workspace: { name: 'empty' },
@@ -1600,6 +2799,44 @@ describe('workspace knowledge graph', () => {
     expect(graph.quality.unknownCount).toBeGreaterThanOrEqual(1);
     expect(graph.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'graph.provider.codeowners.empty_result'
+    );
+  });
+
+  it('projects repository-authored Prow scripts as external CI pipelines', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-prow-graph-'));
+    tempDirs.push(root);
+    await fsExtra.outputJson(path.join(root, 'mesh', '.workspai', 'project.json'), {
+      runtime: 'go',
+      kind: 'platform',
+    });
+    await fsExtra.outputFile(
+      path.join(root, 'mesh', 'prow', 'presubmit.sh'),
+      '#!/usr/bin/env bash\nmake test\n'
+    );
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'mesh-workspace' },
+      projects: [{ id: 'mesh', path: 'mesh', runtime: 'go' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'mesh', path: 'mesh', runtime: 'go' }],
+        edges: [],
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(graph.providers.find((provider) => provider.id === 'ci-workflow')).toMatchObject({
+      status: 'passed',
+      discoveredEntities: 1,
+    });
+    expect(graph.entities).toContainEqual(
+      expect.objectContaining({
+        kind: 'pipeline',
+        label: 'presubmit.sh · Prow',
+        projectId: 'mesh',
+        attributes: expect.objectContaining({ triggers: ['external-provider'] }),
+      })
     );
   });
 
@@ -1701,6 +2938,148 @@ describe('workspace knowledge graph', () => {
     ).toBe(true);
   });
 
+  it('models distributed Prow OWNERS manifests as portable ownership evidence', async () => {
+    const workspaceRoot = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-owners-workspace-')
+    );
+    const projectRoot = path.join(workspaceRoot, 'platform');
+    tempDirs.push(workspaceRoot);
+    await fsExtra.outputFile(path.join(projectRoot, 'go.mod'), 'module example.com/platform\n');
+    await fsExtra.outputFile(
+      path.join(projectRoot, 'pkg', 'controlplane', 'OWNERS'),
+      'approvers:\n  - platform-admin\nreviewers:\n  - runtime-reviewer\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: workspaceRoot,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'platform', path: 'platform', runtime: 'go' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'platform', path: 'platform', runtime: 'go' }],
+        edges: [],
+        stats: { ...topology().stats, nodeCount: 1, edgeCount: 0, orphanCount: 1 },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(graph.providers.find((provider) => provider.id === 'codeowners')).toMatchObject({
+      status: 'passed',
+      version: '1.2.0',
+    });
+    expect(
+      graph.entities.some((entity) => entity.kind === 'owner' && entity.label === '@platform-admin')
+    ).toBe(true);
+    expect(
+      graph.entities.some(
+        (entity) => entity.kind === 'owner' && entity.label === '@runtime-reviewer'
+      )
+    ).toBe(true);
+    expect(
+      graph.proofs.some(
+        (proof) =>
+          proof.artifact === 'platform/pkg/controlplane/OWNERS' && proof.pointer === '/approvers/0'
+      )
+    ).toBe(true);
+    expect(JSON.stringify(graph)).not.toContain(workspaceRoot);
+  });
+
+  it('keeps canonical source visible when a large vendored tree exceeds extraction limits', async () => {
+    const workspaceRoot = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-balanced-source-workspace-')
+    );
+    const projectRoot = path.join(workspaceRoot, 'editor');
+    tempDirs.push(workspaceRoot);
+    await fsExtra.outputJson(path.join(projectRoot, 'package.json'), {
+      name: 'editor',
+      scripts: { build: 'tsc' },
+    });
+    await fsExtra.outputFile(
+      path.join(projectRoot, 'src', 'extensionHostStartup.ts'),
+      'export function startCanonicalExtensionHost() { return "ready"; }\n'
+    );
+    await Promise.all(
+      Array.from({ length: 1_005 }, (_, index) =>
+        fsExtra.outputFile(
+          path.join(
+            projectRoot,
+            'external',
+            'mirror',
+            `vendored-${String(index).padStart(4, '0')}.ts`
+          ),
+          `export const vendored${index} = ${index};\n`
+        )
+      )
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: workspaceRoot,
+      workspace: { name: 'editor-platform' },
+      projects: [{ id: 'editor', path: 'editor', runtime: 'node' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'editor', path: 'editor', runtime: 'node' }],
+        edges: [],
+        stats: { ...topology().stats, nodeCount: 1, edgeCount: 0, orphanCount: 1 },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities.some(
+        (entity) => entity.kind === 'file' && entity.label === 'editor/src/extensionHostStartup.ts'
+      )
+    ).toBe(true);
+    expect(
+      graph.entities.some(
+        (entity) => entity.kind === 'symbol' && entity.label === 'startCanonicalExtensionHost'
+      )
+    ).toBe(true);
+  });
+
+  it('does not present a development container as deployment evidence', async () => {
+    const root = await fixture();
+    await fsExtra.outputFile(
+      path.join(root, 'api', '.devcontainer', 'Dockerfile'),
+      'FROM mcr.microsoft.com/devcontainers/typescript-node:22\n'
+    );
+
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'api', path: 'api', runtime: 'node' }],
+        edges: [],
+        stats: { ...topology().stats, nodeCount: 1, edgeCount: 0, orphanCount: 1 },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.kind === 'container' &&
+          String(entity.attributes.artifact).includes('.devcontainer/Dockerfile')
+      )
+    ).toBe(false);
+    expect(
+      graph.relations.some(
+        (relation) =>
+          relation.kind === 'deploys' &&
+          graph.proofs.some(
+            (proof) =>
+              relation.proofIds.includes(proof.id) &&
+              proof.artifact.includes('.devcontainer/Dockerfile')
+          )
+      )
+    ).toBe(false);
+  });
+
   it('reports reproducible retrieval-payload savings without claiming model billing savings', async () => {
     const root = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -1738,6 +3117,63 @@ describe('workspace knowledge graph', () => {
     expect(report.corpus.characterCount).toBeGreaterThan(report.retrieval.characterCount);
     expect(report.savings.reductionPercent).toBeGreaterThan(0);
     expect(report.methodology.claimBoundary).toMatch(/does not claim.*billing savings/i);
+  });
+
+  it('runs a deterministic multi-scenario benchmark without presenting estimates as measured usage', async () => {
+    const root = await fixture();
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [
+        { id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' },
+        { id: 'web', path: 'web', runtime: 'python', framework: 'fastapi' },
+      ],
+      projectTopology: topology(),
+      contract: contract(),
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const report = await buildWorkspaceIntelligenceBenchmark({
+      workspacePath: root,
+      graph,
+      suite: 'agent-core.v1',
+      limit: 3,
+      now: NOW,
+    });
+
+    expect(report).toMatchObject({
+      schemaVersion: 'workspace-intelligence-benchmark.v1',
+      generatedAt: NOW.toISOString(),
+      suite: { id: 'agent-core.v1', version: 1 },
+      methodology: { deterministic: true, networkRequired: false },
+      retrievalSummary: {
+        provenance: 'estimated',
+        scenarioCount: 5,
+        matchedScenarioCount: 5,
+        status: 'passed',
+      },
+      evaluation: {
+        availability: 'unavailable',
+        provenance: 'unavailable',
+        trustedMeasuredReductionPercent: null,
+      },
+    });
+    expect(report.scenarios.map((scenario) => scenario.id)).toEqual([
+      'architecture',
+      'ownership',
+      'interfaces',
+      'change-safety',
+      'delivery',
+    ]);
+    expect(report.scenarios.every((scenario) => scenario.queryOrigin === 'graph-derived')).toBe(
+      true
+    );
+    expect(report.scenarios.every((scenario) => scenario.targetEntityId.length > 0)).toBe(true);
+    expect(report.scenarios.every((scenario) => scenario.targetRetrieved)).toBe(true);
+    expect(report.methodology.claimBoundary).toMatch(/do not establish.*billing savings/i);
+    const outputPath = await writeWorkspaceIntelligenceBenchmark(root, report);
+    expect(await fsExtra.readJson(outputPath)).toEqual(report);
   });
 
   it('reads portable external proof artifacts through the workspace contract', async () => {
@@ -1810,10 +3246,13 @@ describe('workspace knowledge graph', () => {
     expect(JSON.stringify(graph)).not.toContain('private_recovery_package');
     expect(graph.providers.map((provider) => provider.id)).toEqual([
       'architecture-decisions',
+      'authored-api-implementation-binding',
       'ci-workflow',
       'codeowners',
       'compose',
       'documentation',
+      'dynamic-api-registration-binding',
+      'incremental-project-cache',
       'infrastructure-as-code',
       'interface-contracts',
       'kubernetes',
@@ -1823,6 +3262,7 @@ describe('workspace knowledge graph', () => {
       'runtime-bridge-semantics',
       'source-language-inventory',
       'source-structure',
+      'source-symbol-binding',
       'vscode-extension-manifest',
       'workspace-foundation',
       'workspace-service-contract',
@@ -1841,6 +3281,7 @@ describe('workspace knowledge graph', () => {
         'api',
         'endpoint',
         'schema',
+        'protocol',
         'service',
         'container',
         'database',
@@ -1855,13 +3296,30 @@ describe('workspace knowledge graph', () => {
     expect(graph.relations.some((relation) => relation.kind === 'depends-on')).toBe(true);
     expect(graph.relations.some((relation) => relation.kind === 'exposes')).toBe(true);
     expect(graph.relations.some((relation) => relation.kind === 'references')).toBe(true);
+    const usersEndpoint = graph.entities.find(
+      (entity) => entity.kind === 'endpoint' && entity.attributes.operationId === 'listUsers'
+    );
+    const usersImplementation = graph.entities.find(
+      (entity) => entity.kind === 'file' && entity.label.endsWith('src/routes/users.ts')
+    );
+    expect(
+      graph.relations.some(
+        (relation) =>
+          relation.kind === 'implements' &&
+          relation.from === usersImplementation?.id &&
+          relation.to === usersEndpoint?.id &&
+          relation.trust === 'corroborated'
+      )
+    ).toBe(true);
     expect(graph.relations.some((relation) => relation.kind === 'deploys')).toBe(true);
     expect(graph.relations.some((relation) => relation.kind === 'owns')).toBe(true);
     expect(graph.relations.some((relation) => relation.kind === 'publishes')).toBe(true);
     expect(graph.relations.some((relation) => relation.kind === 'consumes')).toBe(true);
     expect(
       graph.providers.every(
-        (provider) => provider.status === 'skipped' || provider.discoveredEntities > 0
+        (provider) =>
+          provider.status === 'skipped' ||
+          provider.discoveredEntities + provider.discoveredRelations + provider.proofCount > 0
       )
     ).toBe(true);
     expect(graph.quality).toMatchObject({
@@ -1873,9 +3331,9 @@ describe('workspace knowledge graph', () => {
       bindingCoverage: {
         apiImplementation: {
           eligibleCount: 2,
-          boundCount: 0,
-          unknownCount: 2,
-          coverageRatio: 0,
+          boundCount: 2,
+          unknownCount: 0,
+          coverageRatio: 1,
         },
         projectTests: {
           eligibleCount: 2,
@@ -1899,11 +3357,51 @@ describe('workspace knowledge graph', () => {
           entity.attributes.resolution === 'unresolved-local'
       )
     ).toBe(false);
+    expect(
+      graph.entities.filter((entity) => entity.kind === 'module' && entity.label === '@nestjs/core')
+    ).toHaveLength(1);
+    expect(
+      graph.entities.some(
+        (entity) =>
+          entity.kind === 'module' &&
+          entity.label === '@nestjs/common' &&
+          entity.projectId === 'api'
+      )
+    ).toBe(true);
     expect(graph.proofs.every((proof) => !path.isAbsolute(proof.artifact))).toBe(true);
+    const referencedProofIds = new Set(
+      [...graph.entities, ...graph.relations].flatMap((entry) => entry.proofIds)
+    );
+    expect(graph.proofs.every((proof) => referencedProofIds.has(proof.id))).toBe(true);
     expect(JSON.stringify(graph)).not.toContain('never-export-this');
     expect(JSON.stringify(graph)).not.toContain('postgres://user:secret');
     expect(JSON.stringify(graph)).not.toContain('compose-secret-must-not-leak');
     expect(JSON.stringify(graph)).toContain('API_TOKEN');
+    expect(
+      graph.entities.some((entity) => entity.kind === 'service' && entity.label === 'telemetry')
+    ).toBe(true);
+    expect(
+      graph.entities.some((entity) => entity.kind === 'service' && entity.label === 'legacy-cache')
+    ).toBe(true);
+    const apiServices = graph.entities.filter(
+      (entity) =>
+        entity.kind === 'service' &&
+        entity.label === 'api' &&
+        entity.identity.key.startsWith('compose-service:')
+    );
+    expect(apiServices).toHaveLength(1);
+    expect(apiServices[0].attributes.environmentKeys).toEqual(['API_TOKEN', 'FEATURE_FLAG']);
+    const telemetry = graph.entities.find(
+      (entity) => entity.kind === 'service' && entity.label === 'telemetry'
+    );
+    expect(
+      graph.relations.some(
+        (relation) =>
+          relation.from === telemetry?.id &&
+          relation.to === apiServices[0].id &&
+          relation.kind === 'depends-on'
+      )
+    ).toBe(true);
     expect(graph.proofs.some((proof) => proof.artifact.includes('.rapidkit/vendor'))).toBe(false);
     expect(graph.entities.some((entity) => entity.label.includes('generated-copy'))).toBe(false);
 
@@ -1998,6 +3496,248 @@ describe('workspace knowledge graph', () => {
     expect(validate(overlay), JSON.stringify(validate.errors)).toBe(true);
   });
 
+  it('does not report unchanged manifests when a shared dependency gains a new proof', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-overlay-shared-proof-')
+    );
+    tempDirs.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, 'packages', 'existing', 'package.json'), {
+      name: '@example/existing',
+      dependencies: { zod: '^4.0.0' },
+    });
+    const input = {
+      workspacePath,
+      workspace: { name: 'shared-proof' },
+      projects: [{ id: 'platform', path: '.', runtime: 'node', framework: 'node' }],
+      projectTopology: topology(),
+      source: modelSource(),
+    } as const;
+    const base = await buildWorkspaceKnowledgeGraph({ ...input, now: NOW });
+
+    await fsExtra.outputJson(path.join(workspacePath, 'packages', 'z-added', 'package.json'), {
+      name: '@example/added',
+      dependencies: { zod: '^4.0.0' },
+    });
+    const head = await buildWorkspaceKnowledgeGraph({
+      ...input,
+      now: new Date('2026-07-21T12:01:00.000Z'),
+    });
+    const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(base, head, NOW);
+
+    expect(overlay.changedArtifacts).toEqual(['platform/packages/z-added/package.json']);
+    expect(
+      overlay.entities.changed.some(
+        (change) => change.after?.label === 'zod' && change.changedFields.includes('proofIds')
+      )
+    ).toBe(true);
+  });
+
+  it('reuses unchanged project scopes while rescanning the changed project', async () => {
+    const workspacePath = await fixture();
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', '.github', 'workflows', 'verify.yml'),
+      'name: Verify\non:\n  push:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: []\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', '.github', 'CODEOWNERS'),
+      '* @platform-team\n'
+    );
+    const options = {
+      workspacePath,
+      workspace: { name: 'platform' },
+      projects: [
+        { id: 'api', path: 'api', runtime: 'node', framework: 'nestjs' },
+        { id: 'web', path: 'web', runtime: 'python', framework: 'fastapi' },
+      ],
+      projectTopology: topology(),
+      contract: contract(),
+      source: modelSource(),
+    };
+    const base = await buildWorkspaceKnowledgeGraph({ ...options, now: NOW });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'src', 'incremental.ts'),
+      "export function incrementalRoute() { return 'ready'; }\n"
+    );
+    const head = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:01:00.000Z'),
+      previousGraph: base,
+    });
+
+    expect(
+      head.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({
+      status: 'passed',
+    });
+    const baseWebProofs = new Set(
+      base.entities
+        .filter((entity) => entity.projectId === 'web')
+        .flatMap((entity) => entity.proofIds)
+    );
+    const headWebProofs = new Set(
+      head.entities
+        .filter((entity) => entity.projectId === 'web')
+        .flatMap((entity) => entity.proofIds)
+    );
+    expect([...baseWebProofs].every((proofId) => headWebProofs.has(proofId))).toBe(true);
+    expect(
+      head.entities.some(
+        (entity) => entity.projectId === 'api' && entity.label === 'incrementalRoute'
+      )
+    ).toBe(true);
+    expect(
+      head.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'graph.provider.ci-workflow.empty_result' ||
+          diagnostic.code === 'graph.provider.codeowners.empty_result'
+      )
+    ).toBe(false);
+
+    const reusableHead = structuredClone(head);
+    const reusableDiagnostic = {
+      code: 'graph.provider.source_structure.unresolved_local_imports',
+      severity: 'warning' as const,
+      message: 'Synthetic reusable provider diagnostic.',
+      recommendation: 'Keep this diagnostic attached to reused provider evidence.',
+    };
+    reusableHead.diagnostics.push(reusableDiagnostic);
+    reusableHead.providers
+      .find((provider) => provider.id === 'source-structure')
+      ?.diagnostics.push(`${reusableDiagnostic.code}: ${reusableDiagnostic.message}`);
+    const unchanged = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:01:30.000Z'),
+      previousGraph: reusableHead,
+    });
+    expect(
+      unchanged.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({ status: 'passed', version: '1.4.0' });
+    for (const providerId of ['source-language-inventory', 'source-structure'] as const) {
+      const original = reusableHead.providers.find((provider) => provider.id === providerId);
+      const reused = unchanged.providers.find((provider) => provider.id === providerId);
+      expect(reused).toMatchObject({
+        status: original?.status,
+        discoveredEntities: original?.discoveredEntities,
+        discoveredRelations: original?.discoveredRelations,
+        proofCount: original?.proofCount,
+      });
+      expect(reused?.diagnostics).toContain(
+        'Provider evidence reused from unchanged project scopes.'
+      );
+    }
+    expect(
+      unchanged.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.provider.source-symbol-binding.empty_result'
+      )
+    ).toBe(false);
+    expect(
+      unchanged.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === reusableDiagnostic.code &&
+          diagnostic.message === reusableDiagnostic.message
+      )
+    ).toBe(true);
+    expect(
+      head.entities
+        .filter((entity) => !unchanged.entities.some((candidate) => candidate.id === entity.id))
+        .map((entity) => ({ id: entity.id, kind: entity.kind, label: entity.label }))
+    ).toEqual([]);
+    expect(unchanged.relations).toHaveLength(head.relations.length);
+    expect(new Set(unchanged.proofs.map((proof) => proof.id))).toEqual(
+      new Set(head.proofs.map((proof) => proof.id))
+    );
+
+    const semanticHead = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      projects: options.projects.map((project) =>
+        project.id === 'api'
+          ? { ...project, runtime: 'ruby', framework: 'rails', kit: 'adopted.rails' }
+          : project
+      ),
+      now: new Date('2026-07-21T12:01:45.000Z'),
+      previousGraph: unchanged,
+    });
+    const semanticApi = semanticHead.entities.find(
+      (entity) => entity.kind === 'project' && entity.projectId === 'api'
+    );
+    expect(semanticApi?.attributes).toMatchObject({
+      runtime: 'ruby',
+      framework: 'rails',
+      kit: 'adopted.rails',
+    });
+    expect(
+      semanticHead.diagnostics.some(
+        (diagnostic) => diagnostic.code === 'graph.knowledge.attribute_conflict'
+      )
+    ).toBe(false);
+
+    const incompatible = structuredClone(head);
+    const sourceProvider = incompatible.providers.find(
+      (provider) => provider.id === 'source-structure'
+    );
+    if (sourceProvider) sourceProvider.version = '0.0.0';
+    const fullRebuild = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:02:00.000Z'),
+      previousGraph: incompatible,
+    });
+    expect(
+      fullRebuild.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({ status: 'skipped', version: '1.4.0' });
+  });
+
+  it('uses full scans for overlapping project boundaries so unchanged child artifacts stay stable', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'workspai-overlapping-project-graph-')
+    );
+    tempDirs.push(workspacePath);
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'root.ts'),
+      "export const rootValue = 'before';\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'child', 'main.ts'),
+      "export const childValue = 'stable';\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'child', 'Dockerfile'),
+      'FROM node:22-alpine\n'
+    );
+    const options = {
+      workspacePath,
+      workspace: { name: 'overlapping-projects' },
+      projects: [
+        { id: 'root', path: 'repo', runtime: 'node', framework: 'node' },
+        { id: 'child', path: 'repo/child', runtime: 'node', framework: 'node' },
+      ],
+      projectTopology: topology(),
+      source: modelSource(),
+    };
+    const base = await buildWorkspaceKnowledgeGraph({ ...options, now: NOW });
+
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'repo', 'root.ts'),
+      "export const rootValue = 'after';\n"
+    );
+    const head = await buildWorkspaceKnowledgeGraph({
+      ...options,
+      now: new Date('2026-07-21T12:01:00.000Z'),
+      previousGraph: base,
+    });
+    const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(base, head, NOW);
+
+    expect(
+      head.providers.find((provider) => provider.id === 'incremental-project-cache')
+    ).toMatchObject({
+      status: 'skipped',
+      diagnostics: [expect.stringContaining('Overlapping project boundaries')],
+    });
+    expect(overlay.changedArtifacts).toContain('repo/root.ts');
+    expect(overlay.changedArtifacts.some((artifact) => artifact.endsWith('Dockerfile'))).toBe(
+      false
+    );
+  });
+
   it('supports entity, evidence and shortest proof-path queries', async () => {
     const workspacePath = await fixture();
     const graph = await buildWorkspaceKnowledgeGraph({
@@ -2033,5 +3773,300 @@ describe('workspace knowledge graph', () => {
     expect(pathResult.found).toBe(true);
     expect(pathResult.hops.map((hop) => hop.kind)).toEqual(['depends-on', 'exposes', 'contains']);
     expect(pathResult.proofs.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('uses project scope to resolve otherwise ambiguous evidence and path targets', () => {
+    const shared = {
+      kind: 'symbol' as const,
+      label: 'Charge',
+      attributes: {},
+      proofIds: [],
+    };
+    const graph = {
+      schemaVersion: 'workspace-knowledge-graph.v1' as const,
+      generatedAt: NOW,
+      workspace: { name: 'platform' },
+      source: modelSource(),
+      entities: [
+        {
+          ...shared,
+          id: 'symbol:a:charge',
+          projectId: 'a',
+          identity: {
+            key: 'symbol:a:charge',
+            scope: 'project' as const,
+            aliases: [],
+            fingerprint: 'a',
+          },
+        },
+        {
+          ...shared,
+          id: 'symbol:b:charge',
+          projectId: 'b',
+          identity: {
+            key: 'symbol:b:charge',
+            scope: 'project' as const,
+            aliases: [],
+            fingerprint: 'b',
+          },
+        },
+      ],
+      relations: [],
+      proofs: [],
+      diagnostics: [],
+      summary: { entityCount: 2, relationCount: 0, proofCount: 0, byKind: { symbol: 2 } },
+    };
+
+    expect(queryKnowledgeEvidence(graph, 'Charge').found).toBe(false);
+    expect(queryKnowledgeEvidence(graph, 'Charge', 'a')).toMatchObject({
+      found: true,
+      target: { id: 'symbol:a:charge' },
+    });
+    expect(queryKnowledgePath(graph, 'Charge', 'Charge', 'b')).toMatchObject({
+      found: true,
+      resolvedFrom: 'symbol:b:charge',
+      resolvedTo: 'symbol:b:charge',
+    });
+  });
+
+  it('binds dynamic and configuration-driven API registration without fabricating endpoint handlers', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-dynamic-api-'));
+    tempDirs.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: NOW.toISOString(),
+      workspace: { name: 'dynamic-api' },
+      projects: [],
+    });
+    await fsExtra.outputJson(path.join(workspacePath, 'api', 'package.json'), {
+      name: 'dynamic-api',
+    });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'openapi.yaml'),
+      [
+        'openapi: 3.1.0',
+        'info:',
+        '  title: Dynamic API',
+        '  version: 1.0.0',
+        'paths:',
+        '  /widgets:',
+        '    get:',
+        '      responses: {}',
+      ].join('\n')
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'src', 'server.ts'),
+      "export function install(app: any, generatedRouter: any) { app.use('/api', generatedRouter); }\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'src', 'types.ts'),
+      'export interface GenericAPIServer { name: string }\n'
+    );
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath,
+      workspace: { name: 'dynamic-api' },
+      projects: [{ id: 'api', path: 'api', runtime: 'node', framework: 'custom' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'api', path: 'api', runtime: 'node', framework: 'custom' }],
+        edges: [],
+        stats: {
+          ...topology().stats,
+          nodeCount: 1,
+          edgeCount: 0,
+          contractEdges: 0,
+          authoritativeEdges: 0,
+          orphanCount: 1,
+          connectedNodeCount: 0,
+          density: 0,
+          edgeCoverageRatio: 0,
+          evidenceCoverageRatio: 1,
+        },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const api = graph.entities.find((entity) => entity.kind === 'api');
+    const endpoint = graph.entities.find((entity) => entity.kind === 'endpoint');
+    const registration = graph.entities.find(
+      (entity) =>
+        entity.kind === 'runtime-unit' &&
+        entity.attributes.mechanism === 'runtime-generated-routing'
+    );
+    expect(api).toBeDefined();
+    expect(registration).toBeDefined();
+    expect(
+      graph.entities.filter(
+        (entity) =>
+          entity.kind === 'runtime-unit' &&
+          entity.attributes.mechanism === 'runtime-generated-routing'
+      )
+    ).toHaveLength(1);
+    expect(
+      graph.relations.some(
+        (relation) =>
+          relation.kind === 'implements' &&
+          relation.from === registration?.id &&
+          relation.to === api?.id
+      )
+    ).toBe(true);
+    expect(
+      graph.relations.some(
+        (relation) => relation.kind === 'implements' && relation.to === endpoint?.id
+      )
+    ).toBe(false);
+    expect(graph.quality.bindingCoverage?.apiRuntimeRegistration).toMatchObject({
+      eligibleCount: 1,
+      boundCount: 1,
+      unknownCount: 0,
+      coverageRatio: 1,
+    });
+    expect(graph.quality.bindingCoverage?.apiImplementation).toMatchObject({
+      eligibleCount: 1,
+      boundCount: 0,
+      unknownCount: 1,
+      coverageRatio: 0,
+    });
+  });
+
+  it('separates GraphQL executable documents from runtime-served schema APIs', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-graphql-doc-'));
+    tempDirs.push(workspacePath);
+    await fsExtra.outputJson(path.join(workspacePath, 'web', 'package.json'), {
+      name: 'graphql-client',
+    });
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'get-user.query.graphql'),
+      'query GetUser($id: ID!) { user(id: $id) { id type } }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'user.fragment.graphql'),
+      'fragment UserFields on User { id type }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'web', 'src', 'viewer.query.graphql'),
+      '{ viewer { id } }\n'
+    );
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath,
+      workspace: { name: 'graphql-client' },
+      projects: [{ id: 'web', path: 'web', runtime: 'node' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'web', path: 'web', runtime: 'node' }],
+        edges: [],
+        stats: {
+          ...topology().stats,
+          nodeCount: 1,
+          edgeCount: 0,
+          contractEdges: 0,
+          authoritativeEdges: 0,
+          orphanCount: 1,
+          connectedNodeCount: 0,
+          density: 0,
+          edgeCoverageRatio: 0,
+          evidenceCoverageRatio: 1,
+        },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    expect(graph.entities.filter((entity) => entity.kind === 'api')).toHaveLength(0);
+    expect(
+      graph.entities.find(
+        (entity) =>
+          entity.kind === 'symbol' &&
+          entity.attributes.operationKind === 'query' &&
+          entity.label === 'GetUser'
+      )?.label
+    ).toBe('GetUser');
+    expect(
+      graph.entities.find(
+        (entity) => entity.kind === 'symbol' && entity.attributes.symbolKind === 'fragment'
+      )?.label
+    ).toBe('UserFields');
+    expect(
+      graph.entities.find(
+        (entity) =>
+          entity.kind === 'symbol' &&
+          entity.attributes.operationKind === 'query' &&
+          entity.label.startsWith('anonymous-')
+      )
+    ).toBeDefined();
+    expect(graph.quality.bindingCoverage?.apiRuntimeRegistration).toEqual({
+      eligibleCount: 0,
+      boundCount: 0,
+      unknownCount: 0,
+      coverageRatio: null,
+    });
+  });
+
+  it('binds a GraphQL schema API through a proof-carrying Rails mount', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-graphql-rails-'));
+    tempDirs.push(workspacePath);
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'Gemfile'),
+      "source 'https://rubygems.org'\n"
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'schema.graphql'),
+      'type Query { health: String! }\nextend type Query { viewer: String }\n'
+    );
+    await fsExtra.outputFile(
+      path.join(workspacePath, 'api', 'config', 'routes.rb'),
+      "Rails.application.routes.draw do\n  mount GraphqlSchema, at: '/graphql'\nend\n"
+    );
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath,
+      workspace: { name: 'graphql-rails' },
+      projects: [{ id: 'api', path: 'api', runtime: 'ruby', framework: 'rails' }],
+      projectTopology: {
+        ...topology(),
+        nodes: [{ id: 'api', path: 'api', runtime: 'ruby', framework: 'rails' }],
+        edges: [],
+        stats: {
+          ...topology().stats,
+          nodeCount: 1,
+          edgeCount: 0,
+          contractEdges: 0,
+          authoritativeEdges: 0,
+          orphanCount: 1,
+          connectedNodeCount: 0,
+          density: 0,
+          edgeCoverageRatio: 0,
+          evidenceCoverageRatio: 1,
+        },
+      },
+      now: NOW,
+      source: modelSource(),
+    });
+
+    const api = graph.entities.find(
+      (entity) => entity.kind === 'api' && entity.attributes.surface === 'graphql-schema'
+    );
+    const registration = graph.entities.find(
+      (entity) =>
+        entity.kind === 'runtime-unit' &&
+        entity.attributes.mechanism === 'runtime-generated-routing'
+    );
+    expect(api).toBeDefined();
+    expect(registration).toBeDefined();
+    expect(
+      graph.relations.some(
+        (relation) =>
+          relation.kind === 'implements' &&
+          relation.from === registration?.id &&
+          relation.to === api?.id
+      )
+    ).toBe(true);
+    expect(graph.quality.bindingCoverage?.apiRuntimeRegistration).toEqual({
+      eligibleCount: 1,
+      boundCount: 1,
+      unknownCount: 0,
+      coverageRatio: 1,
+    });
   });
 });

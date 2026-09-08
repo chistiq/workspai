@@ -26,6 +26,7 @@ export type BackendRuntimeFamily =
   | 'unknown';
 
 export type BackendPlatformKey =
+  | 'microsoft-agent-framework'
   | 'fastapi'
   | 'django'
   | 'flask'
@@ -120,6 +121,17 @@ type BackendContractDescriptor = BackendFrameworkContract & {
 };
 
 const BACKEND_CONTRACTS: Record<BackendPlatformKey, BackendContractDescriptor> = {
+  'microsoft-agent-framework': {
+    key: 'microsoft-agent-framework',
+    // The authored runtime hint overrides this default because Microsoft
+    // Agent Framework has equally governed Python and .NET adapters.
+    runtime: 'python',
+    displayName: 'Microsoft Agent Framework',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['microsoft-agent-framework', 'microsoft agent framework'],
+    kitPrefixes: ['agent.microsoft'],
+  },
   fastapi: {
     key: 'fastapi',
     runtime: 'python',
@@ -601,6 +613,13 @@ const NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES = new Set([
   'coverage',
   '.next',
   '.cache',
+  'test',
+  'tests',
+  'spec',
+  'specs',
+  'testdata',
+  'fixtures',
+  '__fixtures__',
 ]);
 
 function listFilesRecursive(dirPath: string, maxDepth: number): string[] {
@@ -662,6 +681,41 @@ function hasFileWithSuffix(projectPath: string, suffix: string, maxDepth = 2): b
   return listFilesRecursive(projectPath, maxDepth).some((candidatePath) =>
     candidatePath.toLowerCase().endsWith(suffix.toLowerCase())
   );
+}
+
+/**
+ * Detects a native monorepo whose project boundary is an aggregation of
+ * independently buildable CMake/Meson components. Requiring three direct
+ * component manifests keeps ordinary applications with one or two optional
+ * native extensions from displacing their authored primary runtime.
+ */
+export function hasNativeWorkspaceTopology(projectPath: string): boolean {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(projectPath, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  let nativeComponents = 0;
+  for (const entry of entries) {
+    if (
+      !entry.isDirectory() ||
+      NESTED_RUNTIME_DISCOVERY_IGNORED_DIRECTORIES.has(entry.name) ||
+      isPythonVirtualEnvironmentDirectory(entry.name)
+    ) {
+      continue;
+    }
+    const componentRoot = path.join(projectPath, entry.name);
+    if (
+      fs.existsSync(path.join(componentRoot, 'CMakeLists.txt')) ||
+      fs.existsSync(path.join(componentRoot, 'meson.build'))
+    ) {
+      nativeComponents += 1;
+      if (nativeComponents >= 3) return true;
+    }
+  }
+  return false;
 }
 
 function findFilesWithSuffix(projectPath: string, suffix: string, maxDepth = 2): string[] {
@@ -726,12 +780,18 @@ export function detectBackendFrameworkFromHints(input: {
 }): BackendFrameworkDetection {
   const byKit = findByKitName(input.kitName);
   if (byKit !== 'unknown') {
-    return buildDetection(byKit, 'high', 'kit');
+    const detected = buildDetection(byKit, 'high', 'kit');
+    return byKit === 'microsoft-agent-framework' && input.runtime
+      ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
+      : detected;
   }
 
   const byFramework = normalizeBackendPlatformKey(input.framework);
   if (byFramework !== 'unknown') {
-    return buildDetection(byFramework, 'high', 'framework');
+    const detected = buildDetection(byFramework, 'high', 'framework');
+    return byFramework === 'microsoft-agent-framework' && input.runtime
+      ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
+      : detected;
   }
 
   const byRuntime = normalizeBackendPlatformKey(input.runtime);
@@ -742,16 +802,53 @@ export function detectBackendFrameworkFromHints(input: {
   return buildDetection('unknown', 'low', 'unknown');
 }
 
+/**
+ * Linked-adoption metadata is an observation emitted by Workspai, not an
+ * authored stack declaration. Treating it as an everlasting hint pins every
+ * later consumer to the first adoption guess and prevents source changes (or
+ * improved detectors) from correcting the model.
+ */
+export function isWorkspaiManagedLinkedProjectMetadata(
+  projectJsonData: Record<string, unknown> | null | undefined
+): boolean {
+  const adoption = projectJsonData?.adoption;
+  if (adoption && typeof adoption === 'object' && !Array.isArray(adoption)) {
+    const value = adoption as Record<string, unknown>;
+    if (value.managed_by === 'workspai' && value.mode === 'linked') return true;
+  }
+
+  const imported = projectJsonData?.import;
+  return (
+    imported !== null &&
+    typeof imported === 'object' &&
+    !Array.isArray(imported) &&
+    (imported as Record<string, unknown>).managed_by === 'workspai'
+  );
+}
+
 function detectNodeBackendFromProject(projectPath: string): BackendFrameworkDetection {
   const packageJson = readJsonIfExists(path.join(projectPath, 'package.json'));
   if (!packageJson) {
     return buildDetection('unknown', 'low', 'unknown');
   }
 
-  const dependencies = {
-    ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
-  };
+  const declaredDependencies =
+    (packageJson.dependencies as Record<string, unknown> | undefined) ?? {};
+  const developmentDependencies =
+    (packageJson.devDependencies as Record<string, unknown> | undefined) ?? {};
+  const isPrivateWorkspaceRoot =
+    packageJson.private === true &&
+    (Array.isArray(packageJson.workspaces) ||
+      (packageJson.workspaces !== null && typeof packageJson.workspaces === 'object') ||
+      fs.existsSync(path.join(projectPath, 'pnpm-workspace.yaml')));
+  // Private workspace roots commonly install application frameworks only to
+  // build fixtures, examples, or the framework itself. A devDependency there
+  // is tooling evidence, not proof that the monorepo root is that application
+  // framework. Production dependencies and explicit lifecycle scripts remain
+  // valid ownership signals.
+  const dependencies = isPrivateWorkspaceRoot
+    ? declaredDependencies
+    : { ...declaredDependencies, ...developmentDependencies };
   const scripts = ((packageJson.scripts as Record<string, unknown> | undefined) ?? {}) as Record<
     string,
     unknown
@@ -841,10 +938,9 @@ function detectPythonBackendFromProject(projectPath: string): BackendFrameworkDe
 }
 
 function detectGoBackendFromProject(projectPath: string): BackendFrameworkDetection {
-  const merged = [
-    readTextIfExists(path.join(projectPath, 'go.mod')),
-    readTextIfExists(path.join(projectPath, 'main.go')),
-  ].join('\n');
+  const goModule = readTextIfExists(path.join(projectPath, 'go.mod'));
+  const mainSource = readTextIfExists(path.join(projectPath, 'main.go'));
+  const merged = [goModule, mainSource].join('\n');
 
   if (merged.includes('github.com/gofiber/fiber')) {
     return buildDetection('gofiber', 'high', 'manifest');
@@ -855,7 +951,10 @@ function detectGoBackendFromProject(projectPath: string): BackendFrameworkDetect
   if (merged.includes('github.com/labstack/echo')) {
     return buildDetection('echo', 'high', 'manifest');
   }
-  if (merged.trim()) {
+  if (goModule.trim()) {
+    return buildDetection('go', 'high', 'manifest');
+  }
+  if (mainSource.trim()) {
     return buildDetection('go', 'medium', 'marker');
   }
 
@@ -896,13 +995,16 @@ function detectPhpBackendFromProject(projectPath: string): BackendFrameworkDetec
 
 function detectRubyBackendFromProject(projectPath: string): BackendFrameworkDetection {
   const gemfile = readTextIfExists(path.join(projectPath, 'Gemfile'));
+  const gemspec = findFilesWithSuffix(projectPath, '.gemspec', 0)
+    .map((filePath) => readTextIfExists(filePath))
+    .join('\n');
   if (gemfile.includes("gem 'rails'") || gemfile.includes('gem "rails"')) {
     return buildDetection('rails', 'high', 'manifest');
   }
   if (gemfile.includes("gem 'sinatra'") || gemfile.includes('gem "sinatra"')) {
     return buildDetection('sinatra', 'high', 'manifest');
   }
-  if (gemfile.trim()) {
+  if (gemfile.trim() || gemspec.trim()) {
     return buildDetection('ruby', 'medium', 'marker');
   }
 
@@ -989,7 +1091,11 @@ export function detectRuntimeCandidatesFromProject(projectPath: string): Backend
     push('dotnet');
   }
   if (fs.existsSync(path.join(projectPath, 'package.json'))) push('node');
-  if (fs.existsSync(path.join(projectPath, 'Gemfile'))) push('ruby');
+  if (
+    fs.existsSync(path.join(projectPath, 'Gemfile')) ||
+    hasFileWithSuffix(projectPath, '.gemspec', 0)
+  )
+    push('ruby');
   if (
     fs.existsSync(path.join(projectPath, 'pyproject.toml')) ||
     fs.existsSync(path.join(projectPath, 'setup.py')) ||
@@ -1013,7 +1119,9 @@ export function detectRuntimeCandidatesFromProject(projectPath: string): Backend
   }
   if (
     fs.existsSync(path.join(projectPath, 'bun.lockb')) ||
-    fs.existsSync(path.join(projectPath, 'bun.lock'))
+    fs.existsSync(path.join(projectPath, 'bun.lock')) ||
+    fs.existsSync(path.join(projectPath, 'bunfig.toml')) ||
+    fs.existsSync(path.join(projectPath, '.bunfig.toml'))
   ) {
     push('bun');
   }
@@ -1071,12 +1179,12 @@ export function detectNestedRuntimeCandidatesFromProject(
   if (hasName('composer.json')) push('php');
   if (hasSuffix('.csproj', '.sln')) push('dotnet');
   if (hasName('package.json')) push('node');
-  if (hasName('Gemfile')) push('ruby');
+  if (hasName('Gemfile') || hasSuffix('.gemspec')) push('ruby');
   if (hasName('pyproject.toml', 'setup.py', 'requirements.txt', 'requirements.in')) push('python');
   if (hasName('deps.edn', 'project.clj')) push('clojure');
   if (hasName('build.sbt')) push('scala');
   if (hasName('deno.json', 'deno.jsonc')) push('deno');
-  if (hasName('bun.lockb', 'bun.lock')) push('bun');
+  if (hasName('bun.lockb', 'bun.lock', 'bunfig.toml', '.bunfig.toml')) push('bun');
   if (
     hasName('CMakeLists.txt', 'meson.build') ||
     hasSuffix('.cpp', '.cc', '.cxx', '.hpp', '.hh', '.hxx')
@@ -1103,20 +1211,83 @@ export function detectBackendFrameworkFromProject(
   projectPath: string,
   projectJsonData?: Record<string, unknown> | null
 ): BackendFrameworkDetection {
+  const managedLinkedMetadata = isWorkspaiManagedLinkedProjectMetadata(projectJsonData);
+  const rootEntries = (() => {
+    try {
+      return fs.readdirSync(projectPath, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  })();
+  const directManifestNames = new Set([
+    'package.json',
+    'Gemfile',
+    'go.mod',
+    'Cargo.toml',
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'mix.exs',
+    'composer.json',
+    'pyproject.toml',
+    'setup.py',
+    'requirements.txt',
+    'requirements.in',
+    'deps.edn',
+    'project.clj',
+    'build.sbt',
+    'deno.json',
+    'deno.jsonc',
+    'CMakeLists.txt',
+    'meson.build',
+  ]);
+  const hasRootRuntimeOwner = rootEntries.some(
+    (entry) =>
+      entry.isFile() &&
+      (directManifestNames.has(entry.name) || /\.(?:csproj|slnx?|gemspec)$/iu.test(entry.name))
+  );
+  // A manifest-free composite container has no source-backed way to choose one
+  // nested runtime as primary. Preserve the previous managed observation only
+  // while that runtime is still present; otherwise force fresh detection.
+  const managedCompositeFallback =
+    managedLinkedMetadata && !hasRootRuntimeOwner
+      ? detectBackendFrameworkFromHints({
+          framework:
+            typeof projectJsonData?.framework === 'string'
+              ? (projectJsonData.framework as string)
+              : undefined,
+          runtime:
+            typeof projectJsonData?.runtime === 'string'
+              ? (projectJsonData.runtime as string)
+              : undefined,
+          kitName:
+            typeof projectJsonData?.kit_name === 'string'
+              ? (projectJsonData.kit_name as string)
+              : typeof projectJsonData?.kit === 'string'
+                ? (projectJsonData.kit as string)
+                : undefined,
+        })
+      : null;
+  if (
+    managedCompositeFallback?.runtime &&
+    managedCompositeFallback.runtime !== 'unknown' &&
+    detectNestedRuntimeCandidatesFromProject(projectPath).includes(managedCompositeFallback.runtime)
+  ) {
+    return managedCompositeFallback;
+  }
+  const detectionHints = managedLinkedMetadata ? null : projectJsonData;
   const hinted = detectBackendFrameworkFromHints({
     framework:
-      typeof projectJsonData?.framework === 'string'
-        ? (projectJsonData.framework as string)
+      typeof detectionHints?.framework === 'string'
+        ? (detectionHints.framework as string)
         : undefined,
     runtime:
-      typeof projectJsonData?.runtime === 'string'
-        ? (projectJsonData.runtime as string)
-        : undefined,
+      typeof detectionHints?.runtime === 'string' ? (detectionHints.runtime as string) : undefined,
     kitName:
-      typeof projectJsonData?.kit_name === 'string'
-        ? (projectJsonData.kit_name as string)
-        : typeof projectJsonData?.kit === 'string'
-          ? (projectJsonData.kit as string)
+      typeof detectionHints?.kit_name === 'string'
+        ? (detectionHints.kit_name as string)
+        : typeof detectionHints?.kit === 'string'
+          ? (detectionHints.kit as string)
           : undefined,
   });
   if (hinted.key !== 'unknown') {
@@ -1124,10 +1295,24 @@ export function detectBackendFrameworkFromProject(
   }
 
   const runtimeCandidates = detectRuntimeCandidatesFromProject(projectPath);
+  const nestedRuntimeCandidates = detectNestedRuntimeCandidatesFromProject(projectPath);
+  // A manifest-free monorepo root can still have an unambiguous runtime owner
+  // when every bounded child manifest belongs to the same runtime family.
+  // Preserve `unknown` for genuinely polyglot containers; do not erase a
+  // homogeneous Python/Go/etc. workspace merely because its manifests live in
+  // packages below the repository root.
+  if (runtimeCandidates.length === 0 && nestedRuntimeCandidates.length === 1) {
+    return buildDetection(
+      normalizeBackendPlatformKey(nestedRuntimeCandidates[0]),
+      'medium',
+      'runtime'
+    );
+  }
   const rootCmake = readTextIfExists(path.join(projectPath, 'CMakeLists.txt'));
   const rootMeson = readTextIfExists(path.join(projectPath, 'meson.build'));
   const rootCargo = readTextIfExists(path.join(projectPath, 'Cargo.toml'));
   const hasRootNativeBuild = rootCmake.trim().length > 0 || rootMeson.trim().length > 0;
+  const hasNativeWorkspace = hasNativeWorkspaceTopology(projectPath);
   const hasCppSource =
     hasFileWithSuffix(projectPath, '.cpp', 3) ||
     hasFileWithSuffix(projectPath, '.cc', 3) ||
@@ -1138,7 +1323,11 @@ export function detectBackendFrameworkFromProject(
   // tooling manifests for Python, Node, Ruby, or .NET. Large native projects
   // such as gRPC intentionally ship those secondary language surfaces beside
   // their C/C++ core.
-  if (hasRootNativeBuild && runtimeCandidates.includes('cpp') && (hasCppSource || declaresCpp)) {
+  if (
+    (hasRootNativeBuild || hasNativeWorkspace) &&
+    runtimeCandidates.includes('cpp') &&
+    (hasCppSource || declaresCpp)
+  ) {
     return buildDetection('cpp', 'high', 'manifest');
   }
   if (
@@ -1179,15 +1368,38 @@ export function detectBackendFrameworkFromProject(
     if (applicationDetection.key !== 'unknown') {
       return applicationDetection;
     }
-    const frontendDetection = detectFrontendFrameworkFromProject(projectPath, projectJsonData);
+    const detection = detectNodeBackendFromProject(projectPath);
+    // A concrete Node server framework owns the application boundary. Generic
+    // Node tooling does not: keep looking for a root backend framework before
+    // allowing a frontend dependency to classify a polyglot application.
+    if (detection.key !== 'unknown' && detection.key !== 'node') {
+      return detection;
+    }
+  }
+  // Root backend frameworks are stronger ownership evidence than asset-pipeline
+  // dependencies in package.json. This keeps Rails/Django/etc. applications
+  // with Vue/React build surfaces from becoming standalone frontend projects.
+  const explicitBackendDetections = [
+    runtimeCandidates.includes('python') ? detectPythonBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('go') ? detectGoBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('java') ? detectJavaBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('php') ? detectPhpBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('ruby') ? detectRubyBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('rust') ? detectRustBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('elixir') ? detectElixirBackendFromProject(projectPath) : null,
+    runtimeCandidates.includes('dotnet') ? detectDotnetBackendFromProject(projectPath) : null,
+  ].filter((detection): detection is BackendFrameworkDetection => detection !== null);
+  const explicitBackend = explicitBackendDetections.find(
+    (detection) => detection.key !== 'unknown' && detection.key !== detection.runtime
+  );
+  if (explicitBackend) return explicitBackend;
+  if (runtimeCandidates.includes('node')) {
+    const frontendDetection = detectFrontendFrameworkFromProject(projectPath, detectionHints);
     if (frontendDetection.key !== 'unknown') {
       return frontendDetection;
     }
-
     const detection = detectNodeBackendFromProject(projectPath);
-    if (detection.key !== 'unknown') {
-      return detection;
-    }
+    if (detection.key !== 'unknown') return detection;
   }
   if (runtimeCandidates.includes('python')) {
     const detection = detectPythonBackendFromProject(projectPath);

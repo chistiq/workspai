@@ -110,8 +110,8 @@ export function buildAgentCustomizationPackContract(): AgentCustomizationPackCon
         outputFamilies: ['instructions', 'prompts', 'skills', 'agents', 'hooks'],
       },
       agents: {
-        meaning: 'Generate portable AGENTS.md grounding for any agent.',
-        outputFamilies: ['portable'],
+        meaning: 'Generate portable AGENTS.md grounding and .agents/skills projections.',
+        outputFamilies: ['portable', 'skills'],
       },
       copilot: {
         meaning: 'Generate GitHub Copilot instructions, prompts, and skills.',
@@ -190,7 +190,7 @@ export function buildAgentCustomizationPackContract(): AgentCustomizationPackCon
     ],
     pathLayers: {
       l1CanonicalRoots: [`.workspai/reports/`, `${WORKSPAI_SKILLS_DIR}/`],
-      l2PrefixedMirrorRoots: ['.github/', '.cursor/', '.claude/', '.amazonq/'],
+      l2PrefixedMirrorRoots: ['.agents/', '.github/', '.cursor/', '.claude/', '.amazonq/'],
       l3SharedIndustryFiles: [
         'AGENTS.md',
         '.github/copilot-instructions.md',

@@ -2,7 +2,11 @@ import fsExtra from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { evaluateReleaseReadiness, runReleaseReadinessCommand } from '../readiness.js';
+import {
+  dependencyBlockingSummary,
+  evaluateReleaseReadiness,
+  runReleaseReadinessCommand,
+} from '../readiness.js';
 
 const createdPaths: string[] = [];
 
@@ -175,6 +179,76 @@ describe('release readiness', () => {
     expect(envGate?.details).toContain(
       'Run workspai setup python and workspai bootstrap to lock python for this workspace.'
     );
+  });
+
+  it('evaluates an adopted external project from externalPath instead of its virtual contract path', async () => {
+    const workspace = await makeWorkspace();
+    const externalProject = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'rapidkit-readiness-external-java-')
+    );
+    createdPaths.push(externalProject);
+    await fsExtra.writeFile(
+      path.join(externalProject, 'settings.gradle'),
+      "rootProject.name='api'\n"
+    );
+    await fsExtra.writeFile(path.join(externalProject, 'build.gradle'), 'plugins { id "java" }\n');
+    await fsExtra.writeJSON(path.join(workspace, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      projects: [
+        {
+          slug: 'api',
+          relativePath: 'external/api',
+          externalPath: externalProject,
+          source: 'adopted-local',
+        },
+      ],
+    });
+    await fsExtra.writeJSON(path.join(workspace, '.workspai', 'toolchain.lock'), {
+      runtime: { node: { version: '24.18.0' } },
+    });
+
+    const readiness = await evaluateReleaseReadiness({
+      startPath: workspace,
+      writeReport: false,
+      skipVerify: true,
+    });
+    const envGate = readiness.gates.find((gate) => gate.gate === 'env');
+
+    expect(envGate?.status).toBe('fail');
+    expect(envGate?.summary).toContain('(java)');
+    expect(envGate?.details).toContain(
+      'Run workspai setup java and workspai bootstrap to lock java for this workspace.'
+    );
+  });
+
+  it('does not claim a native project toolchain is pinned by the Workspai Node runtime', async () => {
+    const workspace = await makeWorkspace();
+    await fsExtra.outputJSON(path.join(workspace, 'compiler', '.workspai', 'project.json'), {
+      name: 'compiler',
+      runtime: 'cpp',
+      framework: 'cpp',
+      kit_name: 'adopted.cpp',
+    });
+    await fsExtra.writeJSON(path.join(workspace, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      projects: [{ slug: 'compiler', relativePath: 'compiler' }],
+    });
+    await fsExtra.writeJSON(path.join(workspace, '.workspai', 'toolchain.lock'), {
+      runtime: { node: { version: '24.18.0' } },
+    });
+
+    const readiness = await evaluateReleaseReadiness({
+      startPath: workspace,
+      writeReport: false,
+      skipVerify: true,
+    });
+    const envGate = readiness.gates.find((gate) => gate.gate === 'env');
+
+    expect(envGate).toMatchObject({ status: 'warn' });
+    expect(envGate?.summary).toContain('(cpp) cannot be verified by toolchain.lock');
+    expect(envGate?.details.join('\n')).toContain('do not prove the cpp compiler');
   });
 
   it('prefers workspace-registry.v1.json for registered project count', async () => {
@@ -362,6 +436,16 @@ describe('release readiness', () => {
     expect(readiness.overallStatus).toBe('fail');
     expect(dependencyGate?.status).toBe('fail');
     expect(dependencyGate?.summary).toContain('vulnerability');
+  });
+
+  it('does not describe a dependency environment blocker as a known vulnerability', () => {
+    const summary = dependencyBlockingSummary({
+      blockingFindings: 1,
+      vulnerableDependencies: 0,
+    });
+
+    expect(summary).toBe('1 blocking dependency/security finding(s) reported');
+    expect(summary).not.toContain('vulnerability');
   });
 
   it('treats unknown doctor evidence schema as missing evidence', async () => {

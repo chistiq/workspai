@@ -12,7 +12,7 @@ vi.mock('execa', async (importOriginal) => {
     execa: vi.fn().mockImplementation((cmd: string, _args: string[], _opts: unknown) => {
       if (cmd === 'go') {
         return Promise.resolve({
-          stdout: 'go version go1.24.0 linux/amd64',
+          stdout: 'go version go1.26.0 linux/amd64',
           stderr: '',
           exitCode: 0,
         });
@@ -117,6 +117,7 @@ describe('generateGoGinKit', () => {
         '.env.example',
         '.gitignore',
         '.github/workflows/ci.yml',
+        '.github/dependabot.yml',
         'README.md',
         '.workspai/project.json',
         '.workspai/context.json',
@@ -146,12 +147,12 @@ describe('generateGoGinKit', () => {
       expect(goMod).toContain('module my-gin-api');
     });
 
-    it('should use go 1.24 by default', async () => {
+    it('should use the supported Go 1.26 baseline by default', async () => {
       const projectPath = path.join(testDir, 'gin-go-version');
       await generateGoGinKit(projectPath, { project_name: 'gin-go-version', skipGit: true });
 
       const goMod = await fs.readFile(path.join(projectPath, 'go.mod'), 'utf8');
-      expect(goMod).toContain('go 1.24');
+      expect(goMod).toContain('go 1.26');
     });
 
     it('should use port 8080 by default', async () => {
@@ -232,7 +233,7 @@ describe('generateGoGinKit', () => {
 
       const goMod = await fs.readFile(path.join(projectPath, 'go.mod'), 'utf8');
       expect(goMod).toContain('module myginapp');
-      expect(goMod).toContain('github.com/gin-gonic/gin');
+      expect(goMod).toContain('github.com/gin-gonic/gin v1.12.0');
     });
 
     it('should generate main.go with correct package', async () => {
@@ -296,6 +297,11 @@ describe('generateGoGinKit', () => {
         'utf8'
       );
       expect(workflow).toContain('go');
+      expect(workflow).toContain('actions/setup-go@v7');
+      expect(workflow).toContain('golangci/golangci-lint-action@v9');
+      expect(workflow).toContain('version: v2.12.2');
+      expect(workflow).toContain('permissions:\n  contents: read');
+      expect(workflow).not.toContain('version: latest');
     });
 
     it('should generate .golangci.yml linter config', async () => {
@@ -303,8 +309,9 @@ describe('generateGoGinKit', () => {
       await generateGoGinKit(projectPath, { project_name: 'gin-lint', skipGit: true });
 
       const lint = await fs.readFile(path.join(projectPath, '.golangci.yml'), 'utf8');
-      expect(lint).toBeDefined();
-      expect(lint.length).toBeGreaterThan(0);
+      expect(lint).toContain('version: "2"');
+      expect(lint).toContain('formatters:');
+      expect(lint).not.toContain('linters-settings:');
     });
 
     it('should generate .air.toml for hot reload', async () => {
@@ -453,7 +460,7 @@ describe('generateGoGinKit', () => {
       const mockedExeca = vi.mocked(execa);
       mockedExeca.mockImplementation((cmd: string) => {
         if (cmd === 'git') return Promise.reject(new Error('git: command not found'));
-        return Promise.resolve({ stdout: 'go version go1.24', stderr: '', exitCode: 0 } as any);
+        return Promise.resolve({ stdout: 'go version go1.26', stderr: '', exitCode: 0 } as any);
       });
 
       const projectPath = path.join(testDir, 'gin-git-fail');

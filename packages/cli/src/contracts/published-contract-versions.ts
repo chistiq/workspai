@@ -75,6 +75,36 @@ import {
   AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
   PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
 } from '../project-agent-entry.js';
+import { WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION } from '../activity/activity-contract.js';
+import {
+  WORKSPACE_ACTIVITY_MONITOR_FLEET_SCHEMA_VERSION,
+  WORKSPACE_ACTIVITY_MONITOR_SNAPSHOT_SCHEMA_VERSION,
+} from '../activity/activity-monitor.js';
+import { WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION } from '../activity/activity-board.js';
+import { WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION } from '../workspace-intelligence-benchmark.js';
+import {
+  DECISION_CHECKPOINT_SCHEMA_VERSION,
+  DECISION_EVENT_SCHEMA_VERSION,
+  DECISION_TRANSACTION_SCHEMA_VERSION,
+} from '../decisions/decision-contract.js';
+import {
+  ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION,
+  ARCHITECTURE_SURPRISE_REPORT_SCHEMA_VERSION,
+  CHANGE_OPERATION_RESULT_SCHEMA_VERSION,
+  PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_CAPSULE_EXPORT_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_LIST_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_CAPSULE_VALIDATION_SCHEMA_VERSION,
+  PROOF_CARRYING_CHANGE_CAPSULE_SCHEMA_VERSION,
+} from './proof-carrying-change-contract.js';
+import {
+  AGENT_FRAMEWORK_ADAPTER_MANIFEST_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_ADMISSION_CANDIDATE_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_CHANGE_PLAN_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_CONFORMANCE_REPORT_SCHEMA_VERSION,
+  AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_SCHEMA_VERSION,
+} from './agent-framework-contract.js';
 
 export const PUBLISHED_CONTRACT_CATALOG_SCHEMA_VERSION =
   'workspai-published-contract-catalog-v1' as const;
@@ -100,6 +130,8 @@ export function getPublishedContractVersions() {
     projectWorkspaceResolution: PROJECT_WORKSPACE_RESOLUTION_SCHEMA_VERSION,
     projectContextAgent:
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectContextAgent.schemaVersion,
+    projectKnowledgeGraphReference:
+      WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectKnowledgeGraphReference.schemaVersion,
     projectAgentEntry: PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
     agentBootstrapReceipt: AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
     doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
@@ -119,10 +151,25 @@ export function getPublishedContractVersions() {
     goalPlanResult: GOAL_PLAN_RESULT_SCHEMA_VERSION,
     goalIndex: GOAL_INDEX_SCHEMA_VERSION,
     goalLifecycleResult: GOAL_LIFECYCLE_RESULT_SCHEMA_VERSION,
+    decisionEvent: DECISION_EVENT_SCHEMA_VERSION,
+    decisionTransaction: DECISION_TRANSACTION_SCHEMA_VERSION,
+    decisionCheckpoint: DECISION_CHECKPOINT_SCHEMA_VERSION,
+    changeOperationResult: CHANGE_OPERATION_RESULT_SCHEMA_VERSION,
+    architectureChangeLease: ARCHITECTURE_CHANGE_LEASE_SCHEMA_VERSION,
+    predictedArchitectureChange: PREDICTED_ARCHITECTURE_CHANGE_SCHEMA_VERSION,
+    architectureSurpriseReport: ARCHITECTURE_SURPRISE_REPORT_SCHEMA_VERSION,
+    proofCarryingChangeCapsule: PROOF_CARRYING_CHANGE_CAPSULE_SCHEMA_VERSION,
+    proofCarryingChangeList: PROOF_CARRYING_CHANGE_LIST_SCHEMA_VERSION,
+    proofCarryingChangeCapsuleValidation: PROOF_CARRYING_CHANGE_CAPSULE_VALIDATION_SCHEMA_VERSION,
+    proofCarryingChangeCapsuleExport: PROOF_CARRYING_CHANGE_CAPSULE_EXPORT_SCHEMA_VERSION,
     workspaceIntelligenceArchitecture: WORKSPACE_INTELLIGENCE_ARCHITECTURE_SCHEMA_VERSION,
     workspaceIntelligenceChain: WORKSPACE_INTELLIGENCE_CHAIN_SCHEMA_VERSION,
     workspaceIntelligenceArtifacts: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
     cliLogEvent: CLI_LOG_EVENT_SCHEMA_VERSION,
+    workspaceActivityEvent: WORKSPACE_ACTIVITY_EVENT_SCHEMA_VERSION,
+    workspaceActivityMonitorSnapshot: WORKSPACE_ACTIVITY_MONITOR_SNAPSHOT_SCHEMA_VERSION,
+    workspaceActivityMonitorFleet: WORKSPACE_ACTIVITY_MONITOR_FLEET_SCHEMA_VERSION,
+    workspaceActivityBoard: WORKSPACE_ACTIVITY_BOARD_SCHEMA_VERSION,
     freshnessMetadata: FRESHNESS_METADATA_SCHEMA_VERSION,
     factFreshness: FACT_FRESHNESS_SCHEMA_VERSION,
     blockerResolution: BLOCKER_RESOLUTION_SCHEMA_VERSION,
@@ -136,12 +183,19 @@ export function getPublishedContractVersions() {
     workspaceKnowledgeGraphChangeOverlay: WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION,
     workspaceKnowledgeSearch: WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION,
     workspaceGraphTokenEfficiency: WORKSPACE_GRAPH_TOKEN_EFFICIENCY_SCHEMA_VERSION,
+    workspaceIntelligenceBenchmark: WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION,
     modelUsageEvent: MODEL_USAGE_EVENT_SCHEMA_VERSION,
     workspaceIntelligenceEvaluation: WORKSPACE_INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
     workspaceIntelligenceEvaluationComparison:
       WORKSPACE_INTELLIGENCE_EVALUATION_COMPARISON_SCHEMA_VERSION,
     workspaceIntelligenceHistory: WORKSPACE_HISTORY_SCHEMA_VERSION,
     agentCustomizationPackCapabilities: AGENT_CUSTOMIZATION_PACK_SCHEMA_VERSION,
+    agentFrameworkCapabilities: AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION,
+    agentFrameworkAdapterManifest: AGENT_FRAMEWORK_ADAPTER_MANIFEST_SCHEMA_VERSION,
+    agentFrameworkConformanceReport: AGENT_FRAMEWORK_CONFORMANCE_REPORT_SCHEMA_VERSION,
+    agentFrameworkChangePlan: AGENT_FRAMEWORK_CHANGE_PLAN_SCHEMA_VERSION,
+    agentFrameworkOwnershipReceipt: AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_SCHEMA_VERSION,
+    agentFrameworkAdmissionCandidate: AGENT_FRAMEWORK_ADMISSION_CANDIDATE_SCHEMA_VERSION,
     agentCustomizationPackReport: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.agentCustomizationPack,
     agentReportsIndex: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.agentIndex,
     workspaceOperationalSkill: WORKSPACE_OPERATIONAL_SKILL_SCHEMA_VERSION,
@@ -209,6 +263,8 @@ export function getPublishedContractCatalog() {
     projectWorkspaceLink: 'contracts/project-workspace-link.v1.json',
     projectWorkspaceResolution: 'contracts/project-workspace-resolution.v1.json',
     projectContextAgent: 'contracts/workspace-intelligence/project-context-agent.v1.json',
+    projectKnowledgeGraphReference:
+      'contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json',
     projectAgentEntry: 'contracts/workspace-intelligence/project-agent-entry.v1.json',
     agentBootstrapReceipt: 'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
     doctorProjectEvidence: 'contracts/doctor-project-evidence.v1.json',
@@ -227,10 +283,30 @@ export function getPublishedContractCatalog() {
     goalPlanResult: 'contracts/workspace-intelligence/goal-plan-result.v1.json',
     goalIndex: 'contracts/workspace-intelligence/goal-index.v1.json',
     goalLifecycleResult: 'contracts/workspace-intelligence/goal-lifecycle-result.v1.json',
+    decisionEvent: 'contracts/workspace-intelligence/decision-event.v1.json',
+    decisionTransaction: 'contracts/workspace-intelligence/decision-transaction.v1.json',
+    decisionCheckpoint: 'contracts/workspace-intelligence/decision-checkpoint.v1.json',
+    changeOperationResult: 'contracts/workspace-intelligence/change-operation-result.v1.json',
+    architectureChangeLease: 'contracts/workspace-intelligence/architecture-change-lease.v1.json',
+    predictedArchitectureChange:
+      'contracts/workspace-intelligence/predicted-architecture-change.v1.json',
+    architectureSurpriseReport:
+      'contracts/workspace-intelligence/architecture-surprise-report.v1.json',
+    proofCarryingChangeCapsule:
+      'contracts/workspace-intelligence/proof-carrying-change-capsule.v1.json',
+    proofCarryingChangeList: 'contracts/workspace-intelligence/proof-carrying-change-list.v1.json',
+    proofCarryingChangeCapsuleValidation:
+      'contracts/workspace-intelligence/proof-carrying-change-capsule-validation.v1.json',
+    proofCarryingChangeCapsuleExport:
+      'contracts/workspace-intelligence/proof-carrying-change-capsule-export.v1.json',
     workspaceIntelligenceArchitecture: 'contracts/workspace-intelligence-architecture.v1.json',
     workspaceIntelligenceChain: 'contracts/workspace-intelligence-chain.v1.json',
     workspaceIntelligenceArtifacts: null,
     cliLogEvent: 'contracts/cli-log-event.v1.json',
+    workspaceActivityEvent: 'contracts/workspace-activity-event.v1.json',
+    workspaceActivityMonitorSnapshot: 'contracts/workspace-activity-monitor-snapshot.v1.json',
+    workspaceActivityMonitorFleet: 'contracts/workspace-activity-monitor-fleet.v1.json',
+    workspaceActivityBoard: 'contracts/workspace-activity-board.v1.json',
     freshnessMetadata: null,
     factFreshness: 'contracts/workspace-intelligence/fact-freshness.v1.json',
     blockerResolution: 'contracts/workspace-intelligence/blocker-resolution.v1.json',
@@ -246,6 +322,8 @@ export function getPublishedContractCatalog() {
     workspaceKnowledgeSearch: 'contracts/workspace-intelligence/workspace-knowledge-search.v1.json',
     workspaceGraphTokenEfficiency:
       'contracts/workspace-intelligence/workspace-graph-token-efficiency.v1.json',
+    workspaceIntelligenceBenchmark:
+      'contracts/workspace-intelligence/workspace-intelligence-benchmark.v1.json',
     modelUsageEvent: 'contracts/workspace-intelligence/model-usage-event.v1.json',
     workspaceIntelligenceEvaluation:
       'contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json',
@@ -254,6 +332,17 @@ export function getPublishedContractCatalog() {
     workspaceIntelligenceHistory:
       'contracts/workspace-intelligence/workspace-intelligence-history.v1.json',
     agentCustomizationPackCapabilities: 'contracts/agent-customization-pack.v1.json',
+    agentFrameworkCapabilities: 'contracts/agent-framework-capabilities.v1.json',
+    agentFrameworkAdapterManifest:
+      'contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json',
+    agentFrameworkConformanceReport:
+      'contracts/workspace-intelligence/agent-framework-conformance-report.v1.json',
+    agentFrameworkChangePlan:
+      'contracts/workspace-intelligence/agent-framework-change-plan.v1.json',
+    agentFrameworkOwnershipReceipt:
+      'contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json',
+    agentFrameworkAdmissionCandidate:
+      'contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json',
     agentCustomizationPackReport:
       'contracts/workspace-intelligence/agent-customization-pack-report.v1.json',
     agentReportsIndex: 'contracts/workspace-intelligence/agent-reports-index.v1.json',

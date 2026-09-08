@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
+const repositoryRoot = path.resolve(root, '..', '..');
 
 function collectMarkdownFiles(dir, acc = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -15,7 +16,15 @@ function collectMarkdownFiles(dir, acc = []) {
   return acc;
 }
 
-const targets = [path.join(root, 'README.md'), ...collectMarkdownFiles(path.join(root, 'docs'))];
+const targets = [
+  path.join(root, 'README.md'),
+  ...collectMarkdownFiles(path.join(root, 'docs')),
+  path.join(repositoryRoot, 'README.md'),
+  path.join(repositoryRoot, 'SECURITY.md'),
+  path.join(repositoryRoot, '.github', 'CONTRIBUTING.md'),
+  path.join(repositoryRoot, '.github', 'CONTRIBUTOR_MESSAGES.md'),
+  path.join(repositoryRoot, '.github', 'PULL_REQUEST_TEMPLATE.md'),
+];
 
 const linkRegex = /\[[^\]]+\]\(([^)]+)\)/g;
 const errors = [];

@@ -125,44 +125,62 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
     (goal.sourceBinding.graph.inputHash
       ? currentGraphInputHash === goal.sourceBinding.graph.inputHash
       : currentGraphHash === goal.sourceBinding.graph.hash);
+  let verificationReceiptCurrent = false;
+  if (entry.verificationReceipt && entry.verifiedGoalId) {
+    const receipt = entry.verificationReceipt;
+    const { readVerifiedGoal } = await import('./verified-goal.js');
+    const verified = await readVerifiedGoal(workspacePath, entry.verifiedGoalId).catch(
+      () => undefined
+    );
+    const graphFingerprint = currentGraphInputHash ?? currentGraphHash;
+    verificationReceiptCurrent = Boolean(
+      verified &&
+      receipt.verifiedGoalId === entry.verifiedGoalId &&
+      receipt.attempt === verified.status.attempt &&
+      receipt.statusHash === hashCanonicalJson(verified.status) &&
+      receipt.modelHash === currentModelHash &&
+      receipt.graphFingerprint === graphFingerprint &&
+      receipt.graphFingerprintSemantics ===
+        (currentGraphInputHash ? 'workspace-knowledge-graph-inputs-v1' : 'canonical-json-v1')
+    );
+  }
   if (!originalBindingMatches) {
-    const transactionIds =
-      entry.repairTransactionIds ?? (entry.repairTransactionId ? [entry.repairTransactionId] : []);
-    const { assertClosedGoalRepairTransactionCurrent } =
-      await import('./workspace-repair-engine.js');
+    const changeTransactionIds =
+      entry.changeTransactionIds ?? (entry.changeTransactionId ? [entry.changeTransactionId] : []);
+    const { assertSealedProofCarryingChangeCurrent } = await import('./proof-carrying-change.js');
     let sanctioned = false;
-    for (const transactionId of [...transactionIds].reverse()) {
-      const binding = await assertClosedGoalRepairTransactionCurrent({
+    for (const changeId of [...changeTransactionIds].reverse()) {
+      const binding = await assertSealedProofCarryingChangeCurrent({
         workspacePath,
-        transactionId,
+        changeId,
         goalId: entry.id,
       }).catch(() => undefined);
-      if (
-        binding?.modelHash === currentModelHash &&
-        binding.graphInputHash === currentGraphInputHash
-      ) {
+      if (binding?.modelHash === currentModelHash && binding.graphHash === currentGraphHash) {
         sanctioned = true;
         break;
       }
     }
-    if (!sanctioned && entry.verificationReceipt && entry.verifiedGoalId) {
-      const receipt = entry.verificationReceipt;
-      const { readVerifiedGoal } = await import('./verified-goal.js');
-      const verified = await readVerifiedGoal(workspacePath, entry.verifiedGoalId).catch(
-        () => undefined
-      );
-      const graphFingerprint = currentGraphInputHash ?? currentGraphHash;
-      sanctioned = Boolean(
-        verified &&
-        receipt.verifiedGoalId === entry.verifiedGoalId &&
-        receipt.attempt === verified.status.attempt &&
-        receipt.statusHash === hashCanonicalJson(verified.status) &&
-        receipt.modelHash === currentModelHash &&
-        receipt.graphFingerprint === graphFingerprint &&
-        receipt.graphFingerprintSemantics ===
-          (currentGraphInputHash ? 'workspace-knowledge-graph-inputs-v1' : 'canonical-json-v1')
-      );
+    const transactionIds =
+      entry.repairTransactionIds ?? (entry.repairTransactionId ? [entry.repairTransactionId] : []);
+    const { assertClosedGoalRepairTransactionCurrent } =
+      await import('./workspace-repair-engine.js');
+    if (!sanctioned) {
+      for (const transactionId of [...transactionIds].reverse()) {
+        const binding = await assertClosedGoalRepairTransactionCurrent({
+          workspacePath,
+          transactionId,
+          goalId: entry.id,
+        }).catch(() => undefined);
+        if (
+          binding?.modelHash === currentModelHash &&
+          binding.graphInputHash === currentGraphInputHash
+        ) {
+          sanctioned = true;
+          break;
+        }
+      }
     }
+    if (!sanctioned) sanctioned = verificationReceiptCurrent;
     if (!sanctioned) {
       throw new Error(
         `Goal ${entry.id} is stale because its canonical model or graph binding changed outside a closed Goal repair transaction or recorded CLI verification attempt. Regenerate it with --refresh.`
@@ -189,7 +207,10 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
       throw new Error(`Goal measurement evidence escapes its project boundary: ${evidence.path}`);
     }
     const content = await fsExtra.readFile(evidencePath).catch(() => null);
-    if (!content || createHash('sha256').update(content).digest('hex') !== evidence.sha256) {
+    if (
+      (!content || createHash('sha256').update(content).digest('hex') !== evidence.sha256) &&
+      !verificationReceiptCurrent
+    ) {
       throw new Error(
         `Goal ${entry.id} is stale because measurement evidence changed: ${evidence.project}/${evidence.path}`
       );
@@ -496,6 +517,59 @@ export async function linkGoalRepairTransaction(input: {
         ...existing,
         repairTransactionId: input.transactionId,
         repairTransactionIds: nextRepairTransactionIds,
+        updatedAt: new Date().toISOString(),
+      };
+      const index: GoalIndex = {
+        ...current,
+        generatedAt: updated.updatedAt,
+        goals: current.goals.map((entry) => (entry.id === input.goalId ? updated : entry)),
+      };
+      assertJsonSchemaContract(index, GOAL_INDEX_CONTRACT_PATH, 'Goal index');
+      assertGoalIndexSemantics(index);
+      await writeWorkspaceArtifactJsonSet(input.workspacePath, GOAL_INDEX_PATH, [
+        { relativePath: GOAL_INDEX_PATH, payload: index },
+      ]);
+      return updated;
+    }
+  );
+}
+
+export async function linkGoalChangeTransaction(input: {
+  workspacePath: string;
+  goalId: string;
+  changeId: string;
+}): Promise<GoalIndexEntry> {
+  const inspected = await inspectGoalLifecycle({
+    workspacePath: input.workspacePath,
+    goalId: input.goalId,
+  });
+  if (!inspected.active || inspected.index.activeGoalId !== input.goalId) {
+    throw new Error(`Proof-carrying change Goal is not the active workspace Goal: ${input.goalId}`);
+  }
+  if (!inspected.goalPack) {
+    throw new Error(`Proof-carrying change Goal Pack is unavailable: ${input.goalId}`);
+  }
+  const maxAttempts = inspected.goalPack.policy.maxAttempts;
+  return withWorkspaceArtifactLock(
+    input.workspacePath,
+    '.workspai/goals/index-lifecycle',
+    async () => {
+      const current = await readIndex(input.workspacePath);
+      const existing = current.goals.find((entry) => entry.id === input.goalId);
+      if (!existing) throw new Error(`Goal is not registered in this workspace: ${input.goalId}`);
+      const ids =
+        existing.changeTransactionIds ??
+        (existing.changeTransactionId ? [existing.changeTransactionId] : []);
+      if (!ids.includes(input.changeId) && ids.length >= maxAttempts) {
+        throw new Error(
+          `Goal ${input.goalId} exhausted its proof-carrying change budget (${maxAttempts}).`
+        );
+      }
+      const nextIds = ids.includes(input.changeId) ? ids : [...ids, input.changeId];
+      const updated: GoalIndexEntry = {
+        ...existing,
+        changeTransactionId: input.changeId,
+        changeTransactionIds: nextIds,
         updatedAt: new Date().toISOString(),
       };
       const index: GoalIndex = {

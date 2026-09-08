@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createProject } from '../create.js';
 import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 import { registerProjectInWorkspaceStrict } from '../workspace.js';
+import { readWorkspaceKnowledgeGraphSnapshot } from '../workspace-knowledge-graph-snapshot.js';
 import {
   getLegacyWorkspaceRegistryDirectory,
   getWorkspaceRegistryDirectory,
@@ -23,6 +24,7 @@ const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
 const originalAppData = process.env.APPDATA;
 const originalRegistryPublishFailure = process.env.WORKSPAI_TEST_FAIL_WORKSPACE_REGISTRY_PUBLISH;
+const FULL_WORKSPACE_CREATE_TIMEOUT_MS = process.platform === 'win32' ? 120_000 : 60_000;
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dirPath = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -72,131 +74,150 @@ afterEach(async () => {
 });
 
 describe('workspace create registry integration', () => {
-  it('registers custom-directory workspaces in ~/.workspai/workspaces.json', async () => {
-    const homePath = await makeTempDir('rapidkit-registry-home-');
-    const parentDir = await makeTempDir('rapidkit-registry-parent-');
-    const workspaceName = 'custom-ws-registry-test';
+  it(
+    'registers custom-directory workspaces in ~/.workspai/workspaces.json',
+    async () => {
+      const homePath = await makeTempDir('rapidkit-registry-home-');
+      const parentDir = await makeTempDir('rapidkit-registry-parent-');
+      const workspaceName = 'custom-ws-registry-test';
 
-    process.env.HOME = homePath;
-    process.env.USERPROFILE = homePath;
+      process.env.HOME = homePath;
+      process.env.USERPROFILE = homePath;
 
-    await createProject(workspaceName, {
-      skipGit: true,
-      yes: true,
-      profile: 'minimal',
-      parentDirectory: parentDir,
-    });
+      await createProject(workspaceName, {
+        skipGit: true,
+        yes: true,
+        profile: 'minimal',
+        parentDirectory: parentDir,
+      });
 
-    const workspacePath = path.join(parentDir, workspaceName);
-    const registryFile = path.join(getWorkspaceRegistryDirectory(), 'workspaces.json');
-    const legacyRegistryFile = path.join(getLegacyWorkspaceRegistryDirectory(), 'workspaces.json');
-    const registry = await fsExtra.readJson(registryFile);
-    const legacyRegistry = await fsExtra.readJson(legacyRegistryFile);
-    const normalizedPath = normalizeRegistryPath(workspacePath);
+      const workspacePath = path.join(parentDir, workspaceName);
+      const registryFile = path.join(getWorkspaceRegistryDirectory(), 'workspaces.json');
+      const legacyRegistryFile = path.join(
+        getLegacyWorkspaceRegistryDirectory(),
+        'workspaces.json'
+      );
+      const registry = await fsExtra.readJson(registryFile);
+      const legacyRegistry = await fsExtra.readJson(legacyRegistryFile);
+      const normalizedPath = normalizeRegistryPath(workspacePath);
 
-    expect(registry.workspaces).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: workspaceName,
-          path: normalizedPath,
-        }),
-      ])
-    );
-    expect(legacyRegistry).toEqual(registry);
-    expect(await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_CONTRACT_PATH))).toBe(true);
-    const summary = await fsExtra.readJson(
-      path.join(workspacePath, WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH)
-    );
-    expect(summary.sources.globalRegistry).toMatchObject({
-      exists: true,
-      path: registryFile,
-    });
-    const model = await fsExtra.readJson(
-      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model)
-    );
-    const graph = await fsExtra.readJson(
-      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
-    );
-    const context = await fsExtra.readJson(
-      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext)
-    );
-    const index = await fsExtra.readJson(
-      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex)
-    );
+      expect(registry.workspaces).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: workspaceName,
+            path: normalizedPath,
+          }),
+        ])
+      );
+      expect(legacyRegistry).toEqual(registry);
+      expect(await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_CONTRACT_PATH))).toBe(
+        true
+      );
+      const summary = await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH)
+      );
+      expect(summary.sources.globalRegistry).toMatchObject({
+        exists: true,
+        path: registryFile,
+      });
+      const model = await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model)
+      );
+      const graph = await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph)
+      );
+      const context = await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext)
+      );
+      const index = await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex)
+      );
 
-    expect(model.summary.projectCount).toBe(0);
-    expect(graph.workspace.name).toBe(workspaceName);
-    expect(context.workspace.name).toBe(workspaceName);
-    expect(index.reports).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
-          exists: true,
-        }),
-        expect.objectContaining({
-          path: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
-          exists: true,
-        }),
-      ])
-    );
-    expect(
-      await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.snapshot))
-    ).toBe(true);
-    expect(
-      await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.diff))
-    ).toBe(true);
-    expect(
-      await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.impact))
-    ).toBe(true);
-    expect(await fsExtra.pathExists(path.join(workspacePath, 'AGENTS.md'))).toBe(true);
-    const initialReadme = await fsExtra.readFile(path.join(workspacePath, 'README.md'), 'utf-8');
-    expect(initialReadme).toContain(`# ${workspaceName}`);
-    expect(initialReadme).toContain('| Profile | `minimal` |');
-    expect(initialReadme).toContain('| Registered projects | 0 projects |');
-    expect(initialReadme).toContain(
-      'Understand → Change → Evidence → Gate → Ground → Distribute → Explain'
-    );
+      expect(model.summary.projectCount).toBe(0);
+      expect(graph.workspace.name).toBe(workspaceName);
+      expect(context.workspace.name).toBe(workspaceName);
+      expect(index.reports).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
+            exists: true,
+          }),
+          expect.objectContaining({
+            path: WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+            exists: true,
+          }),
+        ])
+      );
+      expect(
+        await fsExtra.pathExists(
+          path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.snapshot)
+        )
+      ).toBe(true);
+      expect(
+        await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.diff))
+      ).toBe(true);
+      expect(
+        await fsExtra.pathExists(path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.impact))
+      ).toBe(true);
+      expect(await fsExtra.pathExists(path.join(workspacePath, 'AGENTS.md'))).toBe(true);
+      const initialReadme = await fsExtra.readFile(path.join(workspacePath, 'README.md'), 'utf-8');
+      expect(initialReadme).toContain(`# ${workspaceName}`);
+      expect(initialReadme).toContain('| Profile | `minimal` |');
+      expect(initialReadme).toContain('| Registered projects | 0 projects |');
+      expect(initialReadme).toContain(
+        'Understand → Change → Evidence → Gate → Ground → Distribute → Explain'
+      );
 
-    const projectPath = path.join(workspacePath, 'api');
-    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
-    await fsExtra.writeJson(path.join(projectPath, '.workspai', 'project.json'), {
-      schema_version: '1.0',
-      name: 'api',
-      runtime: 'node',
-      framework: 'nestjs',
-      kind: 'backend',
-    });
-    await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
-      name: 'api',
-      private: true,
-      scripts: { test: 'vitest run' },
-    });
-    await registerProjectInWorkspaceStrict(workspacePath, 'api', projectPath);
-    const refreshed = await syncWorkspaceConsumerArtifacts(workspacePath, { silent: true });
-    const refreshedModel = await fsExtra.readJson(
-      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model)
-    );
-
-    expect(refreshed.projectCount).toBe(1);
-    expect(refreshed.baselineCreated).toBe(false);
-    expect(refreshedModel.projects).toEqual([
-      expect.objectContaining({
+      const projectPath = path.join(workspacePath, 'api');
+      await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+      await fsExtra.writeJson(path.join(projectPath, '.workspai', 'project.json'), {
+        schema_version: '1.0',
         name: 'api',
         runtime: 'node',
-      }),
-    ]);
-    const refreshedReadme = await fsExtra.readFile(path.join(workspacePath, 'README.md'), 'utf-8');
-    expect(refreshedReadme).toContain('| Registered projects | 1 project |');
-    expect(
-      await fsExtra.pathExists(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))
-    ).toBe(true);
-    expect(
-      await fsExtra.pathExists(
-        path.join(projectPath, '.workspai', 'reports', 'project-context-agent.json')
-      )
-    ).toBe(true);
-    expect(await fsExtra.pathExists(path.join(projectPath, 'AGENTS.md'))).toBe(true);
-  }, 60_000);
+        framework: 'nestjs',
+        kind: 'backend',
+      });
+      await fsExtra.writeJson(path.join(projectPath, 'package.json'), {
+        name: 'api',
+        private: true,
+        scripts: { test: 'vitest run' },
+      });
+      await registerProjectInWorkspaceStrict(workspacePath, 'api', projectPath);
+      const refreshed = await syncWorkspaceConsumerArtifacts(workspacePath, { silent: true });
+      const refreshedModel = await fsExtra.readJson(
+        path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model)
+      );
+
+      expect(refreshed.projectCount).toBe(1);
+      expect(refreshed.baselineCreated).toBe(false);
+      expect(refreshed.freshnessSealed).toBe(true);
+      expect(refreshed.reconciledAfterGrounding).toBe(true);
+      expect(await readWorkspaceKnowledgeGraphSnapshot(workspacePath)).toMatchObject({
+        status: 'hit',
+      });
+      expect(refreshedModel.projects).toEqual([
+        expect.objectContaining({
+          name: 'api',
+          runtime: 'node',
+        }),
+      ]);
+      const refreshedReadme = await fsExtra.readFile(
+        path.join(workspacePath, 'README.md'),
+        'utf-8'
+      );
+      expect(refreshedReadme).toContain('| Registered projects | 1 project |');
+      expect(
+        await fsExtra.pathExists(path.join(projectPath, '.workspai', 'PROJECT-GROUNDING.md'))
+      ).toBe(true);
+      expect(
+        await fsExtra.pathExists(
+          path.join(projectPath, '.workspai', 'reports', 'project-context-agent.json')
+        )
+      ).toBe(true);
+      expect(await fsExtra.pathExists(path.join(projectPath, 'AGENTS.md'))).toBe(true);
+    },
+    FULL_WORKSPACE_CREATE_TIMEOUT_MS
+  );
 
   it('registers nested workspace even when parent directory is already in the registry', async () => {
     const homePath = await makeTempDir('rapidkit-registry-home-');

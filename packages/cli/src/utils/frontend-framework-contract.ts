@@ -298,11 +298,20 @@ function packageSignals(projectPath: string): {
     return { dependencies: {}, scriptText: '' };
   }
 
-  const dependencies = {
-    ...((packageJson.dependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson.peerDependencies as Record<string, unknown> | undefined) ?? {}),
-  };
+  const declaredDependencies =
+    (packageJson.dependencies as Record<string, unknown> | undefined) ?? {};
+  const isPrivateWorkspaceRoot =
+    packageJson.private === true &&
+    (Array.isArray(packageJson.workspaces) ||
+      (packageJson.workspaces !== null && typeof packageJson.workspaces === 'object') ||
+      fs.existsSync(path.join(projectPath, 'pnpm-workspace.yaml')));
+  const dependencies = isPrivateWorkspaceRoot
+    ? declaredDependencies
+    : {
+        ...declaredDependencies,
+        ...((packageJson.devDependencies as Record<string, unknown> | undefined) ?? {}),
+        ...((packageJson.peerDependencies as Record<string, unknown> | undefined) ?? {}),
+      };
   const scripts = ((packageJson.scripts as Record<string, unknown> | undefined) ?? {}) as Record<
     string,
     unknown
@@ -317,6 +326,15 @@ function packageSignals(projectPath: string): {
 
 function hasAnyFile(projectPath: string, candidates: string[]): boolean {
   return candidates.some((candidate) => fs.existsSync(path.join(projectPath, candidate)));
+}
+
+function scriptInvokesHint(scriptText: string, hint: string): boolean {
+  const pattern = hint
+    .trim()
+    .split(/\s+/u)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
+    .join('\\s+');
+  return new RegExp(`(?:^|[\\s;&|])${pattern}(?=$|[\\s;&|])`, 'u').test(scriptText);
 }
 
 function resolveViteSubframework(
@@ -386,14 +404,28 @@ export function detectFrontendFrameworkFromProject(
   projectPath: string,
   projectJsonData?: Record<string, unknown> | null
 ): BackendFrameworkDetection {
+  const adoption = projectJsonData?.adoption;
+  const imported = projectJsonData?.import;
+  const managedLinkedMetadata =
+    (adoption !== null &&
+      typeof adoption === 'object' &&
+      !Array.isArray(adoption) &&
+      (adoption as Record<string, unknown>).managed_by === 'workspai' &&
+      (adoption as Record<string, unknown>).mode === 'linked') ||
+    (imported !== null &&
+      typeof imported === 'object' &&
+      !Array.isArray(imported) &&
+      (imported as Record<string, unknown>).managed_by === 'workspai');
   const hinted = normalizeFrontendFrameworkLabel(
-    typeof projectJsonData?.framework === 'string'
-      ? projectJsonData.framework
-      : typeof projectJsonData?.kit_name === 'string'
-        ? projectJsonData.kit_name
-        : typeof projectJsonData?.kit === 'string'
-          ? projectJsonData.kit
-          : undefined
+    managedLinkedMetadata
+      ? undefined
+      : typeof projectJsonData?.framework === 'string'
+        ? projectJsonData.framework
+        : typeof projectJsonData?.kit_name === 'string'
+          ? projectJsonData.kit_name
+          : typeof projectJsonData?.kit === 'string'
+            ? projectJsonData.kit
+            : undefined
   );
   if (hinted !== 'unknown') {
     return detection(hinted, 'high', 'framework');
@@ -432,7 +464,7 @@ export function detectFrontendFrameworkFromProject(
       }
       return detection(key, 'high', 'manifest');
     }
-    if (item.scriptHints.some((script) => scriptText.includes(script))) {
+    if (item.scriptHints.some((script) => scriptInvokesHint(scriptText, script))) {
       return detection(key, 'medium', 'manifest');
     }
   }

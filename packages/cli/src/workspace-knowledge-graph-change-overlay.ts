@@ -138,16 +138,13 @@ export function buildWorkspaceKnowledgeGraphChangeOverlay(
     ...proofs.removed.map((proof) => proof.id),
     ...proofs.changed.map((proof) => proof.id),
   ]);
-  for (const entity of [...entities.added, ...entities.removed]) {
-    entity.proofIds.forEach((id) => changedProofIds.add(id));
-  }
-  for (const change of entities.changed) {
-    change.before?.proofIds.forEach((id) => changedProofIds.add(id));
-    change.after?.proofIds.forEach((id) => changedProofIds.add(id));
-  }
-  for (const relation of changedRelations) {
-    relation.proofIds.forEach((id) => changedProofIds.add(id));
-  }
+  // `changedArtifacts` represents source evidence whose bytes were actually
+  // added, removed, or changed. Do not expand it through every proof attached
+  // to a changed entity/relation: shared dependency entities accumulate proofs
+  // from many unchanged manifests, and one new manifest would otherwise make
+  // all of those authored files look mutated to PCC and repair consumers.
+  // Entity and relation impact remains available through their own deltas and
+  // `impactedEntityIds`; artifact mutation follows proof deltas only.
   const changedArtifacts = [
     ...new Set([
       ...proofArtifacts(base, changedProofIds),

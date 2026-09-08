@@ -24,6 +24,7 @@ describe('support matrix', () => {
     expect(getFrameworkSupportTier('springboot')).toBe('extended');
     expect(getFrameworkSupportTier('dotnet')).toBe('extended');
     expect(getFrameworkSupportTier('laravel')).toBe('extended');
+    expect(getFrameworkSupportTier('cpp')).toBe('observed');
     expect(getFrameworkSupportTier('unknown')).toBe('observed');
   });
 
@@ -51,18 +52,8 @@ describe('support matrix', () => {
     }
   });
 
-  it('keeps observed runtimes import-safe but lifecycle-limited', () => {
-    for (const runtime of [
-      'ruby',
-      'elixir',
-      'clojure',
-      'scala',
-      'kotlin',
-      'deno',
-      'bun',
-      'c',
-      'cpp',
-    ]) {
+  it('keeps observed runtimes import-safe and requires explicit lifecycle adapters', () => {
+    for (const runtime of ['ruby', 'elixir', 'clojure', 'scala', 'kotlin', 'deno', 'c', 'cpp']) {
       const support = getRuntimeSupport(runtime);
       const commands = buildRuntimeCommandSupport({ runtime, moduleSupport: false });
 
@@ -72,5 +63,24 @@ describe('support matrix', () => {
       expect(commands.lifecycleCommands).toEqual(['help']);
       expect(commands.unsupportedLifecycleCommands).toContain('dev');
     }
+
+    const bunSupport = getRuntimeSupport('bun');
+    const bunCommands = buildRuntimeCommandSupport({ runtime: 'bun', moduleSupport: false });
+
+    expect(bunSupport.tier).toBe('observed');
+    expect(bunSupport.importSupport).toBe(true);
+    expect(bunSupport.scaffoldSupport).toBe(false);
+    expect(bunSupport.moduleCommands).toBe(false);
+    expect(bunCommands.lifecycleCommands).toEqual([
+      'init',
+      'dev',
+      'start',
+      'build',
+      'test',
+      'lint',
+      'format',
+      'help',
+    ]);
+    expect(bunCommands.unsupportedLifecycleCommands).toEqual([]);
   });
 });

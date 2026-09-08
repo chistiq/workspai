@@ -50,7 +50,16 @@ npx workspai workspace import team.workspai-archive.zip --output ./team --json
 ### Adopt behavior
 
 - Source files are not moved or copied.
-- Default workspace resolution matches import, including canonical creation and valid legacy managed-default reuse.
+- An interactive adopt outside every workspace offers the managed default or,
+  only when the direct parent contains exactly the project being adopted,
+  turning that parent into a workspace. Parent bootstrap is the recommended
+  choice in that narrowly safe case.
+- Non-interactive and `--json` callers keep the existing managed-default
+  behavior unless they pass `--workspace` explicitly.
+- `--workspace <path>` adopts into an existing valid Workspai workspace. An
+  existing empty directory is bootstrapped first; a non-empty directory that
+  is not already a valid workspace is rejected without modification.
+- The project directory itself is never converted into its own workspace.
 - Writes `.workspai/project.json`, `.workspai/adopt.json`, and `.workspai/adopt-readiness.json`.
 - Registry and contract sync include adopted projects for `workspace model`, `workspace context`, Dashboard, and agents.
 - Managed grounding writes a portable project lens, project grounding, and a
@@ -88,7 +97,7 @@ versioned archive operation result instead.
 
 Workspace creation publishes the initial contract, canonical model, Knowledge
 Graph, structural baseline, context, report index, profile-aware `README.md`,
-`AGENTS.md`, operational skills, and supported IDE/agent surfaces—even before
+`AGENTS.md`, applicable operational skills, and supported IDE/agent surfaces—even before
 the first project exists. The README's Workspai-managed section shows the
 current profile, project count, canonical intelligence loop, and consumer entry
 points while preserving user-authored content. Successful project creation,
@@ -96,6 +105,14 @@ adoption, import, workspace connection, and workspace import refresh those same
 projections in the background. The structural baseline is created once and
 preserved; current model, graph, diff, impact, context, README, and project
 grounding move forward with workspace membership.
+
+Operational Skill generation is evidence-driven. Release readiness remains
+available at workspace scope, while API, schema, dependency, contract, runtime,
+test, delivery, and polyglot playbooks are emitted only for matching projects.
+`.workspai/reports/workspace-skills-index.json` records both generated and
+suppressed candidates, including the signals behind each decision. This keeps
+agent discovery useful without claiming capabilities the repository does not
+have.
 
 Doctor, Analyze, Readiness, and Verify remain explicit checks because they may
 run project tools or enforce release policy. Use `workspace intelligence run`
@@ -122,20 +139,29 @@ Workspai returns a specific error for an invalid explicit workspace, malformed
 or stale link, ambiguous registration, or an unlinked project. It never picks
 one workspace silently when ownership is ambiguous.
 
-The project receives four distinct surfaces:
+The project receives seven complementary surfaces. They are different views of
+one canonical workspace binding, not seven copies of the model or graph:
 
-| File                                           | Purpose                                                                        | Portable              |
-| ---------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
-| `.workspai/workspace-link.local.json`          | Machine-local canonical workspace binding                                      | No; always gitignored |
-| `.workspai/agent-entry.v1.json`                | Versioned host coverage, read order, authority boundaries, and integrity proof | Yes                   |
-| `.workspai/reports/project-context-agent.json` | Bounded project view of model, graph, proofs, diagnostics, and safe commands   | Yes                   |
-| `.workspai/PROJECT-GROUNDING.md`               | Human- and agent-readable project entry guide                                  | Yes                   |
-| `AGENTS.md` and host adapters                  | Route supported hosts to the same canonical-first bootstrap                    | Yes                   |
+| File                                                       | Purpose                                                                        | Portable              |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
+| `.workspai/workspace-link.local.json`                      | Machine-local canonical workspace binding                                      | No; always gitignored |
+| `.workspai/agent-entry.v1.json`                            | Versioned host coverage, read order, authority boundaries, and integrity proof | Yes                   |
+| `.workspai/reports/project-context-agent.json`             | Bounded project view of model, graph, proofs, diagnostics, and safe commands   | Yes                   |
+| `.workspai/reports/project-knowledge-graph-reference.json` | Integrity-bound locator for the canonical project graph projection             | Yes                   |
+| `.workspai/PROJECT-GROUNDING.md`                           | Human- and agent-readable project entry guide                                  | Yes                   |
+| `.agents/skills/workspai-*/SKILL.md`                       | Native project Skill wrappers for canonical workspace playbooks                | Yes                   |
+| `AGENTS.md` and host adapters                              | Route supported hosts to the same canonical-first bootstrap                    | Yes                   |
 
 The bounded context includes project identity and commands, dependencies and
 dependents, related API/deployment/test surfaces, current project findings,
 portable proof locators, and model/graph freshness. It deliberately references
 rather than duplicates workspace-wide evidence.
+
+Representative graph entities are selected with a stratified round-robin
+budget, so a large early-sorted kind cannot hide later architectural kinds.
+`intelligence.projection` records the entity and byte budgets, selected and
+omitted counts per kind, and the scoped graph-search command for retrieving
+anything outside the lens. Aggregate counts in the lens remain exhaustive.
 
 Use `--project-grounding managed` (default) to publish all portable surfaces,
 `local` to keep the project lens and grounding gitignored without managing
@@ -167,7 +193,8 @@ workspace contract.
   `commandsResolveWorkspaceFromProject`, and `importedProject`. The imported
   project includes its `source`.
 - Adopt returns `workspacePath`, `workspaceResolution`,
-  `defaultWorkspaceCreated`, `wouldCreateDefaultWorkspace`,
+  `defaultWorkspaceCreated`, `workspaceBootstrapped`,
+  `wouldCreateDefaultWorkspace`, `wouldBootstrapWorkspace`,
   `projectWorkspaceCommand`, `commandsResolveWorkspaceFromProject`, `dryRun`,
   and `adoptedProject`.
 - Project results include detected `name`, `path`, `stack`, `runtime`, `framework`, `supportTier`, `moduleSupport`, and `confidence` where available.
@@ -225,6 +252,28 @@ npx workspai workspace contract graph --output ./contract-graph.json --json
 ```
 
 Contract file: `.workspai/workspace.contract.json`. Verification checks schema, duplicate slugs, port collisions, and unknown dependencies.
+
+Project entries may also declare governance that lives outside the repository:
+
+```json
+{
+  "slug": "api",
+  "relativePath": "services/api",
+  "governance": {
+    "ci": { "mode": "external", "provider": "Prow", "reference": "platform/test-infra" },
+    "release": { "mode": "external", "provider": "Release Engineering" },
+    "ownership": { "mode": "repository" }
+  }
+}
+```
+
+Workspai reconciles each control as `repository`, `external-declared`,
+`external-observed`, or `unknown`. Analyze does not misreport an explicitly
+external control as a missing repository file. Observed-but-undeclared external
+governance stays advisory until the canonical contract names its authority.
+The resolved profile is emitted by the Workspace Model, project lens, agent
+context, facts, and project graph attributes so every consumer sees the same
+truth.
 
 `workspace contract graph --json` preserves its original `nodes`, `edges`, and
 summary fields for existing consumers, and now adds an evidence-backed
@@ -394,6 +443,12 @@ Artifacts:
 | `doctor` / `doctor workspace` / `doctor project`            | Wrapper health         | Host, workspace, and project scopes                |
 | `workspace run`                                             | Workspace orchestrator | Fleet stage execution                              |
 | `infra`                                                     | Workspace sidecar      | Contract-driven local dependencies                 |
+
+The readiness `env` gate only treats runtimes represented in
+`.workspai/toolchain.lock` as pinned. A Workspai Node pin does not prove a
+native C/C++ compiler or another unrepresented project toolchain; those scopes
+remain `warn` until the project build contract or organization CI policy
+provides verifiable toolchain evidence.
 
 The unified intelligence runner keeps `sync` and baseline resolution in a
 separate two-entry execution envelope and emits exactly 11 canonical stages.

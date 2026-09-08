@@ -8,6 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   firstExistingWorkspaceArtifactPath,
   isWorkspaceArtifactLockContentionError,
+  resolveContainedWorkspaceArtifactPath,
+  resolvePortableWorkspaceEvidenceCandidatePath,
+  resolvePortableWorkspaceEvidencePath,
   resolveLegacyWorkspaceArtifactPath,
   resolveWorkspaceArtifactPath,
   writeWorkspaceArtifactJson,
@@ -274,6 +277,83 @@ describe('workspace artifact path compatibility', () => {
     await expect(
       firstExistingWorkspaceArtifactPath(root, '.workspai/reports/escape.json')
     ).rejects.toThrow(/outside workspace root/i);
+  });
+
+  it('resolves only contained existing files and directories of the declared kind', async () => {
+    const root = await temporaryWorkspace();
+    const directory = path.join(root, '.workspai', 'changes');
+    const artifact = path.join(directory, 'capsule.json');
+    await fsExtra.outputJson(artifact, { safe: true });
+
+    await expect(
+      resolveContainedWorkspaceArtifactPath(root, '.workspai/changes', 'directory')
+    ).resolves.toBe(await fsExtra.realpath(directory));
+    await expect(
+      resolveContainedWorkspaceArtifactPath(root, '.workspai/changes/capsule.json')
+    ).resolves.toBe(await fsExtra.realpath(artifact));
+    await expect(
+      resolveContainedWorkspaceArtifactPath(root, '.workspai/changes', 'file')
+    ).rejects.toThrow(/not a regular file/i);
+  });
+
+  it('resolves contract-authorized external evidence without permitting symlink escape', async () => {
+    const root = await temporaryWorkspace();
+    const external = await temporaryWorkspace();
+    const outside = await temporaryWorkspace();
+    const sourceArtifact = path.join(external, 'src', 'module.gradle');
+    await fsExtra.outputFile(sourceArtifact, 'plugins { id "java" }\n');
+    await fsExtra.outputJson(path.join(root, '.workspai', 'workspace.contract.json'), {
+      projects: [
+        {
+          relativePath: 'external/platform',
+          externalPath: external,
+        },
+      ],
+    });
+
+    await expect(
+      resolvePortableWorkspaceEvidencePath(root, 'external/platform/src/module.gradle')
+    ).resolves.toBe(await fsExtra.realpath(sourceArtifact));
+
+    const outsideArtifact = path.join(outside, 'escape.gradle');
+    const escapedArtifact = path.join(external, 'src', 'escape.gradle');
+    await fsExtra.outputFile(outsideArtifact, 'unsafe\n');
+    await fsExtra.symlink(outsideArtifact, escapedArtifact);
+    await expect(
+      resolvePortableWorkspaceEvidencePath(root, 'external/platform/src/escape.gradle')
+    ).rejects.toThrow(/outside its contracted root/i);
+  });
+
+  it('resolves missing local and contracted external evidence without permitting symlink-parent escape', async () => {
+    const root = await temporaryWorkspace();
+    const external = await temporaryWorkspace();
+    const outside = await temporaryWorkspace();
+    await fsExtra.outputJson(path.join(root, '.workspai', 'workspace.contract.json'), {
+      projects: [
+        {
+          relativePath: 'external/platform',
+          externalPath: external,
+        },
+      ],
+    });
+
+    await expect(
+      resolvePortableWorkspaceEvidenceCandidatePath(root, 'src/deleted.ts')
+    ).resolves.toBe(path.join(root, 'src', 'deleted.ts'));
+    await expect(
+      resolvePortableWorkspaceEvidenceCandidatePath(root, 'external/platform/src/deleted.gradle')
+    ).resolves.toBe(path.join(external, 'src', 'deleted.gradle'));
+    await expect(
+      resolvePortableWorkspaceEvidenceCandidatePath(root, '../outside.ts')
+    ).resolves.toBeNull();
+
+    await fsExtra.symlink(outside, path.join(external, 'escaped'));
+    await expect(
+      resolvePortableWorkspaceEvidenceCandidatePath(
+        root,
+        'external/platform/escaped/deleted.gradle'
+      )
+    ).rejects.toThrow(/outside its contracted root/i);
   });
 
   it('does not steal an old lock from a process that is still alive', async () => {

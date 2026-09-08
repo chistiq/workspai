@@ -183,6 +183,57 @@ describe('backend-framework-contract', () => {
     expect(detectRuntimeCandidatesFromProject(nativePolyglotProject)).toEqual(['python', 'cpp']);
   });
 
+  it('refreshes managed adoption detection and keeps a root backend stronger than frontend tooling', async () => {
+    const managedApplication = await createTempProject('managed-rails-vue');
+    await fs.outputFile(
+      path.join(managedApplication, 'Gemfile'),
+      "source 'https://rubygems.org'\ngem 'rails'\n"
+    );
+    await fs.outputJson(path.join(managedApplication, 'package.json'), {
+      name: 'asset-pipeline',
+      dependencies: { vue: '^3.0.0' },
+    });
+
+    expect(
+      detectBackendFrameworkFromProject(managedApplication, {
+        runtime: 'node',
+        framework: 'vue',
+        kit_name: 'adopted.vue',
+        adoption: { managed_by: 'workspai', mode: 'linked' },
+      })
+    ).toMatchObject({
+      key: 'rails',
+      runtime: 'ruby',
+      confidence: 'high',
+      source: 'manifest',
+    });
+  });
+
+  it('keeps a multi-component native workspace primary over root-level Python tooling', async () => {
+    const nativeWorkspace = await createTempProject('native-workspace');
+    await fs.outputFile(
+      path.join(nativeWorkspace, 'pyproject.toml'),
+      '[project]\nname = "repository-tooling"\n'
+    );
+    for (const component of ['compiler', 'linker', 'runtime']) {
+      await fs.outputFile(
+        path.join(nativeWorkspace, component, 'CMakeLists.txt'),
+        `project(${component} CXX)\n`
+      );
+      await fs.outputFile(
+        path.join(nativeWorkspace, component, 'lib', `${component}.cpp`),
+        `int ${component}_entry() { return 0; }\n`
+      );
+    }
+
+    expect(detectBackendFrameworkFromProject(nativeWorkspace)).toMatchObject({
+      key: 'cpp',
+      runtime: 'cpp',
+      confidence: 'high',
+      source: 'manifest',
+    });
+  });
+
   it('keeps an explicit Cargo default workspace primary over Node binding tooling', async () => {
     const rustWorkspace = await createTempProject('rust-workspace-bindings');
     await fs.outputFile(
@@ -226,6 +277,24 @@ describe('backend-framework-contract', () => {
     ]);
   });
 
+  it('does not classify a private workspace root from fixture-only framework devDependencies', async () => {
+    const workspace = await createTempProject('node-workspace-tooling');
+    await fs.writeJson(path.join(workspace, 'package.json'), {
+      name: 'framework-monorepo',
+      private: true,
+      workspaces: ['packages/*'],
+      devDependencies: { express: '^5.0.0', next: 'latest' },
+      scripts: { build: 'turbo build' },
+    });
+
+    expect(detectBackendFrameworkFromProject(workspace)).toMatchObject({
+      key: 'node',
+      runtime: 'node',
+      confidence: 'medium',
+      source: 'marker',
+    });
+  });
+
   it('reports both Node and Rust runtime surfaces for a Tauri project', async () => {
     const tauriProject = await createTempProject('tauri-runtimes');
     await fs.writeJson(path.join(tauriProject, 'package.json'), {
@@ -258,6 +327,13 @@ describe('backend-framework-contract', () => {
       path.join(monorepo, 'node_modules', 'ignored', 'Cargo.toml'),
       '[package]\nname = "ignored"\n'
     );
+    await fs.outputFile(
+      path.join(monorepo, 'tests', 'fixtures', 'bun-project', 'bun.lock'),
+      '{"lockfileVersion": 1}\n'
+    );
+    await fs.outputJson(path.join(monorepo, 'tests', 'specs', 'node-project', 'package.json'), {
+      name: 'fixture-only',
+    });
 
     expect(detectNestedRuntimeCandidatesFromProject(monorepo)).toEqual([
       'go',
@@ -265,6 +341,40 @@ describe('backend-framework-contract', () => {
       'node',
       'python',
     ]);
+  });
+
+  it('promotes a homogeneous manifest-free monorepo to its nested runtime', async () => {
+    const monorepo = await createTempProject('nested-python-monorepo');
+    await fs.outputFile(
+      path.join(monorepo, 'libs', 'core', 'pyproject.toml'),
+      '[project]\nname = "core"\n'
+    );
+    await fs.outputFile(
+      path.join(monorepo, 'libs', 'plugins', 'pyproject.toml'),
+      '[project]\nname = "plugins"\n'
+    );
+
+    expect(detectRuntimeCandidatesFromProject(monorepo)).toEqual([]);
+    expect(detectNestedRuntimeCandidatesFromProject(monorepo)).toEqual(['python']);
+    expect(detectBackendFrameworkFromProject(monorepo)).toMatchObject({
+      key: 'python',
+      runtime: 'python',
+      importStack: 'unknown',
+      confidence: 'medium',
+      source: 'runtime',
+    });
+  });
+
+  it('keeps a supplemental Bun tool runner distinct from the Node project runtime', async () => {
+    const monorepo = await createTempProject('node-bun-tool-runner');
+    await fs.outputJson(path.join(monorepo, 'package.json'), {
+      name: 'node-bun-tool-runner',
+      packageManager: 'pnpm@10.33.0',
+    });
+    await fs.outputFile(path.join(monorepo, '.bunfig.toml'), '[install.lockfile]\nsave = false\n');
+
+    expect(detectRuntimeCandidatesFromProject(monorepo)).toEqual(['node', 'bun']);
+    expect(detectNestedRuntimeCandidatesFromProject(monorepo)).toEqual(['node', 'bun']);
   });
 
   it('pins unknown normalization and returns immutable public descriptors', () => {
@@ -333,6 +443,34 @@ describe('backend-framework-contract', () => {
     const project = await createTempProject(name);
     await fs.writeFile(path.join(project, fileName), content);
     expect(detectBackendFrameworkFromProject(project).key).toBe(expectedKey);
+  });
+
+  it('treats an authored Go module as authoritative runtime evidence', async () => {
+    const project = await createTempProject('go-module-confidence');
+    await fs.writeFile(path.join(project, 'go.mod'), 'module example.com/service\n\ngo 1.24\n');
+
+    expect(detectBackendFrameworkFromProject(project)).toMatchObject({
+      key: 'go',
+      runtime: 'go',
+      confidence: 'high',
+      source: 'manifest',
+    });
+  });
+
+  it('detects a gemspec-only Ruby library boundary', async () => {
+    const project = await createTempProject('ruby-gem');
+    await fs.writeFile(
+      path.join(project, 'example.gemspec'),
+      'Gem::Specification.new { |spec| spec.name = "example" }\n'
+    );
+
+    expect(detectRuntimeCandidatesFromProject(project)).toEqual(['ruby']);
+    expect(detectBackendFrameworkFromProject(project)).toMatchObject({
+      key: 'ruby',
+      runtime: 'ruby',
+      confidence: 'medium',
+      source: 'marker',
+    });
   });
 
   it.each([

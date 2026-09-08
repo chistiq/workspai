@@ -369,18 +369,8 @@ export async function writeWorkspaceModelSnapshot(
 }
 
 function projectSignature(project: WorkspaceModelProject): Record<string, unknown> {
-  return {
-    name: project.name,
-    path: project.path,
-    kind: project.kind,
-    category: project.category,
-    runtime: project.runtime,
-    framework: project.framework,
-    generator: project.generator,
-    supportTier: project.supportTier,
-    commands: project.commands,
-    importantFiles: project.importantFiles,
-  };
+  const { evidence: _ignoredLiveEvidence, ...structuralProject } = project;
+  return structuralProject;
 }
 
 function addChange(changes: WorkspaceModelDiffChange[], change: WorkspaceModelDiffChange): void {
@@ -588,8 +578,19 @@ export async function diffWorkspaceModel(
     }
   }
 
-  const gitChangedFiles = changes.filter((change) => change.type.startsWith('git.')).length;
   const modelChanged = previous.hash !== currentHash;
+  if (modelChanged && !changes.some((change) => !change.type.startsWith('git.'))) {
+    addChange(changes, {
+      type: 'workspace.changed',
+      severity: 'warning',
+      target: 'model.structural-hash',
+      message:
+        'Workspace structural identity changed outside the currently classified diff fields.',
+      before: previous.hash,
+      after: currentHash,
+    });
+  }
+  const gitChangedFiles = changes.filter((change) => change.type.startsWith('git.')).length;
   const fromRef = gitRequested
     ? `git:${gitRef ?? 'HEAD'}`
     : path.relative(workspacePath, fromPath).split(path.sep).join('/');
@@ -689,48 +690,22 @@ function buildImpactCommand(
 function projectVerificationPlan(project: WorkspaceModelProject): WorkspaceImpactCommand[] {
   const scope = `project:${project.name}`;
   const fleetStages = project.commands.fleetStages;
-  return [
-    buildImpactCommand(
-      `project.${project.name}.init`,
-      `Run init for ${project.name}`,
-      ['workspace', 'run', 'init', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('init'),
-      }
-    ),
-    buildImpactCommand(
-      `project.${project.name}.test`,
-      `Run tests for ${project.name}`,
-      ['workspace', 'run', 'test', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('test'),
-      }
-    ),
-    buildImpactCommand(
-      `project.${project.name}.build`,
-      `Run build for ${project.name}`,
-      ['workspace', 'run', 'build', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('build'),
-      }
-    ),
-    buildImpactCommand(
-      `project.${project.name}.start`,
-      `Run start for ${project.name}`,
-      ['workspace', 'run', 'start', '--scope', scope, '--json'],
-      {
-        scope: 'project',
-        project: project.name,
-        required: fleetStages.includes('start'),
-      }
-    ),
-  ];
+  const labels = {
+    init: `Run init for ${project.name}`,
+    test: `Run tests for ${project.name}`,
+    build: `Run build for ${project.name}`,
+    start: `Run start for ${project.name}`,
+  } as const;
+  return (['init', 'test', 'build', 'start'] as const)
+    .filter((stage) => fleetStages.includes(stage))
+    .map((stage) =>
+      buildImpactCommand(
+        `project.${project.name}.${stage}`,
+        labels[stage],
+        ['workspace', 'run', stage, '--scope', scope, '--json'],
+        { scope: 'project', project: project.name }
+      )
+    );
 }
 
 export function workspaceVerificationPlan(): WorkspaceImpactCommand[] {

@@ -34,8 +34,10 @@ These commands are implemented and orchestrated by Workspai CLI:
 - `commands`
 - `create`
 - `goal`
+- `change`
 - `agent`
 - `project`
+- `live`
 - `shell activate`
 
 Reason: workspace-level policy, registry, and platform orchestration live in npm wrapper.
@@ -52,6 +54,22 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `config remove-api-key`
 - `config set-api-key`
 - `config show`
+- `change begin`
+- `change list`
+- `change predict`
+- `change authorize`
+- `change resume`
+- `change effect`
+- `change effect record`
+- `change verification`
+- `change verification record`
+- `change status`
+- `change explain`
+- `change verify`
+- `change abort`
+- `change capsule`
+- `change capsule validate`
+- `change capsule export`
 - `infra down`
 - `infra plan`
 - `infra status`
@@ -60,6 +78,11 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `product manifest create`
 - `product plan`
 - `agent bootstrap`
+- `agent framework`
+- `agent framework list`
+- `agent framework plan`
+- `agent framework attach`
+- `agent framework apply`
 - `project agent-entry`
 - `project commands`
 - `project coverage`

@@ -18,6 +18,7 @@ import {
 } from '../../workspace-intelligence.js';
 import { WORKSPACE_MODEL_SCHEMA_VERSION } from '../../workspace-model.js';
 import { WORKSPACE_VERIFY_SCHEMA_VERSION } from '../../workspace-verify.js';
+import { WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION } from '../../workspace-intelligence-benchmark.js';
 import {
   AGENT_CUSTOMIZATION_PACK_SCHEMA,
   AGENT_REPORTS_INDEX_SCHEMA,
@@ -48,6 +49,10 @@ const WORKSPACE_INTELLIGENCE_CONTRACTS = [
   {
     fileName: 'workspace-impact.v1.json',
     schemaVersion: WORKSPACE_IMPACT_SCHEMA_VERSION,
+  },
+  {
+    fileName: 'workspace-intelligence-benchmark.v1.json',
+    schemaVersion: WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION,
   },
   {
     fileName: 'workspace-context.v1.json',
@@ -162,5 +167,23 @@ describe('workspace intelligence schema contracts', () => {
     expect(changeTypeEnum).toEqual(
       expect.arrayContaining(['git.file.changed', 'git.untracked', 'git.deleted'])
     );
+  });
+
+  it('keeps Goal lifecycle projections compatible with Repair and PCC transaction bindings', () => {
+    const schema = readSchema('goal-lifecycle-result.v1.json');
+    const definitions = schema.$defs as Record<string, Record<string, unknown>>;
+    const goalEntry = definitions.goalEntry;
+    const properties = goalEntry.properties as Record<string, Record<string, unknown>>;
+
+    expect(Object.keys(properties)).toEqual(
+      expect.arrayContaining([
+        'repairTransactionId',
+        'repairTransactionIds',
+        'changeTransactionId',
+        'changeTransactionIds',
+      ])
+    );
+    expect(properties.changeTransactionId.pattern).toBe('^change-[a-z0-9][a-z0-9-]{7,95}$');
+    expect(properties.changeTransactionIds.maxItems).toBe(25);
   });
 });

@@ -1,4 +1,101 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync } from 'node:fs';
+
+const RESERVED_PROJECT_NAMES = new Set([
+  'build',
+  'dist',
+  'lib',
+  'node',
+  'npm',
+  'pip',
+  'poetry',
+  'python',
+  'rapidkit',
+  'src',
+  'test',
+  'tests',
+]);
+
+export function resolveQualificationProjectPath({
+  workspacePath,
+  requestedProject,
+  workspaceContract,
+  workspaceModel,
+  importedRegistry,
+  pathExists = existsSync,
+}) {
+  const candidates = [
+    requestedProject,
+    ...(importedRegistry?.projects ?? []).map((project) => project.path),
+    ...(workspaceContract?.projects ?? []).map(
+      (project) => project.externalPath ?? project.relativePath
+    ),
+    ...(workspaceModel?.projects ?? []).map((project) => project.absolutePath ?? project.path),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    const resolved = path.resolve(workspacePath, candidate);
+    if (
+      pathExists(path.join(resolved, '.workspai', 'project.json')) ||
+      pathExists(path.join(resolved, '.rapidkit', 'project.json'))
+    )
+      return resolved;
+  }
+  return null;
+}
+
+export function summarizeQualificationCoverage(records) {
+  if (!records.length) return 'not-run';
+  if (records.some((record) => !record.accepted)) return 'failed';
+  if (records.some((record) => record.acceptanceClass === 'governed-block'))
+    return 'governed-block';
+  return 'verified';
+}
+
+export function qualificationLeafCommandPaths(runtimeInventory) {
+  const commands = Array.isArray(runtimeInventory?.commands)
+    ? runtimeInventory.commands.filter(
+        (command) => command && command.hidden !== true && Array.isArray(command.path)
+      )
+    : [];
+  return commands
+    .filter(
+      (candidate) =>
+        !commands.some(
+          (other) =>
+            other.path.length > candidate.path.length &&
+            candidate.path.every((part, index) => other.path[index] === part)
+        )
+    )
+    .map((command) => command.path.map(String));
+}
+
+export function qualificationCommandTargets(commandSurface) {
+  const targets = qualificationLeafCommandPaths(commandSurface?.runtimeInventory)
+    .filter((commandPath) => commandPath[0] !== 'workspace')
+    .map((path) => ({ path, owner: 'npm-wrapper', scope: 'command' }));
+  for (const subcommand of commandSurface?.workspace?.subcommands ?? []) {
+    targets.push({
+      path: ['workspace', String(subcommand)],
+      owner: 'npm-wrapper',
+      scope: 'workspace',
+    });
+  }
+  for (const command of commandSurface?.commands?.coreBacked ?? []) {
+    targets.push({ path: [String(command)], owner: 'python-core', scope: 'core' });
+  }
+  for (const command of commandSurface?.commands?.projectScoped ?? []) {
+    targets.push({ path: [String(command)], owner: 'runtime-adapter', scope: 'project' });
+  }
+  return [...new Map(targets.map((target) => [target.path.join(' '), target])).values()].sort(
+    (left, right) => left.path.join(' ').localeCompare(right.path.join(' '))
+  );
+}
+
+export function qualificationInvocationCoversPath(invocation, commandPath) {
+  return commandPath.every((part, index) => invocation[index] === part);
+}
 
 const FORBIDDEN_REPORT_KEYS = new Set([
   'argv',
@@ -52,6 +149,168 @@ export function isQualificationCommandAccepted({
   return (
     acceptedExitCodes.includes(exitCode) && (!expectJson || parsed !== null) && processStateAccepted
   );
+}
+
+export function qualificationCommandAllowsGovernedBlock(argv) {
+  const command = argv
+    .filter((part) => !String(part).startsWith('-'))
+    .slice(0, 3)
+    .join(' ');
+  return (
+    command.startsWith('doctor workspace') ||
+    command.startsWith('doctor project') ||
+    command === 'analyze' ||
+    command === 'readiness' ||
+    command.startsWith('workspace intelligence run') ||
+    command.startsWith('workspace verify') ||
+    command.startsWith('workspace goal verify') ||
+    command === 'pipeline' ||
+    command.startsWith('workspace why') ||
+    command.startsWith('workspace remediation-plan')
+  );
+}
+
+export function hasGovernedQualificationOutcome(value) {
+  if (Array.isArray(value)) return value.some(hasGovernedQualificationOutcome);
+  if (!value || typeof value !== 'object') return false;
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      ['status', 'verdict', 'readiness', 'result'].includes(key) &&
+      typeof entry === 'string' &&
+      ['blocked', 'not-ready', 'not_ready', 'needs-attention', 'needs_attention'].includes(
+        entry.toLowerCase()
+      )
+    ) {
+      return true;
+    }
+    if (hasGovernedQualificationOutcome(entry)) return true;
+  }
+  return false;
+}
+
+export function selectQualificationProjectId({ graph, contract, model, importedRegistry }) {
+  const graphProject = graph?.entities?.find((entity) => entity?.kind === 'project');
+  return (
+    [
+      graphProject?.projectId,
+      contract?.projects?.[0]?.slug,
+      model?.projects?.[0]?.name,
+      importedRegistry?.projects?.[0]?.name,
+    ].find((value) => typeof value === 'string' && value.trim().length > 0) ?? null
+  );
+}
+
+export function selectQualificationLifecycleProjectId({
+  workspacePath,
+  contract,
+  model,
+  importedRegistry,
+  pathExists = existsSync,
+}) {
+  const isManagedPath = (candidate) => {
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) return false;
+    const resolved = path.resolve(workspacePath, candidate);
+    const relative = path.relative(path.resolve(workspacePath), resolved);
+    return (
+      relative.length > 0 &&
+      !relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative) &&
+      pathExists(resolved)
+    );
+  };
+  const contractProject = contract?.projects?.find(
+    (project) => !project?.externalPath && isManagedPath(project?.relativePath)
+  );
+  if (typeof contractProject?.slug === 'string' && contractProject.slug.trim()) {
+    return contractProject.slug;
+  }
+  const registryProject = importedRegistry?.projects?.find((project) => {
+    if (typeof project?.path !== 'string') return false;
+    const resolved = path.resolve(project.path);
+    const relative = path.relative(path.resolve(workspacePath), resolved);
+    return (
+      relative.length > 0 &&
+      !relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative) &&
+      pathExists(resolved)
+    );
+  });
+  if (typeof registryProject?.name === 'string' && registryProject.name.trim()) {
+    return registryProject.name;
+  }
+  const modelProject = model?.projects?.find((project) => isManagedPath(project?.path));
+  return typeof modelProject?.name === 'string' && modelProject.name.trim()
+    ? modelProject.name
+    : null;
+}
+
+export function qualificationPrimaryRuntime(project) {
+  const runtime = typeof project?.runtime === 'string' ? project.runtime.trim().toLowerCase() : '';
+  return runtime && runtime !== 'unknown' ? runtime : null;
+}
+
+export function repairAdaptersForQualificationBoundary(runtime, projectPath) {
+  const normalized = typeof runtime === 'string' ? runtime.trim().toLowerCase() : '';
+  const exists = (...names) => names.some((name) => existsSync(path.join(projectPath, name)));
+  const rootFiles = (() => {
+    try {
+      return readdirSync(projectPath);
+    } catch {
+      return [];
+    }
+  })();
+  if (normalized === 'node' && exists('package.json')) return ['node'];
+  if (normalized === 'python' && exists('pyproject.toml', 'requirements.txt')) return ['python'];
+  if (normalized === 'go' && exists('go.mod')) return ['go'];
+  if (normalized === 'rust' && exists('Cargo.toml')) return ['rust'];
+  if (normalized === 'php' && exists('composer.json')) return ['php-composer'];
+  if (normalized === 'ruby' && exists('Gemfile')) return ['ruby-bundler'];
+  if (normalized === 'elixir' && exists('mix.exs')) return ['elixir-mix'];
+  if (normalized === 'deno' && exists('deno.json', 'deno.jsonc')) return ['deno'];
+  if (
+    normalized === 'dotnet' &&
+    rootFiles.some((file) => /\.(?:cs|fs|vb)proj$|\.slnx?$/iu.test(file))
+  )
+    return ['dotnet'];
+  if (['java', 'kotlin'].includes(normalized)) {
+    return [
+      ...(exists('pom.xml') ? ['jvm-maven'] : []),
+      ...(exists('build.gradle', 'build.gradle.kts') ? ['jvm-gradle'] : []),
+    ];
+  }
+  if (normalized === 'clojure' && exists('deps.edn', 'project.clj')) return ['clojure'];
+  if (normalized === 'scala' && exists('build.sbt')) return ['scala-sbt'];
+  return [];
+}
+
+/**
+ * Convert an arbitrary repository identifier into a collision-resistant name
+ * accepted by the public workspace/project naming contract. Repository names
+ * may contain dots, uppercase letters, spaces, Unicode, or reserved package
+ * names; qualification must never fail before adoption because of that source
+ * naming difference.
+ */
+export function canonicalQualificationWorkspaceName(value) {
+  const source = String(value).trim();
+  const normalized = source
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, '-')
+    .replace(/^[^a-z]+/gu, '')
+    .replace(/[-_]{2,}/gu, '-')
+    .replace(/^[-_]+|[-_]+$/gu, '');
+  const base =
+    normalized.length >= 2 && !RESERVED_PROJECT_NAMES.has(normalized)
+      ? normalized
+      : `workspace-${normalized || 'repository'}`;
+  const changed = base !== source;
+  const truncated = base.length > 196;
+  if (!changed && !truncated) return base;
+  const digest = createHash('sha256').update(source).digest('hex').slice(0, 10);
+  return `${base.slice(0, 196).replace(/[-_]+$/gu, '')}-${digest}`;
 }
 
 export function assertQualificationReportIsPublicationSafe(report, forbiddenPaths = []) {

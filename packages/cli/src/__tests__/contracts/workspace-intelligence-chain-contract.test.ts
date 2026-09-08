@@ -81,6 +81,9 @@ describe('workspace intelligence chain contract', () => {
     );
     const extractionSafeContractSources = new Set([
       path.resolve(sourceRoot, 'goals/goal-pack-contract.ts'),
+      path.resolve(sourceRoot, 'decisions/decision-contract.ts'),
+      path.resolve(sourceRoot, 'contracts/proof-carrying-change-contract.ts'),
+      path.resolve(sourceRoot, 'contracts/workspace-knowledge-graph-change-overlay-contract.ts'),
     ]);
     const testSegment = `${path.sep}__tests__${path.sep}`;
     const sourceFiles: string[] = [];
@@ -132,6 +135,9 @@ describe('workspace intelligence chain contract', () => {
     const extractionSafeSchemaSources = new Set([
       path.resolve(sourceRoot, 'contracts/doctor-capabilities-contract.ts'),
       path.resolve(sourceRoot, 'goals/goal-pack-contract.ts'),
+      path.resolve(sourceRoot, 'decisions/decision-contract.ts'),
+      path.resolve(sourceRoot, 'contracts/proof-carrying-change-contract.ts'),
+      path.resolve(sourceRoot, 'contracts/workspace-knowledge-graph-change-overlay-contract.ts'),
     ]);
     const testSegment = `${path.sep}__tests__${path.sep}`;
     const schemaVersions = [
@@ -533,6 +539,7 @@ describe('workspace intelligence chain contract', () => {
     expect(contract.auxiliaryCapabilities.map((capability) => capability.id)).toEqual([
       'graph',
       'evaluation',
+      'activity',
       'watch',
       'mcp',
     ]);

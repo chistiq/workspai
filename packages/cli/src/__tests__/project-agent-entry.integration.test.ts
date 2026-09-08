@@ -41,6 +41,7 @@ describe('canonical-first project agent entry', () => {
     roots.push(root);
     const workspacePath = path.join(root, 'workspace');
     const projectPath = path.join(root, 'projects', 'api');
+    const unrelatedProjectPath = path.join(root, 'projects', 'worker');
     await fsExtra.outputFile(path.join(workspacePath, '.workspai-workspace'), 'workspace\n');
     await fsExtra.outputJson(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
       workspace_name: 'agent-entry-lab',
@@ -61,6 +62,22 @@ describe('canonical-first project agent entry', () => {
       name: 'api',
       runtime: 'node',
       framework: 'express',
+      adoption: { managed_by: 'workspai', mode: 'linked' },
+    });
+    await fsExtra.outputJson(path.join(unrelatedProjectPath, 'package.json'), {
+      name: 'worker',
+      version: '1.0.0',
+      scripts: { build: 'tsc', test: 'vitest run' },
+    });
+    await fsExtra.outputFile(
+      path.join(unrelatedProjectPath, 'src', 'index.ts'),
+      'export const processJob = () => "done";\n'
+    );
+    await fsExtra.outputJson(path.join(unrelatedProjectPath, '.workspai', 'project.json'), {
+      schema_version: '1.0',
+      name: 'worker',
+      runtime: 'node',
+      framework: 'generic',
       adoption: { managed_by: 'workspai', mode: 'linked' },
     });
     await fsExtra.outputJson(
@@ -89,6 +106,24 @@ describe('canonical-first project agent entry', () => {
               env: [],
             },
           },
+          {
+            slug: 'worker',
+            relativePath: 'external/worker',
+            externalPath: unrelatedProjectPath,
+            relationship: 'adopted',
+            runtime: 'node',
+            framework: 'generic',
+            modules: [],
+            ports: [],
+            contracts: {
+              owns: [],
+              apis: [],
+              publishes: [],
+              consumes: [],
+              dependsOn: [],
+              env: [],
+            },
+          },
         ],
       }
     );
@@ -101,6 +136,15 @@ describe('canonical-first project agent entry', () => {
       relativePath: 'external/api',
       now: new Date('2026-08-16T00:00:00.000Z'),
     });
+    await writeProjectWorkspaceLink({
+      workspacePath,
+      projectPath: unrelatedProjectPath,
+      projectName: 'worker',
+      relationship: 'adopted',
+      workspaceName: 'agent-entry-lab',
+      relativePath: 'external/worker',
+      now: new Date('2026-08-16T00:00:00.000Z'),
+    });
 
     // Adoption creates host entry surfaces before the canonical graph captures
     // the live source fingerprint.
@@ -108,6 +152,14 @@ describe('canonical-first project agent entry', () => {
       workspacePath,
       projectPath,
       projectName: 'api',
+      relationship: 'adopted',
+      mode: 'managed',
+      now: new Date('2026-08-16T00:00:00.000Z'),
+    });
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath: unrelatedProjectPath,
+      projectName: 'worker',
       relationship: 'adopted',
       mode: 'managed',
       now: new Date('2026-08-16T00:00:00.000Z'),
@@ -154,6 +206,14 @@ describe('canonical-first project agent entry', () => {
       mode: 'managed',
       now: new Date('2026-08-16T00:03:00.000Z'),
     });
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath: unrelatedProjectPath,
+      projectName: 'worker',
+      relationship: 'adopted',
+      mode: 'managed',
+      now: new Date('2026-08-16T00:03:00.000Z'),
+    });
 
     const receipt = await buildAgentBootstrapReceipt({
       startPath: projectPath,
@@ -164,6 +224,13 @@ describe('canonical-first project agent entry', () => {
     expect(receipt.checks.filter((check) => check.status !== 'passed')).toEqual([]);
     expect(receipt).toMatchObject({
       status: 'ready',
+      statusScope: 'agent-grounding',
+      readiness: {
+        agentGrounding: 'ready',
+        architectureEvidence: 'ready',
+        projectEnvironment: 'ready',
+        release: 'not-verified',
+      },
       resolvedHost: 'codex',
       project: { name: 'api', relativePath: 'external/api' },
       workspace: {
@@ -177,13 +244,18 @@ describe('canonical-first project agent entry', () => {
       activeGoal: { present: false, appliesToProject: false, status: 'none' },
       canonicalEvidence: {
         projectContext: '.workspai/reports/project-context-agent.json',
+        projectKnowledgeGraph: '.workspai/reports/project-knowledge-graph-reference.json',
         workspaceIndex: 'workspace:.workspai/reports/INDEX.json',
         workspaceContext: 'workspace:.workspai/reports/workspace-context-agent.json',
+        workspaceModel: 'workspace:.workspai/reports/workspace-model.json',
+        knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
         workspaceSkillsIndex: 'workspace:.workspai/reports/workspace-skills-index.json',
         boundedGraphSearch:
           'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
         graphMatchesModel: true,
         liveInputsValidated: true,
+        modelFreshness: 'fresh',
+        graphFreshness: 'fresh',
       },
       claims: { architecture: 'allowed-with-citations' },
       integrity: { portable: true, absolutePathsEmitted: false },
@@ -204,6 +276,44 @@ describe('canonical-first project agent entry', () => {
       'workspace:.workspai/reports/workspace-skills-index.json'
     );
     expect(JSON.stringify(receipt)).not.toContain(root);
+
+    const projectContext = await fsExtra.readJson(
+      path.join(projectPath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent)
+    );
+    const agentEntry = await fsExtra.readJson(
+      path.join(projectPath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectAgentEntry)
+    );
+    expect(projectContext.workspace).toMatchObject({
+      projectKnowledgeGraph: '.workspai/reports/project-knowledge-graph-reference.json',
+      model: 'workspace:.workspai/reports/workspace-model.json',
+      knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+    });
+    expect(agentEntry.canonical).toMatchObject({
+      projectKnowledgeGraph: '.workspai/reports/project-knowledge-graph-reference.json',
+      workspaceModel: 'workspace:.workspai/reports/workspace-model.json',
+      knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json',
+    });
+
+    const projectGraphPath = path.join(
+      projectPath,
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectKnowledgeGraphReference
+    );
+    const mismatchedProjectGraph = await fsExtra.readJson(projectGraphPath);
+    mismatchedProjectGraph.canonical.projectionHash = '0'.repeat(64);
+    await fsExtra.outputJson(projectGraphPath, mismatchedProjectGraph);
+    const mismatchedReceipt = await buildAgentBootstrapReceipt({
+      startPath: projectPath,
+      forAgent: 'codex',
+      now: new Date('2026-08-16T00:04:30.000Z'),
+    });
+    expect(mismatchedReceipt).toMatchObject({
+      status: 'blocked',
+      claims: { architecture: 'prohibited' },
+    });
+    expect(mismatchedReceipt.checks).toContainEqual(
+      expect.objectContaining({ id: 'project-knowledge-graph', status: 'failed' })
+    );
+    await writeWorkspaceModel(persistedModel, workspacePath);
 
     const plannedGoal = await planGoalPack({
       startPath: projectPath,
@@ -249,6 +359,14 @@ describe('canonical-first project agent entry', () => {
       mode: 'managed',
       now: new Date('2026-08-16T00:06:00.000Z'),
     });
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath: unrelatedProjectPath,
+      projectName: 'worker',
+      relationship: 'adopted',
+      mode: 'managed',
+      now: new Date('2026-08-16T00:06:00.000Z'),
+    });
 
     const staleGoalReceipt = await buildAgentBootstrapReceipt({
       startPath: projectPath,
@@ -274,6 +392,33 @@ describe('canonical-first project agent entry', () => {
       'workspai goal "Map the health endpoint architecture" --scope project:api --for-agent generic --refresh --json'
     );
     expect(JSON.stringify(staleGoalReceipt)).not.toContain(root);
+
+    const unrelatedProjectReceipt = await buildAgentBootstrapReceipt({
+      startPath: unrelatedProjectPath,
+      forAgent: 'codex',
+      now: new Date('2026-08-16T00:07:30.000Z'),
+    });
+    expect(unrelatedProjectReceipt).toMatchObject({
+      status: 'degraded',
+      readiness: {
+        agentGrounding: 'degraded',
+        architectureEvidence: 'ready',
+      },
+      activeGoal: {
+        present: true,
+        appliesToProject: false,
+        status: 'stale',
+        id: plannedGoal.goalPack.id,
+      },
+      claims: { architecture: 'allowed-with-citations' },
+    });
+    expect(unrelatedProjectReceipt.checks).toContainEqual(
+      expect.objectContaining({ id: 'active-goal', status: 'warning' })
+    );
+    expect(unrelatedProjectReceipt.nextActions[0]).toBe(
+      'workspai goal "Map the health endpoint architecture" --scope project:api --for-agent generic --refresh --json'
+    );
+    expect(JSON.stringify(unrelatedProjectReceipt)).not.toContain(root);
 
     await fsExtra.outputFile(
       path.join(projectPath, 'src', 'index.ts'),

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { emitActivityTouch, emitWorkspaceActivity } from '../activity/activity-runtime.js';
 
 const JOURNAL_KIND = 'workspai.lifecycle-transaction';
 const JOURNAL_VERSION = 1;
@@ -310,6 +311,11 @@ export class LifecycleTransaction {
     const initialStat = await lstatOrNull(absolutePath);
     if (!initialStat) {
       await this.addDurableOperation({ type: 'file', path: absolutePath, state: 'absent' });
+      emitActivityTouch({
+        targetPath: absolutePath,
+        operation: 'capture-preimage',
+        status: 'planned',
+      });
       return;
     }
     if (initialStat.isSymbolicLink() || !initialStat.isFile()) {
@@ -374,6 +380,11 @@ export class LifecycleTransaction {
           },
         });
       }
+      emitActivityTouch({
+        targetPath: absolutePath,
+        operation: 'capture-preimage',
+        status: 'planned',
+      });
     } finally {
       await handle.close();
     }
@@ -386,6 +397,7 @@ export class LifecycleTransaction {
     const stat = await lstatOrNull(absolutePath);
     if (!stat) {
       await this.addDurableOperation({ type: 'tree', path: absolutePath });
+      emitActivityTouch({ targetPath: absolutePath, operation: 'create-tree', status: 'planned' });
       return true;
     }
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
@@ -413,6 +425,13 @@ export class LifecycleTransaction {
       if (this.transactionDirectory) {
         await fs.rm(this.transactionDirectory, { recursive: true }).catch(() => undefined);
       }
+      emitWorkspaceActivity({
+        kind: 'operation.completed',
+        status: 'succeeded',
+        component: 'lifecycle-transaction',
+        message: 'Lifecycle transaction committed.',
+        attributes: { capturedTargets: this.durableOperations.length },
+      });
     } catch (error) {
       this.phase = 'active';
       throw error;
@@ -423,6 +442,13 @@ export class LifecycleTransaction {
     if (this.finished || this.phase === 'committed') return;
     this.assertActive();
     this.phase = 'rolling-back';
+    emitWorkspaceActivity({
+      kind: 'operation.started',
+      status: 'running',
+      component: 'lifecycle-transaction',
+      message: 'Lifecycle transaction rollback started.',
+      attributes: { capturedTargets: this.durableOperations.length },
+    });
     try {
       await this.persist();
     } catch (error) {
@@ -441,11 +467,25 @@ export class LifecycleTransaction {
       }
     }
     if (failures.length > 0) {
+      emitWorkspaceActivity({
+        kind: 'operation.failed',
+        status: 'failed',
+        component: 'lifecycle-transaction',
+        message: 'Lifecycle transaction rollback failed.',
+        attributes: { failures: failures.length },
+      });
       throw new AggregateError(failures, 'Lifecycle transaction rollback failed.');
     }
 
     this.finished = true;
     if (this.transactionDirectory) await fs.rm(this.transactionDirectory, { recursive: true });
+    emitWorkspaceActivity({
+      kind: 'operation.completed',
+      status: 'rolled-back',
+      component: 'lifecycle-transaction',
+      message: 'Lifecycle transaction rolled back.',
+      attributes: { restoredTargets: this.durableOperations.length },
+    });
   }
 }
 

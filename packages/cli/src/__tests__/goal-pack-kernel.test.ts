@@ -114,6 +114,25 @@ describe('goal pack pure kernel', () => {
     expect(first.id).not.toBe(third.id);
   });
 
+  it('changes identity when an immutable baseline or consumer-specific handoff changes', () => {
+    const original = input('Map the authentication architecture');
+    original.sourceBinding.graph.inputHash = hash('i');
+    const first = buildGoalPack(original, ports).goalPack;
+
+    const richerBaseline = input('Map the authentication architecture');
+    richerBaseline.sourceBinding.graph.inputHash = hash('i');
+    richerBaseline.baseline.graph.entities += 1;
+    const second = buildGoalPack(richerBaseline, ports).goalPack;
+
+    const codexConsumer = input('Map the authentication architecture');
+    codexConsumer.sourceBinding.graph.inputHash = hash('i');
+    codexConsumer.consumer = 'codex';
+    const third = buildGoalPack(codexConsumer, ports).goalPack;
+
+    expect(second.id).not.toBe(first.id);
+    expect(third.id).not.toBe(first.id);
+  });
+
   it('requires clarification instead of inventing a metric for ambiguous coverage intent', () => {
     const { goalPack } = buildGoalPack(input('Improve test coverage'), ports);
 
@@ -140,6 +159,25 @@ describe('goal pack pure kernel', () => {
     const { goalPack } = buildGoalPack({ ...input(explicit.original), intent: explicit }, ports);
     expect(goalPack.commands.planVerifiedGoal).toContain('--runtime cpp');
     expect(goalPack.successCriteria[0]?.producerCommand).toContain('--runtime cpp');
+  });
+
+  it('accepts natural-language and decimal coverage targets without losing precision', () => {
+    expect(
+      compileGoalIntent('Raise Ruby test coverage to 80 percent', {
+        availableCoverageRuntimes: ['ruby'],
+      })
+    ).toMatchObject({
+      ambiguities: [],
+      requestedTarget: { value: 80, runtime: 'ruby' },
+    });
+    expect(
+      compileGoalIntent('Raise Python coverage by at least 82.5 percentage points', {
+        availableCoverageRuntimes: ['python'],
+      })
+    ).toMatchObject({
+      ambiguities: [],
+      requestedTarget: { value: 82.5, runtime: 'python' },
+    });
   });
 
   it('uses structured common runtime choices in the user decision', () => {
@@ -217,7 +255,67 @@ describe('goal pack pure kernel', () => {
     expect(handoff.guardrails).toContainEqual(
       expect.stringContaining('final outcome acceptance requires evidence review')
     );
-    expect(handoff.workflow.at(-1)).toMatchObject({ order: 6, owner: 'agent' });
+    expect(handoff.workflow).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          order: 3,
+          owner: 'workspai-cli',
+          instruction: expect.stringContaining('workspai change begin'),
+        }),
+        expect.objectContaining({
+          order: 5,
+          owner: 'human',
+          instruction: expect.stringContaining('Authorize explicit effect classes'),
+        }),
+      ])
+    );
+    expect(handoff.workflow.at(-1)).toMatchObject({ order: 8, owner: 'agent' });
+  });
+
+  it('distinguishes domain memory features from runtime memory performance', () => {
+    expect(
+      compileGoalIntent('Add tenant-scoped memory retention across the Python and TypeScript SDKs')
+    ).toMatchObject({
+      category: 'feature-change',
+      confidence: 'high',
+    });
+    expect(
+      compileGoalIntent('Reduce memory usage and heap pressure in the indexing worker')
+    ).toMatchObject({
+      category: 'performance',
+    });
+  });
+
+  it('recognizes improvement objectives as high-confidence feature changes', () => {
+    expect(
+      compileGoalIntent(
+        'Improve agent tool execution reliability while preserving session isolation'
+      )
+    ).toMatchObject({
+      category: 'feature-change',
+      confidence: 'high',
+      ambiguities: [],
+    });
+  });
+
+  it('recognizes policy enforcement as a high-confidence feature goal', () => {
+    expect(
+      compileGoalIntent(
+        'Enforce namespace-aware admission policy across the API server and generated clients'
+      )
+    ).toMatchObject({
+      category: 'feature-change',
+      confidence: 'high',
+      ambiguities: [],
+    });
+  });
+
+  it('lets a specific objective category override generic feature verbs', () => {
+    expect(compileGoalIntent('Harden release readiness across the workspace')).toMatchObject({
+      category: 'release-readiness',
+      confidence: 'high',
+      ambiguities: [],
+    });
   });
 
   it('recognizes a named project in a natural release-readiness objective', () => {
