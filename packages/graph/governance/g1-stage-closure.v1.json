@@ -151,7 +151,7 @@
   "measurements": {
     "candidateSchemas": 16,
     "testFiles": 13,
-    "tests": 70,
+    "tests": 71,
     "coverageStatementsPercent": 94.7,
     "coverageBranchesPercent": 93.22,
     "coverageFunctionsPercent": 100,
