@@ -19,8 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   invalid resume/abort transitions on terminal transactions.
 - Bind agent framework plans and effect receipts to portable artifact identities
   for adopted external projects while keeping managed writes in the project root.
-- Stabilize Windows adoption integration cleanup by releasing test doubles before
-  bounded retries for transient filesystem locks; persistent locks still fail.
+- Stabilize Windows adoption integration coverage by restoring the real process
+  working directory before cleanup, then retrying only transient filesystem locks.
 - Made interactive adoption outside a workspace offer a safe parent-workspace
   bootstrap only when the parent contains exactly the project being adopted;
   automation retains the managed-default behavior.

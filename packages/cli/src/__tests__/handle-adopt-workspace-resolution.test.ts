@@ -102,9 +102,10 @@ describe('handleAdoptCommand workspace resolution', () => {
       configurable: true,
       get: () => true,
     });
+    const previousCwd = process.cwd();
+    process.chdir(projectPath);
 
     try {
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(projectPath);
       const exitCode = await handleAdoptCommand(
         projectPath,
         {
@@ -120,8 +121,8 @@ describe('handleAdoptCommand workspace resolution', () => {
       expect(exitCode).toBe(0);
       expect(promptSpy).toHaveBeenCalled();
       expect(registerSpy).not.toHaveBeenCalled();
-      cwdSpy.mockRestore();
     } finally {
+      process.chdir(previousCwd);
       promptSpy.mockRestore();
       registerSpy.mockRestore();
       consoleLog.mockRestore();
@@ -147,9 +148,10 @@ describe('handleAdoptCommand workspace resolution', () => {
       configurable: true,
       get: () => true,
     });
+    const previousCwd = process.cwd();
+    process.chdir(projectPath);
 
     try {
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(projectPath);
       const exitCode = await handleAdoptCommand(
         projectPath,
         {
@@ -164,8 +166,8 @@ describe('handleAdoptCommand workspace resolution', () => {
 
       expect(exitCode).toBe(0);
       expect(promptSpy).not.toHaveBeenCalled();
-      cwdSpy.mockRestore();
     } finally {
+      process.chdir(previousCwd);
       promptSpy.mockRestore();
       consoleLog.mockRestore();
       if (stdinIsTty) {
@@ -226,9 +228,10 @@ describe('handleAdoptCommand workspace resolution', () => {
 
     const promptSpy = vi.spyOn(cliPrompts, 'prompt');
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const previousCwd = process.cwd();
+    process.chdir(projectPath);
 
     try {
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(projectPath);
       const exitCode = await handleAdoptCommand(
         projectPath,
         {
@@ -250,8 +253,8 @@ describe('handleAdoptCommand workspace resolution', () => {
       };
       expect(payload.workspaceResolution).toBe('nearest');
       expect(payload.workspacePath).toBe(workspacePath);
-      cwdSpy.mockRestore();
     } finally {
+      process.chdir(previousCwd);
       promptSpy.mockRestore();
       consoleLog.mockRestore();
     }
@@ -265,9 +268,10 @@ describe('handleAdoptCommand workspace resolution', () => {
     await fs.writeFile(path.join(projectPath, 'package.json'), '{"name":"demo"}');
     const promptSpy = vi.spyOn(cliPrompts, 'prompt');
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const previousCwd = process.cwd();
+    process.chdir(unrelatedCwd);
 
     try {
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(unrelatedCwd);
       const exitCode = await handleAdoptCommand(projectPath, {
         json: true,
         dryRun: true,
@@ -280,8 +284,8 @@ describe('handleAdoptCommand workspace resolution', () => {
       };
       expect(payload.workspaceResolution).toBe('nearest');
       expect(payload.workspacePath).toBe(workspacePath);
-      cwdSpy.mockRestore();
     } finally {
+      process.chdir(previousCwd);
       promptSpy.mockRestore();
       consoleLog.mockRestore();
     }
@@ -309,9 +313,10 @@ describe('handleAdoptCommand workspace resolution', () => {
       configurable: true,
       get: () => exposeTty,
     });
+    const previousCwd = process.cwd();
+    process.chdir(projectPath);
 
     try {
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(projectPath);
       const exitCode = await handleAdoptCommand(projectPath, {});
       expect(exitCode, consoleLog.mock.calls.map(([value]) => String(value)).join('\n')).toBe(0);
       expect(promptSpy).toHaveBeenCalledOnce();
@@ -334,8 +339,8 @@ describe('handleAdoptCommand workspace resolution', () => {
       ) as { entities: unknown[] };
       expect(model.summary.projectCount).toBe(1);
       expect(graph.entities.length).toBeGreaterThan(0);
-      cwdSpy.mockRestore();
     } finally {
+      process.chdir(previousCwd);
       process.env.HOME = previousHome;
       process.env.USERPROFILE = previousUserProfile;
       promptSpy.mockRestore();
@@ -371,15 +376,16 @@ describe('handleAdoptCommand workspace resolution', () => {
       configurable: true,
       get: () => exposeTty,
     });
+    const previousCwd = process.cwd();
+    process.chdir(projectPath);
 
     try {
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(projectPath);
       const exitCode = await handleAdoptCommand(projectPath, {});
       expect(exitCode).toBe(1);
       expect(await fs.readdir(workspacePath)).toEqual(['my-project']);
       expect(await fs.readdir(projectPath)).toEqual(['package.json']);
-      cwdSpy.mockRestore();
     } finally {
+      process.chdir(previousCwd);
       process.env.HOME = previousHome;
       process.env.USERPROFILE = previousUserProfile;
       if (previousFailure === undefined) delete process.env.RAPIDKIT_TEST_ADOPT_SYNC_FAIL;
