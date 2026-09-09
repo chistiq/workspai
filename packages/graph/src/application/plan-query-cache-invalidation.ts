@@ -14,6 +14,9 @@ export interface GraphQueryCacheInvalidationRequest {
   readonly entries: readonly GraphQueryCacheEntry[];
   readonly currentRedactionDigest?: WisDigestReference;
   readonly currentAuthorizationDigest?: WisDigestReference;
+  readonly currentOntologyDigest?: WisDigestReference;
+  readonly currentProofPolicyDigest?: WisDigestReference;
+  readonly currentProfileDigest?: WisDigestReference;
   readonly currentScope?: GraphScope;
   readonly delta?: GraphDelta;
   readonly overlay?: GraphChangeOverlay;
@@ -78,13 +81,9 @@ export function planQueryCacheInvalidation(
   };
 
   const corrupt = new Set((request.corruptKeyDigests ?? []).map(digestKey));
-  const causeKinds = new Set((request.causes ?? []).map((cause) => cause.kind));
 
   const overlayStale = request.overlay?.status === 'stale';
   const overlayDigest = request.overlay?.proposal.digest;
-  const indexInvalidated = (request.delta?.downstreamInvalidations ?? []).some((entry) =>
-    entry.startsWith('query-cache:')
-  );
 
   for (const entry of request.entries) {
     if (corrupt.has(digestKey(entry.keyDigest))) {
@@ -108,6 +107,30 @@ export function planQueryCacheInvalidation(
       continue;
     }
 
+    if (
+      request.currentOntologyDigest &&
+      entry.key.ontologyDigest.value !== request.currentOntologyDigest.value
+    ) {
+      add('ontology', entry.keyDigest);
+      continue;
+    }
+
+    if (
+      request.currentProofPolicyDigest &&
+      entry.key.proofPolicyDigest.value !== request.currentProofPolicyDigest.value
+    ) {
+      add('proof-policy', entry.keyDigest);
+      continue;
+    }
+
+    if (
+      request.currentProfileDigest &&
+      entry.key.profileDigest.value !== request.currentProfileDigest.value
+    ) {
+      add('profile', entry.keyDigest);
+      continue;
+    }
+
     if (request.currentScope && !scopesCompatible(entry.key.scope, request.currentScope)) {
       add('scope', entry.keyDigest);
       continue;
@@ -118,24 +141,6 @@ export function planQueryCacheInvalidation(
         add('generation', entry.keyDigest);
         continue;
       }
-    }
-
-    const keyedToBase =
-      request.delta !== undefined && entry.key.graphGeneration.id === request.delta.baseGeneration;
-    if (keyedToBase && causeKinds.has('ontology')) {
-      add('ontology', entry.keyDigest);
-      continue;
-    }
-    if (keyedToBase && causeKinds.has('proof-policy')) {
-      add('proof-policy', entry.keyDigest);
-      continue;
-    }
-    if (
-      keyedToBase &&
-      indexInvalidated &&
-      (entry.key.indexDigests.length > 0 || entry.key.projectionDigests.length > 0)
-    ) {
-      add('profile', entry.keyDigest);
     }
   }
 

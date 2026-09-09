@@ -2,6 +2,7 @@ import type {
   GraphCanonicalGraph,
   GraphDiagnostic,
   GraphOntologyProfile,
+  GraphProviderInput,
   GraphProviderRunSummary,
   GraphProviderRuntime,
   GraphQualityReport,
@@ -42,6 +43,8 @@ export interface GraphRepoBuildRequest {
   readonly policy: GraphRepoBuildPolicy;
   readonly ports: GraphProductHostPorts;
   readonly compositionReuse?: GraphRepoBuildCompositionReuse;
+  /** Pre-admitted inventory; when set the host file source is not reread. */
+  readonly admittedInputs?: readonly GraphProviderInput[];
 }
 
 export interface GraphRepoBuildMetrics {

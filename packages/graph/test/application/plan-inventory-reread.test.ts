@@ -118,8 +118,28 @@ describe('Git-aware inventory reread planning', () => {
     expect(journal.records[0]?.locator).toBe('src/quoted file.ts');
   });
 
-  it('ignores truncated porcelain lines and maps copy/unknown codes', () => {
-    const journal = parseGitStatusPorcelain('xx\nC  src/a.ts -> src/b.ts\n!! ignored\n?? new.ts\n');
+  it('treats malformed porcelain as untrusted so skip-reread cannot proceed', () => {
+    const journal = parseGitStatusPorcelain('xx\nC  src/a.ts -> src/b.ts\n');
+    expect(journal.trust).toBe('untrusted');
+    expect(journal.records).toEqual([]);
+    const plan = planInventoryReread({
+      priorManifest: manifest(),
+      journal,
+      scanProfileDigestValue: scanProfileDigest.value,
+    });
+    expect(plan.reusedLocators).toEqual([]);
+    expect(plan.rereadLocators).toEqual(['README.md', 'src/index.ts']);
+  });
+
+  it('maps blank XY codes to unknown without treating Git as Merkle authority', () => {
+    const journal = parseGitStatusPorcelain('   src/plain.ts\n T src/typed.ts\n');
+    expect(journal.trust).toBe('trusted');
+    expect(journal.records.map((record) => record.kind)).toEqual(['unknown', 'changed']);
+  });
+
+  it('parses copy, ignored and untracked porcelain without treating Git as Merkle authority', () => {
+    const journal = parseGitStatusPorcelain('C  src/a.ts -> src/b.ts\n!! ignored\n?? new.ts\n');
+    expect(journal.trust).toBe('trusted');
     expect(journal.records.map((record) => record.kind)).toEqual([
       'renamed',
       'unknown',

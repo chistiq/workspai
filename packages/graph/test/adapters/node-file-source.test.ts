@@ -223,4 +223,34 @@ describe('Node repository file source', () => {
     );
     expect(JSON.stringify(result)).not.toContain(externalGitDirectory);
   });
+
+  it('content-hashes only the requested locators during skip-reread inventory', async () => {
+    const root = await fixture();
+    const source = createNodeGraphFileSource();
+    const result = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+      onlyLocators: ['src/index.ts'],
+    });
+
+    expect(result.inputs.map((input) => input.locator)).toEqual(['src/index.ts']);
+    const skipped = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+      onlyLocators: [],
+    });
+    expect(skipped.inputs).toEqual([]);
+  });
 });

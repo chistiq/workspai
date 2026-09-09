@@ -172,4 +172,30 @@ describe('buildContentStateManifest', () => {
       })
     ).toThrow(/Duplicate content-state leaf locator/);
   });
+
+  it('separates lib and library path-boundary prefixes', () => {
+    const manifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T20:00:00.000Z',
+      scanProfileDigest,
+      leaves: [
+        {
+          locator: 'lib/foo.ts',
+          contentDigest: { algorithm: 'sha256', value: 'c'.repeat(64) },
+          inputKind: 'source-file',
+          scanProfileDigest,
+        },
+        {
+          locator: 'library/foo.ts',
+          contentDigest: { algorithm: 'sha256', value: 'd'.repeat(64) },
+          inputKind: 'source-file',
+          scanProfileDigest,
+        },
+      ],
+    });
+    expect(
+      manifest.nodes.filter((node) => node.kind === 'directory').map((node) => node.locator)
+    ).toEqual(['lib', 'library']);
+    expect(validateGraphContentStateManifest(manifest).accepted).toBe(true);
+  });
 });

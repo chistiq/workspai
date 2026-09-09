@@ -133,4 +133,49 @@ describe('incremental conformance admission', () => {
       }).accepted
     ).toBe(false);
   });
+
+  it('rejects a content-state manifest whose Merkle root does not match its leaves', () => {
+    const manifest = readFixture<Record<string, unknown>>(
+      'fixtures/g6/minimal-content-state-manifest.json'
+    );
+    const rejected = validateGraphContentStateManifest({
+      ...manifest,
+      merkleRoot: {
+        algorithm: 'sha256',
+        value: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+    });
+    expect(rejected.accepted).toBe(false);
+    expect(
+      rejected.issues.some((entry) => entry.code === 'GRAPH_CONTENT_STATE_MERKLE_MISMATCH')
+    ).toBe(true);
+  });
+
+  it('rejects a content-state manifest whose leaves cannot assemble a Merkle tree', () => {
+    const manifest = readFixture<Record<string, unknown>>(
+      'fixtures/g6/minimal-content-state-manifest.json'
+    );
+    const rejected = validateGraphContentStateManifest({
+      ...manifest,
+      nodes: [
+        {
+          kind: 'file',
+          locator: '../escape.ts',
+          contentDigest: {
+            algorithm: 'sha256',
+            value: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          },
+          inputKind: 'source-file',
+          scanProfileDigest: {
+            algorithm: 'sha256',
+            value: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+        },
+      ],
+    });
+    expect(rejected.accepted).toBe(false);
+    expect(
+      rejected.issues.some((entry) => entry.code === 'GRAPH_CONTENT_STATE_MERKLE_INVALID')
+    ).toBe(true);
+  });
 });

@@ -5,95 +5,19 @@ import type { WisDigestReference } from '@workspai/shared/contracts';
 import {
   GRAPH_CONTENT_STATE_MANIFEST_CONTRACT,
   type GraphContentStateDirectory,
-  type GraphContentStateDirectoryChild,
   type GraphContentStateLeaf,
   type GraphContentStateManifest,
   type GraphContentStateNode,
 } from '../contracts/index.js';
-import {
-  assertPortableLocator,
-  canonicalDirectoryMaterial,
-  directoryChild,
-  parentLocator,
-} from '../domain/content-state-merkle.js';
+import { assembleContentStateMerkle } from '../domain/content-state-merkle.js';
 
-import type {
-  GraphContentStateLeafInput,
-  GraphContentStateManifestBuildRequest,
-} from './content-state-manifest-types.js';
+import type { GraphContentStateManifestBuildRequest } from './content-state-manifest-types.js';
 
-function digestMaterial(material: string): WisDigestReference {
+function digestUtf8(material: string): WisDigestReference {
   return Object.freeze({
     algorithm: 'sha256',
     value: createHash('sha256').update(material, 'utf8').digest('hex'),
   });
-}
-
-function digestDirectoryChildren(
-  children: readonly GraphContentStateDirectoryChild[]
-): WisDigestReference {
-  return digestMaterial(canonicalDirectoryMaterial(children));
-}
-
-function collectDirectoryLocators(leaves: readonly GraphContentStateLeafInput[]): string[] {
-  const directories = new Set<string>(['']);
-  for (const leaf of leaves) {
-    assertPortableLocator(leaf.locator);
-    let current = parentLocator(leaf.locator);
-    while (true) {
-      directories.add(current);
-      if (current.length === 0) {
-        break;
-      }
-      current = parentLocator(current);
-    }
-  }
-  return [...directories].sort((left, right) => right.length - left.length);
-}
-
-function directoryChildren(
-  directory: string,
-  leaves: readonly GraphContentStateLeafInput[],
-  directoryDigests: Map<string, WisDigestReference>
-): GraphContentStateDirectoryChild[] {
-  const prefix = directory.length === 0 ? '' : `${directory}/`;
-  const childDirs = new Set<string>();
-  const childFiles = new Map<string, GraphContentStateLeafInput>();
-
-  for (const leaf of leaves) {
-    const relative = directory.length === 0 ? leaf.locator : leaf.locator.slice(prefix.length);
-    if (directory.length > 0 && !leaf.locator.startsWith(prefix)) {
-      continue;
-    }
-    if (relative.length === 0) {
-      continue;
-    }
-    const [segment, ...rest] = relative.split('/');
-    if (!segment) {
-      continue;
-    }
-    if (rest.length === 0) {
-      childFiles.set(segment, leaf);
-      continue;
-    }
-    childDirs.add(segment);
-  }
-
-  const children: GraphContentStateDirectoryChild[] = [];
-  for (const name of [...childDirs].sort()) {
-    const locator = directory.length === 0 ? name : `${directory}/${name}`;
-    const digest = directoryDigests.get(locator);
-    if (!digest) {
-      throw new Error(`Missing directory digest for ${locator}`);
-    }
-    children.push(directoryChild(name, 'directory', digest));
-  }
-  for (const [name, leaf] of [...childFiles.entries()].sort(([left], [right]) =>
-    left.localeCompare(right)
-  )) {
-    children.push(directoryChild(name, 'file', leaf.contentDigest));
-  }
-  return children;
 }
 
 /**
@@ -114,24 +38,19 @@ export function buildContentStateManifest(
     seen.add(leaf.locator);
   }
 
-  const directoryDigests = new Map<string, WisDigestReference>();
-  for (const directory of collectDirectoryLocators(leaves)) {
-    directoryDigests.set(
-      directory,
-      digestDirectoryChildren(directoryChildren(directory, leaves, directoryDigests))
-    );
-  }
+  const assembled = assembleContentStateMerkle(leaves, digestUtf8);
 
   const nodes: GraphContentStateNode[] = [];
-  for (const directory of [...directoryDigests.keys()]
+  for (const locator of [...assembled.directories.keys()]
     .filter((entry) => entry.length > 0)
     .sort((left, right) => left.localeCompare(right))) {
+    const directory = assembled.directories.get(locator)!;
     nodes.push(
       Object.freeze({
         kind: 'directory',
-        locator: directory,
-        digest: directoryDigests.get(directory)!,
-        children: Object.freeze(directoryChildren(directory, leaves, directoryDigests)),
+        locator,
+        digest: directory.digest,
+        children: directory.children,
       }) satisfies GraphContentStateDirectory
     );
   }
@@ -151,7 +70,7 @@ export function buildContentStateManifest(
   return Object.freeze({
     contract: GRAPH_CONTENT_STATE_MANIFEST_CONTRACT,
     scope: request.scope,
-    merkleRoot: directoryDigests.get('') ?? digestDirectoryChildren([]),
+    merkleRoot: assembled.merkleRoot,
     nodes: Object.freeze(nodes),
     shardDependencies: Object.freeze(request.shardDependencies ?? []),
     generatedAt: request.generatedAt,

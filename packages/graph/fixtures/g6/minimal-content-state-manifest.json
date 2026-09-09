@@ -3,10 +3,13 @@
     "id": "workspai.graph.content-state-manifest",
     "version": "0.1.0-candidate"
   },
-  "scope": { "kind": "project", "projectIds": ["project:fixture"] },
+  "scope": {
+    "kind": "project",
+    "projectIds": ["project:fixture"]
+  },
   "merkleRoot": {
     "algorithm": "sha256",
-    "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    "value": "be5265a74d073eefbf6fd9446e9f487229a26089821e25552374fb7d92e4da37"
   },
   "nodes": [
     {
@@ -14,7 +17,7 @@
       "locator": "src",
       "digest": {
         "algorithm": "sha256",
-        "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "value": "5c043a1c90179a896fef580667285426f86b6fcf15252b198acad8902f27804e"
       },
       "children": [
         {

@@ -1,6 +1,7 @@
 import type { WisDigestReference } from '@workspai/shared/contracts';
 
 import type {
+  GraphContentStateLeaf,
   GraphContentStateManifest,
   GraphDiagnostic,
   GraphInputChange,
@@ -10,6 +11,7 @@ import type {
   GraphShardReuseRejectionReason,
   GraphShardReuseRequest,
 } from '../contracts/index.js';
+import { shardMembershipLocator } from '../domain/shard-membership.js';
 
 function digestEqual(left: WisDigestReference, right: WisDigestReference): boolean {
   return left.algorithm === right.algorithm && left.value === right.value;
@@ -30,14 +32,6 @@ function digestSetEqual(
   return left.every((digest) => rightKeys.has(digestKey(digest)));
 }
 
-function shardLocator(shardId: string): string | undefined {
-  const parts = shardId.split(':');
-  if (parts.length < 3 || parts[0] !== 'shard') {
-    return undefined;
-  }
-  return parts.slice(2).join(':');
-}
-
 function changedLocators(changedInputs: readonly GraphInputChange[]): Set<string> {
   const locators = new Set<string>();
   for (const change of changedInputs) {
@@ -54,14 +48,14 @@ function indexShards(manifest: GraphContentStateManifest): Map<string, GraphShar
   return new Map(manifest.shardDependencies.map((shard) => [shard.shardId, shard]));
 }
 
-function leafDigests(manifest: GraphContentStateManifest): Set<string> {
-  const digests = new Set<string>();
+function leafByLocator(manifest: GraphContentStateManifest): Map<string, GraphContentStateLeaf> {
+  const files = new Map<string, GraphContentStateLeaf>();
   for (const node of manifest.nodes) {
     if (node.kind === 'file') {
-      digests.add(digestKey(node.contentDigest));
+      files.set(node.locator, node);
     }
   }
-  return digests;
+  return files;
 }
 
 function reject(
@@ -150,8 +144,14 @@ export function planShardReuseAndInvalidation(
 
   const baseShards = indexShards(request.base);
   const targetShards = indexShards(request.target);
-  const targetLeafDigests = leafDigests(request.target);
+  const targetLeaves = leafByLocator(request.target);
+  const baseLeaves = leafByLocator(request.base);
   const affectedLocators = changedLocators(request.changedInputs);
+  const membershipLocators = new Set([
+    ...targetLeaves.keys(),
+    ...baseLeaves.keys(),
+    ...affectedLocators,
+  ]);
   const authorized = request.authorizedShardIds ? new Set(request.authorizedShardIds) : undefined;
 
   for (const [shardId, baseShard] of [...baseShards.entries()].sort(([left], [right]) =>
@@ -171,7 +171,7 @@ export function planShardReuseAndInvalidation(
       continue;
     }
 
-    const locator = shardLocator(shardId);
+    const locator = shardMembershipLocator(shardId, membershipLocators);
     if (locator && affectedLocators.has(locator)) {
       rejected.push(reject(shardId, 'content-changed', locator));
       invalidationSources.push(baseShard);
@@ -184,7 +184,14 @@ export function planShardReuseAndInvalidation(
       continue;
     }
 
-    if (!targetLeafDigests.has(digestKey(targetShard.contentDigest))) {
+    if (locator) {
+      const member = targetLeaves.get(locator);
+      if (!member || !digestEqual(member.contentDigest, targetShard.contentDigest)) {
+        rejected.push(reject(shardId, 'content-incompatible', 'missing-content-membership'));
+        invalidationSources.push(baseShard);
+        continue;
+      }
+    } else {
       rejected.push(reject(shardId, 'content-incompatible', 'missing-content-membership'));
       invalidationSources.push(baseShard);
       continue;

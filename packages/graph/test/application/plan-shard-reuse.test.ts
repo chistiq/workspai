@@ -159,4 +159,24 @@ describe('planShardReuseAndInvalidation', () => {
     });
     expect(incompletePlan.rejected[0]?.reason).toBe('missing-semantic-dependency');
   });
+
+  it('does not treat a shared content digest as membership of a different locator', () => {
+    const base = readManifest('minimal-content-state-manifest.json');
+    const shifted = withManifest(base, {
+      shardDependencies: base.shardDependencies.map((shard) => ({
+        ...shard,
+        shardId: 'shard:ecmascript-imports:library/index.ts',
+      })),
+    });
+    const plan = planShardReuseAndInvalidation({
+      base: shifted,
+      target: shifted,
+      changedInputs: [],
+    });
+    expect(plan.reused).toEqual([]);
+    expect(plan.rejected[0]).toMatchObject({
+      reason: 'content-incompatible',
+      detail: 'missing-content-membership',
+    });
+  });
 });

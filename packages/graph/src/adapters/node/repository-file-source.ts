@@ -8,6 +8,7 @@ import type {
   GraphUnknownZone,
   GraphUnsupportedZone,
 } from '../../contracts/index.js';
+import { graphInputMediaType } from '../../domain/input-media-type.js';
 import type {
   GraphFileInventoryRequest,
   GraphFileInventoryResult,
@@ -25,37 +26,6 @@ function inside(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return (
     relative === '' || (!path.isAbsolute(relative) && !relative.split(path.sep).includes('..'))
-  );
-}
-
-function mediaType(locator: string): string {
-  const extension = path.posix.extname(locator).toLowerCase();
-  return (
-    (
-      {
-        '.c': 'text/x-c',
-        '.cpp': 'text/x-c++',
-        '.cs': 'text/x-csharp',
-        '.css': 'text/css',
-        '.go': 'text/x-go',
-        '.html': 'text/html',
-        '.java': 'text/x-java',
-        '.js': 'text/javascript',
-        '.json': 'application/json',
-        '.jsx': 'text/jsx',
-        '.md': 'text/markdown',
-        '.php': 'text/x-php',
-        '.py': 'text/x-python',
-        '.rb': 'text/x-ruby',
-        '.rs': 'text/x-rust',
-        '.toml': 'application/toml',
-        '.ts': 'text/typescript',
-        '.tsx': 'text/tsx',
-        '.xml': 'application/xml',
-        '.yaml': 'application/yaml',
-        '.yml': 'application/yaml',
-      } as Readonly<Record<string, string>>
-    )[extension] ?? 'application/octet-stream'
   );
 }
 
@@ -114,6 +84,8 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
         }
         const root = await fs.realpath(request.root);
         const excluded = new Set(request.excludedDirectories);
+        const onlyLocators =
+          request.onlyLocators === undefined ? undefined : new Set(request.onlyLocators);
         const pending = [{ directory: root, depth: 0 }];
         while (pending.length > 0) {
           if (request.signal?.aborted) {
@@ -189,6 +161,9 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               });
               continue;
             }
+            if (onlyLocators && !onlyLocators.has(locator)) {
+              continue;
+            }
             const stat = await fs.stat(target);
             if (request.sensitiveFiles === 'omit-known' && knownSensitiveFile(entry.name)) {
               omittedFiles += 1;
@@ -223,7 +198,7 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
             const value = createHash('sha256').update(stable.bytes).digest('hex');
             inputs.push({
               locator,
-              mediaType: mediaType(locator),
+              mediaType: graphInputMediaType(locator),
               byteLength: stable.size,
               digest: { algorithm: 'sha256', value },
             });
@@ -231,60 +206,62 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           }
         }
         const gitDirectory = path.join(root, '.git');
-        try {
-          const gitDirectoryStat = await fs.lstat(gitDirectory);
-          if (gitDirectoryStat.isDirectory() && !gitDirectoryStat.isSymbolicLink()) {
-            const head = path.join(gitDirectory, 'HEAD');
-            const headStat = await fs.lstat(head);
-            if (headStat.isSymbolicLink() || !headStat.isFile()) {
-              unsupportedZones.push({
-                code: 'graph.git-head-special-entry-unsupported',
-                scope: 'repository',
-                reason: 'Git HEAD must be a real repository-local regular file.',
-              });
-            } else if (headStat.size > 4_096) {
-              omittedFiles += 1;
-              omittedBytes += headStat.size;
-              unsupportedZones.push({
-                code: 'graph.git-head-size-unsupported',
-                scope: 'repository',
-                reason: 'Git HEAD exceeds the fixed safe metadata size ceiling.',
-              });
-            } else {
-              if (
-                inputs.length < request.maxFiles &&
-                totalBytes + headStat.size <= request.maxTotalBytes &&
-                headStat.size <= request.maxFileBytes
-              ) {
-                const stable = await readStableFile(head, 4_096, request.signal);
-                inputs.push({
-                  locator: '.git/HEAD',
-                  mediaType: 'text/plain',
-                  byteLength: stable.size,
-                  digest: {
-                    algorithm: 'sha256',
-                    value: createHash('sha256').update(stable.bytes).digest('hex'),
-                  },
+        if (!onlyLocators || onlyLocators.has('.git/HEAD')) {
+          try {
+            const gitDirectoryStat = await fs.lstat(gitDirectory);
+            if (gitDirectoryStat.isDirectory() && !gitDirectoryStat.isSymbolicLink()) {
+              const head = path.join(gitDirectory, 'HEAD');
+              const headStat = await fs.lstat(head);
+              if (headStat.isSymbolicLink() || !headStat.isFile()) {
+                unsupportedZones.push({
+                  code: 'graph.git-head-special-entry-unsupported',
+                  scope: 'repository',
+                  reason: 'Git HEAD must be a real repository-local regular file.',
                 });
-                totalBytes += stable.size;
-              } else {
+              } else if (headStat.size > 4_096) {
                 omittedFiles += 1;
                 omittedBytes += headStat.size;
-                unknownZones.push({
-                  code: 'graph.git-head-budget-omitted',
+                unsupportedZones.push({
+                  code: 'graph.git-head-size-unsupported',
                   scope: 'repository',
-                  reason: 'Git HEAD evidence exceeded the admitted repository inventory budget.',
+                  reason: 'Git HEAD exceeds the fixed safe metadata size ceiling.',
                 });
+              } else {
+                if (
+                  inputs.length < request.maxFiles &&
+                  totalBytes + headStat.size <= request.maxTotalBytes &&
+                  headStat.size <= request.maxFileBytes
+                ) {
+                  const stable = await readStableFile(head, 4_096, request.signal);
+                  inputs.push({
+                    locator: '.git/HEAD',
+                    mediaType: 'text/plain',
+                    byteLength: stable.size,
+                    digest: {
+                      algorithm: 'sha256',
+                      value: createHash('sha256').update(stable.bytes).digest('hex'),
+                    },
+                  });
+                  totalBytes += stable.size;
+                } else {
+                  omittedFiles += 1;
+                  omittedBytes += headStat.size;
+                  unknownZones.push({
+                    code: 'graph.git-head-budget-omitted',
+                    scope: 'repository',
+                    reason: 'Git HEAD evidence exceeded the admitted repository inventory budget.',
+                  });
+                }
               }
             }
-          }
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-            unsupportedZones.push({
-              code: 'graph.git-head-unavailable',
-              scope: 'repository',
-              reason: 'Git HEAD metadata could not be safely admitted from this repository.',
-            });
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+              unsupportedZones.push({
+                code: 'graph.git-head-unavailable',
+                scope: 'repository',
+                reason: 'Git HEAD metadata could not be safely admitted from this repository.',
+              });
+            }
           }
         }
         inputs.sort((left, right) => left.locator.localeCompare(right.locator));

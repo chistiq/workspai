@@ -411,17 +411,29 @@ export async function buildRepoGraph(
 
   try {
     request.ports.cancellation.throwIfAborted();
-    inventory = await request.ports.fileSource.inventory({
-      root: request.root,
-      maxFiles: request.policy.limits.maxFiles,
-      maxTotalBytes: request.policy.limits.maxTotalBytes,
-      maxFileBytes: request.policy.limits.maxFileBytes,
-      maxDepth: request.policy.limits.maxDepth,
-      maxDirectoryEntries: request.policy.limits.maxDirectoryEntries,
-      excludedDirectories: request.policy.excludedDirectories,
-      sensitiveFiles: request.policy.sensitiveFiles,
-      signal: request.ports.signal,
-    });
+    if (request.admittedInputs !== undefined) {
+      inventory = {
+        status: 'complete',
+        inputs: request.admittedInputs,
+        diagnostics: [],
+        omittedFiles: 0,
+        omittedBytes: 0,
+        unknownZones: [],
+        unsupportedZones: [],
+      };
+    } else {
+      inventory = await request.ports.fileSource.inventory({
+        root: request.root,
+        maxFiles: request.policy.limits.maxFiles,
+        maxTotalBytes: request.policy.limits.maxTotalBytes,
+        maxFileBytes: request.policy.limits.maxFileBytes,
+        maxDepth: request.policy.limits.maxDepth,
+        maxDirectoryEntries: request.policy.limits.maxDirectoryEntries,
+        excludedDirectories: request.policy.excludedDirectories,
+        sensitiveFiles: request.policy.sensitiveFiles,
+        signal: request.ports.signal,
+      });
+    }
   } catch {
     const cancelled = request.ports.cancellation.aborted || request.ports.signal?.aborted === true;
     return emptyResult(

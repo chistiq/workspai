@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { WisDigestReference } from '@workspai/shared/contracts';
 
 import {
@@ -9,6 +11,7 @@ import {
   GRAPH_PROPOSED_GRAPH_DELTA_CONTRACT,
   type GraphChangeOverlay,
   type GraphChangeSet,
+  type GraphContentStateDirectoryChild,
   type GraphContentStateManifest,
   type GraphDelta,
   type GraphProposedChangeSet,
@@ -16,6 +19,10 @@ import {
   type GraphValidationIssue,
   type GraphValidationResult,
 } from '../contracts/index.js';
+import {
+  assembleContentStateMerkle,
+  canonicalDirectoryMaterial,
+} from '../domain/content-state-merkle.js';
 
 const DIGEST_VALUE = /^[a-f0-9]{32,256}$/u;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u;
@@ -44,6 +51,110 @@ function digest(value: unknown): value is WisDigestReference {
     typeof value.value === 'string' &&
     DIGEST_VALUE.test(value.value)
   );
+}
+
+function digestUtf8(material: string): WisDigestReference {
+  return Object.freeze({
+    algorithm: 'sha256',
+    value: createHash('sha256').update(material, 'utf8').digest('hex'),
+  });
+}
+
+function directoryChildRecord(value: unknown): value is GraphContentStateDirectoryChild {
+  return (
+    record(value) &&
+    typeof value.name === 'string' &&
+    (value.kind === 'file' || value.kind === 'directory') &&
+    digest(value.digest)
+  );
+}
+
+function verifyContentStateMerkle(
+  input: Record<string, unknown>,
+  issues: GraphValidationIssue[]
+): void {
+  if (!Array.isArray(input.nodes) || !digest(input.merkleRoot)) {
+    return;
+  }
+  const leaves: { locator: string; contentDigest: WisDigestReference }[] = [];
+  const directories: Record<string, unknown>[] = [];
+  for (const node of input.nodes) {
+    if (!record(node)) {
+      continue;
+    }
+    if (node.kind === 'file' && typeof node.locator === 'string' && digest(node.contentDigest)) {
+      leaves.push({ locator: node.locator, contentDigest: node.contentDigest });
+    }
+    if (node.kind === 'directory' && typeof node.locator === 'string') {
+      directories.push(node);
+    }
+  }
+  let assembled;
+  try {
+    assembled = assembleContentStateMerkle(leaves, digestUtf8);
+  } catch {
+    issue(
+      issues,
+      'GRAPH_CONTENT_STATE_MERKLE_INVALID',
+      '/nodes',
+      'Content-state Merkle tree could not be assembled from file leaves.'
+    );
+    return;
+  }
+  if (assembled.merkleRoot.value !== input.merkleRoot.value) {
+    issue(
+      issues,
+      'GRAPH_CONTENT_STATE_MERKLE_MISMATCH',
+      '/merkleRoot',
+      'Merkle root does not match the directory tree assembled from file leaves.'
+    );
+  }
+  const expectedLocators = [...assembled.directories.keys()]
+    .filter((locator) => locator.length > 0)
+    .sort();
+  const actualLocators = directories.map((directory) => String(directory.locator)).sort();
+  if (expectedLocators.join('\u0000') !== actualLocators.join('\u0000')) {
+    issue(
+      issues,
+      'GRAPH_CONTENT_STATE_DIRECTORY_SET_INVALID',
+      '/nodes',
+      'Directory nodes must match the locators derived from file leaves.'
+    );
+  }
+  for (const directory of directories) {
+    const expected = assembled.directories.get(String(directory.locator));
+    if (!expected) {
+      continue;
+    }
+    if (!digest(directory.digest) || directory.digest.value !== expected.digest.value) {
+      issue(
+        issues,
+        'GRAPH_CONTENT_STATE_DIRECTORY_DIGEST_INVALID',
+        `/nodes/${String(directory.locator)}`,
+        'Directory digest does not match the canonical child material.'
+      );
+    }
+    if (!Array.isArray(directory.children) || !directory.children.every(directoryChildRecord)) {
+      issue(
+        issues,
+        'GRAPH_CONTENT_STATE_DIRECTORY_CHILDREN_INVALID',
+        `/nodes/${String(directory.locator)}/children`,
+        'Directory children are incomplete.'
+      );
+      continue;
+    }
+    if (
+      canonicalDirectoryMaterial(directory.children) !==
+      canonicalDirectoryMaterial(expected.children)
+    ) {
+      issue(
+        issues,
+        'GRAPH_CONTENT_STATE_DIRECTORY_CHILDREN_MISMATCH',
+        `/nodes/${String(directory.locator)}/children`,
+        'Directory children do not match the assembled Merkle tree.'
+      );
+    }
+  }
 }
 
 function validateInputChanges(path: string, value: unknown, issues: GraphValidationIssue[]): void {
@@ -187,6 +298,7 @@ export function validateGraphContentStateManifest(
         'Content-state scope is invalid.'
       );
     }
+    verifyContentStateMerkle(input, issues);
   }
   return issues.length > 0
     ? { accepted: false, issues }

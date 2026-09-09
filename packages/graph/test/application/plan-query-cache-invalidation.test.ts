@@ -116,98 +116,53 @@ describe('planQueryCacheInvalidation', () => {
   });
 
   it('classifies ontology, proof-policy, profile, scope, redaction and corruption reasons', () => {
-    const indexed = entry({
-      keyDigest: 'idx',
-      indexDigests: [digest('index')],
-    });
-    const ontology = planQueryCacheInvalidation({
-      entries: [entry({ keyDigest: 'onto' })],
-      delta: {
-        contract: GRAPH_DELTA_CONTRACT,
-        baseGeneration: 'generation:base',
-        targetGeneration: 'generation:target',
-        changedInputs: [],
-        affectedProviders: [],
-        facts: { added: [], renewed: [], removed: [], invalidated: [] },
-        graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
-        affectedProjections: [],
-        downstreamInvalidations: ['query-cache:dependency-neighbors'],
-        execution: {
-          detected: 0,
-          scanned: 0,
-          parsed: 0,
-          recomputed: 0,
-          skippedByDigest: 0,
-          unsupported: 0,
-          failed: 0,
-          truncation: [],
-          processing: [],
+    expect(
+      planQueryCacheInvalidation({
+        entries: [entry({ keyDigest: 'onto' })],
+        currentOntologyDigest: digest('new-onto'),
+      })[0]?.reason
+    ).toBe('ontology');
+    expect(
+      planQueryCacheInvalidation({
+        entries: [entry({ keyDigest: 'proof' })],
+        currentProofPolicyDigest: digest('new-proof'),
+      })[0]?.reason
+    ).toBe('proof-policy');
+    expect(
+      planQueryCacheInvalidation({
+        entries: [entry({ keyDigest: 'profile' })],
+        currentProfileDigest: digest('new-profile'),
+      })[0]?.reason
+    ).toBe('profile');
+    expect(
+      planQueryCacheInvalidation({
+        entries: [entry({ keyDigest: 'onto-hist' })],
+        delta: {
+          contract: GRAPH_DELTA_CONTRACT,
+          baseGeneration: 'generation:base',
+          targetGeneration: 'generation:target',
+          changedInputs: [],
+          affectedProviders: [],
+          facts: { added: [], renewed: [], removed: [], invalidated: [] },
+          graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
+          affectedProjections: [],
+          downstreamInvalidations: ['query-cache:dependency-neighbors'],
+          execution: {
+            detected: 0,
+            scanned: 0,
+            parsed: 0,
+            recomputed: 0,
+            skippedByDigest: 0,
+            unsupported: 0,
+            failed: 0,
+            truncation: [],
+            processing: [],
+          },
+          equivalence: 'not-assessed',
         },
-        equivalence: 'not-assessed',
-      },
-      causes: [{ kind: 'ontology', source: 'ontology-profile' }],
-    });
-    expect(ontology[0]?.reason).toBe('ontology');
-
-    const proof = planQueryCacheInvalidation({
-      entries: [entry({ keyDigest: 'proof' })],
-      delta: ontology[0]
-        ? {
-            contract: GRAPH_DELTA_CONTRACT,
-            baseGeneration: 'generation:base',
-            targetGeneration: 'generation:target',
-            changedInputs: [],
-            affectedProviders: [],
-            facts: { added: [], renewed: [], removed: [], invalidated: [] },
-            graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
-            affectedProjections: [],
-            downstreamInvalidations: [],
-            execution: {
-              detected: 0,
-              scanned: 0,
-              parsed: 0,
-              recomputed: 0,
-              skippedByDigest: 0,
-              unsupported: 0,
-              failed: 0,
-              truncation: [],
-              processing: [],
-            },
-            equivalence: 'not-assessed',
-          }
-        : undefined,
-      causes: [{ kind: 'proof-policy', source: 'proof-policy' }],
-    });
-    expect(proof[0]?.reason).toBe('proof-policy');
-
-    const profile = planQueryCacheInvalidation({
-      entries: [indexed],
-      delta: {
-        contract: GRAPH_DELTA_CONTRACT,
-        baseGeneration: 'generation:base',
-        targetGeneration: 'generation:target',
-        changedInputs: [],
-        affectedProviders: [],
-        facts: { added: [], renewed: [], removed: [], invalidated: [] },
-        graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
-        affectedProjections: ['workspai.graph.projection.dependency'],
-        downstreamInvalidations: ['query-cache:dependency-neighbors'],
-        execution: {
-          detected: 0,
-          scanned: 0,
-          parsed: 0,
-          recomputed: 0,
-          skippedByDigest: 0,
-          unsupported: 0,
-          failed: 0,
-          truncation: [],
-          processing: [],
-        },
-        equivalence: 'not-assessed',
-      },
-    });
-    expect(profile[0]?.reason).toBe('profile');
-
+        causes: [{ kind: 'ontology', source: 'ontology-profile' }],
+      })
+    ).toEqual([]);
     expect(
       planQueryCacheInvalidation({
         entries: [entry({ keyDigest: 'scope' })],

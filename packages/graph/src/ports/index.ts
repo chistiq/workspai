@@ -71,6 +71,11 @@ export interface GraphFileInventoryRequest {
   readonly excludedDirectories: readonly string[];
   readonly sensitiveFiles: 'omit-known';
   readonly signal?: AbortSignal;
+  /**
+   * When set, only these locators are content-hashed. `undefined` inventories
+   * the whole tree; `[]` hashes no files. Used for trusted skip-reread.
+   */
+  readonly onlyLocators?: readonly string[];
 }
 
 export interface GraphFileInventoryResult {
