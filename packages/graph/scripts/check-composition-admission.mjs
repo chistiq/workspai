@@ -117,9 +117,11 @@ function auditComposition(options) {
     graphRegistry?.stageStatus === 'in-progress' &&
     graphRegistry?.latestClosure === 'packages/graph/governance/g1-stage-approval.v1.json';
   const admittedHistoricalG2 =
-    graphRegistry?.currentStage === 'G3' &&
     graphRegistry?.stageStatus === 'in-progress' &&
-    graphRegistry?.latestClosure === 'packages/graph/governance/g2-stage-approval.v1.json';
+    ((graphRegistry?.currentStage === 'G3' &&
+      graphRegistry?.latestClosure === 'packages/graph/governance/g2-stage-approval.v1.json') ||
+      (graphRegistry?.currentStage === 'G4' &&
+        graphRegistry?.latestClosure === 'packages/graph/governance/g3-stage-approval.v1.json'));
   if (!inProgressG2 && !admittedHistoricalG2) {
     failures.push('Graph registry neither authorizes nor records admitted G2 work');
   }

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Admitted the signed G3 proof-carrying query candidate after the same-commit
+  Linux, macOS and Windows matrix and aggregate CI gate passed.
+- Opened G4 with a host-neutral, bounded and offline `buildRepoGraph` candidate
+  while keeping Node filesystem access behind the explicit adapter subpath.
+- Added deterministic repository topology, package manifest, ECMAScript and
+  cross-language import providers with explicit unsupported and unknown zones.
+- Kept executable commands, persistence, publication, CLI integration and native
+  acceleration blocked behind their remaining G4 and later-stage evidence.
+
 - Admitted the signed G2 deterministic composition candidate after retained
   Linux, macOS and Windows evidence passed the same-commit repository gate.
 - Added versioned proof policies, proof-carrying paths and cross-layer binding

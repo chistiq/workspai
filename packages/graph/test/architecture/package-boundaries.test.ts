@@ -162,10 +162,11 @@ describe('Graph architecture boundaries', () => {
     }
   });
 
-  it('does not expose adapters or internals from the root API', () => {
+  it('exposes the host-neutral repository build without leaking adapters or later stages', () => {
     const rootApi = fs.readFileSync(path.join(sourceRoot, 'index.ts'), 'utf8');
 
     expect(rootApi).not.toMatch(/adapters|internal|testing/);
-    expect(rootApi).not.toMatch(/buildRepoGraph|buildWorkspaceGraph/);
+    expect(rootApi).toMatch(/buildRepoGraph/);
+    expect(rootApi).not.toMatch(/buildWorkspaceGraph/);
   });
 });

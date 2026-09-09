@@ -4,6 +4,8 @@ import { validateWisCoreResultEnvelope } from '@workspai/shared/validation';
 import {
   GRAPH_PACKAGE_METADATA,
   GRAPH_STANDARD_COMPOSITION_POLICY,
+  GRAPH_STANDARD_REPO_BUILD_POLICY,
+  buildRepoGraph,
   composeGraph,
   getGraphPackageStatus,
   queryGraph,
@@ -21,7 +23,7 @@ import {
 describe('@workspai/graph development package', () => {
   it('is explicitly non-publishable and honest about implemented capabilities', () => {
     expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
-    expect(GRAPH_PACKAGE_METADATA.maturity).toBe('query-candidate');
+    expect(GRAPH_PACKAGE_METADATA.maturity).toBe('repository-preview-candidate');
     expect(GRAPH_PACKAGE_METADATA.implementedCapabilities).toEqual([
       'package-status',
       'shared-adoption-conformance',
@@ -58,11 +60,25 @@ describe('@workspai/graph development package', () => {
       'operational-risk-abstention',
       'query-result-semantic-admission',
       'query-scale-baseline',
+      'governed-repository-build-orchestration',
+      'bounded-repository-file-inventory-port',
+      'official-offline-repository-providers',
+      'node-repository-preview-adapter',
     ]);
   });
 
   it('exports the G3 proof-carrying query candidate without claiming stable publication', () => {
     expect(queryGraph).toBeTypeOf('function');
+    expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
+  });
+
+  it('exports the host-neutral G4 repository build candidate without Node coupling', () => {
+    expect(buildRepoGraph).toBeTypeOf('function');
+    expect(GRAPH_STANDARD_REPO_BUILD_POLICY).toMatchObject({
+      network: 'deny',
+      redactionProfile: 'portable-default',
+      sensitiveFiles: 'omit-known',
+    });
     expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
   });
 

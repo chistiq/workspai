@@ -3,6 +3,8 @@ export {
   GRAPH_REFERENCE_COMPOSITION_TASK,
   GRAPH_STANDARD_COMPOSITION_POLICY,
   GRAPH_STANDARD_PROOF_POLICY,
+  GRAPH_STANDARD_REPO_BUILD_POLICY,
+  buildRepoGraph,
   composeGraph,
   assessGraphEdgeProof,
   executeGraphReferenceCompositionTask,
@@ -17,6 +19,11 @@ export {
   type GraphCompositionResult,
   type GraphCompositionSource,
   type GraphReferenceCompositionTaskOutput,
+  type GraphRepoBuildMetrics,
+  type GraphRepoBuildPolicy,
+  type GraphRepoBuildQuality,
+  type GraphRepoBuildRequest,
+  type GraphRepoBuildResult,
   type GraphProofPolicyAssessment,
 } from './application/index.js';
 export {

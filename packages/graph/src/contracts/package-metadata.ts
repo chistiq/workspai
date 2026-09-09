@@ -5,7 +5,7 @@ export const GRAPH_PACKAGE_STATUS_CONTRACT = defineWisContract({
   version: '0.1.0-draft',
 });
 
-export const GRAPH_PACKAGE_MATURITY = 'query-candidate' as const;
+export const GRAPH_PACKAGE_MATURITY = 'repository-preview-candidate' as const;
 
 export const GRAPH_PACKAGE_METADATA = Object.freeze({
   name: '@workspai/graph',
@@ -48,12 +48,17 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'operational-risk-abstention',
     'query-result-semantic-admission',
     'query-scale-baseline',
+    'governed-repository-build-orchestration',
+    'bounded-repository-file-inventory-port',
+    'official-offline-repository-providers',
+    'node-repository-preview-adapter',
   ] as const,
   plannedCapabilities: [
     'projection',
     'incremental',
     'storage-adapters',
-    'provider-runtime',
+    'standalone-executable',
+    'project-local-persistence',
     'cli-shadow-parity',
   ] as const,
 });

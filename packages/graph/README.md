@@ -2,7 +2,7 @@
 
 Evidence-backed, storage-neutral workspace graph engine for Workspai.
 
-Status: **query candidate · development-only · not publishable**
+Status: **repository preview candidate · development-only · not publishable**
 
 > This is the developing independent Graph implementation. The released
 > Workspai CLI already contains the current official internal graph capability.
@@ -12,9 +12,11 @@ Status: **query candidate · development-only · not publishable**
 > gates.
 
 The package is intentionally available for internal and community development
-before publication. Its root API exposes the G2 deterministic composer and the
-G3 bounded, proof-carrying query candidate. Persistence, provider execution and
-CLI replacement stay unavailable until their later conformance gates complete.
+before publication. Its root API exposes the admitted deterministic composer,
+the bounded proof-carrying query engine and the host-neutral G4 repository build
+candidate. Node filesystem access is isolated under `@workspai/graph/adapters/node`.
+Persistence, executable commands and CLI replacement remain unavailable until
+their later conformance gates complete.
 
 The current `/conformance` surface includes the SH6 Shared-adoption boundary,
 the admitted G1 contract layer, G2 reference engine and G3 query suites. It validates WIS
@@ -28,6 +30,11 @@ Node hosts may explicitly import `@workspai/graph/adapters/node` to execute the
 portable reference-composition task outside the event loop. The package root
 remains host-neutral. Worker output is revalidated against admitted facts before
 it can influence a canonical graph.
+
+The G4 repository preview remains read-only, offline and explicit. The root
+`buildRepoGraph` API requires injected host ports and never creates `.workspai`
+metadata. The Node adapter provides the bounded filesystem implementation and
+official deterministic provider set as a separate convenience surface.
 
 ```ts
 import { admitGraphProviderOutput, assessGraphSharedEnvelope } from '@workspai/graph/conformance';
@@ -67,9 +74,9 @@ corepack npm --workspace @workspai/graph run test:contracts
 corepack npm --workspace @workspai/graph run pack:check
 ```
 
-Do not add a CLI bridge, executable command or public build/query API merely to
-make the scaffold look complete. Each surface is released only at its roadmap
-gate with contract and fixture evidence.
+Do not add a CLI bridge, executable command or persistence surface merely to make
+the package look complete. Each surface is released only at its roadmap gate
+with contract and fixture evidence.
 
 The canonical source, versioning, quality gates and any future npm publication
 remain in the `chistiq/workspai` monorepo. A future `workspai-graph` repository
@@ -83,5 +90,5 @@ boundaries, cost, truncation and an explicit analytical claim level.
 Consumer contracts, API guidance, provider authoring, security, architecture
 and roadmaps are maintained once in the canonical Workspai documentation
 portfolio. They are intentionally not duplicated in this public package
-repository or npm artifact. The approved G2 evidence authorizes G3 query work
-only; it does not claim standalone stability or release admission.
+repository or npm artifact. The approved G3 evidence authorizes G4 repository
+preview work only; it does not claim standalone stability or release admission.

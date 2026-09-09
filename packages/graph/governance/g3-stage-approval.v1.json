@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G3",
+  "asOf": "2026-09-09",
+  "status": "approved",
+  "advancesAdmissionGate": true,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Proof-carrying queries consume canonical graph generations without creating another Graph truth.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-closure.v1.json",
+        "packages/graph/governance/g3-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Traversal, evidence, pagination and pending paths remained bounded across the admitted matrix.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-closure.v1.json",
+        "packages/graph/governance/g3-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Declared small, normal and large query profiles passed their local budgets and remote package gates.",
+      "evidence": ["packages/graph/governance/g3-remote-admission.v1.json"]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Malformed generations, identities, cursors, budgets and semantic cache drift failed closed.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-closure.v1.json",
+        "packages/graph/governance/g3-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Authorization, redaction, scope and generation state remained exact query dependencies.",
+      "evidence": ["packages/graph/governance/g3-stage-closure.v1.json"]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "passed",
+      "summary": "Linux, macOS and Windows admitted the same signed G3 source through one pull-request run.",
+      "evidence": ["packages/graph/governance/g3-remote-admission.v1.json"]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "The installed package query engine passed without importing the central CLI runtime.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-closure.v1.json",
+        "packages/graph/governance/g3-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Normalization, proof paths, ordering, pagination and replay passed the required matrix.",
+      "evidence": ["packages/graph/governance/g3-remote-admission.v1.json"]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Versioned proof, binding, query, result and retrieval contracts remained fail closed.",
+      "evidence": ["packages/graph/governance/g3-stage-closure.v1.json"]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Unknowns, disputes, freshness, cost, truncation and analytical limits stayed machine readable.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-closure.v1.json",
+        "packages/graph/governance/g3-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Query, proof, cache, scale and governance rules retained package-owned executable evidence.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-closure.v1.json",
+        "packages/graph/governance/g3-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "A verified signed source, retained platform artifacts and successful aggregate gate authorize G4 only.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-closure.v1.json",
+        "packages/graph/governance/g3-remote-admission.v1.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "signed-source-checkpoint",
+      "status": "passed",
+      "evidence": "Commit ed18cd5cb435711e742a4dfd99d3778635bf695d has a verified maintainer signature."
+    },
+    {
+      "id": "same-commit-platform-matrix",
+      "status": "passed",
+      "evidence": "Linux, macOS and Windows query artifacts were admitted by run 34356880325."
+    },
+    {
+      "id": "repository-gate",
+      "status": "passed",
+      "evidence": "The aggregate CI Gate completed successfully."
+    }
+  ],
+  "measurements": {
+    "remotePlatforms": 3,
+    "retainedPlatformArtifacts": 3,
+    "retainedAdmissionCandidates": 1,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "passed" },
+  "remainingRisks": [
+    "Repository providers, executable surfaces and persistence remain governed by G4.",
+    "Empirical retrieval relevance and analytical accuracy remain explicitly unassessed.",
+    "Rust, native and WASM remain prohibited until G6 measurements justify an adapter.",
+    "Stable publication and CLI replacement remain prohibited by later gates."
+  ],
+  "nextStage": "G4",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-09-09",
+    "rule": "The verified signed candidate, retained same-commit matrix and successful repository gate authorize G4 repository preview work only."
+  }
+}

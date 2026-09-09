@@ -76,12 +76,16 @@ if (!validateClosure(closure))
   failures.push(
     `G3 closure violates the stage contract: ${JSON.stringify(validateClosure.errors)}`
   );
-if (
-  graph?.currentStage !== 'G3' ||
-  graph?.stageStatus !== 'in-progress' ||
-  graph?.latestClosure !== 'packages/graph/governance/g2-stage-approval.v1.json'
-)
-  failures.push('Graph registry is not authorized for in-progress G3 work');
+const inProgressG3 =
+  graph?.currentStage === 'G3' &&
+  graph?.stageStatus === 'in-progress' &&
+  graph?.latestClosure === 'packages/graph/governance/g2-stage-approval.v1.json';
+const admittedHistoricalG3 =
+  graph?.currentStage === 'G4' &&
+  graph?.stageStatus === 'in-progress' &&
+  graph?.latestClosure === 'packages/graph/governance/g3-stage-approval.v1.json';
+if (!inProgressG3 && !admittedHistoricalG3)
+  failures.push('Graph registry neither authorizes nor records admitted G3 work');
 if (plan.stage !== 'G3' || plan.nextStageAuthorized !== false)
   failures.push('G3 plan identity or fail-closed state drifted');
 if (
@@ -109,7 +113,13 @@ const report = {
   package: manifest.name,
   version: manifest.version,
   stage: 'G3',
-  status: failures.length ? 'invalid' : ciEvidence ? 'passed-platform' : 'pending-remote',
+  status: failures.length
+    ? 'invalid'
+    : ciEvidence
+      ? 'passed-platform'
+      : admittedHistoricalG3
+        ? 'approved-historical'
+        : 'pending-remote',
   admitted: false,
   closureDigest: digestFiles([closurePath]),
   planDigest: digestFiles(['packages/graph/governance/g3-stage-plan.v1.json']),

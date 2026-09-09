@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('Graph G3 query admission', () => {
-  it('reports an honest local remote-pending candidate', () => {
+  it('retains an honest historical audit after G3 admission', () => {
     const result = spawnSync(process.execPath, ['scripts/check-query-admission.mjs'], {
       cwd: packageRoot,
       encoding: 'utf8',
@@ -25,7 +25,7 @@ describe('Graph G3 query admission', () => {
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       stage: 'G3',
-      status: 'pending-remote',
+      status: 'approved-historical',
       admitted: false,
       failures: [],
     });

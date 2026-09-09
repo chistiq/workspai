@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G4",
+  "status": "in-progress",
+  "authorizedBy": "packages/graph/governance/g3-stage-approval.v1.json",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g4",
+    "workspai-docs:Packages/graph/PROVIDER_AUTHORING.md",
+    "workspai-docs:Packages/graph/STANDALONE_AND_WORKSPACE_INTEGRATION.md",
+    "workspai-docs:Packages/graph/SECURITY_AND_PRIVACY.md",
+    "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "host-neutral-repository-build",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/build-repo-graph.ts",
+        "packages/graph/test/build/repo-build.test.ts"
+      ]
+    },
+    {
+      "id": "bounded-node-file-inventory",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/adapters/node/repository-file-source.ts",
+        "packages/graph/test/adapters/node-file-source.test.ts"
+      ]
+    },
+    {
+      "id": "initial-offline-provider-set",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/providers/index.ts",
+        "packages/graph/test/build/repo-build.test.ts"
+      ]
+    },
+    {
+      "id": "installed-repository-preview",
+      "status": "implemented-local-candidate",
+      "evidence": ["packages/graph/scripts/check-packed-package.mjs"]
+    },
+    {
+      "id": "standalone-executable-surfaces",
+      "status": "planned",
+      "evidence": ["packages/graph/package.json"]
+    },
+    {
+      "id": "project-local-atomic-persistence",
+      "status": "planned",
+      "evidence": ["packages/graph/src/ports/index.ts"]
+    },
+    {
+      "id": "g4-cross-platform-admission",
+      "status": "planned",
+      "evidence": [".github/workflows/ci.yml"]
+    }
+  ],
+  "defaultSecurityProfile": {
+    "sourceAccess": "read-only-within-resolved-root",
+    "network": "deny",
+    "processExecution": "deny",
+    "credentials": "deny",
+    "implicitMetadataWrites": "deny"
+  },
+  "requiredLanguageFixtures": ["node", "python", "go", "java", "dotnet"],
+  "additionalBestEffortLanguageFixtures": ["rust"],
+  "prohibitions": [
+    "No repository-controlled code, package manager, build or hook execution in the default profile.",
+    "No implicit network, credential access or metadata write.",
+    "No empty success for unsupported, excluded, failed or truncated zones.",
+    "No provider bypass around FactBatch admission or canonical composition.",
+    "No central CLI runtime import or second Graph truth.",
+    "No workspace graph, stable publication or CLI replacement claim."
+  ],
+  "nativeAcceleration": {
+    "status": "prohibited",
+    "earliestDecisionStage": "G6",
+    "rule": "Rust source analysis is a provider capability; Rust, native and WASM execution may accelerate only benchmark-proven hot paths behind parity-checked adapters."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G5",
+  "nextStageAuthorized": false
+}
