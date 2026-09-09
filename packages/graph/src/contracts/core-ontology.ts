@@ -16,6 +16,8 @@ const entities = Object.freeze([
   ['package', 'source'],
   ['file', 'source'],
   ['symbol', 'source'],
+  ['branch', 'source'],
+  ['revision', 'source'],
   ['api', 'interface'],
   ['endpoint', 'interface'],
   ['schema', 'interface'],

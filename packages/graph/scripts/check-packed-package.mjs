@@ -126,7 +126,7 @@ try {
       import type { GraphProviderManifest, WorkspaiGraphProviderManifestCandidate } from '@workspai/graph/contracts';
       import { GRAPH_PROVIDER_MANIFEST_CONTRACT, GRAPH_IDENTITY_SCHEME } from '@workspai/graph/contracts';
       import { validateGraphProviderManifest } from '@workspai/graph/conformance';
-      import { composeGraph, GRAPH_STANDARD_COMPOSITION_POLICY, queryGraph } from '@workspai/graph';
+      import { buildReviewContextSlice, composeGraph, GRAPH_STANDARD_COMPOSITION_POLICY, projectRepositoryPreview, queryGraph } from '@workspai/graph';
       import type { GraphExecutionPorts } from '@workspai/graph';
       const wire: WorkspaiGraphProviderManifestCandidate = {
         contract: GRAPH_PROVIDER_MANIFEST_CONTRACT,
@@ -144,6 +144,8 @@ try {
       void ports;
       void GRAPH_STANDARD_COMPOSITION_POLICY;
       void queryGraph;
+      void projectRepositoryPreview;
+      void buildReviewContextSlice;
     `,
     'utf8'
   );
@@ -218,7 +220,7 @@ try {
         };
         if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
         const standardProviders = providers.createStandardRepositoryProviders();
-        if (standardProviders.length !== 5 || !Object.isFrozen(standardProviders)) process.exit(30);
+        if (standardProviders.length !== 7 || !Object.isFrozen(standardProviders)) process.exit(30);
         const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
         if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
         const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
@@ -244,6 +246,10 @@ try {
         const preview = await buildNodeRepoGraph({ root: process.cwd() });
         if (!['complete', 'partial'].includes(preview.status) || !preview.graph || preview.metrics.inputFiles < 2) {
           throw new Error('Packed repository preview failed: ' + JSON.stringify(preview));
+        }
+        const view = graph.projectRepositoryPreview(preview.graph, preview.quality.graph, 'evidence', { maxNodes: 100, maxEdges: 100, maxEvidence: 100 });
+        if (!view.accepted || view.value.sourceGeneration.id !== preview.graph.generation.reference.id) {
+          throw new Error('Packed repository preview view lost canonical generation identity');
         }
         const { existsSync } = await import('node:fs');
         if (existsSync('.workspai')) throw new Error('Repository preview created forbidden metadata');
@@ -277,11 +283,26 @@ try {
   if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
     throw new Error('packed Graph CLI wrote metadata without --write');
   }
+  const structuralView = runCli(['inspect', '.', '--view', 'structural', '--json']);
+  if (
+    structuralView.data?.view?.view !== 'structural' ||
+    !structuralView.data?.view?.sourceGeneration
+  ) {
+    throw new Error('packed Graph CLI did not emit the structural preview view');
+  }
   const providerList = runCli(['providers', 'list', '--json']);
-  if (!Array.isArray(providerList.data) || providerList.data.length !== 5) {
+  if (!Array.isArray(providerList.data) || providerList.data.length !== 7) {
     throw new Error('packed Graph CLI provider inventory is incomplete');
   }
   runCli(['query', '.', '--preset', 'entryPoints', '--json']);
+  const reviewSlice = runCli(['query', '.', '--preset', 'reviewContext', '--slice', '--json']);
+  if (
+    reviewSlice.data?.contract?.id !== 'workspai.graph.review-context-slice' ||
+    !reviewSlice.data?.sourceGeneration ||
+    !reviewSlice.data?.sourceQueryDigest
+  ) {
+    throw new Error('packed Graph CLI did not emit a provenance-bound review context slice');
+  }
   runCli(['quality', '.', '--json'], [0, 2]);
   const writtenPreview = runCli(['inspect', '.', '--write', '--json']);
   if (!['committed', 'already-current'].includes(writtenPreview.data?.publication?.status)) {
@@ -330,6 +351,9 @@ try {
     'schemas/graph-query.v0.1.0-candidate.schema.json',
     'schemas/graph-query-result.v0.1.0-candidate.schema.json',
     'schemas/retrieval-plan.v0.1.0-candidate.schema.json',
+    'schemas/repository-preview-view.v0.1.0-candidate.schema.json',
+    'schemas/review-context-slice.v0.1.0-candidate.schema.json',
+    'schemas/structural-extractor-profile.v0.1.0-candidate.schema.json',
   ]) {
     if (!paths.includes(requiredPath))
       throw new Error(`packed Graph package omits ${requiredPath}`);

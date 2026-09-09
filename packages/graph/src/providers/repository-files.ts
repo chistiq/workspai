@@ -6,9 +6,46 @@ import {
   type GraphFactBatch,
   type GraphProviderRuntime,
   type GraphWorkspaceFact,
+  GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE,
 } from '../contracts/index.js';
 
 export const REPOSITORY_FILES_PROVIDER_ID = 'workspai.graph.provider.repository-files';
+
+const SUPPORTED_SOURCE_EXTENSIONS = new Set(
+  GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE.languages.flatMap((profile) => profile.extensions)
+);
+const KNOWN_SOURCE_EXTENSIONS = new Set([
+  ...SUPPORTED_SOURCE_EXTENSIONS,
+  '.c',
+  '.cc',
+  '.clj',
+  '.cljs',
+  '.cpp',
+  '.dart',
+  '.ex',
+  '.exs',
+  '.fs',
+  '.fsx',
+  '.groovy',
+  '.hs',
+  '.kt',
+  '.kts',
+  '.lua',
+  '.m',
+  '.mm',
+  '.php',
+  '.rb',
+  '.scala',
+  '.sol',
+  '.swift',
+  '.zig',
+]);
+
+function extension(locator: string): string {
+  const basename = locator.slice(locator.lastIndexOf('/') + 1);
+  const dot = basename.lastIndexOf('.');
+  return dot <= 0 ? '' : basename.slice(dot).toLowerCase();
+}
 
 export function createRepositoryFilesProvider(): GraphProviderRuntime {
   const manifest = {
@@ -42,8 +79,12 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
     detect: (request) => ({
       contract: GRAPH_PROVIDER_DETECTION_CONTRACT,
       provider: { id: manifest.id, version: manifest.version },
-      status: request.availableInputs.length > 0 ? 'applicable' : 'not-applicable',
-      matchedInputs: request.availableInputs.length > 0 ? ['repository-files'] : [],
+      status: request.availableInputs.some((input) => !input.startsWith('.git/'))
+        ? 'applicable'
+        : 'not-applicable',
+      matchedInputs: request.availableInputs.some((input) => !input.startsWith('.git/'))
+        ? ['repository-files']
+        : [],
       missingPermissions: [],
       diagnostics: [],
     }),
@@ -60,7 +101,21 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
       }
 
       const facts: GraphWorkspaceFact[] = [];
-      for (const [index, input] of request.inputs.entries()) {
+      const inputs = request.inputs.filter((input) => !input.locator.startsWith('.git/'));
+      const unsupportedZones = inputs
+        .filter((input) => {
+          const sourceExtension = extension(input.locator);
+          return (
+            KNOWN_SOURCE_EXTENSIONS.has(sourceExtension) &&
+            !SUPPORTED_SOURCE_EXTENSIONS.has(sourceExtension)
+          );
+        })
+        .map((input) => ({
+          code: 'graph.source-language-unsupported',
+          scope: input.locator,
+          reason: `Structural extraction does not support ${extension(input.locator)} source files.`,
+        }));
+      for (const [index, input] of inputs.entries()) {
         if (request.signal?.aborted) throw new Error('Repository file collection was cancelled.');
         const file = await request.resolveIdentity({
           namespace: 'workspai',
@@ -104,23 +159,23 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
       const batch: GraphFactBatch = {
         contract: GRAPH_FACT_BATCH_CONTRACT,
         provider: { id: manifest.id, version: manifest.version },
-        batchId: `batch:repository-files:${request.inputs.length}`,
+        batchId: `batch:repository-files:${inputs.length}`,
         scope: request.scope,
-        inputs: request.inputs.map((input) => ({ locator: input.locator, digest: input.digest })),
+        inputs: inputs.map((input) => ({ locator: input.locator, digest: input.digest })),
         facts,
         diagnostics: [],
         coverage: [
           {
             dimension: 'repository-files',
-            observed: request.inputs.length,
-            expected: request.inputs.length,
+            observed: inputs.length,
+            expected: inputs.length,
           },
         ],
         unknownZones: [],
-        unsupportedZones: [],
+        unsupportedZones,
         redaction: { policy: 'portable-default', redacted: 0, omitted: 0 },
-        status: 'complete',
-        processing: request.inputs.map((input) => ({
+        status: unsupportedZones.length > 0 ? 'partial' : 'complete',
+        processing: inputs.map((input) => ({
           input: { locator: input.locator, digest: input.digest },
           provider: { id: manifest.id, version: manifest.version },
           stage: { id: 'repository-file-inventory', version: manifest.version },

@@ -168,4 +168,59 @@ describe('Node repository file source', () => {
       expect.objectContaining({ code: 'graph.repository-directory-truncated' })
     );
   });
+
+  it('admits only repository-local Git HEAD metadata and excludes other Git state', async () => {
+    const root = await fixture();
+    await fs.mkdir(path.join(root, '.git'), { recursive: true });
+    await fs.writeFile(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    await fs.writeFile(
+      path.join(root, '.git', 'config'),
+      '[remote "origin"]\nurl = https://secret@example.invalid/private.git\n'
+    );
+    const source = createNodeGraphFileSource();
+    const result = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['.git', 'node_modules'],
+      sensitiveFiles: 'omit-known',
+    });
+
+    expect(result.inputs.map((candidate) => candidate.locator)).toContain('.git/HEAD');
+    expect(result.inputs.map((candidate) => candidate.locator)).not.toContain('.git/config');
+    expect(JSON.stringify(result)).not.toContain('secret@example.invalid');
+    const head = result.inputs.find((candidate) => candidate.locator === '.git/HEAD');
+    expect(head).toBeDefined();
+    if (!head) return;
+    await expect(source.read(root, head, { maxBytes: 4_096 })).resolves.toEqual(
+      new TextEncoder().encode('ref: refs/heads/main\n')
+    );
+  });
+
+  it('does not follow or expose Git worktree indirection outside the repository', async () => {
+    const root = await fixture();
+    const externalGitDirectory = path.join(root, '..', 'private-worktree-metadata');
+    await fs.writeFile(path.join(root, '.git'), `gitdir: ${externalGitDirectory}\n`);
+    const source = createNodeGraphFileSource();
+    const result = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['.git', 'node_modules'],
+      sensitiveFiles: 'omit-known',
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.inputs.map((candidate) => candidate.locator)).not.toContain('.git');
+    expect(result.unsupportedZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.git-indirection-unsupported' })
+    );
+    expect(JSON.stringify(result)).not.toContain(externalGitDirectory);
+  });
 });

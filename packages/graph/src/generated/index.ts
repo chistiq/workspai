@@ -18,4 +18,7 @@ export type { WorkspaiGraphQueryCacheEntryCandidate } from './query-cache-entry.
 export type { WorkspaiGraphQueryCacheInvalidationCandidate } from './query-cache-invalidation.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCacheKeyCandidate } from './query-cache-key.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCacheReuseCandidate } from './query-cache-reuse.v0.1.0-candidate.js';
+export type { WorkspaiGraphRepositoryPreviewViewCandidate } from './repository-preview-view.v0.1.0-candidate.js';
 export type { WorkspaiGraphRetrievalPlanCandidate } from './retrieval-plan.v0.1.0-candidate.js';
+export type { WorkspaiGraphReviewContextSliceCandidate } from './review-context-slice.v0.1.0-candidate.js';
+export type { WorkspaiGraphStructuralExtractorProfileCandidate } from './structural-extractor-profile.v0.1.0-candidate.js';

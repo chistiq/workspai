@@ -4,6 +4,7 @@ export {
   GRAPH_STANDARD_COMPOSITION_POLICY,
   GRAPH_STANDARD_PROOF_POLICY,
   GRAPH_STANDARD_REPO_BUILD_POLICY,
+  GRAPH_PROJECT_ARTIFACT_FILES,
   buildRepoGraph,
   composeGraph,
   assessGraphEdgeProof,
@@ -73,3 +74,18 @@ export type {
   GraphProjectPublicationRequest,
   GraphProjectPublicationResult,
 } from './ports/index.js';
+export {
+  GRAPH_PROJECTIONS_AVAILABLE,
+  GRAPH_REPOSITORY_PREVIEW_VIEW_CONTRACT,
+  GRAPH_REPOSITORY_PREVIEW_VIEWS_AVAILABLE,
+  GRAPH_REVIEW_CONTEXT_SLICE_CONTRACT,
+  buildReviewContextSlice,
+  projectRepositoryPreview,
+  type GraphRepositoryPreviewView,
+  type GraphRepositoryPreviewViewBudget,
+  type GraphRepositoryPreviewViewExecution,
+  type GraphRepositoryPreviewViewResult,
+  type GraphReviewContextSliceBudget,
+  type GraphReviewContextSliceExecution,
+  type GraphReviewContextSliceResult,
+} from './projections/index.js';

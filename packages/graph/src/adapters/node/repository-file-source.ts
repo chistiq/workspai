@@ -155,6 +155,18 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               omittedFiles += 1;
               continue;
             }
+            if (current.directory === root && entry.name === '.git' && !entry.isDirectory()) {
+              const metadata = await fs.lstat(target);
+              omittedFiles += 1;
+              omittedBytes += metadata.isFile() ? metadata.size : 0;
+              unsupportedZones.push({
+                code: 'graph.git-indirection-unsupported',
+                scope: 'repository',
+                reason:
+                  'Git worktree indirection is excluded because its metadata may cross the repository boundary.',
+              });
+              continue;
+            }
             if (entry.isDirectory()) {
               if (!excluded.has(entry.name)) {
                 if (current.depth >= request.maxDepth) {
@@ -216,6 +228,63 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               digest: { algorithm: 'sha256', value },
             });
             totalBytes += stable.size;
+          }
+        }
+        const gitDirectory = path.join(root, '.git');
+        try {
+          const gitDirectoryStat = await fs.lstat(gitDirectory);
+          if (gitDirectoryStat.isDirectory() && !gitDirectoryStat.isSymbolicLink()) {
+            const head = path.join(gitDirectory, 'HEAD');
+            const headStat = await fs.lstat(head);
+            if (headStat.isSymbolicLink() || !headStat.isFile()) {
+              unsupportedZones.push({
+                code: 'graph.git-head-special-entry-unsupported',
+                scope: 'repository',
+                reason: 'Git HEAD must be a real repository-local regular file.',
+              });
+            } else if (headStat.size > 4_096) {
+              omittedFiles += 1;
+              omittedBytes += headStat.size;
+              unsupportedZones.push({
+                code: 'graph.git-head-size-unsupported',
+                scope: 'repository',
+                reason: 'Git HEAD exceeds the fixed safe metadata size ceiling.',
+              });
+            } else {
+              if (
+                inputs.length < request.maxFiles &&
+                totalBytes + headStat.size <= request.maxTotalBytes &&
+                headStat.size <= request.maxFileBytes
+              ) {
+                const stable = await readStableFile(head, 4_096, request.signal);
+                inputs.push({
+                  locator: '.git/HEAD',
+                  mediaType: 'text/plain',
+                  byteLength: stable.size,
+                  digest: {
+                    algorithm: 'sha256',
+                    value: createHash('sha256').update(stable.bytes).digest('hex'),
+                  },
+                });
+                totalBytes += stable.size;
+              } else {
+                omittedFiles += 1;
+                omittedBytes += headStat.size;
+                unknownZones.push({
+                  code: 'graph.git-head-budget-omitted',
+                  scope: 'repository',
+                  reason: 'Git HEAD evidence exceeded the admitted repository inventory budget.',
+                });
+              }
+            }
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            unsupportedZones.push({
+              code: 'graph.git-head-unavailable',
+              scope: 'repository',
+              reason: 'Git HEAD metadata could not be safely admitted from this repository.',
+            });
           }
         }
         inputs.sort((left, right) => left.locator.localeCompare(right.locator));

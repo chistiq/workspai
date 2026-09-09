@@ -18,6 +18,13 @@ import type {
   GraphQueryExecutionResult,
 } from './contracts/index.js';
 import { createStandardRepositoryProviders } from './providers/index.js';
+import {
+  buildReviewContextSlice,
+  projectRepositoryPreview,
+  type GraphRepositoryPreviewView,
+  type GraphRepositoryPreviewViewExecution,
+  type GraphReviewContextSliceExecution,
+} from './projections/index.js';
 
 type GraphCliCommand = 'inspect' | 'quality' | 'query' | 'providers';
 
@@ -32,6 +39,8 @@ interface GraphCliOptions {
   readonly preset?: keyof typeof GRAPH_QUERY_PRESETS;
   readonly subject?: string;
   readonly target?: string;
+  readonly view?: GraphRepositoryPreviewView;
+  readonly slice: boolean;
 }
 
 export interface GraphCliIo {
@@ -48,15 +57,23 @@ export interface GraphCliDependencies {
     signal: AbortSignal
   ): ReturnType<typeof writeGraphGeneration>;
   query(graph: GraphCanonicalGraph, query: GraphQuery): Promise<GraphQueryExecutionResult<unknown>>;
+  slice(
+    result: GraphQueryExecutionResult<unknown> & { readonly accepted: true }
+  ): GraphReviewContextSliceExecution;
+  project(
+    graph: GraphCanonicalGraph,
+    quality: NonNullable<GraphRepoBuildResult['quality']['graph']>,
+    view: GraphRepositoryPreviewView
+  ): GraphRepositoryPreviewViewExecution;
   providers(): readonly GraphProviderRuntime[];
 }
 
 const HELP = `Workspai Graph repository preview
 
 Usage:
-  workspai-graph inspect [root] [--mode project-only] [--write] [--json]
+  workspai-graph inspect [root] [--mode project-only] [--view source|structural|evidence] [--write] [--json]
   workspai-graph quality [root] [--json]
-  workspai-graph query [root] --preset <name> [--subject <id>] [--target <id>] [--json]
+  workspai-graph query [root] --preset <name> [--subject <id>] [--target <id>] [--slice] [--json]
   workspai-graph providers list [--json]
   workspai-graph providers inspect <provider-id> [--json]
 
@@ -84,6 +101,8 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
   let preset: keyof typeof GRAPH_QUERY_PRESETS | undefined;
   let subject: string | undefined;
   let target: string | undefined;
+  let view: GraphRepositoryPreviewView | undefined;
+  let slice = false;
   let providerAction: 'list' | 'inspect' | undefined;
   let providerId: string | undefined;
   const positionals: string[] = [];
@@ -91,6 +110,10 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
     const argument = args[index];
     if (argument === '--json') {
       json = true;
+      continue;
+    }
+    if (argument === '--slice') {
+      slice = true;
       continue;
     }
     if (argument === '--write') write = true;
@@ -114,6 +137,13 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
     } else if (argument === '--target') {
       target = takeValue(args, index, argument);
       index += 1;
+    } else if (argument === '--view') {
+      const value = takeValue(args, index, argument);
+      index += 1;
+      if (!['source', 'structural', 'evidence'].includes(value)) {
+        throw new GraphCliInputError(`Unknown repository preview view: ${value}`);
+      }
+      view = value as GraphRepositoryPreviewView;
     } else if (argument?.startsWith('-'))
       throw new GraphCliInputError(`Unknown option: ${argument}`);
     else positionals.push(argument ?? '');
@@ -141,6 +171,10 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
     throw new GraphCliInputError('Query requires --preset <name>.');
   if (command !== 'query' && (preset || subject || target))
     throw new GraphCliInputError('Query options are supported only by query.');
+  if (command !== 'inspect' && view)
+    throw new GraphCliInputError('--view is supported only by inspect.');
+  if (slice && (command !== 'query' || preset !== 'reviewContext'))
+    throw new GraphCliInputError('--slice is supported only by the reviewContext query preset.');
 
   return {
     command: command as GraphCliCommand,
@@ -153,6 +187,8 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
     preset,
     subject,
     target,
+    view,
+    slice,
   };
 }
 
@@ -198,6 +234,8 @@ function defaultDependencies(): GraphCliDependencies {
       const ports = createNodeGraphProductHostPorts();
       return queryGraph(graph, input, ports.digest);
     },
+    slice: (result) => buildReviewContextSlice(result.value),
+    project: projectRepositoryPreview,
     providers: createStandardRepositoryProviders,
   };
 }
@@ -285,6 +323,25 @@ export async function runGraphCli(
   }
 
   if (options.command === 'inspect') {
+    const view =
+      options.view && build.quality.graph
+        ? dependencies.project(build.graph, build.quality.graph, options.view)
+        : undefined;
+    if (view && !view.accepted) {
+      emit(
+        io,
+        options.json,
+        true,
+        envelope(
+          'inspect',
+          'failed',
+          view,
+          view.issues.map((issue) => ({ ...issue, severity: 'error' as const }))
+        ),
+        `Graph view failed. ${view.issues.map((issue) => issue.message).join(' ')}`
+      );
+      return 3;
+    }
     const publication = options.write
       ? await dependencies.publish(options.root, build, signal)
       : undefined;
@@ -305,10 +362,24 @@ export async function runGraphCli(
       envelope(
         'inspect',
         build.status,
-        { build, ...(publication ? { publication: publication.value } : {}) },
+        {
+          ...(view?.accepted
+            ? {
+                build: {
+                  status: build.status,
+                  quality: build.quality,
+                  providers: build.providers,
+                  diagnostics: build.diagnostics,
+                  metrics: build.metrics,
+                },
+                view: view.value,
+              }
+            : { build }),
+          ...(publication ? { publication: publication.value } : {}),
+        },
         build.diagnostics
       ),
-      `Graph preview: ${build.status}\nFiles: ${build.metrics.inputFiles}\nNodes: ${build.graph.nodes.length}\nEdges: ${build.graph.edges.length}${publication ? `\nPublication: ${publication.value.status}` : ''}`
+      `Graph preview: ${build.status}\nFiles: ${build.metrics.inputFiles}\nNodes: ${view?.accepted ? view.value.nodes.length : build.graph.nodes.length}\nEdges: ${view?.accepted ? view.value.edges.length : build.graph.edges.length}${options.view ? `\nView: ${options.view}` : ''}${publication ? `\nPublication: ${publication.value.status}` : ''}`
     );
     return 0;
   }
@@ -351,12 +422,33 @@ export async function runGraphCli(
     );
     return result.code === 'resource-limit' ? 2 : 3;
   }
+  const slice = options.slice ? dependencies.slice(result) : undefined;
+  if (slice && !slice.accepted) {
+    emit(
+      io,
+      options.json,
+      true,
+      envelope(
+        'query',
+        'failed',
+        slice,
+        slice.issues.map((issue) => ({ ...issue, severity: 'error' as const }))
+      ),
+      `Graph review context slice failed. ${slice.issues.map((issue) => issue.message).join(' ')}`
+    );
+    return 3;
+  }
   emit(
     io,
     options.json,
     false,
-    envelope('query', build.status, result.value, build.diagnostics),
-    `Graph query: ${build.status}\nPreset: ${options.preset ?? ''}`
+    envelope(
+      'query',
+      build.status,
+      slice?.accepted ? slice.value : result.value,
+      build.diagnostics
+    ),
+    `Graph query: ${build.status}\nPreset: ${options.preset ?? ''}${slice?.accepted ? '\nOutput: bounded review context slice' : ''}`
   );
   return 0;
 }

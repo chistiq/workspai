@@ -53,12 +53,19 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'official-offline-repository-providers',
     'node-repository-preview-adapter',
     'repository-contract-runtime-delivery-surfaces',
+    'safe-local-git-head-evidence',
+    'declarative-structural-extractor-profile',
+    'literal-route-extraction',
+    'unsupported-language-abstention',
+    'multi-language-repository-fixtures',
+    'fixed-repository-preview-views',
+    'bounded-review-context-slice',
     'project-local-atomic-persistence',
     'explicit-generation-publication',
     'standalone-executable',
     'installed-cli-smoke',
   ] as const,
-  plannedCapabilities: ['projection', 'incremental', 'cli-shadow-parity'] as const,
+  plannedCapabilities: ['profile-driven-projection', 'incremental', 'cli-shadow-parity'] as const,
 });
 
 export type GraphPackageMetadata = typeof GRAPH_PACKAGE_METADATA;

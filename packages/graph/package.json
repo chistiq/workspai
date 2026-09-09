@@ -90,6 +90,8 @@
     "pack:dry": "corepack npm pack --dry-run",
     "pack:check": "node scripts/check-packed-package.mjs",
     "admission:audit": "node scripts/check-repository-preview-stage.mjs",
+    "admission:repository-preview:audit": "node scripts/check-repository-preview-admission.mjs",
+    "admission:repository-preview:matrix": "node scripts/check-repository-preview-matrix-admission.mjs",
     "admission:matrix": "node scripts/check-query-matrix-admission.mjs",
     "admission:query:audit": "node scripts/check-query-admission.mjs",
     "admission:composition:audit": "node scripts/check-composition-admission.mjs --allow-pending",

@@ -103,9 +103,24 @@
       "sha256": "1c7b70110412c07d1395904ab404d885e7a5d7956d618d9c045f60e55b998f94"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/repository-preview-view/v0.1.0-candidate",
+      "file": "schemas/repository-preview-view.v0.1.0-candidate.schema.json",
+      "sha256": "8b8fdcd8bde18f1760e0340631b84e10fff524496f6c7d46d0321273e654bc69"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/retrieval-plan/v0.1.0-candidate",
       "file": "schemas/retrieval-plan.v0.1.0-candidate.schema.json",
       "sha256": "43c0f919b01c032502c9d2acfea3770a714646c2972de82a483189f4c1662df4"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/review-context-slice/v0.1.0-candidate",
+      "file": "schemas/review-context-slice.v0.1.0-candidate.schema.json",
+      "sha256": "4f4bc3775a48a38efa79165edfce33a1f5bbd70c2d69943db1e00f2348efab1a"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",
+      "file": "schemas/structural-extractor-profile.v0.1.0-candidate.schema.json",
+      "sha256": "21c48f143d318d59f26e3861a836529b404d1d6d9e247901408367db01f223e8"
     }
   ]
 }

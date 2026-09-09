@@ -10,10 +10,22 @@
   cross-language import providers with explicit unsupported and unknown zones.
 - Added evidence-backed API contract, runtime/container, CI workflow and test
   surface discovery without executing repository-controlled code.
+- Added bounded literal-route evidence for Node, Python, Go, Java and .NET plus
+  explicit abstention for computed routes and unsupported source languages.
+- Added a schema-governed structural extractor profile and real Node, Python,
+  Go, Java, .NET, Rust and unsupported-language repository fixtures.
+- Added safe repository-local Git HEAD evidence without reading Git config,
+  following worktree indirection or invoking Git.
+- Added bounded source, structural and evidence preview views that preserve the
+  canonical generation and keep generalized projections blocked until G5.
+- Added a deterministic review-context slice with independent item and byte
+  budgets, source generation/query provenance and explicit truncation.
 - Added the standalone `workspai-graph` repository-preview executable with
   inspect, quality, query and provider inventory surfaces.
 - Added explicit project-local publication with immutable content-addressed
   generations, writer exclusion, integrity verification and pointer-last commit.
+- Made the portable generation pointer self-resolving with project-relative
+  immutable artifact paths bound to their content digests.
 - Added installed-tarball CLI coverage proving default read-only behavior,
   bundled worker resolution and explicit portable publication.
 - Kept central CLI integration and native acceleration blocked behind their

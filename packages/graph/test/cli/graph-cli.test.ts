@@ -65,6 +65,25 @@ function harness(build: GraphRepoBuildResult = result('complete')): {
             issues: [],
           }) as unknown as GraphQueryExecutionResult<unknown>
       ),
+      slice: vi.fn(
+        () =>
+          ({
+            accepted: true as const,
+            value: { profile: { id: 'workspai.graph.review-context-slice.standard' } },
+            issues: [] as const,
+          }) as unknown as ReturnType<GraphCliDependencies['slice']>
+      ),
+      project: vi.fn(
+        () =>
+          ({
+            accepted: true as const,
+            value: {
+              nodes: [],
+              edges: [],
+            },
+            issues: [] as const,
+          }) as unknown as ReturnType<GraphCliDependencies['project']>
+      ),
       providers: createStandardRepositoryProviders,
     },
   };
@@ -97,6 +116,10 @@ describe('workspai-graph CLI', () => {
     ['query', '--preset', 'unknown'],
     ['query'],
     ['quality', '--write'],
+    ['quality', '--view', 'source'],
+    ['query', '--preset', 'entryPoints', '--slice'],
+    ['inspect', '--slice'],
+    ['inspect', '--view', 'unknown'],
     ['inspect', '--mode', 'project-and-default-workspace'],
     ['inspect', '--subject', 'entity:unexpected'],
     ['inspect', 'one', 'two'],
@@ -132,6 +155,23 @@ describe('workspai-graph CLI', () => {
     const human = harness();
     expect(await runGraphCli(['inspect'], human.io, human.dependencies)).toBe(0);
     expect(human.output[0]).toContain('Graph preview: complete');
+
+    const projected = harness();
+    expect(
+      await runGraphCli(
+        ['inspect', '.', '--view', 'evidence', '--json'],
+        projected.io,
+        projected.dependencies
+      )
+    ).toBe(0);
+    expect(projected.dependencies.project).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'evidence'
+    );
+    expect(JSON.parse(projected.output[0] ?? '{}')).toMatchObject({
+      data: { view: { nodes: [], edges: [] } },
+    });
   });
 
   it('uses quality exit 2 for an honest partial repository build', async () => {
@@ -180,11 +220,45 @@ describe('workspai-graph CLI', () => {
     ).toBe(2);
   });
 
+  it('emits a bounded slice only for the fixed review context preset', async () => {
+    const test = harness();
+    expect(
+      await runGraphCli(
+        ['query', '--preset', 'reviewContext', '--slice', '--json'],
+        test.io,
+        test.dependencies
+      )
+    ).toBe(0);
+    expect(test.dependencies.slice).toHaveBeenCalledOnce();
+    expect(JSON.parse(test.output[0] ?? '{}')).toMatchObject({
+      command: 'query',
+      data: { profile: { id: 'workspai.graph.review-context-slice.standard' } },
+    });
+
+    test.dependencies.slice = vi.fn(() => ({
+      accepted: false as const,
+      issues: [
+        {
+          code: 'GRAPH_REVIEW_CONTEXT_SLICE_BUDGET_INVALID',
+          path: '/budget',
+          message: 'Invalid slice budget.',
+        },
+      ],
+    }));
+    expect(
+      await runGraphCli(
+        ['query', '--preset', 'reviewContext', '--slice'],
+        test.io,
+        test.dependencies
+      )
+    ).toBe(3);
+  });
+
   it('lists and inspects only the admitted offline provider set', async () => {
     const test = harness();
     expect(await runGraphCli(['providers', 'list', '--json'], test.io, test.dependencies)).toBe(0);
     const list = JSON.parse(test.output[0] ?? '{}') as { data: { id: string }[] };
-    expect(list.data).toHaveLength(5);
+    expect(list.data).toHaveLength(7);
     expect(list.data.every((provider) => provider.id.startsWith('workspai.graph.provider.'))).toBe(
       true
     );

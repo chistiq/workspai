@@ -227,6 +227,158 @@ function request(providers: readonly GraphProviderRuntime[], hostPorts = ports()
 }
 
 describe('buildRepoGraph', () => {
+  it('extracts evidence-backed literal routes across supported framework surfaces', async () => {
+    const contents = {
+      'src/server.ts':
+        "// router.get('/commented-out', handler);\nrouter.get('/node-health', handler);\nrouter.get(dynamicRoute, handler);\n",
+      'api.py': "@app.post('/python-orders')\ndef orders(): pass\n",
+      'main.go': 'package main\nfunc routes() { router.DELETE("/go-items/:id", handler) }\n',
+      'Api.java': '@PutMapping("/java-users/{id}")\nvoid update() {}\n',
+      'Program.cs': 'app.MapPatch("/dotnet-jobs/{id}", Handler);\n',
+    };
+    const inputs = Object.entries(contents).map(([locator, content]) => ({
+      locator,
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(content).byteLength,
+      digest: {
+        algorithm: 'sha256' as const,
+        value: createHash('sha256').update(content).digest('hex'),
+      },
+    }));
+    const result = await buildRepoGraph({
+      ...request(createStandardRepositoryProviders(), ports(inputs, contents)),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+    if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
+
+    expect(result.status).toBe('partial');
+    expect(result.graph.nodes.filter((node) => node.kind === 'endpoint')).toHaveLength(5);
+    expect(result.graph.edges.filter((edge) => edge.relation === 'exposes')).toHaveLength(5);
+    expect(result.providers).toContainEqual(
+      expect.objectContaining({
+        provider: expect.objectContaining({
+          id: 'workspai.graph.provider.repository-routes',
+        }),
+        detection: 'applicable',
+        collection: 'partial',
+        factCount: 5,
+      })
+    );
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.dynamic-route-unsupported',
+        scope: 'src/server.ts',
+      })
+    );
+  });
+
+  it('marks computed routes unknown instead of inventing an endpoint', async () => {
+    const source = 'router.get(routeFromConfiguration, handler);\n';
+    const sourceInput: GraphProviderInput = {
+      locator: 'src/server.ts',
+      mediaType: 'text/typescript',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput], { 'src/server.ts': source })
+      ),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.graph?.nodes.some((node) => node.kind === 'endpoint')).toBe(false);
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.dynamic-route-unsupported' })
+    );
+  });
+
+  it('keeps file topology but refuses complete structural coverage for an unsupported language', async () => {
+    const source = "require_relative 'billing'\n";
+    const sourceInput: GraphProviderInput = {
+      locator: 'app.rb',
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(createStandardRepositoryProviders(), ports([sourceInput], { 'app.rb': source })),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.graph?.nodes).toContainEqual(expect.objectContaining({ kind: 'file' }));
+    expect(result.quality.unsupportedZones).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.source-language-unsupported',
+        scope: 'app.rb',
+      })
+    );
+  });
+
+  it('models a local Git branch from bounded HEAD evidence without invoking Git', async () => {
+    const head = 'ref: refs/heads/feature/graph-preview\n';
+    const headInput: GraphProviderInput = {
+      locator: '.git/HEAD',
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(head).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(head).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(createStandardRepositoryProviders(), ports([headInput], { '.git/HEAD': head })),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+    if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
+
+    expect(result.status).toBe('complete');
+    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ kind: 'branch' }));
+    expect(result.graph.edges).toContainEqual(
+      expect.objectContaining({ relation: 'contains', state: 'accepted' })
+    );
+    expect(result.providers).toContainEqual(
+      expect.objectContaining({
+        provider: { id: 'workspai.graph.provider.git-head', version: '0.1.0-candidate' },
+        detection: 'applicable',
+        collection: 'complete',
+        factCount: 1,
+      })
+    );
+  });
+
+  it('reports malformed Git HEAD as unknown instead of inventing repository history', async () => {
+    const head = 'ref: refs/heads/../outside\n';
+    const headInput: GraphProviderInput = {
+      locator: '.git/HEAD',
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(head).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(head).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(createStandardRepositoryProviders(), ports([headInput], { '.git/HEAD': head })),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.git-head-format-unsupported' })
+    );
+    expect(result.graph?.nodes.some((node) => node.kind === 'branch')).toBe(false);
+  });
+
   it('extracts bounded declared imports across Python, Go, Java, .NET and Rust', async () => {
     const contents = {
       'app.py': "import os\nfrom package.feature import run\noptional = __import__('dynamic')\n",
@@ -787,6 +939,18 @@ describe('writeGraphGeneration', () => {
       );
       expect(new TextDecoder().decode(candidate.bytes)).not.toContain('/repository');
     }
+    const publicationArtifact = publication?.artifacts.find(
+      (candidate) => candidate.name === 'publication'
+    );
+    const publicationIndex = JSON.parse(
+      new TextDecoder().decode(publicationArtifact?.bytes ?? new Uint8Array())
+    ) as {
+      artifacts: Record<string, { digest: string; path: string }>;
+    };
+    expect(publicationIndex.artifacts['canonical-graph']?.path).toMatch(
+      /^\.workspai\/reports\/graph-generations\/[a-f0-9]{64}\/source-evidence-graph\.json$/u
+    );
+    expect(publicationIndex.artifacts.quality?.digest).toMatch(/^[a-f0-9]{64}$/u);
   });
 
   it('refuses failed or cancelled builds and never calls the store', async () => {

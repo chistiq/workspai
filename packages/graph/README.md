@@ -43,15 +43,39 @@ credentials and process access.
 
 ```bash
 workspai-graph inspect .
+workspai-graph inspect . --view structural --json
+workspai-graph inspect . --view evidence --json
 workspai-graph quality . --json
 workspai-graph query . --preset entryPoints --json
+workspai-graph query . --preset reviewContext --slice --json
 workspai-graph providers list
 workspai-graph inspect . --write --json
 ```
 
 An explicit write commits immutable, content-addressed artifacts below
 `.workspai/reports/graph-generations/` and advances the portable
-`graph-generation.json` pointer only after all artifacts are durable.
+`graph-generation.json` pointer only after all artifacts are durable. The
+pointer records project-relative immutable artifact paths and their digests, so
+consumers do not need host paths or directory guessing to resolve a generation.
+
+The offline provider set currently covers file/package topology, static imports
+for Node, Python, Go, Java, .NET and Rust, literal route declarations for the
+first five of those profiles, repository contract/runtime/delivery surfaces and
+safe repository-local Git `HEAD` identity. Computed routes, dynamic imports,
+unsupported source languages and Git worktree indirection remain explicit
+unknown or unsupported zones. Git config, remotes, credentials and external
+worktree metadata are never ingested.
+
+The fixed `source`, `structural` and `evidence` preview views are bounded
+read-only selections over the same immutable canonical generation. They retain
+canonical node/edge identities, proof and source generation. The generalized
+profile-driven projection engine remains unavailable until G5.
+
+The fixed review-context slice turns the admitted `reviewContext` query into a
+deterministic, size-bounded payload for model and review consumers. It retains
+the source generation, query digest, proof paths, evidence, disputes, unknown
+boundaries, quality and analytical limitations. It is not a new graph, does not
+infer missing facts and does not authorize a generic projection or slice engine.
 
 ```ts
 import { admitGraphProviderOutput, assessGraphSharedEnvelope } from '@workspai/graph/conformance';

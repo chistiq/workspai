@@ -2,6 +2,8 @@ import { randomUUID, createHash } from 'node:crypto';
 import { lstat, mkdir, open, readFile, realpath, rename, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
+import { GRAPH_PROJECT_ARTIFACT_FILES } from '../../application/publish-project-graph.js';
+
 import type {
   GraphProjectArtifact,
   GraphProjectArtifactName,
@@ -9,14 +11,8 @@ import type {
   GraphProjectPublicationResult,
 } from '../../ports/index.js';
 
-const ARTIFACT_FILES: Readonly<Record<GraphProjectArtifactName, string>> = Object.freeze({
-  'canonical-graph': 'source-evidence-graph.json',
-  quality: 'source-evidence-graph-quality.json',
-  'provider-runs': 'graph-provider-runs.json',
-  publication: 'graph-generation.json',
-});
 const REQUIRED_ARTIFACTS = Object.freeze(
-  Object.keys(ARTIFACT_FILES).sort() as GraphProjectArtifactName[]
+  Object.keys(GRAPH_PROJECT_ARTIFACT_FILES).sort() as GraphProjectArtifactName[]
 );
 
 function portable(root: string, target: string): string {
@@ -61,7 +57,29 @@ async function writeDurable(file: string, bytes: Uint8Array): Promise<void> {
   }
 }
 
-function validateArtifacts(artifacts: readonly GraphProjectArtifact[]): void {
+function parseArtifact(artifact: GraphProjectArtifact): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(artifact.bytes));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error();
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new Error('Project publication requires valid JSON object artifacts.');
+  }
+}
+
+function property(value: unknown, ...keys: string[]): unknown {
+  let current = value;
+  for (const key of keys) {
+    if (typeof current !== 'object' || current === null || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function validateArtifacts(
+  generationKey: string,
+  artifacts: readonly GraphProjectArtifact[]
+): void {
   const names = artifacts.map((artifact) => artifact.name).sort();
   if (
     names.length !== REQUIRED_ARTIFACTS.length ||
@@ -80,6 +98,36 @@ function validateArtifacts(artifacts: readonly GraphProjectArtifact[]): void {
       throw new Error('Project publication artifact integrity validation failed.');
     }
   }
+  const byName = new Map(artifacts.map((artifact) => [artifact.name, artifact]));
+  const graph = parseArtifact(byName.get('canonical-graph') as GraphProjectArtifact);
+  const publication = parseArtifact(byName.get('publication') as GraphProjectArtifact);
+  if (
+    property(graph, 'generation', 'reference', 'contentDigest', 'value') !== generationKey ||
+    publication.schemaVersion !== 'workspai.graph.project-publication-index.v1' ||
+    property(publication, 'generation', 'generation', 'reference', 'contentDigest', 'value') !==
+      generationKey
+  ) {
+    throw new Error('Project publication generation identity validation failed.');
+  }
+  for (const name of ['canonical-graph', 'quality', 'provider-runs'] as const) {
+    const current = byName.get(name);
+    const expectedPath = `.workspai/reports/graph-generations/${generationKey}/${GRAPH_PROJECT_ARTIFACT_FILES[name]}`;
+    if (
+      !current ||
+      property(publication, 'artifacts', name, 'digest') !== current.digest.value ||
+      property(publication, 'artifacts', name, 'path') !== expectedPath
+    ) {
+      throw new Error('Project publication artifact binding validation failed.');
+    }
+  }
+  if (
+    property(publication, 'generation', 'artifactDigest', 'value') !==
+      byName.get('canonical-graph')?.digest.value ||
+    property(publication, 'generation', 'qualityDigest', 'value') !==
+      byName.get('quality')?.digest.value
+  ) {
+    throw new Error('Project publication manifest digest binding validation failed.');
+  }
 }
 
 async function existingGenerationMatches(
@@ -90,7 +138,7 @@ async function existingGenerationMatches(
     if (!(await stat(generationDirectory)).isDirectory()) return false;
     for (const artifact of artifacts) {
       const existing = await readFile(
-        path.join(generationDirectory, ARTIFACT_FILES[artifact.name])
+        path.join(generationDirectory, GRAPH_PROJECT_ARTIFACT_FILES[artifact.name])
       );
       if (!existing.equals(Buffer.from(artifact.bytes))) return false;
     }
@@ -107,7 +155,7 @@ export function createNodeProjectArtifactStore(projectRoot: string): GraphProjec
       if (!/^[a-f0-9]{64}$/u.test(request.generationKey)) {
         throw new Error('Generation key must be a lowercase SHA-256 digest.');
       }
-      validateArtifacts(request.artifacts);
+      validateArtifacts(request.generationKey, request.artifacts);
       request.signal?.throwIfAborted();
 
       const rootEntry = await lstat(projectRoot);
@@ -145,7 +193,10 @@ export function createNodeProjectArtifactStore(projectRoot: string): GraphProjec
           await mkdir(staging, { mode: 0o700 });
           for (const artifact of request.artifacts) {
             request.signal?.throwIfAborted();
-            await writeDurable(path.join(staging, ARTIFACT_FILES[artifact.name]), artifact.bytes);
+            await writeDurable(
+              path.join(staging, GRAPH_PROJECT_ARTIFACT_FILES[artifact.name]),
+              artifact.bytes
+            );
           }
           await rename(staging, generationDirectory);
         }
@@ -169,7 +220,10 @@ export function createNodeProjectArtifactStore(projectRoot: string): GraphProjec
             artifact.name,
             artifact.name === 'publication'
               ? portable(root, pointer)
-              : portable(root, path.join(generationDirectory, ARTIFACT_FILES[artifact.name])),
+              : portable(
+                  root,
+                  path.join(generationDirectory, GRAPH_PROJECT_ARTIFACT_FILES[artifact.name])
+                ),
           ])
         ) as Record<GraphProjectArtifactName, string>;
         return {

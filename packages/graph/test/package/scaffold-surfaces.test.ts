@@ -6,7 +6,10 @@ import {
   GRAPH_TRUTH_DEPENDENCY_DIRECTION,
   GRAPH_TRUTH_INVARIANTS,
 } from '../../src/domain/index.js';
-import { GRAPH_PROJECTIONS_AVAILABLE } from '../../src/projections/index.js';
+import {
+  GRAPH_PROJECTIONS_AVAILABLE,
+  GRAPH_REPOSITORY_PREVIEW_VIEWS_AVAILABLE,
+} from '../../src/projections/index.js';
 import { GRAPH_FORBIDDEN_RUNTIME_DEPENDENCIES } from '../../src/testing/index.js';
 
 describe('developing Graph package surfaces', () => {
@@ -23,6 +26,7 @@ describe('developing Graph package surfaces', () => {
   it('exposes the admitted execution adapter while keeping later projections unavailable', () => {
     expect(GRAPH_ADAPTERS_AVAILABLE).toBe(true);
     expect(GRAPH_PROJECTIONS_AVAILABLE).toBe(false);
+    expect(GRAPH_REPOSITORY_PREVIEW_VIEWS_AVAILABLE).toBe(true);
   });
 
   it('publishes query conformance without granting production trust', () => {

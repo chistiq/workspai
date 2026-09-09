@@ -15,8 +15,23 @@ export interface GraphProjectPublicationIndex {
   readonly generation: GraphPublicationManifest;
   readonly buildStatus: 'complete' | 'partial';
   readonly artifacts: Readonly<
-    Record<Exclude<GraphProjectArtifactName, 'publication'>, { readonly digest: string }>
+    Record<
+      Exclude<GraphProjectArtifactName, 'publication'>,
+      { readonly digest: string; readonly path: string }
+    >
   >;
+}
+
+export const GRAPH_PROJECT_ARTIFACT_FILES: Readonly<Record<GraphProjectArtifactName, string>> =
+  Object.freeze({
+    'canonical-graph': 'source-evidence-graph.json',
+    quality: 'source-evidence-graph-quality.json',
+    'provider-runs': 'graph-provider-runs.json',
+    publication: 'graph-generation.json',
+  });
+
+function generationArtifactPath(generationKey: string, name: GraphProjectArtifactName): string {
+  return `.workspai/reports/graph-generations/${generationKey}/${GRAPH_PROJECT_ARTIFACT_FILES[name]}`;
 }
 
 export type GraphProjectPublicationOutcome =
@@ -121,9 +136,27 @@ export async function writeGraphGeneration(request: {
     generation,
     buildStatus,
     artifacts: {
-      'canonical-graph': { digest: graphArtifact.digest.value },
-      quality: { digest: qualityArtifact.digest.value },
-      'provider-runs': { digest: providersArtifact.digest.value },
+      'canonical-graph': {
+        digest: graphArtifact.digest.value,
+        path: generationArtifactPath(
+          build.graph.generation.reference.contentDigest.value,
+          'canonical-graph'
+        ),
+      },
+      quality: {
+        digest: qualityArtifact.digest.value,
+        path: generationArtifactPath(
+          build.graph.generation.reference.contentDigest.value,
+          'quality'
+        ),
+      },
+      'provider-runs': {
+        digest: providersArtifact.digest.value,
+        path: generationArtifactPath(
+          build.graph.generation.reference.contentDigest.value,
+          'provider-runs'
+        ),
+      },
     },
   };
   const publicationArtifact = await artifact('publication', index, request.digest);

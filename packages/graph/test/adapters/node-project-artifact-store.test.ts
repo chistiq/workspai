@@ -36,12 +36,42 @@ function jsonArtifact(name: GraphProjectArtifactName, value: unknown): GraphProj
 }
 
 function artifacts(generationKey: string): readonly GraphProjectArtifact[] {
-  return [
-    jsonArtifact('canonical-graph', { generationKey, nodes: [], edges: [] }),
-    jsonArtifact('quality', { status: 'complete' }),
-    jsonArtifact('provider-runs', []),
-    jsonArtifact('publication', { generationKey, publication: 'committed' }),
-  ];
+  const generation = {
+    reference: {
+      id: `generation:${generationKey}`,
+      generatedAt: '2026-09-09T00:00:00.000Z',
+      contentDigest: { algorithm: 'sha256', value: generationKey },
+    },
+  };
+  const graph = jsonArtifact('canonical-graph', { generation, nodes: [], edges: [] });
+  const quality = jsonArtifact('quality', { status: 'complete' });
+  const providers = jsonArtifact('provider-runs', []);
+  const base = '.workspai/reports/graph-generations';
+  const publication = jsonArtifact('publication', {
+    schemaVersion: 'workspai.graph.project-publication-index.v1',
+    generation: {
+      generation,
+      artifactDigest: graph.digest,
+      qualityDigest: quality.digest,
+      publication: 'committed',
+    },
+    buildStatus: 'complete',
+    artifacts: {
+      'canonical-graph': {
+        digest: graph.digest.value,
+        path: `${base}/${generationKey}/source-evidence-graph.json`,
+      },
+      quality: {
+        digest: quality.digest.value,
+        path: `${base}/${generationKey}/source-evidence-graph-quality.json`,
+      },
+      'provider-runs': {
+        digest: providers.digest.value,
+        path: `${base}/${generationKey}/graph-provider-runs.json`,
+      },
+    },
+  });
+  return [graph, quality, providers, publication];
 }
 
 describe('Node project graph artifact store', () => {
@@ -58,9 +88,15 @@ describe('Node project graph artifact store', () => {
     expect(first.pointer).toBe('.workspai/reports/graph-generation.json');
     expect(Object.values(first.artifacts).every((value) => !path.isAbsolute(value))).toBe(true);
     const pointer = await fs.readFile(path.join(root, first.pointer), 'utf8');
-    expect(pointer).toBe(
-      '{"generationKey":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","publication":"committed"}\n'
-    );
+    expect(JSON.parse(pointer)).toMatchObject({
+      schemaVersion: 'workspai.graph.project-publication-index.v1',
+      buildStatus: 'complete',
+      artifacts: {
+        'canonical-graph': {
+          path: expect.stringMatching(/^\.workspai\/reports\/graph-generations\//u),
+        },
+      },
+    });
     expect(pointer).not.toContain(root);
     await expect(
       fs.readFile(
@@ -139,6 +175,28 @@ describe('Node project graph artifact store', () => {
     await expect(store.publish({ generationKey, artifacts: malformed })).rejects.toThrow(
       'exactly one artifact'
     );
+    await expect(fs.stat(path.join(root, '.workspai'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects a self-hashed publication pointer that forges an artifact binding', async () => {
+    const root = await projectFixture();
+    const generationKey = '1'.repeat(64);
+    const candidate = [...artifacts(generationKey)];
+    const publicationIndex = candidate.find((artifact) => artifact.name === 'publication');
+    expect(publicationIndex).toBeDefined();
+    const decoded = JSON.parse(new TextDecoder().decode(publicationIndex?.bytes)) as {
+      artifacts: { 'canonical-graph': { digest: string; path: string } };
+    };
+    decoded.artifacts['canonical-graph'].path =
+      '.workspai/reports/graph-generations/forged/source-evidence-graph.json';
+    const forgedPublication = jsonArtifact('publication', decoded);
+    const forgedSet = candidate.map((artifact) =>
+      artifact.name === 'publication' ? forgedPublication : artifact
+    );
+
+    await expect(
+      createNodeProjectArtifactStore(root).publish({ generationKey, artifacts: forgedSet })
+    ).rejects.toThrow('artifact binding');
     await expect(fs.stat(path.join(root, '.workspai'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

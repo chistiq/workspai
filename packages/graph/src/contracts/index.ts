@@ -119,3 +119,11 @@ export {
   GRAPH_STANDARD_BINDING_PROFILES,
   type GraphQueryPreset,
 } from './query-presets.js';
+export {
+  GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE,
+  GRAPH_STRUCTURAL_EXTRACTOR_PROFILE_CONTRACT,
+  type GraphStructuralExtraction,
+  type GraphStructuralExtractorProfile,
+  type GraphStructuralLanguage,
+  type GraphStructuralLanguageProfile,
+} from './structural-extractor-profile.js';

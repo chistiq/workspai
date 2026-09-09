@@ -18,6 +18,11 @@ export {
   REPOSITORY_SURFACES_PROVIDER_ID,
   createRepositorySurfacesProvider,
 } from './repository-surfaces.js';
+export { GIT_HEAD_PROVIDER_ID, createGitHeadProvider } from './git-head.js';
+export {
+  REPOSITORY_ROUTES_PROVIDER_ID,
+  createRepositoryRoutesProvider,
+} from './repository-routes.js';
 
 import type { GraphProviderRuntime } from '../contracts/provider.js';
 
@@ -26,6 +31,8 @@ import { createRepositoryFilesProvider } from './repository-files.js';
 import { createEcmaScriptImportsProvider } from './ecmascript-imports.js';
 import { createLanguageImportsProvider } from './language-imports.js';
 import { createRepositorySurfacesProvider } from './repository-surfaces.js';
+import { createGitHeadProvider } from './git-head.js';
+import { createRepositoryRoutesProvider } from './repository-routes.js';
 
 /** The deterministic, offline provider set admitted for the standalone repository preview. */
 export function createStandardRepositoryProviders(): readonly GraphProviderRuntime[] {
@@ -35,5 +42,7 @@ export function createStandardRepositoryProviders(): readonly GraphProviderRunti
     createEcmaScriptImportsProvider(),
     createLanguageImportsProvider(),
     createRepositorySurfacesProvider(),
+    createGitHeadProvider(),
+    createRepositoryRoutesProvider(),
   ]);
 }
