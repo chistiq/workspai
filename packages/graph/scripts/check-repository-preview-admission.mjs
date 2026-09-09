@@ -86,11 +86,15 @@ if (!validateClosure(closure)) {
     `G4 closure violates the stage contract: ${JSON.stringify(validateClosure.errors)}`
   );
 }
-if (
-  graph?.currentStage !== 'G4' ||
-  graph?.stageStatus !== 'in-progress' ||
-  graph?.latestClosure !== 'packages/graph/governance/g3-stage-approval.v1.json'
-) {
+const inProgressG4 =
+  graph?.currentStage === 'G4' &&
+  graph?.stageStatus === 'in-progress' &&
+  graph?.latestClosure === 'packages/graph/governance/g3-stage-approval.v1.json';
+const admittedHistoricalG4 =
+  graph?.currentStage === 'G5' &&
+  graph?.stageStatus === 'local-source-complete' &&
+  graph?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json';
+if (!inProgressG4 && !admittedHistoricalG4) {
   failures.push('Graph registry does not authorize in-progress G4 work');
 }
 if (plan.stage !== 'G4' || plan.status !== 'in-progress' || plan.nextStageAuthorized !== false) {

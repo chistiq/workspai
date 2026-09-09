@@ -136,11 +136,15 @@ if (
 ) {
   failures.push('G3 admission must retain exactly Linux, macOS and Windows evidence');
 }
-if (
-  graph?.currentStage !== 'G4' ||
-  graph?.stageStatus !== 'in-progress' ||
-  graph?.latestClosure !== approvalPath
-) {
+const inProgressG4 =
+  graph?.currentStage === 'G4' &&
+  graph?.stageStatus === 'in-progress' &&
+  graph?.latestClosure === approvalPath;
+const admittedHistoricalG4 =
+  graph?.currentStage === 'G5' &&
+  graph?.stageStatus === 'local-source-complete' &&
+  graph?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json';
+if (!inProgressG4 && !admittedHistoricalG4) {
   failures.push('Graph registry is not authorized for in-progress G4 work');
 }
 if (

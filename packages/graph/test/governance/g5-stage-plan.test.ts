@@ -13,7 +13,7 @@ describe('Graph G5 stage authorization', () => {
     const plan = readJson(path.join(packageRoot, 'governance/g5-stage-plan.v1.json'));
     expect(plan).toMatchObject({
       stage: 'G5',
-      status: 'in-progress',
+      status: 'local-source-complete',
       nextStage: 'G6',
       nextStageAuthorized: false,
       publicInternalDocuments: 0,
@@ -25,7 +25,17 @@ describe('Graph G5 stage authorization', () => {
         'versioned-projection-profile-and-result',
         'generic-graph-slice-contract',
         'workspace-graph-composition',
+        'derived-projection-profiles',
+        'standalone-dual-scope-orchestration',
+        'workspace-artifact-store-adapter',
       ])
     );
+    for (const checkpoint of checkpoints) {
+      if (checkpoint.id === 'g5-cross-platform-admission') {
+        expect(checkpoint.status).toBe('planned');
+        continue;
+      }
+      expect(checkpoint.status).toBe('implemented-local-candidate');
+    }
   });
 });

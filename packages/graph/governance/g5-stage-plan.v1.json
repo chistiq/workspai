@@ -2,7 +2,7 @@
   "schemaVersion": "workspai-graph-stage-plan.v1",
   "package": "@workspai/graph",
   "stage": "G5",
-  "status": "in-progress",
+  "status": "local-source-complete",
   "authorizedBy": "local-source-continuation",
   "authority": [
     "workspai-docs:Packages/graph/ROADMAP.md#phase-g5",

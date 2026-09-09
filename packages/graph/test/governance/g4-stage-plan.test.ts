@@ -6,27 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const repositoryRoot = path.resolve(packageRoot, '../..');
 const readJson = (file: string): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
 
 describe('Graph G4 stage authorization', () => {
-  it('enters G4 only through the retained signed G3 matrix', () => {
-    const registry = readJson(path.join(repositoryRoot, 'independent-packages.json')) as {
-      packages: {
-        name: string;
-        currentStage: string;
-        stageStatus: string;
-        latestClosure: string;
-      }[];
-    };
-    const graph = registry.packages.find((entry) => entry.name === '@workspai/graph');
-    expect(graph).toMatchObject({
-      currentStage: 'G4',
-      stageStatus: 'in-progress',
-      latestClosure: 'packages/graph/governance/g3-stage-approval.v1.json',
-    });
-    expect(readJson(path.join(repositoryRoot, graph?.latestClosure ?? ''))).toMatchObject({
+  it('retains the signed G3 matrix that authorized G4 work', () => {
+    expect(readJson(path.join(packageRoot, 'governance/g3-stage-approval.v1.json'))).toMatchObject({
       stage: 'G3',
       status: 'approved',
       nextStage: 'G4',
