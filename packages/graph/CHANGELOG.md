@@ -21,6 +21,10 @@
   architecture summaries with explicit algorithm/seed/limitation descriptors.
 - Routed dual-scope `inspect` modes through `runStandaloneGraph` with honest
   partial/handoff-unavailable results when no workspace onboarding adapter exists.
+- Added `createNodeWorkspaceArtifactStore` with workspace publication validation,
+  separate writer locks and CLI wiring to the admitted workspace root only.
+- Recorded local G5 stage closure with all source checkpoints complete and remote
+  cross-platform admission deferred to final workflow evidence.
 
 - Admitted the signed G3 proof-carrying query candidate after the same-commit
   Linux, macOS and Windows matrix and aggregate CI gate passed.

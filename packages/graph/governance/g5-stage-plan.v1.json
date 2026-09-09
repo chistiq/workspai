@@ -68,6 +68,15 @@
       ]
     },
     {
+      "id": "workspace-artifact-store-adapter",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/adapters/node/workspace-artifact-store.ts",
+        "packages/graph/src/adapters/node/publication-artifact-store.ts",
+        "packages/graph/test/adapters/node-workspace-artifact-store.test.ts"
+      ]
+    },
+    {
       "id": "g5-cross-platform-admission",
       "status": "planned",
       "evidence": [".github/workflows/ci.yml"]

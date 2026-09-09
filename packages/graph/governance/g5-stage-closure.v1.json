@@ -1,0 +1,166 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G5",
+  "asOf": "2026-09-09",
+  "status": "local-passed-remote-pending-awaiting-approval",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Projections, slices and workspace composition preserve one canonical generation without parallel truth.",
+      "evidence": [
+        "packages/graph/src/projections/project-graph.ts",
+        "packages/graph/src/application/build-workspace-graph.ts",
+        "packages/graph/src/application/run-standalone-graph.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Projection, slice, derived analytics and dual-scope orchestration each declare independent bounded budgets.",
+      "evidence": [
+        "packages/graph/src/projections/create-graph-slice.ts",
+        "packages/graph/src/projections/project-derived-graph.ts"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Workspace composition reuses immutable project generations and local query/worker budgets remain within declared ceilings.",
+      "evidence": [
+        "packages/graph/scripts/check-node-worker-adapter.mjs",
+        "packages/graph/scripts/check-query-profile.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Project and workspace publication remain locked, pointer-last and schema-bound with separate writer locks per scope.",
+      "evidence": [
+        "packages/graph/src/adapters/node/publication-artifact-store.ts",
+        "packages/graph/src/adapters/node/workspace-artifact-store.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Derived projections and dual-scope results carry explicit limitations, omissions and portable relative references.",
+      "evidence": [
+        "packages/graph/src/projections/derived-projection-profiles.ts",
+        "packages/graph/src/application/publish-workspace-graph.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Local checks pass; retained same-commit Linux, macOS and Windows G5 evidence remains required.",
+      "evidence": ["packages/graph/governance/g5-stage-plan.v1.json", ".github/workflows/ci.yml"]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Standalone orchestration, derived projections and dual-scope inspect operate without central CLI runtime imports.",
+      "evidence": [
+        "packages/graph/test/architecture/package-boundaries.test.ts",
+        "packages/graph/test/application/run-standalone-graph.test.ts"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Projection, slice, derived analytics and workspace composition fixtures preserve canonical identity and stable ordering.",
+      "evidence": [
+        "packages/graph/test/projections/project-graph.test.ts",
+        "packages/graph/test/projections/project-derived-graph.test.ts",
+        "packages/graph/test/build/workspace-build.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Projection, slice and derived projection wire contracts are versioned candidates in the content-addressed catalog.",
+      "evidence": [
+        "packages/graph/conformance/contract-catalog.v1.json",
+        "packages/graph/schemas/derived-projection-result.v0.1.0-candidate.schema.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Dual-scope failures preserve valid project generations and report handoff-unavailable or partial workspace status honestly.",
+      "evidence": [
+        "packages/graph/src/application/run-standalone-graph.ts",
+        "packages/graph/test/cli/graph-cli.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "G5 checkpoints have dedicated application, projection, adapter and CLI coverage with governance evidence paths.",
+      "evidence": [
+        "packages/graph/governance/g5-stage-plan.v1.json",
+        "packages/graph/test/application/publish-workspace-graph.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "The package remains private and packed output excludes source, tests, governance, scripts, maps and internal documents.",
+      "evidence": ["packages/graph/package.json", "packages/graph/scripts/check-packed-package.mjs"]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-package-check",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run check",
+      "evidence": "Package-owned build, contract, test, runtime, packed-consumer and admission gates pass locally."
+    },
+    {
+      "id": "g5-local-source-checkpoints",
+      "status": "passed",
+      "evidence": "All G5 stage-plan checkpoints except g5-cross-platform-admission are implemented-local-candidate."
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Same-commit Linux, macOS and Windows G5 admission evidence is not yet retained."
+    }
+  ],
+  "measurements": {
+    "candidateSchemas": 27,
+    "languageFixtures": 7,
+    "providerCount": 7,
+    "testFiles": 38,
+    "tests": 274,
+    "coverageStatementsPercent": 90.12,
+    "coverageBranchesPercent": 85.54,
+    "coverageFunctionsPercent": 92.54,
+    "coverageLinesPercent": 91.95,
+    "packedFiles": 75,
+    "packedCompressedBytes": 210161,
+    "packedCompressedBudgetBytes": 262144,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "pending" },
+  "remainingRisks": [
+    "The signed candidate still requires retained Linux, Windows and macOS G5 evidence.",
+    "Central CLI onboarding remains an optional handoff; default standalone mode stays honest and partial without it.",
+    "Contract-topology, architecture-conformance and richer derived intelligence profiles remain later G5/G6 work.",
+    "Rust, native and WASM acceleration remain prohibited until G6 measurements justify a parity-checked adapter.",
+    "Central CLI shadow parity and replacement remain prohibited until G8."
+  ],
+  "nextStage": "G6",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "awaiting",
+    "requiredForNextStage": true,
+    "rule": "A signed checkpoint plus retained same-commit Linux, Windows and macOS G5 evidence authorizes G6 only."
+  }
+}

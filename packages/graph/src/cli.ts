@@ -16,6 +16,7 @@ import {
   buildNodeRepoGraph,
   createNodeGraphProductHostPorts,
   createNodeProjectArtifactStore,
+  createNodeWorkspaceArtifactStore,
 } from './adapters/node/index.js';
 import { GRAPH_QUERY_CONTRACT, GRAPH_QUERY_PRESETS } from './contracts/index.js';
 import type {
@@ -286,6 +287,8 @@ function defaultDependencies(): GraphCliDependencies {
     providers: createStandardRepositoryProviders,
     standalone: (root, options, signal) => {
       const ports = createNodeGraphProductHostPorts({ signal, workerUrl });
+      const workspace = workspaceSelection(root, options.workspace);
+      const workspaceRoot = workspace?.root;
       return runStandaloneGraph({
         repo: {
           root,
@@ -296,7 +299,7 @@ function defaultDependencies(): GraphCliDependencies {
           ports,
         },
         mode: options.mode,
-        workspace: workspaceSelection(root, options.workspace),
+        workspace,
         workspacePolicy: {
           network: 'deny',
           redactionProfile: 'portable-default',
@@ -304,7 +307,10 @@ function defaultDependencies(): GraphCliDependencies {
         },
         write: options.write,
         projectStore: options.write ? createNodeProjectArtifactStore(root) : undefined,
-        workspaceStore: options.write ? createNodeProjectArtifactStore(root) : undefined,
+        workspaceStore:
+          options.write && workspaceRoot
+            ? createNodeWorkspaceArtifactStore(workspaceRoot)
+            : undefined,
         interaction: { approved: true },
         signal,
       });
