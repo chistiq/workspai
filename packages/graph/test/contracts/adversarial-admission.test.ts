@@ -40,6 +40,7 @@ function canonicalGraph(): Record<string, unknown> {
   const proof = {
     policy: { id: 'workspai.graph.proof.standard', version: '1' },
     state: 'supported',
+    authorities: ['observed'],
     evidence: [
       { id: 'evidence:1', sourceKind: 'source-file', relativeLocator: 'src/index.ts', digest },
     ],

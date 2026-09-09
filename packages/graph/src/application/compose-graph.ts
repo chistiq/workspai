@@ -1323,6 +1323,9 @@ export async function composeGraph(
           policy: candidate.relation.proofPolicy,
           state: conflict ? 'disputed' : proof.state,
           evidence,
+          authorities: sortUnique(
+            candidate.facts.map(({ fact }) => fact.authority)
+          ) as GraphEdge['proof']['authorities'],
           corroborationGroups: evidenceGroups(candidate, normalizedRequest, proof.roots),
           counterEvidence,
           missingRequirements: proof.state === 'insufficient' ? proof.drivers : [],

@@ -126,7 +126,7 @@ try {
       import type { GraphProviderManifest, WorkspaiGraphProviderManifestCandidate } from '@workspai/graph/contracts';
       import { GRAPH_PROVIDER_MANIFEST_CONTRACT, GRAPH_IDENTITY_SCHEME } from '@workspai/graph/contracts';
       import { validateGraphProviderManifest } from '@workspai/graph/conformance';
-      import { composeGraph, GRAPH_STANDARD_COMPOSITION_POLICY } from '@workspai/graph';
+      import { composeGraph, GRAPH_STANDARD_COMPOSITION_POLICY, queryGraph } from '@workspai/graph';
       import type { GraphExecutionPorts } from '@workspai/graph';
       const wire: WorkspaiGraphProviderManifestCandidate = {
         contract: GRAPH_PROVIDER_MANIFEST_CONTRACT,
@@ -143,6 +143,7 @@ try {
       void compose;
       void ports;
       void GRAPH_STANDARD_COMPOSITION_POLICY;
+      void queryGraph;
     `,
     'utf8'
   );
@@ -184,6 +185,9 @@ try {
         import { validateWisCoreResultEnvelope } from '@workspai/shared/validation';
         if (!graph.GRAPH_PACKAGE_METADATA) process.exit(10);
         if (typeof graph.composeGraph !== 'function') process.exit(25);
+        if (typeof graph.queryGraph !== 'function') process.exit(27);
+        if (!contracts.GRAPH_QUERY_CONTRACT) process.exit(28);
+        if (typeof conformance.validateGraphQuery !== 'function') process.exit(29);
         if (graph.GRAPH_STANDARD_COMPOSITION_POLICY.version !== '0.1.0-candidate') process.exit(26);
         if (!contracts.GRAPH_PACKAGE_METADATA) process.exit(11);
         if (!providers.GRAPH_PROVIDER_MANIFEST_CONTRACT) process.exit(12);
@@ -277,6 +281,11 @@ try {
     'schemas/query-cache-entry.v0.1.0-candidate.schema.json',
     'schemas/query-cache-reuse.v0.1.0-candidate.schema.json',
     'schemas/query-cache-invalidation.v0.1.0-candidate.schema.json',
+    'schemas/proof-policy.v0.1.0-candidate.schema.json',
+    'schemas/binding-profile.v0.1.0-candidate.schema.json',
+    'schemas/graph-query.v0.1.0-candidate.schema.json',
+    'schemas/graph-query-result.v0.1.0-candidate.schema.json',
+    'schemas/retrieval-plan.v0.1.0-candidate.schema.json',
   ]) {
     if (!paths.includes(requiredPath))
       throw new Error(`packed Graph package omits ${requiredPath}`);

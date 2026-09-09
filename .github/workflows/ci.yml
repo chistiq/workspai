@@ -194,21 +194,21 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Capture Graph composition-admission platform evidence
+      - name: Capture Graph query-admission platform evidence
         shell: bash
         env:
           WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
           WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: >-
-          node packages/graph/scripts/check-composition-admission.mjs
+          node packages/graph/scripts/check-query-admission.mjs
           --ci-evidence --json
-          --output artifacts/graph-composition-admission-${{ runner.os }}.json
+          --output artifacts/graph-query-admission-${{ runner.os }}.json
 
-      - name: Upload Graph composition-admission platform evidence
+      - name: Upload Graph query-admission platform evidence
         uses: actions/upload-artifact@v4
         with:
-          name: graph-composition-admission-${{ runner.os }}-node-${{ matrix.node-version }}
-          path: artifacts/graph-composition-admission-${{ runner.os }}.json
+          name: graph-query-admission-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-query-admission-${{ runner.os }}.json
           if-no-files-found: error
           retention-days: 30
 
@@ -278,8 +278,8 @@ jobs:
           name: rapidkit-coverage
           fail_ci_if_error: false
 
-  graph-composition-admission:
-    name: Admit Graph composition matrix
+  graph-query-admission:
+    name: Admit Graph query matrix
     needs: build-test-matrix
     if: needs.build-test-matrix.result == 'success'
     runs-on: ubuntu-latest
@@ -290,26 +290,26 @@ jobs:
       - name: Checkout admitted commit
         uses: actions/checkout@v4
 
-      - name: Download Graph composition evidence
+      - name: Download Graph query evidence
         uses: actions/download-artifact@v4
         with:
-          pattern: graph-composition-admission-*
-          path: artifacts/graph-composition-platforms
+          pattern: graph-query-admission-*
+          path: artifacts/graph-query-platforms
           merge-multiple: true
 
-      - name: Verify complete Graph composition matrix
+      - name: Verify complete Graph query matrix
         run: >-
-          node packages/graph/scripts/check-composition-matrix-admission.mjs
-          --evidence-directory artifacts/graph-composition-platforms
+          node packages/graph/scripts/check-query-matrix-admission.mjs
+          --evidence-directory artifacts/graph-query-platforms
           --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
           --tested-commit "${{ github.sha }}"
-          --output artifacts/graph-composition-admission-candidate.json
+          --output artifacts/graph-query-admission-candidate.json
 
-      - name: Upload Graph composition admission candidate
+      - name: Upload Graph query admission candidate
         uses: actions/upload-artifact@v4
         with:
-          name: graph-composition-admission-candidate
-          path: artifacts/graph-composition-admission-candidate.json
+          name: graph-query-admission-candidate
+          path: artifacts/graph-query-admission-candidate.json
           if-no-files-found: error
           retention-days: 30
 
@@ -370,7 +370,7 @@ jobs:
         docs-quality,
         phase4-fast-guard,
         build-test-matrix,
-        graph-composition-admission,
+        graph-query-admission,
         phase4-runtime-contracts,
       ]
     runs-on: ubuntu-latest
@@ -382,7 +382,7 @@ jobs:
           DOCS_RESULT: ${{ needs.docs-quality.result }}
           HEAVY_REQUIRED: ${{ needs.changes.outputs.heavy == 'true' }}
           HEAVY_RESULT: ${{ needs.build-test-matrix.result }}
-          GRAPH_COMPOSITION_RESULT: ${{ needs.graph-composition-admission.result }}
+          GRAPH_QUERY_RESULT: ${{ needs.graph-query-admission.result }}
           PHASE4_REQUIRED: ${{ needs.changes.outputs.phase4 == 'true' }}
           PHASE4_FAST_RESULT: ${{ needs.phase4-fast-guard.result }}
           PHASE4_MATRIX_RESULT: ${{ needs.phase4-runtime-contracts.result }}
@@ -395,7 +395,7 @@ jobs:
           fi
           if [[ "$HEAVY_REQUIRED" = "true" ]]; then
             test "$HEAVY_RESULT" = "success"
-            test "$GRAPH_COMPOSITION_RESULT" = "success"
+            test "$GRAPH_QUERY_RESULT" = "success"
           fi
           if [[ "$PHASE4_REQUIRED" = "true" ]]; then
             test "$PHASE4_FAST_RESULT" = "success"

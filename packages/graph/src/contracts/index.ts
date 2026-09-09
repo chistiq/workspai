@@ -82,3 +82,36 @@ export {
 } from './graph.js';
 export type * from '../generated/index.js';
 export { CORE_GRAPH_ONTOLOGY_PROFILE } from './core-ontology.js';
+export {
+  GRAPH_BINDING_PROFILE_CONTRACT,
+  GRAPH_PROOF_POLICY_CONTRACT,
+  GRAPH_QUERY_CONTRACT,
+  GRAPH_QUERY_RESULT_CONTRACT,
+  GRAPH_RETRIEVAL_PLAN_CONTRACT,
+  type GraphBindingProfile,
+  type GraphBindingStep,
+  type GraphBindingCompleteness,
+  type GraphAnalyticalResultDescriptor,
+  type GraphNormalizedQuery,
+  type GraphOperationalRiskResult,
+  type GraphPath,
+  type GraphProofPathHop,
+  type GraphProofPolicy,
+  type GraphQuery,
+  type GraphQueryCost,
+  type GraphQueryExecutionResult,
+  type GraphQueryKind,
+  type GraphQueryQuality,
+  type GraphQueryPage,
+  type GraphQueryResult,
+  type GraphQueryStrategy,
+  type GraphQueryTruncation,
+  type GraphRetrievalCandidate,
+  type GraphRetrievalPlan,
+  type GraphRetrievalUtility,
+} from './query.js';
+export {
+  GRAPH_QUERY_PRESETS,
+  GRAPH_STANDARD_BINDING_PROFILES,
+  type GraphQueryPreset,
+} from './query-presets.js';

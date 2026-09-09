@@ -123,6 +123,7 @@ export interface GraphEdgeProof {
   readonly policy: WisContractReference;
   readonly state: GraphProofState;
   readonly evidence: readonly WisEvidenceReference[];
+  readonly authorities: readonly GraphClaimAuthority[];
   readonly corroborationGroups: readonly GraphEvidenceGroup[];
   readonly counterEvidence: readonly WisEvidenceReference[];
   readonly missingRequirements: readonly string[];
@@ -215,6 +216,12 @@ export interface GraphQueryCacheKey {
   readonly ontologyDigest: WisDigestReference;
   readonly proofPolicyDigest: WisDigestReference;
   readonly profileDigest: WisDigestReference;
+  readonly plannerProfileDigest: WisDigestReference;
+  readonly resultProfileDigest: WisDigestReference;
+  readonly projectionDigests: readonly WisDigestReference[];
+  readonly indexDigests: readonly WisDigestReference[];
+  readonly requiredExtensions: readonly WisContractReference[];
+  readonly overlayDigest?: WisDigestReference;
   readonly scope: GraphScope;
   readonly redactionPolicyDigest: WisDigestReference;
   readonly authorizationDigest: WisDigestReference;

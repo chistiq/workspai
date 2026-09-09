@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Admitted the signed G2 deterministic composition candidate after retained
+  Linux, macOS and Windows evidence passed the same-commit repository gate.
+- Added versioned proof policies, proof-carrying paths and cross-layer binding
+  profiles with explicit completeness and unknown-boundary reporting.
+- Added deterministic dependency, ownership, impact, entry-point, path, cycle,
+  contract-topology, architecture-conformance and operational-risk queries.
+- Added fixed query budgets, deterministic pagination, bounded pending work,
+  proof thresholds and fail-closed canonical-generation topology checks.
+- Added immutable generation and semantic cache dependencies covering planner,
+  result, projection, index, extension, scope, redaction and authorization state.
+- Added result-level provenance, disputes, freshness, cost, truncation,
+  analytical limitations and abstention for mixed semantic consequences.
+- Replaced the completed composition evidence lane with a same-commit G3 query
+  admission matrix for Linux, macOS and Windows.
+
 - Admitted the signed G1 contract foundation after retained Linux, macOS and
   Windows evidence passed the same-commit repository gate.
 - Added the G2 deterministic TypeScript reference composer with injected

@@ -2,7 +2,7 @@
 
 Evidence-backed, storage-neutral workspace graph engine for Workspai.
 
-Status: **composition candidate · development-only · not publishable**
+Status: **query candidate · development-only · not publishable**
 
 > This is the developing independent Graph implementation. The released
 > Workspai CLI already contains the current official internal graph capability.
@@ -12,16 +12,17 @@ Status: **composition candidate · development-only · not publishable**
 > gates.
 
 The package is intentionally available for internal and community development
-before publication. Its root API exposes package status and the G2 deterministic
-composition candidate. Query, persistence, provider execution and CLI
-replacement stay unavailable until their later conformance gates are complete.
+before publication. Its root API exposes the G2 deterministic composer and the
+G3 bounded, proof-carrying query candidate. Persistence, provider execution and
+CLI replacement stay unavailable until their later conformance gates complete.
 
 The current `/conformance` surface includes the SH6 Shared-adoption boundary,
-the admitted G1 contract layer and G2 reference-engine suites. It validates WIS
+the admitted G1 contract layer, G2 reference engine and G3 query suites. It validates WIS
 envelope identity, provider detection/manifests, FactBatch provenance and
 accounting, ontology-constrained canonical graphs, immutable generations,
-quality and exact query-cache lifecycle envelopes. The composer is a semantic
-reference candidate, not a standalone-stability or release claim.
+quality, binding completeness, proof paths, explicit unknowns and exact
+query-cache lifecycle envelopes. These are semantic reference candidates, not
+standalone-stability or release claims.
 
 Node hosts may explicitly import `@workspai/graph/adapters/node` to execute the
 portable reference-composition task outside the event loop. The package root
@@ -75,8 +76,12 @@ remain in the `chistiq/workspai` monorepo. A future `workspai-graph` repository
 is a read-only discovery mirror and owns no tags, releases, workflows or npm
 publication.
 
+Queries are deterministic and bounded. Every accepted result identifies its
+immutable graph generation and carries paths, evidence, disputes, unknown
+boundaries, cost, truncation and an explicit analytical claim level.
+
 Consumer contracts, API guidance, provider authoring, security, architecture
 and roadmaps are maintained once in the canonical Workspai documentation
 portfolio. They are intentionally not duplicated in this public package
-repository or npm artifact. The approved G1 evidence authorizes G2 composition
-work only; it does not claim standalone stability or release admission.
+repository or npm artifact. The approved G2 evidence authorizes G3 query work
+only; it does not claim standalone stability or release admission.

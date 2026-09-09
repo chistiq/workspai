@@ -11,6 +11,11 @@
     "ontologyDigest",
     "proofPolicyDigest",
     "profileDigest",
+    "plannerProfileDigest",
+    "resultProfileDigest",
+    "projectionDigests",
+    "indexDigests",
+    "requiredExtensions",
     "scope",
     "redactionPolicyDigest",
     "authorizationDigest",
@@ -23,6 +28,24 @@
     "ontologyDigest": { "type": "object", "required": ["algorithm", "value"] },
     "proofPolicyDigest": { "type": "object", "required": ["algorithm", "value"] },
     "profileDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "plannerProfileDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "resultProfileDigest": { "type": "object", "required": ["algorithm", "value"] },
+    "projectionDigests": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "type": "object", "required": ["algorithm", "value"] }
+    },
+    "indexDigests": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "type": "object", "required": ["algorithm", "value"] }
+    },
+    "requiredExtensions": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "type": "object", "required": ["id", "version"] }
+    },
+    "overlayDigest": { "type": "object", "required": ["algorithm", "value"] },
     "scope": { "type": "object" },
     "redactionPolicyDigest": { "type": "object", "required": ["algorithm", "value"] },
     "authorizationDigest": { "type": "object", "required": ["algorithm", "value"] },

@@ -15,3 +15,6 @@ export {
   composeGraph,
   executeGraphReferenceCompositionTask,
 } from './compose-graph.js';
+export { normalizeGraphQuery, queryGraph } from './query-graph.js';
+export { assessGraphEdgeProof, type GraphProofPolicyAssessment } from './assess-proof.js';
+export { evaluateGraphQueryCacheReuse } from './query-cache.js';

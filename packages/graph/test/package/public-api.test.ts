@@ -6,6 +6,7 @@ import {
   GRAPH_STANDARD_COMPOSITION_POLICY,
   composeGraph,
   getGraphPackageStatus,
+  queryGraph,
 } from '../../src/index.js';
 import {
   GRAPH_PROVIDER_DETECTION_CONTRACT,
@@ -15,7 +16,7 @@ import {
 describe('@workspai/graph development package', () => {
   it('is explicitly non-publishable and honest about implemented capabilities', () => {
     expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
-    expect(GRAPH_PACKAGE_METADATA.maturity).toBe('composition-candidate');
+    expect(GRAPH_PACKAGE_METADATA.maturity).toBe('query-candidate');
     expect(GRAPH_PACKAGE_METADATA.implementedCapabilities).toEqual([
       'package-status',
       'shared-adoption-conformance',
@@ -44,7 +45,20 @@ describe('@workspai/graph development package', () => {
       'validated-worker-output-accounting',
       'node-reference-worker-adapter',
       'non-publishable-cancellation',
+      'versioned-proof-policy-assessment',
+      'cross-layer-binding-profiles',
+      'deterministic-proof-carrying-query',
+      'bounded-query-planning',
+      'deterministic-query-pagination',
+      'operational-risk-abstention',
+      'query-result-semantic-admission',
+      'query-scale-baseline',
     ]);
+  });
+
+  it('exports the G3 proof-carrying query candidate without claiming stable publication', () => {
+    expect(queryGraph).toBeTypeOf('function');
+    expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
   });
 
   it('returns a WIS-shaped status without claiming standalone stability', () => {

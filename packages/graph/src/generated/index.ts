@@ -1,3 +1,4 @@
+export type { WorkspaiGraphBindingProfileCandidate } from './binding-profile.v0.1.0-candidate.js';
 export type { WorkspaiCanonicalGraphCandidate } from './canonical-graph.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivationLineageCandidate } from './derivation-lineage.v0.1.0-candidate.js';
 export type { WorkspaiGraphEntityIdentityCandidate } from './entity-identity.v0.1.0-candidate.js';
@@ -5,12 +6,16 @@ export type { WorkspaiGraphEvidenceIndependenceCandidate } from './evidence-inde
 export type { WorkspaiGraphFactBatchCandidate } from './fact-batch.v0.1.0-candidate.js';
 export type { WorkspaiGraphGenerationPublicationCandidate } from './generation-publication.v0.1.0-candidate.js';
 export type { WorkspaiGraphQualityCandidate } from './graph-quality.v0.1.0-candidate.js';
+export type { WorkspaiGraphQueryResultCandidate } from './graph-query-result.v0.1.0-candidate.js';
+export type { WorkspaiGraphQueryCandidate } from './graph-query.v0.1.0-candidate.js';
 export type { WorkspaiGraphModelGenerationBindingCandidate } from './model-generation-binding.v0.1.0-candidate.js';
 export type { WorkspaiGraphNaryAssertionCandidate } from './nary-assertion.v0.1.0-candidate.js';
 export type { WorkspaiGraphOntologyProfileCandidate } from './ontology-profile.v0.1.0-candidate.js';
+export type { WorkspaiGraphProofPolicyCandidate } from './proof-policy.v0.1.0-candidate.js';
 export type { WorkspaiGraphProviderDetectionCandidate } from './provider-detection.v0.1.0-candidate.js';
 export type { WorkspaiGraphProviderManifestCandidate } from './provider-manifest.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCacheEntryCandidate } from './query-cache-entry.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCacheInvalidationCandidate } from './query-cache-invalidation.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCacheKeyCandidate } from './query-cache-key.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCacheReuseCandidate } from './query-cache-reuse.v0.1.0-candidate.js';
+export type { WorkspaiGraphRetrievalPlanCandidate } from './retrieval-plan.v0.1.0-candidate.js';

@@ -47,6 +47,34 @@ function digest(value: unknown): boolean {
     DIGEST_VALUE.test(value.value)
   );
 }
+function canonicalDigestSet(value: unknown): boolean {
+  if (!Array.isArray(value) || value.some((entry) => !digest(entry))) return false;
+  const keys = value.map((entry) => {
+    const item = entry as { algorithm: string; value: string; canonicalization?: string };
+    return `${item.algorithm}:${item.value}:${item.canonicalization ?? ''}`;
+  });
+  return (
+    new Set(keys).size === keys.length && keys.join('\u0000') === [...keys].sort().join('\u0000')
+  );
+}
+function canonicalContractSet(value: unknown): boolean {
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (entry) =>
+        !record(entry) ||
+        typeof entry.id !== 'string' ||
+        entry.id.length === 0 ||
+        typeof entry.version !== 'string' ||
+        entry.version.length === 0
+    )
+  )
+    return false;
+  const keys = value.map((entry) => `${String(entry.id)}@${String(entry.version)}`);
+  return (
+    new Set(keys).size === keys.length && keys.join('\u0000') === [...keys].sort().join('\u0000')
+  );
+}
 function generationReference(value: unknown): boolean {
   return (
     record(value) &&
@@ -376,6 +404,10 @@ export function validateCanonicalGraph(
           !record(edge.proof) ||
           !Array.isArray(edge.proof.evidence) ||
           edge.proof.evidence.length === 0 ||
+          !uniqueNonEmptyStrings(edge.proof.authorities, 4) ||
+          edge.proof.authorities.some(
+            (authority) => !['declared', 'observed', 'verified', 'inferred'].includes(authority)
+          ) ||
           ![
             'supported',
             'corroborated',
@@ -492,7 +524,7 @@ export function validateGraphQueryCacheKey(
         '/contract',
         'Query cache contract is unsupported.'
       );
-    if (!record(input.graphGeneration) || !record(input.graphGeneration.contentDigest))
+    if (!generationReference(input.graphGeneration))
       add(
         issues,
         'GRAPH_QUERY_CACHE_MUTABLE_GENERATION',
@@ -517,16 +549,40 @@ export function validateGraphQueryCacheKey(
       'ontologyDigest',
       'proofPolicyDigest',
       'profileDigest',
+      'plannerProfileDigest',
+      'resultProfileDigest',
       'redactionPolicyDigest',
       'authorizationDigest',
     ])
-      if (!record(input[key]))
+      if (!digest(input[key]))
         add(
           issues,
           'GRAPH_QUERY_CACHE_DEPENDENCY_MISSING',
           `/${key}`,
           'All semantic dependencies are required for reuse.'
         );
+    for (const key of ['projectionDigests', 'indexDigests'])
+      if (!canonicalDigestSet(input[key]))
+        add(
+          issues,
+          'GRAPH_QUERY_CACHE_DEPENDENCY_SET_INVALID',
+          `/${key}`,
+          'Projection and index dependency digests must be explicit arrays.'
+        );
+    if (!canonicalContractSet(input.requiredExtensions))
+      add(
+        issues,
+        'GRAPH_QUERY_CACHE_EXTENSION_SET_INVALID',
+        '/requiredExtensions',
+        'Required semantic extensions must be explicit and versioned.'
+      );
+    if (input.overlayDigest !== undefined && !digest(input.overlayDigest))
+      add(
+        issues,
+        'GRAPH_QUERY_CACHE_OVERLAY_INVALID',
+        '/overlayDigest',
+        'Overlay dependency must be content addressed.'
+      );
   }
   return result(input, issues);
 }

@@ -112,12 +112,16 @@ function auditComposition(options) {
   ) {
     failures.push('G2 closure identity or fail-closed approval state drifted');
   }
-  if (
-    graphRegistry?.currentStage !== 'G2' ||
-    graphRegistry?.stageStatus !== 'in-progress' ||
-    graphRegistry?.latestClosure !== 'packages/graph/governance/g1-stage-approval.v1.json'
-  ) {
-    failures.push('Graph registry is not authorized for in-progress G2 work');
+  const inProgressG2 =
+    graphRegistry?.currentStage === 'G2' &&
+    graphRegistry?.stageStatus === 'in-progress' &&
+    graphRegistry?.latestClosure === 'packages/graph/governance/g1-stage-approval.v1.json';
+  const admittedHistoricalG2 =
+    graphRegistry?.currentStage === 'G3' &&
+    graphRegistry?.stageStatus === 'in-progress' &&
+    graphRegistry?.latestClosure === 'packages/graph/governance/g2-stage-approval.v1.json';
+  if (!inProgressG2 && !admittedHistoricalG2) {
+    failures.push('Graph registry neither authorizes nor records admitted G2 work');
   }
   if (packageManifest.private !== true || packageManifest.publishable === true) {
     failures.push('G2 candidate must remain private and non-publishable');

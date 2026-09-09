@@ -84,6 +84,7 @@ function graph() {
         proof: {
           policy: { id: 'workspai.graph.proof.structural', version: '1' },
           state: 'supported',
+          authorities: ['observed'],
           evidence: [
             {
               id: 'evidence:1',
@@ -232,6 +233,11 @@ describe('Graph G1 graph-domain contracts', () => {
       ontologyDigest: digest,
       proofPolicyDigest: digest,
       profileDigest: digest,
+      plannerProfileDigest: digest,
+      resultProfileDigest: digest,
+      projectionDigests: [],
+      indexDigests: [],
+      requiredExtensions: [],
       scope,
       redactionPolicyDigest: digest,
       authorizationDigest: digest,
@@ -255,6 +261,11 @@ describe('Graph G1 graph-domain contracts', () => {
       ontologyDigest: digest,
       proofPolicyDigest: digest,
       profileDigest: digest,
+      plannerProfileDigest: digest,
+      resultProfileDigest: digest,
+      projectionDigests: [],
+      indexDigests: [],
+      requiredExtensions: [],
       scope,
       redactionPolicyDigest: digest,
       authorizationDigest: digest,

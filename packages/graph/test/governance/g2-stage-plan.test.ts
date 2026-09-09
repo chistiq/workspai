@@ -12,22 +12,13 @@ function readJson(file: string): Record<string, unknown> {
 }
 
 describe('Graph G2 stage authorization', () => {
-  it('enters G2 only through the approved G1 closure', () => {
-    const registry = readJson(path.join(repositoryRoot, 'independent-packages.json')) as {
-      packages: {
-        name: string;
-        currentStage: string;
-        stageStatus: string;
-        latestClosure: string;
-      }[];
-    };
-    const graph = registry.packages.find((entry) => entry.name === '@workspai/graph');
-    expect(graph).toMatchObject({
-      currentStage: 'G2',
-      stageStatus: 'in-progress',
-      latestClosure: 'packages/graph/governance/g1-stage-approval.v1.json',
+  it('records that G2 entered only through the approved G1 closure', () => {
+    const plan = readJson(path.join(packageRoot, 'governance/g2-stage-plan.v1.json'));
+    expect(plan).toMatchObject({
+      stage: 'G2',
+      authorizedBy: 'packages/graph/governance/g1-stage-approval.v1.json',
     });
-    const approval = readJson(path.join(repositoryRoot, graph?.latestClosure ?? ''));
+    const approval = readJson(path.join(repositoryRoot, String(plan.authorizedBy)));
     expect(approval).toMatchObject({
       stage: 'G1',
       status: 'approved',

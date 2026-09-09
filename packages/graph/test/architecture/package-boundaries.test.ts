@@ -166,6 +166,6 @@ describe('Graph architecture boundaries', () => {
     const rootApi = fs.readFileSync(path.join(sourceRoot, 'index.ts'), 'utf8');
 
     expect(rootApi).not.toMatch(/adapters|internal|testing/);
-    expect(rootApi).not.toMatch(/buildRepoGraph|buildWorkspaceGraph|queryGraph/);
+    expect(rootApi).not.toMatch(/buildRepoGraph|buildWorkspaceGraph/);
   });
 });

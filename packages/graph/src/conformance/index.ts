@@ -1,7 +1,7 @@
 export const GRAPH_CONFORMANCE_PROFILE = Object.freeze({
   id: 'workspai.graph.conformance',
   version: '0.1.0-candidate',
-  maturity: 'composition-candidate' as const,
+  maturity: 'query-candidate' as const,
   requiredSuites: [
     'contracts',
     'semantic-invalid',
@@ -14,6 +14,12 @@ export const GRAPH_CONFORMANCE_PROFILE = Object.freeze({
     'conflict-preservation',
     'quality-assessment',
     'execution-port-responsiveness',
+    'query-normalization',
+    'proof-carrying-query',
+    'cross-layer-binding',
+    'query-budget-and-pagination',
+    'query-result-abstention',
+    'query-scale-baseline',
     'query-cache-lifecycle',
     'architecture-boundaries',
     'determinism',
@@ -52,3 +58,9 @@ export {
   validateGraphQueryCacheKey,
   validateGraphQueryCacheReuseDecision,
 } from './graph.js';
+export {
+  validateGraphBindingProfile,
+  validateGraphProofPolicy,
+  validateGraphQuery,
+  validateGraphQueryResult,
+} from './query.js';

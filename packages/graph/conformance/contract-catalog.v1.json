@@ -3,6 +3,11 @@
   "generatedBy": "@workspai/graph",
   "contracts": [
     {
+      "id": "https://schemas.workspai.dev/graph/binding-profile/v0.1.0-candidate",
+      "file": "schemas/binding-profile.v0.1.0-candidate.schema.json",
+      "sha256": "97a15ab0dde3b8955023f523bcd0dd096342b4722bcab54337dc839906dea4f0"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/canonical-graph/v0.1.0-candidate",
       "file": "schemas/canonical-graph.v0.1.0-candidate.schema.json",
       "sha256": "bad426350a3d7b4e7498ddba5da6c2c929c48185a0e002037733f41a351554e9"
@@ -38,6 +43,16 @@
       "sha256": "e16a16e05cf157f8f738a3e8a336c1a9cc4d6bbd0bfe69b063f6b673a099e4a2"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/query-result/v0.1.0-candidate",
+      "file": "schemas/graph-query-result.v0.1.0-candidate.schema.json",
+      "sha256": "70686f0c4546f59ef1da62ef8cceb2bb66ef16335cf43cfdd94478d4a0fa8eb8"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/query/v0.1.0-candidate",
+      "file": "schemas/graph-query.v0.1.0-candidate.schema.json",
+      "sha256": "f2597cfbab8ec677a29e76b77d59558217377482a927aa809f4a7ec499cbeb1b"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/model-generation-binding/v0.1.0-candidate",
       "file": "schemas/model-generation-binding.v0.1.0-candidate.schema.json",
       "sha256": "af0d736a6329d2a44d44ab576a6ffd735cb9b20b70279c7f817ba34994120beb"
@@ -51,6 +66,11 @@
       "id": "https://schemas.workspai.dev/graph/ontology-profile/v0.1.0-candidate",
       "file": "schemas/ontology-profile.v0.1.0-candidate.schema.json",
       "sha256": "42dab242a9accaaa59daf55b8bcaccc2e8ec14eccb044f4753cc9300d3eae29b"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/proof-policy/v0.1.0-candidate",
+      "file": "schemas/proof-policy.v0.1.0-candidate.schema.json",
+      "sha256": "2c932a39dc9d0f52fb20bbae740fb9ce5872843668a469c4f66ca9fb8839b0fb"
     },
     {
       "id": "https://schemas.workspai.dev/graph/provider-detection/v0.1.0-candidate",
@@ -75,12 +95,17 @@
     {
       "id": "https://schemas.workspai.dev/graph/query-cache-key/v0.1.0-candidate",
       "file": "schemas/query-cache-key.v0.1.0-candidate.schema.json",
-      "sha256": "9d2950256754290ad11737df4ae7146159c3646844dbb8298158332a815c804c"
+      "sha256": "e5111ef6b1fc043684e84c03058bd7f4d32940bafb772ba0bb3136805e1763e7"
     },
     {
       "id": "https://schemas.workspai.dev/graph/query-cache-reuse/v0.1.0-candidate",
       "file": "schemas/query-cache-reuse.v0.1.0-candidate.schema.json",
       "sha256": "1c7b70110412c07d1395904ab404d885e7a5d7956d618d9c045f60e55b998f94"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/retrieval-plan/v0.1.0-candidate",
+      "file": "schemas/retrieval-plan.v0.1.0-candidate.schema.json",
+      "sha256": "43c0f919b01c032502c9d2acfea3770a714646c2972de82a483189f4c1662df4"
     }
   ]
 }

@@ -7,6 +7,21 @@ export interface WorkspaiGraphQueryCacheKeyCandidate {
   ontologyDigest: {};
   proofPolicyDigest: {};
   profileDigest: {};
+  plannerProfileDigest: {};
+  resultProfileDigest: {};
+  /**
+   * @maxItems 1000
+   */
+  projectionDigests: {}[];
+  /**
+   * @maxItems 1000
+   */
+  indexDigests: {}[];
+  /**
+   * @maxItems 1000
+   */
+  requiredExtensions: {}[];
+  overlayDigest?: {};
   scope: {};
   redactionPolicyDigest: {};
   authorizationDigest: {};

@@ -25,11 +25,12 @@ describe('developing Graph package surfaces', () => {
     expect(GRAPH_PROJECTIONS_AVAILABLE).toBe(false);
   });
 
-  it('publishes composition conformance without granting production trust', () => {
-    expect(GRAPH_CONFORMANCE_PROFILE.maturity).toBe('composition-candidate');
+  it('publishes query conformance without granting production trust', () => {
+    expect(GRAPH_CONFORMANCE_PROFILE.maturity).toBe('query-candidate');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('architecture-boundaries');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('security-adversarial');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('reference-composition');
+    expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('proof-carrying-query');
   });
 
   it('lists the central CLI and consumer frameworks as forbidden runtime dependencies', () => {
