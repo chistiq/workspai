@@ -48,7 +48,7 @@ describe('Graph identity and evidence lineage', () => {
       );
     const composed = `src/${'deep/'.repeat(80)}Cafe\u0301.ts`;
     const first = await resolve(composed);
-    const second = await resolve(composed.normalize('NFC').replace('Café', 'CAFÉ'));
+    const second = await resolve(composed.normalize('NFC').replace('Caf\u00e9', 'CAF\u00c9'));
 
     expect(first).toMatchObject({ accepted: true });
     expect(second).toMatchObject({ accepted: true });
