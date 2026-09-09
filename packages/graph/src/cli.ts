@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -473,6 +474,28 @@ export async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+type GraphCliRealpath = (value: string) => string;
+
+/** Compares executable identity after resolving platform path aliases and symlinks. */
+export function isDirectGraphCliInvocation(
+  argvPath: string | undefined,
+  moduleUrl: string,
+  resolveRealpath: GraphCliRealpath = realpathSync
+): boolean {
+  if (!argvPath) return false;
+  const canonical = (value: string): string => {
+    const resolved = path.resolve(value);
+    let real = resolved;
+    try {
+      real = resolveRealpath(resolved);
+    } catch {
+      // A lexical comparison still gives imported/test hosts a fail-closed fallback.
+    }
+    return process.platform === 'win32' ? real.toLowerCase() : real;
+  };
+  return canonical(argvPath) === canonical(fileURLToPath(moduleUrl));
+}
+
+if (isDirectGraphCliInvocation(process.argv[1], import.meta.url)) {
   void main();
 }

@@ -268,13 +268,27 @@ try {
     const result = spawnSync(process.execPath, [cliPath, ...args], {
       cwd: consumerRoot,
       encoding: 'utf8',
+      timeout: 120_000,
+      maxBuffer: 32 * 1024 * 1024,
     });
     if (result.error || !acceptedStatuses.includes(result.status)) {
       throw new Error(
         `packed Graph CLI failed with exit ${result.status ?? 'unknown'}${result.error ? `: ${result.error.message}` : ''}\n${result.stdout ?? ''}\n${result.stderr ?? ''}`
       );
     }
-    return JSON.parse(result.stdout || result.stderr);
+    const serialized = (result.stdout || result.stderr).trim();
+    if (!serialized) {
+      throw new Error(
+        `packed Graph CLI exited successfully without a JSON envelope: ${args.join(' ')}`
+      );
+    }
+    try {
+      return JSON.parse(serialized);
+    } catch (error) {
+      throw new Error(
+        `packed Graph CLI emitted invalid JSON for ${args.join(' ')}: ${error instanceof Error ? error.message : 'unknown parse failure'}\n${serialized}`
+      );
+    }
   };
   const readOnlyPreview = runCli(['inspect', '.', '--json']);
   if (!['complete', 'partial'].includes(readOnlyPreview.status)) {

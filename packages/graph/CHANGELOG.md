@@ -28,6 +28,8 @@
   immutable artifact paths bound to their content digests.
 - Added installed-tarball CLI coverage proving default read-only behavior,
   bundled worker resolution and explicit portable publication.
+- Resolved executable identity through real filesystem paths so macOS `/var`
+  aliases and installed symlink entrypoints start the packed CLI reliably.
 - Kept central CLI integration and native acceleration blocked behind their
   remaining later-stage evidence.
 

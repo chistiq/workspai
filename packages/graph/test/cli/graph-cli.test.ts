@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { main, runGraphCli, type GraphCliDependencies, type GraphCliIo } from '../../src/cli.js';
+import {
+  isDirectGraphCliInvocation,
+  main,
+  runGraphCli,
+  type GraphCliDependencies,
+  type GraphCliIo,
+} from '../../src/cli.js';
 import type { GraphRepoBuildResult } from '../../src/application/index.js';
 import type { GraphCanonicalGraph, GraphQueryExecutionResult } from '../../src/contracts/index.js';
 import { createStandardRepositoryProviders } from '../../src/providers/index.js';
@@ -90,6 +96,26 @@ function harness(build: GraphRepoBuildResult = result('complete')): {
 }
 
 describe('workspai-graph CLI', () => {
+  it('recognizes the same executable through a platform path alias', () => {
+    const realpath = (value: string): string =>
+      value.startsWith('/var/') ? `/private${value}` : value;
+    expect(
+      isDirectGraphCliInvocation(
+        '/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
+        'file:///private/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
+        realpath
+      )
+    ).toBe(true);
+    expect(
+      isDirectGraphCliInvocation(
+        '/var/folders/workspai/node_modules/@workspai/graph/dist/other.js',
+        'file:///private/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
+        realpath
+      )
+    ).toBe(false);
+    expect(isDirectGraphCliInvocation(undefined, import.meta.url, realpath)).toBe(false);
+  });
+
   it('is helpful without reading a repository', async () => {
     const test = harness();
     expect(await runGraphCli([], test.io, test.dependencies)).toBe(0);
