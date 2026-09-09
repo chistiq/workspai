@@ -168,5 +168,8 @@ describe('Graph architecture boundaries', () => {
     expect(rootApi).not.toMatch(/adapters|internal|testing/);
     expect(rootApi).toMatch(/buildRepoGraph/);
     expect(rootApi).not.toMatch(/buildWorkspaceGraph/);
+    expect(rootApi).not.toMatch(
+      /buildGraphChangeOverlay|planIncrementalGraphBuild|compareContentStateManifests/
+    );
   });
 });

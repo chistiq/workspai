@@ -13,7 +13,7 @@ describe('Graph G6 stage authorization', () => {
     const plan = readJson(path.join(packageRoot, 'governance/g6-stage-plan.v1.json'));
     expect(plan).toMatchObject({
       stage: 'G6',
-      status: 'in-progress',
+      status: 'local-source-complete',
       nextStage: 'G7',
       nextStageAuthorized: false,
       publicInternalDocuments: 0,
@@ -34,17 +34,7 @@ describe('Graph G6 stage authorization', () => {
         expect(checkpoint.status).toBe('planned');
         continue;
       }
-      if (
-        checkpoint.id === 'versioned-changeset-and-graph-delta-contract' ||
-        checkpoint.id === 'content-state-manifest-contract' ||
-        checkpoint.id === 'merkle-comparison-engine' ||
-        checkpoint.id === 'shard-reuse-and-invalidation' ||
-        checkpoint.id === 'incremental-build-orchestration'
-      ) {
-        expect(checkpoint.status).toBe('implemented-local-candidate');
-        continue;
-      }
-      expect(checkpoint.status).toBe('planned');
+      expect(checkpoint.status).toBe('implemented-local-candidate');
     }
   });
 });

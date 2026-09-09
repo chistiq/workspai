@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/proposed-graph-delta/v0.1.0-candidate",
+  "title": "WorkspaiGraphProposedGraphDeltaCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "baseGeneration",
+    "targetOverlay",
+    "changedInputs",
+    "affectedProviders",
+    "facts",
+    "graph",
+    "affectedProjections",
+    "downstreamInvalidations",
+    "execution",
+    "equivalence"
+  ],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.proposed-graph-delta",
+        "version": "0.1.0-candidate"
+      }
+    },
+    "baseGeneration": { "type": "string", "minLength": 1 },
+    "targetOverlay": { "type": "string", "minLength": 1 },
+    "changedInputs": { "type": "array", "maxItems": 1000000, "items": { "type": "object" } },
+    "affectedProviders": { "type": "array", "maxItems": 10000, "items": { "type": "string" } },
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["added", "renewed", "removed", "invalidated"],
+      "properties": {
+        "added": { "type": "array", "items": { "type": "string" } },
+        "renewed": { "type": "array", "items": { "type": "string" } },
+        "removed": { "type": "array", "items": { "type": "string" } },
+        "invalidated": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["addedNodes", "removedNodes", "changedEdges"],
+      "properties": {
+        "addedNodes": { "type": "array", "items": { "type": "string" } },
+        "removedNodes": { "type": "array", "items": { "type": "string" } },
+        "changedEdges": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "affectedProjections": { "type": "array", "maxItems": 10000, "items": { "type": "string" } },
+    "downstreamInvalidations": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "type": "string" }
+    },
+    "execution": { "type": "object" },
+    "equivalence": {
+      "enum": ["pass", "attention", "blocked", "not-assessed"]
+    }
+  }
+}

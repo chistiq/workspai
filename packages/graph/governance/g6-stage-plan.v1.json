@@ -2,7 +2,7 @@
   "schemaVersion": "workspai-graph-stage-plan.v1",
   "package": "@workspai/graph",
   "stage": "G6",
-  "status": "in-progress",
+  "status": "local-source-complete",
   "authorizedBy": "local-source-continuation",
   "authority": [
     "workspai-docs:Packages/graph/ROADMAP.md#phase-g6",
@@ -60,8 +60,18 @@
     },
     {
       "id": "proposed-change-overlay",
-      "status": "planned",
-      "evidence": ["packages/graph/governance/g6-stage-plan.v1.json"]
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/proposed-change.ts",
+        "packages/graph/schemas/proposed-change-set.v0.1.0-candidate.schema.json",
+        "packages/graph/schemas/proposed-graph-delta.v0.1.0-candidate.schema.json",
+        "packages/graph/schemas/graph-change-overlay.v0.1.0-candidate.schema.json",
+        "packages/graph/src/application/build-graph-change-overlay.ts",
+        "packages/graph/src/application/evaluate-overlay-staleness.ts",
+        "packages/graph/src/application/compare-change-overlays.ts",
+        "packages/graph/test/application/build-graph-change-overlay.test.ts",
+        "packages/graph/test/application/g6-incremental-pipeline.test.ts"
+      ]
     },
     {
       "id": "g6-cross-platform-admission",

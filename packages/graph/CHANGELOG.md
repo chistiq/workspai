@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Recorded local G6 stage closure with incremental and overlay checkpoints
+  complete and remote cross-platform admission deferred to final workflow evidence.
+- Added proposed-change overlay contracts plus `buildGraphChangeOverlay`,
+  `evaluateGraphChangeOverlayStaleness` and advisory `compareChangeOverlays`
+  with explicit non-canonical release claims and no merge-conflict authority.
 - Added `planIncrementalGraphBuild` to orchestrate content comparison, shard
   reuse planning and honest GraphDelta emission without fabricating fact ids.
 - Added `planShardReuseAndInvalidation` for exact-digest shard reuse with

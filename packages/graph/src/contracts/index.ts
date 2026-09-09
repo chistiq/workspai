@@ -191,6 +191,21 @@ export {
   type GraphShardReuseRequest,
 } from './incremental.js';
 export {
+  GRAPH_CHANGE_OVERLAY_CONTRACT,
+  GRAPH_PROPOSED_CHANGE_SET_CONTRACT,
+  GRAPH_PROPOSED_GRAPH_DELTA_CONTRACT,
+  type GraphChangeOverlay,
+  type GraphChangeOverlayOverlapResult,
+  type GraphChangeOverlayStatus,
+  type GraphChangeProposal,
+  type GraphChangeProposalKind,
+  type GraphOverlayMergeOrderRisk,
+  type GraphOverlayStalenessReason,
+  type GraphOverlayStalenessResult,
+  type GraphProposedChangeSet,
+  type GraphProposedGraphDelta,
+} from './proposed-change.js';
+export {
   type GraphDualScopeWorkspaceStatus,
   type GraphProjectGraphReference,
   type GraphProjectMembershipRelationship,

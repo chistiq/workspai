@@ -53,6 +53,11 @@
       "sha256": "aa44741f640c0aa8e6f8a7a8bf627200141a56bf73870fd4822204248eaf4c58"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/change-overlay/v0.1.0-candidate",
+      "file": "schemas/graph-change-overlay.v0.1.0-candidate.schema.json",
+      "sha256": "de08ed0c7d8f01294080e84e5d834528b8f60d6b52820648c07711f0871e494a"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/graph-delta/v0.1.0-candidate",
       "file": "schemas/graph-delta.v0.1.0-candidate.schema.json",
       "sha256": "51a837067090dcb49e716cf99fe32685007491fb7b7ccaa13ef4703453970663"
@@ -101,6 +106,16 @@
       "id": "https://schemas.workspai.dev/graph/proof-policy/v0.1.0-candidate",
       "file": "schemas/proof-policy.v0.1.0-candidate.schema.json",
       "sha256": "2c932a39dc9d0f52fb20bbae740fb9ce5872843668a469c4f66ca9fb8839b0fb"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/proposed-change-set/v0.1.0-candidate",
+      "file": "schemas/proposed-change-set.v0.1.0-candidate.schema.json",
+      "sha256": "876480b048b4fc32c33d73fcdf199a4a87117061ec76ab7689e9486016246514"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/proposed-graph-delta/v0.1.0-candidate",
+      "file": "schemas/proposed-graph-delta.v0.1.0-candidate.schema.json",
+      "sha256": "18553f2ce486bcf64c73f88759f0f8cf34915873fb504a60c0432d8b8bd6df15"
     },
     {
       "id": "https://schemas.workspai.dev/graph/provider-detection/v0.1.0-candidate",

@@ -1,0 +1,166 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G6",
+  "asOf": "2026-09-09",
+  "status": "local-passed-remote-pending-awaiting-approval",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Incremental planning and proposed-change overlays preserve one canonical generation and bind predictions to base generation digests.",
+      "evidence": [
+        "packages/graph/src/application/plan-incremental-graph-build.ts",
+        "packages/graph/src/application/build-graph-change-overlay.ts",
+        "packages/graph/src/contracts/proposed-change.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Merkle comparison, shard reuse and overlay planning each declare independent bounded budgets.",
+      "evidence": [
+        "packages/graph/src/application/compare-content-state-manifest.ts",
+        "packages/graph/src/application/plan-shard-reuse.ts"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Unequal Merkle branches and exact-digest shard reuse avoid whole-generation rescans in planning paths.",
+      "evidence": [
+        "packages/graph/test/application/g6-incremental-pipeline.test.ts",
+        "packages/graph/scripts/check-query-profile.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Overlay construction fails closed on base/proposal digest mismatch and rejects unauthorized shard reuse.",
+      "evidence": [
+        "packages/graph/src/application/build-graph-change-overlay.ts",
+        "packages/graph/src/application/plan-shard-reuse.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Overlay release claims prohibit latest advancement and merge-conflict authority over predicted state.",
+      "evidence": [
+        "packages/graph/src/application/compare-change-overlays.ts",
+        "packages/graph/schemas/graph-change-overlay.v0.1.0-candidate.schema.json"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Local checks pass; retained same-commit Linux, macOS and Windows G6 evidence remains required.",
+      "evidence": ["packages/graph/governance/g6-stage-plan.v1.json", ".github/workflows/ci.yml"]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Incremental and overlay APIs remain outside the root export surface and do not import central CLI runtime.",
+      "evidence": [
+        "packages/graph/test/architecture/package-boundaries.test.ts",
+        "packages/graph/src/application/index.ts"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Comparison, shard reuse, incremental planning and overlay prediction preserve stable ordering and honest accounting.",
+      "evidence": [
+        "packages/graph/test/application/compare-content-state-manifest.test.ts",
+        "packages/graph/test/application/plan-shard-reuse.test.ts",
+        "packages/graph/test/application/build-graph-change-overlay.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "ChangeSet, GraphDelta, ContentStateManifest and overlay wire contracts are versioned candidates in the catalog.",
+      "evidence": [
+        "packages/graph/conformance/contract-catalog.v1.json",
+        "packages/graph/schemas/proposed-change-set.v0.1.0-candidate.schema.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Overlay staleness and partial budget truncation report explicit diagnostics without empty success.",
+      "evidence": [
+        "packages/graph/src/application/evaluate-overlay-staleness.ts",
+        "packages/graph/test/application/plan-incremental-graph-build.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "G6 checkpoints have dedicated contract, application, pipeline and governance coverage.",
+      "evidence": [
+        "packages/graph/governance/g6-stage-plan.v1.json",
+        "packages/graph/test/contracts/proposed-change-contract.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "The package remains private and packed output excludes source, tests, governance, scripts, maps and internal documents.",
+      "evidence": ["packages/graph/package.json", "packages/graph/scripts/check-packed-package.mjs"]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-package-check",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run check",
+      "evidence": "Package-owned build, contract, test, runtime, packed-consumer and admission gates pass locally."
+    },
+    {
+      "id": "g6-local-source-checkpoints",
+      "status": "passed",
+      "evidence": "All G6 stage-plan checkpoints except g6-cross-platform-admission are implemented-local-candidate."
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Same-commit Linux, macOS and Windows G6 admission evidence is not yet retained."
+    }
+  ],
+  "measurements": {
+    "candidateSchemas": 33,
+    "languageFixtures": 7,
+    "providerCount": 7,
+    "testFiles": 47,
+    "tests": 304,
+    "coverageStatementsPercent": 90.05,
+    "coverageBranchesPercent": 85.41,
+    "coverageFunctionsPercent": 92.17,
+    "coverageLinesPercent": 91.69,
+    "packedFiles": 75,
+    "packedCompressedBytes": 210161,
+    "packedCompressedBudgetBytes": 262144,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "pending" },
+  "remainingRisks": [
+    "The signed candidate still requires retained Linux, Windows and macOS G6 evidence.",
+    "Incremental planning does not yet execute selective provider recomputation or full-build equivalence gates.",
+    "Proposed overlays predict invalidation only; observed fact identifiers require a subsequent canonical rebuild.",
+    "Rust, native and WASM acceleration remain prohibited until benchmark evidence justifies a parity-checked adapter.",
+    "Central CLI shadow parity and replacement remain prohibited until G8."
+  ],
+  "nextStage": "G7",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "awaiting",
+    "requiredForNextStage": true,
+    "rule": "A signed checkpoint plus retained same-commit Linux, Windows and macOS G6 evidence authorizes G7 only."
+  }
+}

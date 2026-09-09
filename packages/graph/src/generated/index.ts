@@ -8,6 +8,7 @@ export type { WorkspaiGraphEntityIdentityCandidate } from './entity-identity.v0.
 export type { WorkspaiGraphEvidenceIndependenceCandidate } from './evidence-independence.v0.1.0-candidate.js';
 export type { WorkspaiGraphFactBatchCandidate } from './fact-batch.v0.1.0-candidate.js';
 export type { WorkspaiGraphGenerationPublicationCandidate } from './generation-publication.v0.1.0-candidate.js';
+export type { WorkspaiGraphChangeOverlayCandidate } from './graph-change-overlay.v0.1.0-candidate.js';
 export type { WorkspaiGraphDeltaCandidate } from './graph-delta.v0.1.0-candidate.js';
 export type { WorkspaiGraphQualityCandidate } from './graph-quality.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryResultCandidate } from './graph-query-result.v0.1.0-candidate.js';
@@ -18,6 +19,8 @@ export type { WorkspaiGraphNaryAssertionCandidate } from './nary-assertion.v0.1.
 export type { WorkspaiGraphOntologyProfileCandidate } from './ontology-profile.v0.1.0-candidate.js';
 export type { WorkspaiGraphProjectionResultCandidate } from './projection-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphProofPolicyCandidate } from './proof-policy.v0.1.0-candidate.js';
+export type { WorkspaiGraphProposedChangeSetCandidate } from './proposed-change-set.v0.1.0-candidate.js';
+export type { WorkspaiGraphProposedGraphDeltaCandidate } from './proposed-graph-delta.v0.1.0-candidate.js';
 export type { WorkspaiGraphProviderDetectionCandidate } from './provider-detection.v0.1.0-candidate.js';
 export type { WorkspaiGraphProviderManifestCandidate } from './provider-manifest.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCacheEntryCandidate } from './query-cache-entry.v0.1.0-candidate.js';
