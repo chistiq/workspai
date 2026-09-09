@@ -12,6 +12,11 @@ import {
   GRAPH_PROVIDER_DETECTION_CONTRACT,
   GRAPH_PROVIDER_MANIFEST_CONTRACT,
 } from '../../src/contracts/index.js';
+import {
+  createPackageJsonProvider,
+  createRepositoryFilesProvider,
+  createStandardRepositoryProviders,
+} from '../../src/providers/index.js';
 
 describe('@workspai/graph development package', () => {
   it('is explicitly non-publishable and honest about implemented capabilities', () => {
@@ -92,5 +97,21 @@ describe('@workspai/graph development package', () => {
       version: '0.1.0-candidate',
     });
     expect(Object.isFrozen(GRAPH_PROVIDER_DETECTION_CONTRACT)).toBe(true);
+  });
+
+  it('exports only deterministic offline providers in the standard repository set', () => {
+    expect(createRepositoryFilesProvider().manifest.permissions).toMatchObject({
+      network: 'deny',
+      process: 'deny',
+      credentials: 'deny',
+    });
+    expect(createPackageJsonProvider().manifest.permissions).toMatchObject({
+      network: 'deny',
+      process: 'deny',
+      credentials: 'deny',
+    });
+    const providers = createStandardRepositoryProviders();
+    expect(providers).toHaveLength(4);
+    expect(Object.isFrozen(providers)).toBe(true);
   });
 });

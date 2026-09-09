@@ -1,4 +1,15 @@
 import { defineWisContract } from '@workspai/shared/contracts';
+import type { WisDigestReference } from '@workspai/shared/contracts';
+
+import type {
+  GraphDiagnostic,
+  GraphEntityIdentityInput,
+  GraphEntityIdentityNormalization,
+  GraphFactBatch,
+  GraphProviderIdentity,
+  GraphScope,
+  GraphValidationResult,
+} from './foundation.js';
 
 export const GRAPH_PROVIDER_MANIFEST_CONTRACT = defineWisContract({
   id: 'workspai.graph.provider-manifest',
@@ -60,6 +71,42 @@ export interface GraphProviderDetectionResult {
   readonly matchedInputs: readonly string[];
   readonly missingPermissions: readonly string[];
   readonly diagnostics: readonly { readonly code: string; readonly message: string }[];
+}
+
+/** A content-addressed, portable input visible to repository providers. */
+export interface GraphProviderInput {
+  readonly locator: string;
+  readonly mediaType: string;
+  readonly byteLength: number;
+  readonly digest: WisDigestReference;
+}
+
+export interface GraphProviderCollectionRequest {
+  readonly scope: GraphScope;
+  readonly inputs: readonly GraphProviderInput[];
+  readonly observedAt: string;
+  readonly resolveIdentity: (
+    input: GraphEntityIdentityInput
+  ) => Promise<GraphValidationResult<GraphEntityIdentityNormalization>>;
+  readonly readInput: (
+    input: GraphProviderInput,
+    options: { readonly maxBytes: number; readonly signal?: AbortSignal }
+  ) => Promise<Uint8Array>;
+  readonly signal?: AbortSignal;
+}
+
+export interface GraphProviderRuntime {
+  readonly manifest: GraphProviderManifest;
+  detect(request: GraphProviderDetectionRequest): Promise<unknown> | unknown;
+  collect(request: GraphProviderCollectionRequest): Promise<unknown> | unknown;
+}
+
+export interface GraphProviderRunSummary {
+  readonly provider: GraphProviderIdentity;
+  readonly detection: GraphProviderDetectionResult['status'] | 'invalid' | 'failed';
+  readonly collection: GraphFactBatch['status'] | 'not-run' | 'invalid';
+  readonly factCount: number;
+  readonly diagnostics: readonly GraphDiagnostic[];
 }
 
 export function defineGraphProviderManifest<const TManifest extends GraphProviderManifest>(

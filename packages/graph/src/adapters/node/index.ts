@@ -1,10 +1,35 @@
 import { Worker } from 'node:worker_threads';
+import { createHash } from 'node:crypto';
+import { setImmediate as waitForImmediate } from 'node:timers/promises';
 
 import type {
   GraphWorkerPoolPort,
   GraphWorkerTaskRequest,
   GraphWorkerTaskResult,
 } from '../../ports/index.js';
+import type { GraphProductHostPorts } from '../../ports/index.js';
+import { buildRepoGraph, GRAPH_STANDARD_REPO_BUILD_POLICY } from '../../application/index.js';
+import type { GraphRepoBuildPolicy, GraphRepoBuildResult } from '../../application/index.js';
+import {
+  CORE_GRAPH_ONTOLOGY_PROFILE,
+  type GraphOntologyProfile,
+  type GraphProviderRuntime,
+  type GraphScope,
+} from '../../contracts/index.js';
+import { createStandardRepositoryProviders } from '../../providers/index.js';
+
+import { createNodeGraphFileSource } from './repository-file-source.js';
+
+export { createNodeGraphFileSource } from './repository-file-source.js';
+
+export interface NodeRepoGraphBuildRequest {
+  readonly root: string;
+  readonly scope?: GraphScope;
+  readonly ontology?: GraphOntologyProfile;
+  readonly providers?: readonly GraphProviderRuntime[];
+  readonly policy?: GraphRepoBuildPolicy;
+  readonly signal?: AbortSignal;
+}
 
 function emptyResult<TOutput>(
   status: 'failed' | 'cancelled' | 'resource-limit',
@@ -146,4 +171,47 @@ export function createNodeGraphReferenceWorkerPool(): GraphWorkerPoolPort {
       });
     },
   };
+}
+
+export function createNodeGraphProductHostPorts(
+  options: { readonly signal?: AbortSignal } = {}
+): GraphProductHostPorts {
+  const signal = options.signal;
+  return {
+    clock: { now: () => new Date() },
+    digest: {
+      algorithm: 'sha256',
+      digest: async (input) => createHash('sha256').update(input).digest('hex'),
+    },
+    cancellation: {
+      get aborted() {
+        return signal?.aborted === true;
+      },
+      throwIfAborted: () => signal?.throwIfAborted(),
+    },
+    scheduler: { yield: () => waitForImmediate() },
+    workers: createNodeGraphReferenceWorkerPool(),
+    fileSource: createNodeGraphFileSource(),
+    signal,
+  };
+}
+
+/**
+ * Runs the package-owned, offline repository preview with secure Node host adapters.
+ * It does not create Workspai metadata, execute project code or persist a graph.
+ */
+export function buildNodeRepoGraph(
+  request: NodeRepoGraphBuildRequest
+): Promise<GraphRepoBuildResult> {
+  return buildRepoGraph({
+    root: request.root,
+    scope: request.scope ?? {
+      kind: 'project',
+      projectIds: ['project:implicit-single-repository'],
+    },
+    ontology: request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE,
+    providers: request.providers ?? createStandardRepositoryProviders(),
+    policy: request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY,
+    ports: createNodeGraphProductHostPorts({ signal: request.signal }),
+  });
 }

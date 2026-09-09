@@ -60,3 +60,45 @@ export interface GraphExecutionPorts {
   readonly workers: GraphWorkerPoolPort;
   readonly signal?: AbortSignal;
 }
+
+export interface GraphFileInventoryRequest {
+  readonly root: string;
+  readonly maxFiles: number;
+  readonly maxTotalBytes: number;
+  readonly maxFileBytes: number;
+  readonly maxDepth: number;
+  readonly maxDirectoryEntries: number;
+  readonly excludedDirectories: readonly string[];
+  readonly sensitiveFiles: 'omit-known';
+  readonly signal?: AbortSignal;
+}
+
+export interface GraphFileInventoryResult {
+  readonly status: 'complete' | 'partial' | 'cancelled' | 'failed';
+  readonly inputs: readonly GraphProviderInput[];
+  readonly diagnostics: readonly GraphDiagnostic[];
+  readonly omittedFiles: number;
+  readonly omittedBytes: number;
+  readonly unknownZones: readonly GraphUnknownZone[];
+  readonly unsupportedZones: readonly GraphUnsupportedZone[];
+}
+
+/** Host adapter for bounded repository reads. The engine never imports a filesystem API. */
+export interface GraphFileSourcePort {
+  inventory(request: GraphFileInventoryRequest): Promise<GraphFileInventoryResult>;
+  read(
+    root: string,
+    input: GraphProviderInput,
+    options: { readonly maxBytes: number; readonly signal?: AbortSignal }
+  ): Promise<Uint8Array>;
+}
+
+export interface GraphProductHostPorts extends GraphExecutionPorts {
+  readonly fileSource: GraphFileSourcePort;
+}
+import type {
+  GraphDiagnostic,
+  GraphProviderInput,
+  GraphUnknownZone,
+  GraphUnsupportedZone,
+} from '../contracts/index.js';

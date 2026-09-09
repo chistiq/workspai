@@ -18,3 +18,11 @@ export {
 export { normalizeGraphQuery, queryGraph } from './query-graph.js';
 export { assessGraphEdgeProof, type GraphProofPolicyAssessment } from './assess-proof.js';
 export { evaluateGraphQueryCacheReuse } from './query-cache.js';
+export { GRAPH_STANDARD_REPO_BUILD_POLICY, buildRepoGraph } from './build-repo-graph.js';
+export type {
+  GraphRepoBuildMetrics,
+  GraphRepoBuildPolicy,
+  GraphRepoBuildQuality,
+  GraphRepoBuildRequest,
+  GraphRepoBuildResult,
+} from './repo-build-types.js';

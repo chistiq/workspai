@@ -181,7 +181,7 @@ try {
         import * as providers from '@workspai/graph/providers';
         import * as conformance from '@workspai/graph/conformance';
         import * as testing from '@workspai/graph/testing';
-        import { createNodeGraphReferenceWorkerPool } from '@workspai/graph/adapters/node';
+      import { buildNodeRepoGraph, createNodeGraphReferenceWorkerPool } from '@workspai/graph/adapters/node';
         import { validateWisCoreResultEnvelope } from '@workspai/shared/validation';
         if (!graph.GRAPH_PACKAGE_METADATA) process.exit(10);
         if (typeof graph.composeGraph !== 'function') process.exit(25);
@@ -217,6 +217,8 @@ try {
           status: 'applicable', matchedInputs: ['source-file'], missingPermissions: [], diagnostics: [],
         };
         if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
+        const standardProviders = providers.createStandardRepositoryProviders();
+        if (standardProviders.length !== 4 || !Object.isFrozen(standardProviders)) process.exit(30);
         const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
         if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
         const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
@@ -239,6 +241,12 @@ try {
         if (workerResult.status !== 'complete') {
           throw new Error('Packed Graph worker failed: ' + JSON.stringify(workerResult));
         }
+        const preview = await buildNodeRepoGraph({ root: process.cwd() });
+        if (!['complete', 'partial'].includes(preview.status) || !preview.graph || preview.metrics.inputFiles < 2) {
+          throw new Error('Packed repository preview failed: ' + JSON.stringify(preview));
+        }
+        const { existsSync } = await import('node:fs');
+        if (existsSync('.workspai')) throw new Error('Repository preview created forbidden metadata');
       `,
     ],
     { cwd: consumerRoot, encoding: 'utf8' }

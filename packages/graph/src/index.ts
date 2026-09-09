@@ -53,4 +53,8 @@ export type {
   GraphWorkerPoolPort,
   GraphWorkerTaskRequest,
   GraphWorkerTaskResult,
+  GraphFileInventoryRequest,
+  GraphFileInventoryResult,
+  GraphFileSourcePort,
+  GraphProductHostPorts,
 } from './ports/index.js';
