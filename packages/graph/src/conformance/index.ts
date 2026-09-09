@@ -64,3 +64,11 @@ export {
   validateGraphQuery,
   validateGraphQueryResult,
 } from './query.js';
+export {
+  validateGraphChangeOverlay,
+  validateGraphChangeSet,
+  validateGraphContentStateManifest,
+  validateGraphDelta,
+  validateGraphProposedChangeSet,
+  validateGraphProposedGraphDelta,
+} from './incremental.js';

@@ -11,7 +11,12 @@ import type {
 } from '../contracts/index.js';
 import type { GraphProductHostPorts } from '../ports/index.js';
 
-import type { GraphCompositionPolicy } from './composition-types.js';
+import type { GraphCompositionPolicy, GraphCompositionSource } from './composition-types.js';
+
+export interface GraphRepoBuildCompositionReuse {
+  readonly reusedSources: readonly GraphCompositionSource[];
+  readonly providersToRecompute: readonly string[];
+}
 
 export interface GraphRepoBuildPolicy {
   readonly network: 'deny' | 'allow';
@@ -36,6 +41,7 @@ export interface GraphRepoBuildRequest {
   readonly providers: readonly GraphProviderRuntime[];
   readonly policy: GraphRepoBuildPolicy;
   readonly ports: GraphProductHostPorts;
+  readonly compositionReuse?: GraphRepoBuildCompositionReuse;
 }
 
 export interface GraphRepoBuildMetrics {
@@ -59,4 +65,5 @@ export interface GraphRepoBuildResult {
   readonly providers: readonly GraphProviderRunSummary[];
   readonly diagnostics: readonly GraphDiagnostic[];
   readonly metrics: GraphRepoBuildMetrics;
+  readonly compositionSources?: readonly GraphCompositionSource[];
 }

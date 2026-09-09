@@ -7,7 +7,10 @@ import { describe, expect, it } from 'vitest';
 
 import { buildGraphChangeOverlay } from '../../src/application/build-graph-change-overlay.js';
 import { compareChangeOverlays } from '../../src/application/compare-change-overlays.js';
-import { evaluateGraphChangeOverlayStaleness } from '../../src/application/evaluate-overlay-staleness.js';
+import {
+  applyGraphChangeOverlayStaleness,
+  evaluateGraphChangeOverlayStaleness,
+} from '../../src/application/evaluate-overlay-staleness.js';
 import {
   GRAPH_CHANGE_OVERLAY_CONTRACT,
   GRAPH_PROPOSED_GRAPH_DELTA_CONTRACT,
@@ -188,6 +191,22 @@ describe('buildGraphChangeOverlay', () => {
         evaluatedAt: '2026-09-09T23:00:00.000Z',
       }).reasons
     ).toEqual(expect.arrayContaining(['proposal-changed', 'overlay-expired']));
+  });
+
+  it('marks overlay status stale when applyGraphChangeOverlayStaleness detects drift', () => {
+    const base = readManifest('minimal-content-state-manifest.json');
+    const proposed = replaceFile(base, 'src/index.ts', {
+      contentDigest: digest('5555555555555555555555555555555555555555555555555555555555555555'),
+    });
+    const overlay = buildGraphChangeOverlay(overlayRequest(base, proposed));
+    const stale = applyGraphChangeOverlayStaleness({
+      overlay,
+      currentBaseGeneration: overlay.baseGeneration,
+      currentProposalDigest: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      evaluatedAt: '2026-09-09T23:00:00.000Z',
+    });
+    expect(stale.status).toBe('stale');
+    expect(stale.diagnostics.length).toBeGreaterThan(overlay.diagnostics.length);
   });
 
   it('returns advisory overlap without merge-conflict claims', () => {

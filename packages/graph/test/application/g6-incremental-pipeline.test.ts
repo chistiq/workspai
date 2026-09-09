@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { buildContentStateManifest } from '../../src/application/build-content-state-manifest.js';
 import { buildGraphChangeOverlay } from '../../src/application/build-graph-change-overlay.js';
 import { compareContentStateManifests } from '../../src/application/compare-content-state-manifest.js';
 import { planIncrementalGraphBuild } from '../../src/application/plan-incremental-graph-build.js';
@@ -86,5 +87,49 @@ describe('G6 incremental pipeline integration', () => {
     expect(overlay.predictedDelta.affectedProviders).toEqual(shardReuse.invalidatedProviders);
     expect(overlay.predictedDelta.execution.recomputed).toBe(shardReuse.rejected.length);
     expect(overlay.quality.generation).toEqual(baseGeneration);
+  });
+
+  it('supports manifests built from admitted leaves without hand-authored Merkle nodes', () => {
+    const scanProfileDigest = digest(
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    );
+    const scope = Object.freeze({
+      kind: 'project' as const,
+      projectIds: ['project:pipeline'] as [string, ...string[]],
+    });
+    const base = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T20:00:00.000Z',
+      scanProfileDigest,
+      leaves: [
+        {
+          locator: 'src/index.ts',
+          contentDigest: digest('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'),
+          inputKind: 'source-file',
+          scanProfileDigest,
+        },
+      ],
+    });
+    const target = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T20:01:00.000Z',
+      scanProfileDigest,
+      leaves: [
+        {
+          locator: 'src/index.ts',
+          contentDigest: digest('abababababababababababababababababababababababababababababababab'),
+          inputKind: 'source-file',
+          scanProfileDigest,
+        },
+      ],
+    });
+    const comparison = compareContentStateManifests({ base, target });
+    const incremental = planIncrementalGraphBuild({
+      baseGeneration: 'generation:built-base',
+      targetGeneration: 'generation:built-target',
+      baseManifest: base,
+      targetManifest: target,
+    });
+    expect(comparison.changedInputs).toEqual(incremental.changeSet.inputs);
   });
 });

@@ -15,6 +15,7 @@ import type {
 import { composeGraph } from './compose-graph.js';
 import { GRAPH_STANDARD_COMPOSITION_POLICY } from './composition-types.js';
 import type { GraphCompositionSource } from './composition-types.js';
+import type { GraphRepoBuildCompositionReuse } from './repo-build-types.js';
 import type {
   GraphRepoBuildPolicy,
   GraphRepoBuildRequest,
@@ -260,6 +261,69 @@ function validateInventory(
   return diagnostics;
 }
 
+function validateCompositionReuse(
+  providers: readonly { manifest: { id: string } }[],
+  compositionReuse: GraphRepoBuildCompositionReuse
+): GraphDiagnostic[] {
+  const diagnostics: GraphDiagnostic[] = [];
+  const registered = new Set(providers.map((provider) => provider.manifest.id));
+  const recompute = new Set(compositionReuse.providersToRecompute);
+  const reusedIds = new Set(compositionReuse.reusedSources.map((source) => source.manifest.id));
+
+  for (const providerId of recompute) {
+    if (!registered.has(providerId)) {
+      diagnostics.push(
+        diagnostic(
+          'GRAPH_REPO_INCREMENTAL_PROVIDER_UNKNOWN',
+          'error',
+          '/compositionReuse/providersToRecompute',
+          `Provider ${providerId} is not registered for this build.`
+        )
+      );
+    }
+    if (reusedIds.has(providerId)) {
+      diagnostics.push(
+        diagnostic(
+          'GRAPH_REPO_INCREMENTAL_PROVIDER_DOUBLE_COVERED',
+          'error',
+          '/compositionReuse',
+          `Provider ${providerId} cannot be both reused and recomputed.`
+        )
+      );
+    }
+  }
+
+  for (const providerId of registered) {
+    if (!recompute.has(providerId) && !reusedIds.has(providerId)) {
+      diagnostics.push(
+        diagnostic(
+          'GRAPH_REPO_INCREMENTAL_PROVIDER_UNCOVERED',
+          'error',
+          '/compositionReuse',
+          `Provider ${providerId} must be reused or explicitly recomputed.`
+        )
+      );
+    }
+  }
+
+  const reusedProviders = new Set<string>();
+  for (const source of compositionReuse.reusedSources) {
+    if (reusedProviders.has(source.manifest.id)) {
+      diagnostics.push(
+        diagnostic(
+          'GRAPH_REPO_INCREMENTAL_REUSED_PROVIDER_DUPLICATE',
+          'error',
+          '/compositionReuse/reusedSources',
+          `Provider ${source.manifest.id} appears more than once in reused sources.`
+        )
+      );
+    }
+    reusedProviders.add(source.manifest.id);
+  }
+
+  return diagnostics;
+}
+
 function emptyResult(
   status: 'failed' | 'cancelled',
   diagnostics: readonly GraphDiagnostic[],
@@ -423,6 +487,7 @@ export async function buildRepoGraph(
 
   const admittedInputs = Object.freeze(inventory.inputs.map(immutableInput));
   const inputByLocator = new Map(admittedInputs.map((input) => [input.locator, input]));
+  const compositionReuse = request.compositionReuse;
   const providers = [...request.providers].sort((left, right) => {
     const byId = String(left.manifest?.id ?? '').localeCompare(String(right.manifest?.id ?? ''));
     return (
@@ -456,7 +521,27 @@ export async function buildRepoGraph(
       inventoryZones
     );
   }
+  if (compositionReuse) {
+    diagnostics.push(...validateCompositionReuse(providers, compositionReuse));
+    if (diagnostics.some((entry) => entry.severity === 'error')) {
+      return emptyResult(
+        'failed',
+        diagnostics,
+        summaries,
+        admittedInputs.length,
+        inputBytes,
+        inventory.omittedFiles,
+        inventoryZones
+      );
+    }
+  }
   const observedAt = request.ports.clock.now().toISOString();
+  const providersToRecompute = compositionReuse
+    ? new Set(compositionReuse.providersToRecompute)
+    : null;
+  const reusedByProvider = compositionReuse
+    ? new Map(compositionReuse.reusedSources.map((source) => [source.manifest.id, source]))
+    : null;
 
   for (const provider of providers) {
     try {
@@ -481,6 +566,36 @@ export async function buildRepoGraph(
       );
     }
     const identity = providerIdentity(provider.manifest.id, provider.manifest.version);
+    if (providersToRecompute && !providersToRecompute.has(identity.id)) {
+      const reused = reusedByProvider?.get(identity.id);
+      if (!reused) {
+        diagnostics.push(
+          diagnostic(
+            'GRAPH_REPO_INCREMENTAL_REUSED_SOURCE_MISSING',
+            'error',
+            `/providers/${encodeURIComponent(identity.id)}`,
+            'Incremental builds require reused provider output for skipped providers.'
+          )
+        );
+        continue;
+      }
+      sources.push(reused);
+      summaries.push({
+        provider: identity,
+        detection: 'not-applicable',
+        collection: 'not-run',
+        factCount: reused.batch.facts.length,
+        diagnostics: [
+          diagnostic(
+            'GRAPH_PROVIDER_REUSED_FROM_PRIOR_GENERATION',
+            'info',
+            `/providers/${encodeURIComponent(identity.id)}`,
+            'Provider output was reused without re-execution.'
+          ),
+        ],
+      });
+      continue;
+    }
     let manifestSnapshot: unknown;
     try {
       manifestSnapshot = deepFreeze(structuredClone(provider.manifest));
@@ -738,6 +853,22 @@ export async function buildRepoGraph(
     }
   }
 
+  if (
+    diagnostics.some(
+      (entry) => entry.severity === 'error' && entry.code.startsWith('GRAPH_REPO_INCREMENTAL')
+    )
+  ) {
+    return emptyResult(
+      'failed',
+      diagnostics,
+      summaries,
+      inventory.inputs.length,
+      inputBytes,
+      inventory.omittedFiles,
+      inventoryZones
+    );
+  }
+
   if (sources.length === 0) {
     diagnostics.push(
       diagnostic(
@@ -790,6 +921,7 @@ export async function buildRepoGraph(
   return {
     status: incomplete ? 'partial' : 'complete',
     graph: composed.value.graph,
+    compositionSources: Object.freeze([...sources]),
     quality: {
       graph: composed.value.quality,
       unknownZones: [

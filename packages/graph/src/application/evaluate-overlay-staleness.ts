@@ -1,4 +1,8 @@
-import type { GraphDiagnostic, GraphOverlayStalenessResult } from '../contracts/index.js';
+import type {
+  GraphChangeOverlay,
+  GraphDiagnostic,
+  GraphOverlayStalenessResult,
+} from '../contracts/index.js';
 
 import type { GraphOverlayStalenessRequest } from './proposed-change-types.js';
 
@@ -62,5 +66,20 @@ export function evaluateGraphChangeOverlayStaleness(
     stale: reasons.length > 0,
     reasons: Object.freeze(reasons),
     diagnostics: Object.freeze(diagnostics),
+  });
+}
+
+/** Returns the overlay with `status: 'stale'` when staleness evaluation fails. */
+export function applyGraphChangeOverlayStaleness(
+  request: GraphOverlayStalenessRequest
+): GraphChangeOverlay {
+  const evaluation = evaluateGraphChangeOverlayStaleness(request);
+  if (!evaluation.stale) {
+    return request.overlay;
+  }
+  return Object.freeze({
+    ...request.overlay,
+    status: 'stale',
+    diagnostics: Object.freeze([...request.overlay.diagnostics, ...evaluation.diagnostics]),
   });
 }

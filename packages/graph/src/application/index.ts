@@ -20,6 +20,11 @@ export { assessGraphEdgeProof, type GraphProofPolicyAssessment } from './assess-
 export { evaluateGraphQueryCacheReuse } from './query-cache.js';
 export { GRAPH_STANDARD_REPO_BUILD_POLICY, buildRepoGraph } from './build-repo-graph.js';
 export type {
+  GraphIncrementalRepoBuildRequest,
+  GraphIncrementalRepoBuildResult,
+} from './incremental-repo-build-types.js';
+export type {
+  GraphRepoBuildCompositionReuse,
   GraphRepoBuildMetrics,
   GraphRepoBuildPolicy,
   GraphRepoBuildQuality,
@@ -33,12 +38,42 @@ export {
   type GraphProjectPublicationOutcome,
 } from './publish-project-graph.js';
 export { buildWorkspaceGraph } from './build-workspace-graph.js';
+export { assessIncrementalBuildEquivalence } from './assess-incremental-build-equivalence.js';
+export type {
+  GraphIncrementalBuildEquivalenceRequest,
+  GraphIncrementalBuildEquivalenceResult,
+} from './assess-incremental-build-equivalence.js';
+export { buildContentStateManifest } from './build-content-state-manifest.js';
+export { buildIncrementalRepoGraph } from './build-incremental-repo-graph.js';
+export {
+  contentStateLeavesFromProviderInputs,
+  type GraphContentStateLeafInput,
+  type GraphContentStateManifestBuildRequest,
+} from './content-state-manifest-types.js';
 export { compareContentStateManifests } from './compare-content-state-manifest.js';
 export { planShardReuseAndInvalidation } from './plan-shard-reuse.js';
 export { planIncrementalGraphBuild } from './plan-incremental-graph-build.js';
-export { buildGraphChangeOverlay } from './build-graph-change-overlay.js';
-export { evaluateGraphChangeOverlayStaleness } from './evaluate-overlay-staleness.js';
+export {
+  planProviderRecomputeScope,
+  type GraphProviderRecomputeScopePlan,
+  type GraphProviderRecomputeScopeRequest,
+} from './plan-provider-recompute-scope.js';
+export {
+  buildGraphChangeOverlay,
+  buildGraphChangeOverlay as createChangeOverlay,
+} from './build-graph-change-overlay.js';
+export {
+  applyGraphChangeOverlayStaleness,
+  evaluateGraphChangeOverlayStaleness,
+} from './evaluate-overlay-staleness.js';
+export { buildShardDependenciesFromSources } from './build-shard-dependencies.js';
 export { compareChangeOverlays } from './compare-change-overlays.js';
+export { queryChangeOverlay } from './query-change-overlay.js';
+export type {
+  GraphChangeOverlayQuery,
+  GraphChangeOverlayQueryRequest,
+  GraphChangeOverlayQueryResult,
+} from './query-change-overlay.js';
 export type {
   GraphIncrementalBuildPlan,
   GraphIncrementalBuildRequest,
