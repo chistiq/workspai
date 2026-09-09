@@ -54,8 +54,12 @@
     },
     {
       "id": "standalone-dual-scope-orchestration",
-      "status": "planned",
-      "evidence": ["workspai-docs:Packages/graph/PUBLIC_API.md"]
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/run-standalone-graph.ts",
+        "packages/graph/src/application/publish-workspace-graph.ts",
+        "packages/graph/test/application/run-standalone-graph.test.ts"
+      ]
     },
     {
       "id": "g5-cross-platform-admission",

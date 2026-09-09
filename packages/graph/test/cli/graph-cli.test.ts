@@ -182,7 +182,7 @@ describe('workspai-graph CLI', () => {
     ['query', '--preset', 'entryPoints', '--slice'],
     ['inspect', '--slice'],
     ['inspect', '--view', 'unknown'],
-    ['inspect', '--mode', 'project-and-default-workspace'],
+    ['inspect', '--mode', 'unknown-mode'],
     ['inspect', '--subject', 'entity:unexpected'],
     ['inspect', 'one', 'two'],
     ['providers'],

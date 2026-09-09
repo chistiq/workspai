@@ -33,6 +33,21 @@ export {
   type GraphProjectPublicationOutcome,
 } from './publish-project-graph.js';
 export { buildWorkspaceGraph } from './build-workspace-graph.js';
+export { runStandaloneGraph } from './run-standalone-graph.js';
+export {
+  writeWorkspaceGraphGeneration,
+  GRAPH_WORKSPACE_ARTIFACT_FILES,
+  type GraphWorkspacePublicationIndex,
+  type GraphWorkspacePublicationOutcome,
+} from './publish-workspace-graph.js';
+export {
+  projectIdentityFromScope,
+  workspaceScope,
+  type GraphStandaloneGraphExecution,
+  type GraphStandaloneGraphRequest,
+  type GraphStandaloneInteraction,
+  type GraphStandaloneMode,
+} from './standalone-build-types.js';
 export {
   projectGraphReference,
   type GraphDualScopeGraphResult,

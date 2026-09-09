@@ -34,7 +34,9 @@ interface GraphCliOptions {
   readonly root: string;
   readonly write: boolean;
   readonly json: boolean;
-  readonly mode: 'project-only';
+  readonly mode:
+    'project-only' | 'project-and-default-workspace' | 'project-and-existing-workspace';
+  readonly workspace?: string;
   readonly providerAction?: 'list' | 'inspect';
   readonly providerId?: string;
   readonly preset?: keyof typeof GRAPH_QUERY_PRESETS;
@@ -72,7 +74,7 @@ export interface GraphCliDependencies {
 const HELP = `Workspai Graph repository preview
 
 Usage:
-  workspai-graph inspect [root] [--mode project-only] [--view source|structural|evidence] [--write] [--json]
+  workspai-graph inspect [root] [--mode project-only|project-and-default-workspace|project-and-existing-workspace] [--workspace <id-or-path>] [--view source|structural|evidence] [--write] [--json]
   workspai-graph quality [root] [--json]
   workspai-graph query [root] --preset <name> [--subject <id>] [--target <id>] [--slice] [--json]
   workspai-graph providers list [--json]
@@ -98,7 +100,8 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
   let root = cwd;
   let write = false;
   let json = false;
-  let mode: 'project-only' = 'project-only';
+  let mode: GraphCliOptions['mode'] = 'project-only';
+  let workspace: string | undefined;
   let preset: keyof typeof GRAPH_QUERY_PRESETS | undefined;
   let subject: string | undefined;
   let target: string | undefined;
@@ -121,12 +124,19 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
     else if (argument === '--mode') {
       const value = takeValue(args, index, argument);
       index += 1;
-      if (value !== 'project-only') {
-        throw new GraphCliInputError(
-          'Only project-only mode is admitted by the standalone repository preview.'
-        );
+      if (
+        ![
+          'project-only',
+          'project-and-default-workspace',
+          'project-and-existing-workspace',
+        ].includes(value)
+      ) {
+        throw new GraphCliInputError(`Unknown inspect mode: ${value}`);
       }
-      mode = value;
+      mode = value as GraphCliOptions['mode'];
+    } else if (argument === '--workspace') {
+      workspace = takeValue(args, index, argument);
+      index += 1;
     } else if (argument === '--preset') {
       const value = takeValue(args, index, argument);
       index += 1;
@@ -168,6 +178,11 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
   }
   if (write && command !== 'inspect')
     throw new GraphCliInputError('--write is supported only by inspect.');
+  if (mode === 'project-and-existing-workspace' && !workspace && command === 'inspect' && write) {
+    throw new GraphCliInputError(
+      'Existing-workspace mode requires --workspace <id-or-path> when writing.'
+    );
+  }
   if (command === 'query' && !preset)
     throw new GraphCliInputError('Query requires --preset <name>.');
   if (command !== 'query' && (preset || subject || target))
@@ -183,6 +198,7 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
     write,
     json,
     mode,
+    workspace,
     providerAction,
     providerId,
     preset,

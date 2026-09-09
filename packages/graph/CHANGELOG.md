@@ -13,6 +13,10 @@
   runtime coupling.
 - Refactored G4 repository preview views to delegate to the shared projection
   engine instead of maintaining parallel filtering logic.
+- Added `runStandaloneGraph` for project-first dual-scope orchestration with
+  fail-closed workspace handoff when no onboarding adapter is injected.
+- Added workspace graph publication through `writeWorkspaceGraphGeneration` and
+  admitted workspace inspect modes in the standalone CLI argument surface.
 
 - Admitted the signed G3 proof-carrying query candidate after the same-commit
   Linux, macOS and Windows matrix and aggregate CI gate passed.
