@@ -10,6 +10,7 @@ const repositoryRoot = path.resolve(packageRoot, '../..');
 const script = path.join(packageRoot, 'scripts/check-composition-matrix-admission.mjs');
 const temporaryDirectories: string[] = [];
 const sourceCommit = 'c'.repeat(40);
+const testedCommit = 'd'.repeat(40);
 
 function repositoryRelative(file: string): string {
   return path.relative(repositoryRoot, file).split(path.sep).join('/');
@@ -26,7 +27,7 @@ function createEvidenceDirectory(): string {
     ['Windows', 'win32', 'X64'],
   ]) {
     const report = {
-      schemaVersion: 'workspai-graph-composition-admission-audit.v1',
+      schemaVersion: 'workspai-graph-composition-admission-audit.v2',
       generatedAt: '2026-09-08T20:00:00.000Z',
       package: '@workspai/graph',
       version: '0.0.0-development',
@@ -47,7 +48,9 @@ function createEvidenceDirectory(): string {
         provider: 'github-actions',
         runId: '4321',
         runAttempt: '1',
-        commit: sourceCommit,
+        sourceCommit,
+        testedCommit,
+        event: 'pull_request',
         ref: 'refs/pull/1/merge',
       },
       failures: [],
@@ -70,6 +73,8 @@ function runAdmission(directory: string) {
       repositoryRelative(directory),
       '--source-commit',
       sourceCommit,
+      '--tested-commit',
+      testedCommit,
       '--output',
       repositoryRelative(output),
     ],
@@ -102,6 +107,7 @@ describe('Graph composition matrix admission', () => {
       nextStage: 'G3',
       nextStageAuthorized: true,
       sourceCommit,
+      testedCommit,
       failures: [],
     });
   });
@@ -125,6 +131,43 @@ describe('Graph composition matrix admission', () => {
       admitted: false,
       failures: expect.arrayContaining([
         'macOS: closure or implementation digest drifted across the matrix',
+      ]),
+    });
+
+    const commitDriftDirectory = createEvidenceDirectory();
+    const commitEvidencePath = path.join(
+      commitDriftDirectory,
+      'graph-composition-admission-Windows.json'
+    );
+    const commitEvidence = JSON.parse(fs.readFileSync(commitEvidencePath, 'utf8')) as {
+      ci: { testedCommit: string };
+    };
+    commitEvidence.ci.testedCommit = 'e'.repeat(40);
+    fs.writeFileSync(commitEvidencePath, `${JSON.stringify(commitEvidence)}\n`);
+    expect(runAdmission(commitDriftDirectory).output).toMatchObject({
+      admitted: false,
+      failures: expect.arrayContaining([
+        'Windows: evidence is not bound to the requested source commit, tested commit and run',
+      ]),
+    });
+  });
+
+  it('rejects mixed runs and runner identity masquerading', () => {
+    const directory = createEvidenceDirectory();
+    const evidencePath = path.join(directory, 'graph-composition-admission-Windows.json');
+    const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8')) as {
+      ci: { runId: string };
+      environment: { platform: string };
+    };
+    evidence.ci.runId = '9999';
+    evidence.environment.platform = 'linux';
+    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence)}\n`);
+
+    expect(runAdmission(directory).output).toMatchObject({
+      admitted: false,
+      failures: expect.arrayContaining([
+        'Windows: runner OS and runtime platform do not match',
+        'Windows: evidence was mixed across GitHub runs or events',
       ]),
     });
   });

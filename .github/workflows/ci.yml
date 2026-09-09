@@ -198,6 +198,7 @@ jobs:
         shell: bash
         env:
           WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: >-
           node packages/graph/scripts/check-composition-admission.mjs
           --ci-evidence --json
@@ -300,7 +301,8 @@ jobs:
         run: >-
           node packages/graph/scripts/check-composition-matrix-admission.mjs
           --evidence-directory artifacts/graph-composition-platforms
-          --source-commit "${{ github.sha }}"
+          --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
+          --tested-commit "${{ github.sha }}"
           --output artifacts/graph-composition-admission-candidate.json
 
       - name: Upload Graph composition admission candidate

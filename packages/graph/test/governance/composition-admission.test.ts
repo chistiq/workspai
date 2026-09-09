@@ -24,7 +24,7 @@ describe('Graph composition admission audit', () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toMatchObject({
-      schemaVersion: 'workspai-graph-composition-admission-audit.v1',
+      schemaVersion: 'workspai-graph-composition-admission-audit.v2',
       stage: 'G2',
       status: 'pending-remote',
       admitted: false,
@@ -36,6 +36,8 @@ describe('Graph composition admission audit', () => {
     const environment = { ...process.env };
     delete environment.GITHUB_ACTIONS;
     delete environment.WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED;
+    delete environment.WORKSPAI_ADMISSION_SOURCE_COMMIT;
+    delete environment.GITHUB_SHA;
     const result = run(['--ci-evidence', '--json'], environment);
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({
@@ -44,7 +46,36 @@ describe('Graph composition admission audit', () => {
       failures: expect.arrayContaining([
         'CI evidence requires GitHub Actions',
         'CI evidence requires the preceding package-infrastructure pass',
+        'CI evidence requires the full source commit SHA',
+        'CI evidence requires the full tested commit SHA',
       ]),
+    });
+  });
+
+  it('binds platform evidence to distinct source and tested commits', () => {
+    const environment = {
+      ...process.env,
+      GITHUB_ACTIONS: 'true',
+      GITHUB_EVENT_NAME: 'pull_request',
+      GITHUB_REF: 'refs/pull/58/merge',
+      GITHUB_RUN_ATTEMPT: '1',
+      GITHUB_RUN_ID: '34292221450',
+      GITHUB_SHA: 'b'.repeat(40),
+      RUNNER_ARCH: 'X64',
+      RUNNER_OS: 'Linux',
+      WORKSPAI_ADMISSION_SOURCE_COMMIT: 'a'.repeat(40),
+      WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: '1',
+    };
+    const result = run(['--ci-evidence', '--json'], environment);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: 'passed-platform',
+      ci: {
+        sourceCommit: 'a'.repeat(40),
+        testedCommit: 'b'.repeat(40),
+        event: 'pull_request',
+      },
+      failures: [],
     });
   });
 

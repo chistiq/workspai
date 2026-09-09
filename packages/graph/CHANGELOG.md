@@ -22,6 +22,9 @@
 - Replaced the completed foundation evidence lane with a same-commit G2
   composition matrix whose aggregate admission is required by the repository
   gate on Linux, macOS and Windows.
+- Bound pull-request admission separately to the signed source commit and the
+  tested merge commit, and reject mixed runs, events, digests or runner
+  identities across the platform matrix.
 - Consolidated architecture, governance and contributor documentation in the
   canonical Workspai documentation portfolio. The public package retains only
   root consumer metadata plus an offline installed-tarball and leak gate.

@@ -25,6 +25,7 @@ const implementationPaths = [
 ];
 const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
 const Ajv2020 = toolRequire('ajv/dist/2020').default;
+const FULL_GIT_SHA = /^[a-f0-9]{40}$/u;
 
 function parseArguments(argv) {
   const options = { allowPending: false, ciEvidence: false, json: false, output: undefined };
@@ -158,9 +159,15 @@ function auditComposition(options) {
     if (process.env.WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED !== '1') {
       failures.push('CI evidence requires the preceding package-infrastructure pass');
     }
+    if (!FULL_GIT_SHA.test(process.env.WORKSPAI_ADMISSION_SOURCE_COMMIT ?? '')) {
+      failures.push('CI evidence requires the full source commit SHA');
+    }
+    if (!FULL_GIT_SHA.test(process.env.GITHUB_SHA ?? '')) {
+      failures.push('CI evidence requires the full tested commit SHA');
+    }
   }
   return {
-    schemaVersion: 'workspai-graph-composition-admission-audit.v1',
+    schemaVersion: 'workspai-graph-composition-admission-audit.v2',
     generatedAt: new Date().toISOString(),
     package: packageManifest.name,
     version: packageManifest.version,
@@ -189,7 +196,9 @@ function auditComposition(options) {
             provider: 'github-actions',
             runId: process.env.GITHUB_RUN_ID ?? 'unknown',
             runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? 'unknown',
-            commit: process.env.GITHUB_SHA ?? 'unknown',
+            sourceCommit: process.env.WORKSPAI_ADMISSION_SOURCE_COMMIT ?? 'unknown',
+            testedCommit: process.env.GITHUB_SHA ?? 'unknown',
+            event: process.env.GITHUB_EVENT_NAME ?? 'unknown',
             ref: process.env.GITHUB_REF ?? 'unknown',
           },
         }

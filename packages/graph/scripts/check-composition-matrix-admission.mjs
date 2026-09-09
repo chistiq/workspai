@@ -6,26 +6,40 @@ import { fileURLToPath } from 'node:url';
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
 const requiredOperatingSystems = new Set(['Linux', 'macOS', 'Windows']);
+const platformByOperatingSystem = new Map([
+  ['Linux', 'linux'],
+  ['macOS', 'darwin'],
+  ['Windows', 'win32'],
+]);
+const FULL_GIT_SHA = /^[a-f0-9]{40}$/u;
+const SHA256_DIGEST = /^sha256:[a-f0-9]{64}$/u;
+const GITHUB_RUN_ID = /^[1-9][0-9]*$/u;
 
 function parseArguments(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     const value = argv[index + 1];
-    if (!['--evidence-directory', '--source-commit', '--output'].includes(argument)) {
+    if (
+      !['--evidence-directory', '--source-commit', '--tested-commit', '--output'].includes(argument)
+    ) {
       throw new Error(`Unknown option: ${argument}`);
     }
     if (!value || value.startsWith('-')) throw new Error(`${argument} requires a value.`);
     if (argument === '--evidence-directory') options.evidenceDirectory = value;
     else if (argument === '--source-commit') options.sourceCommit = value;
+    else if (argument === '--tested-commit') options.testedCommit = value;
     else options.output = value;
     index += 1;
   }
   if (!options.evidenceDirectory || !options.output) {
     throw new Error('--evidence-directory and --output are required.');
   }
-  if (!/^[a-f0-9]{40}$/u.test(options.sourceCommit ?? '')) {
+  if (!FULL_GIT_SHA.test(options.sourceCommit ?? '')) {
     throw new Error('--source-commit must be a full lowercase Git SHA.');
+  }
+  if (!FULL_GIT_SHA.test(options.testedCommit ?? '')) {
+    throw new Error('--tested-commit must be a full lowercase Git SHA.');
   }
   return options;
 }
@@ -68,11 +82,13 @@ function main() {
   const evidence = [];
   let expectedClosureDigest;
   let expectedImplementationDigest;
+  let expectedRunId;
+  let expectedEvent;
 
   for (const file of files) {
     const report = JSON.parse(fs.readFileSync(file, 'utf8'));
     const runnerOs = report.platformEvidence?.runnerOs ?? 'unknown';
-    if (report.schemaVersion !== 'workspai-graph-composition-admission-audit.v1') {
+    if (report.schemaVersion !== 'workspai-graph-composition-admission-audit.v2') {
       failures.push(`${runnerOs}: unsupported evidence schema`);
     }
     if (report.package !== packageManifest.name || report.version !== packageManifest.version) {
@@ -89,16 +105,39 @@ function main() {
     }
     if (
       report.ci?.provider !== 'github-actions' ||
-      report.ci?.commit !== options.sourceCommit ||
+      report.ci?.sourceCommit !== options.sourceCommit ||
+      report.ci?.testedCommit !== options.testedCommit ||
       !report.ci?.runId ||
       report.ci.runId === 'unknown'
     ) {
-      failures.push(`${runnerOs}: evidence is not bound to the requested CI commit and run`);
+      failures.push(
+        `${runnerOs}: evidence is not bound to the requested source commit, tested commit and run`
+      );
     }
-    if (!requiredOperatingSystems.has(runnerOs))
+    if (!requiredOperatingSystems.has(runnerOs)) {
       failures.push(`${runnerOs}: unsupported runner OS`);
+    } else if (report.environment?.platform !== platformByOperatingSystem.get(runnerOs)) {
+      failures.push(`${runnerOs}: runner OS and runtime platform do not match`);
+    }
     if (observed.has(runnerOs)) failures.push(`${runnerOs}: duplicate platform evidence`);
     observed.add(runnerOs);
+    if (!GITHUB_RUN_ID.test(report.ci?.runId ?? '')) {
+      failures.push(`${runnerOs}: GitHub run identity is invalid`);
+    }
+    if (!['pull_request', 'push'].includes(report.ci?.event)) {
+      failures.push(`${runnerOs}: GitHub event identity is invalid`);
+    }
+    expectedRunId ??= report.ci?.runId;
+    expectedEvent ??= report.ci?.event;
+    if (report.ci?.runId !== expectedRunId || report.ci?.event !== expectedEvent) {
+      failures.push(`${runnerOs}: evidence was mixed across GitHub runs or events`);
+    }
+    if (
+      !SHA256_DIGEST.test(report.closureDigest ?? '') ||
+      !SHA256_DIGEST.test(report.implementationDigest ?? '')
+    ) {
+      failures.push(`${runnerOs}: closure or implementation digest is invalid`);
+    }
     expectedClosureDigest ??= report.closureDigest;
     expectedImplementationDigest ??= report.implementationDigest;
     if (
@@ -129,12 +168,13 @@ function main() {
   evidence.sort((left, right) => left.runnerOs.localeCompare(right.runnerOs));
   const admitted = failures.length === 0;
   const candidate = {
-    schemaVersion: 'workspai-graph-composition-matrix-admission.v1',
+    schemaVersion: 'workspai-graph-composition-matrix-admission.v2',
     generatedAt: new Date().toISOString(),
     package: packageManifest.name,
     version: packageManifest.version,
     stage: 'G2',
     sourceCommit: options.sourceCommit,
+    testedCommit: options.testedCommit,
     status: admitted ? 'admitted-candidate' : 'blocked',
     admitted,
     nextStage: 'G3',
