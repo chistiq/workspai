@@ -54,6 +54,16 @@ function indexShards(manifest: GraphContentStateManifest): Map<string, GraphShar
   return new Map(manifest.shardDependencies.map((shard) => [shard.shardId, shard]));
 }
 
+function leafDigests(manifest: GraphContentStateManifest): Set<string> {
+  const digests = new Set<string>();
+  for (const node of manifest.nodes) {
+    if (node.kind === 'file') {
+      digests.add(digestKey(node.contentDigest));
+    }
+  }
+  return digests;
+}
+
 function reject(
   shardId: string,
   reason: GraphShardReuseRejectionReason,
@@ -140,6 +150,7 @@ export function planShardReuseAndInvalidation(
 
   const baseShards = indexShards(request.base);
   const targetShards = indexShards(request.target);
+  const targetLeafDigests = leafDigests(request.target);
   const affectedLocators = changedLocators(request.changedInputs);
   const authorized = request.authorizedShardIds ? new Set(request.authorizedShardIds) : undefined;
 
@@ -169,6 +180,12 @@ export function planShardReuseAndInvalidation(
 
     if (!digestEqual(baseShard.contentDigest, targetShard.contentDigest)) {
       rejected.push(reject(shardId, 'content-incompatible'));
+      invalidationSources.push(baseShard);
+      continue;
+    }
+
+    if (!targetLeafDigests.has(digestKey(targetShard.contentDigest))) {
+      rejected.push(reject(shardId, 'content-incompatible', 'missing-content-membership'));
       invalidationSources.push(baseShard);
       continue;
     }

@@ -93,8 +93,40 @@ export interface GraphFileSourcePort {
   ): Promise<Uint8Array>;
 }
 
+export type GraphChangeJournalTrust = 'trusted' | 'untrusted' | 'absent';
+export type GraphChangeJournalSource = 'git' | 'watcher' | 'change-journal' | 'none';
+export type GraphChangeJournalRecordKind =
+  'unchanged' | 'changed' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'unknown';
+
+/** Host-observed locator change. Git/mtime/path semantics never become reuse authority. */
+export interface GraphChangeJournalRecord {
+  readonly locator: string;
+  readonly kind: GraphChangeJournalRecordKind;
+  readonly gitStatus?: string;
+  readonly priorLocator?: string;
+}
+
+export interface GraphChangeJournalInspection {
+  readonly trust: GraphChangeJournalTrust;
+  readonly source: GraphChangeJournalSource;
+  readonly records: readonly GraphChangeJournalRecord[];
+  readonly diagnostics: readonly GraphDiagnostic[];
+}
+
+/**
+ * Optional Git/watcher/change-journal adapter. Untrusted or absent inspections
+ * force a conservative full reread; portable content digests remain correctness.
+ */
+export interface GraphChangeJournalPort {
+  inspect(request: {
+    readonly root: string;
+    readonly signal?: AbortSignal;
+  }): Promise<GraphChangeJournalInspection>;
+}
+
 export interface GraphProductHostPorts extends GraphExecutionPorts {
   readonly fileSource: GraphFileSourcePort;
+  readonly changeJournal?: GraphChangeJournalPort;
 }
 
 export type GraphProjectArtifactName =

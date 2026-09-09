@@ -92,6 +92,29 @@
       ]
     },
     {
+      "id": "git-aware-change-journal",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/ports/index.ts",
+        "packages/graph/src/application/plan-inventory-reread.ts",
+        "packages/graph/src/application/parse-git-status-porcelain.ts",
+        "packages/graph/test/application/plan-inventory-reread.test.ts"
+      ]
+    },
+    {
+      "id": "query-cache-invalidation-and-generation-diff",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/plan-query-cache-invalidation.ts",
+        "packages/graph/src/application/diff-graph-generations.ts",
+        "packages/graph/src/application/summarize-input-processing-ledger.ts",
+        "packages/graph/src/application/plan-shard-reuse.ts",
+        "packages/graph/test/application/plan-query-cache-invalidation.test.ts",
+        "packages/graph/test/application/diff-graph-generations.test.ts",
+        "packages/graph/test/application/plan-shard-reuse.test.ts"
+      ]
+    },
+    {
       "id": "g6-cross-platform-admission",
       "status": "planned",
       "evidence": [".github/workflows/ci.yml"]

@@ -30,9 +30,10 @@
     {
       "id": "performance-and-efficiency",
       "status": "passed",
-      "summary": "Unequal Merkle branches and exact-digest shard reuse avoid whole-generation rescans in planning paths.",
+      "summary": "Trusted Git/journal skip-reread avoids content reads for unchanged leaves; untrusted journals reread conservatively and Git status never enters Merkle identity.",
       "evidence": [
-        "packages/graph/test/application/g6-incremental-pipeline.test.ts",
+        "packages/graph/src/application/plan-inventory-reread.ts",
+        "packages/graph/test/application/plan-inventory-reread.test.ts",
         "packages/graph/scripts/check-query-profile.mjs"
       ]
     },
@@ -135,12 +136,12 @@
     "candidateSchemas": 33,
     "languageFixtures": 7,
     "providerCount": 7,
-    "testFiles": 56,
-    "tests": 340,
-    "coverageStatementsPercent": 90.02,
-    "coverageBranchesPercent": 85.2,
-    "coverageFunctionsPercent": 92.93,
-    "coverageLinesPercent": 91.52,
+    "testFiles": 59,
+    "tests": 357,
+    "coverageStatementsPercent": 90.11,
+    "coverageBranchesPercent": 85.02,
+    "coverageFunctionsPercent": 92.61,
+    "coverageLinesPercent": 91.61,
     "packedFiles": 75,
     "packedCompressedBytes": 210161,
     "packedCompressedBudgetBytes": 262144,
@@ -151,7 +152,7 @@
   "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "pending" },
   "remainingRisks": [
     "The signed candidate still requires retained Linux, Windows and macOS G6 evidence.",
-    "Selective provider recomputation and equivalence assessment are implemented locally; retained cross-platform admission evidence is still required before registry advance.",
+    "Selective provider recomputation, equivalence assessment, Git skip-reread planning and query-cache invalidation are implemented locally; retained cross-platform admission evidence and measured SLO baselines are still required before registry advance or native-acceleration decisions.",
     "Proposed overlays predict invalidation only; observed fact identifiers require a subsequent canonical rebuild.",
     "Rust, native and WASM acceleration remain prohibited until benchmark evidence justifies a parity-checked adapter.",
     "Central CLI shadow parity and replacement remain prohibited until G8."

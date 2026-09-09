@@ -18,6 +18,8 @@ export {
 export { normalizeGraphQuery, queryGraph } from './query-graph.js';
 export { assessGraphEdgeProof, type GraphProofPolicyAssessment } from './assess-proof.js';
 export { evaluateGraphQueryCacheReuse } from './query-cache.js';
+export { planQueryCacheInvalidation } from './plan-query-cache-invalidation.js';
+export type { GraphQueryCacheInvalidationRequest } from './plan-query-cache-invalidation.js';
 export { GRAPH_STANDARD_REPO_BUILD_POLICY, buildRepoGraph } from './build-repo-graph.js';
 export type {
   GraphIncrementalRepoBuildRequest,
@@ -51,6 +53,23 @@ export {
   type GraphContentStateManifestBuildRequest,
 } from './content-state-manifest-types.js';
 export { compareContentStateManifests } from './compare-content-state-manifest.js';
+export { planInventoryReread } from './plan-inventory-reread.js';
+export type {
+  GraphInventoryRereadDecision,
+  GraphInventoryRereadPlan,
+} from './plan-inventory-reread.js';
+export {
+  absentChangeJournal,
+  parseGitStatusPorcelain,
+  untrustedChangeJournal,
+} from './parse-git-status-porcelain.js';
+export { diffGraphGenerations } from './diff-graph-generations.js';
+export type { GraphGenerationDiff } from './diff-graph-generations.js';
+export {
+  summarizeDeltaProcessingLedger,
+  summarizeInputProcessingLedger,
+  type GraphInputProcessingLedger,
+} from './summarize-input-processing-ledger.js';
 export { planShardReuseAndInvalidation } from './plan-shard-reuse.js';
 export { planIncrementalGraphBuild } from './plan-incremental-graph-build.js';
 export {

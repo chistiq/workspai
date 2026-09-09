@@ -112,6 +112,26 @@ describe('planShardReuseAndInvalidation', () => {
     });
   });
 
+  it('rejects reused shards that lack content-membership in the target tree', () => {
+    const base = readManifest('minimal-content-state-manifest.json');
+    const target = withManifest(base, {
+      shardDependencies: base.shardDependencies.map((shard) => ({
+        ...shard,
+        contentDigest: digest('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      })),
+    });
+    const plan = planShardReuseAndInvalidation({
+      base: target,
+      target,
+      changedInputs: [],
+    });
+    expect(plan.reused).toEqual([]);
+    expect(plan.rejected[0]).toMatchObject({
+      reason: 'content-incompatible',
+      detail: 'missing-content-membership',
+    });
+  });
+
   it('rejects missing, unauthorized and semantically incomplete shards', () => {
     const base = readManifest('minimal-content-state-manifest.json');
     const target = withManifest(base, { shardDependencies: [] });

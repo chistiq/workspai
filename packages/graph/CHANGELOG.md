@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added Git/change-journal skip-reread planning so trusted porcelain status can
+  avoid content rereads while untrusted journals stay conservative and Git never
+  becomes Merkle reuse authority.
+- Added `planQueryCacheInvalidation`, `diffGraphGenerations` and a per-stage
+  input processing ledger, plus content-membership rejection for reused shards.
+
 - Recorded local G6 stage closure with incremental and overlay checkpoints
   complete and remote cross-platform admission deferred to final workflow evidence.
 - Added proposed-change overlay contracts plus `buildGraphChangeOverlay`,
