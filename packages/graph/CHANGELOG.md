@@ -29,7 +29,10 @@
 - Added installed-tarball CLI coverage proving default read-only behavior,
   bundled worker resolution and explicit portable publication.
 - Resolved executable identity through real filesystem paths so macOS `/var`
-  aliases and installed symlink entrypoints start the packed CLI reliably.
+  aliases, Windows case-insensitive paths and installed symlink entrypoints start
+  the packed CLI reliably.
+- Fail-closed CLI entrypoint detection now rejects invalid module URLs instead of
+  throwing during packed or cross-platform invocation checks.
 - Kept central CLI integration and native acceleration blocked behind their
   remaining later-stage evidence.
 

@@ -483,6 +483,12 @@ export function isDirectGraphCliInvocation(
   resolveRealpath: GraphCliRealpath = realpathSync
 ): boolean {
   if (!argvPath) return false;
+  let modulePath: string;
+  try {
+    modulePath = fileURLToPath(moduleUrl);
+  } catch {
+    return false;
+  }
   const canonical = (value: string): string => {
     const resolved = path.resolve(value);
     let real = resolved;
@@ -493,7 +499,7 @@ export function isDirectGraphCliInvocation(
     }
     return process.platform === 'win32' ? real.toLowerCase() : real;
   };
-  return canonical(argvPath) === canonical(fileURLToPath(moduleUrl));
+  return canonical(argvPath) === canonical(modulePath);
 }
 
 if (isDirectGraphCliInvocation(process.argv[1], import.meta.url)) {

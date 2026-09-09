@@ -97,23 +97,59 @@ function harness(build: GraphRepoBuildResult = result('complete')): {
 
 describe('workspai-graph CLI', () => {
   it('recognizes the same executable through a platform path alias', () => {
-    const realpath = (value: string): string =>
-      value.startsWith('/var/') ? `/private${value}` : value;
-    expect(
-      isDirectGraphCliInvocation(
-        '/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
-        'file:///private/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
-        realpath
-      )
-    ).toBe(true);
-    expect(
-      isDirectGraphCliInvocation(
-        '/var/folders/workspai/node_modules/@workspai/graph/dist/other.js',
-        'file:///private/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
-        realpath
-      )
-    ).toBe(false);
-    expect(isDirectGraphCliInvocation(undefined, import.meta.url, realpath)).toBe(false);
+    if (process.platform === 'darwin') {
+      const realpath = (value: string): string =>
+        value.startsWith('/var/') ? `/private${value}` : value;
+      expect(
+        isDirectGraphCliInvocation(
+          '/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
+          'file:///private/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
+          realpath
+        )
+      ).toBe(true);
+      expect(
+        isDirectGraphCliInvocation(
+          '/var/folders/workspai/node_modules/@workspai/graph/dist/other.js',
+          'file:///private/var/folders/workspai/node_modules/@workspai/graph/dist/cli.js',
+          realpath
+        )
+      ).toBe(false);
+    } else if (process.platform === 'win32') {
+      const moduleUrl = 'file:///D:/workspai/node_modules/@workspai/graph/dist/cli.js';
+      expect(
+        isDirectGraphCliInvocation(
+          'D:\\workspai\\node_modules\\@workspai\\graph\\dist\\cli.js',
+          moduleUrl
+        )
+      ).toBe(true);
+      expect(
+        isDirectGraphCliInvocation(
+          'd:\\workspai\\node_modules\\@workspai\\graph\\dist\\cli.js',
+          moduleUrl
+        )
+      ).toBe(true);
+      expect(
+        isDirectGraphCliInvocation(
+          'D:\\workspai\\node_modules\\@workspai\\graph\\dist\\other.js',
+          moduleUrl
+        )
+      ).toBe(false);
+    } else {
+      const cliPath = '/workspai/node_modules/@workspai/graph/dist/cli.js';
+      const moduleUrl = `file://${cliPath}`;
+      expect(isDirectGraphCliInvocation(cliPath, moduleUrl)).toBe(true);
+      expect(
+        isDirectGraphCliInvocation(
+          '/workspai/node_modules/@workspai/graph/dist/other.js',
+          moduleUrl
+        )
+      ).toBe(false);
+    }
+    expect(isDirectGraphCliInvocation(undefined, import.meta.url)).toBe(false);
+  });
+
+  it('rejects invalid module URLs without throwing', () => {
+    expect(isDirectGraphCliInvocation('/some/cli.js', 'not-a-valid-module-url')).toBe(false);
   });
 
   it('is helpful without reading a repository', async () => {
