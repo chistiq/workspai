@@ -8,9 +8,11 @@ export type { WorkspaiGraphGenerationPublicationCandidate } from './generation-p
 export type { WorkspaiGraphQualityCandidate } from './graph-quality.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryResultCandidate } from './graph-query-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCandidate } from './graph-query.v0.1.0-candidate.js';
+export type { WorkspaiGraphSliceResultCandidate } from './graph-slice-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphModelGenerationBindingCandidate } from './model-generation-binding.v0.1.0-candidate.js';
 export type { WorkspaiGraphNaryAssertionCandidate } from './nary-assertion.v0.1.0-candidate.js';
 export type { WorkspaiGraphOntologyProfileCandidate } from './ontology-profile.v0.1.0-candidate.js';
+export type { WorkspaiGraphProjectionResultCandidate } from './projection-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphProofPolicyCandidate } from './proof-policy.v0.1.0-candidate.js';
 export type { WorkspaiGraphProviderDetectionCandidate } from './provider-detection.v0.1.0-candidate.js';
 export type { WorkspaiGraphProviderManifestCandidate } from './provider-manifest.v0.1.0-candidate.js';

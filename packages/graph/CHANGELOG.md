@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Opened G5 with versioned projection profile/result contracts, standard
+  projection families and bounded `projectGraph` execution that preserves
+  canonical generation identity.
+- Added generic graph slice request/result contracts plus deterministic
+  intent-driven `createGraphSlice` selection with explicit truncation.
+- Added `buildWorkspaceGraph` to compose workspace graphs from immutable project
+  generations without re-extracting repositories.
+- Added workspace onboarding port types for optional central CLI handoff without
+  runtime coupling.
+- Refactored G4 repository preview views to delegate to the shared projection
+  engine instead of maintaining parallel filtering logic.
+
 - Admitted the signed G3 proof-carrying query candidate after the same-commit
   Linux, macOS and Windows matrix and aggregate CI gate passed.
 - Opened G4 with a host-neutral, bounded and offline `buildRepoGraph` candidate

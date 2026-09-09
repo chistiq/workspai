@@ -125,7 +125,7 @@ describe('G4 fixed repository preview views', () => {
     expect(source.value.unknownZones).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: 'graph.fixture-unknown' }),
-        expect.objectContaining({ code: 'graph.repository-preview-source-unresolved' }),
+        expect.objectContaining({ code: 'graph.projection-source-unresolved' }),
       ])
     );
   });
@@ -156,7 +156,7 @@ describe('G4 fixed repository preview views', () => {
     });
     expect(projectRepositoryPreview(graph, quality, 'source', { maxNodes: 0 })).toMatchObject({
       accepted: false,
-      issues: [{ code: 'GRAPH_REPOSITORY_PREVIEW_VIEW_BUDGET_INVALID' }],
+      issues: [{ code: 'GRAPH_PROJECTION_BUDGET_INVALID' }],
     });
   });
 });

@@ -32,3 +32,14 @@ export {
   type GraphProjectPublicationIndex,
   type GraphProjectPublicationOutcome,
 } from './publish-project-graph.js';
+export { buildWorkspaceGraph } from './build-workspace-graph.js';
+export {
+  projectGraphReference,
+  type GraphDualScopeGraphResult,
+  type GraphWorkspaceBuildExecution,
+  type GraphWorkspaceBuildMetrics,
+  type GraphWorkspaceBuildPolicy,
+  type GraphWorkspaceBuildRequest,
+  type GraphWorkspaceBuildResult,
+  type GraphWorkspaceProjectInput,
+} from './workspace-build-types.js';

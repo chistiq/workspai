@@ -127,3 +127,34 @@ export {
   type GraphStructuralLanguage,
   type GraphStructuralLanguageProfile,
 } from './structural-extractor-profile.js';
+export {
+  GRAPH_PROJECTION_PROFILE_CONTRACT,
+  GRAPH_PROJECTION_RESULT_CONTRACT,
+  type GraphProjectionBudget,
+  type GraphProjectionExecution,
+  type GraphProjectionOmittedFamilies,
+  type GraphProjectionProfile,
+  type GraphProjectionRequest,
+  type GraphProjectionResult,
+} from './projection.js';
+export {
+  GRAPH_SLICE_REQUEST_CONTRACT,
+  GRAPH_SLICE_RESULT_CONTRACT,
+  type GraphSliceBudget,
+  type GraphSliceExecution,
+  type GraphSliceIntent,
+  type GraphSliceRequest,
+  type GraphSliceResult,
+  type GraphSliceSelectionExplanation,
+} from './graph-slice.js';
+export {
+  type GraphDualScopeWorkspaceStatus,
+  type GraphProjectGraphReference,
+  type GraphProjectMembershipRelationship,
+  type GraphWorkspaceContextReference,
+  type GraphWorkspaceOnboardingPlan,
+  type GraphWorkspaceOnboardingPort,
+  type GraphWorkspaceOnboardingRequest,
+  type GraphWorkspaceOnboardingResult,
+  type GraphWorkspaceOnboardingMode,
+} from './workspace-integration.js';

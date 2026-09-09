@@ -23,9 +23,9 @@ describe('developing Graph package surfaces', () => {
     expect(GRAPH_TRUTH_INVARIANTS).toContain('model-does-not-write-back-graph-truth');
   });
 
-  it('exposes the admitted execution adapter while keeping later projections unavailable', () => {
+  it('exposes the admitted execution adapter and bounded G5 projections', () => {
     expect(GRAPH_ADAPTERS_AVAILABLE).toBe(true);
-    expect(GRAPH_PROJECTIONS_AVAILABLE).toBe(false);
+    expect(GRAPH_PROJECTIONS_AVAILABLE).toBe(true);
     expect(GRAPH_REPOSITORY_PREVIEW_VIEWS_AVAILABLE).toBe(true);
   });
 
