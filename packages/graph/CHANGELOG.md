@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added `planShardReuseAndInvalidation` for exact-digest shard reuse with
+  semantic dependency gates and downstream provider/projection/index invalidation.
 - Added `compareContentStateManifests` to walk unequal Merkle branches, emit
   added/edited/deleted/rename-candidate inputs and report compared/skipped branch
   accounting with fail-closed scope and budget handling.

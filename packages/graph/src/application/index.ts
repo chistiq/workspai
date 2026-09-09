@@ -34,6 +34,7 @@ export {
 } from './publish-project-graph.js';
 export { buildWorkspaceGraph } from './build-workspace-graph.js';
 export { compareContentStateManifests } from './compare-content-state-manifest.js';
+export { planShardReuseAndInvalidation } from './plan-shard-reuse.js';
 export { runStandaloneGraph } from './run-standalone-graph.js';
 export {
   writeWorkspaceGraphGeneration,

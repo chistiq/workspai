@@ -184,6 +184,11 @@ export {
   type GraphContentStateComparisonRequest,
   type GraphContentStateComparisonResult,
   type GraphContentStateComparisonStatus,
+  type GraphShardReuseDecision,
+  type GraphShardReuseDecisionKind,
+  type GraphShardReusePlan,
+  type GraphShardReuseRejectionReason,
+  type GraphShardReuseRequest,
 } from './incremental.js';
 export {
   type GraphDualScopeWorkspaceStatus,

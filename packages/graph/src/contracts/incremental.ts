@@ -179,3 +179,40 @@ export interface GraphContentStateComparisonResult {
   readonly truncation?: GraphIncrementalTruncationSummary;
   readonly status: GraphContentStateComparisonStatus;
 }
+
+export type GraphShardReuseDecisionKind = 'reuse' | 'reject';
+
+export type GraphShardReuseRejectionReason =
+  | 'missing-target-shard'
+  | 'unauthorized-shard'
+  | 'content-changed'
+  | 'content-incompatible'
+  | 'semantic-incompatible'
+  | 'missing-semantic-dependency'
+  | 'extra-semantic-dependency';
+
+export interface GraphShardReuseDecision {
+  readonly shardId: string;
+  readonly decision: GraphShardReuseDecisionKind;
+  readonly reason?: GraphShardReuseRejectionReason;
+  readonly detail?: string;
+}
+
+export interface GraphShardReusePlan {
+  readonly reused: readonly GraphShardDependency[];
+  readonly rejected: readonly GraphShardReuseDecision[];
+  readonly invalidatedProviders: readonly string[];
+  readonly invalidatedProjections: readonly string[];
+  readonly invalidatedQueryIndexes: readonly string[];
+  readonly invalidatedGraphRegions: readonly string[];
+  readonly diagnostics: readonly GraphDiagnostic[];
+  readonly status: 'complete' | 'partial' | 'failed';
+}
+
+export interface GraphShardReuseRequest {
+  readonly base: GraphContentStateManifest;
+  readonly target: GraphContentStateManifest;
+  readonly changedInputs: readonly GraphInputChange[];
+  readonly requiredSemanticDependencies?: readonly WisDigestReference[];
+  readonly authorizedShardIds?: readonly string[];
+}
