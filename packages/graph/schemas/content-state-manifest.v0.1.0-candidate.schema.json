@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/content-state-manifest/v0.1.0-candidate",
+  "title": "WorkspaiGraphContentStateManifestCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "scope", "merkleRoot", "nodes", "shardDependencies", "generatedAt"],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.content-state-manifest",
+        "version": "0.1.0-candidate"
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["project", "workspace"] },
+        "projectIds": { "type": "array", "items": { "type": "string" } },
+        "workspaceId": { "type": "string" }
+      }
+    },
+    "merkleRoot": { "$ref": "#/$defs/digest" },
+    "nodes": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": { "$ref": "#/$defs/contentNode" }
+    },
+    "shardDependencies": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/shardDependency" }
+    },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "contentNode": {
+      "oneOf": [{ "$ref": "#/$defs/fileLeaf" }, { "$ref": "#/$defs/directoryNode" }]
+    },
+    "fileLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "locator", "contentDigest", "inputKind", "scanProfileDigest"],
+      "properties": {
+        "kind": { "const": "file" },
+        "locator": { "type": "string", "minLength": 1 },
+        "contentDigest": { "$ref": "#/$defs/digest" },
+        "inputKind": { "type": "string", "minLength": 1 },
+        "scanProfileDigest": { "$ref": "#/$defs/digest" },
+        "observations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sizeBytes": { "type": "integer", "minimum": 0 },
+            "modifiedAt": { "type": "string", "format": "date-time" },
+            "gitStatus": { "type": "string" }
+          }
+        }
+      }
+    },
+    "directoryNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "locator", "digest", "children"],
+      "properties": {
+        "kind": { "const": "directory" },
+        "locator": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "#/$defs/digest" },
+        "children": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "kind", "digest"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "kind": { "enum": ["file", "directory"] },
+              "digest": { "$ref": "#/$defs/digest" }
+            }
+          }
+        }
+      }
+    },
+    "shardDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shardId",
+        "contentDigest",
+        "semanticDependencies",
+        "providerStages",
+        "graphRegions",
+        "projections",
+        "queryIndexes"
+      ],
+      "properties": {
+        "shardId": { "type": "string", "minLength": 1 },
+        "contentDigest": { "$ref": "#/$defs/digest" },
+        "semanticDependencies": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/digest" }
+        },
+        "providerStages": { "type": "array", "maxItems": 1000, "items": { "type": "string" } },
+        "graphRegions": { "type": "array", "maxItems": 1000, "items": { "type": "string" } },
+        "projections": { "type": "array", "maxItems": 1000, "items": { "type": "string" } },
+        "queryIndexes": { "type": "array", "maxItems": 1000, "items": { "type": "string" } }
+      }
+    }
+  }
+}

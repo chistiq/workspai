@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Opened G6 with versioned ChangeSet, GraphDelta and ContentStateManifest
+  contracts plus minimal G6 fixtures for incremental execution accounting and
+  portable content-state reuse.
+- Added `g6-stage-plan.v1.json` with incremental contract checkpoints while the
+  independent package registry remains on sealed G5 local source.
+
 - Opened G5 with versioned projection profile/result contracts, standard
   projection families and bounded `projectGraph` execution that preserves
   canonical generation identity.

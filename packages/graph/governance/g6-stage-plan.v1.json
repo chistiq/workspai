@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G6",
+  "status": "in-progress",
+  "authorizedBy": "local-source-continuation",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g6",
+    "workspai-docs:Packages/graph/adr/0014-portable-content-state-controls-incremental-reuse.md",
+    "workspai-docs:Packages/graph/CONTRACTS_AND_ONTOLOGY.md#14-changeset-and-graphdelta",
+    "workspai-docs:Packages/graph/ARCHITECTURE.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "versioned-changeset-and-graph-delta-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/incremental.ts",
+        "packages/graph/schemas/changeset.v0.1.0-candidate.schema.json",
+        "packages/graph/schemas/graph-delta.v0.1.0-candidate.schema.json",
+        "packages/graph/test/contracts/incremental-contract.test.ts"
+      ]
+    },
+    {
+      "id": "content-state-manifest-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/incremental.ts",
+        "packages/graph/schemas/content-state-manifest.v0.1.0-candidate.schema.json",
+        "packages/graph/fixtures/g6/minimal-content-state-manifest.json",
+        "packages/graph/test/contracts/incremental-contract.test.ts"
+      ]
+    },
+    {
+      "id": "merkle-comparison-engine",
+      "status": "planned",
+      "evidence": ["packages/graph/src/contracts/incremental.ts"]
+    },
+    {
+      "id": "shard-reuse-and-invalidation",
+      "status": "planned",
+      "evidence": ["packages/graph/governance/g6-stage-plan.v1.json"]
+    },
+    {
+      "id": "incremental-build-orchestration",
+      "status": "planned",
+      "evidence": ["packages/graph/src/application/build-repo-graph.ts"]
+    },
+    {
+      "id": "proposed-change-overlay",
+      "status": "planned",
+      "evidence": ["packages/graph/governance/g6-stage-plan.v1.json"]
+    },
+    {
+      "id": "g6-cross-platform-admission",
+      "status": "planned",
+      "evidence": [".github/workflows/ci.yml"]
+    }
+  ],
+  "prohibitions": [
+    "No incremental build may promote facts without provider re-observation.",
+    "No shard reuse without exact content and semantic dependency equality.",
+    "No similarity-only reuse contributing canonical facts, relations or proof state.",
+    "No central CLI runtime import or second Graph truth.",
+    "No native acceleration claim without benchmark evidence and parity-checked adapters."
+  ],
+  "nativeAcceleration": {
+    "status": "prohibited",
+    "earliestDecisionStage": "G6",
+    "rule": "Rust, native and WASM execution remain blocked until benchmark evidence justifies a parity-checked adapter."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G7",
+  "nextStageAuthorized": false
+}

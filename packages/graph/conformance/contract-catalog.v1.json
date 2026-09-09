@@ -13,6 +13,16 @@
       "sha256": "bad426350a3d7b4e7498ddba5da6c2c929c48185a0e002037733f41a351554e9"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/change-set/v0.1.0-candidate",
+      "file": "schemas/changeset.v0.1.0-candidate.schema.json",
+      "sha256": "e8fe49925835688b30e0467f8c8685b6762b1785e98ae39cd8d64d396cebe056"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/content-state-manifest/v0.1.0-candidate",
+      "file": "schemas/content-state-manifest.v0.1.0-candidate.schema.json",
+      "sha256": "07faf8452599fbd5b7f1f48955df0a41c654eb2a285beabb7c6da87a96a36766"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/derivation-lineage/v0.1.0-candidate",
       "file": "schemas/derivation-lineage.v0.1.0-candidate.schema.json",
       "sha256": "bb4a7ddf6aa753545075bf8084017178948c9467db5044f7a785abe5b9814d26"
@@ -41,6 +51,11 @@
       "id": "https://schemas.workspai.dev/graph/generation-publication/v0.1.0-candidate",
       "file": "schemas/generation-publication.v0.1.0-candidate.schema.json",
       "sha256": "aa44741f640c0aa8e6f8a7a8bf627200141a56bf73870fd4822204248eaf4c58"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/graph-delta/v0.1.0-candidate",
+      "file": "schemas/graph-delta.v0.1.0-candidate.schema.json",
+      "sha256": "51a837067090dcb49e716cf99fe32685007491fb7b7ccaa13ef4703453970663"
     },
     {
       "id": "https://schemas.workspai.dev/graph/quality/v0.1.0-candidate",

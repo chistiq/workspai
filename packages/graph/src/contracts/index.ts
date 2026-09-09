@@ -162,6 +162,26 @@ export {
   type GraphSliceSelectionExplanation,
 } from './graph-slice.js';
 export {
+  GRAPH_CHANGE_SET_CONTRACT,
+  GRAPH_CONTENT_STATE_MANIFEST_CONTRACT,
+  GRAPH_DELTA_CONTRACT,
+  type GraphChangeCause,
+  type GraphChangeCauseKind,
+  type GraphChangeSet,
+  type GraphContentStateDirectory,
+  type GraphContentStateDirectoryChild,
+  type GraphContentStateLeaf,
+  type GraphContentStateManifest,
+  type GraphContentStateNode,
+  type GraphContentStateNodeKind,
+  type GraphDelta,
+  type GraphDeltaExecutionAccounting,
+  type GraphIncrementalTruncationSummary,
+  type GraphInputChange,
+  type GraphInputChangeKind,
+  type GraphShardDependency,
+} from './incremental.js';
+export {
   type GraphDualScopeWorkspaceStatus,
   type GraphProjectGraphReference,
   type GraphProjectMembershipRelationship,

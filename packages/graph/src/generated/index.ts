@@ -1,11 +1,14 @@
 export type { WorkspaiGraphBindingProfileCandidate } from './binding-profile.v0.1.0-candidate.js';
 export type { WorkspaiCanonicalGraphCandidate } from './canonical-graph.v0.1.0-candidate.js';
+export type { WorkspaiGraphChangeSetCandidate } from './changeset.v0.1.0-candidate.js';
+export type { WorkspaiGraphContentStateManifestCandidate } from './content-state-manifest.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivationLineageCandidate } from './derivation-lineage.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivedProjectionResultCandidate } from './derived-projection-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphEntityIdentityCandidate } from './entity-identity.v0.1.0-candidate.js';
 export type { WorkspaiGraphEvidenceIndependenceCandidate } from './evidence-independence.v0.1.0-candidate.js';
 export type { WorkspaiGraphFactBatchCandidate } from './fact-batch.v0.1.0-candidate.js';
 export type { WorkspaiGraphGenerationPublicationCandidate } from './generation-publication.v0.1.0-candidate.js';
+export type { WorkspaiGraphDeltaCandidate } from './graph-delta.v0.1.0-candidate.js';
 export type { WorkspaiGraphQualityCandidate } from './graph-quality.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryResultCandidate } from './graph-query-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCandidate } from './graph-query.v0.1.0-candidate.js';

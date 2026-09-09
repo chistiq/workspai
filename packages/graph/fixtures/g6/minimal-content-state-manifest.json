@@ -1,0 +1,64 @@
+{
+  "contract": {
+    "id": "workspai.graph.content-state-manifest",
+    "version": "0.1.0-candidate"
+  },
+  "scope": { "kind": "project", "projectIds": ["project:fixture"] },
+  "merkleRoot": {
+    "algorithm": "sha256",
+    "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "nodes": [
+    {
+      "kind": "directory",
+      "locator": "src",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "children": [
+        {
+          "name": "index.ts",
+          "kind": "file",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "file",
+      "locator": "src/index.ts",
+      "contentDigest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "inputKind": "source-file",
+      "scanProfileDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ],
+  "shardDependencies": [
+    {
+      "shardId": "shard:ecmascript-imports:src/index.ts",
+      "contentDigest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "semanticDependencies": [
+        {
+          "algorithm": "sha256",
+          "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "providerStages": ["workspai.graph.provider.ecmascript-imports"],
+      "graphRegions": ["imports"],
+      "projections": ["workspai.graph.projection.dependency"],
+      "queryIndexes": ["dependency-neighbors"]
+    }
+  ],
+  "generatedAt": "2026-09-09T20:00:00.000Z"
+}
