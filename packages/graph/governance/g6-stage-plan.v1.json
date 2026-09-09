@@ -33,8 +33,12 @@
     },
     {
       "id": "merkle-comparison-engine",
-      "status": "planned",
-      "evidence": ["packages/graph/src/contracts/incremental.ts"]
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/compare-content-state-manifest.ts",
+        "packages/graph/src/contracts/incremental.ts",
+        "packages/graph/test/application/compare-content-state-manifest.test.ts"
+      ]
     },
     {
       "id": "shard-reuse-and-invalidation",

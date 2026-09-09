@@ -1,7 +1,7 @@
 import type { WisDigestReference } from '@workspai/shared/contracts';
 import { defineWisContract } from '@workspai/shared/contracts';
 
-import type { GraphInputProcessingRecord, GraphScope } from './foundation.js';
+import type { GraphDiagnostic, GraphInputProcessingRecord, GraphScope } from './foundation.js';
 import type { GraphQualityVerdict } from './graph.js';
 
 export const GRAPH_CHANGE_SET_CONTRACT = defineWisContract({
@@ -153,4 +153,29 @@ export interface GraphContentStateManifest {
   readonly nodes: readonly GraphContentStateNode[];
   readonly shardDependencies: readonly GraphShardDependency[];
   readonly generatedAt: string;
+}
+
+export interface GraphContentStateComparisonBudget {
+  readonly maxComparedBranches: number;
+  readonly maxChangedInputs: number;
+}
+
+export interface GraphContentStateComparisonRequest {
+  readonly base: GraphContentStateManifest;
+  readonly target: GraphContentStateManifest;
+  readonly budget?: Partial<GraphContentStateComparisonBudget>;
+}
+
+export type GraphContentStateComparisonStatus = 'complete' | 'partial' | 'failed';
+
+export interface GraphContentStateComparisonResult {
+  readonly baseRoot: WisDigestReference;
+  readonly targetRoot: WisDigestReference;
+  readonly comparedBranches: number;
+  readonly skippedBranches: number;
+  readonly changedInputs: readonly GraphInputChange[];
+  readonly causes: readonly GraphChangeCause[];
+  readonly diagnostics: readonly GraphDiagnostic[];
+  readonly truncation?: GraphIncrementalTruncationSummary;
+  readonly status: GraphContentStateComparisonStatus;
 }

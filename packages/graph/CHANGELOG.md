@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added `compareContentStateManifests` to walk unequal Merkle branches, emit
+  added/edited/deleted/rename-candidate inputs and report compared/skipped branch
+  accounting with fail-closed scope and budget handling.
 - Opened G6 with versioned ChangeSet, GraphDelta and ContentStateManifest
   contracts plus minimal G6 fixtures for incremental execution accounting and
   portable content-state reuse.

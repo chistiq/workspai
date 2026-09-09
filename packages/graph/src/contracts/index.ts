@@ -180,6 +180,10 @@ export {
   type GraphInputChange,
   type GraphInputChangeKind,
   type GraphShardDependency,
+  type GraphContentStateComparisonBudget,
+  type GraphContentStateComparisonRequest,
+  type GraphContentStateComparisonResult,
+  type GraphContentStateComparisonStatus,
 } from './incremental.js';
 export {
   type GraphDualScopeWorkspaceStatus,
