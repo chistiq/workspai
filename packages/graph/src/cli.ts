@@ -3,8 +3,15 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { queryGraph, writeGraphGeneration } from './application/index.js';
-import type { GraphRepoBuildResult } from './application/index.js';
+import {
+  GRAPH_STANDARD_COMPOSITION_POLICY,
+  GRAPH_STANDARD_REPO_BUILD_POLICY,
+  queryGraph,
+  runStandaloneGraph,
+  writeGraphGeneration,
+} from './application/index.js';
+import type { GraphRepoBuildResult, GraphStandaloneGraphExecution } from './application/index.js';
+import { CORE_GRAPH_ONTOLOGY_PROFILE } from './contracts/index.js';
 import {
   buildNodeRepoGraph,
   createNodeGraphProductHostPorts,
@@ -69,6 +76,11 @@ export interface GraphCliDependencies {
     view: GraphRepositoryPreviewView
   ): GraphRepositoryPreviewViewExecution;
   providers(): readonly GraphProviderRuntime[];
+  standalone(
+    root: string,
+    options: Pick<GraphCliOptions, 'mode' | 'workspace' | 'write'>,
+    signal: AbortSignal
+  ): Promise<GraphStandaloneGraphExecution>;
 }
 
 const HELP = `Workspai Graph repository preview
@@ -189,6 +201,9 @@ function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'hel
     throw new GraphCliInputError('Query options are supported only by query.');
   if (command !== 'inspect' && view)
     throw new GraphCliInputError('--view is supported only by inspect.');
+  if (command === 'inspect' && view && mode !== 'project-only') {
+    throw new GraphCliInputError('--view is supported only in project-only inspect mode.');
+  }
   if (slice && (command !== 'query' || preset !== 'reviewContext'))
     throw new GraphCliInputError('--slice is supported only by the reviewContext query preset.');
 
@@ -230,14 +245,29 @@ function emit(io: GraphCliIo, json: boolean, error: boolean, payload: string, hu
   else io.writeOut(value);
 }
 
-function defaultDependencies(): GraphCliDependencies {
+function workspaceSelection(
+  root: string,
+  workspace?: string
+): { readonly id?: string; readonly root?: string } | undefined {
+  if (!workspace) return undefined;
+  if (workspace.startsWith('workspace:')) return { id: workspace };
   return {
-    build: (root, signal) =>
-      buildNodeRepoGraph({
-        root,
-        signal,
-        workerUrl: new URL('./adapters/node/reference-worker-entry.js', import.meta.url),
-      }),
+    root: path.isAbsolute(workspace) ? workspace : path.resolve(root, workspace),
+  };
+}
+
+function dualScopeCliStatus(
+  status: 'complete-project-only' | 'complete-dual-scope' | 'partial' | 'failed'
+): 'complete' | 'partial' | 'failed' {
+  if (status === 'complete-dual-scope' || status === 'complete-project-only') return 'complete';
+  if (status === 'partial') return 'partial';
+  return 'failed';
+}
+
+function defaultDependencies(): GraphCliDependencies {
+  const workerUrl = new URL('./adapters/node/reference-worker-entry.js', import.meta.url);
+  return {
+    build: (root, signal) => buildNodeRepoGraph({ root, signal, workerUrl }),
     publish: (root, build, signal) => {
       const ports = createNodeGraphProductHostPorts({ signal });
       return writeGraphGeneration({
@@ -254,6 +284,31 @@ function defaultDependencies(): GraphCliDependencies {
     slice: (result) => buildReviewContextSlice(result.value),
     project: projectRepositoryPreview,
     providers: createStandardRepositoryProviders,
+    standalone: (root, options, signal) => {
+      const ports = createNodeGraphProductHostPorts({ signal, workerUrl });
+      return runStandaloneGraph({
+        repo: {
+          root,
+          scope: { kind: 'project', projectIds: ['project:implicit-single-repository'] },
+          ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+          providers: createStandardRepositoryProviders(),
+          policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+          ports,
+        },
+        mode: options.mode,
+        workspace: workspaceSelection(root, options.workspace),
+        workspacePolicy: {
+          network: 'deny',
+          redactionProfile: 'portable-default',
+          composition: GRAPH_STANDARD_COMPOSITION_POLICY,
+        },
+        write: options.write,
+        projectStore: options.write ? createNodeProjectArtifactStore(root) : undefined,
+        workspaceStore: options.write ? createNodeProjectArtifactStore(root) : undefined,
+        interaction: { approved: true },
+        signal,
+      });
+    },
   };
 }
 
@@ -318,6 +373,43 @@ export async function runGraphCli(
             .join('\n')
         : JSON.stringify(data, null, 2)
     );
+    return 0;
+  }
+
+  if (options.command === 'inspect' && options.mode !== 'project-only') {
+    const orchestration = await dependencies.standalone(
+      options.root,
+      { mode: options.mode, workspace: options.workspace, write: options.write },
+      signal
+    );
+    if (!orchestration.accepted) {
+      const payload = envelope('inspect', 'failed', null, [
+        ...orchestration.issues.map((issue) => ({
+          code: issue.code,
+          severity: 'error' as const,
+          path: issue.path,
+          message: issue.message,
+        })),
+      ]);
+      emit(
+        io,
+        options.json,
+        true,
+        payload,
+        `Graph inspect rejected. ${orchestration.issues.map((item) => item.message).join(' ')}`
+      );
+      return 3;
+    }
+    const status = dualScopeCliStatus(orchestration.value.status);
+    emit(
+      io,
+      options.json,
+      false,
+      envelope('inspect', status, orchestration.value, orchestration.value.diagnostics),
+      `Graph inspect: ${orchestration.value.status}\nWorkspace: ${orchestration.value.workspace.status}${orchestration.value.workspace.renewalCommand ? `\nRenewal: ${orchestration.value.workspace.renewalCommand}` : ''}`
+    );
+    if (orchestration.value.status === 'failed') return 1;
+    if (orchestration.value.status === 'partial') return 2;
     return 0;
   }
 

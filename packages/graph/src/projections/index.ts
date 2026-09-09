@@ -28,11 +28,18 @@ export {
   GRAPH_STANDARD_PROJECTION_PROFILES,
   type GraphStandardProjectionProfileId,
 } from './projection-profiles.js';
+export {
+  GRAPH_DERIVED_PROJECTION_PROFILES,
+  type GraphDerivedProjectionProfileId,
+} from './derived-projection-profiles.js';
 export { projectGraph } from './project-graph.js';
+export { projectDerivedGraph } from './project-derived-graph.js';
 export { createGraphSlice } from './create-graph-slice.js';
 
 /** Profile-driven projections are available for bounded read views over canonical graphs. */
 export const GRAPH_PROJECTIONS_AVAILABLE = true as const;
+/** Derived analytics profiles are available without mutating canonical graph truth. */
+export const GRAPH_DERIVED_PROJECTIONS_AVAILABLE = true as const;
 /** G4 exposes only these fixed, non-authoritative repository preview views. */
 export const GRAPH_REPOSITORY_PREVIEW_VIEWS_AVAILABLE = true as const;
 

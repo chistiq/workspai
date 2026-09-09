@@ -49,8 +49,14 @@
     },
     {
       "id": "derived-projection-profiles",
-      "status": "planned",
-      "evidence": ["packages/graph/src/projections/projection-profiles.ts"]
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/projection.ts",
+        "packages/graph/schemas/derived-projection-result.v0.1.0-candidate.schema.json",
+        "packages/graph/src/projections/derived-projection-profiles.ts",
+        "packages/graph/src/projections/project-derived-graph.ts",
+        "packages/graph/test/projections/project-derived-graph.test.ts"
+      ]
     },
     {
       "id": "standalone-dual-scope-orchestration",

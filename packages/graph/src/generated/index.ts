@@ -1,6 +1,7 @@
 export type { WorkspaiGraphBindingProfileCandidate } from './binding-profile.v0.1.0-candidate.js';
 export type { WorkspaiCanonicalGraphCandidate } from './canonical-graph.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivationLineageCandidate } from './derivation-lineage.v0.1.0-candidate.js';
+export type { WorkspaiGraphDerivedProjectionResultCandidate } from './derived-projection-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphEntityIdentityCandidate } from './entity-identity.v0.1.0-candidate.js';
 export type { WorkspaiGraphEvidenceIndependenceCandidate } from './evidence-independence.v0.1.0-candidate.js';
 export type { WorkspaiGraphFactBatchCandidate } from './fact-batch.v0.1.0-candidate.js';

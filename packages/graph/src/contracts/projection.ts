@@ -1,4 +1,8 @@
-import type { WisContractReference, WisEvidenceReference } from '@workspai/shared/contracts';
+import type {
+  WisContractReference,
+  WisEvidenceReference,
+  WisOmission,
+} from '@workspai/shared/contracts';
 import { defineWisContract } from '@workspai/shared/contracts';
 
 import type {
@@ -75,6 +79,116 @@ export interface GraphProjectionResult {
 
 export type GraphProjectionExecution =
   | { readonly accepted: true; readonly value: GraphProjectionResult; readonly issues: readonly [] }
+  | {
+      readonly accepted: false;
+      readonly issues: readonly {
+        readonly code: string;
+        readonly path: string;
+        readonly message: string;
+      }[];
+    };
+
+export const GRAPH_DERIVED_PROJECTION_PROFILE_CONTRACT = defineWisContract({
+  id: 'workspai.graph.derived-projection-profile',
+  version: '0.1.0-candidate',
+});
+
+export const GRAPH_DERIVED_PROJECTION_RESULT_CONTRACT = defineWisContract({
+  id: 'workspai.graph.derived-projection-result',
+  version: '0.1.0-candidate',
+});
+
+export type GraphDerivedProjectionKind =
+  'community' | 'flow' | 'review-risk' | 'architecture-summary';
+
+/** Versioned analytical profile that cannot mutate canonical graph truth. */
+export interface GraphDerivedProjectionProfile {
+  readonly id: string;
+  readonly version: string;
+  readonly kind: GraphDerivedProjectionKind;
+  readonly algorithm: WisContractReference & { readonly seed: string };
+  readonly proofThreshold: GraphProofState;
+  readonly limitations: readonly string[];
+  readonly redactionPolicy: string;
+}
+
+export interface GraphDerivedProjectionDescriptor {
+  readonly profile: WisContractReference;
+  readonly algorithm: WisContractReference & { readonly seed: string };
+  readonly sourceGeneration: GraphGenerationRef;
+  readonly proofThreshold: GraphProofState;
+  readonly limitations: readonly string[];
+  readonly omissions: readonly WisOmission[];
+  readonly accuracyEvidence?: readonly WisEvidenceReference[];
+}
+
+export interface GraphDerivedProjectionBudget {
+  readonly maxItems: number;
+}
+
+export interface GraphDerivedProjectionRequest {
+  readonly profile: GraphDerivedProjectionProfile;
+  readonly budget?: Partial<GraphDerivedProjectionBudget>;
+  readonly scope?: GraphScope;
+}
+
+export interface GraphDerivedCommunityGroup {
+  readonly id: string;
+  readonly members: readonly string[];
+  readonly cohesion: number;
+}
+
+export interface GraphDerivedFlowRank {
+  readonly entityId: string;
+  readonly rank: number;
+  readonly score: number;
+  readonly drivers: readonly string[];
+}
+
+export interface GraphDerivedReviewRiskFinding {
+  readonly entityId: string;
+  readonly score: number;
+  readonly classification: 'low' | 'moderate' | 'high' | 'advisory';
+  readonly drivers: readonly string[];
+}
+
+export interface GraphDerivedArchitectureMetrics {
+  readonly nodeCount: number;
+  readonly edgeCount: number;
+  readonly nodesByKind: Readonly<Record<string, number>>;
+  readonly edgesBySemantics: Readonly<Record<string, number>>;
+}
+
+export interface GraphDerivedArchitectureHotspot {
+  readonly entityId: string;
+  readonly degree: number;
+}
+
+export interface GraphDerivedProjectionResult {
+  readonly contract: typeof GRAPH_DERIVED_PROJECTION_RESULT_CONTRACT;
+  readonly descriptor: GraphDerivedProjectionDescriptor;
+  readonly kind: GraphDerivedProjectionKind;
+  readonly communities?: readonly GraphDerivedCommunityGroup[];
+  readonly flowRanks?: readonly GraphDerivedFlowRank[];
+  readonly reviewFindings?: readonly GraphDerivedReviewRiskFinding[];
+  readonly architecture?: {
+    readonly metrics: GraphDerivedArchitectureMetrics;
+    readonly hotspots: readonly GraphDerivedArchitectureHotspot[];
+  };
+  readonly unknownZones: readonly GraphUnknownZone[];
+  readonly unsupportedZones: readonly GraphUnsupportedZone[];
+  readonly truncation: {
+    readonly truncated: boolean;
+    readonly reasons: readonly 'items'[];
+  };
+}
+
+export type GraphDerivedProjectionExecution =
+  | {
+      readonly accepted: true;
+      readonly value: GraphDerivedProjectionResult;
+      readonly issues: readonly [];
+    }
   | {
       readonly accepted: false;
       readonly issues: readonly {

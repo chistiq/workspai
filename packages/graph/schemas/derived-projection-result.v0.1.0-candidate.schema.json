@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/derived-projection-result/v0.1.0-candidate",
+  "title": "WorkspaiGraphDerivedProjectionResultCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "descriptor", "kind", "unknownZones", "unsupportedZones", "truncation"],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.derived-projection-result",
+        "version": "0.1.0-candidate"
+      }
+    },
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "algorithm",
+        "sourceGeneration",
+        "proofThreshold",
+        "limitations",
+        "omissions"
+      ],
+      "properties": {
+        "profile": { "type": "object", "required": ["id", "version"] },
+        "algorithm": {
+          "type": "object",
+          "required": ["id", "version", "seed"],
+          "properties": {
+            "id": { "type": "string" },
+            "version": { "type": "string" },
+            "seed": { "type": "string" }
+          }
+        },
+        "sourceGeneration": {
+          "type": "object",
+          "required": ["id", "generatedAt", "contentDigest"]
+        },
+        "proofThreshold": { "type": "string" },
+        "limitations": { "type": "array", "items": { "type": "string" } },
+        "omissions": { "type": "array" },
+        "accuracyEvidence": { "type": "array" }
+      }
+    },
+    "kind": {
+      "enum": ["community", "flow", "review-risk", "architecture-summary"]
+    },
+    "communities": { "type": "array" },
+    "flowRanks": { "type": "array" },
+    "reviewFindings": { "type": "array" },
+    "architecture": { "type": "object" },
+    "unknownZones": { "type": "array" },
+    "unsupportedZones": { "type": "array" },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["truncated", "reasons"],
+      "properties": {
+        "truncated": { "type": "boolean" },
+        "reasons": { "type": "array", "items": { "const": "items" } }
+      }
+    }
+  }
+}

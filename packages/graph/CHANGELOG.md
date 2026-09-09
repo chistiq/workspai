@@ -17,6 +17,10 @@
   fail-closed workspace handoff when no onboarding adapter is injected.
 - Added workspace graph publication through `writeWorkspaceGraphGeneration` and
   admitted workspace inspect modes in the standalone CLI argument surface.
+- Added versioned derived projection profiles for community, flow, review-risk and
+  architecture summaries with explicit algorithm/seed/limitation descriptors.
+- Routed dual-scope `inspect` modes through `runStandaloneGraph` with honest
+  partial/handoff-unavailable results when no workspace onboarding adapter exists.
 
 - Admitted the signed G3 proof-carrying query candidate after the same-commit
   Linux, macOS and Windows matrix and aggregate CI gate passed.

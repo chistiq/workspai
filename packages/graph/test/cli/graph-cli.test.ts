@@ -91,6 +91,19 @@ function harness(build: GraphRepoBuildResult = result('complete')): {
           }) as unknown as ReturnType<GraphCliDependencies['project']>
       ),
       providers: createStandardRepositoryProviders,
+      standalone: vi.fn(async () => ({
+        accepted: true as const,
+        value: {
+          status: 'partial' as const,
+          project: { build: result('complete') },
+          workspace: {
+            status: 'handoff-unavailable' as const,
+            renewalCommand: 'workspai workspace link --project <path>',
+          },
+          diagnostics: [],
+        },
+        issues: [] as const,
+      })),
     },
   };
 }
@@ -183,6 +196,7 @@ describe('workspai-graph CLI', () => {
     ['inspect', '--slice'],
     ['inspect', '--view', 'unknown'],
     ['inspect', '--mode', 'unknown-mode'],
+    ['inspect', '--mode', 'project-and-default-workspace', '--view', 'source'],
     ['inspect', '--subject', 'entity:unexpected'],
     ['inspect', 'one', 'two'],
     ['providers'],
@@ -192,6 +206,98 @@ describe('workspai-graph CLI', () => {
     const test = harness();
     expect(await runGraphCli(args, test.io, test.dependencies)).toBe(3);
     expect(test.dependencies.build).not.toHaveBeenCalled();
+  });
+
+  it('routes dual-scope inspect through standalone orchestration', async () => {
+    const test = harness();
+    expect(
+      await runGraphCli(
+        ['inspect', '.', '--mode', 'project-and-default-workspace', '--json'],
+        test.io,
+        test.dependencies
+      )
+    ).toBe(2);
+    expect(test.dependencies.build).not.toHaveBeenCalled();
+    expect(test.dependencies.standalone).toHaveBeenCalledOnce();
+    expect(JSON.parse(test.output[0] ?? '{}')).toMatchObject({
+      command: 'inspect',
+      status: 'partial',
+      data: { workspace: { status: 'handoff-unavailable' } },
+    });
+  });
+
+  it('rejects dual-scope inspect orchestration input before repository build', async () => {
+    const test = harness();
+    test.dependencies.standalone = vi.fn(async () => ({
+      accepted: false as const,
+      code: 'invalid-input' as const,
+      issues: [
+        {
+          code: 'GRAPH_STANDALONE_WORKSPACE_SELECTION_REQUIRED',
+          path: '/workspace',
+          message: 'Existing-workspace mode requires a workspace id or root.',
+        },
+      ],
+    }));
+    expect(
+      await runGraphCli(
+        ['inspect', '.', '--mode', 'project-and-existing-workspace', '--json'],
+        test.io,
+        test.dependencies
+      )
+    ).toBe(3);
+    expect(test.dependencies.build).not.toHaveBeenCalled();
+    expect(JSON.parse(test.errors[0] ?? '{}')).toMatchObject({
+      status: 'failed',
+      diagnostics: [{ code: 'GRAPH_STANDALONE_WORKSPACE_SELECTION_REQUIRED' }],
+    });
+  });
+
+  it('maps dual-scope failed orchestration to exit code 1', async () => {
+    const test = harness();
+    test.dependencies.standalone = vi.fn(async () => ({
+      accepted: true as const,
+      value: {
+        status: 'failed' as const,
+        project: { build: result('failed') },
+        workspace: { status: 'not-requested' as const },
+        diagnostics: [],
+      },
+      issues: [] as const,
+    }));
+    expect(
+      await runGraphCli(
+        ['inspect', '.', '--mode', 'project-and-default-workspace', '--json'],
+        test.io,
+        test.dependencies
+      )
+    ).toBe(1);
+    expect(JSON.parse(test.output[0] ?? '{}')).toMatchObject({ status: 'failed' });
+  });
+
+  it('passes workspace selection into dual-scope orchestration', async () => {
+    const test = harness();
+    await runGraphCli(
+      [
+        'inspect',
+        '.',
+        '--mode',
+        'project-and-existing-workspace',
+        '--workspace',
+        'workspace:platform',
+        '--json',
+      ],
+      test.io,
+      test.dependencies
+    );
+    expect(test.dependencies.standalone).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        mode: 'project-and-existing-workspace',
+        workspace: 'workspace:platform',
+      }),
+      expect.any(AbortSignal)
+    );
   });
 
   it('keeps inspect read-only unless write is explicit', async () => {

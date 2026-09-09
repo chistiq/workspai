@@ -18,6 +18,11 @@
       "sha256": "bb4a7ddf6aa753545075bf8084017178948c9467db5044f7a785abe5b9814d26"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/derived-projection-result/v0.1.0-candidate",
+      "file": "schemas/derived-projection-result.v0.1.0-candidate.schema.json",
+      "sha256": "8ed2752a7d5b4835ea145123aab07840cf8de7d9eb5f362637d8591796c03fa3"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/entity-identity/v0.1.0-candidate",
       "file": "schemas/entity-identity.v0.1.0-candidate.schema.json",
       "sha256": "9dbb1663f0447fbceeb9256d50251548b9b8a8fe474171b8ce8061878cb5ef55"
