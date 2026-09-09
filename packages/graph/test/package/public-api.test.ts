@@ -64,6 +64,11 @@ describe('@workspai/graph development package', () => {
       'bounded-repository-file-inventory-port',
       'official-offline-repository-providers',
       'node-repository-preview-adapter',
+      'repository-contract-runtime-delivery-surfaces',
+      'project-local-atomic-persistence',
+      'explicit-generation-publication',
+      'standalone-executable',
+      'installed-cli-smoke',
     ]);
   });
 
@@ -127,7 +132,7 @@ describe('@workspai/graph development package', () => {
       credentials: 'deny',
     });
     const providers = createStandardRepositoryProviders();
-    expect(providers).toHaveLength(4);
+    expect(providers).toHaveLength(5);
     expect(Object.isFrozen(providers)).toBe(true);
   });
 });

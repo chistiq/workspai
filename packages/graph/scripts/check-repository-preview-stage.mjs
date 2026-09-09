@@ -16,12 +16,18 @@ const implementationPaths = [
   'packages/graph/src/application/repo-build-types.ts',
   'packages/graph/src/adapters/node/repository-file-source.ts',
   'packages/graph/src/adapters/node/index.ts',
+  'packages/graph/src/adapters/node/project-artifact-store.ts',
+  'packages/graph/src/application/publish-project-graph.ts',
+  'packages/graph/src/cli.ts',
   'packages/graph/src/providers/repository-files.ts',
   'packages/graph/src/providers/package-json.ts',
   'packages/graph/src/providers/ecmascript-imports.ts',
   'packages/graph/src/providers/language-imports.ts',
+  'packages/graph/src/providers/repository-surfaces.ts',
   'packages/graph/test/build/repo-build.test.ts',
   'packages/graph/test/adapters/node-file-source.test.ts',
+  'packages/graph/test/adapters/node-project-artifact-store.test.ts',
+  'packages/graph/test/cli/graph-cli.test.ts',
   'packages/graph/scripts/check-packed-package.mjs',
 ];
 const expectedPlatforms = new Set(['Linux', 'macOS', 'Windows']);

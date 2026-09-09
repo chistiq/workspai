@@ -14,6 +14,12 @@ export const ECMASCRIPT_IMPORTS_PROVIDER_ID = 'workspai.graph.provider.ecmascrip
 
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts']);
 const RESOLUTION_EXTENSIONS = ['', ...SOURCE_EXTENSIONS];
+const TYPESCRIPT_RUNTIME_REWRITES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  '.js': Object.freeze(['.ts', '.tsx']),
+  '.jsx': Object.freeze(['.tsx']),
+  '.mjs': Object.freeze(['.mts']),
+  '.cjs': Object.freeze(['.cts']),
+});
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
 const STATIC_IMPORT =
@@ -55,6 +61,15 @@ function resolveLocalImport(
 ): string | null {
   const candidate = resolveRelative(directory(source), specifier);
   if (!candidate) return null;
+  const runtimeExtension = extension(candidate);
+  const rewrites = TYPESCRIPT_RUNTIME_REWRITES[runtimeExtension] ?? [];
+  if (rewrites.length > 0) {
+    const stem = candidate.slice(0, -runtimeExtension.length);
+    for (const rewrite of rewrites) {
+      const typescriptSource = `${stem}${rewrite}`;
+      if (available.has(typescriptSource)) return typescriptSource;
+    }
+  }
   for (const extension of RESOLUTION_EXTENSIONS) {
     const direct = `${candidate}${extension}`;
     if (available.has(direct)) return direct;

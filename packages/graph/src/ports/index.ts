@@ -96,6 +96,33 @@ export interface GraphFileSourcePort {
 export interface GraphProductHostPorts extends GraphExecutionPorts {
   readonly fileSource: GraphFileSourcePort;
 }
+
+export type GraphProjectArtifactName =
+  'canonical-graph' | 'quality' | 'provider-runs' | 'publication';
+
+export interface GraphProjectArtifact {
+  readonly name: GraphProjectArtifactName;
+  readonly mediaType: 'application/json';
+  readonly bytes: Uint8Array;
+  readonly digest: { readonly algorithm: 'sha256'; readonly value: string };
+}
+
+export interface GraphProjectPublicationRequest {
+  readonly generationKey: string;
+  readonly artifacts: readonly GraphProjectArtifact[];
+  readonly signal?: AbortSignal;
+}
+
+export interface GraphProjectPublicationResult {
+  readonly status: 'committed' | 'already-current';
+  readonly pointer: string;
+  readonly artifacts: Readonly<Record<GraphProjectArtifactName, string>>;
+}
+
+/** Atomically publishes immutable project artifacts and advances one validated pointer last. */
+export interface GraphProjectArtifactStorePort {
+  publish(request: GraphProjectPublicationRequest): Promise<GraphProjectPublicationResult>;
+}
 import type {
   GraphDiagnostic,
   GraphProviderInput,

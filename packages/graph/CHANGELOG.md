@@ -8,8 +8,16 @@
   while keeping Node filesystem access behind the explicit adapter subpath.
 - Added deterministic repository topology, package manifest, ECMAScript and
   cross-language import providers with explicit unsupported and unknown zones.
-- Kept executable commands, persistence, publication, CLI integration and native
-  acceleration blocked behind their remaining G4 and later-stage evidence.
+- Added evidence-backed API contract, runtime/container, CI workflow and test
+  surface discovery without executing repository-controlled code.
+- Added the standalone `workspai-graph` repository-preview executable with
+  inspect, quality, query and provider inventory surfaces.
+- Added explicit project-local publication with immutable content-addressed
+  generations, writer exclusion, integrity verification and pointer-last commit.
+- Added installed-tarball CLI coverage proving default read-only behavior,
+  bundled worker resolution and explicit portable publication.
+- Kept central CLI integration and native acceleration blocked behind their
+  remaining later-stage evidence.
 
 - Admitted the signed G2 deterministic composition candidate after retained
   Linux, macOS and Windows evidence passed the same-commit repository gate.

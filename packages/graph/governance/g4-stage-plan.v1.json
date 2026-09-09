@@ -43,13 +43,23 @@
     },
     {
       "id": "standalone-executable-surfaces",
-      "status": "planned",
-      "evidence": ["packages/graph/package.json"]
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/package.json",
+        "packages/graph/src/cli.ts",
+        "packages/graph/test/cli/graph-cli.test.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
     },
     {
       "id": "project-local-atomic-persistence",
-      "status": "planned",
-      "evidence": ["packages/graph/src/ports/index.ts"]
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/ports/index.ts",
+        "packages/graph/src/application/publish-project-graph.ts",
+        "packages/graph/src/adapters/node/project-artifact-store.ts",
+        "packages/graph/test/adapters/node-project-artifact-store.test.ts"
+      ]
     },
     {
       "id": "g4-cross-platform-admission",

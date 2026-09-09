@@ -52,6 +52,12 @@ export const GRAPH_QUERY_PRESETS = Object.freeze({
   operationalRisk: preset('workspai.graph.query.operational-risk', 'operational-risk', {
     strategy: 'hybrid',
   }),
+  reviewContext: preset('workspai.graph.query.review-context', 'architecture-conformance', {
+    strategy: 'hybrid',
+    direction: 'both',
+    budget: { maxDepth: 3, maxNodes: 150, maxEdges: 300, maxEvidence: 150 },
+    page: { size: 150 },
+  }),
 });
 
 const apiImplementationVerification: GraphBindingProfile = Object.freeze({

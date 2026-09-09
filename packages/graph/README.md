@@ -15,8 +15,9 @@ The package is intentionally available for internal and community development
 before publication. Its root API exposes the admitted deterministic composer,
 the bounded proof-carrying query engine and the host-neutral G4 repository build
 candidate. Node filesystem access is isolated under `@workspai/graph/adapters/node`.
-Persistence, executable commands and CLI replacement remain unavailable until
-their later conformance gates complete.
+The G4 candidate now includes an explicitly invoked standalone executable and
+project-local atomic persistence. CLI replacement remains unavailable until its
+later shadow-parity and migration gates complete.
 
 The current `/conformance` surface includes the SH6 Shared-adoption boundary,
 the admitted G1 contract layer, G2 reference engine and G3 query suites. It validates WIS
@@ -35,6 +36,22 @@ The G4 repository preview remains read-only, offline and explicit. The root
 `buildRepoGraph` API requires injected host ports and never creates `.workspai`
 metadata. The Node adapter provides the bounded filesystem implementation and
 official deterministic provider set as a separate convenience surface.
+
+The executable is read-only unless `--write` is supplied. It never executes
+repository-controlled code and its default provider set denies network,
+credentials and process access.
+
+```bash
+workspai-graph inspect .
+workspai-graph quality . --json
+workspai-graph query . --preset entryPoints --json
+workspai-graph providers list
+workspai-graph inspect . --write --json
+```
+
+An explicit write commits immutable, content-addressed artifacts below
+`.workspai/reports/graph-generations/` and advances the portable
+`graph-generation.json` pointer only after all artifacts are durable.
 
 ```ts
 import { admitGraphProviderOutput, assessGraphSharedEnvelope } from '@workspai/graph/conformance';
@@ -74,9 +91,9 @@ corepack npm --workspace @workspai/graph run test:contracts
 corepack npm --workspace @workspai/graph run pack:check
 ```
 
-Do not add a CLI bridge, executable command or persistence surface merely to make
-the package look complete. Each surface is released only at its roadmap gate
-with contract and fixture evidence.
+Do not add a central CLI bridge merely to make the package look complete. Each
+integration surface is released only at its roadmap gate with contract and
+fixture evidence.
 
 The canonical source, versioning, quality gates and any future npm publication
 remain in the `chistiq/workspai` monorepo. A future `workspai-graph` repository

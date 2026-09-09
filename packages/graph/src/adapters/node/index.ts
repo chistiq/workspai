@@ -21,6 +21,7 @@ import { createStandardRepositoryProviders } from '../../providers/index.js';
 import { createNodeGraphFileSource } from './repository-file-source.js';
 
 export { createNodeGraphFileSource } from './repository-file-source.js';
+export { createNodeProjectArtifactStore } from './project-artifact-store.js';
 
 export interface NodeRepoGraphBuildRequest {
   readonly root: string;
@@ -29,6 +30,8 @@ export interface NodeRepoGraphBuildRequest {
   readonly providers?: readonly GraphProviderRuntime[];
   readonly policy?: GraphRepoBuildPolicy;
   readonly signal?: AbortSignal;
+  /** Overrides the packaged reference worker location for bundled executable hosts. */
+  readonly workerUrl?: URL;
 }
 
 function emptyResult<TOutput>(
@@ -56,7 +59,9 @@ function emptyResult<TOutput>(
  * reference task protocol. Worker isolation is an execution concern only and
  * cannot redefine composition semantics.
  */
-export function createNodeGraphReferenceWorkerPool(): GraphWorkerPoolPort {
+export function createNodeGraphReferenceWorkerPool(
+  workerUrl: URL = new URL('./reference-worker-entry.js', import.meta.url)
+): GraphWorkerPoolPort {
   return {
     execute<TInput, TOutput>(
       request: GraphWorkerTaskRequest<TInput>
@@ -86,7 +91,7 @@ export function createNodeGraphReferenceWorkerPool(): GraphWorkerPoolPort {
       return new Promise((resolve) => {
         let worker: Worker;
         try {
-          worker = new Worker(new URL('./reference-worker-entry.js', import.meta.url), {
+          worker = new Worker(workerUrl, {
             // Eval/STDIN-only flags inherited from a host process make file-backed
             // workers fail before startup. Preserve all other host execution flags.
             execArgv: process.execArgv.filter((argument) => !argument.startsWith('--input-type')),
@@ -174,7 +179,7 @@ export function createNodeGraphReferenceWorkerPool(): GraphWorkerPoolPort {
 }
 
 export function createNodeGraphProductHostPorts(
-  options: { readonly signal?: AbortSignal } = {}
+  options: { readonly signal?: AbortSignal; readonly workerUrl?: URL } = {}
 ): GraphProductHostPorts {
   const signal = options.signal;
   return {
@@ -190,7 +195,7 @@ export function createNodeGraphProductHostPorts(
       throwIfAborted: () => signal?.throwIfAborted(),
     },
     scheduler: { yield: () => waitForImmediate() },
-    workers: createNodeGraphReferenceWorkerPool(),
+    workers: createNodeGraphReferenceWorkerPool(options.workerUrl),
     fileSource: createNodeGraphFileSource(),
     signal,
   };
@@ -212,6 +217,9 @@ export function buildNodeRepoGraph(
     ontology: request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE,
     providers: request.providers ?? createStandardRepositoryProviders(),
     policy: request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY,
-    ports: createNodeGraphProductHostPorts({ signal: request.signal }),
+    ports: createNodeGraphProductHostPorts({
+      signal: request.signal,
+      workerUrl: request.workerUrl,
+    }),
   });
 }

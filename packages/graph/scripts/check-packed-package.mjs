@@ -218,7 +218,7 @@ try {
         };
         if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
         const standardProviders = providers.createStandardRepositoryProviders();
-        if (standardProviders.length !== 4 || !Object.isFrozen(standardProviders)) process.exit(30);
+        if (standardProviders.length !== 5 || !Object.isFrozen(standardProviders)) process.exit(30);
         const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
         if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
         const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
@@ -257,6 +257,41 @@ try {
     );
   }
 
+  const cliPath = path.join(consumerRoot, 'node_modules', '@workspai', 'graph', 'dist', 'cli.js');
+  const runCli = (args, acceptedStatuses = [0]) => {
+    const result = spawnSync(process.execPath, [cliPath, ...args], {
+      cwd: consumerRoot,
+      encoding: 'utf8',
+    });
+    if (result.error || !acceptedStatuses.includes(result.status)) {
+      throw new Error(
+        `packed Graph CLI failed with exit ${result.status ?? 'unknown'}${result.error ? `: ${result.error.message}` : ''}\n${result.stdout ?? ''}\n${result.stderr ?? ''}`
+      );
+    }
+    return JSON.parse(result.stdout || result.stderr);
+  };
+  const readOnlyPreview = runCli(['inspect', '.', '--json']);
+  if (!['complete', 'partial'].includes(readOnlyPreview.status)) {
+    throw new Error('packed Graph CLI did not return an honest repository preview');
+  }
+  if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
+    throw new Error('packed Graph CLI wrote metadata without --write');
+  }
+  const providerList = runCli(['providers', 'list', '--json']);
+  if (!Array.isArray(providerList.data) || providerList.data.length !== 5) {
+    throw new Error('packed Graph CLI provider inventory is incomplete');
+  }
+  runCli(['query', '.', '--preset', 'entryPoints', '--json']);
+  runCli(['quality', '.', '--json'], [0, 2]);
+  const writtenPreview = runCli(['inspect', '.', '--write', '--json']);
+  if (!['committed', 'already-current'].includes(writtenPreview.data?.publication?.status)) {
+    throw new Error('packed Graph CLI did not publish an explicit project generation');
+  }
+  const pointerPath = path.join(consumerRoot, '.workspai', 'reports', 'graph-generation.json');
+  if (!fs.existsSync(pointerPath) || fs.readFileSync(pointerPath, 'utf8').includes(consumerRoot)) {
+    throw new Error('packed Graph CLI publication pointer is absent or host-bound');
+  }
+
   const installedRoot = path.join(consumerRoot, 'node_modules/@workspai/graph');
   const paths = packedFiles(installedRoot);
   const rootRuntime = fs.readFileSync(path.join(installedRoot, 'dist/index.js'), 'utf8');
@@ -269,6 +304,7 @@ try {
     'package.json',
     'dist/index.js',
     'dist/index.d.ts',
+    'dist/cli.js',
     'dist/contracts/index.js',
     'dist/providers/index.js',
     'dist/conformance/index.js',

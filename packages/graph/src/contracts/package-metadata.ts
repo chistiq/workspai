@@ -52,15 +52,13 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'bounded-repository-file-inventory-port',
     'official-offline-repository-providers',
     'node-repository-preview-adapter',
-  ] as const,
-  plannedCapabilities: [
-    'projection',
-    'incremental',
-    'storage-adapters',
+    'repository-contract-runtime-delivery-surfaces',
+    'project-local-atomic-persistence',
+    'explicit-generation-publication',
     'standalone-executable',
-    'project-local-persistence',
-    'cli-shadow-parity',
+    'installed-cli-smoke',
   ] as const,
+  plannedCapabilities: ['projection', 'incremental', 'cli-shadow-parity'] as const,
 });
 
 export type GraphPackageMetadata = typeof GRAPH_PACKAGE_METADATA;

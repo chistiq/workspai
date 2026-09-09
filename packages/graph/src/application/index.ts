@@ -26,3 +26,8 @@ export type {
   GraphRepoBuildRequest,
   GraphRepoBuildResult,
 } from './repo-build-types.js';
+export {
+  writeGraphGeneration,
+  type GraphProjectPublicationIndex,
+  type GraphProjectPublicationOutcome,
+} from './publish-project-graph.js';

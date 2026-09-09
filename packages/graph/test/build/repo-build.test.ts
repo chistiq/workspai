@@ -19,8 +19,10 @@ import {
   GRAPH_STANDARD_REPO_BUILD_POLICY,
   buildRepoGraph,
   executeGraphReferenceCompositionTask,
+  writeGraphGeneration,
 } from '../../src/application/index.js';
 import type {
+  GraphProjectPublicationRequest,
   GraphProductHostPorts,
   GraphWorkerTaskRequest,
   GraphWorkerTaskResult,
@@ -259,11 +261,57 @@ describe('buildRepoGraph', () => {
     );
   });
 
+  it('discovers API, runtime, CI and test surfaces without executing repository code', async () => {
+    const contents = {
+      'contracts/openapi.yaml': 'openapi: 3.1.0\n',
+      Dockerfile: 'FROM scratch\n',
+      '.github/workflows/ci.yml': 'name: CI\n',
+      'tests/health.fixture': 'must never execute\n',
+    };
+    const inputs = Object.entries(contents).map(([locator, content]) => ({
+      locator,
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(content).byteLength,
+      digest: {
+        algorithm: 'sha256' as const,
+        value: createHash('sha256').update(content).digest('hex'),
+      },
+    }));
+    const hostPorts = ports(inputs, contents);
+    const read = vi.spyOn(hostPorts.fileSource, 'read');
+    const result = await buildRepoGraph({
+      ...request(createStandardRepositoryProviders(), hostPorts),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+    if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
+
+    expect(result.status).toBe('complete');
+    expect(result.graph.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'contract' }),
+        expect.objectContaining({ kind: 'container' }),
+        expect.objectContaining({ kind: 'workflow' }),
+        expect.objectContaining({ kind: 'test' }),
+      ])
+    );
+    expect(result.providers).toContainEqual(
+      expect.objectContaining({
+        provider: expect.objectContaining({
+          id: 'workspai.graph.provider.repository-surfaces',
+        }),
+        detection: 'applicable',
+        collection: 'complete',
+        factCount: 4,
+      })
+    );
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it('links static source imports to local files and external module specifiers', async () => {
     const contents = {
       'package.json': JSON.stringify({ name: 'fixture-app', dependencies: { react: '^19.0.0' } }),
       'src/index.ts':
-        "/* import forged from 'not-real'; */\nimport React from 'react';\nimport { helper } from './util';\nvoid React; void helper;\n",
+        "/* import forged from 'not-real'; */\nimport React from 'react';\nimport { helper } from './util.js';\nvoid React; void helper;\n",
       'src/util.ts': 'export const helper = 1;\n',
     };
     const inputs = Object.entries(contents).map(([locator, content]) => ({
@@ -699,5 +747,99 @@ describe('buildRepoGraph', () => {
     expect(result.quality.providerFailures).toContainEqual(
       expect.objectContaining({ providerId: runtime.manifest.id })
     );
+  });
+});
+
+describe('writeGraphGeneration', () => {
+  it('publishes canonical immutable artifacts through the injected store', async () => {
+    const hostPorts = ports();
+    const build = await buildRepoGraph(request([provider()], hostPorts));
+    const publish = vi.fn(async (publicationRequest: GraphProjectPublicationRequest) => ({
+      status: 'committed' as const,
+      pointer: '.workspai/reports/graph-generation.json',
+      artifacts: Object.fromEntries(
+        publicationRequest.artifacts.map((candidate) => [
+          candidate.name,
+          `.workspai/reports/${candidate.name}.json`,
+        ])
+      ) as Record<'canonical-graph' | 'quality' | 'provider-runs' | 'publication', string>,
+    }));
+
+    const result = await writeGraphGeneration({
+      build,
+      store: { publish },
+      digest: hostPorts.digest,
+    });
+
+    expect(result).toMatchObject({ accepted: true, value: { status: 'committed' } });
+    expect(publish).toHaveBeenCalledOnce();
+    const publication = publish.mock.calls[0]?.[0];
+    expect(publication?.generationKey).toMatch(/^[a-f0-9]{64}$/u);
+    expect(publication?.artifacts.map((candidate) => candidate.name).sort()).toEqual([
+      'canonical-graph',
+      'provider-runs',
+      'publication',
+      'quality',
+    ]);
+    for (const candidate of publication?.artifacts ?? []) {
+      expect(createHash('sha256').update(candidate.bytes).digest('hex')).toBe(
+        candidate.digest.value
+      );
+      expect(new TextDecoder().decode(candidate.bytes)).not.toContain('/repository');
+    }
+  });
+
+  it('refuses failed or cancelled builds and never calls the store', async () => {
+    const publish = vi.fn();
+    const hostPorts = ports();
+    const base = await buildRepoGraph(request([provider()], hostPorts));
+
+    for (const status of ['failed', 'cancelled'] as const) {
+      const result = await writeGraphGeneration({
+        build: { ...base, status, graph: undefined },
+        store: { publish },
+        digest: hostPorts.digest,
+      });
+      expect(result).toMatchObject({ accepted: false, code: 'invalid-build' });
+    }
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('does not call the store when cancellation is already requested', async () => {
+    const hostPorts = ports();
+    const build = await buildRepoGraph(request([provider()], hostPorts));
+    const publish = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await writeGraphGeneration({
+      build,
+      store: { publish },
+      digest: hostPorts.digest,
+      signal: controller.signal,
+    });
+
+    expect(result).toMatchObject({
+      accepted: false,
+      issues: [expect.objectContaining({ code: 'GRAPH_PROJECT_PUBLICATION_CANCELLED' })],
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('converts store failures into portable diagnostics', async () => {
+    const hostPorts = ports();
+    const build = await buildRepoGraph(request([provider()], hostPorts));
+    const result = await writeGraphGeneration({
+      build,
+      store: {
+        publish: async () => {
+          throw new Error('/private/repository/secret');
+        },
+      },
+      digest: hostPorts.digest,
+    });
+
+    expect(result).toMatchObject({ accepted: false, code: 'publication-failed' });
+    expect(JSON.stringify(result)).not.toContain('/private/repository/secret');
   });
 });

@@ -12,6 +12,7 @@ export {
   getGraphPackageStatus,
   normalizeGraphQuery,
   queryGraph,
+  writeGraphGeneration,
   type GraphCompositionDecision,
   type GraphCompositionOutput,
   type GraphCompositionPolicy,
@@ -24,6 +25,8 @@ export {
   type GraphRepoBuildQuality,
   type GraphRepoBuildRequest,
   type GraphRepoBuildResult,
+  type GraphProjectPublicationIndex,
+  type GraphProjectPublicationOutcome,
   type GraphProofPolicyAssessment,
 } from './application/index.js';
 export {
@@ -64,4 +67,9 @@ export type {
   GraphFileInventoryResult,
   GraphFileSourcePort,
   GraphProductHostPorts,
+  GraphProjectArtifact,
+  GraphProjectArtifactName,
+  GraphProjectArtifactStorePort,
+  GraphProjectPublicationRequest,
+  GraphProjectPublicationResult,
 } from './ports/index.js';

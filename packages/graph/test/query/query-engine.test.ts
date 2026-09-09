@@ -449,6 +449,15 @@ describe('Graph G3 deterministic query engine', () => {
       version: '0.1.0-candidate',
       query: { kind: 'architecture-conformance', strategy: 'hybrid' },
     });
+    expect(GRAPH_QUERY_PRESETS.reviewContext).toMatchObject({
+      id: 'workspai.graph.query.review-context',
+      version: '0.1.0-candidate',
+      query: {
+        kind: 'architecture-conformance',
+        strategy: 'hybrid',
+        budget: { maxNodes: 150, maxEdges: 300, maxEvidence: 150 },
+      },
+    });
     expect(GRAPH_STANDARD_BINDING_PROFILES.apiImplementationVerification.steps).toHaveLength(2);
   });
 
