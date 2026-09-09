@@ -38,7 +38,8 @@ describe('Graph G6 stage authorization', () => {
         checkpoint.id === 'versioned-changeset-and-graph-delta-contract' ||
         checkpoint.id === 'content-state-manifest-contract' ||
         checkpoint.id === 'merkle-comparison-engine' ||
-        checkpoint.id === 'shard-reuse-and-invalidation'
+        checkpoint.id === 'shard-reuse-and-invalidation' ||
+        checkpoint.id === 'incremental-build-orchestration'
       ) {
         expect(checkpoint.status).toBe('implemented-local-candidate');
         continue;

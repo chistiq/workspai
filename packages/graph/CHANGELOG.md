@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added `planIncrementalGraphBuild` to orchestrate content comparison, shard
+  reuse planning and honest GraphDelta emission without fabricating fact ids.
 - Added `planShardReuseAndInvalidation` for exact-digest shard reuse with
   semantic dependency gates and downstream provider/projection/index invalidation.
 - Added `compareContentStateManifests` to walk unequal Merkle branches, emit

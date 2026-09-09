@@ -35,6 +35,11 @@ export {
 export { buildWorkspaceGraph } from './build-workspace-graph.js';
 export { compareContentStateManifests } from './compare-content-state-manifest.js';
 export { planShardReuseAndInvalidation } from './plan-shard-reuse.js';
+export { planIncrementalGraphBuild } from './plan-incremental-graph-build.js';
+export type {
+  GraphIncrementalBuildPlan,
+  GraphIncrementalBuildRequest,
+} from './incremental-build-types.js';
 export { runStandaloneGraph } from './run-standalone-graph.js';
 export {
   writeWorkspaceGraphGeneration,

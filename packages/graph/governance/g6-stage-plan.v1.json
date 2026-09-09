@@ -51,8 +51,12 @@
     },
     {
       "id": "incremental-build-orchestration",
-      "status": "planned",
-      "evidence": ["packages/graph/src/application/build-repo-graph.ts"]
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/plan-incremental-graph-build.ts",
+        "packages/graph/src/application/incremental-build-types.ts",
+        "packages/graph/test/application/plan-incremental-graph-build.test.ts"
+      ]
     },
     {
       "id": "proposed-change-overlay",
