@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
 const temporary: string[] = [];
+const portableRelativePath = (target: string): string =>
+  path.relative(repositoryRoot, target).split(path.sep).join(path.posix.sep);
 
 afterEach(() => {
   for (const directory of temporary.splice(0))
@@ -61,13 +63,13 @@ describe('Graph G3 query admission', () => {
       [
         'packages/graph/scripts/check-query-matrix-admission.mjs',
         '--evidence-directory',
-        path.relative(repositoryRoot, directory),
+        portableRelativePath(directory),
         '--source-commit',
         sourceCommit,
         '--tested-commit',
         testedCommit,
         '--output',
-        path.relative(repositoryRoot, output),
+        portableRelativePath(output),
       ],
       { cwd: repositoryRoot, encoding: 'utf8' }
     );
