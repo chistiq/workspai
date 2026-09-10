@@ -313,6 +313,52 @@
       }
     },
     {
+      "id": "evidence-from-endpoint",
+      "family": "evidence-and-dispute-retrieval",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "evidence",
+        "subject": "endpoint:health",
+        "direction": "both"
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": true,
+        "selectedStrategy": "direct"
+      }
+    },
+    {
+      "id": "owners-from-app",
+      "family": "test-owner-entry-point-discovery",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "owners",
+        "subject": "module:app"
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": false,
+        "selectedStrategy": "direct",
+        "unknownCodes": ["GRAPH_QUERY_NO_PROVEN_PATH"]
+      }
+    },
+    {
+      "id": "hybrid-architecture-from-app",
+      "family": "direct-versus-graph-versus-hybrid-cost",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "architecture-conformance",
+        "subject": "module:app",
+        "strategy": "hybrid"
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": false,
+        "selectedStrategy": "hybrid",
+        "resultIds": ["module:app", "module:core", "module:lib"]
+      }
+    },
+    {
       "id": "truncated-dependencies",
       "family": "truncation-preservation",
       "query": {

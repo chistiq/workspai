@@ -88,6 +88,8 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'synthetic-retrieval-benchmark',
     'packed-artifact-security-scan',
     'public-release-inventory-candidate',
+    'packed-conformance-corpus',
+    'incident-rollback-boundary-candidate',
   ] as const,
   plannedCapabilities: ['standalone-stable', 'public-preview', 'cli-shadow-parity'] as const,
 });

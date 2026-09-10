@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Closed G7 local source: packed jobs now cover project-only, source view and
+  workspace inspect without onboarding; the tarball ships the query-candidate
+  conformance profile and G1 corpus; query-cache `latest` aliases stay rejected
+  and query results omit `cache`; incident classes and an unproven rollback
+  boundary are published. Signed provenance, independent accuracy, G6 OS-matrix
+  evidence and standalone-stable admission remain planned.
+
 - Locked a G7 release inventory of public exports and schema digests, and
   scanned the packed tarball for secret material, machine-local paths, source
   maps and governance leakage. Catalog sha256 values must match packed schemas.

@@ -15,15 +15,23 @@ const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
 const typescriptCli = toolRequire.resolve('typescript/bin/tsc');
 const {
   GRAPH_CLI_RESULT_SCHEMA_VERSION,
+  GRAPH_INCIDENT_CLASSES,
   GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY,
+  GRAPH_ROLLBACK_PROCEDURE,
   GRAPH_STANDALONE_PACKED_JOBS,
 } = await import(pathToFileURL(path.join(packageRoot, 'dist/contracts/index.js')).href);
 
 if (GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY.signedAttestation !== 'not-generated') {
   throw new Error('Packed artifact security boundary cannot claim attestation');
 }
-if (GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY.rollbackProcedure !== 'not-proven') {
-  throw new Error('Packed artifact security boundary cannot claim a proven rollback procedure');
+if (
+  GRAPH_ROLLBACK_PROCEDURE.status !== 'not-proven' ||
+  GRAPH_ROLLBACK_PROCEDURE.sourceRewrite !== 'prohibited'
+) {
+  throw new Error('Packed artifact cannot claim a proven rollback procedure');
+}
+if (!GRAPH_INCIDENT_CLASSES.includes('secret-or-path-leakage')) {
+  throw new Error('Incident classes omitted secret or path leakage');
 }
 
 function runNpm(args, cwd) {
@@ -60,6 +68,26 @@ function runNpm(args, cwd) {
     );
   }
   return result.stdout;
+}
+
+function packedJson(installedRoot, relative) {
+  return JSON.parse(fs.readFileSync(path.join(installedRoot, relative), 'utf8'));
+}
+
+function mutate(document, mutation) {
+  const segments = mutation.pointer.split('/').slice(1);
+  let cursor = document;
+  for (const segment of segments.slice(0, -1)) {
+    cursor = Array.isArray(cursor) ? cursor[Number(segment)] : cursor[segment];
+  }
+  const key = segments.at(-1);
+  if (mutation.remove) {
+    if (Array.isArray(cursor)) cursor.splice(Number(key), 1);
+    else delete cursor[key];
+    return;
+  }
+  if (Array.isArray(cursor)) cursor[Number(key)] = mutation.value;
+  else cursor[key] = mutation.value;
 }
 
 function packedFiles(installedRoot) {
@@ -277,6 +305,45 @@ try {
         if (!view.accepted || view.value.sourceGeneration.id !== preview.graph.generation.reference.id) {
           throw new Error('Packed repository preview view lost canonical generation identity');
         }
+        const { createHash } = await import('node:crypto');
+        const digestPort = {
+          algorithm: 'sha256',
+          digest: async (input) => createHash('sha256').update(input).digest('hex'),
+        };
+        const liveQuery = await graph.queryGraph(
+          preview.graph,
+          { contract: contracts.GRAPH_QUERY_CONTRACT, kind: 'entry-points' },
+          digestPort
+        );
+        if (!liveQuery.accepted || 'cache' in liveQuery.value) process.exit(41);
+        const aliased = {
+          ...preview.graph,
+          generation: {
+            ...preview.graph.generation,
+            reference: { ...preview.graph.generation.reference, id: 'latest' },
+          },
+        };
+        try {
+          await graph.createQueryCacheKey({
+            graph: aliased,
+            query: graph.normalizeGraphQuery({
+              contract: contracts.GRAPH_QUERY_CONTRACT,
+              kind: 'dependencies',
+              subject: preview.graph.nodes[0]?.id,
+              scope: preview.graph.nodes[0]?.scope,
+            }),
+            digest: digestPort,
+            policy: {
+              redactionPolicyDigest: { algorithm: 'sha256', value: 'a'.repeat(64) },
+              authorizationDigest: { algorithm: 'sha256', value: 'b'.repeat(64) },
+            },
+          });
+          process.exit(39);
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== 'GRAPH_QUERY_CACHE_MUTABLE_GENERATION') {
+            throw error;
+          }
+        }
         const { existsSync } = await import('node:fs');
         if (existsSync('.workspai')) throw new Error('Repository preview created forbidden metadata');
       `,
@@ -335,6 +402,19 @@ try {
         throw new Error('packed Graph CLI wrote metadata without --write');
       }
     },
+    'inspect-project-only': (envelope) => {
+      if (!['complete', 'partial'].includes(envelope.status)) {
+        throw new Error('packed Graph CLI project-only inspect drifted');
+      }
+      if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
+        throw new Error('packed Graph CLI wrote metadata in project-only mode');
+      }
+    },
+    'inspect-source-view': (envelope) => {
+      if (envelope.data?.view?.view !== 'source' || !envelope.data?.view?.sourceGeneration) {
+        throw new Error('packed Graph CLI did not emit the source preview view');
+      }
+    },
     'inspect-structural-view': (envelope) => {
       if (envelope.data?.view?.view !== 'structural' || !envelope.data?.view?.sourceGeneration) {
         throw new Error('packed Graph CLI did not emit the structural preview view');
@@ -362,6 +442,22 @@ try {
         !envelope.data?.sourceQueryDigest
       ) {
         throw new Error('packed Graph CLI did not emit a provenance-bound review context slice');
+      }
+    },
+    'inspect-workspace-without-onboarding': (envelope) => {
+      if (envelope.status !== 'partial') {
+        throw new Error('packed Graph CLI silently completed workspace inspect without onboarding');
+      }
+      if (
+        envelope.data?.workspace?.status !== 'handoff-unavailable' ||
+        !JSON.stringify(envelope.diagnostics).includes(
+          'GRAPH_STANDALONE_ONBOARDING_ADAPTER_MISSING'
+        )
+      ) {
+        throw new Error('packed Graph CLI hid missing workspace onboarding');
+      }
+      if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
+        throw new Error('packed Graph CLI wrote workspace metadata without --write');
       }
     },
     'inspect-write': (envelope) => {
@@ -425,6 +521,12 @@ try {
     'schemas/structural-extractor-profile.v0.1.0-candidate.schema.json',
     'schemas/cli-result.v0.1.0-candidate.schema.json',
     'schemas/standalone-support-matrix.v0.1.0-candidate.schema.json',
+    'conformance/profile.json',
+    'fixtures/g1/minimal-provider-manifest.json',
+    'fixtures/g1/minimal-fact-batch.json',
+    'fixtures/g1/minimal-entity.json',
+    'fixtures/g1/semantic-invalid-mutations.json',
+    'fixtures/g1/invalid-absolute-entity.json',
     'fixtures/g7/retrieval-corpus.v1.json',
   ]) {
     if (!paths.includes(requiredPath))
@@ -467,6 +569,53 @@ try {
     const digest = crypto.createHash('sha256').update(fs.readFileSync(schemaPath)).digest('hex');
     if (digest !== contract.sha256) {
       throw new Error(`packed catalog digest drifted for ${contract.file}`);
+    }
+  }
+
+  const packedConformance = await import(
+    pathToFileURL(path.join(installedRoot, 'dist/conformance/index.js')).href
+  );
+  const profile = packedJson(installedRoot, 'conformance/profile.json');
+  if (
+    profile.id !== packedConformance.GRAPH_CONFORMANCE_PROFILE.id ||
+    profile.version !== packedConformance.GRAPH_CONFORMANCE_PROFILE.version ||
+    profile.maturity !== packedConformance.GRAPH_CONFORMANCE_PROFILE.maturity ||
+    JSON.stringify(profile.requiredSuites) !==
+      JSON.stringify([...packedConformance.GRAPH_CONFORMANCE_PROFILE.requiredSuites])
+  ) {
+    throw new Error('packed conformance profile drifted from GRAPH_CONFORMANCE_PROFILE');
+  }
+  const packedManifest = packedJson(installedRoot, 'fixtures/g1/minimal-provider-manifest.json');
+  const packedBatch = packedJson(installedRoot, 'fixtures/g1/minimal-fact-batch.json');
+  if (!packedConformance.validateGraphProviderManifest(packedManifest).accepted) {
+    throw new Error('packed G1 provider manifest was not admitted');
+  }
+  if (!packedConformance.validateGraphFactBatch(packedBatch, packedManifest).accepted) {
+    throw new Error('packed G1 fact batch was not admitted');
+  }
+  const { default: Ajv2020 } = await import('ajv/dist/2020.js');
+  const entitySchema = packedJson(
+    installedRoot,
+    'schemas/entity-identity.v0.1.0-candidate.schema.json'
+  );
+  const validateEntity = new Ajv2020({
+    strict: true,
+    strictRequired: false,
+    validateFormats: false,
+  }).compile(entitySchema);
+  if (!validateEntity(packedJson(installedRoot, 'fixtures/g1/minimal-entity.json'))) {
+    throw new Error('packed G1 entity fixture was not schema-valid');
+  }
+  if (validateEntity(packedJson(installedRoot, 'fixtures/g1/invalid-absolute-entity.json'))) {
+    throw new Error('packed invalid-absolute entity was admitted');
+  }
+  for (const fixture of packedJson(installedRoot, 'fixtures/g1/semantic-invalid-mutations.json')) {
+    const batch = structuredClone(packedBatch);
+    mutate(batch, fixture);
+    if (fixture.also) mutate(batch, fixture.also);
+    const result = packedConformance.validateGraphFactBatch(batch, packedManifest);
+    if (result.accepted || !result.issues.some((issue) => issue.code === fixture.expectedCode)) {
+      throw new Error(`packed semantic-invalid mutation ${fixture.id} was not fail-closed`);
     }
   }
 

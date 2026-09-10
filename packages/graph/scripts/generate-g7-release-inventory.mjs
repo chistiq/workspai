@@ -62,6 +62,8 @@ const rootForbiddenValueExports = frozenStringArray(
   'GRAPH_ROOT_FORBIDDEN_VALUE_EXPORTS'
 );
 const packedJobs = packedJobIds(productSource);
+const incidents = frozenStringArray(productSource, 'GRAPH_INCIDENT_CLASSES');
+const profile = readJson(path.join(packageRoot, 'conformance/profile.json'));
 const exported = namedValueExports(rootSource);
 
 if (
@@ -80,8 +82,11 @@ if (JSON.stringify(exported) !== JSON.stringify([...rootValueExports].sort())) {
 for (const forbidden of rootForbiddenValueExports) {
   if (exported.includes(forbidden)) failures.push(`Forbidden root export present: ${forbidden}`);
 }
-if (!Array.isArray(catalog.contracts) || catalog.contracts.length === 0) {
-  failures.push('Contract catalog is missing packed schema identities');
+if (!Array.isArray(profile.requiredSuites) || profile.requiredSuites.length === 0) {
+  failures.push('Conformance profile is missing required suites');
+}
+if (profile.maturity !== 'query-candidate' || profile.version !== '0.1.0-candidate') {
+  failures.push('Conformance profile must remain a query candidate');
 }
 for (const contract of catalog.contracts ?? []) {
   const file = path.join(packageRoot, contract.file);
@@ -110,6 +115,8 @@ const inventory = {
     rootForbiddenValueExports,
   },
   packedJobs,
+  incidents,
+  conformanceProfile: profile,
   schemas: catalog.contracts,
   packedArtifactSecurity: {
     sourceMaps: 'excluded',

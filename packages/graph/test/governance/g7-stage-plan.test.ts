@@ -10,17 +10,33 @@ const readJson = (file: string): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
 
 describe('Graph G7 stage authorization', () => {
-  it('opens G7 product-surface checkpoints while registry remains on G5', () => {
+  it('seals G7 local source while registry remains on G5', () => {
     const plan = readJson(path.join(packageRoot, 'governance/g7-stage-plan.v1.json'));
+    const closure = readJson(path.join(packageRoot, 'governance/g7-stage-closure.v1.json'));
     expect(plan).toMatchObject({
       stage: 'G7',
-      status: 'local-source-continuation',
+      status: 'local-source-complete',
       nextStage: 'G8',
       nextStageAuthorized: false,
       publicInternalDocuments: 0,
       nativeAcceleration: { status: 'prohibited', earliestDecisionStage: 'G6' },
     });
-    expect(JSON.stringify(plan)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
+    expect(closure).toMatchObject({
+      stage: 'G7',
+      status: 'local-passed-remote-pending-awaiting-approval',
+      advancesAdmissionGate: false,
+      nextStage: 'G8',
+      nextStageAuthorized: false,
+      measurements: {
+        standaloneStable: false,
+        signedAttestation: 'not-generated',
+        rollbackProcedure: 'not-proven',
+        cliRuntimeBridges: 0,
+        nativeTruthImplementations: 0,
+        publicInternalDocuments: 0,
+      },
+    });
+    expect(JSON.stringify({ plan, closure })).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
 
     const checkpoints = plan.checkpoints as { id: string; status: string }[];
     expect(checkpoints.map((entry) => entry.id)).toEqual(
@@ -32,6 +48,9 @@ describe('Graph G7 stage authorization', () => {
         'sbom-generation-candidate',
         'retrieval-benchmark-command',
         'packed-contents-and-unsigned-security-verification',
+        'conformance-corpus-distribution',
+        'packed-query-cache-and-workspace-fail-closed',
+        'incident-and-rollback-boundary',
         'g7-standalone-stable-admission',
       ])
     );
@@ -47,7 +66,7 @@ describe('Graph G7 stage authorization', () => {
     }
   });
 
-  it('audits G7 as an unauthorized local product-surface continuation', () => {
+  it('audits G7 as a local-source-complete product surface with remote admission pending', () => {
     const result = spawnSync(process.execPath, ['scripts/check-g7-stage.mjs'], {
       cwd: packageRoot,
       encoding: 'utf8',
@@ -55,7 +74,7 @@ describe('Graph G7 stage authorization', () => {
     expect(result.status, result.stderr + result.stdout).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       stage: 'G7',
-      status: 'local-source-continuation',
+      status: 'local-source-complete',
       admitted: false,
       standaloneStable: false,
       nextStage: 'G8',
@@ -63,5 +82,6 @@ describe('Graph G7 stage authorization', () => {
       registryStage: 'G5',
       failures: [],
     });
+    expect(JSON.parse(result.stdout).closureDigest).toMatch(/^sha256:[a-f0-9]{64}$/u);
   });
 });

@@ -9,12 +9,14 @@ import {
   GRAPH_CLI_EXIT_CODES,
   GRAPH_CLI_RESULT_CONTRACT,
   GRAPH_CLI_RESULT_SCHEMA_VERSION,
+  GRAPH_INCIDENT_CLASSES,
   GRAPH_PACKAGE_METADATA,
+  GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY,
   GRAPH_PUBLIC_EXPORT_MAP,
   GRAPH_QUERY_CACHE_OPERATING_BOUNDARY,
-  GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY,
   GRAPH_RELEASE_INVENTORY_CONTRACT,
   GRAPH_RETRIEVAL_BENCHMARK_CLAIM,
+  GRAPH_ROLLBACK_PROCEDURE,
   GRAPH_SBOM_SPEC,
   GRAPH_STANDALONE_PACKED_JOBS,
   GRAPH_STANDALONE_SUPPORT_MATRIX,
@@ -121,6 +123,20 @@ describe('G7 standalone product contracts', () => {
       id: 'workspai.graph.release-inventory',
       version: '0.1.0-candidate',
     });
+    expect(GRAPH_ROLLBACK_PROCEDURE).toEqual({
+      status: 'not-proven',
+      restores: 'last-supported-package-and-graph-generation',
+      sourceRewrite: 'prohibited',
+    });
+    expect([...GRAPH_INCIDENT_CLASSES]).toEqual([
+      'compromised-provider-or-package',
+      'contract-or-identity-regression',
+      'corrupted-cache-or-artifact-generation',
+      'false-authoritative-edge-or-missing-conflict',
+      'secret-or-path-leakage',
+      'performance-amplification',
+      'cli-package-incompatibility',
+    ]);
     expect(GRAPH_RETRIEVAL_BENCHMARK_CLAIM.publicAccuracyClaimPermitted).toBe(false);
   });
 
@@ -153,8 +169,18 @@ describe('G7 standalone product contracts', () => {
       publicationFailed: 4,
       cancelled: 130,
     });
-    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.packedJobs).toEqual(
-      GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id)
+    const packedJobIds = GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id);
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.packedJobs).toEqual(packedJobIds);
+    expect(packedJobIds.at(-1)).toBe('inspect-write');
+    expect(packedJobIds).toEqual(
+      expect.arrayContaining([
+        'inspect-project-only',
+        'inspect-source-view',
+        'inspect-workspace-without-onboarding',
+      ])
+    );
+    expect(packedJobIds.indexOf('inspect-workspace-without-onboarding')).toBeLessThan(
+      packedJobIds.indexOf('inspect-write')
     );
     expect(packChecker).toMatch(/GRAPH_STANDALONE_PACKED_JOBS/);
     expect(packChecker).toMatch(/GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY/);

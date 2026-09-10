@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { GRAPH_ADAPTERS_AVAILABLE } from '../../src/adapters/index.js';
@@ -35,6 +38,15 @@ describe('developing Graph package surfaces', () => {
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('security-adversarial');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('reference-composition');
     expect(GRAPH_CONFORMANCE_PROFILE.requiredSuites).toContain('proof-carrying-query');
+    const profile = JSON.parse(
+      fs.readFileSync(
+        fileURLToPath(new URL('../../conformance/profile.json', import.meta.url)),
+        'utf8'
+      )
+    ) as { requiredSuites: string[]; maturity: string; version: string };
+    expect(profile.maturity).toBe(GRAPH_CONFORMANCE_PROFILE.maturity);
+    expect(profile.version).toBe(GRAPH_CONFORMANCE_PROFILE.version);
+    expect(profile.requiredSuites).toEqual([...GRAPH_CONFORMANCE_PROFILE.requiredSuites]);
   });
 
   it('lists the central CLI and consumer frameworks as forbidden runtime dependencies', () => {

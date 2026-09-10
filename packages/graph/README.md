@@ -50,6 +50,8 @@ credentials and process access.
 
 ```bash
 workspai-graph inspect .
+workspai-graph inspect . --mode project-only --json
+workspai-graph inspect . --view source --json
 workspai-graph inspect . --view structural --json
 workspai-graph inspect . --view evidence --json
 workspai-graph quality . --json
@@ -58,6 +60,11 @@ workspai-graph query . --preset reviewContext --slice --json
 workspai-graph providers list
 workspai-graph inspect . --write --json
 ```
+
+Workspace inspect without an injected onboarding adapter stays `partial` with
+`handoff-unavailable`. The packed tarball ships the query-candidate conformance
+profile and G1 admit/reject corpus. Incident classes are published; rollback is
+not proven.
 
 An explicit write commits immutable, content-addressed artifacts below
 `.workspai/reports/graph-generations/` and advances the portable
@@ -152,7 +159,8 @@ and roadmaps are maintained once in the canonical Workspai documentation
 portfolio. They are intentionally not duplicated in this public package
 repository or npm artifact. The approved G3 evidence authorizes G4 repository
 preview work only; it does not claim standalone stability or release admission.
-G5 and G6 local engines exist as candidates. G7 product-surface contracts exist
-as local candidates. G6 remote OS-matrix evidence, public preview, signed
-provenance and G8 CLI integration remain unauthorized. The CycloneDX SBOM
-candidate is unattested.
+G5 and G6 local engines exist as candidates. G7 local source is complete for
+the packed product surface. G6 remote OS-matrix evidence, signed provenance,
+independent retrieval accuracy, public preview, standalone-stable admission and
+G8 CLI integration remain unauthorized. The CycloneDX SBOM candidate is
+unattested.

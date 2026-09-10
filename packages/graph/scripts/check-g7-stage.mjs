@@ -59,7 +59,7 @@ const graphRegistry = (registry.packages ?? []).find((entry) => entry.name === '
 
 if (
   plan.stage !== 'G7' ||
-  plan.status !== 'local-source-continuation' ||
+  plan.status !== 'local-source-complete' ||
   plan.nextStage !== 'G8' ||
   plan.nextStageAuthorized !== false ||
   plan.nativeAcceleration?.status !== 'prohibited' ||
@@ -115,18 +115,42 @@ for (const required of plannedCheckpoints) {
     failures.push(`G7 plan must retain ${required}`);
   }
 }
-if (fs.existsSync(repositoryFile(closurePath))) {
-  const closure = readJson(closurePath);
+let closure;
+if (!fs.existsSync(repositoryFile(closurePath))) {
+  failures.push('G7 local-source closure is missing');
+} else {
+  closure = readJson(closurePath);
+  const portability = (closure.dimensions ?? []).find(
+    (dimension) => dimension.id === 'portability-and-multiplatform'
+  );
   if (
+    closure.stage !== 'G7' ||
+    closure.status !== 'local-passed-remote-pending-awaiting-approval' ||
     closure.nextStageAuthorized !== false ||
     closure.advancesAdmissionGate !== false ||
-    closure.status === 'admitted' ||
-    closure.status === 'standalone-stable'
+    closure.nextStage !== 'G8'
   ) {
     failures.push('G7 closure cannot authorize G8, admission or standalone stability');
   }
+  if (
+    closure.measurements?.standaloneStable !== false ||
+    closure.measurements?.signedAttestation !== 'not-generated' ||
+    closure.measurements?.rollbackProcedure !== 'not-proven' ||
+    closure.measurements?.cliRuntimeBridges !== 0 ||
+    closure.measurements?.nativeTruthImplementations !== 0 ||
+    closure.measurements?.publicInternalDocuments !== 0
+  ) {
+    failures.push('G7 closure measurements cannot claim stability, attestation or a CLI bridge');
+  }
+  if (portability?.status !== 'pending-remote') {
+    failures.push('G7 portability must remain pending-remote until G6 OS-matrix evidence exists');
+  }
 }
-if (/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u.test(JSON.stringify({ plan, registry: graphRegistry }))) {
+if (
+  /(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u.test(
+    JSON.stringify({ plan, closure, registry: graphRegistry })
+  )
+) {
   failures.push('G7 governance contains a machine-local path');
 }
 
@@ -136,13 +160,14 @@ const report = {
   package: manifest.name,
   version: manifest.version,
   stage: 'G7',
-  status: failures.length > 0 ? 'invalid' : 'local-source-continuation',
+  status: failures.length > 0 ? 'invalid' : 'local-source-complete',
   admitted: false,
   standaloneStable: false,
   nextStage: 'G8',
   nextStageAuthorized: false,
   registryStage: graphRegistry?.currentStage,
   planDigest: digestFiles([planPath]),
+  ...(closure ? { closureDigest: digestFiles([closurePath]) } : {}),
   checkpoints: checkpoints.map((checkpoint) => ({
     id: checkpoint.id,
     status: checkpoint.status,

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  GRAPH_INCIDENT_CLASSES,
   GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY,
   GRAPH_PUBLIC_EXPORT_MAP,
   GRAPH_RELEASE_INVENTORY_CONTRACT,
@@ -42,6 +43,8 @@ describe('Graph G7 release inventory', () => {
         rootForbiddenValueExports: string[];
       };
       packedJobs: string[];
+      incidents: string[];
+      conformanceProfile: { id: string; version: string; maturity: string };
       schemas: { file: string; sha256: string }[];
       packedArtifactSecurity: typeof GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY;
     };
@@ -60,6 +63,12 @@ describe('Graph G7 release inventory', () => {
       ...GRAPH_PUBLIC_EXPORT_MAP.rootForbiddenValueExports,
     ]);
     expect(inventory.packedJobs).toEqual(GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id));
+    expect(inventory.incidents).toEqual([...GRAPH_INCIDENT_CLASSES]);
+    expect(inventory.conformanceProfile).toMatchObject({
+      id: 'workspai.graph.conformance',
+      version: '0.1.0-candidate',
+      maturity: 'query-candidate',
+    });
     expect(inventory.packedArtifactSecurity).toEqual(GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY);
     expect(inventory.schemas.length).toBeGreaterThan(0);
     expect(JSON.stringify(inventory)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);

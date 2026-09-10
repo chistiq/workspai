@@ -2,7 +2,7 @@
   "schemaVersion": "workspai-graph-stage-plan.v1",
   "package": "@workspai/graph",
   "stage": "G7",
-  "status": "local-source-continuation",
+  "status": "local-source-complete",
   "authorizedBy": "local-source-continuation",
   "authority": [
     "workspai-docs:Packages/graph/ROADMAP.md#phase-g7",
@@ -137,6 +137,36 @@
         "packages/graph/governance/g7-release-inventory.v1.json",
         "packages/graph/scripts/check-packed-package.mjs",
         "packages/graph/test/governance/g7-release-inventory.test.ts"
+      ]
+    },
+    {
+      "id": "conformance-corpus-distribution",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/conformance/profile.json",
+        "packages/graph/src/conformance/index.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/package/scaffold-surfaces.test.ts",
+        "packages/graph/test/contracts/portable-fixture-corpus.test.ts"
+      ]
+    },
+    {
+      "id": "packed-query-cache-and-workspace-fail-closed",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/src/application/run-standalone-graph.ts",
+        "packages/graph/src/application/query-cache.ts"
+      ]
+    },
+    {
+      "id": "incident-and-rollback-boundary",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/test/contracts/standalone-product.test.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
       ]
     },
     {

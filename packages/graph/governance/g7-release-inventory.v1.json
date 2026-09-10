@@ -80,6 +80,8 @@
   },
   "packedJobs": [
     "inspect-json",
+    "inspect-project-only",
+    "inspect-source-view",
     "inspect-structural-view",
     "inspect-evidence-view",
     "providers-list",
@@ -87,8 +89,48 @@
     "query-entry-points",
     "query-review-context-slice",
     "quality-json",
+    "inspect-workspace-without-onboarding",
     "inspect-write"
   ],
+  "incidents": [
+    "compromised-provider-or-package",
+    "contract-or-identity-regression",
+    "corrupted-cache-or-artifact-generation",
+    "false-authoritative-edge-or-missing-conflict",
+    "secret-or-path-leakage",
+    "performance-amplification",
+    "cli-package-incompatibility"
+  ],
+  "conformanceProfile": {
+    "id": "workspai.graph.conformance",
+    "version": "0.1.0-candidate",
+    "maturity": "query-candidate",
+    "requiredSuites": [
+      "contracts",
+      "semantic-invalid",
+      "provider-admission",
+      "canonical-replay",
+      "identity-portability",
+      "lineage-independence",
+      "reference-composition",
+      "proof-evaluation",
+      "conflict-preservation",
+      "quality-assessment",
+      "execution-port-responsiveness",
+      "query-normalization",
+      "proof-carrying-query",
+      "cross-layer-binding",
+      "query-budget-and-pagination",
+      "query-result-abstention",
+      "query-scale-baseline",
+      "query-cache-lifecycle",
+      "architecture-boundaries",
+      "determinism",
+      "security-adversarial",
+      "cross-platform",
+      "package-consumer"
+    ]
+  },
   "schemas": [
     {
       "id": "https://schemas.workspai.dev/graph/binding-profile/v0.1.0-candidate",

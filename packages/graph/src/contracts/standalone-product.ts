@@ -123,6 +123,16 @@ export const GRAPH_STANDALONE_PACKED_JOBS = Object.freeze([
     acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
   }),
   Object.freeze({
+    id: 'inspect-project-only',
+    args: Object.freeze(['inspect', '.', '--mode', 'project-only', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+  }),
+  Object.freeze({
+    id: 'inspect-source-view',
+    args: Object.freeze(['inspect', '.', '--view', 'source', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+  }),
+  Object.freeze({
     id: 'inspect-structural-view',
     args: Object.freeze(['inspect', '.', '--view', 'structural', '--json'] as const),
     acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
@@ -161,6 +171,17 @@ export const GRAPH_STANDALONE_PACKED_JOBS = Object.freeze([
     id: 'quality-json',
     args: Object.freeze(['quality', '.', '--json'] as const),
     acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+  }),
+  Object.freeze({
+    id: 'inspect-workspace-without-onboarding',
+    args: Object.freeze([
+      'inspect',
+      '.',
+      '--mode',
+      'project-and-default-workspace',
+      '--json',
+    ] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.partial]),
   }),
   Object.freeze({
     id: 'inspect-write',
@@ -263,7 +284,25 @@ export const GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY = Object.freeze({
   rollbackProcedure: 'not-proven',
 } as const);
 
+export const GRAPH_INCIDENT_CLASSES = Object.freeze([
+  'compromised-provider-or-package',
+  'contract-or-identity-regression',
+  'corrupted-cache-or-artifact-generation',
+  'false-authoritative-edge-or-missing-conflict',
+  'secret-or-path-leakage',
+  'performance-amplification',
+  'cli-package-incompatibility',
+] as const);
+
+export const GRAPH_ROLLBACK_PROCEDURE = Object.freeze({
+  status: 'not-proven',
+  restores: 'last-supported-package-and-graph-generation',
+  sourceRewrite: 'prohibited',
+} as const);
+
 export type GraphStandaloneSupportMatrix = typeof GRAPH_STANDALONE_SUPPORT_MATRIX;
 export type GraphPublicExportMap = typeof GRAPH_PUBLIC_EXPORT_MAP;
 export type GraphQueryCacheOperatingBoundary = typeof GRAPH_QUERY_CACHE_OPERATING_BOUNDARY;
 export type GraphPackedArtifactSecurityBoundary = typeof GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY;
+export type GraphIncidentClass = (typeof GRAPH_INCIDENT_CLASSES)[number];
+export type GraphRollbackProcedure = typeof GRAPH_ROLLBACK_PROCEDURE;

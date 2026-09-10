@@ -103,6 +103,8 @@ describe('@workspai/graph development package', () => {
       'synthetic-retrieval-benchmark',
       'packed-artifact-security-scan',
       'public-release-inventory-candidate',
+      'packed-conformance-corpus',
+      'incident-rollback-boundary-candidate',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',
