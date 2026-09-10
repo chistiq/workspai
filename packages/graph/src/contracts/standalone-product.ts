@@ -168,6 +168,45 @@ export const GRAPH_STANDALONE_PACKED_JOBS = Object.freeze([
     acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
   }),
   Object.freeze({
+    id: 'query-contract-topology',
+    args: Object.freeze(['query', '.', '--preset', 'contractTopology', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+  }),
+  Object.freeze({
+    id: 'query-architecture-conformance',
+    args: Object.freeze(['query', '.', '--preset', 'architectureConformance', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+  }),
+  Object.freeze({
+    id: 'query-operational-risk',
+    args: Object.freeze(['query', '.', '--preset', 'operationalRisk', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+    requiresSubject: true,
+  }),
+  Object.freeze({
+    id: 'query-dependencies',
+    args: Object.freeze(['query', '.', '--preset', 'dependencies', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+    requiresSubject: true,
+  }),
+  Object.freeze({
+    id: 'query-owners',
+    args: Object.freeze(['query', '.', '--preset', 'owners', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+    requiresSubject: true,
+  }),
+  Object.freeze({
+    id: 'query-impact',
+    args: Object.freeze(['query', '.', '--preset', 'impact', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
+    requiresSubject: true,
+  }),
+  Object.freeze({
+    id: 'query-dependencies-without-subject',
+    args: Object.freeze(['query', '.', '--preset', 'dependencies', '--json'] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.rejected]),
+  }),
+  Object.freeze({
     id: 'quality-json',
     args: Object.freeze(['quality', '.', '--json'] as const),
     acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.success, GRAPH_CLI_EXIT_CODES.partial]),
@@ -182,6 +221,17 @@ export const GRAPH_STANDALONE_PACKED_JOBS = Object.freeze([
       '--json',
     ] as const),
     acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.partial]),
+  }),
+  Object.freeze({
+    id: 'inspect-existing-workspace-without-selection',
+    args: Object.freeze([
+      'inspect',
+      '.',
+      '--mode',
+      'project-and-existing-workspace',
+      '--json',
+    ] as const),
+    acceptedExitCodes: Object.freeze([GRAPH_CLI_EXIT_CODES.rejected]),
   }),
   Object.freeze({
     id: 'inspect-write',

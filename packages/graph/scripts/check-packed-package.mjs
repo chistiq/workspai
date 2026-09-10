@@ -393,6 +393,7 @@ try {
     }
     return parsed;
   };
+  let subjectId;
   const extraById = {
     'inspect-json': (envelope) => {
       if (!['complete', 'partial'].includes(envelope.status)) {
@@ -401,6 +402,11 @@ try {
       if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
         throw new Error('packed Graph CLI wrote metadata without --write');
       }
+      const nodeId = envelope.data?.build?.graph?.nodes?.[0]?.id;
+      if (typeof nodeId !== 'string' || nodeId.length === 0) {
+        throw new Error('packed Graph CLI inspect omitted graph nodes');
+      }
+      subjectId = nodeId;
     },
     'inspect-project-only': (envelope) => {
       if (!['complete', 'partial'].includes(envelope.status)) {
@@ -444,6 +450,14 @@ try {
         throw new Error('packed Graph CLI did not emit a provenance-bound review context slice');
       }
     },
+    'query-dependencies-without-subject': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes('GRAPH_QUERY_SUBJECT_REQUIRED')
+      ) {
+        throw new Error('packed Graph CLI admitted a subject-required query without a subject');
+      }
+    },
     'inspect-workspace-without-onboarding': (envelope) => {
       if (envelope.status !== 'partial') {
         throw new Error('packed Graph CLI silently completed workspace inspect without onboarding');
@@ -460,6 +474,19 @@ try {
         throw new Error('packed Graph CLI wrote workspace metadata without --write');
       }
     },
+    'inspect-existing-workspace-without-selection': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes(
+          'GRAPH_STANDALONE_WORKSPACE_SELECTION_REQUIRED'
+        )
+      ) {
+        throw new Error('packed Graph CLI admitted existing-workspace inspect without a selection');
+      }
+      if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
+        throw new Error('packed Graph CLI wrote metadata while rejecting workspace selection');
+      }
+    },
     'inspect-write': (envelope) => {
       if (!['committed', 'already-current'].includes(envelope.data?.publication?.status)) {
         throw new Error('packed Graph CLI did not publish an explicit project generation');
@@ -474,7 +501,14 @@ try {
     },
   };
   for (const job of GRAPH_STANDALONE_PACKED_JOBS) {
-    const envelope = runCli([...job.args], [...job.acceptedExitCodes]);
+    const args = [...job.args];
+    if (job.requiresSubject) {
+      if (typeof subjectId !== 'string') {
+        throw new Error(`packed job ${job.id} needs a captured graph subject`);
+      }
+      args.push('--subject', subjectId);
+    }
+    const envelope = runCli(args, [...job.acceptedExitCodes]);
     extraById[job.id]?.(envelope);
   }
 
@@ -617,6 +651,64 @@ try {
     if (result.accepted || !result.issues.some((issue) => issue.code === fixture.expectedCode)) {
       throw new Error(`packed semantic-invalid mutation ${fixture.id} was not fail-closed`);
     }
+  }
+
+  const packedRuntime = await import(pathToFileURL(path.join(installedRoot, 'dist/index.js')).href);
+  const packedTesting = await import(
+    pathToFileURL(path.join(installedRoot, 'dist/testing/index.js')).href
+  );
+  const packedCorpus = packedJson(installedRoot, 'fixtures/g7/retrieval-corpus.v1.json');
+  if (packedCorpus.groundTruthClass !== 'synthetic' || packedCorpus.accuracyClaim !== 'none') {
+    throw new Error('packed retrieval corpus claimed non-synthetic accuracy');
+  }
+  const retrievalDigest = {
+    algorithm: 'sha256',
+    digest: async (input) => crypto.createHash('sha256').update(input).digest('hex'),
+  };
+  const retrievalObservations = [];
+  for (const fixture of packedCorpus.cases) {
+    const result = await packedRuntime.queryGraph(
+      packedCorpus.graph,
+      fixture.query,
+      retrievalDigest
+    );
+    if (!result.accepted) {
+      retrievalObservations.push({
+        id: fixture.id,
+        accepted: false,
+        resultIds: [],
+        pathNodeIds: [],
+        truncated: false,
+        issueCodes: result.issues.map((issue) => issue.code),
+        unknownCodes: [],
+        elapsedMs: 0,
+      });
+      continue;
+    }
+    retrievalObservations.push({
+      id: fixture.id,
+      accepted: true,
+      resultIds: (Array.isArray(result.value.result) ? result.value.result : [])
+        .map((item) => item?.id)
+        .filter((id) => typeof id === 'string')
+        .sort(),
+      pathNodeIds: result.value.paths[0]?.nodes.map((node) => node.id) ?? [],
+      truncated: Boolean(result.value.truncation?.truncated),
+      selectedStrategy: result.value.retrievalPlan?.selected,
+      issueCodes: [],
+      unknownCodes: result.value.unknownBoundaries.map((zone) => zone.code),
+      elapsedMs: 0,
+    });
+  }
+  const retrievalReport = packedTesting.scoreGraphRetrievalBenchmark(
+    packedCorpus,
+    retrievalObservations
+  );
+  if (
+    retrievalReport.publicAccuracyClaimPermitted !== false ||
+    retrievalReport.failures.length > 0
+  ) {
+    throw new Error(`packed retrieval benchmark failed: ${retrievalReport.failures.join('; ')}`);
   }
 
   const leakedRoots = [

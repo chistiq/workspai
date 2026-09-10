@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Packed every published query preset from the tarball, reject subject-less
+  dependency queries and existing-workspace inspect without a selection, and
+  score the synthetic retrieval corpus from the installed package. Public
+  accuracy, signed provenance and standalone-stable admission remain unclaimed.
+
 - Closed G7 local source: packed jobs now cover project-only, source view and
   workspace inspect without onboarding; the tarball ships the query-candidate
   conformance profile and G1 corpus; query-cache `latest` aliases stay rejected

@@ -88,8 +88,16 @@
     "providers-inspect-repository-files",
     "query-entry-points",
     "query-review-context-slice",
+    "query-contract-topology",
+    "query-architecture-conformance",
+    "query-operational-risk",
+    "query-dependencies",
+    "query-owners",
+    "query-impact",
+    "query-dependencies-without-subject",
     "quality-json",
     "inspect-workspace-without-onboarding",
+    "inspect-existing-workspace-without-selection",
     "inspect-write"
   ],
   "incidents": [

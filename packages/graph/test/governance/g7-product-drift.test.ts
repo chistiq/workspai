@@ -19,10 +19,12 @@ describe('Graph G7 documentation and export drift', () => {
     expect(readme).toMatch(/not publishable/i);
     expect(readme).toMatch(/standalone-stable admission is not claimed/i);
     expect(readme).toMatch(/signed\s+provenance/i);
+    expect(readme).toMatch(/GRAPH_QUERY_PRESETS/);
     expect(readme).not.toMatch(/public preview, SBOM and G8/i);
     expect(readme).not.toMatch(/\bincremental\b[\s\S]{0,40}unavailable/i);
     expect(cli).toMatch(/Workspai Graph standalone executable/);
     expect(cli).toMatch(/Standalone-stable admission is not claimed/);
+    expect(cli).toMatch(/Query presets: \$\{Object\.keys\(GRAPH_QUERY_PRESETS\)\.join\(', '\)\}/);
     expect(cli).not.toMatch(/from ['"]workspai['"]/);
   });
 });

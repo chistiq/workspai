@@ -172,6 +172,9 @@ describe('workspai-graph CLI', () => {
     expect(test.output.join('')).toContain('workspai.graph.cli-result.v1');
     expect(test.output.join('')).toContain('3 rejected');
     expect(test.output.join('')).toContain('Standalone-stable admission is not claimed');
+    expect(test.output.join('')).toContain('Query presets:');
+    expect(test.output.join('')).toContain('entryPoints');
+    expect(test.output.join('')).toContain('architectureConformance');
     expect(test.dependencies.build).not.toHaveBeenCalled();
   });
 

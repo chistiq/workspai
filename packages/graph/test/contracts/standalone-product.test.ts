@@ -14,6 +14,7 @@ import {
   GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY,
   GRAPH_PUBLIC_EXPORT_MAP,
   GRAPH_QUERY_CACHE_OPERATING_BOUNDARY,
+  GRAPH_QUERY_PRESETS,
   GRAPH_RELEASE_INVENTORY_CONTRACT,
   GRAPH_RETRIEVAL_BENCHMARK_CLAIM,
   GRAPH_ROLLBACK_PROCEDURE,
@@ -177,8 +178,32 @@ describe('G7 standalone product contracts', () => {
         'inspect-project-only',
         'inspect-source-view',
         'inspect-workspace-without-onboarding',
+        'inspect-existing-workspace-without-selection',
+        'query-dependencies',
+        'query-owners',
+        'query-impact',
+        'query-contract-topology',
+        'query-architecture-conformance',
+        'query-operational-risk',
+        'query-dependencies-without-subject',
       ])
     );
+    expect(packedJobIds.indexOf('inspect-existing-workspace-without-selection')).toBeLessThan(
+      packedJobIds.indexOf('inspect-write')
+    );
+    expect(
+      GRAPH_STANDALONE_PACKED_JOBS.filter(
+        (job) => 'requiresSubject' in job && job.requiresSubject
+      ).map((job) => job.id)
+    ).toEqual(['query-operational-risk', 'query-dependencies', 'query-owners', 'query-impact']);
+    for (const preset of Object.keys(GRAPH_QUERY_PRESETS)) {
+      expect(
+        GRAPH_STANDALONE_PACKED_JOBS.some((job) =>
+          (job.args as readonly string[]).includes(preset)
+        ),
+        `packed jobs omit query preset ${preset}`
+      ).toBe(true);
+    }
     expect(packedJobIds.indexOf('inspect-workspace-without-onboarding')).toBeLessThan(
       packedJobIds.indexOf('inspect-write')
     );

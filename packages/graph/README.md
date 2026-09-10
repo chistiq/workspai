@@ -61,6 +61,10 @@ workspai-graph providers list
 workspai-graph inspect . --write --json
 ```
 
+Published query presets are `GRAPH_QUERY_PRESETS`. Subject-required presets
+fail closed without `--subject`. Existing-workspace inspect without
+`--workspace` is rejected.
+
 Workspace inspect without an injected onboarding adapter stays `partial` with
 `handoff-unavailable`. The packed tarball ships the query-candidate conformance
 profile and G1 admit/reject corpus. Incident classes are published; rollback is

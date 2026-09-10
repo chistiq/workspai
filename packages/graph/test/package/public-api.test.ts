@@ -105,6 +105,7 @@ describe('@workspai/graph development package', () => {
       'public-release-inventory-candidate',
       'packed-conformance-corpus',
       'incident-rollback-boundary-candidate',
+      'packed-version-1-query-preset-jobs',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',

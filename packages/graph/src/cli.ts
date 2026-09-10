@@ -100,6 +100,7 @@ Usage:
 
 JSON results use schemaVersion ${GRAPH_CLI_RESULT_SCHEMA_VERSION}.
 Exit codes: ${GRAPH_CLI_EXIT_CODES.success} success, ${GRAPH_CLI_EXIT_CODES.partial} partial, ${GRAPH_CLI_EXIT_CODES.failed} failed, ${GRAPH_CLI_EXIT_CODES.rejected} rejected, ${GRAPH_CLI_EXIT_CODES.publicationFailed} publication failed, ${GRAPH_CLI_EXIT_CODES.cancelled} cancelled.
+Query presets: ${Object.keys(GRAPH_QUERY_PRESETS).join(', ')}.
 
 The executable is local, offline and read-only unless --write is explicitly supplied.
 It does not import the central Workspai CLI. Standalone-stable admission is not claimed.

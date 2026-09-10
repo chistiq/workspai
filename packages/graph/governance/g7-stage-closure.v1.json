@@ -21,7 +21,7 @@
     {
       "id": "scalability-and-extensibility",
       "status": "passed",
-      "summary": "Packed jobs, query-cache injection and workspace onboarding fail closed independently of root incremental APIs.",
+      "summary": "Packed jobs cover every published query preset; query-cache injection and workspace onboarding fail closed independently of root incremental APIs.",
       "evidence": [
         "packages/graph/scripts/check-packed-package.mjs",
         "packages/graph/src/application/run-standalone-graph.ts"
@@ -30,7 +30,7 @@
     {
       "id": "performance-and-efficiency",
       "status": "passed",
-      "summary": "Synthetic retrieval benchmark and query-scale budgets remain labelled non-public; truncated rows stay out of accuracy aggregates.",
+      "summary": "Synthetic retrieval scored from the packed tarball remains labelled non-public; truncated rows stay out of accuracy aggregates.",
       "evidence": [
         "packages/graph/scripts/check-retrieval-benchmark.mjs",
         "packages/graph/scripts/check-query-profile.mjs"
@@ -75,7 +75,7 @@
     {
       "id": "correctness-and-determinism",
       "status": "passed",
-      "summary": "Packed CLI jobs, G1 corpus admission and synthetic retrieval cases are deterministic and identity-locked.",
+      "summary": "Packed CLI jobs, G1 corpus admission and synthetic retrieval scored from the installed tarball are deterministic and identity-locked.",
       "evidence": [
         "packages/graph/scripts/check-packed-package.mjs",
         "packages/graph/scripts/check-retrieval-benchmark.mjs"
@@ -138,7 +138,7 @@
   ],
   "measurements": {
     "candidateSchemas": 35,
-    "packedJobs": 12,
+    "packedJobs": 20,
     "conformanceSuites": 23,
     "languageFixtures": 7,
     "providerCount": 7,
@@ -149,7 +149,7 @@
     "coverageFunctionsPercent": 93.82,
     "coverageLinesPercent": 92.37,
     "packedFiles": 94,
-    "packedCompressedBytes": 249393,
+    "packedCompressedBytes": 251278,
     "packedCompressedBudgetBytes": 262144,
     "publicInternalDocuments": 0,
     "cliRuntimeBridges": 0,
