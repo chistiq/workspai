@@ -12,6 +12,8 @@ import {
   GRAPH_PACKAGE_METADATA,
   GRAPH_PUBLIC_EXPORT_MAP,
   GRAPH_QUERY_CACHE_OPERATING_BOUNDARY,
+  GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY,
+  GRAPH_RELEASE_INVENTORY_CONTRACT,
   GRAPH_RETRIEVAL_BENCHMARK_CLAIM,
   GRAPH_SBOM_SPEC,
   GRAPH_STANDALONE_PACKED_JOBS,
@@ -98,6 +100,7 @@ describe('G7 standalone product contracts', () => {
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.limitations).toEqual(
       expect.arrayContaining([
         'signed-provenance-unattested',
+        'rollback-procedure-not-proven',
         'retrieval-benchmark-is-synthetic-fixture-labelled',
       ])
     );
@@ -105,6 +108,19 @@ describe('G7 standalone product contracts', () => {
       'sbom-and-provenance-pending'
     );
     expect(GRAPH_SBOM_SPEC.provenance).toBe('unattested');
+    expect(GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY).toEqual({
+      sourceMaps: 'excluded',
+      governance: 'excluded',
+      machineLocalPaths: 'rejected',
+      secrets: 'rejected',
+      catalogDigest: 'required',
+      signedAttestation: 'not-generated',
+      rollbackProcedure: 'not-proven',
+    });
+    expect(GRAPH_RELEASE_INVENTORY_CONTRACT).toEqual({
+      id: 'workspai.graph.release-inventory',
+      version: '0.1.0-candidate',
+    });
     expect(GRAPH_RETRIEVAL_BENCHMARK_CLAIM.publicAccuracyClaimPermitted).toBe(false);
   });
 
@@ -140,9 +156,8 @@ describe('G7 standalone product contracts', () => {
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.packedJobs).toEqual(
       GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id)
     );
-    for (const job of GRAPH_STANDALONE_PACKED_JOBS) {
-      expect(packChecker).toContain(job.args.map((part) => `'${part}'`).join(', '));
-    }
+    expect(packChecker).toMatch(/GRAPH_STANDALONE_PACKED_JOBS/);
+    expect(packChecker).toMatch(/GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY/);
     expect(GRAPH_QUERY_CACHE_OPERATING_BOUNDARY.resultEnvelopeCacheField).toBe('prohibited');
     expect(GRAPH_QUERY_CACHE_OPERATING_BOUNDARY.defaultStore).toBe('none');
   });

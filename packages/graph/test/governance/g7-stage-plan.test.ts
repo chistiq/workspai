@@ -31,6 +31,7 @@ describe('Graph G7 stage authorization', () => {
         'published-support-limitations-matrix',
         'sbom-generation-candidate',
         'retrieval-benchmark-command',
+        'packed-contents-and-unsigned-security-verification',
         'g7-standalone-stable-admission',
       ])
     );

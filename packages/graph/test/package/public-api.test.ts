@@ -101,6 +101,8 @@ describe('@workspai/graph development package', () => {
       'standalone-support-matrix',
       'cyclonedx-sbom-candidate',
       'synthetic-retrieval-benchmark',
+      'packed-artifact-security-scan',
+      'public-release-inventory-candidate',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',

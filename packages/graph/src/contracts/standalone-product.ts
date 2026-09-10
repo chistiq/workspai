@@ -221,6 +221,7 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
     'overlays-do-not-publish-canonical-generations',
     'external-provider-sdk-deferred',
     'signed-provenance-unattested',
+    'rollback-procedure-not-proven',
     'retrieval-benchmark-is-synthetic-fixture-labelled',
     'g6-cross-platform-admission-pending',
     'standalone-stable-not-admitted',
@@ -247,6 +248,22 @@ export const GRAPH_SBOM_SPEC = Object.freeze({
   npmProvenance: 'not-generated',
 } as const);
 
+export const GRAPH_RELEASE_INVENTORY_CONTRACT = defineWisContract({
+  id: 'workspai.graph.release-inventory',
+  version: '0.1.0-candidate',
+});
+
+export const GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY = Object.freeze({
+  sourceMaps: 'excluded',
+  governance: 'excluded',
+  machineLocalPaths: 'rejected',
+  secrets: 'rejected',
+  catalogDigest: 'required',
+  signedAttestation: 'not-generated',
+  rollbackProcedure: 'not-proven',
+} as const);
+
 export type GraphStandaloneSupportMatrix = typeof GRAPH_STANDALONE_SUPPORT_MATRIX;
 export type GraphPublicExportMap = typeof GRAPH_PUBLIC_EXPORT_MAP;
 export type GraphQueryCacheOperatingBoundary = typeof GRAPH_QUERY_CACHE_OPERATING_BOUNDARY;
+export type GraphPackedArtifactSecurityBoundary = typeof GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY;

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Locked a G7 release inventory of public exports and schema digests, and
+  scanned the packed tarball for secret material, machine-local paths, source
+  maps and governance leakage. Catalog sha256 values must match packed schemas.
+  Signed provenance and rollback remain unattested and unproven.
+
 - Generated an unattested CycloneDX 1.6 SBOM candidate from Graph lockfile
   identities without claiming npm provenance or SLSA. A pinned synthetic
   retrieval corpus now has a reproducible benchmark command and raw result

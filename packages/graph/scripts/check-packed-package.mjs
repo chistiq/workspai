@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sharedRoot = path.resolve(packageRoot, '../shared');
@@ -12,6 +13,18 @@ const consumerRoot = path.join(temporaryRoot, 'consumer');
 const npmCache = path.join(temporaryRoot, 'npm-cache');
 const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
 const typescriptCli = toolRequire.resolve('typescript/bin/tsc');
+const {
+  GRAPH_CLI_RESULT_SCHEMA_VERSION,
+  GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY,
+  GRAPH_STANDALONE_PACKED_JOBS,
+} = await import(pathToFileURL(path.join(packageRoot, 'dist/contracts/index.js')).href);
+
+if (GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY.signedAttestation !== 'not-generated') {
+  throw new Error('Packed artifact security boundary cannot claim attestation');
+}
+if (GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY.rollbackProcedure !== 'not-proven') {
+  throw new Error('Packed artifact security boundary cannot claim a proven rollback procedure');
+}
 
 function runNpm(args, cwd) {
   // Bypass the Windows .cmd shim when npm exposes its JavaScript entrypoint.
@@ -304,7 +317,7 @@ try {
       );
     }
     if (
-      parsed.schemaVersion !== 'workspai.graph.cli-result.v1' ||
+      parsed.schemaVersion !== GRAPH_CLI_RESULT_SCHEMA_VERSION ||
       typeof parsed.command !== 'string' ||
       typeof parsed.status !== 'string' ||
       !Array.isArray(parsed.diagnostics)
@@ -313,54 +326,60 @@ try {
     }
     return parsed;
   };
-  const readOnlyPreview = runCli(['inspect', '.', '--json']);
-  if (!['complete', 'partial'].includes(readOnlyPreview.status)) {
-    throw new Error('packed Graph CLI did not return an honest repository preview');
-  }
-  if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
-    throw new Error('packed Graph CLI wrote metadata without --write');
-  }
-  const structuralView = runCli(['inspect', '.', '--view', 'structural', '--json']);
-  if (
-    structuralView.data?.view?.view !== 'structural' ||
-    !structuralView.data?.view?.sourceGeneration
-  ) {
-    throw new Error('packed Graph CLI did not emit the structural preview view');
-  }
-  const evidenceView = runCli(['inspect', '.', '--view', 'evidence', '--json']);
-  if (evidenceView.data?.view?.view !== 'evidence' || !evidenceView.data?.view?.sourceGeneration) {
-    throw new Error('packed Graph CLI did not emit the evidence preview view');
-  }
-  const providerList = runCli(['providers', 'list', '--json']);
-  if (!Array.isArray(providerList.data) || providerList.data.length !== 7) {
-    throw new Error('packed Graph CLI provider inventory is incomplete');
-  }
-  const providerInspect = runCli([
-    'providers',
-    'inspect',
-    'workspai.graph.provider.repository-files',
-    '--json',
-  ]);
-  if (providerInspect.data?.id !== 'workspai.graph.provider.repository-files') {
-    throw new Error('packed Graph CLI did not inspect the repository-files provider');
-  }
-  runCli(['query', '.', '--preset', 'entryPoints', '--json']);
-  const reviewSlice = runCli(['query', '.', '--preset', 'reviewContext', '--slice', '--json']);
-  if (
-    reviewSlice.data?.contract?.id !== 'workspai.graph.review-context-slice' ||
-    !reviewSlice.data?.sourceGeneration ||
-    !reviewSlice.data?.sourceQueryDigest
-  ) {
-    throw new Error('packed Graph CLI did not emit a provenance-bound review context slice');
-  }
-  runCli(['quality', '.', '--json'], [0, 2]);
-  const writtenPreview = runCli(['inspect', '.', '--write', '--json']);
-  if (!['committed', 'already-current'].includes(writtenPreview.data?.publication?.status)) {
-    throw new Error('packed Graph CLI did not publish an explicit project generation');
-  }
-  const pointerPath = path.join(consumerRoot, '.workspai', 'reports', 'graph-generation.json');
-  if (!fs.existsSync(pointerPath) || fs.readFileSync(pointerPath, 'utf8').includes(consumerRoot)) {
-    throw new Error('packed Graph CLI publication pointer is absent or host-bound');
+  const extraById = {
+    'inspect-json': (envelope) => {
+      if (!['complete', 'partial'].includes(envelope.status)) {
+        throw new Error('packed Graph CLI did not return an honest repository preview');
+      }
+      if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
+        throw new Error('packed Graph CLI wrote metadata without --write');
+      }
+    },
+    'inspect-structural-view': (envelope) => {
+      if (envelope.data?.view?.view !== 'structural' || !envelope.data?.view?.sourceGeneration) {
+        throw new Error('packed Graph CLI did not emit the structural preview view');
+      }
+    },
+    'inspect-evidence-view': (envelope) => {
+      if (envelope.data?.view?.view !== 'evidence' || !envelope.data?.view?.sourceGeneration) {
+        throw new Error('packed Graph CLI did not emit the evidence preview view');
+      }
+    },
+    'providers-list': (envelope) => {
+      if (!Array.isArray(envelope.data) || envelope.data.length !== 7) {
+        throw new Error('packed Graph CLI provider inventory is incomplete');
+      }
+    },
+    'providers-inspect-repository-files': (envelope) => {
+      if (envelope.data?.id !== 'workspai.graph.provider.repository-files') {
+        throw new Error('packed Graph CLI did not inspect the repository-files provider');
+      }
+    },
+    'query-review-context-slice': (envelope) => {
+      if (
+        envelope.data?.contract?.id !== 'workspai.graph.review-context-slice' ||
+        !envelope.data?.sourceGeneration ||
+        !envelope.data?.sourceQueryDigest
+      ) {
+        throw new Error('packed Graph CLI did not emit a provenance-bound review context slice');
+      }
+    },
+    'inspect-write': (envelope) => {
+      if (!['committed', 'already-current'].includes(envelope.data?.publication?.status)) {
+        throw new Error('packed Graph CLI did not publish an explicit project generation');
+      }
+      const pointerPath = path.join(consumerRoot, '.workspai', 'reports', 'graph-generation.json');
+      if (
+        !fs.existsSync(pointerPath) ||
+        fs.readFileSync(pointerPath, 'utf8').includes(consumerRoot)
+      ) {
+        throw new Error('packed Graph CLI publication pointer is absent or host-bound');
+      }
+    },
+  };
+  for (const job of GRAPH_STANDALONE_PACKED_JOBS) {
+    const envelope = runCli([...job.args], [...job.acceptedExitCodes]);
+    extraById[job.id]?.(envelope);
   }
 
   const installedRoot = path.join(consumerRoot, 'node_modules/@workspai/graph');
@@ -426,6 +445,67 @@ try {
   if (paths.some((entry) => entry.endsWith('.map'))) {
     throw new Error('packed Graph package leaks source maps');
   }
+  if (
+    paths.some(
+      (entry) => entry === 'governance/g7-sbom.cdx.json' || entry.startsWith('governance/')
+    )
+  ) {
+    throw new Error('packed Graph package leaks unattested governance artifacts');
+  }
+
+  const catalog = JSON.parse(
+    fs.readFileSync(path.join(installedRoot, 'conformance/contract-catalog.v1.json'), 'utf8')
+  );
+  if (!Array.isArray(catalog.contracts) || catalog.contracts.length === 0) {
+    throw new Error('packed Graph package omits the contract catalog');
+  }
+  for (const contract of catalog.contracts) {
+    const schemaPath = path.join(installedRoot, contract.file);
+    if (!fs.existsSync(schemaPath)) {
+      throw new Error(`packed Graph package omits catalog schema ${contract.file}`);
+    }
+    const digest = crypto.createHash('sha256').update(fs.readFileSync(schemaPath)).digest('hex');
+    if (digest !== contract.sha256) {
+      throw new Error(`packed catalog digest drifted for ${contract.file}`);
+    }
+  }
+
+  const leakedRoots = [
+    ...new Set(
+      [
+        os.homedir(),
+        process.env.HOME,
+        process.env.USERPROFILE,
+        packageRoot,
+        path.resolve(packageRoot, '../..'),
+      ]
+        .filter((value) => typeof value === 'string' && value.length >= 3)
+        .flatMap((value) => [value, value.replaceAll('\\', '/'), value.replaceAll('/', '\\')])
+    ),
+  ];
+  const secretMaterial =
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|npm_[A-Za-z0-9]{36}/u;
+  for (const relative of paths) {
+    if (
+      !relative.endsWith('.js') &&
+      !relative.endsWith('.json') &&
+      !relative.endsWith('.md') &&
+      !relative.endsWith('.ts') &&
+      relative !== 'LICENSE'
+    ) {
+      continue;
+    }
+    const text = fs.readFileSync(path.join(installedRoot, relative), 'utf8');
+    if (secretMaterial.test(text)) {
+      throw new Error(`packed Graph package contains secret material in ${relative}`);
+    }
+    for (const root of leakedRoots) {
+      if (text.includes(root)) {
+        throw new Error(`packed Graph package leaks host path in ${relative}`);
+      }
+    }
+  }
+
   console.log(
     `Packed Graph consumer passed: ${paths.length} files, ${compressedBytes}/${compressedBudgetBytes} compressed bytes.`
   );

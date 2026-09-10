@@ -130,6 +130,7 @@ corepack npm --workspace @workspai/graph run test:architecture
 corepack npm --workspace @workspai/graph run test:contracts
 corepack npm --workspace @workspai/graph run pack:check
 corepack npm --workspace @workspai/graph run sbom:check
+corepack npm --workspace @workspai/graph run inventory:check
 corepack npm --workspace @workspai/graph run retrieval:check
 ```
 
@@ -152,5 +153,6 @@ portfolio. They are intentionally not duplicated in this public package
 repository or npm artifact. The approved G3 evidence authorizes G4 repository
 preview work only; it does not claim standalone stability or release admission.
 G5 and G6 local engines exist as candidates. G7 product-surface contracts exist
-as local candidates. G6 remote OS-matrix evidence, public preview, SBOM and G8
-CLI integration remain unauthorized.
+as local candidates. G6 remote OS-matrix evidence, public preview, signed
+provenance and G8 CLI integration remain unauthorized. The CycloneDX SBOM
+candidate is unattested.

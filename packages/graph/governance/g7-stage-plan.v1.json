@@ -129,6 +129,17 @@
       ]
     },
     {
+      "id": "packed-contents-and-unsigned-security-verification",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/scripts/generate-g7-release-inventory.mjs",
+        "packages/graph/governance/g7-release-inventory.v1.json",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/governance/g7-release-inventory.test.ts"
+      ]
+    },
+    {
       "id": "sbom-provenance-security-verification",
       "status": "planned",
       "evidence": [
