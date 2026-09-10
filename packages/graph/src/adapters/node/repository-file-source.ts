@@ -9,6 +9,7 @@ import type {
   GraphUnsupportedZone,
 } from '../../contracts/index.js';
 import { graphInputMediaType } from '../../domain/input-media-type.js';
+import { normalizePortableLocator } from '../../domain/content-state-merkle.js';
 import type {
   GraphFileInventoryRequest,
   GraphFileInventoryResult,
@@ -19,7 +20,55 @@ function portableLocator(root: string, target: string): string | null {
   const relative = path.relative(root, target);
   if (!relative || path.isAbsolute(relative) || relative.split(path.sep).includes('..'))
     return null;
-  return relative.split(path.sep).join('/');
+  return normalizePortableLocator(relative.split(path.sep).join('/'));
+}
+
+function collidingNfcNames(names: readonly string[]): Set<string> {
+  const groups = new Map<string, string[]>();
+  for (const name of names) {
+    const key = name.normalize('NFC');
+    const group = groups.get(key) ?? [];
+    group.push(name);
+    groups.set(key, group);
+  }
+  const colliding = new Set<string>();
+  for (const group of groups.values()) {
+    if (new Set(group).size > 1) {
+      for (const name of group) colliding.add(name);
+    }
+  }
+  return colliding;
+}
+
+async function resolvePortableFile(root: string, locator: string): Promise<string | null> {
+  const portable = normalizePortableLocator(locator);
+  const direct = path.resolve(root, ...portable.split('/'));
+  try {
+    const real = await fs.realpath(direct);
+    if (inside(root, real)) return real;
+  } catch {
+    // Fall through to NFC-equal dirent matching when the logical path is precomposed.
+  }
+  let current = root;
+  for (const segment of portable.split('/')) {
+    const wanted = segment.normalize('NFC');
+    let match: string | undefined;
+    let matches = 0;
+    for await (const entry of await fs.opendir(current)) {
+      if (entry.isSymbolicLink() || entry.name.normalize('NFC') !== wanted) continue;
+      matches += 1;
+      match = entry.name;
+    }
+    if (!match || matches !== 1) return null;
+    current = path.join(current, match);
+    if (!inside(root, current)) return null;
+  }
+  try {
+    const real = await fs.realpath(current);
+    return inside(root, real) ? real : null;
+  } catch {
+    return null;
+  }
 }
 
 function inside(root: string, target: string): boolean {
@@ -83,9 +132,11 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           throw new Error('Repository root must be a real directory, not a symbolic link.');
         }
         const root = await fs.realpath(request.root);
-        const excluded = new Set(request.excludedDirectories);
+        const excluded = new Set(request.excludedDirectories.map((name) => name.normalize('NFC')));
         const onlyLocators =
-          request.onlyLocators === undefined ? undefined : new Set(request.onlyLocators);
+          request.onlyLocators === undefined
+            ? undefined
+            : new Set(request.onlyLocators.map((locator) => normalizePortableLocator(locator)));
         const pending = [{ directory: root, depth: 0 }];
         while (pending.length > 0) {
           if (request.signal?.aborted) {
@@ -114,6 +165,7 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
             entries.push(entry);
           }
           entries.sort((left, right) => left.name.localeCompare(right.name));
+          const colliding = collidingNfcNames(entries.map((entry) => entry.name));
           for (const entry of entries) {
             const target = path.join(current.directory, entry.name);
             const locator = portableLocator(root, target);
@@ -127,7 +179,21 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               omittedFiles += 1;
               continue;
             }
-            if (current.directory === root && entry.name === '.git' && !entry.isDirectory()) {
+            if (colliding.has(entry.name)) {
+              omittedFiles += 1;
+              unknownZones.push({
+                code: 'graph.unicode-locator-collision',
+                scope: locator,
+                reason:
+                  'NFC-equivalent filenames in one directory cannot share a portable content locator.',
+              });
+              continue;
+            }
+            if (
+              current.directory === root &&
+              entry.name.normalize('NFC') === '.git' &&
+              !entry.isDirectory()
+            ) {
               const metadata = await fs.lstat(target);
               omittedFiles += 1;
               omittedBytes += metadata.isFile() ? metadata.size : 0;
@@ -140,7 +206,7 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               continue;
             }
             if (entry.isDirectory()) {
-              if (!excluded.has(entry.name)) {
+              if (!excluded.has(entry.name.normalize('NFC'))) {
                 if (current.depth >= request.maxDepth) {
                   unknownZones.push({
                     code: 'graph.repository-depth-truncated',
@@ -303,16 +369,18 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
 
     async read(rootInput, input, options) {
       try {
+        const locator = normalizePortableLocator(input.locator);
         if (
-          !input.locator ||
-          path.posix.isAbsolute(input.locator) ||
-          input.locator.includes('\\') ||
-          input.locator.split('/').includes('..')
+          !locator ||
+          path.posix.isAbsolute(locator) ||
+          locator.includes('\\') ||
+          locator.split('/').includes('..')
         ) {
           throw new Error('Repository input locator is not portable.');
         }
         const root = await fs.realpath(rootInput);
-        const target = path.resolve(root, ...input.locator.split('/'));
+        const target = await resolvePortableFile(root, locator);
+        if (!target) throw new Error('Repository input locator is not portable.');
         const realTarget = await fs.realpath(target);
         if (!inside(root, realTarget)) throw new Error('Repository input escapes its root.');
         const stable = await readStableFile(realTarget, options.maxBytes, options.signal);

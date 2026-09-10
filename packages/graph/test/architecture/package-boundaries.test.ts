@@ -4,6 +4,14 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  GRAPH_CANONICAL_SHARD_REUSE_IDENTITY,
+  GRAPH_EXECUTABLE_QUERY_STRATEGIES,
+  GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES,
+  GRAPH_QUERY_STRATEGIES,
+  GRAPH_SHARD_REUSE_REJECTION_REASONS,
+} from '../../src/contracts/index.js';
+
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const sourceRoot = path.join(packageRoot, 'src');
 
@@ -169,7 +177,43 @@ describe('Graph architecture boundaries', () => {
     expect(rootApi).toMatch(/buildRepoGraph/);
     expect(rootApi).not.toMatch(/buildWorkspaceGraph/);
     expect(rootApi).not.toMatch(
-      /buildGraphChangeOverlay|planIncrementalGraphBuild|compareContentStateManifests/
+      /buildGraphChangeOverlay|planIncrementalGraphBuild|compareContentStateManifests|buildIncrementalRepoGraph|summarizeCanonicalGraphDelta|planQueryCacheInvalidation|applyQueryCacheInvalidations|collectGraphSemanticDependencies|providersRequiredForAddedInputs|addedInputLocators/
     );
+  });
+
+  it('keeps similarity and vector retrieval out of canonical query and shard reuse', () => {
+    expect(GRAPH_CANONICAL_SHARD_REUSE_IDENTITY).toBe('exact-digest');
+    expect([...GRAPH_QUERY_STRATEGIES]).toEqual(['direct', 'graph', 'hybrid', 'auto']);
+    expect([...GRAPH_EXECUTABLE_QUERY_STRATEGIES]).toEqual(['direct', 'graph', 'hybrid']);
+    for (const strategy of GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES) {
+      expect(GRAPH_QUERY_STRATEGIES).not.toContain(strategy);
+      expect(GRAPH_EXECUTABLE_QUERY_STRATEGIES).not.toContain(strategy);
+      expect(GRAPH_SHARD_REUSE_REJECTION_REASONS).not.toContain(strategy);
+    }
+    for (const relative of [
+      'application/plan-shard-reuse.ts',
+      'application/compose-graph.ts',
+      'application/build-incremental-repo-graph.ts',
+      'application/query-graph.ts',
+      'application/query-cache.ts',
+    ]) {
+      const source = fs.readFileSync(path.join(sourceRoot, relative), 'utf8');
+      expect(source).not.toMatch(/\b(?:knn|vectorIndex|embeddingIndex|similarityIndex)\b/);
+    }
+  });
+
+  it('keeps proposed-change overlays from publishing canonical generations', () => {
+    for (const relative of [
+      'application/build-graph-change-overlay.ts',
+      'application/compare-change-overlays.ts',
+      'application/evaluate-overlay-staleness.ts',
+      'application/query-change-overlay.ts',
+      'application/proposed-change-types.ts',
+    ]) {
+      const source = fs.readFileSync(path.join(sourceRoot, relative), 'utf8');
+      expect(source).not.toMatch(
+        /writeGraphGeneration|publish-project-graph|createNodeProjectArtifactStore/
+      );
+    }
   });
 });

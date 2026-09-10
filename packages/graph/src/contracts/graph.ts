@@ -229,6 +229,16 @@ export interface GraphQueryCacheKey {
   readonly page?: { readonly cursor: string; readonly size: number };
 }
 
+export type GraphQueryCacheObservationStatus =
+  'hit' | 'miss' | 'stale' | 'denied' | 'incompatible' | 'corrupt' | 'unavailable';
+
+/** Host-store observation. Never changes the semantic GraphQueryResult payload. */
+export interface GraphQueryCacheObservation {
+  readonly status: GraphQueryCacheObservationStatus;
+  readonly keyDigest?: WisDigestReference;
+  readonly reasons?: readonly string[];
+}
+
 export interface GraphQueryCacheEntry<T = unknown> {
   readonly contract: typeof GRAPH_QUERY_CACHE_ENTRY_CONTRACT;
   readonly keyDigest: WisDigestReference;

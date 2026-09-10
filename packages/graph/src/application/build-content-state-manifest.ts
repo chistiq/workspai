@@ -9,7 +9,10 @@ import {
   type GraphContentStateManifest,
   type GraphContentStateNode,
 } from '../contracts/index.js';
-import { assembleContentStateMerkle } from '../domain/content-state-merkle.js';
+import {
+  assembleContentStateMerkle,
+  normalizePortableLocator,
+} from '../domain/content-state-merkle.js';
 
 import type { GraphContentStateManifestBuildRequest } from './content-state-manifest-types.js';
 
@@ -27,9 +30,9 @@ function digestUtf8(material: string): WisDigestReference {
 export function buildContentStateManifest(
   request: GraphContentStateManifestBuildRequest
 ): GraphContentStateManifest {
-  const leaves = [...request.leaves].sort((left, right) =>
-    left.locator.localeCompare(right.locator)
-  );
+  const leaves = [...request.leaves]
+    .map((leaf) => Object.freeze({ ...leaf, locator: normalizePortableLocator(leaf.locator) }))
+    .sort((left, right) => left.locator.localeCompare(right.locator));
   const seen = new Set<string>();
   for (const leaf of leaves) {
     if (seen.has(leaf.locator)) {

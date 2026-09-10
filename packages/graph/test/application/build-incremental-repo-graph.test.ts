@@ -7,10 +7,13 @@ import {
   GRAPH_IDENTITY_SCHEME,
   GRAPH_PROVIDER_DETECTION_CONTRACT,
   GRAPH_PROVIDER_MANIFEST_CONTRACT,
+  GRAPH_QUERY_CACHE_CONTRACT,
+  GRAPH_QUERY_CACHE_ENTRY_CONTRACT,
   CORE_GRAPH_ONTOLOGY_PROFILE,
   type GraphFactBatch,
   type GraphProviderInput,
   type GraphProviderRuntime,
+  type GraphQueryCacheEntry,
 } from '../../src/contracts/index.js';
 import {
   GRAPH_STANDARD_REPO_BUILD_POLICY,
@@ -18,6 +21,7 @@ import {
   buildIncrementalRepoGraph,
   buildRepoGraph,
   buildShardDependenciesFromSources,
+  collectGraphSemanticDependencies,
   contentStateLeavesFromProviderInputs,
   executeGraphReferenceCompositionTask,
   parseGitStatusPorcelain,
@@ -25,6 +29,7 @@ import {
 import type {
   GraphFileInventoryRequest,
   GraphProductHostPorts,
+  GraphQueryCacheStorePort,
   GraphWorkerTaskRequest,
 } from '../../src/ports/index.js';
 
@@ -109,12 +114,13 @@ function ports(
 function fixtureProvider(
   id: string,
   locator: string,
-  collectCalls: string[]
+  collectCalls: string[],
+  version = '1'
 ): GraphProviderRuntime {
   const manifest = {
     contract: GRAPH_PROVIDER_MANIFEST_CONTRACT,
     id,
-    version: '1',
+    version,
     displayName: id,
     determinism: 'deterministic' as const,
     capabilities: {
@@ -179,6 +185,16 @@ function fixtureProvider(
   };
 }
 
+async function semanticStampsFor(runtime: readonly GraphProviderRuntime[]) {
+  return collectGraphSemanticDependencies({
+    ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    compositionPolicy: GRAPH_STANDARD_REPO_BUILD_POLICY.composition,
+    redactionProfile: GRAPH_STANDARD_REPO_BUILD_POLICY.redactionProfile,
+    providerManifests: runtime.map((provider) => provider.manifest),
+    digest: ports({}).digest,
+  });
+}
+
 describe('buildIncrementalRepoGraph', () => {
   it('reuses prior provider output and assesses equivalence against a full build', async () => {
     const files = { 'src/index.ts': 'export const ok = 1;' };
@@ -206,7 +222,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/index.ts', files['src/index.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
 
     collectCalls.length = 0;
@@ -224,6 +243,7 @@ describe('buildIncrementalRepoGraph', () => {
       providersToRecompute: [],
       scanProfileDigest,
       referenceGenerationDigest: full.graph?.generation.reference.contentDigest,
+      baseGraph: full.graph,
     });
 
     expect(incremental.equivalence).toBe('pass');
@@ -231,6 +251,17 @@ describe('buildIncrementalRepoGraph', () => {
     expect(incremental.plan.providersToRecompute).toEqual([]);
     expect(incremental.processing.length).toBeGreaterThan(0);
     expect(collectCalls).toEqual([]);
+    expect(incremental.plan.delta.graph).toEqual({
+      addedNodes: [],
+      removedNodes: [],
+      changedEdges: [],
+    });
+    expect(incremental.plan.delta.facts).toEqual({
+      added: [],
+      renewed: [],
+      removed: [],
+      invalidated: [],
+    });
   });
 
   it('skips content hashing of unchanged files when a trusted Git journal is empty', async () => {
@@ -256,7 +287,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/index.ts', files['src/index.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
 
     collectCalls.length = 0;
@@ -279,8 +313,95 @@ describe('buildIncrementalRepoGraph', () => {
     expect(incremental.inventoryReread.trust).toBe('trusted');
     expect(incremental.inventoryReread.reusedLocators).toEqual(['src/index.ts']);
     expect(inventoryCalls).toEqual([[]]);
+    expect(incremental.plan.delta.execution).toMatchObject({
+      detected: 0,
+      scanned: 0,
+      parsed: 0,
+      recomputed: 0,
+      skippedByDigest: 1,
+    });
+    expect(incremental.plan.accounting.bytes).toEqual({ hashed: 0, reused: 20 });
     expect(incremental.equivalence).toBe('pass');
     expect(collectCalls.filter((id) => id === 'workspai.graph.provider.fixture-a').length).toBe(0);
+  });
+
+  it('matches full-rebuild digest across trusted Git, absent journal, untrusted journal and another checkout root', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const collectCalls: string[] = [];
+    const providers = [
+      fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', collectCalls),
+    ];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const run = async (root: string, portOptions: { porcelain?: string } = {}) => {
+      collectCalls.length = 0;
+      return buildIncrementalRepoGraph({
+        root,
+        scope,
+        ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+        providers,
+        policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+        ports: ports(files, portOptions),
+        baseManifest,
+        baseGeneration: 'generation:base',
+        targetGeneration: 'generation:target',
+        baseSources: full.compositionSources ?? [],
+        providersToRecompute: [],
+        scanProfileDigest,
+        referenceGenerationDigest: full.graph?.generation.reference.contentDigest,
+      });
+    };
+
+    const trusted = await run('/fixture', { porcelain: '' });
+    const absent = await run('/fixture');
+    const untrusted = await run('/fixture', { porcelain: 'not porcelain' });
+    const otherCheckout = await run('/checkout-b', { porcelain: '' });
+    const digest = full.graph?.generation.reference.contentDigest;
+
+    expect(trusted.inventoryReread.trust).toBe('trusted');
+    expect(absent.inventoryReread.trust).toBe('absent');
+    expect(untrusted.inventoryReread.trust).toBe('untrusted');
+    expect(trusted.plan.delta.execution.scanned).toBe(0);
+    expect(absent.plan.delta.execution.scanned).toBe(1);
+    expect(untrusted.plan.delta.execution.scanned).toBe(1);
+    expect(trusted.graph?.generation.reference.contentDigest).toEqual(digest);
+    expect(absent.graph?.generation.reference.contentDigest).toEqual(digest);
+    expect(untrusted.graph?.generation.reference.contentDigest).toEqual(digest);
+    expect(otherCheckout.graph?.generation.reference.contentDigest).toEqual(digest);
+    expect(trusted.equivalence).toBe('pass');
+    expect(absent.equivalence).toBe('pass');
+    expect(untrusted.equivalence).toBe('pass');
+    expect(otherCheckout.equivalence).toBe('pass');
+    expect(trusted.targetManifest.merkleRoot).toEqual(absent.targetManifest.merkleRoot);
+    expect(trusted.targetManifest.merkleRoot).toEqual(untrusted.targetManifest.merkleRoot);
+    expect(trusted.targetManifest.merkleRoot).toEqual(otherCheckout.targetManifest.merkleRoot);
+    expect(
+      otherCheckout.targetManifest.nodes
+        .filter((node) => node.kind === 'file')
+        .map((node) => node.locator)
+    ).toEqual(['src/index.ts']);
+    expect(JSON.stringify(otherCheckout.graph)).not.toContain('/checkout-b');
+    expect(JSON.stringify(otherCheckout.targetManifest)).not.toContain('/checkout-b');
+    expect(trusted.plan.changeSet.causes).toEqual([]);
   });
 
   it('recomputes only providers bound to edited files and matches a clean full rebuild', async () => {
@@ -312,7 +433,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/a.ts', files['src/a.ts']!), inputFor('src/b.ts', files['src/b.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
 
     files['src/a.ts'] = 'export const a = 2;';
@@ -345,6 +469,14 @@ describe('buildIncrementalRepoGraph', () => {
 
     expect(inventoryCalls).toEqual([['src/a.ts']]);
     expect(incrementalCollects).toEqual([providerA]);
+    expect(incremental.plan.delta.execution).toMatchObject({
+      detected: 1,
+      scanned: 1,
+      skippedByDigest: 1,
+    });
+    expect(incremental.plan.delta.execution.parsed).toBeGreaterThan(0);
+    expect(incremental.plan.accounting.leaves.edited).toBe(1);
+    expect(incremental.plan.accounting.bytes.hashed).toBeGreaterThan(0);
     expect(incremental.plan.providersToRecompute).toEqual([providerA]);
     expect(incremental.providers.find((entry) => entry.provider.id === providerB)?.collection).toBe(
       'not-run'
@@ -394,7 +526,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/a.ts', files['src/a.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
 
     files['src/b.ts'] = 'export const b = 1;';
@@ -452,7 +587,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/a.ts', files['src/a.ts']!), inputFor('src/b.ts', files['src/b.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
 
     delete files['src/b.ts'];
@@ -483,6 +621,80 @@ describe('buildIncrementalRepoGraph', () => {
         (node) => node.kind === 'file' && node.locator === 'src/b.ts'
       )
     ).toBe(false);
+    expect(incremental.graph?.generation.reference.contentDigest).toEqual(
+      rebuilt.graph?.generation.reference.contentDigest
+    );
+  });
+
+  it('records a journal rename as a rename-candidate after portable digest comparison', async () => {
+    const content = 'export const ok = 1;';
+    const files: Record<string, string> = { 'src/old.ts': content };
+    const collectCalls: string[] = [];
+    const providers = [
+      fixtureProvider('workspai.graph.provider.fixture-a', 'src/old.ts', collectCalls),
+    ];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/old.ts', content)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+
+    delete files['src/old.ts'];
+    files['src/new.ts'] = content;
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: 'R  src/old.ts -> src/new.ts\n' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    const rebuilt = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+
+    expect(incremental.inventoryReread.deletedLocators).toEqual(['src/old.ts']);
+    expect(incremental.inventoryReread.rereadLocators).toEqual(['src/new.ts']);
+    expect(incremental.plan.changeSet.inputs).toEqual([
+      expect.objectContaining({
+        kind: 'rename-candidate',
+        locator: 'src/new.ts',
+        renameCandidate: {
+          priorLocator: 'src/old.ts',
+          nextLocator: 'src/new.ts',
+          confidence: 1,
+        },
+      }),
+    ]);
+    expect(incremental.plan.accounting.leaves.renameCandidates).toBe(1);
+    expect(incremental.plan.delta.execution.scanned).toBe(1);
     expect(incremental.graph?.generation.reference.contentDigest).toEqual(
       rebuilt.graph?.generation.reference.contentDigest
     );
@@ -535,7 +747,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/index.ts', files['src/index.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
     const host = ports(files);
     const incremental = await buildIncrementalRepoGraph({
@@ -561,6 +776,8 @@ describe('buildIncrementalRepoGraph', () => {
     });
     expect(incremental.inventoryReread.trust).toBe('untrusted');
     expect(incremental.status).toBe('complete');
+    expect(incremental.plan.delta.execution.scanned).toBe(1);
+    expect(incremental.plan.delta.execution.skippedByDigest).toBe(0);
   });
 
   it('fails closed when incremental inventory throws', async () => {
@@ -585,7 +802,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/index.ts', files['src/index.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
     const host = ports(files);
     const incremental = await buildIncrementalRepoGraph({
@@ -635,7 +855,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/index.ts', files['src/index.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
     });
     const host = ports(files);
     const incremental = await buildIncrementalRepoGraph({
@@ -686,7 +909,10 @@ describe('buildIncrementalRepoGraph', () => {
         [inputFor('src/index.ts', files['src/index.ts']!)],
         scanProfileDigest
       ),
-      shardDependencies: buildShardDependenciesFromSources(full.compositionSources ?? []),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(first)
+      ),
     });
     collectCalls.length = 0;
     const incremental = await buildIncrementalRepoGraph({
@@ -705,5 +931,403 @@ describe('buildIncrementalRepoGraph', () => {
     });
     expect(incremental.plan.providersToRecompute).toEqual([providerB]);
     expect(collectCalls).toEqual([providerB]);
+  });
+
+  it('surfaces scan-profile drift as renewed and recomputes instead of reusing shards', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const collectCalls: string[] = [];
+    const providers = [
+      fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', collectCalls),
+    ];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    collectCalls.length = 0;
+    const nextScan = { algorithm: 'sha256' as const, value: 'b'.repeat(64) };
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest: nextScan,
+    });
+    expect(incremental.plan.changeSet.inputs).toEqual([
+      expect.objectContaining({ kind: 'renewed', locator: 'src/index.ts' }),
+    ]);
+    expect(incremental.plan.accounting.leaves.renewed).toBe(1);
+    expect(incremental.plan.shardReuse.reused).toEqual([]);
+    expect(collectCalls).toEqual(['workspai.graph.provider.fixture-a']);
+  });
+
+  it('applies query-cache invalidation without failing the incremental build', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const collectCalls: string[] = [];
+    const providers = [
+      fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', collectCalls),
+    ];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    if (!full.graph) {
+      throw new Error('expected a composed graph');
+    }
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const digest = (value: string) =>
+      Object.freeze({ algorithm: 'sha256' as const, value: value.padEnd(64, '0') });
+    const cacheKey = {
+      contract: GRAPH_QUERY_CACHE_CONTRACT,
+      graphGeneration: {
+        id: 'generation:older',
+        generatedAt: '2026-09-08T20:00:00.000Z',
+        contentDigest: digest('old'),
+      },
+      queryDigest: digest('query'),
+      ontologyDigest: full.graph.generation.ontologySetDigest,
+      proofPolicyDigest: full.graph.generation.proofPolicySetDigest,
+      profileDigest: digest('profile'),
+      plannerProfileDigest: digest('planner'),
+      resultProfileDigest: digest('result'),
+      projectionDigests: [],
+      indexDigests: [],
+      requiredExtensions: [],
+      scope,
+      redactionPolicyDigest: digest('redact'),
+      authorizationDigest: digest('auth'),
+      budget: { maxDepth: 4, maxNodes: 100, maxEdges: 200, maxEvidence: 50 },
+    };
+    const keep: GraphQueryCacheEntry = {
+      contract: GRAPH_QUERY_CACHE_ENTRY_CONTRACT,
+      keyDigest: digest('keep'),
+      key: cacheKey,
+      result: null,
+      resultDigest: digest('result-body'),
+      freshness: { status: 'current' },
+    };
+    const drop: GraphQueryCacheEntry = {
+      ...keep,
+      keyDigest: digest('drop'),
+      key: { ...cacheKey, authorizationDigest: digest('old-auth') },
+    };
+    const entries = new Map<string, GraphQueryCacheEntry>();
+    const store: GraphQueryCacheStorePort = {
+      async get(keyDigest) {
+        return entries.get(`${keyDigest.algorithm}:${keyDigest.value}`);
+      },
+      async publish(entry) {
+        entries.set(`${entry.keyDigest.algorithm}:${entry.keyDigest.value}`, entry);
+      },
+      async invalidate(keyDigests) {
+        for (const keyDigest of keyDigests) {
+          entries.delete(`${keyDigest.algorithm}:${keyDigest.value}`);
+        }
+      },
+    };
+    await store.publish(keep);
+    await store.publish(drop);
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      queryCache: {
+        store,
+        entries: [keep, drop],
+        policy: { authorizationDigest: digest('auth') },
+      },
+    });
+    expect(incremental.status).toBe('complete');
+    expect(entries.has(`${keep.keyDigest.algorithm}:${keep.keyDigest.value}`)).toBe(true);
+    expect(entries.has(`${drop.keyDigest.algorithm}:${drop.keyDigest.value}`)).toBe(false);
+    expect(
+      incremental.queryCacheInvalidations?.some((item) => item.reason === 'authorization')
+    ).toBe(true);
+
+    const failingStore: GraphQueryCacheStorePort = {
+      async get() {
+        return undefined;
+      },
+      async publish() {
+        return undefined;
+      },
+      async invalidate() {
+        throw new Error('store down');
+      },
+    };
+    const failedInvalidation = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      queryCache: {
+        store: failingStore,
+        entries: [drop],
+        policy: { authorizationDigest: digest('auth') },
+      },
+    });
+    expect(failedInvalidation.status).toBe('complete');
+    expect(
+      failedInvalidation.diagnostics.some(
+        (entry) => entry.code === 'GRAPH_QUERY_CACHE_INVALIDATION_FAILED'
+      )
+    ).toBe(true);
+  });
+
+  it('recomputes when ontology identity changes with unchanged content', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const collectCalls: string[] = [];
+    const providers = [
+      fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', collectCalls),
+    ];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const driftedOntology = Object.freeze({
+      ...CORE_GRAPH_ONTOLOGY_PROFILE,
+      version: '0.1.0-candidate+drift',
+    });
+    const rebuilt = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: driftedOntology,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    collectCalls.length = 0;
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: driftedOntology,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      referenceGenerationDigest: rebuilt.graph?.generation.reference.contentDigest,
+    });
+
+    expect(incremental.plan.changeSet.causes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'ontology', source: 'shard-reuse-planning' }),
+      ])
+    );
+    expect(incremental.plan.providersToRecompute).toEqual(['workspai.graph.provider.fixture-a']);
+    expect(collectCalls).toEqual(['workspai.graph.provider.fixture-a']);
+    expect(incremental.equivalence).toBe('pass');
+  });
+
+  it('recomputes when a provider manifest version changes with unchanged content', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const collectCalls: string[] = [];
+    const id = 'workspai.graph.provider.fixture-a';
+    const baseProviders = [fixtureProvider(id, 'src/index.ts', collectCalls, '1')];
+    const nextProviders = [fixtureProvider(id, 'src/index.ts', collectCalls, '2')];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers: baseProviders,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(baseProviders)
+      ),
+    });
+    const rebuilt = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers: nextProviders,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    collectCalls.length = 0;
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers: nextProviders,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      referenceGenerationDigest: rebuilt.graph?.generation.reference.contentDigest,
+    });
+
+    expect(incremental.plan.changeSet.causes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'provider', source: 'shard-reuse-planning' }),
+      ])
+    );
+    expect(incremental.plan.providersToRecompute).toEqual([id]);
+    expect(collectCalls).toEqual([id]);
+    expect(incremental.equivalence).toBe('pass');
+  });
+
+  it('recomputes when composition policy identity changes with unchanged content', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const collectCalls: string[] = [];
+    const providers = [
+      fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', collectCalls),
+    ];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const driftedPolicy = {
+      ...GRAPH_STANDARD_REPO_BUILD_POLICY,
+      composition: {
+        ...GRAPH_STANDARD_REPO_BUILD_POLICY.composition,
+        version: '0.1.0-candidate+drift',
+      },
+    };
+    const rebuilt = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: driftedPolicy,
+      ports: ports(files),
+    });
+    collectCalls.length = 0;
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: driftedPolicy,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      referenceGenerationDigest: rebuilt.graph?.generation.reference.contentDigest,
+    });
+
+    expect(incremental.plan.changeSet.causes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'schema',
+          source: 'shard-reuse-planning',
+          detail: 'composition-policy',
+        }),
+      ])
+    );
+    expect(incremental.plan.providersToRecompute).toEqual(['workspai.graph.provider.fixture-a']);
+    expect(collectCalls).toEqual(['workspai.graph.provider.fixture-a']);
+    expect(incremental.equivalence).toBe('pass');
   });
 });

@@ -26,6 +26,7 @@ import {
 } from '../conformance/graph.js';
 import { assessGraphEvidenceIndependence } from '../conformance/lineage.js';
 import type { GraphExecutionPorts } from '../ports/index.js';
+import { digestCanonicalGraphInput } from './digest-canonical-graph-input.js';
 import type {
   GraphCompositionDecision,
   GraphCompositionOutput,
@@ -72,18 +73,7 @@ function canonical(input: unknown): string {
 }
 
 async function digest(input: unknown, ports: GraphExecutionPorts): Promise<WisDigestReference> {
-  if (ports.digest.algorithm !== 'sha256') {
-    throw new Error('Graph digest port must implement SHA-256.');
-  }
-  const value = await ports.digest.digest(encoder.encode(canonical(input)));
-  if (!/^[a-f0-9]{32,256}$/u.test(value)) {
-    throw new Error('Graph digest port returned a non-canonical lowercase hexadecimal digest.');
-  }
-  return Object.freeze({
-    algorithm: 'sha256',
-    value,
-    canonicalization: 'workspai.graph.canonical-json.v1',
-  });
+  return digestCanonicalGraphInput(input, ports.digest);
 }
 
 function scopeKey(entity: GraphEntityReference): string {

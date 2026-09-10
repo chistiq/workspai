@@ -81,6 +81,8 @@ export {
   type GraphQueryCacheEntry,
   type GraphQueryCacheInvalidation,
   type GraphQueryCacheKey,
+  type GraphQueryCacheObservation,
+  type GraphQueryCacheObservationStatus,
   type GraphQueryCacheReuseDecision,
   type GraphResolutionState,
 } from './graph.js';
@@ -88,9 +90,12 @@ export type * from '../generated/index.js';
 export { CORE_GRAPH_ONTOLOGY_PROFILE } from './core-ontology.js';
 export {
   GRAPH_BINDING_PROFILE_CONTRACT,
+  GRAPH_EXECUTABLE_QUERY_STRATEGIES,
   GRAPH_PROOF_POLICY_CONTRACT,
+  GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES,
   GRAPH_QUERY_CONTRACT,
   GRAPH_QUERY_RESULT_CONTRACT,
+  GRAPH_QUERY_STRATEGIES,
   GRAPH_RETRIEVAL_PLAN_CONTRACT,
   type GraphBindingProfile,
   type GraphBindingStep,
@@ -108,6 +113,8 @@ export {
   type GraphQueryQuality,
   type GraphQueryPage,
   type GraphQueryResult,
+  type GraphExecutableQueryStrategy,
+  type GraphProhibitedRetrievalStrategy,
   type GraphQueryStrategy,
   type GraphQueryTruncation,
   type GraphRetrievalCandidate,
@@ -162,9 +169,11 @@ export {
   type GraphSliceSelectionExplanation,
 } from './graph-slice.js';
 export {
+  GRAPH_CANONICAL_SHARD_REUSE_IDENTITY,
   GRAPH_CHANGE_SET_CONTRACT,
   GRAPH_CONTENT_STATE_MANIFEST_CONTRACT,
   GRAPH_DELTA_CONTRACT,
+  GRAPH_SHARD_REUSE_REJECTION_REASONS,
   type GraphChangeCause,
   type GraphChangeCauseKind,
   type GraphChangeSet,

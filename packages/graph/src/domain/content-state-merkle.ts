@@ -8,6 +8,8 @@ import type {
 export interface GraphContentStateMerkleLeaf {
   readonly locator: string;
   readonly contentDigest: WisDigestReference;
+  readonly inputKind: string;
+  readonly scanProfileDigest: WisDigestReference;
 }
 
 export interface GraphContentStateMerkleDirectory {
@@ -18,6 +20,22 @@ export interface GraphContentStateMerkleDirectory {
 export interface GraphContentStateMerkleAssembly {
   readonly merkleRoot: WisDigestReference;
   readonly directories: ReadonlyMap<string, GraphContentStateMerkleDirectory>;
+}
+
+/**
+ * Canonical material for a file child digest: content, input kind and
+ * scan-profile, without locator. Path is the tree position, not leaf identity.
+ */
+export function canonicalFileLeafMaterial(
+  leaf: Pick<GraphContentStateMerkleLeaf, 'inputKind' | 'contentDigest' | 'scanProfileDigest'>
+): string {
+  return [
+    leaf.inputKind,
+    leaf.contentDigest.algorithm,
+    leaf.contentDigest.value,
+    leaf.scanProfileDigest.algorithm,
+    leaf.scanProfileDigest.value,
+  ].join('\u0000');
 }
 
 /**
@@ -44,34 +62,44 @@ export function directoryChild(
   return Object.freeze({ name, kind, digest });
 }
 
+/** Logical content-state path: NFC so macOS NFD and Linux NFC occupy one tree slot. */
+export function normalizePortableLocator(locator: string): string {
+  return locator.normalize('NFC');
+}
+
 export function assertPortableLocator(locator: string): void {
+  const portable = typeof locator === 'string' ? normalizePortableLocator(locator) : '';
   if (
     typeof locator !== 'string' ||
-    locator.length === 0 ||
-    locator.startsWith('/') ||
-    locator.includes('\\') ||
-    locator.split('/').includes('..')
+    portable.length === 0 ||
+    portable.startsWith('/') ||
+    portable.includes('\\') ||
+    portable.split('/').includes('..')
   ) {
     throw new Error(`Content-state locator is not portable: ${String(locator)}`);
   }
 }
 
 export function parentLocator(locator: string): string {
-  const index = locator.lastIndexOf('/');
-  return index === -1 ? '' : locator.slice(0, index);
+  const portable = normalizePortableLocator(locator);
+  const index = portable.lastIndexOf('/');
+  return index === -1 ? '' : portable.slice(0, index);
 }
 
 export function baseName(locator: string): string {
-  const index = locator.lastIndexOf('/');
-  return index === -1 ? locator : locator.slice(index + 1);
+  const portable = normalizePortableLocator(locator);
+  const index = portable.lastIndexOf('/');
+  return index === -1 ? portable : portable.slice(index + 1);
 }
 
 /** True when locator is the directory itself or a path-boundary descendant. */
 export function isUnderDirectory(locator: string, directory: string): boolean {
-  if (directory.length === 0) {
+  const portable = normalizePortableLocator(locator);
+  const portableDirectory = normalizePortableLocator(directory);
+  if (portableDirectory.length === 0) {
     return true;
   }
-  return locator === directory || locator.startsWith(`${directory}/`);
+  return portable === portableDirectory || portable.startsWith(`${portableDirectory}/`);
 }
 
 function collectDirectoryLocators(leaves: readonly GraphContentStateMerkleLeaf[]): string[] {
@@ -92,12 +120,17 @@ function collectDirectoryLocators(leaves: readonly GraphContentStateMerkleLeaf[]
 
 function directoryChildren(
   directory: string,
-  leaves: readonly GraphContentStateMerkleLeaf[],
+  leaves: readonly (GraphContentStateMerkleLeaf & {
+    readonly identityDigest: WisDigestReference;
+  })[],
   directoryDigests: Map<string, WisDigestReference>
 ): GraphContentStateDirectoryChild[] {
   const prefix = directory.length === 0 ? '' : `${directory}/`;
   const childDirs = new Set<string>();
-  const childFiles = new Map<string, GraphContentStateMerkleLeaf>();
+  const childFiles = new Map<
+    string,
+    GraphContentStateMerkleLeaf & { readonly identityDigest: WisDigestReference }
+  >();
 
   for (const leaf of leaves) {
     if (!isUnderDirectory(leaf.locator, directory) || leaf.locator === directory) {
@@ -130,7 +163,7 @@ function directoryChildren(
   for (const [name, leaf] of [...childFiles.entries()].sort(([left], [right]) =>
     left.localeCompare(right)
   )) {
-    children.push(directoryChild(name, 'file', leaf.contentDigest));
+    children.push(directoryChild(name, 'file', leaf.identityDigest));
   }
   return children;
 }
@@ -144,11 +177,29 @@ export function assembleContentStateMerkle(
   leaves: readonly GraphContentStateMerkleLeaf[],
   digestUtf8: (material: string) => WisDigestReference
 ): GraphContentStateMerkleAssembly {
+  const portableLeaves: GraphContentStateMerkleLeaf[] = [];
+  const seen = new Set<string>();
+  for (const leaf of leaves) {
+    const locator = normalizePortableLocator(leaf.locator);
+    assertPortableLocator(locator);
+    if (seen.has(locator)) {
+      throw new Error(`Duplicate content-state leaf locator: ${locator}`);
+    }
+    seen.add(locator);
+    portableLeaves.push(Object.freeze({ ...leaf, locator }));
+  }
+
   const directoryDigests = new Map<string, WisDigestReference>();
   const directories = new Map<string, GraphContentStateMerkleDirectory>();
+  const identityLeaves = portableLeaves.map((leaf) =>
+    Object.freeze({
+      ...leaf,
+      identityDigest: digestUtf8(canonicalFileLeafMaterial(leaf)),
+    })
+  );
 
-  for (const directory of collectDirectoryLocators(leaves)) {
-    const children = Object.freeze(directoryChildren(directory, leaves, directoryDigests));
+  for (const directory of collectDirectoryLocators(portableLeaves)) {
+    const children = Object.freeze(directoryChildren(directory, identityLeaves, directoryDigests));
     const digest = digestUtf8(canonicalDirectoryMaterial(children));
     directoryDigests.set(directory, digest);
     directories.set(

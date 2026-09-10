@@ -20,6 +20,7 @@ import type {
   GraphGenerationRef,
   GraphProofState,
   GraphQueryBudget,
+  GraphQueryCacheObservation,
   GraphResolutionState,
 } from './graph.js';
 import type { GraphRelationSemantics } from './provider.js';
@@ -86,7 +87,21 @@ export type GraphQueryKind =
   | 'contract-topology'
   | 'architecture-conformance';
 
-export type GraphQueryStrategy = 'direct' | 'graph' | 'hybrid' | 'auto';
+export const GRAPH_QUERY_STRATEGIES = ['direct', 'graph', 'hybrid', 'auto'] as const;
+export type GraphQueryStrategy = (typeof GRAPH_QUERY_STRATEGIES)[number];
+
+export const GRAPH_EXECUTABLE_QUERY_STRATEGIES = ['direct', 'graph', 'hybrid'] as const;
+export type GraphExecutableQueryStrategy = (typeof GRAPH_EXECUTABLE_QUERY_STRATEGIES)[number];
+
+/** Approximate retrieval may plan later; it is never a query strategy or reuse authority. */
+export const GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES = [
+  'similarity',
+  'vector',
+  'knn',
+  'embedding',
+] as const;
+export type GraphProhibitedRetrievalStrategy =
+  (typeof GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES)[number];
 
 export interface GraphQueryPage {
   readonly cursor?: string;
@@ -241,7 +256,12 @@ export interface GraphQueryResult<T = readonly GraphEntityReference[]> {
 }
 
 export type GraphQueryExecutionResult<T = readonly GraphEntityReference[]> =
-  | { readonly accepted: true; readonly value: GraphQueryResult<T>; readonly issues: readonly [] }
+  | {
+      readonly accepted: true;
+      readonly value: GraphQueryResult<T>;
+      readonly issues: readonly [];
+      readonly cache?: GraphQueryCacheObservation;
+    }
   | {
       readonly accepted: false;
       readonly code: 'invalid-query' | 'resource-limit' | 'unsupported';

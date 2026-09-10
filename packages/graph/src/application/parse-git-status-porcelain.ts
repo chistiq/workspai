@@ -1,4 +1,5 @@
 import type { GraphChangeJournalInspection, GraphChangeJournalRecord } from '../ports/index.js';
+import { assertPortableLocator, normalizePortableLocator } from '../domain/content-state-merkle.js';
 
 const STATUS_KIND: Readonly<Record<string, GraphChangeJournalRecord['kind']>> = Object.freeze({
   M: 'changed',
@@ -23,6 +24,16 @@ function decodePorcelainPath(value: string): string {
     return value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
   }
   return value;
+}
+
+function portableJournalLocator(value: string): string | undefined {
+  try {
+    const locator = normalizePortableLocator(decodePorcelainPath(value));
+    assertPortableLocator(locator);
+    return locator;
+  } catch {
+    return undefined;
+  }
 }
 
 export function absentChangeJournal(): GraphChangeJournalInspection {
@@ -73,20 +84,35 @@ export function parseGitStatusPorcelain(text: string): GraphChangeJournalInspect
     const remainder = matched[1] ?? '';
     const rename = remainder.split(' -> ');
     if (rename.length === 2 && (index === 'R' || worktree === 'R' || index === 'C')) {
+      const locator = portableJournalLocator(rename[1]!);
+      const priorLocator = portableJournalLocator(rename[0]!);
+      if (!locator || !priorLocator) {
+        return untrustedChangeJournal(
+          'git',
+          'Git porcelain status is malformed and cannot authorize skip-reread.'
+        );
+      }
       records.push(
         Object.freeze({
-          locator: decodePorcelainPath(rename[1]!),
+          locator,
           kind: 'renamed',
           gitStatus: `${index}${worktree}`,
-          priorLocator: decodePorcelainPath(rename[0]!),
+          priorLocator,
         })
       );
       continue;
     }
     const code = worktree !== ' ' ? worktree : index;
+    const locator = portableJournalLocator(remainder);
+    if (!locator) {
+      return untrustedChangeJournal(
+        'git',
+        'Git porcelain status is malformed and cannot authorize skip-reread.'
+      );
+    }
     records.push(
       Object.freeze({
-        locator: decodePorcelainPath(remainder),
+        locator,
         kind: kindFromCode(code),
         gitStatus: `${index}${worktree}`,
       })

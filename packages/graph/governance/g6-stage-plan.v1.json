@@ -44,8 +44,10 @@
         "packages/graph/src/application/build-content-state-manifest.ts",
         "packages/graph/src/contracts/incremental.ts",
         "packages/graph/src/conformance/incremental.ts",
+        "packages/graph/src/domain/content-state-merkle.ts",
         "packages/graph/test/application/compare-content-state-manifest.test.ts",
-        "packages/graph/test/conformance/incremental-admission.test.ts"
+        "packages/graph/test/conformance/incremental-admission.test.ts",
+        "packages/graph/test/domain/content-state-merkle.test.ts"
       ]
     },
     {
@@ -53,8 +55,17 @@
       "status": "implemented-local-candidate",
       "evidence": [
         "packages/graph/src/application/plan-shard-reuse.ts",
+        "packages/graph/src/application/collect-semantic-dependencies.ts",
+        "packages/graph/src/application/digest-canonical-graph-input.ts",
+        "packages/graph/src/application/build-shard-dependencies.ts",
         "packages/graph/src/contracts/incremental.ts",
-        "packages/graph/test/application/plan-shard-reuse.test.ts"
+        "packages/graph/src/contracts/query.ts",
+        "packages/graph/src/conformance/query.ts",
+        "packages/graph/test/application/plan-shard-reuse.test.ts",
+        "packages/graph/test/application/collect-semantic-dependencies.test.ts",
+        "packages/graph/test/application/build-shard-dependencies.test.ts",
+        "packages/graph/test/query/query-engine.test.ts",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
       ]
     },
     {
@@ -65,10 +76,16 @@
         "packages/graph/src/application/build-incremental-repo-graph.ts",
         "packages/graph/src/application/assess-incremental-build-equivalence.ts",
         "packages/graph/src/application/build-shard-dependencies.ts",
+        "packages/graph/src/application/collect-semantic-dependencies.ts",
         "packages/graph/src/application/incremental-build-types.ts",
         "packages/graph/src/application/incremental-repo-build-types.ts",
+        "packages/graph/src/application/summarize-incremental-accounting.ts",
+        "packages/graph/src/application/providers-required-for-added-inputs.ts",
         "packages/graph/test/application/plan-incremental-graph-build.test.ts",
         "packages/graph/test/application/build-incremental-repo-graph.test.ts",
+        "packages/graph/test/application/official-provider-incremental-equivalence.test.ts",
+        "packages/graph/test/application/providers-required-for-added-inputs.test.ts",
+        "packages/graph/test/application/summarize-incremental-accounting.test.ts",
         "packages/graph/test/application/assess-incremental-build-equivalence.test.ts",
         "packages/graph/test/application/build-shard-dependencies.test.ts"
       ]
@@ -88,7 +105,8 @@
         "packages/graph/src/application/query-change-overlay.ts",
         "packages/graph/test/application/build-graph-change-overlay.test.ts",
         "packages/graph/test/application/query-change-overlay.test.ts",
-        "packages/graph/test/application/g6-incremental-pipeline.test.ts"
+        "packages/graph/test/application/g6-incremental-pipeline.test.ts",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
       ]
     },
     {
@@ -98,7 +116,12 @@
         "packages/graph/src/ports/index.ts",
         "packages/graph/src/application/plan-inventory-reread.ts",
         "packages/graph/src/application/parse-git-status-porcelain.ts",
-        "packages/graph/test/application/plan-inventory-reread.test.ts"
+        "packages/graph/src/application/build-incremental-repo-graph.ts",
+        "packages/graph/src/application/merge-incremental-inventory.ts",
+        "packages/graph/src/adapters/node/repository-file-source.ts",
+        "packages/graph/test/application/plan-inventory-reread.test.ts",
+        "packages/graph/test/application/build-incremental-repo-graph.test.ts",
+        "packages/graph/test/adapters/node-file-source.test.ts"
       ]
     },
     {
@@ -106,10 +129,14 @@
       "status": "implemented-local-candidate",
       "evidence": [
         "packages/graph/src/application/plan-query-cache-invalidation.ts",
+        "packages/graph/src/application/query-cache.ts",
+        "packages/graph/src/application/query-graph.ts",
         "packages/graph/src/application/diff-graph-generations.ts",
         "packages/graph/src/application/summarize-input-processing-ledger.ts",
         "packages/graph/src/application/plan-shard-reuse.ts",
+        "packages/graph/src/ports/index.ts",
         "packages/graph/test/application/plan-query-cache-invalidation.test.ts",
+        "packages/graph/test/query/query-engine.test.ts",
         "packages/graph/test/application/diff-graph-generations.test.ts",
         "packages/graph/test/application/plan-shard-reuse.test.ts"
       ]
@@ -117,7 +144,12 @@
     {
       "id": "g6-cross-platform-admission",
       "status": "planned",
-      "evidence": [".github/workflows/ci.yml"]
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "packages/graph/scripts/check-g6-admission.mjs",
+        "packages/graph/scripts/check-g6-matrix-admission.mjs",
+        "packages/graph/test/governance/g6-admission.test.ts"
+      ]
     }
   ],
   "prohibitions": [

@@ -1,3 +1,13 @@
+import type { WisDigestReference } from '@workspai/shared/contracts';
+
+import type {
+  GraphDiagnostic,
+  GraphProviderInput,
+  GraphQueryCacheEntry,
+  GraphUnknownZone,
+  GraphUnsupportedZone,
+} from '../contracts/index.js';
+
 export interface GraphClockPort {
   now(): Date;
 }
@@ -160,9 +170,13 @@ export interface GraphProjectPublicationResult {
 export interface GraphProjectArtifactStorePort {
   publish(request: GraphProjectPublicationRequest): Promise<GraphProjectPublicationResult>;
 }
-import type {
-  GraphDiagnostic,
-  GraphProviderInput,
-  GraphUnknownZone,
-  GraphUnsupportedZone,
-} from '../contracts/index.js';
+
+/**
+ * Optional query-result cache. Miss, corruption and unavailability must fall
+ * back to live execution without changing query semantics.
+ */
+export interface GraphQueryCacheStorePort {
+  get(keyDigest: WisDigestReference): Promise<GraphQueryCacheEntry | undefined>;
+  publish(entry: GraphQueryCacheEntry): Promise<void>;
+  invalidate(keyDigests: readonly WisDigestReference[]): Promise<void>;
+}

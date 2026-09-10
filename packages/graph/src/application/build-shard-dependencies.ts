@@ -1,8 +1,11 @@
-import type { WisDigestReference } from '@workspai/shared/contracts';
-
 import type { GraphProviderManifest, GraphShardDependency } from '../contracts/index.js';
 
+import {
+  type GraphIncrementalSemanticStamps,
+  semanticDependenciesForShard,
+} from './collect-semantic-dependencies.js';
 import type { GraphCompositionSource } from './composition-types.js';
+import { mergeShardDigests } from './digest-canonical-graph-input.js';
 
 const PROVIDER_SHARD_METADATA: Readonly<
   Record<string, Pick<GraphShardDependency, 'graphRegions' | 'projections' | 'queryIndexes'>>
@@ -30,9 +33,12 @@ function metadataFor(
 
 /**
  * Derives portable shard dependency records from admitted provider batches.
+ * Optional semantic stamps are unioned onto each shard so ontology, proof,
+ * redaction, composition-policy and provider-manifest drift cannot reuse.
  */
 export function buildShardDependenciesFromSources(
-  sources: readonly GraphCompositionSource[]
+  sources: readonly GraphCompositionSource[],
+  stamps?: GraphIncrementalSemanticStamps
 ): GraphShardDependency[] {
   const shards: GraphShardDependency[] = [];
   const seen = new Set<string>();
@@ -45,18 +51,18 @@ export function buildShardDependenciesFromSources(
         continue;
       }
       seen.add(shardId);
-      const semanticDependencies: WisDigestReference[] = [];
-      if (record.priorDigest) {
-        semanticDependencies.push(record.priorDigest);
-      }
-      if (record.outputDigest && record.outputDigest.value !== record.input.digest.value) {
-        semanticDependencies.push(record.outputDigest);
-      }
+      const processing = [
+        ...(record.priorDigest ? [record.priorDigest] : []),
+        ...(record.outputDigest && record.outputDigest.value !== record.input.digest.value
+          ? [record.outputDigest]
+          : []),
+      ];
+      const stamped = stamps ? semanticDependenciesForShard(stamps, [source.manifest.id]) : [];
       shards.push(
         Object.freeze({
           shardId,
           contentDigest: record.input.digest,
-          semanticDependencies: Object.freeze(semanticDependencies),
+          semanticDependencies: mergeShardDigests(processing, stamped),
           providerStages: Object.freeze([source.manifest.id]),
           graphRegions: metadata.graphRegions,
           projections: metadata.projections,

@@ -7,6 +7,11 @@ import type {
 import { graphInputMediaType } from '../domain/input-media-type.js';
 import { shardMembershipLocator } from '../domain/shard-membership.js';
 
+import {
+  type GraphIncrementalSemanticStamps,
+  semanticDependenciesForShard,
+} from './collect-semantic-dependencies.js';
+import { mergeShardDigests } from './digest-canonical-graph-input.js';
 import type { GraphInventoryRereadPlan } from './plan-inventory-reread.js';
 
 function priorLeaves(manifest: GraphContentStateManifest): Map<string, GraphContentStateLeaf> {
@@ -83,12 +88,22 @@ export function mergeIncrementalInventory(request: {
 
 export function projectShardDependencies(
   base: GraphContentStateManifest,
-  inputs: readonly GraphProviderInput[]
+  inputs: readonly GraphProviderInput[],
+  options?: {
+    readonly stamps?: GraphIncrementalSemanticStamps;
+    readonly registeredProviderIds?: readonly string[];
+  }
 ): readonly GraphShardDependency[] {
   const locators = new Set(inputs.map((input) => input.locator));
   const digestByLocator = new Map(inputs.map((input) => [input.locator, input.digest]));
+  const registered = options?.registeredProviderIds
+    ? new Set(options.registeredProviderIds)
+    : undefined;
   const projected: GraphShardDependency[] = [];
   for (const shard of base.shardDependencies) {
+    if (registered && shard.providerStages.some((providerId) => !registered.has(providerId))) {
+      continue;
+    }
     const locator = shardMembershipLocator(shard.shardId, locators);
     if (!locator) {
       continue;
@@ -97,10 +112,14 @@ export function projectShardDependencies(
     if (!digest) {
       continue;
     }
+    const stamped = options?.stamps
+      ? semanticDependenciesForShard(options.stamps, shard.providerStages)
+      : [];
     projected.push(
       Object.freeze({
         ...shard,
         contentDigest: digest,
+        semanticDependencies: mergeShardDigests(shard.semanticDependencies, stamped),
       })
     );
   }

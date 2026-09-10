@@ -40,11 +40,18 @@ function replaceFile(
   locator: string,
   next: Partial<GraphContentStateLeaf>
 ): GraphContentStateManifest {
+  const merkleRoot = digest('9999999999999999999999999999999999999999999999999999999999999999');
   return withManifest(manifest, {
-    nodes: manifest.nodes.map((node) =>
-      node.kind === 'file' && node.locator === locator ? { ...node, ...next } : node
-    ),
-    merkleRoot: digest('9999999999999999999999999999999999999999999999999999999999999999'),
+    nodes: manifest.nodes.map((node) => {
+      if (node.kind === 'file' && node.locator === locator) {
+        return { ...node, ...next };
+      }
+      if (node.kind === 'directory') {
+        return { ...node, digest: merkleRoot };
+      }
+      return node;
+    }),
+    merkleRoot,
     shardDependencies: manifest.shardDependencies.map((shard) =>
       shard.shardId.endsWith(`:${locator}`)
         ? { ...shard, contentDigest: next.contentDigest ?? shard.contentDigest }

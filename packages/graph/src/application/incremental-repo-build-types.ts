@@ -1,11 +1,30 @@
 import type { WisDigestReference } from '@workspai/shared/contracts';
 
-import type { GraphContentStateManifest, GraphInputProcessingRecord } from '../contracts/index.js';
+import type {
+  GraphCanonicalGraph,
+  GraphContentStateManifest,
+  GraphInputProcessingRecord,
+  GraphQueryCacheEntry,
+  GraphQueryCacheInvalidation,
+  GraphScope,
+} from '../contracts/index.js';
+import type { GraphQueryCacheStorePort } from '../ports/index.js';
 
 import type { GraphCompositionSource } from './composition-types.js';
 import type { GraphIncrementalBuildPlan } from './incremental-build-types.js';
 import type { GraphInventoryRereadPlan } from './plan-inventory-reread.js';
 import type { GraphRepoBuildRequest, GraphRepoBuildResult } from './repo-build-types.js';
+
+export interface GraphIncrementalQueryCacheRequest {
+  readonly store: GraphQueryCacheStorePort;
+  readonly entries: readonly GraphQueryCacheEntry[];
+  readonly policy?: {
+    readonly redactionPolicyDigest?: WisDigestReference;
+    readonly authorizationDigest?: WisDigestReference;
+    readonly profileDigest?: WisDigestReference;
+    readonly scope?: GraphScope;
+  };
+}
 
 export interface GraphIncrementalRepoBuildRequest extends GraphRepoBuildRequest {
   readonly baseManifest: GraphContentStateManifest;
@@ -19,6 +38,9 @@ export interface GraphIncrementalRepoBuildRequest extends GraphRepoBuildRequest 
   readonly providersToRecompute: readonly string[];
   readonly scanProfileDigest: WisDigestReference;
   readonly referenceGenerationDigest?: WisDigestReference;
+  /** Optional prior canonical graph used only to fill executed GraphDelta identities. */
+  readonly baseGraph?: GraphCanonicalGraph;
+  readonly queryCache?: GraphIncrementalQueryCacheRequest;
 }
 
 export interface GraphIncrementalRepoBuildResult extends GraphRepoBuildResult {
@@ -27,4 +49,5 @@ export interface GraphIncrementalRepoBuildResult extends GraphRepoBuildResult {
   readonly processing: readonly GraphInputProcessingRecord[];
   readonly equivalence: GraphIncrementalBuildPlan['delta']['equivalence'];
   readonly inventoryReread: GraphInventoryRereadPlan;
+  readonly queryCacheInvalidations?: readonly GraphQueryCacheInvalidation[];
 }

@@ -166,6 +166,61 @@ describe('Node project graph artifact store', () => {
     });
   });
 
+  it('keeps the previous pointer when a generation directory exists without a commit and recovers on retry', async () => {
+    const root = await projectFixture();
+    const store = createNodeProjectArtifactStore(root);
+    const firstKey = 'a'.repeat(64);
+    const secondKey = 'b'.repeat(64);
+    await store.publish({ generationKey: firstKey, artifacts: artifacts(firstKey) });
+    const pointerPath = path.join(root, '.workspai', 'reports', 'graph-generation.json');
+    const trustedPointer = await fs.readFile(pointerPath, 'utf8');
+    const secondArtifacts = artifacts(secondKey);
+    const generationDirectory = path.join(
+      root,
+      '.workspai',
+      'reports',
+      'graph-generations',
+      secondKey
+    );
+    await fs.mkdir(generationDirectory, { recursive: true });
+    const files: Record<GraphProjectArtifactName, string> = {
+      'canonical-graph': 'source-evidence-graph.json',
+      quality: 'source-evidence-graph-quality.json',
+      'provider-runs': 'graph-provider-runs.json',
+      publication: 'graph-generation.json',
+    };
+    for (const artifact of secondArtifacts) {
+      await fs.writeFile(path.join(generationDirectory, files[artifact.name]), artifact.bytes);
+    }
+
+    expect(await fs.readFile(pointerPath, 'utf8')).toBe(trustedPointer);
+
+    const recovered = await store.publish({
+      generationKey: secondKey,
+      artifacts: secondArtifacts,
+    });
+
+    expect(recovered.status).toBe('committed');
+    expect(JSON.parse(await fs.readFile(pointerPath, 'utf8'))).toMatchObject({
+      generation: {
+        generation: { reference: { contentDigest: { value: secondKey } } },
+      },
+    });
+    await expect(
+      fs.readFile(
+        path.join(
+          root,
+          '.workspai',
+          'reports',
+          'graph-generations',
+          firstKey,
+          'source-evidence-graph.json'
+        ),
+        'utf8'
+      )
+    ).resolves.toContain('"nodes":[]');
+  });
+
   it('rejects malformed artifact sets before touching the project', async () => {
     const root = await projectFixture();
     const store = createNodeProjectArtifactStore(root);

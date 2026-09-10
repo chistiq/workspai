@@ -54,6 +54,42 @@ describe('Node repository file source', () => {
     expect(JSON.stringify(result)).not.toContain(root);
   });
 
+  it('emits identical portable locators and digests for the same tree in two checkouts', async () => {
+    const left = await fixture();
+    const right = await fixture();
+    const source = createNodeGraphFileSource();
+    const request = {
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known' as const,
+    };
+    const first = await source.inventory({ ...request, root: left });
+    const second = await source.inventory({ ...request, root: right });
+
+    expect(left).not.toBe(right);
+    expect(
+      first.inputs.map((input) => ({
+        locator: input.locator,
+        digest: input.digest,
+        byteLength: input.byteLength,
+        mediaType: input.mediaType,
+      }))
+    ).toEqual(
+      second.inputs.map((input) => ({
+        locator: input.locator,
+        digest: input.digest,
+        byteLength: input.byteLength,
+        mediaType: input.mediaType,
+      }))
+    );
+    expect(JSON.stringify(first)).not.toContain(left);
+    expect(JSON.stringify(second)).not.toContain(right);
+  });
+
   it('revalidates content identity before every provider read', async () => {
     const root = await fixture();
     const source = createNodeGraphFileSource();
@@ -252,5 +288,55 @@ describe('Node repository file source', () => {
       onlyLocators: [],
     });
     expect(skipped.inputs).toEqual([]);
+  });
+
+  it('emits NFC locators for NFD filenames and still reads the admitted bytes', async () => {
+    const root = await fixture();
+    await fs.writeFile(path.join(root, 'src', 'Cafe\u0301.ts'), 'export const cafe = 1;\n', 'utf8');
+    const source = createNodeGraphFileSource();
+    const bounds = {
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known' as const,
+    };
+    const result = await source.inventory({ ...bounds, root });
+    const cafe = result.inputs.find((input) => input.locator.endsWith('Caf\u00e9.ts'));
+    expect(cafe?.locator).toBe('src/Caf\u00e9.ts');
+    expect(result.inputs.some((input) => input.locator.includes('\u0301'))).toBe(false);
+    if (!cafe) throw new Error('NFC cafe locator was not inventoried.');
+    const bytes = await source.read(root, cafe, { maxBytes: 1_000 });
+    expect(new TextDecoder().decode(bytes)).toBe('export const cafe = 1;\n');
+  });
+
+  it('omits NFC-equivalent filenames that collide in one directory', async () => {
+    const root = await fixture();
+    const src = path.join(root, 'src');
+    await fs.writeFile(path.join(src, 'Caf\u00e9.ts'), 'nfc\n', 'utf8');
+    await fs.writeFile(path.join(src, 'Cafe\u0301.ts'), 'nfd\n', 'utf8');
+    const names = await fs.readdir(src);
+    const cafeNames = names.filter((name) => name.normalize('NFC') === 'Caf\u00e9.ts');
+    const source = createNodeGraphFileSource();
+    const result = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+    });
+    if (new Set(cafeNames).size < 2) {
+      expect(cafeNames.map((name) => name.normalize('NFC'))).toEqual(['Caf\u00e9.ts']);
+      return;
+    }
+    expect(result.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.unicode-locator-collision' })
+    );
+    expect(result.inputs.some((input) => input.locator.endsWith('Caf\u00e9.ts'))).toBe(false);
   });
 });

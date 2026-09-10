@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+- Wired G6 Linux/macOS/Windows platform-evidence capture and a matrix combiner
+  that can retain same-commit runner reports without authorizing G7. Platform
+  reports must keep registry G5, native acceleration prohibited, and the
+  package-infrastructure prerequisite. The `g6-cross-platform-admission`
+  checkpoint stays planned until those reports exist.
+- Official G4 python, go, java, dotnet, rust and unsupported fixtures now have
+  incremental/full generation-digest equivalence for single-file add, edit and
+  delete. Language-import providers re-observe added source files; package-json
+  stays reused, and an added Ruby file does not wake language-imports.
+- Content-state locators are NFC-normalized across Merkle assembly, inventory,
+  Git porcelain and skip-reread matching, so macOS NFD and Linux NFC occupy one
+  tree slot. NFC-colliding filenames in one directory are omitted fail-closed.
+  Official node rename of a TypeScript file matches a clean full rebuild.
+- Official repository providers now re-observe added locators by detection
+  against the new paths only, so a new file cannot inherit a stale
+  whole-inventory batch. Single-file add and delete on the G4 node fixture
+  match a clean full rebuild while unrelated providers such as package-json
+  stay reused.
+- Official repository providers now have incremental/full generation-digest
+  equivalence on the G4 language fixtures, including a single-file node edit
+  that still matches a clean rebuild. Similarity, vector, knn and embedding
+  cannot be query strategies or canonical shard-reuse reasons; exact digest
+  equality remains the only reuse identity.
+- Merkle comparison no longer invents a content cause when identity is
+  unchanged, so size/mtime/git-status observations cannot look like edits.
+  Trusted Git skip-reread, absent and untrusted journals, and a different
+  checkout root of the same tree produce the same generation digest as a full
+  rebuild. An interrupted publication that left a generation directory without
+  advancing the pointer keeps the previous generation current until retry.
+- Incremental shard reuse now stamps ontology, proof-policy, redaction,
+  composition-policy and per-provider manifest digests, so content-unchanged
+  semantic drift rejects shards and recomputes instead of reusing stale facts.
+  ChangeSet causes name ontology, proof-policy, redaction, schema or provider
+  instead of blaming content for semantic rejection.
+- Merkle comparison now enumerates file changes only under unequal directory
+  branches, so an equal sibling digest is skip authority. Query-cache keys reject
+  the `latest` generation alias even when a digest is present.
+- File-leaf Merkle identity now includes input kind and scan-profile digest, so
+  scan-profile-only changes surface as `renewed` instead of disappearing behind
+  an equal content-only root. Executed GraphDelta can fill graph/fact identities
+  from a generation diff when a prior canonical graph is supplied, and the
+  optional query-cache store can apply planned invalidations without failing the
+  build.
+- Honest incremental execution accounting now reports files actually hashed and
+  inputs parsed this run, plus Merkle/leaf/shard/byte totals, instead of copying
+  changed-input counts. Trusted journal renames delete the prior locator so the
+  executed change set can emit `rename-candidate`.
+- Wired the optional query-result cache store into `queryGraph` so the engine
+  owns key creation and reuse, cache hits preserve historical cost, and miss,
+  corrupt or unavailable stores fall back to live execution without changing
+  the semantic result.
 - Added Git/change-journal skip-reread planning so trusted porcelain status can
   avoid content rereads while untrusted journals stay conservative and Git never
   becomes Merkle reuse authority.

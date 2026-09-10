@@ -33,11 +33,18 @@ function replaceFile(
   locator: string,
   next: Partial<GraphContentStateLeaf>
 ): GraphContentStateManifest {
+  const merkleRoot = digest('1111111111111111111111111111111111111111111111111111111111111111');
   return withManifest(manifest, {
-    nodes: manifest.nodes.map((node) =>
-      node.kind === 'file' && node.locator === locator ? { ...node, ...next } : node
-    ),
-    merkleRoot: digest('1111111111111111111111111111111111111111111111111111111111111111'),
+    nodes: manifest.nodes.map((node) => {
+      if (node.kind === 'file' && node.locator === locator) {
+        return { ...node, ...next };
+      }
+      if (node.kind === 'directory') {
+        return { ...node, digest: merkleRoot };
+      }
+      return node;
+    }),
+    merkleRoot,
     shardDependencies: manifest.shardDependencies.map((shard) =>
       shard.shardId.endsWith(`:${locator}`)
         ? { ...shard, contentDigest: next.contentDigest ?? shard.contentDigest }
@@ -62,7 +69,16 @@ describe('planIncrementalGraphBuild', () => {
     expect(plan.delta.contract).toEqual(GRAPH_DELTA_CONTRACT);
     expect(plan.delta.execution.skippedByDigest).toBe(1);
     expect(plan.delta.execution.recomputed).toBe(0);
+    expect(plan.delta.execution.scanned).toBe(0);
+    expect(plan.delta.execution.parsed).toBe(0);
+    expect(plan.accounting).toMatchObject({
+      merkle: { comparedBranches: 0, skippedBranches: 1 },
+      leaves: { added: 0, edited: 0, deleted: 0, renewed: 0, renameCandidates: 0, unchanged: 1 },
+      shards: { reused: 1, rejected: 0 },
+      bytes: { hashed: 0, reused: 0 },
+    });
     expect(plan.providersToRecompute).toEqual([]);
+    expect(plan.changeSet.causes).toEqual([]);
     expect(plan.delta.equivalence).toBe('not-assessed');
   });
 
@@ -92,9 +108,13 @@ describe('planIncrementalGraphBuild', () => {
     });
     expect(plan.delta.execution).toMatchObject({
       detected: 1,
+      scanned: 0,
+      parsed: 0,
       recomputed: 1,
       skippedByDigest: 0,
     });
+    expect(plan.accounting.leaves.edited).toBe(1);
+    expect(plan.accounting.shards.rejected).toBe(1);
   });
 
   it('fails closed when comparison scope mismatches', () => {
@@ -146,5 +166,78 @@ describe('planIncrementalGraphBuild', () => {
     expect(plan.status).toBe('partial');
     expect(plan.changeSet.inputs).toHaveLength(1);
     expect(plan.delta.execution.truncation).toHaveLength(1);
+  });
+
+  it('attributes shard rejection to ontology, redaction and provider stamps instead of content', () => {
+    const base = readManifest('minimal-content-state-manifest.json');
+    const stamps = {
+      ontology: digest('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      proofPolicy: digest('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+      redaction: digest('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'),
+      compositionPolicy: digest('dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'),
+      providers: {
+        'workspai.graph.provider.ecmascript-imports': digest(
+          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+        ),
+      },
+      required: [
+        digest('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+        digest('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+        digest('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
+        digest('dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'),
+      ],
+    };
+    const stampedBase = withManifest(base, {
+      shardDependencies: base.shardDependencies.map((shard) => ({
+        ...shard,
+        semanticDependencies: [
+          stamps.ontology,
+          stamps.proofPolicy,
+          stamps.redaction,
+          stamps.compositionPolicy,
+          stamps.providers['workspai.graph.provider.ecmascript-imports']!,
+        ],
+      })),
+    });
+    const nextRedaction = digest(
+      'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+    );
+    const target = withManifest(stampedBase, {
+      shardDependencies: stampedBase.shardDependencies.map((shard) => ({
+        ...shard,
+        semanticDependencies: [
+          stamps.ontology,
+          stamps.proofPolicy,
+          nextRedaction,
+          stamps.compositionPolicy,
+          stamps.providers['workspai.graph.provider.ecmascript-imports']!,
+        ],
+      })),
+    });
+    const nextStamps = {
+      ...stamps,
+      redaction: nextRedaction,
+      required: [stamps.ontology, stamps.proofPolicy, nextRedaction, stamps.compositionPolicy],
+    };
+    const plan = planIncrementalGraphBuild({
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseManifest: stampedBase,
+      targetManifest: target,
+      requiredSemanticDependencies: nextStamps.required,
+      semanticStamps: nextStamps,
+    });
+
+    expect(plan.shardReuse.rejected[0]?.reason).toBe('missing-semantic-dependency');
+    expect(plan.changeSet.causes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'redaction', source: 'shard-reuse-planning' }),
+      ])
+    );
+    expect(
+      plan.changeSet.causes.some(
+        (cause) => cause.kind === 'content' && cause.source === 'shard-reuse-planning'
+      )
+    ).toBe(false);
   });
 });

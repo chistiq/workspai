@@ -1,10 +1,16 @@
-import type { GraphDiagnostic, GraphInputProcessingRecord } from '../contracts/index.js';
+import type {
+  GraphDiagnostic,
+  GraphInputProcessingRecord,
+  GraphQueryCacheInvalidation,
+} from '../contracts/index.js';
 
 import { assessIncrementalBuildEquivalence } from './assess-incremental-build-equivalence.js';
 import { buildContentStateManifest } from './build-content-state-manifest.js';
 import { buildRepoGraph } from './build-repo-graph.js';
 import { buildShardDependenciesFromSources } from './build-shard-dependencies.js';
+import { collectGraphSemanticDependencies } from './collect-semantic-dependencies.js';
 import { contentStateLeavesFromProviderInputs } from './content-state-manifest-types.js';
+import { summarizeCanonicalGraphDelta } from './diff-graph-generations.js';
 import type {
   GraphIncrementalRepoBuildRequest,
   GraphIncrementalRepoBuildResult,
@@ -16,7 +22,14 @@ import {
 import { absentChangeJournal, untrustedChangeJournal } from './parse-git-status-porcelain.js';
 import { planIncrementalGraphBuild } from './plan-incremental-graph-build.js';
 import { planInventoryReread } from './plan-inventory-reread.js';
+import { planQueryCacheInvalidation } from './plan-query-cache-invalidation.js';
+import {
+  addedInputLocators,
+  providersRequiredForAddedInputs,
+} from './providers-required-for-added-inputs.js';
+import { applyQueryCacheInvalidations } from './query-cache.js';
 import type { GraphRepoBuildResult } from './repo-build-types.js';
+import { overlayExecutedIncrementalAccounting } from './summarize-incremental-accounting.js';
 
 function collectProcessingRecords(
   sources: readonly { batch: { processing: readonly GraphInputProcessingRecord[] } }[]
@@ -141,13 +154,25 @@ export async function buildIncrementalRepoGraph(
     inventoried: inventory.inputs,
   });
 
+  const stamps = await collectGraphSemanticDependencies({
+    ontology: request.ontology,
+    compositionPolicy: request.policy.composition,
+    redactionProfile: request.policy.redactionProfile,
+    providerManifests: request.providers.map((provider) => provider.manifest),
+    digest: request.ports.digest,
+  });
+  const registered = request.providers.map((provider) => provider.manifest.id);
+
   const generatedAt = request.ports.clock.now().toISOString();
   const projectedManifest = buildContentStateManifest({
     scope: request.scope,
     generatedAt,
     scanProfileDigest: request.scanProfileDigest,
     leaves: contentStateLeavesFromProviderInputs(admittedInputs, request.scanProfileDigest),
-    shardDependencies: projectShardDependencies(request.baseManifest, admittedInputs),
+    shardDependencies: projectShardDependencies(request.baseManifest, admittedInputs, {
+      stamps,
+      registeredProviderIds: registered,
+    }),
   });
 
   const planned = planIncrementalGraphBuild({
@@ -155,13 +180,20 @@ export async function buildIncrementalRepoGraph(
     targetGeneration: request.targetGeneration,
     baseManifest: request.baseManifest,
     targetManifest: projectedManifest,
+    requiredSemanticDependencies: stamps.required,
+    semanticStamps: stamps,
   });
 
-  const registered = request.providers.map((provider) => provider.manifest.id);
   const reusable = new Set(request.baseSources.map((source) => source.manifest.id));
+  const addedRequired = await providersRequiredForAddedInputs({
+    providers: request.providers,
+    addedLocators: addedInputLocators(planned.comparison.changedInputs),
+    scopeKind: request.scope.kind === 'workspace' ? 'workspace' : 'project',
+    networkAllowed: request.policy.network === 'allow',
+  });
   const toRecompute = providersToExecute(
     registered,
-    planned.providersToRecompute,
+    [...planned.providersToRecompute, ...addedRequired],
     request.providersToRecompute,
     reusable
   );
@@ -185,7 +217,7 @@ export async function buildIncrementalRepoGraph(
       });
 
   const compositionSources = build.compositionSources ?? [];
-  const shardDependencies = buildShardDependenciesFromSources(compositionSources);
+  const shardDependencies = buildShardDependenciesFromSources(compositionSources, stamps);
   const targetManifest = buildContentStateManifest({
     scope: request.scope,
     generatedAt,
@@ -199,6 +231,8 @@ export async function buildIncrementalRepoGraph(
     targetGeneration: request.targetGeneration,
     baseManifest: request.baseManifest,
     targetManifest,
+    requiredSemanticDependencies: stamps.required,
+    semanticStamps: stamps,
   });
 
   const equivalence = assessIncrementalBuildEquivalence({
@@ -207,30 +241,85 @@ export async function buildIncrementalRepoGraph(
   });
 
   const processing = collectProcessingRecords(compositionSources);
+  const thisRunProcessing = Object.freeze(
+    compositionSources
+      .filter((source) => toRecompute.includes(source.manifest.id))
+      .flatMap((source) => [...source.batch.processing])
+  );
+  const reusedInputs = admittedInputs.filter(
+    (input) => inventoryReread.decisions[input.locator] === 'reuse-prior-digest'
+  );
+  const executed = overlayExecutedIncrementalAccounting({
+    planned: plan.delta.execution,
+    accounting: plan.accounting,
+    hashedInputs: inventory.inputs,
+    reusedInputs,
+    reread: inventoryReread,
+    thisRunProcessing,
+    providersExecuted: inventoryFailed ? 0 : toRecompute.length,
+    unsupportedZones: inventory.unsupportedZones.length + build.quality.unsupportedZones.length,
+    failed: build.status === 'failed' || build.status === 'cancelled',
+  });
+  const generationDelta =
+    request.baseGraph && build.graph
+      ? summarizeCanonicalGraphDelta(request.baseGraph, build.graph)
+      : { graph: plan.delta.graph, facts: plan.delta.facts };
   const delta = Object.freeze({
     ...plan.delta,
+    graph: generationDelta.graph,
+    facts: generationDelta.facts,
     affectedProviders: toRecompute,
-    execution: Object.freeze({
-      ...plan.delta.execution,
-      processing,
-    }),
+    execution: executed.execution,
     equivalence: equivalence.equivalence,
   });
+  const queryCacheDiagnostics: GraphDiagnostic[] = [];
+  let queryCacheInvalidations: readonly GraphQueryCacheInvalidation[] | undefined;
+  if (request.queryCache) {
+    queryCacheInvalidations = planQueryCacheInvalidation({
+      entries: request.queryCache.entries,
+      delta,
+      currentOntologyDigest: build.graph?.generation.ontologySetDigest,
+      currentProofPolicyDigest: build.graph?.generation.proofPolicySetDigest,
+      currentRedactionDigest: request.queryCache.policy?.redactionPolicyDigest,
+      currentAuthorizationDigest: request.queryCache.policy?.authorizationDigest,
+      currentProfileDigest: request.queryCache.policy?.profileDigest,
+      currentScope: request.queryCache.policy?.scope ?? request.scope,
+    });
+    try {
+      await applyQueryCacheInvalidations({
+        store: request.queryCache.store,
+        invalidations: queryCacheInvalidations,
+      });
+    } catch {
+      queryCacheDiagnostics.push(
+        Object.freeze({
+          code: 'GRAPH_QUERY_CACHE_INVALIDATION_FAILED',
+          severity: 'warning' as const,
+          path: '/queryCache',
+          message:
+            'Query-cache invalidation failed; live query execution remains the correctness path.',
+        })
+      );
+    }
+  }
   const enrichedPlan = Object.freeze({
     ...plan,
     providersToRecompute: toRecompute,
     delta,
+    accounting: executed.accounting,
     diagnostics: Object.freeze([
       ...inventoryReread.diagnostics,
       ...inventory.diagnostics,
       ...plan.diagnostics,
       ...equivalence.diagnostics,
       ...build.diagnostics,
+      ...queryCacheDiagnostics,
     ]),
   });
 
   return Object.freeze({
     ...build,
+    diagnostics: Object.freeze([...build.diagnostics, ...queryCacheDiagnostics]),
     quality: Object.freeze({
       ...build.quality,
       unknownZones: Object.freeze([...inventory.unknownZones, ...build.quality.unknownZones]),
@@ -244,5 +333,6 @@ export async function buildIncrementalRepoGraph(
     processing,
     equivalence: equivalence.equivalence,
     inventoryReread,
+    ...(queryCacheInvalidations ? { queryCacheInvalidations } : {}),
   });
 }

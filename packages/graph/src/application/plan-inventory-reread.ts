@@ -1,4 +1,4 @@
-import { assertPortableLocator } from '../domain/content-state-merkle.js';
+import { assertPortableLocator, normalizePortableLocator } from '../domain/content-state-merkle.js';
 import type { GraphChangeJournalInspection, GraphChangeJournalRecord } from '../ports/index.js';
 import type {
   GraphContentStateLeaf,
@@ -35,7 +35,12 @@ function priorLeaves(manifest: GraphContentStateManifest): Map<string, GraphCont
   const files = new Map<string, GraphContentStateLeaf>();
   for (const node of manifest.nodes) {
     if (node.kind === 'file') {
-      files.set(node.locator, node);
+      const locator = normalizePortableLocator(node.locator);
+      assertPortableLocator(locator);
+      if (files.has(locator)) {
+        throw new Error(`Duplicate content-state leaf locator: ${locator}`);
+      }
+      files.set(locator, Object.freeze({ ...node, locator }));
     }
   }
   return files;
@@ -46,10 +51,20 @@ function indexRecords(
 ): Map<string, GraphChangeJournalRecord> {
   const indexed = new Map<string, GraphChangeJournalRecord>();
   for (const record of records) {
-    assertPortableLocator(record.locator);
-    indexed.set(record.locator, record);
+    const locator = normalizePortableLocator(record.locator);
+    assertPortableLocator(locator);
+    indexed.set(
+      locator,
+      Object.freeze({
+        ...record,
+        locator,
+        ...(record.priorLocator
+          ? { priorLocator: normalizePortableLocator(record.priorLocator) }
+          : {}),
+      })
+    );
     if (record.priorLocator) {
-      assertPortableLocator(record.priorLocator);
+      assertPortableLocator(normalizePortableLocator(record.priorLocator));
     }
   }
   return indexed;
@@ -73,9 +88,6 @@ export function planInventoryReread(request: {
     string,
     { readonly gitStatus?: string; readonly priorLocator?: string }
   > = {};
-  const reread: string[] = [];
-  const reused: string[] = [];
-  const deleted: string[] = [];
 
   const conservative = request.journal.trust !== 'trusted';
   if (conservative) {
@@ -101,42 +113,35 @@ export function planInventoryReread(request: {
 
     if (conservative) {
       decisions[locator] = 'reread';
-      reread.push(locator);
       continue;
     }
 
     if (prior.scanProfileDigest.value !== request.scanProfileDigestValue) {
       decisions[locator] = 'reread';
-      reread.push(locator);
       continue;
     }
 
     if (!record) {
       decisions[locator] = 'reuse-prior-digest';
-      reused.push(locator);
       continue;
     }
 
     if (record.kind === 'unknown' || record.kind === 'untracked') {
       decisions[locator] = 'reread';
-      reread.push(locator);
       continue;
     }
 
     if (record.kind === 'deleted') {
       decisions[locator] = 'deleted';
-      deleted.push(locator);
       continue;
     }
 
     if (record.kind === 'unchanged') {
       decisions[locator] = 'reuse-prior-digest';
-      reused.push(locator);
       continue;
     }
 
     decisions[locator] = 'reread';
-    reread.push(locator);
   }
 
   for (const [locator, record] of [...records.entries()].sort(([left], [right]) =>
@@ -147,10 +152,45 @@ export function planInventoryReread(request: {
     }
     if (record.kind === 'added' || record.kind === 'untracked' || record.kind === 'renamed') {
       decisions[locator] = 'reread';
-      reread.push(locator);
       continue;
     }
     decisions[locator] = 'skip-absent';
+  }
+
+  if (!conservative) {
+    for (const record of records.values()) {
+      if (
+        record.kind !== 'renamed' ||
+        !record.priorLocator ||
+        record.priorLocator === record.locator
+      ) {
+        continue;
+      }
+      decisions[record.locator] = 'reread';
+      decisions[record.priorLocator] = 'deleted';
+      observations[record.locator] = Object.freeze({
+        ...(record.gitStatus ? { gitStatus: record.gitStatus } : {}),
+        priorLocator: record.priorLocator,
+      });
+      observations[record.priorLocator] = Object.freeze({
+        ...(record.gitStatus ? { gitStatus: record.gitStatus } : {}),
+        priorLocator: record.priorLocator,
+      });
+    }
+  }
+
+  const reread: string[] = [];
+  const reused: string[] = [];
+  const deleted: string[] = [];
+  for (const locator of Object.keys(decisions).sort()) {
+    const decision = decisions[locator];
+    if (decision === 'reread') {
+      reread.push(locator);
+    } else if (decision === 'reuse-prior-digest') {
+      reused.push(locator);
+    } else if (decision === 'deleted') {
+      deleted.push(locator);
+    }
   }
 
   return Object.freeze({

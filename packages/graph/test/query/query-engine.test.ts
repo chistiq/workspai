@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   GRAPH_CANONICAL_GRAPH_CONTRACT,
   GRAPH_IDENTITY_SCHEME,
+  GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES,
   GRAPH_QUERY_CONTRACT,
   GRAPH_QUERY_CACHE_CONTRACT,
   GRAPH_QUERY_CACHE_ENTRY_CONTRACT,
@@ -15,19 +16,24 @@ import {
   type GraphEdge,
   type GraphEntityReference,
   type GraphQuery,
+  type GraphQueryCacheEntry,
 } from '../../src/contracts/index.js';
 import {
   assessGraphEdgeProof,
+  createQueryCacheKey,
   evaluateGraphQueryCacheReuse,
   normalizeGraphQuery,
   queryGraph,
 } from '../../src/index.js';
+import { applyQueryCacheInvalidations } from '../../src/application/query-cache.js';
+import { planQueryCacheInvalidation } from '../../src/application/plan-query-cache-invalidation.js';
 import {
   validateGraphBindingProfile,
   validateGraphProofPolicy,
   validateGraphQuery,
   validateGraphQueryResult,
 } from '../../src/conformance/index.js';
+import type { GraphQueryCacheStorePort } from '../../src/ports/index.js';
 
 const digest = { algorithm: 'sha256', value: 'a'.repeat(64) } as const;
 const scope = { kind: 'project' as const, projectIds: ['project:query-fixture'] as [string] };
@@ -553,6 +559,38 @@ describe('Graph G3 deterministic query engine', () => {
     ).resolves.toMatchObject({ accepted: false, code: 'invalid-query' });
   });
 
+  it('rejects similarity and vector strategies before traversal or cache reuse', async () => {
+    for (const strategy of GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES) {
+      expect(
+        validateGraphQuery({
+          contract: GRAPH_QUERY_CONTRACT,
+          kind: 'related',
+          subject: 'service:identity',
+          strategy,
+        })
+      ).toMatchObject({
+        accepted: false,
+        issues: [expect.objectContaining({ code: 'GRAPH_QUERY_STRATEGY_PROHIBITED' })],
+      });
+      await expect(
+        queryGraph(
+          graph,
+          query({ kind: 'related', subject: 'service:identity', strategy: strategy as never }),
+          digestPort
+        )
+      ).resolves.toMatchObject({
+        accepted: false,
+        code: 'invalid-query',
+        issues: [expect.objectContaining({ code: 'GRAPH_QUERY_STRATEGY_PROHIBITED' })],
+      });
+    }
+    const normalized = normalizeGraphQuery(
+      query({ kind: 'related', subject: 'service:identity', strategy: 'similarity' as never })
+    );
+    expect(['direct', 'graph', 'hybrid']).toContain(normalized.strategy);
+    expect(normalized.strategy).not.toBe('similarity');
+  });
+
   it('validates the complete machine result envelope', async () => {
     const output = await queryGraph(
       graph,
@@ -675,5 +713,263 @@ describe('Graph G3 deterministic query engine', () => {
       admitted: false,
       state: 'insufficient',
     });
+  });
+});
+
+function memoryQueryCacheStore(): GraphQueryCacheStorePort & {
+  readonly entries: Map<string, GraphQueryCacheEntry>;
+} {
+  const entries = new Map<string, GraphQueryCacheEntry>();
+  return {
+    entries,
+    async get(keyDigest) {
+      return entries.get(`${keyDigest.algorithm}:${keyDigest.value}`);
+    },
+    async publish(entry) {
+      entries.set(`${entry.keyDigest.algorithm}:${entry.keyDigest.value}`, entry);
+    },
+    async invalidate(keyDigests) {
+      for (const keyDigest of keyDigests) {
+        entries.delete(`${keyDigest.algorithm}:${keyDigest.value}`);
+      }
+    },
+  };
+}
+
+function cachePolicy(
+  overrides: {
+    readonly authorizationDigest?: typeof digest;
+    readonly redactionPolicyDigest?: typeof digest;
+    readonly plannerProfileDigest?: typeof digest;
+  } = {}
+) {
+  return {
+    redactionPolicyDigest: digest,
+    authorizationDigest: digest,
+    ...overrides,
+  };
+}
+
+const cachedPathQuery = () =>
+  query({
+    kind: 'path',
+    subject: 'endpoint:login',
+    target: 'test:login',
+    relations: ['implements', 'verified-by'],
+    direction: 'both',
+  });
+
+describe('optional query cache store', () => {
+  it('creates generation, budget and authorization-bound keys', async () => {
+    const normalized = normalizeGraphQuery(
+      query({
+        kind: 'related',
+        subject: 'service:identity',
+        page: { cursor: 'offset:0', size: 10 },
+        budget: { maxDepth: 2, maxNodes: 500, maxEdges: 1_000, maxEvidence: 200 },
+      })
+    );
+    const key = await createQueryCacheKey({
+      graph,
+      query: normalized,
+      digest: digestPort,
+      policy: cachePolicy(),
+    });
+    expect(key.graphGeneration).toEqual(graph.generation.reference);
+    expect(key.budget).toEqual({ maxDepth: 2, maxNodes: 500, maxEdges: 1_000, maxEvidence: 200 });
+    expect(key.authorizationDigest).toEqual(digest);
+    expect(key.page).toEqual({ cursor: 'offset:0', size: 10 });
+    const otherBudget = await createQueryCacheKey({
+      graph,
+      query: normalizeGraphQuery({ ...normalized, budget: { ...normalized.budget, maxDepth: 3 } }),
+      digest: digestPort,
+      policy: cachePolicy(),
+    });
+    expect(otherBudget.queryDigest.value).not.toBe(key.queryDigest.value);
+    const otherAuth = await createQueryCacheKey({
+      graph,
+      query: normalized,
+      digest: digestPort,
+      policy: cachePolicy({ authorizationDigest: { ...digest, value: 'c'.repeat(64) } }),
+    });
+    expect(otherAuth.authorizationDigest.value).not.toBe(key.authorizationDigest.value);
+  });
+
+  it('returns cached results equivalent to uncached execution and keeps historical cost', async () => {
+    const input = cachedPathQuery();
+    const uncached = await queryGraph(graph, input, digestPort);
+    expect(uncached).toMatchObject({ accepted: true });
+    if (!uncached.accepted) return;
+    expect(uncached).not.toHaveProperty('cache');
+    expect(uncached.value).not.toHaveProperty('cache');
+
+    const store = memoryQueryCacheStore();
+    const options = { cache: { store, policy: cachePolicy() } };
+    const miss = await queryGraph(graph, input, digestPort, options);
+    expect(miss).toMatchObject({ accepted: true, cache: { status: 'miss' } });
+    if (!miss.accepted) return;
+    expect(store.entries.size).toBe(1);
+
+    const hit = await queryGraph(graph, input, digestPort, options);
+    expect(hit).toMatchObject({ accepted: true, cache: { status: 'hit' } });
+    if (!hit.accepted) return;
+    expect(hit.value).toEqual(uncached.value);
+    expect(hit.value).toEqual(miss.value);
+    expect(hit.value.cost).toEqual(miss.value.cost);
+    expect(validateGraphQueryResult(hit.value)).toMatchObject({ accepted: true });
+  });
+
+  it('does not publish in read-only mode and still hits a populated store', async () => {
+    const input = cachedPathQuery();
+    const store = memoryQueryCacheStore();
+    const miss = await queryGraph(graph, input, digestPort, {
+      cache: { store, mode: 'read-only', policy: cachePolicy() },
+    });
+    expect(miss).toMatchObject({ accepted: true, cache: { status: 'miss' } });
+    expect(store.entries.size).toBe(0);
+
+    await queryGraph(graph, input, digestPort, {
+      cache: { store, mode: 'read-write', policy: cachePolicy() },
+    });
+    const hit = await queryGraph(graph, input, digestPort, {
+      cache: { store, mode: 'read-only', policy: cachePolicy() },
+    });
+    expect(hit).toMatchObject({ accepted: true, cache: { status: 'hit' } });
+  });
+
+  it('executes live when the store is unavailable, corrupt, stale or denied', async () => {
+    const input = cachedPathQuery();
+    const uncached = await queryGraph(graph, input, digestPort);
+    if (!uncached.accepted) return;
+
+    const unavailable = await queryGraph(graph, input, digestPort, {
+      cache: {
+        store: {
+          async get() {
+            throw new Error('down');
+          },
+          async publish() {
+            throw new Error('down');
+          },
+          async invalidate() {
+            throw new Error('down');
+          },
+        },
+        policy: cachePolicy(),
+      },
+    });
+    expect(unavailable).toMatchObject({ accepted: true, cache: { status: 'unavailable' } });
+    if (!unavailable.accepted) return;
+    expect(unavailable.value).toEqual(uncached.value);
+
+    const store = memoryQueryCacheStore();
+    const options = { cache: { store, policy: cachePolicy() } };
+    await queryGraph(graph, input, digestPort, options);
+    const recorded = [...store.entries.entries()][0];
+    if (!recorded) throw new Error('expected a published cache entry');
+    const [mapKey, entry] = recorded;
+
+    store.entries.set(mapKey, { ...entry, result: { contract: {} } });
+    const corrupt = await queryGraph(graph, input, digestPort, options);
+    expect(corrupt).toMatchObject({ accepted: true, cache: { status: 'corrupt' } });
+    if (!corrupt.accepted) return;
+    expect(corrupt.value).toEqual(uncached.value);
+
+    store.entries.set(mapKey, { ...entry, freshness: { status: 'stale' } });
+    const stale = await queryGraph(graph, input, digestPort, options);
+    expect(stale).toMatchObject({ accepted: true, cache: { status: 'stale' } });
+
+    store.entries.set(mapKey, {
+      ...entry,
+      key: { ...entry.key, authorizationDigest: { ...digest, value: 'c'.repeat(64) } },
+    });
+    const denied = await queryGraph(graph, input, digestPort, options);
+    expect(denied).toMatchObject({ accepted: true, cache: { status: 'denied' } });
+
+    store.entries.set(mapKey, {
+      ...entry,
+      key: { ...entry.key, plannerProfileDigest: { ...digest, value: 'b'.repeat(64) } },
+    });
+    const incompatible = await queryGraph(graph, input, digestPort, options);
+    expect(incompatible).toMatchObject({ accepted: true, cache: { status: 'incompatible' } });
+  });
+
+  it('skips caching when no scope can be bound and still returns the live result', async () => {
+    const output = await queryGraph(graph, query({ kind: 'entry-points' }), digestPort, {
+      cache: { store: memoryQueryCacheStore(), policy: cachePolicy() },
+    });
+    expect(output).toMatchObject({
+      accepted: true,
+      cache: { status: 'unavailable', reasons: ['GRAPH_QUERY_CACHE_SCOPE_MISSING'] },
+    });
+    if (!output.accepted) return;
+    expect(output.value.result.length).toBeGreaterThan(0);
+  });
+
+  it('does not address cache keys with a latest generation alias', async () => {
+    const aliased: GraphCanonicalGraph = {
+      ...graph,
+      generation: {
+        ...graph.generation,
+        reference: { ...graph.generation.reference, id: 'latest' },
+      },
+    };
+    await expect(
+      createQueryCacheKey({
+        graph: aliased,
+        query: normalizeGraphQuery(cachedPathQuery()),
+        digest: digestPort,
+        policy: cachePolicy(),
+      })
+    ).rejects.toThrow('GRAPH_QUERY_CACHE_MUTABLE_GENERATION');
+    const live = await queryGraph(aliased, cachedPathQuery(), digestPort, {
+      cache: { store: memoryQueryCacheStore(), policy: cachePolicy() },
+    });
+    expect(live).toMatchObject({
+      accepted: true,
+      cache: { status: 'unavailable', reasons: ['GRAPH_QUERY_CACHE_MUTABLE_GENERATION'] },
+    });
+  });
+
+  it('applies planned invalidations atomically and leaves unspecified keys', async () => {
+    const store = memoryQueryCacheStore();
+    const keep = {
+      contract: GRAPH_QUERY_CACHE_ENTRY_CONTRACT,
+      keyDigest: { algorithm: 'sha256' as const, value: '1'.repeat(64) },
+      key: {
+        contract: GRAPH_QUERY_CACHE_CONTRACT,
+        graphGeneration: graph.generation.reference,
+        queryDigest: digest,
+        ontologyDigest: digest,
+        proofPolicyDigest: digest,
+        profileDigest: digest,
+        plannerProfileDigest: digest,
+        resultProfileDigest: digest,
+        projectionDigests: [],
+        indexDigests: [],
+        requiredExtensions: [],
+        scope,
+        redactionPolicyDigest: digest,
+        authorizationDigest: digest,
+        budget: { maxDepth: 4, maxNodes: 100, maxEdges: 200, maxEvidence: 50 },
+      },
+      result: null,
+      resultDigest: digest,
+      freshness: { status: 'current' as const },
+    };
+    const drop = {
+      ...keep,
+      keyDigest: { algorithm: 'sha256' as const, value: '2'.repeat(64) },
+      key: { ...keep.key, authorizationDigest: { ...digest, value: 'c'.repeat(64) } },
+    };
+    await store.publish(keep);
+    await store.publish(drop);
+    const planned = planQueryCacheInvalidation({
+      entries: [keep, drop],
+      currentAuthorizationDigest: digest,
+    });
+    await applyQueryCacheInvalidations({ store, invalidations: planned });
+    expect(store.entries.has(`${keep.keyDigest.algorithm}:${keep.keyDigest.value}`)).toBe(true);
+    expect(store.entries.has(`${drop.keyDigest.algorithm}:${drop.keyDigest.value}`)).toBe(false);
   });
 });

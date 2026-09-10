@@ -12,6 +12,7 @@ import type {
   GraphInputChange,
   GraphScope,
 } from '../contracts/index.js';
+import { normalizePortableLocator, parentLocator } from '../domain/content-state-merkle.js';
 
 const DEFAULT_BUDGET: GraphContentStateComparisonBudget = Object.freeze({
   maxComparedBranches: 100_000,
@@ -46,10 +47,17 @@ function indexManifest(manifest: GraphContentStateManifest): {
   const files = new Map<string, GraphContentStateLeaf>();
   const directories = new Map<string, GraphContentStateDirectory>();
   for (const node of manifest.nodes) {
+    const locator = normalizePortableLocator(node.locator);
     if (node.kind === 'file') {
-      files.set(node.locator, node);
+      if (files.has(locator)) {
+        throw new Error(`Duplicate content-state leaf locator: ${locator}`);
+      }
+      files.set(locator, Object.freeze({ ...node, locator }));
     } else {
-      directories.set(node.locator, node);
+      if (directories.has(locator)) {
+        throw new Error(`Duplicate content-state directory locator: ${locator}`);
+      }
+      directories.set(locator, Object.freeze({ ...node, locator }));
     }
   }
   return { files, directories };
@@ -60,9 +68,14 @@ function accountDirectoryBranches(
   target: GraphContentStateManifest,
   baseDirectories: Map<string, GraphContentStateDirectory>,
   targetDirectories: Map<string, GraphContentStateDirectory>
-): { comparedBranches: number; skippedBranches: number } {
+): {
+  comparedBranches: number;
+  skippedBranches: number;
+  skippedDirectories: ReadonlySet<string>;
+} {
   let comparedBranches = digestEqual(base.merkleRoot, target.merkleRoot) ? 0 : 1;
   let skippedBranches = 0;
+  const skippedDirectories = new Set<string>();
   const locators = new Set([...baseDirectories.keys(), ...targetDirectories.keys()]);
   for (const locator of [...locators].sort()) {
     const left = baseDirectories.get(locator);
@@ -70,6 +83,7 @@ function accountDirectoryBranches(
     if (left && right) {
       if (digestEqual(left.digest, right.digest)) {
         skippedBranches += 1;
+        skippedDirectories.add(locator);
       } else {
         comparedBranches += 1;
       }
@@ -77,7 +91,32 @@ function accountDirectoryBranches(
     }
     comparedBranches += 1;
   }
-  return { comparedBranches, skippedBranches };
+  return { comparedBranches, skippedBranches, skippedDirectories };
+}
+
+/** True when an ancestor directory digest matched and that subtree must not be enumerated. */
+function underSkippedBranch(locator: string, skippedDirectories: ReadonlySet<string>): boolean {
+  let current = parentLocator(locator);
+  while (current.length > 0) {
+    if (skippedDirectories.has(current)) {
+      return true;
+    }
+    current = parentLocator(current);
+  }
+  return false;
+}
+
+function filesInComparedBranches(
+  files: Map<string, GraphContentStateLeaf>,
+  skippedDirectories: ReadonlySet<string>
+): Map<string, GraphContentStateLeaf> {
+  const selected = new Map<string, GraphContentStateLeaf>();
+  for (const [locator, leaf] of files) {
+    if (!underSkippedBranch(locator, skippedDirectories)) {
+      selected.set(locator, leaf);
+    }
+  }
+  return selected;
 }
 
 function fileLeafEqual(left: GraphContentStateLeaf, right: GraphContentStateLeaf): boolean {
@@ -86,6 +125,27 @@ function fileLeafEqual(left: GraphContentStateLeaf, right: GraphContentStateLeaf
     digestEqual(left.contentDigest, right.contentDigest) &&
     digestEqual(left.scanProfileDigest, right.scanProfileDigest)
   );
+}
+
+function contentAndKindEqual(left: GraphContentStateLeaf, right: GraphContentStateLeaf): boolean {
+  return left.inputKind === right.inputKind && digestEqual(left.contentDigest, right.contentDigest);
+}
+
+function comparisonCauses(changedInputs: readonly GraphInputChange[]): GraphChangeCause[] {
+  const kinds = new Set(changedInputs.map((change) => change.kind));
+  const causes: GraphChangeCause[] = [];
+  if (
+    kinds.has('added') ||
+    kinds.has('edited') ||
+    kinds.has('deleted') ||
+    kinds.has('rename-candidate')
+  ) {
+    causes.push(Object.freeze({ kind: 'content', source: 'content-state-comparison' }));
+  }
+  if (kinds.has('renewed')) {
+    causes.push(Object.freeze({ kind: 'scan-profile', source: 'content-state-comparison' }));
+  }
+  return causes;
 }
 
 function detectFileChanges(
@@ -99,6 +159,19 @@ function detectFileChanges(
     const target = targetFiles.get(locator);
     if (base && target) {
       if (fileLeafEqual(base, target)) {
+        continue;
+      }
+      if (contentAndKindEqual(base, target)) {
+        changes.push(
+          Object.freeze({
+            kind: 'renewed',
+            locator,
+            inputKind: target.inputKind,
+            scanProfileDigest: target.scanProfileDigest,
+            priorDigest: base.contentDigest,
+            nextDigest: target.contentDigest,
+          })
+        );
         continue;
       }
       changes.push(
@@ -227,9 +300,6 @@ export function compareContentStateManifests(
     ...DEFAULT_BUDGET,
     ...request.budget,
   });
-  const causes: GraphChangeCause[] = [
-    Object.freeze({ kind: 'content', source: 'content-state-comparison' }),
-  ];
 
   if (!scopesCompatible(request.base.scope, request.target.scope)) {
     return Object.freeze({
@@ -238,7 +308,9 @@ export function compareContentStateManifests(
       comparedBranches: 0,
       skippedBranches: 0,
       changedInputs: Object.freeze([]),
-      causes,
+      causes: Object.freeze([
+        Object.freeze({ kind: 'content' as const, source: 'content-state-comparison' }),
+      ]),
       diagnostics: Object.freeze([
         Object.freeze({
           code: 'GRAPH_INCREMENTAL_SCOPE_MISMATCH',
@@ -261,7 +333,7 @@ export function compareContentStateManifests(
       comparedBranches: 0,
       skippedBranches: baseIndexed.directories.size,
       changedInputs: Object.freeze([]),
-      causes,
+      causes: Object.freeze([]),
       diagnostics: Object.freeze([]),
       status: 'complete',
     });
@@ -280,7 +352,7 @@ export function compareContentStateManifests(
       comparedBranches: branchAccounting.comparedBranches,
       skippedBranches: branchAccounting.skippedBranches,
       changedInputs: Object.freeze([]),
-      causes,
+      causes: Object.freeze([]),
       diagnostics: Object.freeze([
         Object.freeze({
           code: 'GRAPH_INCREMENTAL_BRANCH_BUDGET_EXCEEDED',
@@ -299,11 +371,19 @@ export function compareContentStateManifests(
     });
   }
 
-  const rawChanges = detectFileChanges(baseIndexed.files, targetIndexed.files);
+  const comparedBaseFiles = filesInComparedBranches(
+    baseIndexed.files,
+    branchAccounting.skippedDirectories
+  );
+  const comparedTargetFiles = filesInComparedBranches(
+    targetIndexed.files,
+    branchAccounting.skippedDirectories
+  );
+  const rawChanges = detectFileChanges(comparedBaseFiles, comparedTargetFiles);
   const renameResolution = resolveRenameCandidates(
     rawChanges,
-    baseIndexed.files,
-    targetIndexed.files
+    comparedBaseFiles,
+    comparedTargetFiles
   );
   let changedInputs = renameResolution.changes;
   let truncation = undefined;
@@ -335,7 +415,7 @@ export function compareContentStateManifests(
     comparedBranches: branchAccounting.comparedBranches,
     skippedBranches: branchAccounting.skippedBranches,
     changedInputs: Object.freeze(changedInputs),
-    causes,
+    causes: Object.freeze(comparisonCauses(changedInputs)),
     diagnostics: Object.freeze(diagnostics),
     truncation,
     status,

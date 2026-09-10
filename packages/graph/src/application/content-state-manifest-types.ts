@@ -1,6 +1,7 @@
 import type { WisDigestReference } from '@workspai/shared/contracts';
 
 import type { GraphProviderInput, GraphScope, GraphShardDependency } from '../contracts/index.js';
+import { normalizePortableLocator } from '../domain/content-state-merkle.js';
 
 export interface GraphContentStateLeafInput {
   readonly locator: string;
@@ -29,7 +30,7 @@ export function contentStateLeavesFromProviderInputs(
 ): GraphContentStateLeafInput[] {
   return inputs.map((input) =>
     Object.freeze({
-      locator: input.locator,
+      locator: normalizePortableLocator(input.locator),
       contentDigest: input.digest,
       inputKind,
       scanProfileDigest,

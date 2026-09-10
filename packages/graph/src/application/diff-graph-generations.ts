@@ -1,5 +1,6 @@
 import type {
   GraphCanonicalGraph,
+  GraphDelta,
   GraphDiagnostic,
   GraphGenerationRef,
 } from '../contracts/index.js';
@@ -90,5 +91,89 @@ export function diffGraphGenerations(request: {
     ),
     limitations: Object.freeze([...DIFF_LIMITATIONS]),
     diagnostics: Object.freeze(diagnostics),
+  });
+}
+
+function collectFactIds(graph: GraphCanonicalGraph): Set<string> {
+  const ids = new Set<string>();
+  for (const edge of graph.edges) {
+    for (const fact of edge.facts) {
+      ids.add(fact);
+    }
+  }
+  for (const assertion of graph.assertions) {
+    for (const fact of assertion.facts) {
+      ids.add(fact);
+    }
+  }
+  return ids;
+}
+
+function disputedFactIds(graph: GraphCanonicalGraph): Set<string> {
+  const ids = new Set<string>();
+  const consider = (state: string, proofState: string, facts: readonly string[]): void => {
+    if (state === 'disputed' || proofState === 'disputed') {
+      for (const fact of facts) {
+        ids.add(fact);
+      }
+    }
+  };
+  for (const edge of graph.edges) {
+    consider(edge.state, edge.proof.state, edge.facts);
+  }
+  for (const assertion of graph.assertions) {
+    consider(assertion.state, assertion.proof.state, assertion.facts);
+  }
+  return ids;
+}
+
+function factsOnEdgeIds(graph: GraphCanonicalGraph, edgeIds: ReadonlySet<string>): Set<string> {
+  const ids = new Set<string>();
+  for (const edge of graph.edges) {
+    if (!edgeIds.has(edge.id)) {
+      continue;
+    }
+    for (const fact of edge.facts) {
+      ids.add(fact);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Fills GraphDelta graph/fact identity sets from two canonical graphs. Plan-time
+ * overlays stay empty; this is post-composition accounting, not fact invention.
+ */
+export function summarizeCanonicalGraphDelta(
+  from: GraphCanonicalGraph,
+  to: GraphCanonicalGraph
+): Pick<GraphDelta, 'graph' | 'facts'> {
+  const diff = diffGraphGenerations({ from, to });
+  const fromFacts = collectFactIds(from);
+  const toFacts = collectFactIds(to);
+  const added = [...toFacts].filter((id) => !fromFacts.has(id)).sort();
+  const removed = [...fromFacts].filter((id) => !toFacts.has(id)).sort();
+  const persisted = [...toFacts].filter((id) => fromFacts.has(id));
+  const fromDisputed = disputedFactIds(from);
+  const toDisputed = disputedFactIds(to);
+  const invalidated = persisted.filter((id) => toDisputed.has(id) && !fromDisputed.has(id)).sort();
+  const invalidatedSet = new Set(invalidated);
+  const reemitted = factsOnEdgeIds(to, new Set([...diff.addedEdges, ...diff.changedEdges]));
+  const renewed = persisted.filter((id) => !invalidatedSet.has(id) && reemitted.has(id)).sort();
+  const changedEdges = [
+    ...new Set([...diff.addedEdges, ...diff.removedEdges, ...diff.changedEdges]),
+  ].sort();
+  return Object.freeze({
+    graph: Object.freeze({
+      addedNodes: diff.addedNodes,
+      removedNodes: diff.removedNodes,
+      changedEdges: Object.freeze(changedEdges),
+    }),
+    facts: Object.freeze({
+      added: Object.freeze(added),
+      renewed: Object.freeze(renewed),
+      removed: Object.freeze(removed),
+      invalidated: Object.freeze(invalidated),
+    }),
   });
 }

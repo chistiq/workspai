@@ -29,12 +29,19 @@ function replaceFile(
   locator: string,
   next: Partial<GraphContentStateLeaf>
 ): GraphContentStateManifest {
+  const merkleRoot = digest('1212121212121212121212121212121212121212121212121212121212121212');
   return {
     ...structuredClone(manifest),
-    merkleRoot: digest('1212121212121212121212121212121212121212121212121212121212121212'),
-    nodes: manifest.nodes.map((node) =>
-      node.kind === 'file' && node.locator === locator ? { ...node, ...next } : node
-    ),
+    merkleRoot,
+    nodes: manifest.nodes.map((node) => {
+      if (node.kind === 'file' && node.locator === locator) {
+        return { ...node, ...next };
+      }
+      if (node.kind === 'directory') {
+        return { ...node, digest: merkleRoot };
+      }
+      return node;
+    }),
     shardDependencies: manifest.shardDependencies.map((shard) =>
       shard.shardId.endsWith(`:${locator}`)
         ? { ...shard, contentDigest: next.contentDigest ?? shard.contentDigest }

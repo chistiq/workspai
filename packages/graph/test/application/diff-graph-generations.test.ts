@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { diffGraphGenerations } from '../../src/application/diff-graph-generations.js';
+import {
+  diffGraphGenerations,
+  summarizeCanonicalGraphDelta,
+} from '../../src/application/diff-graph-generations.js';
 import {
   summarizeDeltaProcessingLedger,
   summarizeInputProcessingLedger,
@@ -100,6 +103,54 @@ describe('diffGraphGenerations', () => {
     const source = graph('generation:1', ['entity:a']);
     const diff = diffGraphGenerations({ from: source, to: source });
     expect(diff.diagnostics[0]?.code).toBe('GRAPH_GENERATION_DIFF_SAME_IDENTITY');
+  });
+});
+
+describe('summarizeCanonicalGraphDelta', () => {
+  it('leaves facts empty when graph identities are unchanged', () => {
+    const from = graph('generation:1', ['entity:a', 'entity:b']);
+    const to = graph('generation:2', ['entity:a', 'entity:b']);
+    expect(summarizeCanonicalGraphDelta(from, to)).toEqual({
+      graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
+      facts: { added: [], renewed: [], removed: [], invalidated: [] },
+    });
+  });
+
+  it('records added facts and nodes without inventing identifiers', () => {
+    const delta = summarizeCanonicalGraphDelta(
+      graph('generation:1', ['entity:a']),
+      graph('generation:2', ['entity:a', 'entity:b'])
+    );
+    expect(delta.graph.addedNodes).toEqual(['entity:b']);
+    expect(delta.graph.changedEdges).toEqual(['edge:imports:1']);
+    expect(delta.facts.added).toEqual(['fact:1']);
+    expect(delta.facts.removed).toEqual([]);
+    expect(delta.facts.renewed).toEqual([]);
+  });
+
+  it('marks persisted facts on a changed edge as renewed', () => {
+    const from = graph('generation:1', ['entity:a', 'entity:b']);
+    const to = {
+      ...graph('generation:2', ['entity:a', 'entity:b']),
+      edges: graph('generation:2', ['entity:a', 'entity:b']).edges.map((edge) => ({
+        ...edge,
+        relation: 're-exports',
+      })),
+    };
+    const delta = summarizeCanonicalGraphDelta(from, to);
+    expect(delta.graph.changedEdges).toEqual(['edge:imports:1']);
+    expect(delta.facts.renewed).toEqual(['fact:1']);
+    expect(delta.facts.added).toEqual([]);
+    expect(delta.facts.invalidated).toEqual([]);
+  });
+
+  it('invalidates persisted facts whose owning edge became disputed', () => {
+    const delta = summarizeCanonicalGraphDelta(
+      graph('generation:1', ['entity:a', 'entity:b'], 'accepted'),
+      graph('generation:2', ['entity:a', 'entity:b'], 'disputed')
+    );
+    expect(delta.facts.invalidated).toEqual(['fact:1']);
+    expect(delta.facts.renewed).toEqual([]);
   });
 });
 

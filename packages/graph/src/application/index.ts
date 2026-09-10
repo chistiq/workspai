@@ -15,15 +15,23 @@ export {
   composeGraph,
   executeGraphReferenceCompositionTask,
 } from './compose-graph.js';
-export { normalizeGraphQuery, queryGraph } from './query-graph.js';
+export { normalizeGraphQuery, queryGraph, type GraphQueryOptions } from './query-graph.js';
 export { assessGraphEdgeProof, type GraphProofPolicyAssessment } from './assess-proof.js';
-export { evaluateGraphQueryCacheReuse } from './query-cache.js';
+export {
+  createQueryCacheKey,
+  evaluateGraphQueryCacheReuse,
+  applyQueryCacheInvalidations,
+  type GraphQueryCacheKeyRequest,
+  type GraphQueryCachePolicy,
+  type GraphQueryCacheRequest,
+} from './query-cache.js';
 export { planQueryCacheInvalidation } from './plan-query-cache-invalidation.js';
 export type { GraphQueryCacheInvalidationRequest } from './plan-query-cache-invalidation.js';
 export { GRAPH_STANDARD_REPO_BUILD_POLICY, buildRepoGraph } from './build-repo-graph.js';
 export type {
   GraphIncrementalRepoBuildRequest,
   GraphIncrementalRepoBuildResult,
+  GraphIncrementalQueryCacheRequest,
 } from './incremental-repo-build-types.js';
 export type {
   GraphRepoBuildCompositionReuse,
@@ -63,7 +71,7 @@ export {
   parseGitStatusPorcelain,
   untrustedChangeJournal,
 } from './parse-git-status-porcelain.js';
-export { diffGraphGenerations } from './diff-graph-generations.js';
+export { diffGraphGenerations, summarizeCanonicalGraphDelta } from './diff-graph-generations.js';
 export type { GraphGenerationDiff } from './diff-graph-generations.js';
 export {
   summarizeDeltaProcessingLedger,
@@ -78,6 +86,11 @@ export {
   type GraphProviderRecomputeScopeRequest,
 } from './plan-provider-recompute-scope.js';
 export {
+  addedInputLocators,
+  providersRequiredForAddedInputs,
+  type GraphAddedInputRecomputeRequest,
+} from './providers-required-for-added-inputs.js';
+export {
   buildGraphChangeOverlay,
   buildGraphChangeOverlay as createChangeOverlay,
 } from './build-graph-change-overlay.js';
@@ -86,6 +99,12 @@ export {
   evaluateGraphChangeOverlayStaleness,
 } from './evaluate-overlay-staleness.js';
 export { buildShardDependenciesFromSources } from './build-shard-dependencies.js';
+export {
+  collectGraphSemanticDependencies,
+  semanticDependenciesForShard,
+  type GraphIncrementalSemanticStamps,
+  type GraphSemanticDependencyRequest,
+} from './collect-semantic-dependencies.js';
 export { compareChangeOverlays } from './compare-change-overlays.js';
 export { queryChangeOverlay } from './query-change-overlay.js';
 export type {
@@ -94,6 +113,7 @@ export type {
   GraphChangeOverlayQueryResult,
 } from './query-change-overlay.js';
 export type {
+  GraphIncrementalAccounting,
   GraphIncrementalBuildPlan,
   GraphIncrementalBuildRequest,
 } from './incremental-build-types.js';

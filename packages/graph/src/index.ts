@@ -9,6 +9,7 @@ export {
   composeGraph,
   assessGraphEdgeProof,
   executeGraphReferenceCompositionTask,
+  createQueryCacheKey,
   evaluateGraphQueryCacheReuse,
   getGraphPackageStatus,
   normalizeGraphQuery,
@@ -29,6 +30,10 @@ export {
   type GraphProjectPublicationIndex,
   type GraphProjectPublicationOutcome,
   type GraphProofPolicyAssessment,
+  type GraphQueryCacheKeyRequest,
+  type GraphQueryCachePolicy,
+  type GraphQueryCacheRequest,
+  type GraphQueryOptions,
 } from './application/index.js';
 export {
   GRAPH_PACKAGE_MATURITY,
@@ -49,6 +54,8 @@ export {
   type GraphProofPathHop,
   type GraphProofPolicy,
   type GraphQuery,
+  type GraphQueryCacheObservation,
+  type GraphQueryCacheObservationStatus,
   type GraphQueryExecutionResult,
   type GraphQueryQuality,
   type GraphQueryResult,
@@ -76,6 +83,7 @@ export type {
   GraphProjectArtifactStorePort,
   GraphProjectPublicationRequest,
   GraphProjectPublicationResult,
+  GraphQueryCacheStorePort,
 } from './ports/index.js';
 export {
   GRAPH_PROJECTIONS_AVAILABLE,

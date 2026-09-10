@@ -76,14 +76,30 @@ function verifyContentStateMerkle(
   if (!Array.isArray(input.nodes) || !digest(input.merkleRoot)) {
     return;
   }
-  const leaves: { locator: string; contentDigest: WisDigestReference }[] = [];
+  const leaves: {
+    locator: string;
+    contentDigest: WisDigestReference;
+    inputKind: string;
+    scanProfileDigest: WisDigestReference;
+  }[] = [];
   const directories: Record<string, unknown>[] = [];
   for (const node of input.nodes) {
     if (!record(node)) {
       continue;
     }
-    if (node.kind === 'file' && typeof node.locator === 'string' && digest(node.contentDigest)) {
-      leaves.push({ locator: node.locator, contentDigest: node.contentDigest });
+    if (
+      node.kind === 'file' &&
+      typeof node.locator === 'string' &&
+      digest(node.contentDigest) &&
+      typeof node.inputKind === 'string' &&
+      digest(node.scanProfileDigest)
+    ) {
+      leaves.push({
+        locator: node.locator,
+        contentDigest: node.contentDigest,
+        inputKind: node.inputKind,
+        scanProfileDigest: node.scanProfileDigest,
+      });
     }
     if (node.kind === 'directory' && typeof node.locator === 'string') {
       directories.push(node);

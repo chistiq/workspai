@@ -1,9 +1,12 @@
+import fs from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { buildContentStateManifest } from '../../src/application/build-content-state-manifest.js';
 import { contentStateLeavesFromProviderInputs } from '../../src/application/content-state-manifest-types.js';
 import { compareContentStateManifests } from '../../src/application/compare-content-state-manifest.js';
 import { validateGraphContentStateManifest } from '../../src/conformance/incremental.js';
+import type { GraphContentStateManifest } from '../../src/contracts/index.js';
 
 const scanProfileDigest = Object.freeze({
   algorithm: 'sha256' as const,
@@ -197,5 +200,41 @@ describe('buildContentStateManifest', () => {
       manifest.nodes.filter((node) => node.kind === 'directory').map((node) => node.locator)
     ).toEqual(['lib', 'library']);
     expect(validateGraphContentStateManifest(manifest).accepted).toBe(true);
+  });
+
+  it('reassembles the minimal G6 fixture from its admitted leaves', () => {
+    const fixture = JSON.parse(
+      fs.readFileSync(
+        new URL('../../fixtures/g6/minimal-content-state-manifest.json', import.meta.url),
+        'utf8'
+      )
+    ) as GraphContentStateManifest;
+    const file = fixture.nodes.find((node) => node.kind === 'file');
+    if (!file || file.kind !== 'file') {
+      throw new Error('expected a file leaf in the G6 fixture');
+    }
+    const rebuilt = buildContentStateManifest({
+      scope: fixture.scope,
+      generatedAt: fixture.generatedAt,
+      scanProfileDigest: file.scanProfileDigest,
+      leaves: [
+        {
+          locator: file.locator,
+          contentDigest: file.contentDigest,
+          inputKind: file.inputKind,
+          scanProfileDigest: file.scanProfileDigest,
+        },
+      ],
+      shardDependencies: fixture.shardDependencies,
+    });
+    expect(validateGraphContentStateManifest(fixture).accepted).toBe(true);
+    expect(rebuilt.merkleRoot).toEqual(fixture.merkleRoot);
+    const fixtureDirectory = fixture.nodes.find((node) => node.kind === 'directory');
+    const rebuiltDirectory = rebuilt.nodes.find((node) => node.kind === 'directory');
+    expect(rebuiltDirectory).toEqual(fixtureDirectory);
+    expect(fixtureDirectory && fixtureDirectory.kind === 'directory').toBe(true);
+    if (fixtureDirectory && fixtureDirectory.kind === 'directory') {
+      expect(fixtureDirectory.children[0]?.digest.value).not.toBe(file.contentDigest.value);
+    }
   });
 });

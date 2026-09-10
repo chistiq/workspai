@@ -3,16 +3,23 @@ import {
   GRAPH_DELTA_CONTRACT,
   type GraphChangeCause,
   type GraphContentStateComparisonResult,
+  type GraphContentStateManifest,
   type GraphDiagnostic,
+  type GraphShardReuseDecision,
   type GraphShardReusePlan,
 } from '../contracts/index.js';
 
+import type { GraphIncrementalSemanticStamps } from './collect-semantic-dependencies.js';
 import { compareContentStateManifests } from './compare-content-state-manifest.js';
 import type {
   GraphIncrementalBuildPlan,
   GraphIncrementalBuildRequest,
 } from './incremental-build-types.js';
 import { planShardReuseAndInvalidation } from './plan-shard-reuse.js';
+import {
+  emptyIncrementalAccounting,
+  summarizeIncrementalAccounting,
+} from './summarize-incremental-accounting.js';
 
 function mergeDiagnostics(
   ...groups: readonly (readonly GraphDiagnostic[])[]
@@ -34,6 +41,90 @@ function mergeCauses(
       seen.add(key);
       causes.push(cause);
     }
+  }
+  return Object.freeze(causes);
+}
+
+const CONTENT_REJECTION = new Set([
+  'content-changed',
+  'content-incompatible',
+  'missing-target-shard',
+]);
+const SEMANTIC_REJECTION = new Set([
+  'semantic-incompatible',
+  'missing-semantic-dependency',
+  'extra-semantic-dependency',
+]);
+
+function digestPresent(
+  manifest: GraphContentStateManifest,
+  digest: { readonly algorithm: string; readonly value: string }
+): boolean {
+  return manifest.shardDependencies.some((shard) =>
+    shard.semanticDependencies.some(
+      (entry) => entry.algorithm === digest.algorithm && entry.value === digest.value
+    )
+  );
+}
+
+function shardReuseCauses(
+  rejected: readonly GraphShardReuseDecision[],
+  baseManifest: GraphContentStateManifest,
+  stamps: GraphIncrementalSemanticStamps | undefined
+): readonly GraphChangeCause[] {
+  if (rejected.length === 0) {
+    return Object.freeze([]);
+  }
+  const causes: GraphChangeCause[] = [];
+  if (rejected.some((entry) => entry.reason && CONTENT_REJECTION.has(entry.reason))) {
+    causes.push(Object.freeze({ kind: 'content', source: 'shard-reuse-planning' }));
+  }
+  if (rejected.some((entry) => entry.reason === 'unauthorized-shard')) {
+    causes.push(Object.freeze({ kind: 'authorization', source: 'shard-reuse-planning' }));
+  }
+  const semanticRejected = rejected.some(
+    (entry) => entry.reason && SEMANTIC_REJECTION.has(entry.reason)
+  );
+  if (semanticRejected && stamps) {
+    if (!digestPresent(baseManifest, stamps.ontology)) {
+      causes.push(Object.freeze({ kind: 'ontology', source: 'shard-reuse-planning' }));
+    }
+    if (!digestPresent(baseManifest, stamps.proofPolicy)) {
+      causes.push(Object.freeze({ kind: 'proof-policy', source: 'shard-reuse-planning' }));
+    }
+    if (!digestPresent(baseManifest, stamps.redaction)) {
+      causes.push(Object.freeze({ kind: 'redaction', source: 'shard-reuse-planning' }));
+    }
+    if (!digestPresent(baseManifest, stamps.compositionPolicy)) {
+      causes.push(
+        Object.freeze({
+          kind: 'schema',
+          source: 'shard-reuse-planning',
+          detail: 'composition-policy',
+        })
+      );
+    }
+    const providerChanged = Object.entries(stamps.providers).some(([providerId, digest]) =>
+      baseManifest.shardDependencies.some(
+        (shard) =>
+          shard.providerStages.includes(providerId) &&
+          !shard.semanticDependencies.some(
+            (entry) => entry.algorithm === digest.algorithm && entry.value === digest.value
+          )
+      )
+    );
+    if (providerChanged) {
+      causes.push(Object.freeze({ kind: 'provider', source: 'shard-reuse-planning' }));
+    }
+    if (
+      !causes.some((cause) =>
+        ['ontology', 'proof-policy', 'redaction', 'schema', 'provider'].includes(cause.kind)
+      )
+    ) {
+      causes.push(Object.freeze({ kind: 'unknown', source: 'shard-reuse-planning' }));
+    }
+  } else if (semanticRejected) {
+    causes.push(Object.freeze({ kind: 'unknown', source: 'shard-reuse-planning' }));
   }
   return Object.freeze(causes);
 }
@@ -123,6 +214,7 @@ export function planIncrementalGraphBuild(
       comparison,
       shardReuse,
       providersToRecompute: Object.freeze([]),
+      accounting: emptyIncrementalAccounting(),
       diagnostics: comparison.diagnostics,
     });
   }
@@ -146,9 +238,7 @@ export function planIncrementalGraphBuild(
     inputs: comparison.changedInputs,
     causes: mergeCauses(
       comparison.causes,
-      shardReuse.rejected.length > 0
-        ? [Object.freeze({ kind: 'content' as const, source: 'shard-reuse-planning' })]
-        : []
+      shardReuseCauses(shardReuse.rejected, request.baseManifest, request.semanticStamps)
     ),
   });
   const delta = Object.freeze({
@@ -172,8 +262,8 @@ export function planIncrementalGraphBuild(
     downstreamInvalidations,
     execution: Object.freeze({
       detected: comparison.changedInputs.length,
-      scanned: comparison.changedInputs.length,
-      parsed: comparison.changedInputs.length,
+      scanned: 0,
+      parsed: 0,
       recomputed: shardReuse.rejected.length,
       skippedByDigest: shardReuse.reused.length,
       unsupported: 0,
@@ -193,6 +283,12 @@ export function planIncrementalGraphBuild(
     comparison,
     shardReuse,
     providersToRecompute,
+    accounting: summarizeIncrementalAccounting({
+      comparison,
+      shardReuse,
+      baseManifest: request.baseManifest,
+      targetManifest: request.targetManifest,
+    }),
     diagnostics: mergeDiagnostics(comparison.diagnostics, shardReuse.diagnostics),
   });
 }

@@ -3,6 +3,7 @@ import type { WisContractReference, WisEvidenceReference } from '@workspai/share
 import { canonicalizeGraphValue } from '../conformance/canonical-value.js';
 import { validateGraphBindingProfile, validateGraphQuery } from '../conformance/query.js';
 import {
+  GRAPH_EXECUTABLE_QUERY_STRATEGIES,
   GRAPH_QUERY_CONTRACT,
   GRAPH_QUERY_RESULT_CONTRACT,
   GRAPH_RETRIEVAL_PLAN_CONTRACT,
@@ -11,6 +12,7 @@ import {
   type GraphDiagnostic,
   type GraphEdge,
   type GraphEntityReference,
+  type GraphExecutableQueryStrategy,
   type GraphNormalizedQuery,
   type GraphOperationalRiskResult,
   type GraphPath,
@@ -23,6 +25,17 @@ import {
   type GraphRetrievalCandidate,
 } from '../contracts/index.js';
 import type { GraphDigestPort } from '../ports/index.js';
+import {
+  lookupGraphQueryCache,
+  publishGraphQueryCache,
+  type GraphQueryCacheLookup,
+  type GraphQueryCacheRequest,
+} from './query-cache.js';
+
+export interface GraphQueryOptions {
+  readonly bindingProfiles?: readonly GraphBindingProfile[];
+  readonly cache?: GraphQueryCacheRequest;
+}
 
 const DEFAULT_BUDGET: GraphQueryBudget = Object.freeze({
   maxDepth: 4,
@@ -117,8 +130,12 @@ function canonical(value: unknown): string {
   return normalized.value;
 }
 
-function selectedStrategy(query: GraphQuery): 'direct' | 'graph' | 'hybrid' {
-  if (query.strategy && query.strategy !== 'auto') return query.strategy;
+function isExecutableQueryStrategy(strategy: string): strategy is GraphExecutableQueryStrategy {
+  return (GRAPH_EXECUTABLE_QUERY_STRATEGIES as readonly string[]).includes(strategy);
+}
+
+function selectedStrategy(query: GraphQuery): GraphExecutableQueryStrategy {
+  if (query.strategy && isExecutableQueryStrategy(query.strategy)) return query.strategy;
   if (['evidence', 'owners', 'entry-points'].includes(query.kind)) return 'direct';
   if (['operational-risk', 'bindings', 'architecture-conformance'].includes(query.kind))
     return 'hybrid';
@@ -412,7 +429,7 @@ function retrievalCandidates(
   query: GraphNormalizedQuery,
   edgeCount: number
 ): readonly GraphRetrievalCandidate[] {
-  return (['direct', 'graph', 'hybrid'] as const).map((strategy) => {
+  return GRAPH_EXECUTABLE_QUERY_STRATEGIES.map((strategy) => {
     const eligible = strategy !== 'direct' || query.budget.maxDepth === 1 || !query.target;
     return {
       strategy,
@@ -465,7 +482,7 @@ export async function queryGraph(
   graph: GraphCanonicalGraph,
   input: GraphQuery,
   digest: GraphDigestPort,
-  options: { readonly bindingProfiles?: readonly GraphBindingProfile[] } = {}
+  options: GraphQueryOptions = {}
 ): Promise<
   GraphQueryExecutionResult<readonly GraphEntityReference[] | readonly GraphOperationalRiskResult[]>
 > {
@@ -540,6 +557,26 @@ export async function queryGraph(
       '/subject',
       'Query subject is outside the declared scope.'
     );
+
+  let cacheLookup: GraphQueryCacheLookup | undefined;
+  if (options.cache) {
+    cacheLookup = await lookupGraphQueryCache({
+      graph,
+      query,
+      digest,
+      cache: options.cache,
+    });
+    if (cacheLookup.status === 'hit') {
+      return {
+        accepted: true,
+        value: cacheLookup.result as GraphQueryResult<
+          readonly GraphEntityReference[] | readonly GraphOperationalRiskResult[]
+        >,
+        issues: [],
+        cache: cacheLookup.observation,
+      };
+    }
+  }
 
   const scopedNodeIds = new Set(
     graph.nodes
@@ -788,5 +825,31 @@ export async function queryGraph(
     },
     diagnostics,
   };
-  return { accepted: true, value, issues: [] };
+  const execution: GraphQueryExecutionResult<
+    readonly GraphEntityReference[] | readonly GraphOperationalRiskResult[]
+  > = { accepted: true, value, issues: [] };
+  if (!cacheLookup || cacheLookup.status !== 'proceed') return execution;
+  if (cacheLookup.key && cacheLookup.keyDigest && options.cache) {
+    try {
+      await publishGraphQueryCache({
+        digest,
+        cache: options.cache,
+        key: cacheLookup.key,
+        keyDigest: cacheLookup.keyDigest,
+        result: value,
+      });
+    } catch {
+      return {
+        ...execution,
+        cache: {
+          ...cacheLookup.observation,
+          reasons: Object.freeze([
+            ...(cacheLookup.observation.reasons ?? []),
+            'GRAPH_QUERY_CACHE_PUBLISH_UNAVAILABLE',
+          ]),
+        },
+      };
+    }
+  }
+  return { ...execution, cache: cacheLookup.observation };
 }

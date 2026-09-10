@@ -1,8 +1,10 @@
 import {
   GRAPH_BINDING_PROFILE_CONTRACT,
   GRAPH_PROOF_POLICY_CONTRACT,
+  GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES,
   GRAPH_QUERY_CONTRACT,
   GRAPH_QUERY_RESULT_CONTRACT,
+  GRAPH_QUERY_STRATEGIES,
   type GraphBindingProfile,
   type GraphProofPolicy,
   type GraphQuery,
@@ -217,13 +219,22 @@ export function validateGraphQuery(input: unknown): GraphValidationResult<GraphQ
           'Query relations must be unique and bounded.'
         )
       );
-    if (
-      input.strategy !== undefined &&
-      !['direct', 'graph', 'hybrid', 'auto'].includes(String(input.strategy))
-    )
-      issues.push(
-        issue('GRAPH_QUERY_STRATEGY_INVALID', '/strategy', 'Query strategy is unsupported.')
-      );
+    if (input.strategy !== undefined) {
+      const strategy = String(input.strategy);
+      if ((GRAPH_PROHIBITED_RETRIEVAL_STRATEGIES as readonly string[]).includes(strategy)) {
+        issues.push(
+          issue(
+            'GRAPH_QUERY_STRATEGY_PROHIBITED',
+            '/strategy',
+            'Similarity and vector retrieval cannot be a query strategy or canonical reuse authority.'
+          )
+        );
+      } else if (!(GRAPH_QUERY_STRATEGIES as readonly string[]).includes(strategy)) {
+        issues.push(
+          issue('GRAPH_QUERY_STRATEGY_INVALID', '/strategy', 'Query strategy is unsupported.')
+        );
+      }
+    }
     if (input.minimumProof !== undefined && !PROOF_STATES.has(String(input.minimumProof)))
       issues.push(
         issue('GRAPH_QUERY_PROOF_INVALID', '/minimumProof', 'Query proof threshold is invalid.')

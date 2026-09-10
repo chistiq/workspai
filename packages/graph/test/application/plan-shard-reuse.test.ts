@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { compareContentStateManifests } from '../../src/application/compare-content-state-manifest.js';
+import { buildContentStateManifest } from '../../src/application/build-content-state-manifest.js';
 import { planShardReuseAndInvalidation } from '../../src/application/plan-shard-reuse.js';
-import type {
-  GraphContentStateLeaf,
-  GraphContentStateManifest,
+import {
+  GRAPH_CANONICAL_SHARD_REUSE_IDENTITY,
+  GRAPH_SHARD_REUSE_REJECTION_REASONS,
+  type GraphContentStateLeaf,
+  type GraphContentStateManifest,
 } from '../../src/contracts/index.js';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -32,11 +35,18 @@ function replaceFile(
   locator: string,
   next: Partial<GraphContentStateLeaf>
 ): GraphContentStateManifest {
+  const merkleRoot = digest('1111111111111111111111111111111111111111111111111111111111111111');
   return withManifest(manifest, {
-    nodes: manifest.nodes.map((node) =>
-      node.kind === 'file' && node.locator === locator ? { ...node, ...next } : node
-    ),
-    merkleRoot: digest('1111111111111111111111111111111111111111111111111111111111111111'),
+    nodes: manifest.nodes.map((node) => {
+      if (node.kind === 'file' && node.locator === locator) {
+        return { ...node, ...next };
+      }
+      if (node.kind === 'directory') {
+        return { ...node, digest: merkleRoot };
+      }
+      return node;
+    }),
+    merkleRoot,
     shardDependencies: manifest.shardDependencies.map((shard) =>
       shard.shardId.endsWith(`:${locator}`)
         ? {
@@ -49,6 +59,22 @@ function replaceFile(
 }
 
 describe('planShardReuseAndInvalidation', () => {
+  it('admits only exact-digest reuse reasons and never similarity', () => {
+    expect(GRAPH_CANONICAL_SHARD_REUSE_IDENTITY).toBe('exact-digest');
+    expect([...GRAPH_SHARD_REUSE_REJECTION_REASONS]).toEqual([
+      'missing-target-shard',
+      'unauthorized-shard',
+      'content-changed',
+      'content-incompatible',
+      'semantic-incompatible',
+      'missing-semantic-dependency',
+      'extra-semantic-dependency',
+    ]);
+    for (const banned of ['similarity', 'similar', 'approximate', 'knn', 'vector', 'embedding']) {
+      expect(GRAPH_SHARD_REUSE_REJECTION_REASONS).not.toContain(banned);
+    }
+  });
+
   it('reuses shards when content and semantic dependencies remain exact', () => {
     const manifest = readManifest('minimal-content-state-manifest.json');
     const plan = planShardReuseAndInvalidation({
@@ -178,5 +204,55 @@ describe('planShardReuseAndInvalidation', () => {
       reason: 'content-incompatible',
       detail: 'missing-content-membership',
     });
+  });
+
+  it('rejects shards when only scan-profile identity renewed', () => {
+    const scan = digest('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    const nextScan = digest('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    const leaf = {
+      locator: 'src/index.ts',
+      contentDigest: digest('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'),
+      inputKind: 'source-file',
+      scanProfileDigest: scan,
+    };
+    const shard = {
+      shardId: 'shard:ecmascript-imports:src/index.ts',
+      contentDigest: leaf.contentDigest,
+      semanticDependencies: [
+        digest('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
+      ],
+      providerStages: ['workspai.graph.provider.ecmascript-imports'],
+      graphRegions: ['imports'],
+      projections: ['workspai.graph.projection.dependency'],
+      queryIndexes: ['dependency-neighbors'],
+    };
+    const base = buildContentStateManifest({
+      scope: { kind: 'project', projectIds: ['project:fixture'] },
+      generatedAt: '2026-09-09T20:00:00.000Z',
+      scanProfileDigest: scan,
+      leaves: [leaf],
+      shardDependencies: [shard],
+    });
+    const target = buildContentStateManifest({
+      scope: { kind: 'project', projectIds: ['project:fixture'] },
+      generatedAt: '2026-09-09T20:01:00.000Z',
+      scanProfileDigest: nextScan,
+      leaves: [{ ...leaf, scanProfileDigest: nextScan }],
+      shardDependencies: [shard],
+    });
+    const comparison = compareContentStateManifests({ base, target });
+    const plan = planShardReuseAndInvalidation({
+      base,
+      target,
+      changedInputs: comparison.changedInputs,
+    });
+    expect(comparison.changedInputs[0]?.kind).toBe('renewed');
+    expect(plan.reused).toEqual([]);
+    expect(plan.rejected).toEqual([
+      expect.objectContaining({
+        shardId: shard.shardId,
+        reason: 'content-changed',
+      }),
+    ]);
   });
 });

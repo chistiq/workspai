@@ -250,6 +250,12 @@ describe('Graph G1 graph-domain contracts', () => {
     expect(validateGraphQueryCacheKey({ ...key, graphGeneration: { id: 'latest' } })).toMatchObject(
       { accepted: false }
     );
+    expect(
+      validateGraphQueryCacheKey({
+        ...key,
+        graphGeneration: { ...key.graphGeneration, id: 'latest' },
+      })
+    ).toMatchObject({ accepted: false });
   });
 
   it('validates publication, model binding and every cache lifecycle envelope', () => {

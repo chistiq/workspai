@@ -80,6 +80,7 @@ function generationReference(value: unknown): boolean {
     record(value) &&
     typeof value.id === 'string' &&
     value.id.length > 0 &&
+    value.id !== 'latest' &&
     typeof value.generatedAt === 'string' &&
     ISO_TIMESTAMP.test(value.generatedAt) &&
     digest(value.contentDigest)

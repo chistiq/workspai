@@ -208,6 +208,7 @@ export function planShardReuseAndInvalidation(
       continue;
     }
 
+    // Exact content and semantic digest equality only; similarity is not a reuse path.
     reused.push(targetShard);
   }
 

@@ -182,14 +182,19 @@ export interface GraphContentStateComparisonResult {
 
 export type GraphShardReuseDecisionKind = 'reuse' | 'reject';
 
-export type GraphShardReuseRejectionReason =
-  | 'missing-target-shard'
-  | 'unauthorized-shard'
-  | 'content-changed'
-  | 'content-incompatible'
-  | 'semantic-incompatible'
-  | 'missing-semantic-dependency'
-  | 'extra-semantic-dependency';
+/** Canonical shards reuse only on exact content and semantic digest equality. */
+export const GRAPH_CANONICAL_SHARD_REUSE_IDENTITY = 'exact-digest' as const;
+
+export const GRAPH_SHARD_REUSE_REJECTION_REASONS = [
+  'missing-target-shard',
+  'unauthorized-shard',
+  'content-changed',
+  'content-incompatible',
+  'semantic-incompatible',
+  'missing-semantic-dependency',
+  'extra-semantic-dependency',
+] as const;
+export type GraphShardReuseRejectionReason = (typeof GRAPH_SHARD_REUSE_REJECTION_REASONS)[number];
 
 export interface GraphShardReuseDecision {
   readonly shardId: string;

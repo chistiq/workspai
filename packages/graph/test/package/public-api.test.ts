@@ -7,6 +7,7 @@ import {
   GRAPH_STANDARD_REPO_BUILD_POLICY,
   buildRepoGraph,
   composeGraph,
+  createQueryCacheKey,
   getGraphPackageStatus,
   queryGraph,
 } from '../../src/index.js';
@@ -42,6 +43,7 @@ describe('@workspai/graph development package', () => {
       'graph-model-generation-binding-admission',
       'quality-semantic-admission',
       'query-cache-lifecycle-semantic-admission',
+      'optional-query-cache-store',
       'bounded-canonical-digest-replay',
       'evidence-independence-assessment',
       'deterministic-reference-composition',
@@ -76,11 +78,25 @@ describe('@workspai/graph development package', () => {
       'explicit-generation-publication',
       'standalone-executable',
       'installed-cli-smoke',
+      'honest-incremental-execution-accounting',
+      'scan-profile-merkle-leaf-identity',
+      'executed-canonical-generation-delta',
+      'query-cache-store-invalidation',
+      'merkle-unequal-branch-walk',
+      'semantic-dependency-shard-invalidation',
+      'observation-excluded-merkle-identity',
+      'git-nongit-incremental-digest-parity',
+      'official-provider-incremental-equivalence',
+      'similarity-barred-from-canonical-reuse',
+      'added-input-provider-reobservation',
+      'nfc-portable-content-locators',
+      'official-cross-language-incremental-mutations',
     ]);
   });
 
   it('exports the G3 proof-carrying query candidate without claiming stable publication', () => {
     expect(queryGraph).toBeTypeOf('function');
+    expect(createQueryCacheKey).toBeTypeOf('function');
     expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
   });
 

@@ -81,19 +81,17 @@ describe('Git-aware inventory reread planning', () => {
     ).toEqual([]);
   });
 
-  it('parses rename records without treating Git as Merkle authority', () => {
-    const journal = parseGitStatusPorcelain('R  src/old.ts -> src/index.ts\n');
-    expect(journal.records[0]).toMatchObject({
-      locator: 'src/index.ts',
-      kind: 'renamed',
-      priorLocator: 'src/old.ts',
-    });
+  it('marks the prior locator deleted so a trusted rename cannot reuse the old leaf', () => {
+    const prior = manifest();
     const plan = planInventoryReread({
-      priorManifest: manifest(),
-      journal,
+      priorManifest: prior,
+      journal: parseGitStatusPorcelain('R  src/index.ts -> src/renamed.ts\n'),
       scanProfileDigestValue: scanProfileDigest.value,
     });
-    expect(plan.rereadLocators).toContain('src/index.ts');
+    expect(plan.deletedLocators).toEqual(['src/index.ts']);
+    expect(plan.rereadLocators).toEqual(['src/renamed.ts']);
+    expect(plan.reusedLocators).toEqual(['README.md']);
+    expect(plan.observations['src/renamed.ts']?.priorLocator).toBe('src/index.ts');
   });
 
   it('marks trusted deletions and rereads when the scan profile drifted', () => {
@@ -145,5 +143,47 @@ describe('Git-aware inventory reread planning', () => {
       'unknown',
       'untracked',
     ]);
+  });
+
+  it('normalizes NFD porcelain locators to NFC so skip-reread matches inventory', () => {
+    const prior = buildContentStateManifest({
+      scope: { kind: 'project', projectIds: ['project:fixture'] },
+      generatedAt: '2026-09-09T20:00:00.000Z',
+      scanProfileDigest,
+      leaves: [
+        {
+          locator: 'src/Caf\u00e9.ts',
+          contentDigest: {
+            algorithm: 'sha256',
+            value: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          },
+          inputKind: 'source-file',
+          scanProfileDigest,
+        },
+      ],
+    });
+    const journal = parseGitStatusPorcelain(' M src/Cafe\u0301.ts\n');
+    expect(journal.trust).toBe('trusted');
+    expect(journal.records[0]?.locator).toBe('src/Caf\u00e9.ts');
+    const plan = planInventoryReread({
+      priorManifest: prior,
+      journal,
+      scanProfileDigestValue: scanProfileDigest.value,
+    });
+    expect(plan.rereadLocators).toEqual(['src/Caf\u00e9.ts']);
+    expect(plan.reusedLocators).toEqual([]);
+  });
+
+  it('treats escaping porcelain paths as untrusted so skip-reread cannot proceed', () => {
+    const journal = parseGitStatusPorcelain(' M ../escape.ts\n');
+    expect(journal.trust).toBe('untrusted');
+    expect(journal.records).toEqual([]);
+    const plan = planInventoryReread({
+      priorManifest: manifest(),
+      journal,
+      scanProfileDigestValue: scanProfileDigest.value,
+    });
+    expect(plan.reusedLocators).toEqual([]);
+    expect(plan.rereadLocators).toEqual(['README.md', 'src/index.ts']);
   });
 });

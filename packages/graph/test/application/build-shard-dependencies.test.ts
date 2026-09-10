@@ -114,4 +114,55 @@ describe('buildShardDependenciesFromSources', () => {
     expect(shards[0]?.graphRegions).toEqual(['custom.family']);
     expect(shards[0]?.semanticDependencies).toEqual([digest]);
   });
+
+  it('unions semantic stamps onto processing digests', () => {
+    const source: GraphCompositionSource = {
+      manifest,
+      batch: {
+        contract: GRAPH_FACT_BATCH_CONTRACT,
+        provider: { id: manifest.id, version: manifest.version },
+        batchId: 'batch:fixture',
+        scope: { kind: 'project', projectIds: ['project:fixture'] },
+        inputs: [{ locator: 'src/index.ts', digest }],
+        facts: [],
+        diagnostics: [],
+        coverage: [],
+        unknownZones: [],
+        unsupportedZones: [],
+        redaction: { policy: 'portable-default', redacted: 0, omitted: 0 },
+        status: 'complete',
+        processing: [
+          {
+            input: { locator: 'src/index.ts', digest },
+            provider: { id: manifest.id, version: manifest.version },
+            stage: { id: 'unknown-stage', version: manifest.version },
+            outcome: 'processed',
+            priorDigest: digest,
+            diagnostics: [],
+          },
+        ],
+      },
+    };
+    const ontology = { algorithm: 'sha256' as const, value: '1'.repeat(64) };
+    const proofPolicy = { algorithm: 'sha256' as const, value: '2'.repeat(64) };
+    const redaction = { algorithm: 'sha256' as const, value: '3'.repeat(64) };
+    const compositionPolicy = { algorithm: 'sha256' as const, value: '4'.repeat(64) };
+    const providerDigest = { algorithm: 'sha256' as const, value: '5'.repeat(64) };
+    const shards = buildShardDependenciesFromSources([source], {
+      ontology,
+      proofPolicy,
+      redaction,
+      compositionPolicy,
+      providers: { [manifest.id]: providerDigest },
+      required: [ontology, proofPolicy, redaction, compositionPolicy],
+    });
+    expect(shards[0]?.semanticDependencies).toEqual([
+      ontology,
+      proofPolicy,
+      redaction,
+      compositionPolicy,
+      providerDigest,
+      digest,
+    ]);
+  });
 });

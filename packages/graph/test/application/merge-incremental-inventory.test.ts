@@ -138,6 +138,32 @@ describe('mergeIncrementalInventory', () => {
       ]).map((shard) => shard.shardId)
     ).toEqual(['shard:stage:src/keep.ts']);
   });
+
+  it('drops shards whose providers are no longer registered', () => {
+    const prior = manifest([
+      {
+        locator: 'src/keep.ts',
+        contentDigest: { algorithm: 'sha256', value: 'c'.repeat(64) },
+        inputKind: 'source-file',
+        scanProfileDigest,
+        observations: { sizeBytes: 8 },
+      },
+    ]);
+    expect(
+      projectShardDependencies(
+        prior,
+        [
+          {
+            locator: 'src/keep.ts',
+            mediaType: 'text/typescript',
+            byteLength: 8,
+            digest: { algorithm: 'sha256', value: 'c'.repeat(64) },
+          },
+        ],
+        { registeredProviderIds: ['other'] }
+      )
+    ).toEqual([]);
+  });
 });
 
 describe('graphInputMediaType', () => {
