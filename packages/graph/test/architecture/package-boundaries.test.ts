@@ -179,8 +179,7 @@ describe('Graph architecture boundaries', () => {
     expect(rootApi).not.toMatch(
       /buildGraphChangeOverlay|planIncrementalGraphBuild|compareContentStateManifests|buildIncrementalRepoGraph|summarizeCanonicalGraphDelta|planQueryCacheInvalidation|applyQueryCacheInvalidations|collectGraphSemanticDependencies|providersRequiredForAddedInputs|addedInputLocators/
     );
-    expect(rootApi).toMatch(/GRAPH_STANDALONE_SUPPORT_MATRIX/);
-    expect(rootApi).toMatch(/GRAPH_CLI_EXIT_CODES/);
+    expect(rootApi).not.toMatch(/scoreGraphRetrievalBenchmark/);
   });
 
   it('keeps similarity and vector retrieval out of canonical query and shard reuse', () => {

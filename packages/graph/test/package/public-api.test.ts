@@ -99,6 +99,8 @@ describe('@workspai/graph development package', () => {
       'proposed-change-overlay',
       'standalone-cli-json-contract',
       'standalone-support-matrix',
+      'cyclonedx-sbom-candidate',
+      'synthetic-retrieval-benchmark',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',

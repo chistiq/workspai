@@ -127,6 +127,7 @@ try {
       import { GRAPH_PROVIDER_MANIFEST_CONTRACT, GRAPH_IDENTITY_SCHEME } from '@workspai/graph/contracts';
       import { validateGraphProviderManifest } from '@workspai/graph/conformance';
       import { buildReviewContextSlice, composeGraph, GRAPH_STANDARD_COMPOSITION_POLICY, GRAPH_STANDALONE_SUPPORT_MATRIX, GRAPH_CLI_EXIT_CODES, projectRepositoryPreview, queryGraph } from '@workspai/graph';
+      import { GRAPH_FORBIDDEN_RUNTIME_DEPENDENCIES, scoreGraphRetrievalBenchmark } from '@workspai/graph/testing';
       import type { GraphExecutionPorts } from '@workspai/graph';
       const wire: WorkspaiGraphProviderManifestCandidate = {
         contract: GRAPH_PROVIDER_MANIFEST_CONTRACT,
@@ -148,6 +149,8 @@ try {
       void queryGraph;
       void projectRepositoryPreview;
       void buildReviewContextSlice;
+      void GRAPH_FORBIDDEN_RUNTIME_DEPENDENCIES;
+      void scoreGraphRetrievalBenchmark;
     `,
     'utf8'
   );
@@ -202,6 +205,7 @@ try {
         if (!providers.GRAPH_PROVIDER_MANIFEST_CONTRACT) process.exit(12);
         if (!conformance.GRAPH_CONFORMANCE_PROFILE) process.exit(13);
         if (!testing.GRAPH_FORBIDDEN_RUNTIME_DEPENDENCIES) process.exit(14);
+        if (typeof testing.scoreGraphRetrievalBenchmark !== 'function') process.exit(38);
         const status = graph.getGraphPackageStatus({ kind: 'project', projectIds: ['project:packed-consumer'] });
         if (!validateWisCoreResultEnvelope(status).valid) process.exit(15);
         if ((status.compatibility?.unsupportedCapabilities ?? []).includes('query')) process.exit(36);
@@ -402,6 +406,7 @@ try {
     'schemas/structural-extractor-profile.v0.1.0-candidate.schema.json',
     'schemas/cli-result.v0.1.0-candidate.schema.json',
     'schemas/standalone-support-matrix.v0.1.0-candidate.schema.json',
+    'fixtures/g7/retrieval-corpus.v1.json',
   ]) {
     if (!paths.includes(requiredPath))
       throw new Error(`packed Graph package omits ${requiredPath}`);

@@ -29,14 +29,15 @@ describe('Graph G7 stage authorization', () => {
         'stable-export-map-lock',
         'cli-json-and-exit-contract',
         'published-support-limitations-matrix',
+        'sbom-generation-candidate',
+        'retrieval-benchmark-command',
         'g7-standalone-stable-admission',
       ])
     );
     for (const checkpoint of checkpoints) {
       if (
         checkpoint.id === 'g7-standalone-stable-admission' ||
-        checkpoint.id === 'sbom-provenance-security-verification' ||
-        checkpoint.id === 'retrieval-benchmark-command'
+        checkpoint.id === 'sbom-provenance-security-verification'
       ) {
         expect(checkpoint.status).toBe('planned');
         continue;

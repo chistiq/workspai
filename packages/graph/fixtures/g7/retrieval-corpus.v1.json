@@ -1,0 +1,345 @@
+{
+  "id": "workspai.graph.retrieval-corpus.synthetic-g7",
+  "version": "0.1.0-candidate",
+  "groundTruthClass": "synthetic",
+  "accuracyClaim": "none",
+  "graph": {
+    "contract": { "id": "workspai.graph.canonical-graph", "version": "0.1.0-candidate" },
+    "graphVersion": "0.1.0-candidate",
+    "generation": {
+      "reference": {
+        "id": "generation:retrieval-corpus-g7",
+        "generatedAt": "2026-09-10T00:00:00Z",
+        "contentDigest": {
+          "algorithm": "sha256",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "graphSchema": { "id": "workspai.graph.canonical-graph", "version": "0.1.0-candidate" },
+      "architectureEpoch": "wis-graph-1",
+      "ontologySetDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "proofPolicySetDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "inputsDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "factSetDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "providerSetDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "compositionPolicyDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "ontology": [{ "id": "workspai.graph.ontology.core", "version": "0.1.0-candidate" }],
+    "nodes": [
+      {
+        "id": "module:app",
+        "kind": "module",
+        "scope": { "kind": "project", "projectIds": ["project:retrieval-g7"] },
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" }
+      },
+      {
+        "id": "module:lib",
+        "kind": "module",
+        "scope": { "kind": "project", "projectIds": ["project:retrieval-g7"] },
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" }
+      },
+      {
+        "id": "module:core",
+        "kind": "module",
+        "scope": { "kind": "project", "projectIds": ["project:retrieval-g7"] },
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" }
+      },
+      {
+        "id": "symbol:health",
+        "kind": "symbol",
+        "scope": { "kind": "project", "projectIds": ["project:retrieval-g7"] },
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" }
+      },
+      {
+        "id": "endpoint:health",
+        "kind": "endpoint",
+        "scope": { "kind": "project", "projectIds": ["project:retrieval-g7"] },
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" }
+      },
+      {
+        "id": "test:health",
+        "kind": "test",
+        "scope": { "kind": "project", "projectIds": ["project:retrieval-g7"] },
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" }
+      }
+    ],
+    "edges": [
+      {
+        "id": "app-lib",
+        "from": "module:app",
+        "to": "module:lib",
+        "relation": "depends-on",
+        "semantics": "structural",
+        "state": "accepted",
+        "facts": ["fact:app-lib"],
+        "derivations": ["extracted"],
+        "proof": {
+          "policy": { "id": "workspai.graph.proof.standard", "version": "1" },
+          "state": "corroborated",
+          "authorities": ["observed"],
+          "evidence": [
+            {
+              "id": "evidence:app-lib",
+              "sourceKind": "source-file",
+              "relativeLocator": "src/app.ts",
+              "digest": {
+                "algorithm": "sha256",
+                "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ],
+          "corroborationGroups": [],
+          "counterEvidence": [],
+          "missingRequirements": [],
+          "evaluatedAt": "2026-09-10T00:00:00Z",
+          "inputDigest": {
+            "algorithm": "sha256",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "explanationCode": "GRAPH_EDGE_CORROBORATED"
+        },
+        "freshness": { "status": "current" },
+        "confidence": 0.9,
+        "explanation": { "code": "GRAPH_EDGE_CORROBORATED", "drivers": ["retrieval-corpus"] }
+      },
+      {
+        "id": "lib-core",
+        "from": "module:lib",
+        "to": "module:core",
+        "relation": "depends-on",
+        "semantics": "structural",
+        "state": "accepted",
+        "facts": ["fact:lib-core"],
+        "derivations": ["extracted"],
+        "proof": {
+          "policy": { "id": "workspai.graph.proof.standard", "version": "1" },
+          "state": "corroborated",
+          "authorities": ["observed"],
+          "evidence": [
+            {
+              "id": "evidence:lib-core",
+              "sourceKind": "source-file",
+              "relativeLocator": "src/lib.ts",
+              "digest": {
+                "algorithm": "sha256",
+                "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ],
+          "corroborationGroups": [],
+          "counterEvidence": [],
+          "missingRequirements": [],
+          "evaluatedAt": "2026-09-10T00:00:00Z",
+          "inputDigest": {
+            "algorithm": "sha256",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "explanationCode": "GRAPH_EDGE_CORROBORATED"
+        },
+        "freshness": { "status": "current" },
+        "confidence": 0.9,
+        "explanation": { "code": "GRAPH_EDGE_CORROBORATED", "drivers": ["retrieval-corpus"] }
+      },
+      {
+        "id": "health-implementation",
+        "from": "symbol:health",
+        "to": "endpoint:health",
+        "relation": "implements",
+        "semantics": "structural",
+        "state": "accepted",
+        "facts": ["fact:health-implementation"],
+        "derivations": ["extracted"],
+        "proof": {
+          "policy": { "id": "workspai.graph.proof.standard", "version": "1" },
+          "state": "corroborated",
+          "authorities": ["observed"],
+          "evidence": [
+            {
+              "id": "evidence:health-implementation",
+              "sourceKind": "source-file",
+              "relativeLocator": "src/health.ts",
+              "digest": {
+                "algorithm": "sha256",
+                "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ],
+          "corroborationGroups": [],
+          "counterEvidence": [],
+          "missingRequirements": [],
+          "evaluatedAt": "2026-09-10T00:00:00Z",
+          "inputDigest": {
+            "algorithm": "sha256",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "explanationCode": "GRAPH_EDGE_CORROBORATED"
+        },
+        "freshness": { "status": "current" },
+        "confidence": 0.9,
+        "explanation": { "code": "GRAPH_EDGE_CORROBORATED", "drivers": ["retrieval-corpus"] }
+      },
+      {
+        "id": "health-test",
+        "from": "symbol:health",
+        "to": "test:health",
+        "relation": "verified-by",
+        "semantics": "derived",
+        "state": "accepted",
+        "facts": ["fact:health-test"],
+        "derivations": ["extracted"],
+        "proof": {
+          "policy": { "id": "workspai.graph.proof.standard", "version": "1" },
+          "state": "corroborated",
+          "authorities": ["observed"],
+          "evidence": [
+            {
+              "id": "evidence:health-test",
+              "sourceKind": "source-file",
+              "relativeLocator": "test/health.test.ts",
+              "digest": {
+                "algorithm": "sha256",
+                "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ],
+          "corroborationGroups": [],
+          "counterEvidence": [],
+          "missingRequirements": [],
+          "evaluatedAt": "2026-09-10T00:00:00Z",
+          "inputDigest": {
+            "algorithm": "sha256",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "explanationCode": "GRAPH_EDGE_CORROBORATED"
+        },
+        "freshness": { "status": "current" },
+        "confidence": 0.9,
+        "explanation": { "code": "GRAPH_EDGE_CORROBORATED", "drivers": ["retrieval-corpus"] }
+      }
+    ],
+    "assertions": [],
+    "disputes": [],
+    "unresolved": [],
+    "diagnostics": [
+      {
+        "code": "GRAPH_FIXTURE_UNKNOWN",
+        "severity": "warning",
+        "path": "/unsupported/ruby",
+        "message": "Unsupported language remains an explicit unknown zone."
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "path-endpoint-to-test",
+      "family": "identity-and-relation-retrieval",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "path",
+        "subject": "endpoint:health",
+        "target": "test:health",
+        "relations": ["implements", "verified-by"],
+        "direction": "both"
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": false,
+        "selectedStrategy": "graph",
+        "pathNodeIds": ["endpoint:health", "symbol:health", "test:health"],
+        "resultIds": ["endpoint:health", "symbol:health", "test:health"],
+        "unknownCodes": ["GRAPH_FIXTURE_UNKNOWN"]
+      }
+    },
+    {
+      "id": "dependencies-from-app",
+      "family": "dependency-traversal",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "dependencies",
+        "subject": "module:app"
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": false,
+        "selectedStrategy": "graph",
+        "resultIds": ["module:app", "module:core", "module:lib"]
+      }
+    },
+    {
+      "id": "impact-from-core",
+      "family": "impact-prediction",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "impact",
+        "subject": "module:core"
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": false,
+        "selectedStrategy": "graph",
+        "resultIds": ["module:app", "module:core", "module:lib"]
+      }
+    },
+    {
+      "id": "entry-points",
+      "family": "entry-point-discovery",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "entry-points"
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": false,
+        "selectedStrategy": "direct",
+        "resultIds": ["endpoint:health"]
+      }
+    },
+    {
+      "id": "truncated-dependencies",
+      "family": "truncation-preservation",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "dependencies",
+        "subject": "module:app",
+        "budget": { "maxDepth": 1, "maxNodes": 8, "maxEdges": 8, "maxEvidence": 8 }
+      },
+      "expect": {
+        "accepted": true,
+        "truncated": true,
+        "selectedStrategy": "graph"
+      }
+    },
+    {
+      "id": "similarity-prohibited",
+      "family": "unsupported-strategy-preservation",
+      "query": {
+        "contract": { "id": "workspai.graph.query", "version": "0.1.0-candidate" },
+        "kind": "dependencies",
+        "subject": "module:app",
+        "strategy": "similarity"
+      },
+      "expect": {
+        "accepted": false,
+        "issueCodes": ["GRAPH_QUERY_STRATEGY_PROHIBITED"]
+      }
+    }
+  ]
+}

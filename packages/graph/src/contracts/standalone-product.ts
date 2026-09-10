@@ -220,12 +220,32 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
     'query-cache-is-optional-injected-store',
     'overlays-do-not-publish-canonical-generations',
     'external-provider-sdk-deferred',
-    'sbom-and-provenance-pending',
+    'signed-provenance-unattested',
+    'retrieval-benchmark-is-synthetic-fixture-labelled',
     'g6-cross-platform-admission-pending',
     'standalone-stable-not-admitted',
     'central-cli-runtime-prohibited',
   ] as const),
 });
+
+export const GRAPH_RETRIEVAL_BENCHMARK_CONTRACT = defineWisContract({
+  id: 'workspai.graph.retrieval-benchmark',
+  version: '0.1.0-candidate',
+});
+
+export const GRAPH_RETRIEVAL_BENCHMARK_CLAIM = Object.freeze({
+  groundTruthClass: 'synthetic',
+  accuracyClaim: 'none',
+  publicAccuracyClaimPermitted: false,
+} as const);
+
+export const GRAPH_SBOM_SPEC = Object.freeze({
+  bomFormat: 'CycloneDX',
+  specVersion: '1.6',
+  provenance: 'unattested',
+  slsa: 'not-generated',
+  npmProvenance: 'not-generated',
+} as const);
 
 export type GraphStandaloneSupportMatrix = typeof GRAPH_STANDALONE_SUPPORT_MATRIX;
 export type GraphPublicExportMap = typeof GRAPH_PUBLIC_EXPORT_MAP;

@@ -12,6 +12,8 @@ import {
   GRAPH_PACKAGE_METADATA,
   GRAPH_PUBLIC_EXPORT_MAP,
   GRAPH_QUERY_CACHE_OPERATING_BOUNDARY,
+  GRAPH_RETRIEVAL_BENCHMARK_CLAIM,
+  GRAPH_SBOM_SPEC,
   GRAPH_STANDALONE_PACKED_JOBS,
   GRAPH_STANDALONE_SUPPORT_MATRIX,
   GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT,
@@ -93,8 +95,17 @@ describe('G7 standalone product contracts', () => {
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       ...GRAPH_STANDALONE_SUPPORT_MATRIX.plannedCapabilities,
     ]);
-    expect(GRAPH_PACKAGE_METADATA.plannedCapabilities).not.toContain('incremental');
-    expect(GRAPH_PACKAGE_METADATA.plannedCapabilities).not.toContain('profile-driven-projection');
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.limitations).toEqual(
+      expect.arrayContaining([
+        'signed-provenance-unattested',
+        'retrieval-benchmark-is-synthetic-fixture-labelled',
+      ])
+    );
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.limitations).not.toContain(
+      'sbom-and-provenance-pending'
+    );
+    expect(GRAPH_SBOM_SPEC.provenance).toBe('unattested');
+    expect(GRAPH_RETRIEVAL_BENCHMARK_CLAIM.publicAccuracyClaimPermitted).toBe(false);
   });
 
   it('locks the public export map to package.json and the root entrypoint', () => {

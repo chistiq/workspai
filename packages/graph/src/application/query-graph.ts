@@ -589,17 +589,25 @@ export async function queryGraph(
         scopedNodeIds.has(edge.from) && scopedNodeIds.has(edge.to) && edgeAllowed(edge, query)
     )
     .sort((left, right) => left.id.localeCompare(right.id));
-  let traversal = traverse(graph, query, nodeById, edges);
-  let paths =
-    query.kind === 'bindings'
-      ? bindingPaths(traversal.paths, bindingProfile)
-      : [...traversal.paths];
+  let traversal: TraversalOutput;
+  let paths: GraphPath[];
   if (query.kind === 'entry-points') {
     const entryNodes = graph.nodes.filter(
       (node) => scopedNodeIds.has(node.id) && ['api', 'command', 'endpoint'].includes(node.kind)
     );
     paths = entryNodes.map((node) => toPath(graph, nodeById, [node.id], []));
-    traversal = { ...traversal, visitedNodes: graph.nodes.length };
+    traversal = {
+      paths,
+      visitedNodes: graph.nodes.length,
+      visitedEdges: 0,
+      truncationReasons: new Set(),
+    };
+  } else {
+    traversal = traverse(graph, query, nodeById, edges);
+    paths =
+      query.kind === 'bindings'
+        ? bindingPaths(traversal.paths, bindingProfile)
+        : [...traversal.paths];
   }
   if (query.kind === 'contract-topology')
     paths = paths.filter((path) =>

@@ -11,7 +11,6 @@ const g6PlanPath = 'packages/graph/governance/g6-stage-plan.v1.json';
 const registryPath = 'independent-packages.json';
 const plannedCheckpoints = new Set([
   'sbom-provenance-security-verification',
-  'retrieval-benchmark-command',
   'g7-standalone-stable-admission',
 ]);
 

@@ -185,6 +185,15 @@ describe('Graph G3 deterministic query engine', () => {
     });
   });
 
+  it('discovers entry-points without inheriting discarded traversal truncation', async () => {
+    const output = await queryGraph(graph, query({ kind: 'entry-points' }), digestPort);
+    expect(output).toMatchObject({ accepted: true });
+    if (!output.accepted) return;
+    expect(output.value.paths.map((path) => path.nodes[0]?.id)).toEqual(['endpoint:login']);
+    expect(output.value.retrievalPlan.selected).toBe('direct');
+    expect(output.value.truncation).toMatchObject({ truncated: false, reasons: [] });
+  });
+
   it('applies an exact service to deployment to owner binding profile', async () => {
     const profile = GRAPH_STANDARD_BINDING_PROFILES.serviceDeploymentOwnership;
     const output = await queryGraph(

@@ -129,6 +129,8 @@ corepack npm --workspace @workspai/graph run check
 corepack npm --workspace @workspai/graph run test:architecture
 corepack npm --workspace @workspai/graph run test:contracts
 corepack npm --workspace @workspai/graph run pack:check
+corepack npm --workspace @workspai/graph run sbom:check
+corepack npm --workspace @workspai/graph run retrieval:check
 ```
 
 Do not add a central CLI bridge merely to make the package look complete. Each

@@ -110,14 +110,31 @@
       ]
     },
     {
-      "id": "sbom-provenance-security-verification",
-      "status": "planned",
-      "evidence": ["packages/graph/src/contracts/standalone-product.ts"]
+      "id": "sbom-generation-candidate",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/scripts/generate-graph-sbom.mjs",
+        "packages/graph/governance/g7-sbom.cdx.json",
+        "packages/graph/test/governance/g7-sbom.test.ts"
+      ]
     },
     {
       "id": "retrieval-benchmark-command",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/testing/score-retrieval-benchmark.ts",
+        "packages/graph/scripts/check-retrieval-benchmark.mjs",
+        "packages/graph/fixtures/g7/retrieval-corpus.v1.json",
+        "packages/graph/test/testing/retrieval-benchmark.test.ts"
+      ]
+    },
+    {
+      "id": "sbom-provenance-security-verification",
       "status": "planned",
-      "evidence": ["packages/graph/src/contracts/standalone-product.ts"]
+      "evidence": [
+        "packages/graph/scripts/generate-graph-sbom.mjs",
+        "packages/graph/src/contracts/standalone-product.ts"
+      ]
     },
     {
       "id": "g7-standalone-stable-admission",

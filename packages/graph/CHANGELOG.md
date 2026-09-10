@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-- Opened G7 as an unauthorized local product-surface continuation: frozen CLI
-  JSON/exit contracts, public export-map lock, support/limitations matrix and
-  honest package-status ledger. Registry stays on G5; G6 remote admission stays
-  planned; G8 cannot begin. Standalone-stable, SBOM/provenance and retrieval
-  benchmarks remain planned.
+- Generated an unattested CycloneDX 1.6 SBOM candidate from Graph lockfile
+  identities without claiming npm provenance or SLSA. A pinned synthetic
+  retrieval corpus now has a reproducible benchmark command and raw result
+  format; fixture-labelled scores cannot support public accuracy claims.
+  Entry-point queries no longer inherit depth truncation from a discarded
+  graph walk.
 
 - Wired G6 Linux/macOS/Windows platform-evidence capture and a matrix combiner
   that can retain same-commit runner reports without authorizing G7. Platform
