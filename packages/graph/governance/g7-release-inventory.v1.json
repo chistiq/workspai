@@ -79,6 +79,7 @@
     ]
   },
   "packedJobs": [
+    "help",
     "inspect-json",
     "inspect-project-only",
     "inspect-source-view",
@@ -95,9 +96,15 @@
     "query-owners",
     "query-impact",
     "query-dependencies-without-subject",
+    "query-unknown-preset",
+    "query-without-preset",
+    "query-slice-without-review-context",
+    "quality-write-rejected",
+    "providers-inspect-unknown",
     "quality-json",
     "inspect-workspace-without-onboarding",
     "inspect-existing-workspace-without-selection",
+    "inspect-existing-workspace-write-without-selection",
     "inspect-write"
   ],
   "incidents": [

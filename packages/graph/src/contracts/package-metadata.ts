@@ -91,6 +91,7 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'packed-conformance-corpus',
     'incident-rollback-boundary-candidate',
     'packed-version-1-query-preset-jobs',
+    'packed-installed-product-corpus',
   ] as const,
   plannedCapabilities: ['standalone-stable', 'public-preview', 'cli-shadow-parity'] as const,
 });

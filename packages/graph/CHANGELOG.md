@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Packed published reject paths and `--target` from the installed executable,
+  and execute shipped G4 language fixtures plus G6/G7 envelope fixtures from
+  the tarball. Public accuracy, signed provenance and standalone-stable
+  admission remain unclaimed.
+
 - Packed every published query preset from the tarball, reject subject-less
   dependency queries and existing-workspace inspect without a selection, and
   score the synthetic retrieval corpus from the installed package. Public

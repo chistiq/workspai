@@ -367,6 +367,27 @@ describe('workspai-graph CLI', () => {
       expect.objectContaining({ kind: 'entry-points' })
     );
 
+    expect(
+      await runGraphCli(
+        [
+          'query',
+          '--preset',
+          'impact',
+          '--subject',
+          'entity:source',
+          '--target',
+          'entity:sink',
+          '--json',
+        ],
+        test.io,
+        test.dependencies
+      )
+    ).toBe(0);
+    expect(test.dependencies.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ kind: 'impact', subject: 'entity:source', target: 'entity:sink' })
+    );
+
     test.dependencies.query = vi.fn(async () => ({
       accepted: false as const,
       code: 'invalid-query' as const,

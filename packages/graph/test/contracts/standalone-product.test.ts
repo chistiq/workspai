@@ -6,6 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 
 import {
+  GRAPH_CLI_COMMANDS,
   GRAPH_CLI_EXIT_CODES,
   GRAPH_CLI_RESULT_CONTRACT,
   GRAPH_CLI_RESULT_SCHEMA_VERSION,
@@ -172,6 +173,7 @@ describe('G7 standalone product contracts', () => {
     });
     const packedJobIds = GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.packedJobs).toEqual(packedJobIds);
+    expect(packedJobIds[0]).toBe('help');
     expect(packedJobIds.at(-1)).toBe('inspect-write');
     expect(packedJobIds).toEqual(
       expect.arrayContaining([
@@ -179,6 +181,7 @@ describe('G7 standalone product contracts', () => {
         'inspect-source-view',
         'inspect-workspace-without-onboarding',
         'inspect-existing-workspace-without-selection',
+        'inspect-existing-workspace-write-without-selection',
         'query-dependencies',
         'query-owners',
         'query-impact',
@@ -186,7 +189,15 @@ describe('G7 standalone product contracts', () => {
         'query-architecture-conformance',
         'query-operational-risk',
         'query-dependencies-without-subject',
+        'query-unknown-preset',
+        'query-without-preset',
+        'query-slice-without-review-context',
+        'quality-write-rejected',
+        'providers-inspect-unknown',
       ])
+    );
+    expect(packedJobIds.indexOf('inspect-existing-workspace-write-without-selection')).toBeLessThan(
+      packedJobIds.indexOf('inspect-write')
     );
     expect(packedJobIds.indexOf('inspect-existing-workspace-without-selection')).toBeLessThan(
       packedJobIds.indexOf('inspect-write')
@@ -196,6 +207,24 @@ describe('G7 standalone product contracts', () => {
         (job) => 'requiresSubject' in job && job.requiresSubject
       ).map((job) => job.id)
     ).toEqual(['query-operational-risk', 'query-dependencies', 'query-owners', 'query-impact']);
+    expect(
+      GRAPH_STANDALONE_PACKED_JOBS.filter(
+        (job) => 'requiresTarget' in job && job.requiresTarget
+      ).map((job) => job.id)
+    ).toEqual(['query-impact']);
+    expect(
+      GRAPH_STANDALONE_PACKED_JOBS.filter((job) => 'output' in job && job.output === 'help').map(
+        (job) => job.id
+      )
+    ).toEqual(['help']);
+    for (const command of GRAPH_CLI_COMMANDS) {
+      expect(
+        GRAPH_STANDALONE_PACKED_JOBS.some((job) =>
+          (job.args as readonly string[]).includes(command)
+        ),
+        `packed jobs omit CLI command ${command}`
+      ).toBe(true);
+    }
     for (const preset of Object.keys(GRAPH_QUERY_PRESETS)) {
       expect(
         GRAPH_STANDALONE_PACKED_JOBS.some((job) =>
@@ -209,6 +238,8 @@ describe('G7 standalone product contracts', () => {
     );
     expect(packChecker).toMatch(/GRAPH_STANDALONE_PACKED_JOBS/);
     expect(packChecker).toMatch(/GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY/);
+    expect(packChecker).toMatch(/fixtures\/g4\/structural-extractor-profile\.json/);
+    expect(packChecker).toMatch(/GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE/);
     expect(GRAPH_QUERY_CACHE_OPERATING_BOUNDARY.resultEnvelopeCacheField).toBe('prohibited');
     expect(GRAPH_QUERY_CACHE_OPERATING_BOUNDARY.defaultStore).toBe('none');
   });

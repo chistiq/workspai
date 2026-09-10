@@ -161,6 +161,37 @@ try {
     consumerRoot
   );
 
+  const installedRoot = path.join(consumerRoot, 'node_modules/@workspai/graph');
+  const packedProduct = await import(
+    pathToFileURL(path.join(installedRoot, 'dist/contracts/index.js')).href
+  );
+  if (
+    JSON.stringify(GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id)) !==
+    JSON.stringify(packedProduct.GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id))
+  ) {
+    throw new Error('installed packed job table drifted from the workspace contract');
+  }
+  if (
+    packedProduct.GRAPH_ROLLBACK_PROCEDURE.status !== 'not-proven' ||
+    packedProduct.GRAPH_ROLLBACK_PROCEDURE.sourceRewrite !== 'prohibited' ||
+    packedProduct.GRAPH_SBOM_SPEC.provenance !== 'unattested' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited'
+  ) {
+    throw new Error('installed Graph product claimed stability, attestation or proven rollback');
+  }
+  if (
+    JSON.stringify([...packedProduct.GRAPH_INCIDENT_CLASSES]) !==
+    JSON.stringify([...GRAPH_INCIDENT_CLASSES])
+  ) {
+    throw new Error('installed incident classes drifted');
+  }
+  for (const preset of Object.keys(packedProduct.GRAPH_QUERY_PRESETS)) {
+    if (!packedProduct.GRAPH_STANDALONE_PACKED_JOBS.some((job) => job.args.includes(preset))) {
+      throw new Error(`installed packed jobs omit query preset ${preset}`);
+    }
+  }
+
   fs.writeFileSync(
     path.join(consumerRoot, 'consumer.ts'),
     `
@@ -356,7 +387,7 @@ try {
     );
   }
 
-  const cliPath = path.join(consumerRoot, 'node_modules', '@workspai', 'graph', 'dist', 'cli.js');
+  const cliPath = path.join(installedRoot, 'dist', 'cli.js');
   const runCli = (args, acceptedStatuses = [0]) => {
     const result = spawnSync(process.execPath, [cliPath, ...args], {
       cwd: consumerRoot,
@@ -394,7 +425,21 @@ try {
     return parsed;
   };
   let subjectId;
+  let targetId;
   const extraById = {
+    help: ({ text }) => {
+      if (
+        !text.includes('Query presets:') ||
+        !text.includes('architectureConformance') ||
+        !text.includes('entryPoints') ||
+        !text.includes(GRAPH_CLI_RESULT_SCHEMA_VERSION) ||
+        !text.includes('Standalone-stable admission is not claimed')
+      ) {
+        throw new Error(
+          'packed Graph CLI help omitted published presets or the fail-closed banner'
+        );
+      }
+    },
     'inspect-json': (envelope) => {
       if (!['complete', 'partial'].includes(envelope.status)) {
         throw new Error('packed Graph CLI did not return an honest repository preview');
@@ -402,11 +447,13 @@ try {
       if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
         throw new Error('packed Graph CLI wrote metadata without --write');
       }
-      const nodeId = envelope.data?.build?.graph?.nodes?.[0]?.id;
+      const nodes = envelope.data?.build?.graph?.nodes;
+      const nodeId = nodes?.[0]?.id;
       if (typeof nodeId !== 'string' || nodeId.length === 0) {
         throw new Error('packed Graph CLI inspect omitted graph nodes');
       }
       subjectId = nodeId;
+      targetId = typeof nodes?.[1]?.id === 'string' ? nodes[1].id : nodeId;
     },
     'inspect-project-only': (envelope) => {
       if (!['complete', 'partial'].includes(envelope.status)) {
@@ -458,6 +505,51 @@ try {
         throw new Error('packed Graph CLI admitted a subject-required query without a subject');
       }
     },
+    'query-unknown-preset': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes('GRAPH_CLI_INPUT_INVALID')
+      ) {
+        throw new Error('packed Graph CLI admitted an unknown query preset');
+      }
+    },
+    'query-without-preset': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes('GRAPH_CLI_INPUT_INVALID')
+      ) {
+        throw new Error('packed Graph CLI admitted a query without a preset');
+      }
+    },
+    'query-slice-without-review-context': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes('GRAPH_CLI_INPUT_INVALID')
+      ) {
+        throw new Error('packed Graph CLI admitted --slice on a non-reviewContext preset');
+      }
+    },
+    'quality-write-rejected': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes('GRAPH_CLI_INPUT_INVALID')
+      ) {
+        throw new Error('packed Graph CLI allowed --write on quality');
+      }
+    },
+    'providers-inspect-unknown': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes('GRAPH_PROVIDER_UNKNOWN')
+      ) {
+        throw new Error('packed Graph CLI admitted an unknown provider');
+      }
+    },
+    'quality-json': (envelope) => {
+      if (!envelope.data?.quality || typeof envelope.data?.metrics?.inputFiles !== 'number') {
+        throw new Error('packed Graph CLI quality omitted metrics');
+      }
+    },
     'inspect-workspace-without-onboarding': (envelope) => {
       if (envelope.status !== 'partial') {
         throw new Error('packed Graph CLI silently completed workspace inspect without onboarding');
@@ -487,6 +579,19 @@ try {
         throw new Error('packed Graph CLI wrote metadata while rejecting workspace selection');
       }
     },
+    'inspect-existing-workspace-write-without-selection': (envelope) => {
+      if (
+        envelope.status !== 'failed' ||
+        !JSON.stringify(envelope.diagnostics).includes('GRAPH_CLI_INPUT_INVALID')
+      ) {
+        throw new Error('packed Graph CLI wrote an existing workspace without a selection');
+      }
+      if (fs.existsSync(path.join(consumerRoot, '.workspai'))) {
+        throw new Error(
+          'packed Graph CLI wrote metadata while rejecting workspace write selection'
+        );
+      }
+    },
     'inspect-write': (envelope) => {
       if (!['committed', 'already-current'].includes(envelope.data?.publication?.status)) {
         throw new Error('packed Graph CLI did not publish an explicit project generation');
@@ -508,11 +613,31 @@ try {
       }
       args.push('--subject', subjectId);
     }
+    if (job.requiresTarget) {
+      if (typeof targetId !== 'string') {
+        throw new Error(`packed job ${job.id} needs a captured graph target`);
+      }
+      args.push('--target', targetId);
+    }
+    if (job.output === 'help') {
+      const result = spawnSync(process.execPath, [cliPath, ...args], {
+        cwd: consumerRoot,
+        encoding: 'utf8',
+        timeout: 30_000,
+        maxBuffer: 32 * 1024 * 1024,
+      });
+      if (result.error || !job.acceptedExitCodes.includes(result.status)) {
+        throw new Error(
+          `packed Graph CLI help failed with exit ${result.status ?? 'unknown'}${result.error ? `: ${result.error.message}` : ''}\n${result.stdout ?? ''}\n${result.stderr ?? ''}`
+        );
+      }
+      extraById[job.id]?.({ text: result.stdout ?? '' });
+      continue;
+    }
     const envelope = runCli(args, [...job.acceptedExitCodes]);
     extraById[job.id]?.(envelope);
   }
 
-  const installedRoot = path.join(consumerRoot, 'node_modules/@workspai/graph');
   const paths = packedFiles(installedRoot);
   const rootRuntime = fs.readFileSync(path.join(installedRoot, 'dist/index.js'), 'utf8');
   if (
@@ -561,6 +686,25 @@ try {
     'fixtures/g1/minimal-entity.json',
     'fixtures/g1/semantic-invalid-mutations.json',
     'fixtures/g1/invalid-absolute-entity.json',
+    'fixtures/g1/maximal-provider-manifest.json',
+    'fixtures/g1/maximal-fact-batch.json',
+    'fixtures/g4/structural-extractor-profile.json',
+    'fixtures/g4/repositories/node/package.json',
+    'fixtures/g4/repositories/node/src/server.ts',
+    'fixtures/g4/repositories/python/app.py',
+    'fixtures/g4/repositories/go/main.go',
+    'fixtures/g4/repositories/java/HealthController.java',
+    'fixtures/g4/repositories/dotnet/Program.cs',
+    'fixtures/g4/repositories/rust/main.rs',
+    'fixtures/g4/repositories/unsupported/app.rb',
+    'fixtures/g6/minimal-changeset.json',
+    'fixtures/g6/minimal-content-state-manifest.json',
+    'fixtures/g6/minimal-graph-change-overlay.json',
+    'fixtures/g6/minimal-graph-delta.json',
+    'fixtures/g6/minimal-proposed-change-set.json',
+    'fixtures/g6/minimal-proposed-graph-delta.json',
+    'fixtures/g7/minimal-cli-result.json',
+    'fixtures/g7/invalid-cli-result.json',
     'fixtures/g7/retrieval-corpus.v1.json',
   ]) {
     if (!paths.includes(requiredPath))
@@ -652,6 +796,75 @@ try {
       throw new Error(`packed semantic-invalid mutation ${fixture.id} was not fail-closed`);
     }
   }
+  const packedMaximalManifest = packedJson(
+    installedRoot,
+    'fixtures/g1/maximal-provider-manifest.json'
+  );
+  const packedMaximalBatch = packedJson(installedRoot, 'fixtures/g1/maximal-fact-batch.json');
+  if (!packedConformance.validateGraphProviderManifest(packedMaximalManifest).accepted) {
+    throw new Error('packed maximal G1 provider manifest was not admitted');
+  }
+  const maximalBatch = packedConformance.validateGraphFactBatch(
+    packedMaximalBatch,
+    packedMaximalManifest
+  );
+  if (!maximalBatch.accepted || maximalBatch.value.status !== 'partial') {
+    throw new Error('packed maximal G1 fact batch lost partial unknown state');
+  }
+
+  const compilePackedSchema = (relative) =>
+    new Ajv2020({
+      strict: true,
+      strictRequired: false,
+      validateFormats: false,
+    }).compile(packedJson(installedRoot, relative));
+  const validateCliResult = compilePackedSchema('schemas/cli-result.v0.1.0-candidate.schema.json');
+  if (!validateCliResult(packedJson(installedRoot, 'fixtures/g7/minimal-cli-result.json'))) {
+    throw new Error('packed G7 CLI result fixture was not schema-valid');
+  }
+  if (validateCliResult(packedJson(installedRoot, 'fixtures/g7/invalid-cli-result.json'))) {
+    throw new Error('packed invalid CLI result fixture was admitted');
+  }
+  const packedExtractor = packedJson(
+    installedRoot,
+    'fixtures/g4/structural-extractor-profile.json'
+  );
+  const validateExtractor = compilePackedSchema(
+    'schemas/structural-extractor-profile.v0.1.0-candidate.schema.json'
+  );
+  if (!validateExtractor(packedExtractor)) {
+    throw new Error('packed G4 structural extractor fixture was not schema-valid');
+  }
+  if (
+    JSON.stringify(packedExtractor) !==
+    JSON.stringify(packedProduct.GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE)
+  ) {
+    throw new Error('packed G4 structural extractor fixture drifted from the installed contract');
+  }
+  for (const [fixture, schema] of [
+    ['fixtures/g6/minimal-changeset.json', 'schemas/changeset.v0.1.0-candidate.schema.json'],
+    [
+      'fixtures/g6/minimal-content-state-manifest.json',
+      'schemas/content-state-manifest.v0.1.0-candidate.schema.json',
+    ],
+    [
+      'fixtures/g6/minimal-graph-change-overlay.json',
+      'schemas/graph-change-overlay.v0.1.0-candidate.schema.json',
+    ],
+    ['fixtures/g6/minimal-graph-delta.json', 'schemas/graph-delta.v0.1.0-candidate.schema.json'],
+    [
+      'fixtures/g6/minimal-proposed-change-set.json',
+      'schemas/proposed-change-set.v0.1.0-candidate.schema.json',
+    ],
+    [
+      'fixtures/g6/minimal-proposed-graph-delta.json',
+      'schemas/proposed-graph-delta.v0.1.0-candidate.schema.json',
+    ],
+  ]) {
+    if (!compilePackedSchema(schema)(packedJson(installedRoot, fixture))) {
+      throw new Error(`packed ${fixture} was not schema-valid`);
+    }
+  }
 
   const packedRuntime = await import(pathToFileURL(path.join(installedRoot, 'dist/index.js')).href);
   const packedTesting = await import(
@@ -709,6 +922,48 @@ try {
     retrievalReport.failures.length > 0
   ) {
     throw new Error(`packed retrieval benchmark failed: ${retrievalReport.failures.join('; ')}`);
+  }
+
+  const packedAdapters = await import(
+    pathToFileURL(path.join(installedRoot, 'dist/adapters/node/index.js')).href
+  );
+  const languageFixtures = [
+    ['node', 'imports', 'exposes'],
+    ['python', 'imports', 'exposes'],
+    ['go', 'imports', 'exposes'],
+    ['java', 'imports', 'exposes'],
+    ['dotnet', 'imports', 'exposes'],
+    ['rust', 'imports', undefined],
+  ];
+  for (const [language, importRelation, routeRelation] of languageFixtures) {
+    const fixtureRoot = path.join(installedRoot, 'fixtures/g4/repositories', language);
+    const result = await packedAdapters.buildNodeRepoGraph({ root: fixtureRoot });
+    if (!['complete', 'partial'].includes(result.status) || !result.graph) {
+      throw new Error(`packed G4 ${language} fixture failed to build`);
+    }
+    if (!result.graph.edges.some((edge) => edge.relation === importRelation)) {
+      throw new Error(`packed G4 ${language} fixture omitted ${importRelation} evidence`);
+    }
+    if (routeRelation && !result.graph.edges.some((edge) => edge.relation === routeRelation)) {
+      throw new Error(`packed G4 ${language} fixture omitted ${routeRelation} evidence`);
+    }
+    if (
+      JSON.stringify(result).includes(fixtureRoot) ||
+      JSON.stringify(result).includes(os.homedir())
+    ) {
+      throw new Error(`packed G4 ${language} fixture leaked a host path`);
+    }
+  }
+  const unsupported = await packedAdapters.buildNodeRepoGraph({
+    root: path.join(installedRoot, 'fixtures/g4/repositories/unsupported'),
+  });
+  if (
+    unsupported.status !== 'partial' ||
+    !unsupported.quality.unsupportedZones.some(
+      (zone) => zone.code === 'graph.source-language-unsupported'
+    )
+  ) {
+    throw new Error('packed unsupported-language fixture was not an honest partial');
   }
 
   const leakedRoots = [

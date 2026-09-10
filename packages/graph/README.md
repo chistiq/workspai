@@ -67,8 +67,11 @@ fail closed without `--subject`. Existing-workspace inspect without
 
 Workspace inspect without an injected onboarding adapter stays `partial` with
 `handoff-unavailable`. The packed tarball ships the query-candidate conformance
-profile and G1 admit/reject corpus. Incident classes are published; rollback is
-not proven.
+profile, G1 admit/reject corpus, G4 language fixtures, G6 schema fixtures and
+G7 CLI envelope fixtures. Published reject paths (unknown preset, missing
+subject, `--slice` on the wrong preset, `--write` on non-inspect, unknown
+provider, existing-workspace without `--workspace`) fail closed from the
+installed executable. Incident classes are published; rollback is not proven.
 
 An explicit write commits immutable, content-addressed artifacts below
 `.workspai/reports/graph-generations/` and advances the portable
