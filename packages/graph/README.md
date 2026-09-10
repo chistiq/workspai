@@ -27,6 +27,13 @@ quality, binding completeness, proof paths, explicit unknowns and exact
 query-cache lifecycle envelopes. These are semantic reference candidates, not
 standalone-stability or release claims.
 
+The G5 profile-driven projection engine is available as bounded read views over
+the same immutable canonical generation. Generic projection, derived analytics
+and graph-slice helpers stay off the package root; the root surface exposes the
+fixed `source`, `structural` and `evidence` preview views plus the review-context
+slice. Incremental orchestration exists as a local G6 engine and is not exported
+from `@workspai/graph`. Standalone-stable admission is not claimed.
+
 Node hosts may explicitly import `@workspai/graph/adapters/node` to execute the
 portable reference-composition task outside the event loop. The package root
 remains host-neutral. Worker output is revalidated against admitted facts before
@@ -68,8 +75,17 @@ worktree metadata are never ingested.
 
 The fixed `source`, `structural` and `evidence` preview views are bounded
 read-only selections over the same immutable canonical generation. They retain
-canonical node/edge identities, proof and source generation. The generalized
-profile-driven projection engine remains unavailable until G5.
+canonical node/edge identities, proof and source generation. They are produced
+by the G5 profile-driven projection engine through those three admitted view
+profiles; they are not a second graph and do not authorize similarity, vector or
+central-CLI consumption.
+
+JSON executable results use `schemaVersion` `workspai.graph.cli-result.v1`.
+Exit codes are `0` success, `2` partial, `1` failed, `3` rejected, `4`
+publication failed and `130` cancelled. The published support and limitations
+matrix is `GRAPH_STANDALONE_SUPPORT_MATRIX`; query-cache storage is optional and
+injected, never a default network or host cache, and query result envelopes do
+not carry a `cache` field.
 
 The fixed review-context slice turns the admitted `reviewContext` query into a
 deterministic, size-bounded payload for model and review consumers. It retains
@@ -133,3 +149,6 @@ and roadmaps are maintained once in the canonical Workspai documentation
 portfolio. They are intentionally not duplicated in this public package
 repository or npm artifact. The approved G3 evidence authorizes G4 repository
 preview work only; it does not claim standalone stability or release admission.
+G5 and G6 local engines exist as candidates. G7 product-surface contracts exist
+as local candidates. G6 remote OS-matrix evidence, public preview, SBOM and G8
+CLI integration remain unauthorized.

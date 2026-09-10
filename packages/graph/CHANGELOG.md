@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Opened G7 as an unauthorized local product-surface continuation: frozen CLI
+  JSON/exit contracts, public export-map lock, support/limitations matrix and
+  honest package-status ledger. Registry stays on G5; G6 remote admission stays
+  planned; G8 cannot begin. Standalone-stable, SBOM/provenance and retrieval
+  benchmarks remain planned.
+
 - Wired G6 Linux/macOS/Windows platform-evidence capture and a matrix combiner
   that can retain same-commit runner reports without authorizing G7. Platform
   reports must keep registry G5, native acceleration prohibited, and the

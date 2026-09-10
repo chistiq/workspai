@@ -169,6 +169,9 @@ describe('workspai-graph CLI', () => {
     const test = harness();
     expect(await runGraphCli([], test.io, test.dependencies)).toBe(0);
     expect(test.output.join('')).toContain('read-only unless --write');
+    expect(test.output.join('')).toContain('workspai.graph.cli-result.v1');
+    expect(test.output.join('')).toContain('3 rejected');
+    expect(test.output.join('')).toContain('Standalone-stable admission is not claimed');
     expect(test.dependencies.build).not.toHaveBeenCalled();
   });
 

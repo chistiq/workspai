@@ -11,14 +11,21 @@ import {
   writeGraphGeneration,
 } from './application/index.js';
 import type { GraphRepoBuildResult, GraphStandaloneGraphExecution } from './application/index.js';
-import { CORE_GRAPH_ONTOLOGY_PROFILE } from './contracts/index.js';
+import {
+  CORE_GRAPH_ONTOLOGY_PROFILE,
+  GRAPH_CLI_COMMANDS,
+  GRAPH_CLI_EXIT_CODES,
+  GRAPH_CLI_RESULT_SCHEMA_VERSION,
+  GRAPH_QUERY_CONTRACT,
+  GRAPH_QUERY_PRESETS,
+  type GraphCliCommand,
+} from './contracts/index.js';
 import {
   buildNodeRepoGraph,
   createNodeGraphProductHostPorts,
   createNodeProjectArtifactStore,
   createNodeWorkspaceArtifactStore,
 } from './adapters/node/index.js';
-import { GRAPH_QUERY_CONTRACT, GRAPH_QUERY_PRESETS } from './contracts/index.js';
 import type {
   GraphCanonicalGraph,
   GraphDiagnostic,
@@ -34,8 +41,6 @@ import {
   type GraphRepositoryPreviewViewExecution,
   type GraphReviewContextSliceExecution,
 } from './projections/index.js';
-
-type GraphCliCommand = 'inspect' | 'quality' | 'query' | 'providers';
 
 interface GraphCliOptions {
   readonly command: GraphCliCommand;
@@ -84,7 +89,7 @@ export interface GraphCliDependencies {
   ): Promise<GraphStandaloneGraphExecution>;
 }
 
-const HELP = `Workspai Graph repository preview
+const HELP = `Workspai Graph standalone executable
 
 Usage:
   workspai-graph inspect [root] [--mode project-only|project-and-default-workspace|project-and-existing-workspace] [--workspace <id-or-path>] [--view source|structural|evidence] [--write] [--json]
@@ -93,7 +98,11 @@ Usage:
   workspai-graph providers list [--json]
   workspai-graph providers inspect <provider-id> [--json]
 
-The preview is local, offline and read-only unless --write is explicitly supplied.
+JSON results use schemaVersion ${GRAPH_CLI_RESULT_SCHEMA_VERSION}.
+Exit codes: ${GRAPH_CLI_EXIT_CODES.success} success, ${GRAPH_CLI_EXIT_CODES.partial} partial, ${GRAPH_CLI_EXIT_CODES.failed} failed, ${GRAPH_CLI_EXIT_CODES.rejected} rejected, ${GRAPH_CLI_EXIT_CODES.publicationFailed} publication failed, ${GRAPH_CLI_EXIT_CODES.cancelled} cancelled.
+
+The executable is local, offline and read-only unless --write is explicitly supplied.
+It does not import the central Workspai CLI. Standalone-stable admission is not claimed.
 `;
 
 class GraphCliInputError extends Error {}
@@ -107,7 +116,7 @@ function takeValue(args: readonly string[], index: number, option: string): stri
 function parseArgs(args: readonly string[], cwd: string): GraphCliOptions | 'help' {
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) return 'help';
   const command = args[0];
-  if (!['inspect', 'quality', 'query', 'providers'].includes(command ?? '')) {
+  if (!GRAPH_CLI_COMMANDS.some((value) => value === command)) {
     throw new GraphCliInputError('Expected inspect, quality, query or providers.');
   }
   let root = cwd;
@@ -232,7 +241,7 @@ function envelope(
   diagnostics: readonly GraphDiagnostic[] = []
 ): string {
   return `${JSON.stringify({
-    schemaVersion: 'workspai.graph.cli-result.v1',
+    schemaVersion: GRAPH_CLI_RESULT_SCHEMA_VERSION,
     command,
     status,
     data,
@@ -338,11 +347,11 @@ export async function runGraphCli(
       },
     ]);
     emit(io, args.includes('--json'), true, payload, `Graph input error: ${message}`);
-    return 3;
+    return GRAPH_CLI_EXIT_CODES.rejected;
   }
   if (options === 'help') {
     io.writeOut(HELP);
-    return 0;
+    return GRAPH_CLI_EXIT_CODES.success;
   }
 
   if (options.command === 'providers') {
@@ -366,7 +375,7 @@ export async function runGraphCli(
         },
       ]);
       emit(io, options.json, true, payload, `Unknown Graph provider: ${options.providerId ?? ''}`);
-      return 3;
+      return GRAPH_CLI_EXIT_CODES.rejected;
     }
     emit(
       io,
@@ -379,7 +388,7 @@ export async function runGraphCli(
             .join('\n')
         : JSON.stringify(data, null, 2)
     );
-    return 0;
+    return GRAPH_CLI_EXIT_CODES.success;
   }
 
   if (options.command === 'inspect' && options.mode !== 'project-only') {
@@ -404,7 +413,7 @@ export async function runGraphCli(
         payload,
         `Graph inspect rejected. ${orchestration.issues.map((item) => item.message).join(' ')}`
       );
-      return 3;
+      return GRAPH_CLI_EXIT_CODES.rejected;
     }
     const status = dualScopeCliStatus(orchestration.value.status);
     emit(
@@ -414,9 +423,9 @@ export async function runGraphCli(
       envelope('inspect', status, orchestration.value, orchestration.value.diagnostics),
       `Graph inspect: ${orchestration.value.status}\nWorkspace: ${orchestration.value.workspace.status}${orchestration.value.workspace.renewalCommand ? `\nRenewal: ${orchestration.value.workspace.renewalCommand}` : ''}`
     );
-    if (orchestration.value.status === 'failed') return 1;
-    if (orchestration.value.status === 'partial') return 2;
-    return 0;
+    if (orchestration.value.status === 'failed') return GRAPH_CLI_EXIT_CODES.failed;
+    if (orchestration.value.status === 'partial') return GRAPH_CLI_EXIT_CODES.partial;
+    return GRAPH_CLI_EXIT_CODES.success;
   }
 
   const build = await dependencies.build(options.root, signal);
@@ -434,7 +443,9 @@ export async function runGraphCli(
       payload,
       `Graph ${options.command} failed (${build.status}). ${build.diagnostics.map((item) => item.message).join(' ')}`
     );
-    return build.status === 'cancelled' ? 130 : 1;
+    return build.status === 'cancelled'
+      ? GRAPH_CLI_EXIT_CODES.cancelled
+      : GRAPH_CLI_EXIT_CODES.failed;
   }
 
   if (options.command === 'inspect') {
@@ -455,7 +466,7 @@ export async function runGraphCli(
         ),
         `Graph view failed. ${view.issues.map((issue) => issue.message).join(' ')}`
       );
-      return 3;
+      return GRAPH_CLI_EXIT_CODES.rejected;
     }
     const publication = options.write
       ? await dependencies.publish(options.root, build, signal)
@@ -468,7 +479,9 @@ export async function runGraphCli(
         envelope('inspect', 'failed', { build, publication }, publication.issues),
         `Graph publication failed. ${publication.issues.map((issue) => issue.message).join(' ')}`
       );
-      return publication.issues.some((issue) => issue.code.includes('CANCELLED')) ? 130 : 4;
+      return publication.issues.some((issue) => issue.code.includes('CANCELLED'))
+        ? GRAPH_CLI_EXIT_CODES.cancelled
+        : GRAPH_CLI_EXIT_CODES.publicationFailed;
     }
     emit(
       io,
@@ -496,7 +509,7 @@ export async function runGraphCli(
       ),
       `Graph preview: ${build.status}\nFiles: ${build.metrics.inputFiles}\nNodes: ${view?.accepted ? view.value.nodes.length : build.graph.nodes.length}\nEdges: ${view?.accepted ? view.value.edges.length : build.graph.edges.length}${options.view ? `\nView: ${options.view}` : ''}${publication ? `\nPublication: ${publication.value.status}` : ''}`
     );
-    return 0;
+    return GRAPH_CLI_EXIT_CODES.success;
   }
   if (options.command === 'quality') {
     emit(
@@ -511,7 +524,7 @@ export async function runGraphCli(
       ),
       `Graph quality: ${build.status}\nFiles: ${build.metrics.inputFiles}\nUnknown zones: ${build.quality.unknownZones.length}\nUnsupported zones: ${build.quality.unsupportedZones.length}`
     );
-    return build.status === 'partial' ? 2 : 0;
+    return build.status === 'partial' ? GRAPH_CLI_EXIT_CODES.partial : GRAPH_CLI_EXIT_CODES.success;
   }
 
   const selected = GRAPH_QUERY_PRESETS[options.preset as keyof typeof GRAPH_QUERY_PRESETS];
@@ -535,7 +548,9 @@ export async function runGraphCli(
       ),
       `Graph query failed. ${result.issues.map((issue) => issue.message).join(' ')}`
     );
-    return result.code === 'resource-limit' ? 2 : 3;
+    return result.code === 'resource-limit'
+      ? GRAPH_CLI_EXIT_CODES.partial
+      : GRAPH_CLI_EXIT_CODES.rejected;
   }
   const slice = options.slice ? dependencies.slice(result) : undefined;
   if (slice && !slice.accepted) {
@@ -551,7 +566,7 @@ export async function runGraphCli(
       ),
       `Graph review context slice failed. ${slice.issues.map((issue) => issue.message).join(' ')}`
     );
-    return 3;
+    return GRAPH_CLI_EXIT_CODES.rejected;
   }
   emit(
     io,
@@ -565,7 +580,7 @@ export async function runGraphCli(
     ),
     `Graph query: ${build.status}\nPreset: ${options.preset ?? ''}${slice?.accepted ? '\nOutput: bounded review context slice' : ''}`
   );
-  return 0;
+  return GRAPH_CLI_EXIT_CODES.success;
 }
 
 export async function main(): Promise<void> {

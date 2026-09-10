@@ -7,6 +7,7 @@ import {
 import {
   GRAPH_PACKAGE_METADATA,
   GRAPH_PACKAGE_STATUS_CONTRACT,
+  GRAPH_STANDALONE_SUPPORT_MATRIX,
   type GraphPackageMetadata,
 } from '../contracts/index.js';
 
@@ -38,13 +39,13 @@ export function getGraphPackageStatus(
     diagnostics: [],
     compatibility: {
       status: 'conditionally-compatible',
-      unsupportedCapabilities: ['query', 'persistence', 'incremental', 'cli-runtime-bridge'],
+      unsupportedCapabilities: [...GRAPH_STANDALONE_SUPPORT_MATRIX.unsupportedCapabilities],
     },
     omissions: [
       {
         code: 'GRAPH_ENGINE_NOT_STANDALONE_STABLE',
         reason:
-          'The deterministic composition candidate exists, but later query, persistence, incremental and standalone-admission stages are incomplete.',
+          'Query, persistence, G5 projections and the G6 incremental engine exist as local candidates. Standalone-stable admission, public preview, retained G6 OS-matrix evidence, SBOM/provenance and the G8 CLI bridge remain incomplete.',
         affectsStatus: true,
         recoverable: true,
         scope,

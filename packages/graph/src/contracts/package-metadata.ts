@@ -78,8 +78,14 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'added-input-provider-reobservation',
     'nfc-portable-content-locators',
     'official-cross-language-incremental-mutations',
+    'profile-driven-projection',
+    'workspace-graph-composition',
+    'incremental-engine',
+    'proposed-change-overlay',
+    'standalone-cli-json-contract',
+    'standalone-support-matrix',
   ] as const,
-  plannedCapabilities: ['profile-driven-projection', 'incremental', 'cli-shadow-parity'] as const,
+  plannedCapabilities: ['standalone-stable', 'public-preview', 'cli-shadow-parity'] as const,
 });
 
 export type GraphPackageMetadata = typeof GRAPH_PACKAGE_METADATA;

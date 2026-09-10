@@ -179,6 +179,8 @@ describe('Graph architecture boundaries', () => {
     expect(rootApi).not.toMatch(
       /buildGraphChangeOverlay|planIncrementalGraphBuild|compareContentStateManifests|buildIncrementalRepoGraph|summarizeCanonicalGraphDelta|planQueryCacheInvalidation|applyQueryCacheInvalidations|collectGraphSemanticDependencies|providersRequiredForAddedInputs|addedInputLocators/
     );
+    expect(rootApi).toMatch(/GRAPH_STANDALONE_SUPPORT_MATRIX/);
+    expect(rootApi).toMatch(/GRAPH_CLI_EXIT_CODES/);
   });
 
   it('keeps similarity and vector retrieval out of canonical query and shard reuse', () => {
@@ -200,6 +202,12 @@ describe('Graph architecture boundaries', () => {
       const source = fs.readFileSync(path.join(sourceRoot, relative), 'utf8');
       expect(source).not.toMatch(/\b(?:knn|vectorIndex|embeddingIndex|similarityIndex)\b/);
     }
+    const queryResult = fs.readFileSync(path.join(sourceRoot, 'contracts/query.ts'), 'utf8');
+    const resultStart = queryResult.indexOf('export interface GraphQueryResult');
+    const resultEnd = queryResult.indexOf('export type GraphQueryExecutionResult');
+    expect(resultStart).toBeGreaterThan(-1);
+    expect(resultEnd).toBeGreaterThan(resultStart);
+    expect(queryResult.slice(resultStart, resultEnd)).not.toMatch(/\bcache\b/);
   });
 
   it('keeps proposed-change overlays from publishing canonical generations', () => {

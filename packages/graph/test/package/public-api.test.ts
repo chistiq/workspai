@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { validateWisCoreResultEnvelope } from '@workspai/shared/validation';
 
 import {
+  GRAPH_CLI_EXIT_CODES,
   GRAPH_PACKAGE_METADATA,
+  GRAPH_STANDALONE_SUPPORT_MATRIX,
   GRAPH_STANDARD_COMPOSITION_POLICY,
   GRAPH_STANDARD_REPO_BUILD_POLICY,
   buildRepoGraph,
@@ -91,6 +93,17 @@ describe('@workspai/graph development package', () => {
       'added-input-provider-reobservation',
       'nfc-portable-content-locators',
       'official-cross-language-incremental-mutations',
+      'profile-driven-projection',
+      'workspace-graph-composition',
+      'incremental-engine',
+      'proposed-change-overlay',
+      'standalone-cli-json-contract',
+      'standalone-support-matrix',
+    ]);
+    expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
+      'standalone-stable',
+      'public-preview',
+      'cli-shadow-parity',
     ]);
   });
 
@@ -119,6 +132,14 @@ describe('@workspai/graph development package', () => {
     expect(result.omissions).toEqual([
       expect.objectContaining({ code: 'GRAPH_ENGINE_NOT_STANDALONE_STABLE' }),
     ]);
+    expect(result.compatibility.unsupportedCapabilities).toEqual([
+      ...GRAPH_STANDALONE_SUPPORT_MATRIX.unsupportedCapabilities,
+    ]);
+    expect(result.compatibility.unsupportedCapabilities).not.toContain('query');
+    expect(result.compatibility.unsupportedCapabilities).not.toContain('persistence');
+    expect(result.compatibility.unsupportedCapabilities).not.toContain('incremental');
+    expect(GRAPH_CLI_EXIT_CODES.rejected).toBe(3);
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable).toBe(false);
     expect(validateWisCoreResultEnvelope(result)).toMatchObject({ valid: true });
   });
 

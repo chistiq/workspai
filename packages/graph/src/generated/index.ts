@@ -1,6 +1,7 @@
 export type { WorkspaiGraphBindingProfileCandidate } from './binding-profile.v0.1.0-candidate.js';
 export type { WorkspaiCanonicalGraphCandidate } from './canonical-graph.v0.1.0-candidate.js';
 export type { WorkspaiGraphChangeSetCandidate } from './changeset.v0.1.0-candidate.js';
+export type { WorkspaiGraphCliResultCandidate } from './cli-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphContentStateManifestCandidate } from './content-state-manifest.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivationLineageCandidate } from './derivation-lineage.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivedProjectionResultCandidate } from './derived-projection-result.v0.1.0-candidate.js';
@@ -30,4 +31,5 @@ export type { WorkspaiGraphQueryCacheReuseCandidate } from './query-cache-reuse.
 export type { WorkspaiGraphRepositoryPreviewViewCandidate } from './repository-preview-view.v0.1.0-candidate.js';
 export type { WorkspaiGraphRetrievalPlanCandidate } from './retrieval-plan.v0.1.0-candidate.js';
 export type { WorkspaiGraphReviewContextSliceCandidate } from './review-context-slice.v0.1.0-candidate.js';
+export type { WorkspaiGraphStandaloneSupportMatrixCandidate } from './standalone-support-matrix.v0.1.0-candidate.js';
 export type { WorkspaiGraphStructuralExtractorProfileCandidate } from './structural-extractor-profile.v0.1.0-candidate.js';

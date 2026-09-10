@@ -225,3 +225,22 @@ export {
   type GraphWorkspaceOnboardingResult,
   type GraphWorkspaceOnboardingMode,
 } from './workspace-integration.js';
+export {
+  GRAPH_CLI_COMMANDS,
+  GRAPH_CLI_EXIT_CODES,
+  GRAPH_CLI_RESULT_CONTRACT,
+  GRAPH_CLI_RESULT_SCHEMA_VERSION,
+  GRAPH_PUBLIC_EXPORT_MAP,
+  GRAPH_PUBLIC_EXPORT_SUBPATHS,
+  GRAPH_PUBLIC_ROOT_VALUE_EXPORTS,
+  GRAPH_QUERY_CACHE_OPERATING_BOUNDARY,
+  GRAPH_ROOT_FORBIDDEN_VALUE_EXPORTS,
+  GRAPH_STANDALONE_PACKED_JOBS,
+  GRAPH_STANDALONE_SUPPORT_MATRIX,
+  GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT,
+  type GraphCliCommand,
+  type GraphCliExitCode,
+  type GraphPublicExportMap,
+  type GraphQueryCacheOperatingBoundary,
+  type GraphStandaloneSupportMatrix,
+} from './standalone-product.js';

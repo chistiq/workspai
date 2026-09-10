@@ -18,6 +18,11 @@
       "sha256": "e8fe49925835688b30e0467f8c8685b6762b1785e98ae39cd8d64d396cebe056"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/cli-result/v0.1.0-candidate",
+      "file": "schemas/cli-result.v0.1.0-candidate.schema.json",
+      "sha256": "c52ac87c25aca437e007e913030f933887844a3eacdb1ef8fe58ad7309c83ae8"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/content-state-manifest/v0.1.0-candidate",
       "file": "schemas/content-state-manifest.v0.1.0-candidate.schema.json",
       "sha256": "07faf8452599fbd5b7f1f48955df0a41c654eb2a285beabb7c6da87a96a36766"
@@ -161,6 +166,11 @@
       "id": "https://schemas.workspai.dev/graph/review-context-slice/v0.1.0-candidate",
       "file": "schemas/review-context-slice.v0.1.0-candidate.schema.json",
       "sha256": "4f4bc3775a48a38efa79165edfce33a1f5bbd70c2d69943db1e00f2348efab1a"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/standalone-support-matrix/v0.1.0-candidate",
+      "file": "schemas/standalone-support-matrix.v0.1.0-candidate.schema.json",
+      "sha256": "c61e4686a670003826b634e3e51175c27813d1db87e705a78fc21898fe1d5008"
     },
     {
       "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",
