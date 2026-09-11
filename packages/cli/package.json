@@ -215,7 +215,7 @@
     "tsx": "^4.20.6",
     "typescript": "^5.5.0",
     "vite-bundle-visualizer": "^1.2.1",
-    "vitest": "^4.0.15"
+    "vitest": "^4.1.11"
   },
   "optionalDependencies": {
     "@rollup/rollup-win32-x64-msvc": "*"
