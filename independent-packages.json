@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "workspai-independent-packages.v1",
+  "canonicalRepository": "https://github.com/chistiq/workspai",
+  "integrationPolicy": "standalone-stability-before-cli-bridge",
+  "qualityPolicy": "independent-package-quality-policy.v1.json",
+  "stageClosureContract": "contracts/independent-package-stage-closure.v1.json",
+  "packages": [
+    {
+      "name": "@workspai/shared",
+      "directory": "packages/shared",
+      "deliveryOrder": 0,
+      "maturity": "contract-design",
+      "publishable": false,
+      "standaloneStability": "not-admitted",
+      "cliEquivalent": "official-internal-contract-foundation",
+      "cliRuntimeIntegration": "prohibited-before-standalone-stability",
+      "documentationAuthority": "workspai-docs:Packages/shared",
+      "qualityPlanRef": "workspai-docs:Packages/shared/QUALITY_AND_STAGE_GATES.md",
+      "latestClosure": "packages/shared/governance/sh7-stabilization-report.v1.json",
+      "currentStage": "SH7",
+      "stageStatus": "blocked",
+      "requiredEvidence": [
+        "packages/shared/governance/shared-package-gates.v1.json",
+        "packages/shared/governance/cli-bridgeability-fixtures.v1.json",
+        "packages/shared/governance/semantic-lock-decisions.v1.json",
+        "packages/shared/governance/sh2-stabilization-report.v1.json",
+        "packages/shared/governance/sh3a-stabilization-report.v1.json",
+        "packages/shared/governance/sh3b-stabilization-report.v1.json",
+        "packages/shared/governance/sh3c-stabilization-report.v1.json",
+        "packages/shared/governance/sh4-internal-consumers.v1.json",
+        "packages/shared/governance/sh4-stabilization-report.v1.json",
+        "packages/shared/governance/sh5-external-validation.v1.json",
+        "packages/shared/governance/sh5-stabilization-report.v1.json",
+        "packages/shared/governance/sh6-domain-adoption.v1.json",
+        "packages/shared/governance/sh6-stabilization-report.v1.json",
+        "packages/shared/governance/sh7-standalone-admission.v1.json",
+        "packages/shared/governance/sh7-external-consumer-evidence-policy.v1.json",
+        "packages/shared/governance/sh7-stabilization-report.v1.json"
+      ]
+    },
+    {
+      "name": "@workspai/graph",
+      "directory": "packages/graph",
+      "deliveryOrder": 1,
+      "maturity": "contract-design",
+      "publishable": false,
+      "standaloneStability": "not-admitted",
+      "cliEquivalent": "official-internal-graph-capability",
+      "cliRuntimeIntegration": "prohibited-before-standalone-stability",
+      "documentationAuthority": "workspai-docs:Packages/graph",
+      "qualityPlanRef": "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md",
+      "approvedExternalRuntimeDependencies": [
+        {
+          "name": "yaml",
+          "version": "2.9.0",
+          "purpose": "Bounded safe-core parsing of Docker Compose declarations"
+        }
+      ],
+      "latestClosure": "packages/graph/governance/g5-stage-closure.v1.json",
+      "currentStage": "G5",
+      "stageStatus": "local-source-complete"
+    }
+  ]
+}

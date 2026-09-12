@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "workspai-independent-package-gates.v1",
+  "package": "@workspai/shared",
+  "asOf": "2026-09-12",
+  "maturity": "contract-design",
+  "currentGate": "SH0",
+  "activeWorkstream": "SH7-internal-admission-evidence",
+  "publishable": false,
+  "cliRuntimeIntegration": "prohibited-before-standalone-stability",
+  "gates": [
+    {
+      "id": "SH0",
+      "name": "Inventory and reference landscape",
+      "status": "candidate-evidence",
+      "requiredEvidence": ["governance/cli-bridgeability-fixtures.v1.json"],
+      "maintainerDocumentationRefs": [
+        "workspai-docs:Packages/shared/REFERENCE_LANDSCAPE.md",
+        "workspai-docs:Packages/shared/SHARED_CONTRACT_INVENTORY.md",
+        "workspai-docs:Packages/shared/SCALE_AND_EXTENSION_PROFILE.md"
+      ]
+    },
+    {
+      "id": "SH1",
+      "name": "Semantic lock",
+      "status": "review-pending",
+      "requiredEvidence": ["governance/semantic-lock-decisions.v1.json"],
+      "maintainerDocumentationRefs": [
+        "workspai-docs:Packages/shared/adr/0001-shared-is-a-protocol-kernel.md",
+        "workspai-docs:Packages/shared/adr/0002-schema-first-generation.md",
+        "workspai-docs:Packages/shared/adr/0003-result-and-operation-status.md",
+        "workspai-docs:Packages/shared/adr/0004-portable-identity-generation-evidence.md"
+      ]
+    },
+    {
+      "id": "SH2",
+      "name": "Deterministic generation",
+      "status": "candidate-implemented",
+      "stabilizationStatus": "local-passed-remote-ci-pending",
+      "requiredEvidence": [
+        "schemas/generation-manifest.v2.json",
+        "schemas/generated/registry.v2.json",
+        "schemas/src/wis-core-result-envelope.v0.2.0-draft.schema.json",
+        "fixtures/core/v0.2.0-draft/conformance-manifest.v1.json",
+        "governance/sh2-stabilization-report.v1.json"
+      ],
+      "blockedBy": ["SH1 acceptance", "current/previous compatibility corpus"]
+    },
+    {
+      "id": "SH3",
+      "name": "Conformance and scale",
+      "status": "candidate-stabilized-local-approved",
+      "activeSubstage": "complete-local-remote-pending",
+      "requiredEvidence": [
+        "schemas/src/wis-contract-catalog.v0.1.0-draft.schema.json",
+        "schemas/generated/registry.v2.json",
+        "test/architecture/multi-contract-generation.test.ts",
+        "test/conformance/contract-catalog.test.ts",
+        "governance/sh3a-stabilization-report.v1.json",
+        "schemas/compatibility/wis-core-result-envelope.v0.1.0-draft.schema.json",
+        "fixtures/compatibility/core-result-envelope/conformance-manifest.v1.json",
+        "test/conformance/core-envelope-compatibility.test.ts",
+        "fixtures/scale/workload-manifest.v1.json",
+        "governance/sh3c-scale-baseline.v1.json",
+        "test/scale/scale-workload-contract.test.ts",
+        "governance/sh3b-stabilization-report.v1.json",
+        "governance/sh3c-stabilization-report.v1.json"
+      ]
+    },
+    {
+      "id": "SH4",
+      "name": "Registered internal consumer migration",
+      "status": "candidate-stabilized-local-approved",
+      "requiredEvidence": [
+        "governance/sh4-internal-consumers.v1.json",
+        "governance/sh4-stabilization-report.v1.json"
+      ]
+    },
+    {
+      "id": "SH5",
+      "name": "External validation preview",
+      "status": "candidate-stabilized-local-approved",
+      "requiredEvidence": [
+        "governance/sh5-external-validation.v1.json",
+        "governance/sh5-stabilization-report.v1.json"
+      ]
+    },
+    {
+      "id": "SH6",
+      "name": "Independent domain adoption",
+      "status": "candidate-stabilized-local-approved",
+      "requiredEvidence": [
+        "governance/sh6-domain-adoption.v1.json",
+        "governance/sh6-stabilization-report.v1.json"
+      ]
+    },
+    {
+      "id": "SH7",
+      "name": "Standalone stability admission",
+      "status": "blocked",
+      "requiredEvidence": [
+        "governance/sh7-standalone-admission.v1.json",
+        "governance/sh7-stabilization-report.v1.json"
+      ]
+    }
+  ],
+  "blockers": [
+    "WIS RFC-0001 and RFC-0002 are review-ready but not accepted",
+    "semantic-lock decisions are proposed but await maintainer sign-off",
+    "SH2 generation is implemented as a candidate but cannot be admitted before SH1 acceptance",
+    "SH3-C local closure is approved; real-browser, true-peak-memory and cross-platform evidence remain remote",
+    "SH4 local closure is approved; its remote cross-platform evidence remains pending",
+    "SH5 local closure is approved; real-browser and remote cross-platform evidence remains pending",
+    "SH6 local closure is approved and does not advance Graph maturity or Shared admission",
+    "registered internal Graph consumption passes locally but awaits retained remote evidence",
+    "SH7 admission audit is blocked and SH8 is unauthorized",
+    "bridgeability fixture cases are specified but frozen redacted payloads are not captured"
+  ]
+}

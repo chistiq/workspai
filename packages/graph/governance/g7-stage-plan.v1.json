@@ -1,0 +1,237 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G7",
+  "status": "local-source-complete",
+  "authorizedBy": "local-source-continuation",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g7",
+    "workspai-docs:Packages/graph/CONFORMANCE_AND_RELEASE.md#10-package-publication-gates",
+    "workspai-docs:Packages/graph/ARCHITECTURE.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "honest-package-status-and-capability-ledger",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/package-metadata.ts",
+        "packages/graph/src/application/package-status.ts",
+        "packages/graph/test/package/public-api.test.ts"
+      ]
+    },
+    {
+      "id": "stable-export-map-lock",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/src/index.ts",
+        "packages/graph/package.json",
+        "packages/graph/test/architecture/package-boundaries.test.ts",
+        "packages/graph/test/contracts/standalone-product.test.ts"
+      ]
+    },
+    {
+      "id": "cli-json-and-exit-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/src/cli.ts",
+        "packages/graph/schemas/cli-result.v0.1.0-candidate.schema.json",
+        "packages/graph/fixtures/g7/minimal-cli-result.json",
+        "packages/graph/fixtures/g7/invalid-cli-result.json",
+        "packages/graph/test/cli/graph-cli.test.ts",
+        "packages/graph/test/contracts/standalone-product.test.ts"
+      ]
+    },
+    {
+      "id": "published-support-limitations-matrix",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/schemas/standalone-support-matrix.v0.1.0-candidate.schema.json",
+        "packages/graph/test/contracts/standalone-product.test.ts"
+      ]
+    },
+    {
+      "id": "query-cache-privacy-and-retention-boundary",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/test/contracts/standalone-product.test.ts",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "documentation-export-drift-lock",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/README.md",
+        "packages/graph/src/cli.ts",
+        "packages/graph/test/governance/g7-product-drift.test.ts"
+      ]
+    },
+    {
+      "id": "packed-standalone-job-smoke",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/contracts/standalone-product.test.ts"
+      ]
+    },
+    {
+      "id": "non-cli-embedded-consumer",
+      "status": "implemented-local-candidate",
+      "evidence": ["packages/graph/scripts/check-packed-package.mjs"]
+    },
+    {
+      "id": "project-only-without-central-cli",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/cli.ts",
+        "packages/graph/src/application/package-status.ts",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "external-provider-sdk-deferral",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/test/contracts/standalone-product.test.ts"
+      ]
+    },
+    {
+      "id": "preview-migration-path",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/test/contracts/standalone-product.test.ts"
+      ]
+    },
+    {
+      "id": "sbom-generation-candidate",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/scripts/generate-graph-sbom.mjs",
+        "packages/graph/governance/g7-sbom.cdx.json",
+        "packages/graph/test/governance/g7-sbom.test.ts"
+      ]
+    },
+    {
+      "id": "retrieval-benchmark-command",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/testing/score-retrieval-benchmark.ts",
+        "packages/graph/scripts/check-retrieval-benchmark.mjs",
+        "packages/graph/fixtures/g7/retrieval-corpus.v1.json",
+        "packages/graph/test/testing/retrieval-benchmark.test.ts"
+      ]
+    },
+    {
+      "id": "packed-contents-and-unsigned-security-verification",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/scripts/generate-g7-release-inventory.mjs",
+        "packages/graph/governance/g7-release-inventory.v1.json",
+        "packages/graph/tsup.config.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/governance/g7-release-inventory.test.ts"
+      ]
+    },
+    {
+      "id": "conformance-corpus-distribution",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/conformance/profile.json",
+        "packages/graph/src/conformance/index.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/package/scaffold-surfaces.test.ts",
+        "packages/graph/test/contracts/portable-fixture-corpus.test.ts"
+      ]
+    },
+    {
+      "id": "packed-query-cache-and-workspace-fail-closed",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/src/application/run-standalone-graph.ts",
+        "packages/graph/src/application/query-cache.ts"
+      ]
+    },
+    {
+      "id": "incident-and-rollback-boundary",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/standalone-product.ts",
+        "packages/graph/test/contracts/standalone-product.test.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "g6-bound-cross-platform-release-candidate",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/scripts/check-g7-release-candidate.mjs",
+        "packages/graph/scripts/check-g7-release-matrix.mjs",
+        "packages/graph/test/governance/g7-release-admission.test.ts"
+      ]
+    },
+    {
+      "id": "internal-promotion-and-rollback-verification",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/governance/g7-internal-contract-lock.v1.json",
+        "packages/graph/governance/g7-migration-rollback-policy.v1.json",
+        "packages/graph/governance/g7-verified-baseline.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/test/governance/g7-operational-readiness.test.ts"
+      ]
+    },
+    {
+      "id": "signed-main-commit-promotion-evidence",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/scripts/check-g7-promotion-evidence.mjs",
+        "packages/graph/test/governance/g7-promotion-evidence.test.ts",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "same-run-standalone-admission-decision",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/scripts/finalize-g7-standalone-admission.mjs",
+        "packages/graph/test/governance/g7-admission-finalization.test.ts",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "g7-standalone-stable-admission",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/governance/g7-standalone-admission.v1.json",
+        "packages/graph/scripts/check-standalone-admission.mjs",
+        "packages/graph/test/governance/g7-standalone-admission.test.ts"
+      ]
+    }
+  ],
+  "prohibitions": [
+    "No internal standalone-stable claim without retained G6 OS-matrix evidence and an explicit internal adoption decision.",
+    "No npm publication of Shared or Graph; both packages remain private internal architecture.",
+    "No central CLI runtime import or second Graph truth.",
+    "No incremental orchestration on the package root API.",
+    "No native acceleration claim without benchmark evidence and parity-checked adapters.",
+    "No G8 bridge work until G7 standalone-stable admission."
+  ],
+  "nativeAcceleration": {
+    "status": "bundled-parity-qualified-candidate",
+    "earliestDecisionStage": "G6",
+    "rule": "The product-bundled Rust WASM adapter remains evidence-gated, keeps TypeScript as semantic authority, requires no user toolchain or download, and cannot become a second Graph truth."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G8",
+  "nextStageAuthorized": false
+}

@@ -1,0 +1,33 @@
+[
+  {
+    "id": "absolute-evidence",
+    "pointer": "/facts/0/evidence/0/relativeLocator",
+    "value": "/private/source.ts",
+    "expectedCode": "GRAPH_EVIDENCE_LOCATOR_NON_PORTABLE"
+  },
+  {
+    "id": "authority-inflation-derivation",
+    "pointer": "/facts/0/derivation",
+    "value": "inferred",
+    "expectedCode": "GRAPH_INFERRED_FACT_CANNOT_BE_VERIFIED",
+    "also": { "pointer": "/facts/0/authority", "value": "verified" }
+  },
+  {
+    "id": "foreign-provenance",
+    "pointer": "/facts/0/provenance/id",
+    "value": "foreign.provider",
+    "expectedCode": "GRAPH_FACT_PROVENANCE_MISMATCH"
+  },
+  {
+    "id": "missing-result-dimension",
+    "pointer": "/diagnostics",
+    "remove": true,
+    "expectedCode": "GRAPH_FACT_BATCH_DIMENSION_MISSING"
+  },
+  {
+    "id": "invalid-literal",
+    "pointer": "/facts/0/object/kind",
+    "value": "number",
+    "expectedCode": "GRAPH_FACT_LITERAL_INVALID"
+  }
+]

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/test/dependent",
+  "title": "TestDependent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["base"],
+  "properties": { "base": { "$ref": "https://schemas.workspai.dev/test/base" } }
+}

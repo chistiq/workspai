@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G2",
+  "asOf": "2026-09-09",
+  "status": "approved",
+  "advancesAdmissionGate": true,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "The deterministic composer preserves the admitted Graph truth boundary.",
+      "evidence": [
+        "packages/graph/governance/g2-stage-closure.v1.json",
+        "packages/graph/governance/g2-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Composition resources and extension points remain explicitly bounded.",
+      "evidence": [
+        "packages/graph/governance/g2-stage-closure.v1.json",
+        "packages/graph/governance/g2-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Worker-backed composition and package budgets passed the retained matrix.",
+      "evidence": ["packages/graph/governance/g2-remote-admission.v1.json"]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Adversarial composition and repository security gates passed.",
+      "evidence": [
+        "packages/graph/governance/g2-stage-closure.v1.json",
+        "packages/graph/governance/g2-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Portable evidence boundaries passed without publishing internal material.",
+      "evidence": ["packages/graph/governance/g2-stage-closure.v1.json"]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "passed",
+      "summary": "Linux, macOS and Windows admitted the same signed G2 source.",
+      "evidence": ["packages/graph/governance/g2-remote-admission.v1.json"]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Packed worker consumption passed without a central CLI runtime dependency.",
+      "evidence": [
+        "packages/graph/governance/g2-stage-closure.v1.json",
+        "packages/graph/governance/g2-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Canonical generation identity and replay passed across the required matrix.",
+      "evidence": ["packages/graph/governance/g2-remote-admission.v1.json"]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Portable worker contracts preserve later adapter evolution without moving truth ownership.",
+      "evidence": ["packages/graph/governance/g2-stage-closure.v1.json"]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Cancellation, timeout, crash and invalid transport remain typed non-publishable outcomes.",
+      "evidence": ["packages/graph/governance/g2-stage-closure.v1.json"]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Reference semantics and package-owned executable evidence are reproducible.",
+      "evidence": [
+        "packages/graph/governance/g2-stage-closure.v1.json",
+        "packages/graph/governance/g2-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "A verified signed source and protected repository gate authorize G3 only.",
+      "evidence": [
+        "packages/graph/governance/g2-remote-admission.v1.json",
+        "packages/graph/package.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "signed-source-checkpoint",
+      "status": "passed",
+      "evidence": "Commit 78cc7020181a1646c9ebcbb231d27a8913a81e4e has a verified maintainer signature."
+    },
+    {
+      "id": "same-commit-platform-matrix",
+      "status": "passed",
+      "evidence": "Linux, macOS and Windows composition artifacts were admitted by run 34294134197."
+    },
+    {
+      "id": "repository-gate",
+      "status": "passed",
+      "evidence": "The aggregate CI Gate completed successfully."
+    }
+  ],
+  "measurements": {
+    "remotePlatforms": 3,
+    "retainedPlatformArtifacts": 3,
+    "retainedAdmissionCandidates": 1,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "passed" },
+  "remainingRisks": [
+    "Query and proof-carrying retrieval remain governed by G3.",
+    "Rust and native acceleration remain prohibited until G6 measurements justify them.",
+    "Stable publication and CLI replacement remain prohibited by later gates."
+  ],
+  "nextStage": "G3",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-09-09",
+    "rule": "The verified signed candidate and retained same-commit platform matrix authorize G3 query work only."
+  }
+}

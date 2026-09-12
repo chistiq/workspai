@@ -1,0 +1,30 @@
+{
+  "id": "workspai.graph.conformance",
+  "version": "0.1.0-candidate",
+  "maturity": "query-candidate",
+  "requiredSuites": [
+    "contracts",
+    "semantic-invalid",
+    "provider-admission",
+    "canonical-replay",
+    "identity-portability",
+    "lineage-independence",
+    "reference-composition",
+    "proof-evaluation",
+    "conflict-preservation",
+    "quality-assessment",
+    "execution-port-responsiveness",
+    "query-normalization",
+    "proof-carrying-query",
+    "cross-layer-binding",
+    "query-budget-and-pagination",
+    "query-result-abstention",
+    "query-scale-baseline",
+    "query-cache-lifecycle",
+    "architecture-boundaries",
+    "determinism",
+    "security-adversarial",
+    "cross-platform",
+    "package-consumer"
+  ]
+}

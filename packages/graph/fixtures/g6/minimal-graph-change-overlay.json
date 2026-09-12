@@ -1,0 +1,106 @@
+{
+  "contract": { "id": "workspai.graph.change-overlay", "version": "0.1.0-candidate" },
+  "id": "overlay:fixture",
+  "baseGeneration": {
+    "id": "generation:base",
+    "generatedAt": "2026-09-09T20:00:00.000Z",
+    "contentDigest": {
+      "algorithm": "sha256",
+      "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "proposal": {
+    "kind": "patch",
+    "identity": "patch:fixture:1",
+    "digest": "9999999999999999999999999999999999999999999999999999999999999999"
+  },
+  "status": "complete",
+  "proposedChangeSet": {
+    "contract": {
+      "id": "workspai.graph.proposed-change-set",
+      "version": "0.1.0-candidate"
+    },
+    "id": "proposal:overlay:fixture",
+    "baseGeneration": "generation:base",
+    "inputs": [],
+    "causes": [{ "kind": "content", "source": "content-state-comparison" }],
+    "proposal": {
+      "kind": "patch",
+      "identity": "patch:fixture:1",
+      "digest": "9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "assumptions": ["providers-not-re-executed"]
+  },
+  "predictedDelta": {
+    "contract": {
+      "id": "workspai.graph.proposed-graph-delta",
+      "version": "0.1.0-candidate"
+    },
+    "baseGeneration": "generation:base",
+    "targetOverlay": "overlay:fixture",
+    "changedInputs": [],
+    "affectedProviders": [],
+    "facts": { "added": [], "renewed": [], "removed": [], "invalidated": [] },
+    "graph": {
+      "addedNodes": [],
+      "removedNodes": [],
+      "changedNodes": [],
+      "changedEdges": [],
+      "addedAssertions": [],
+      "removedAssertions": [],
+      "changedAssertions": []
+    },
+    "affectedProjections": [],
+    "downstreamInvalidations": [],
+    "execution": {
+      "detected": 0,
+      "scanned": 0,
+      "parsed": 0,
+      "recomputed": 0,
+      "skippedByDigest": 0,
+      "unsupported": 0,
+      "failed": 0,
+      "truncation": [],
+      "processing": []
+    },
+    "equivalence": "not-assessed"
+  },
+  "quality": {
+    "contract": { "id": "workspai.graph.quality", "version": "0.1.0-candidate" },
+    "generation": {
+      "id": "generation:base",
+      "generatedAt": "2026-09-09T20:00:00.000Z",
+      "contentDigest": {
+        "algorithm": "sha256",
+        "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    "integrity": "pass",
+    "determinism": "pass",
+    "incrementalEquivalence": "not-assessed",
+    "coverage": [],
+    "proofStates": {
+      "supported": 0,
+      "corroborated": 0,
+      "verified": 0,
+      "disputed": 0,
+      "insufficient": 0,
+      "unresolved": 0
+    },
+    "unknownZones": [],
+    "unsupportedZones": [],
+    "staleZones": [],
+    "conflicts": [],
+    "orphans": [],
+    "providerFailures": [],
+    "releaseClaims": [
+      "predicted-change-only",
+      "non-canonical-overlay",
+      "no-merge-conflict-claim",
+      "no-latest-advancement"
+    ]
+  },
+  "unknownZones": [],
+  "diagnostics": [],
+  "generatedAt": "2026-09-09T21:00:00.000Z"
+}

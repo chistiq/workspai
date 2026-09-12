@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "workspai-graph-migration-rollback-policy.v1",
+  "package": "@workspai/graph",
+  "status": "defined-unactivated",
+  "distribution": "internal-only",
+  "migration": {
+    "currentAuthority": "official-internal-graph-capability",
+    "nextMode": "g8-shadow-comparison",
+    "packageMayBecomePrimaryInG7": false,
+    "stateRewriteInG7": "prohibited",
+    "canonicalGenerationMutationInShadowMode": "prohibited",
+    "compatibilityEpoch": "graph-internal-v1"
+  },
+  "runtime": {
+    "silentFallback": "prohibited",
+    "fallbackRequiresQualifiedReason": true,
+    "fallbackMustEmitDeterministicTelemetry": true,
+    "userEngineSelection": "prohibited",
+    "dynamicRuntimeDownload": "prohibited",
+    "userRustToolchain": "not-required"
+  },
+  "rollback": {
+    "target": "official-internal-graph-capability",
+    "activationDefault": "off",
+    "sourceRewrite": "prohibited",
+    "dataMigrationRequiredBeforeG8": false,
+    "dataLossAtG7": "none-no-runtime-integration",
+    "triggerClasses": [
+      "contract-or-identity-regression",
+      "false-authoritative-edge-or-missing-conflict",
+      "performance-amplification",
+      "cli-package-incompatibility"
+    ]
+  },
+  "promotion": {
+    "requiresCurrentCommitLinuxMacosWindowsEvidence": true,
+    "requiresExactSharedWorkspaceLock": true,
+    "requiresPackedConsumer": true,
+    "requiresNativeParityWhenBundled": true,
+    "requiresSignedArtifactAttestation": true,
+    "requiresSignedSbomAttestation": true,
+    "requiresProtectedMainPush": true,
+    "requiresRepositoryAndSignerWorkflowVerification": true,
+    "requiresExactArtifactAndSbomBinding": true,
+    "requiresTransparencyWitness": true,
+    "requiresExplicitAdmissionLedger": true,
+    "npmPublication": "prohibited"
+  }
+}

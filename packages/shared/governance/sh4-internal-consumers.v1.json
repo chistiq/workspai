@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "workspai-shared-internal-consumers.v1",
+  "asOf": "2026-08-14",
+  "sharedPackage": "@workspai/shared",
+  "sharedVersion": "0.0.0-development",
+  "status": "candidate-stabilized-local-approved",
+  "policy": {
+    "registryAuthority": "independent-packages.json",
+    "consumerSelection": "registered-packages-only",
+    "publicSubpathsOnly": true,
+    "allowedSubpaths": [
+      "@workspai/shared/contracts",
+      "@workspai/shared/compatibility",
+      "@workspai/shared/validation",
+      "@workspai/shared/registry"
+    ],
+    "dependencyGraph": "acyclic",
+    "cliBridge": "prohibited",
+    "admissionImpact": "none"
+  },
+  "migratedConsumers": [
+    {
+      "package": "@workspai/graph",
+      "directory": "packages/graph",
+      "dependency": "0.0.0-development",
+      "stageImpact": "none",
+      "sharedPrimitives": [
+        "WisContractReference",
+        "WisResultEnvelope",
+        "WisScopeReference",
+        "defineWisContract",
+        "validateWisCoreResultEnvelope",
+        "negotiateWisCoreResultEnvelope",
+        "getWisGeneratedContract"
+      ],
+      "requiredSubpaths": [
+        "@workspai/shared/contracts",
+        "@workspai/shared/compatibility",
+        "@workspai/shared/validation",
+        "@workspai/shared/registry"
+      ]
+    }
+  ],
+  "deferredConsumers": [
+    {
+      "package": "@workspai/model",
+      "reason": "Model follows Graph in the portfolio execution order and is not registered or scaffolded yet.",
+      "admissionRule": "Migrate Model during its admitted package stage using the same public-subpath and acyclic-consumer gates."
+    }
+  ],
+  "invariants": [
+    "shared-remains-a-runtime-dependency-leaf",
+    "consumer-imports-use-declared-public-subpaths",
+    "registered-package-dependency-graph-is-acyclic",
+    "consumer-domain-maturity-does-not-advance",
+    "central-cli-does-not-consume-development-packages",
+    "deferred-packages-are-not-created-to-satisfy-stage-wording"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/query/v0.1.0-candidate",
+  "title": "WorkspaiGraphQueryCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "kind"],
+  "properties": {
+    "contract": { "const": { "id": "workspai.graph.query", "version": "0.1.0-candidate" } },
+    "kind": {
+      "enum": [
+        "dependencies",
+        "owners",
+        "impact",
+        "entry-points",
+        "related",
+        "cycles",
+        "evidence",
+        "path",
+        "bindings",
+        "operational-risk",
+        "contract-topology",
+        "architecture-conformance"
+      ]
+    },
+    "subject": { "type": "string", "minLength": 1 },
+    "target": { "type": "string", "minLength": 1 },
+    "scope": { "type": "object" },
+    "direction": { "enum": ["outgoing", "incoming", "both"] },
+    "relations": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "minimumProof": {
+      "enum": ["supported", "corroborated", "verified", "disputed", "insufficient", "unresolved"]
+    },
+    "includeDisputed": { "type": "boolean" },
+    "strategy": { "enum": ["direct", "graph", "hybrid", "auto"] },
+    "bindingProfile": { "type": "object", "required": ["id", "version"] },
+    "utilityProfile": { "type": "object", "required": ["id", "version"] },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxDepth": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "maxNodes": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "maxEdges": { "type": "integer", "minimum": 1, "maximum": 500000 },
+        "maxEvidence": { "type": "integer", "minimum": 1, "maximum": 100000 }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size"],
+      "properties": {
+        "cursor": { "type": "string", "pattern": "^offset:[0-9]+$" },
+        "size": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    }
+  }
+}

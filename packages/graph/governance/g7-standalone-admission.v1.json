@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "workspai-graph-standalone-admission.v1",
+  "asOf": "2026-09-12",
+  "package": "@workspai/graph",
+  "version": "0.0.0-development",
+  "status": "blocked",
+  "admitted": false,
+  "standaloneStable": false,
+  "distribution": "internal-only",
+  "npmPublication": "prohibited",
+  "nextStage": "G8",
+  "nextStageAuthorized": false,
+  "policy": {
+    "allRequiredGatesMustPass": true,
+    "pendingIsBlocking": true,
+    "localCandidateCannotSatisfyRetainedRemoteEvidence": true,
+    "runtimeDependenciesMustBeWorkspaceLockedAndPackVerified": true,
+    "publicationMustRemainDisabledAfterAdmission": true,
+    "cliBridgeMustRemainDisabledUntilAdmission": true
+  },
+  "gates": [
+    {
+      "id": "version-1-standalone-jobs",
+      "category": "product",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/governance/g7-release-inventory.v1.json"
+      ],
+      "reason": "All declared standalone jobs pass from the locally packed artifact; retained release-run evidence is not yet admitted."
+    },
+    {
+      "id": "incremental-equivalence-and-slo",
+      "category": "correctness",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/governance/g6-stage-plan.v1.json",
+        "packages/graph/scripts/check-query-profile.mjs"
+      ],
+      "reason": "Local incremental equivalence and measured performance gates pass; their cross-platform G6 evidence remains release-candidate evidence."
+    },
+    {
+      "id": "non-cli-embedded-consumer",
+      "category": "consumer",
+      "status": "passed-local",
+      "evidence": ["packages/graph/scripts/check-packed-package.mjs"],
+      "reason": "An isolated non-CLI consumer runs from the packed package without importing the central CLI."
+    },
+    {
+      "id": "standalone-workspace-modes",
+      "category": "independence",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/src/application/run-standalone-graph.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ],
+      "reason": "Project-only and declared standalone workspace behaviors pass locally without the central CLI runtime."
+    },
+    {
+      "id": "final-internal-contract-policy",
+      "category": "compatibility",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/governance/g7-internal-contract-lock.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/test/governance/g7-operational-readiness.test.ts"
+      ],
+      "reason": "Bridge-critical candidate wire identities are digest-locked into an internal compatibility epoch with explicit breaking, additive, extension and deprecation rules."
+    },
+    {
+      "id": "cross-platform-release-evidence",
+      "category": "portability",
+      "status": "pending-remote",
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "packages/graph/scripts/check-g7-release-matrix.mjs",
+        "packages/graph/governance/g7-verified-baseline.v1.json"
+      ],
+      "reason": "The prior exact candidate has retained three-platform metadata, but the operational-policy commit requires a new same-commit matrix before admission."
+    },
+    {
+      "id": "shared-workspace-runtime-integrity",
+      "category": "dependency",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/package.json",
+        "packages/shared/package.json",
+        "package-lock.json",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ],
+      "reason": "Graph and Shared use the same exact workspace version, remain private, and are installed together by the isolated packed-consumer gate."
+    },
+    {
+      "id": "internal-artifact-integrity",
+      "category": "supply-chain",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/governance/g7-sbom.cdx.json",
+        "packages/graph/governance/g7-release-inventory.v1.json",
+        "packages/graph/scripts/check-g7-release-candidate.mjs"
+      ],
+      "reason": "The internal tarball contents, CycloneDX SBOM and release inventory are verified locally without claiming an npm release."
+    },
+    {
+      "id": "security-and-adversarial-matrix",
+      "category": "security",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/governance/g7-stage-closure.v1.json"
+      ],
+      "reason": "Local hostile-input, path, secret and packed-content gates pass; release admission remains bound to retained remote evidence."
+    },
+    {
+      "id": "internal-migration-and-incident-policy",
+      "category": "operations",
+      "status": "passed-local",
+      "evidence": [
+        "packages/graph/governance/g7-migration-rollback-policy.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/src/contracts/standalone-product.ts"
+      ],
+      "reason": "The internal migration boundary preserves the existing Graph authority, prohibits shadow writes and silent fallback, and binds deterministic incident telemetry."
+    },
+    {
+      "id": "internal-promotion-and-rollback-proof",
+      "category": "release",
+      "status": "pending-remote",
+      "evidence": [
+        "packages/graph/governance/g7-migration-rollback-policy.v1.json",
+        "packages/graph/governance/g7-verified-baseline.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/scripts/check-g7-promotion-evidence.mjs",
+        "packages/graph/scripts/finalize-g7-standalone-admission.mjs",
+        "packages/graph/test/governance/g7-promotion-evidence.test.ts",
+        "packages/graph/test/governance/g7-admission-finalization.test.ts",
+        "packages/graph/package.json"
+      ],
+      "reason": "Rollback is locally proven non-destructive while activation is off; the main-branch workflow must retain a fail-closed proof binding the exact artifact, commit, three-platform candidate, signer identity, provenance and CycloneDX attestation before promotion."
+    },
+    {
+      "id": "central-cli-bridge-absence",
+      "category": "independence",
+      "status": "passed",
+      "evidence": ["scripts/check-independent-package-boundaries.mjs", "independent-packages.json"],
+      "reason": "The central CLI does not import or invoke the independent Graph package before standalone admission."
+    }
+  ],
+  "admissionRule": "Internal standalone admission is allowed only when every gate passes, the exact private Shared workspace dependency is lockfile-bound and pack-verified, and commit-bound promotion plus rollback evidence is retained. npm publication is outside this admission."
+}

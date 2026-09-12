@@ -1,0 +1,57 @@
+{
+  "contract": {
+    "id": "workspai.graph.proposed-graph-delta",
+    "version": "0.1.0-candidate"
+  },
+  "baseGeneration": "generation:base",
+  "targetOverlay": "overlay:fixture",
+  "changedInputs": [
+    {
+      "kind": "edited",
+      "locator": "src/index.ts",
+      "inputKind": "source-file",
+      "scanProfileDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "priorDigest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "nextDigest": {
+        "algorithm": "sha256",
+        "value": "8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    }
+  ],
+  "affectedProviders": ["workspai.graph.provider.ecmascript-imports"],
+  "facts": {
+    "added": [],
+    "renewed": [],
+    "removed": [],
+    "invalidated": []
+  },
+  "graph": {
+    "addedNodes": [],
+    "removedNodes": [],
+    "changedNodes": [],
+    "changedEdges": [],
+    "addedAssertions": [],
+    "removedAssertions": [],
+    "changedAssertions": []
+  },
+  "affectedProjections": ["workspai.graph.projection.dependency"],
+  "downstreamInvalidations": ["query-cache:dependency-neighbors"],
+  "execution": {
+    "detected": 1,
+    "scanned": 1,
+    "parsed": 1,
+    "recomputed": 1,
+    "skippedByDigest": 0,
+    "unsupported": 0,
+    "failed": 0,
+    "truncation": [],
+    "processing": []
+  },
+  "equivalence": "not-assessed"
+}

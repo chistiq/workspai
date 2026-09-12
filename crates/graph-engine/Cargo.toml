@@ -1,0 +1,12 @@
+[package]
+name = "workspai-graph-engine"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Private Rust acceleration kernel for the Workspai Graph package"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]

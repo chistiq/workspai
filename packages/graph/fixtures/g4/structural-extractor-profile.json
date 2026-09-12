@@ -1,0 +1,79 @@
+{
+  "contract": {
+    "id": "workspai.graph.structural-extractor-profile",
+    "version": "0.1.0-candidate"
+  },
+  "id": "workspai.graph.structural-extractor.standard",
+  "version": "0.1.0-candidate",
+  "staticOnly": true,
+  "authority": "observed",
+  "derivation": "extracted",
+  "languages": [
+    {
+      "language": "node",
+      "extensions": [".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"],
+      "extractions": ["static-imports", "literal-routes"],
+      "unsupportedSyntax": ["dynamic-import", "computed-route"]
+    },
+    {
+      "language": "python",
+      "extensions": [".py"],
+      "extractions": ["static-imports", "literal-routes"],
+      "unsupportedSyntax": ["dynamic-import", "computed-route"]
+    },
+    {
+      "language": "go",
+      "extensions": [".go"],
+      "extractions": ["static-imports", "literal-routes"],
+      "unsupportedSyntax": ["plugin-load", "computed-route"]
+    },
+    {
+      "language": "java",
+      "extensions": [".java"],
+      "extractions": ["static-imports", "literal-routes"],
+      "unsupportedSyntax": ["reflective-load", "composed-route-annotation"]
+    },
+    {
+      "language": "dotnet",
+      "extensions": [".cs"],
+      "extractions": ["static-imports", "literal-routes"],
+      "unsupportedSyntax": ["assembly-load", "computed-route"]
+    },
+    {
+      "language": "rust",
+      "extensions": [".rs"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["dynamic-library-load", "framework-route-macro"]
+    },
+    {
+      "language": "c-cpp",
+      "extensions": [".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["dynamic-library-load", "generated-include-path"]
+    },
+    {
+      "language": "objective-c-matlab",
+      "extensions": [".m", ".mm"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["runtime-class-load", "dynamic-path-import"]
+    },
+    {
+      "language": "php",
+      "extensions": [".php"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["variable-include", "runtime-class-load"]
+    },
+    {
+      "language": "ruby",
+      "extensions": [".rb"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["computed-require", "autoload"]
+    },
+    {
+      "language": "swift",
+      "extensions": [".swift"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["dynamic-library-load"]
+    }
+  ]
+}

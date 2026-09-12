@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "dependencyDirection": [
+    "contracts",
+    "domain",
+    "application",
+    "ports",
+    "adapters",
+    "executable-or-bridge"
+  ],
+  "forbiddenRuntimeDependencies": [
+    "packages/cli",
+    "workspai",
+    "@workspai/model",
+    "@workspai/doctor",
+    "@workspai/context",
+    "@workspai/skills",
+    "@workspai/agents",
+    "@workspai/mcp",
+    "commander",
+    "vscode",
+    "agent-renderers",
+    "mcp-transport"
+  ],
+  "truthDirection": [
+    "wis-contracts",
+    "facts-and-evidence",
+    "canonical-graph-generation",
+    "model-and-consumer-projections"
+  ]
+}

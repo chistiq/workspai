@@ -1,0 +1,78 @@
+{
+  "contract": { "id": "workspai.graph.fact-batch", "version": "0.1.0-candidate" },
+  "provider": { "id": "fixture.portable", "version": "1.0.0" },
+  "batchId": "batch:fixture:1",
+  "scope": { "kind": "project", "projectIds": ["project:fixture"] },
+  "inputs": [
+    {
+      "locator": "src/index.ts",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ],
+  "facts": [
+    {
+      "factId": "fact:fixture:1",
+      "factType": "source.contains",
+      "subject": {
+        "id": "entity:fixture:source",
+        "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" },
+        "kind": "file",
+        "scope": { "kind": "project", "projectIds": ["project:fixture"] }
+      },
+      "predicate": "contains",
+      "object": { "kind": "string", "value": "fixture" },
+      "scope": { "kind": "project", "projectIds": ["project:fixture"] },
+      "evidence": [
+        {
+          "id": "evidence:fixture:1",
+          "sourceKind": "source-file",
+          "relativeLocator": "src/index.ts",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      ],
+      "provenance": { "id": "fixture.portable", "version": "1.0.0" },
+      "derivation": "extracted",
+      "authority": "observed",
+      "confidence": 0.9,
+      "freshness": { "status": "current" },
+      "truthLifecycle": { "invalidatedBy": ["input-change", "deletion"] },
+      "observedAt": "2026-09-08T12:00:00Z",
+      "inputDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "unknownZones": []
+    }
+  ],
+  "diagnostics": [],
+  "coverage": [{ "dimension": "source-files", "observed": 1, "expected": 1 }],
+  "unknownZones": [],
+  "unsupportedZones": [],
+  "redaction": { "policy": "workspai.graph.portable-default", "redacted": 0, "omitted": 0 },
+  "status": "complete",
+  "processing": [
+    {
+      "input": {
+        "locator": "src/index.ts",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "provider": { "id": "fixture.portable", "version": "1.0.0" },
+      "stage": { "id": "fixture", "version": "1" },
+      "outcome": "processed",
+      "outputDigest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "diagnostics": []
+    }
+  ]
+}

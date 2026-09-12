@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/generation-publication/v0.1.0-candidate",
+  "title": "WorkspaiGraphGenerationPublicationCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generation", "artifactDigest", "qualityDigest", "publication"],
+  "properties": {
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "graphSchema",
+        "architectureEpoch",
+        "ontologySetDigest",
+        "proofPolicySetDigest",
+        "inputsDigest",
+        "factSetDigest",
+        "providerSetDigest",
+        "compositionPolicyDigest"
+      ],
+      "properties": {
+        "reference": { "$ref": "#/$defs/generationReference" },
+        "graphSchema": { "$ref": "#/$defs/contract" },
+        "architectureEpoch": { "type": "string", "minLength": 1 },
+        "ontologySetDigest": { "$ref": "#/$defs/digest" },
+        "proofPolicySetDigest": { "$ref": "#/$defs/digest" },
+        "inputsDigest": { "$ref": "#/$defs/digest" },
+        "factSetDigest": { "$ref": "#/$defs/digest" },
+        "providerSetDigest": { "$ref": "#/$defs/digest" },
+        "compositionPolicyDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "artifactDigest": { "$ref": "#/$defs/digest" },
+    "qualityDigest": { "$ref": "#/$defs/digest" },
+    "publication": { "enum": ["staged", "committed"] },
+    "previousGeneration": { "$ref": "#/$defs/generationReference" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "type": "string" },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{32,256}$" },
+        "canonicalization": { "type": "string" }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": { "id": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "generationReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "generatedAt", "contentDigest"],
+      "properties": {
+        "id": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "parents": { "type": "array", "items": { "type": "string" } },
+        "contentDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}

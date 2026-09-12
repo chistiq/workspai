@@ -1,0 +1,170 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G6",
+  "status": "local-source-complete",
+  "authorizedBy": "local-source-continuation",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g6",
+    "workspai-docs:Packages/graph/adr/0014-portable-content-state-controls-incremental-reuse.md",
+    "workspai-docs:Packages/graph/CONTRACTS_AND_ONTOLOGY.md#14-changeset-and-graphdelta",
+    "workspai-docs:Packages/graph/ARCHITECTURE.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "versioned-changeset-and-graph-delta-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/incremental.ts",
+        "packages/graph/schemas/changeset.v0.1.0-candidate.schema.json",
+        "packages/graph/schemas/graph-delta.v0.1.0-candidate.schema.json",
+        "packages/graph/test/contracts/incremental-contract.test.ts"
+      ]
+    },
+    {
+      "id": "content-state-manifest-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/incremental.ts",
+        "packages/graph/src/domain/content-state-merkle.ts",
+        "packages/graph/src/application/build-content-state-manifest.ts",
+        "packages/graph/src/application/content-state-manifest-types.ts",
+        "packages/graph/schemas/content-state-manifest.v0.1.0-candidate.schema.json",
+        "packages/graph/fixtures/g6/minimal-content-state-manifest.json",
+        "packages/graph/test/contracts/incremental-contract.test.ts",
+        "packages/graph/test/application/build-content-state-manifest.test.ts",
+        "packages/graph/test/domain/content-state-merkle.test.ts"
+      ]
+    },
+    {
+      "id": "merkle-comparison-engine",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/compare-content-state-manifest.ts",
+        "packages/graph/src/application/build-content-state-manifest.ts",
+        "packages/graph/src/contracts/incremental.ts",
+        "packages/graph/src/conformance/incremental.ts",
+        "packages/graph/src/domain/content-state-merkle.ts",
+        "packages/graph/test/application/compare-content-state-manifest.test.ts",
+        "packages/graph/test/conformance/incremental-admission.test.ts",
+        "packages/graph/test/domain/content-state-merkle.test.ts"
+      ]
+    },
+    {
+      "id": "shard-reuse-and-invalidation",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/plan-shard-reuse.ts",
+        "packages/graph/src/application/collect-semantic-dependencies.ts",
+        "packages/graph/src/application/digest-canonical-graph-input.ts",
+        "packages/graph/src/application/build-shard-dependencies.ts",
+        "packages/graph/src/contracts/incremental.ts",
+        "packages/graph/src/contracts/query.ts",
+        "packages/graph/src/conformance/query.ts",
+        "packages/graph/test/application/plan-shard-reuse.test.ts",
+        "packages/graph/test/application/collect-semantic-dependencies.test.ts",
+        "packages/graph/test/application/build-shard-dependencies.test.ts",
+        "packages/graph/test/query/query-engine.test.ts",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "incremental-build-orchestration",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/plan-incremental-graph-build.ts",
+        "packages/graph/src/application/build-incremental-repo-graph.ts",
+        "packages/graph/src/application/assess-incremental-build-equivalence.ts",
+        "packages/graph/src/application/build-shard-dependencies.ts",
+        "packages/graph/src/application/collect-semantic-dependencies.ts",
+        "packages/graph/src/application/incremental-build-types.ts",
+        "packages/graph/src/application/incremental-repo-build-types.ts",
+        "packages/graph/src/application/summarize-incremental-accounting.ts",
+        "packages/graph/src/application/providers-required-for-added-inputs.ts",
+        "packages/graph/test/application/plan-incremental-graph-build.test.ts",
+        "packages/graph/test/application/build-incremental-repo-graph.test.ts",
+        "packages/graph/test/application/official-provider-incremental-equivalence.test.ts",
+        "packages/graph/test/application/providers-required-for-added-inputs.test.ts",
+        "packages/graph/test/application/summarize-incremental-accounting.test.ts",
+        "packages/graph/test/application/assess-incremental-build-equivalence.test.ts",
+        "packages/graph/test/application/build-shard-dependencies.test.ts"
+      ]
+    },
+    {
+      "id": "proposed-change-overlay",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/proposed-change.ts",
+        "packages/graph/schemas/proposed-change-set.v0.1.0-candidate.schema.json",
+        "packages/graph/schemas/proposed-graph-delta.v0.1.0-candidate.schema.json",
+        "packages/graph/schemas/graph-change-overlay.v0.1.0-candidate.schema.json",
+        "packages/graph/src/application/build-graph-change-overlay.ts",
+        "packages/graph/src/application/evaluate-overlay-staleness.ts",
+        "packages/graph/src/application/plan-provider-recompute-scope.ts",
+        "packages/graph/src/application/compare-change-overlays.ts",
+        "packages/graph/src/application/query-change-overlay.ts",
+        "packages/graph/test/application/build-graph-change-overlay.test.ts",
+        "packages/graph/test/application/query-change-overlay.test.ts",
+        "packages/graph/test/application/g6-incremental-pipeline.test.ts",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "git-aware-change-journal",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/ports/index.ts",
+        "packages/graph/src/application/plan-inventory-reread.ts",
+        "packages/graph/src/application/parse-git-status-porcelain.ts",
+        "packages/graph/src/application/build-incremental-repo-graph.ts",
+        "packages/graph/src/application/merge-incremental-inventory.ts",
+        "packages/graph/src/adapters/node/repository-file-source.ts",
+        "packages/graph/test/application/plan-inventory-reread.test.ts",
+        "packages/graph/test/application/build-incremental-repo-graph.test.ts",
+        "packages/graph/test/adapters/node-file-source.test.ts"
+      ]
+    },
+    {
+      "id": "query-cache-invalidation-and-generation-diff",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/plan-query-cache-invalidation.ts",
+        "packages/graph/src/application/query-cache.ts",
+        "packages/graph/src/application/query-graph.ts",
+        "packages/graph/src/application/diff-graph-generations.ts",
+        "packages/graph/src/application/summarize-input-processing-ledger.ts",
+        "packages/graph/src/application/plan-shard-reuse.ts",
+        "packages/graph/src/ports/index.ts",
+        "packages/graph/test/application/plan-query-cache-invalidation.test.ts",
+        "packages/graph/test/query/query-engine.test.ts",
+        "packages/graph/test/application/diff-graph-generations.test.ts",
+        "packages/graph/test/application/plan-shard-reuse.test.ts"
+      ]
+    },
+    {
+      "id": "g6-cross-platform-admission",
+      "status": "planned",
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "packages/graph/scripts/check-g6-admission.mjs",
+        "packages/graph/scripts/check-g6-matrix-admission.mjs",
+        "packages/graph/test/governance/g6-admission.test.ts"
+      ]
+    }
+  ],
+  "prohibitions": [
+    "No incremental build may promote facts without provider re-observation.",
+    "No shard reuse without exact content and semantic dependency equality.",
+    "No similarity-only reuse contributing canonical facts, relations or proof state.",
+    "No central CLI runtime import or second Graph truth.",
+    "No native acceleration claim without benchmark evidence and parity-checked adapters."
+  ],
+  "nativeAcceleration": {
+    "status": "prohibited",
+    "earliestDecisionStage": "G6",
+    "rule": "Rust, native and WASM execution remain blocked until benchmark evidence justifies a parity-checked adapter."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G7",
+  "nextStageAuthorized": false
+}

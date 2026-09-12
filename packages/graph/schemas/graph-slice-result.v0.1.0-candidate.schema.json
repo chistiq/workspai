@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/graph-slice-result/v0.1.0-candidate",
+  "title": "WorkspaiGraphSliceResultCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "profile",
+    "sourceGeneration",
+    "request",
+    "nodes",
+    "edges",
+    "paths",
+    "evidence",
+    "unknownBoundaries",
+    "proofSummary",
+    "quality",
+    "explanation",
+    "cost",
+    "truncation"
+  ],
+  "properties": {
+    "contract": {
+      "const": { "id": "workspai.graph.slice-result", "version": "0.1.0-candidate" }
+    },
+    "profile": { "type": "object", "required": ["id", "version"] },
+    "sourceGeneration": {
+      "type": "object",
+      "required": ["id", "generatedAt", "contentDigest"]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "subjects", "includeEvidence", "redactionPolicy"],
+      "properties": {
+        "intent": {
+          "enum": ["understand", "impact", "review", "repair", "release"]
+        },
+        "subjects": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "includeEvidence": { "type": "boolean" },
+        "redactionPolicy": { "type": "string" }
+      }
+    },
+    "nodes": { "type": "array", "maxItems": 100000 },
+    "edges": { "type": "array", "maxItems": 500000 },
+    "paths": { "type": "array", "maxItems": 100000 },
+    "evidence": { "type": "array", "maxItems": 100000 },
+    "unknownBoundaries": { "type": "array", "maxItems": 100000 },
+    "proofSummary": { "type": "object" },
+    "quality": { "type": "object" },
+    "explanation": { "type": "object" },
+    "cost": { "type": "object" },
+    "truncation": { "type": "object" }
+  }
+}

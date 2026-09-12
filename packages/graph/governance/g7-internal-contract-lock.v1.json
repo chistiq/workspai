@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "workspai-graph-internal-contract-lock.v1",
+  "package": "@workspai/graph",
+  "status": "locked-for-g8-shadow-bridge",
+  "distribution": "internal-only",
+  "contractEpoch": "graph-internal-v1",
+  "catalog": {
+    "path": "packages/graph/conformance/contract-catalog.v1.json",
+    "digest": "sha256:51f3a23f7cce8439e5f7a9c46c9c64009a8749db39183e6801110e08ca7a525a",
+    "candidateNamesRemainWireIdentities": true
+  },
+  "compatibility": {
+    "breakingChangesRequireNewEpoch": true,
+    "additiveChangesRequireConformanceEvidence": true,
+    "unknownExtensionsRemainNonAuthoritative": true,
+    "silentSemanticReinterpretation": "prohibited",
+    "deprecationRequiresMigrationFixture": true
+  },
+  "scope": [
+    "canonical-graph",
+    "generation-publication",
+    "graph-query",
+    "graph-query-result",
+    "graph-quality",
+    "model-generation-binding",
+    "provider-manifest",
+    "proof-policy"
+  ],
+  "claims": {
+    "npmStable": false,
+    "publicPreview": false,
+    "centralCliPrimary": false
+  }
+}

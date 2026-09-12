@@ -13,17 +13,41 @@ function readJson(fileName: string): Record<string, unknown> {
 }
 
 describe('published monorepo workspace boundary', () => {
-  it('contains only the released CLI packages', () => {
+  it('tracks independent private packages without coupling the released CLI', () => {
     const packageJson = readJson('package.json');
     const packageLock = readJson('package-lock.json');
     const lockPackages = packageLock.packages as Record<string, unknown>;
     const rootLock = lockPackages[''] as { workspaces?: string[] };
 
-    expect(packageJson.workspaces).toEqual(['packages/cli', 'packages/wspai']);
+    expect(packageJson.workspaces).toEqual([
+      'packages/shared',
+      'packages/graph',
+      'packages/cli',
+      'packages/wspai',
+    ]);
     expect(rootLock.workspaces).toEqual(packageJson.workspaces);
-    expect(lockPackages).not.toHaveProperty('packages/graph');
-    expect(lockPackages).not.toHaveProperty('packages/shared');
-    expect(lockPackages).not.toHaveProperty('node_modules/@workspai/graph');
-    expect(lockPackages).not.toHaveProperty('node_modules/@workspai/shared');
+    expect(lockPackages).toHaveProperty('packages/graph');
+    expect(lockPackages).toHaveProperty('packages/shared');
+    expect(lockPackages['node_modules/@workspai/graph']).toEqual({
+      resolved: 'packages/graph',
+      link: true,
+    });
+    expect(lockPackages['node_modules/@workspai/shared']).toEqual({
+      resolved: 'packages/shared',
+      link: true,
+    });
+
+    const cliManifest = readJson('packages/cli/package.json') as {
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    const cliRuntimeDependencies = {
+      ...(cliManifest.dependencies ?? {}),
+      ...(cliManifest.optionalDependencies ?? {}),
+      ...(cliManifest.peerDependencies ?? {}),
+    };
+    expect(cliRuntimeDependencies).not.toHaveProperty('@workspai/shared');
+    expect(cliRuntimeDependencies).not.toHaveProperty('@workspai/graph');
   });
 });

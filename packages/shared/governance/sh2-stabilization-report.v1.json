@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "workspai-shared-stabilization-report.v1",
+  "package": "@workspai/shared",
+  "stage": "SH2-candidate-closure",
+  "asOf": "2026-08-13",
+  "status": "local-passed-stage-approved-remote-ci-pending",
+  "advancesAdmissionGate": false,
+  "scope": [
+    "monorepo and CLI boundary compatibility",
+    "schema-to-vocabulary generation parity",
+    "organization-scope fail-closed policy",
+    "bounded diagnostic truncation integrity",
+    "installed-tarball consumer execution",
+    "package documentation claim alignment"
+  ],
+  "evidence": {
+    "packageInfrastructure": "passed",
+    "sharedTests": { "files": 7, "passed": 56, "failed": 0 },
+    "graphConsumerTests": { "files": 4, "passed": 12, "failed": 0 },
+    "centralCliTests": { "files": 220, "passed": 2421, "failed": 0, "skipped": 8 },
+    "coveragePercent": {
+      "lines": 100,
+      "functions": 100,
+      "statements": 95.45,
+      "branches": 92.21
+    },
+    "packedConsumer": {
+      "status": "passed",
+      "requiredEntries": "passed",
+      "compressedBudgetBytes": 163840,
+      "runtimeDependencies": 0
+    },
+    "generatedSchemaDigest": "sha256:e1d46c17b7f9a1cabab66c3392ce6c6b4a6b69278026f0d743c7680fc42ebeaa",
+    "cliRuntimeBridge": "absent-and-prohibited"
+  },
+  "environment": {
+    "localPlatform": "linux",
+    "crossPlatformGate": "configured-in-ci-awaiting-remote-run"
+  },
+  "remainingAdmissionBlockers": [
+    "SH0 evidence acceptance",
+    "SH1 semantic-lock and WIS RFC acceptance",
+    "current/previous compatibility corpus",
+    "SH3 adversarial and measured scale evidence",
+    "independent external consumer proof"
+  ],
+  "nextStage": "SH3",
+  "nextStageAuthorized": true,
+  "authorizedScope": "SH3-A-local-candidate-only",
+  "approvedAt": "2026-08-13",
+  "approvalRule": "Explicit maintainer approval authorizes SH3-A local candidate work. Remote cross-platform CI remains an admission blocker and SH3-B/SH3-C require a separate stabilization review."
+}

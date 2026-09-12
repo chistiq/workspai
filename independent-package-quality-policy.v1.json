@@ -1,0 +1,154 @@
+{
+  "schemaVersion": "workspai-independent-package-quality-policy.v1",
+  "version": "1.0.0-candidate",
+  "effectiveDate": "2026-08-13",
+  "stageClosureContract": "contracts/independent-package-stage-closure.v1.json",
+  "documentationLayout": {
+    "rootAllowed": ["README.md", "CHANGELOG.md", "LICENSE"],
+    "nestedMarkdown": "forbidden",
+    "canonicalDocumentationAuthority": "external-access-controlled-store",
+    "forbiddenRepositoryPaths": ["docs"],
+    "forbiddenPublishedPrefixes": [
+      "docs/",
+      "governance/",
+      "scripts/",
+      "src/",
+      "test/",
+      "coverage/"
+    ]
+  },
+  "requiredDocuments": [
+    { "path": "README.md", "audience": "consumer", "publish": true },
+    { "path": "CHANGELOG.md", "audience": "consumer", "publish": true },
+    { "path": "LICENSE", "audience": "consumer", "publish": true }
+  ],
+  "requiredScripts": [
+    "typecheck",
+    "lint",
+    "format:check",
+    "test",
+    "build",
+    "check"
+  ],
+  "qualityDimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "intent": "Keep dependency direction, runtime ownership, public contracts and implementation documentation consistent.",
+      "requiredEvidence": [
+        "architecture-boundary",
+        "contract-drift",
+        "documentation-alignment"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "intent": "Keep growth dimensions bounded and extension points versioned, isolated and capability-aware.",
+      "requiredEvidence": [
+        "scale-profile",
+        "resource-limits",
+        "extension-conformance"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "intent": "Protect latency, memory, CPU, I/O, bundle and artifact budgets on representative workloads.",
+      "requiredEvidence": [
+        "reproducible-benchmark",
+        "budget-gate",
+        "regression-comparison"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "intent": "Threat-model trust boundaries and fail safely under malicious, forged, oversized or hostile input.",
+      "requiredEvidence": ["threat-model", "adversarial-tests", "security-scan"]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "intent": "Keep local-first, redaction, secret handling, telemetry and retention behavior explicit and tested.",
+      "requiredEvidence": [
+        "privacy-boundary",
+        "secret-redaction",
+        "portable-output"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "intent": "Preserve declared behavior across Linux, macOS, Windows and every supported runtime/profile.",
+      "requiredEvidence": [
+        "support-matrix",
+        "os-matrix",
+        "path-and-filesystem-cases"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "intent": "Preserve standalone value, explicit ports, dependency direction and the pre-stability CLI bridge prohibition.",
+      "requiredEvidence": [
+        "dependency-boundary",
+        "standalone-consumer",
+        "cli-bridge-absence"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "intent": "Prove deterministic results, explicit partial/unknown states, stable errors and full/incremental equivalence where applicable.",
+      "requiredEvidence": [
+        "conformance-corpus",
+        "determinism",
+        "failure-semantics"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "intent": "Version contracts independently and preserve tested migration, deprecation and unknown-extension behavior.",
+      "requiredEvidence": [
+        "current-previous-fixtures",
+        "migration",
+        "semver-classification"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "intent": "Handle cancellation, interruption, concurrency, retries, rollback and diagnostics without false success or corruption.",
+      "requiredEvidence": [
+        "recovery-cases",
+        "cancellation",
+        "observable-diagnostics"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "intent": "Keep modules cohesive, tests layered, fixtures reusable, decisions traceable and technical debt explicit.",
+      "requiredEvidence": ["quality-suite", "traceability", "reviewed-debt"]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "intent": "Protect package contents, provenance, dependency risk, publication authority, rollback and release reproducibility.",
+      "requiredEvidence": [
+        "packed-consumer",
+        "dependency-audit",
+        "provenance-and-release-gates"
+      ]
+    }
+  ],
+  "closureRules": {
+    "requiredAt": [
+      "end-of-every-stage",
+      "package-stability",
+      "program-completion"
+    ],
+    "allowedDimensionStatuses": [
+      "passed",
+      "pending-remote",
+      "not-applicable",
+      "blocked"
+    ],
+    "notApplicableRequiresJustification": true,
+    "blockedCannotAuthorizeNextStage": true,
+    "pendingRemoteCannotAdvanceAdmission": true,
+    "nextStageRequiresExplicitApproval": true,
+    "testsMayNotBeWeakenedToCloseAStage": true,
+    "finalClosureMustReRunAllCumulativeGates": true
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "workspai-shared-domain-adoption.v1",
+  "asOf": "2026-09-08",
+  "sharedPackage": "@workspai/shared",
+  "sharedVersion": "0.0.0-development",
+  "status": "candidate-stabilized-local-review-pending",
+  "policy": {
+    "registryAuthority": "independent-packages.json",
+    "adopters": "registered-dependent-packages-only",
+    "publicSubpathsOnly": true,
+    "exactDevelopmentVersion": true,
+    "dependencyGraph": "acyclic",
+    "domainMigration": "explicit-consumer-owned",
+    "centralCliBridge": "prohibited",
+    "publicationImpact": "none",
+    "maturityImpact": "none"
+  },
+  "adopters": [
+    {
+      "package": "@workspai/graph",
+      "directory": "packages/graph",
+      "packageStage": "G1",
+      "maturityBefore": "contract-design",
+      "maturityAfter": "contract-design",
+      "sharedSubpaths": [
+        "@workspai/shared/contracts",
+        "@workspai/shared/compatibility",
+        "@workspai/shared/validation",
+        "@workspai/shared/registry"
+      ],
+      "adoptionProfile": "workspai.graph.shared-adoption@0.1.0-draft",
+      "evidence": [
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/test/contracts/shared-adoption.test.ts",
+        "packages/graph/test/contracts/shared-interoperability.test.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ],
+      "provedBoundaries": [
+        "exact-current-core-envelope",
+        "generated-registry-identity-and-digest",
+        "bounded-validation-and-cancellation",
+        "foreign-producer-rejection",
+        "unsupported-domain-schema-rejection",
+        "shared-migration-does-not-authorize-domain-migration",
+        "installed-dual-tarball-consumer"
+      ]
+    }
+  ],
+  "deferredPackages": [
+    {
+      "package": "@workspai/model",
+      "reason": "Model is not registered or admitted in the independent package portfolio.",
+      "rule": "Do not create a placeholder consumer to increase adopter count."
+    }
+  ],
+  "invariants": [
+    "shared-remains-a-runtime-dependency-leaf",
+    "all-registered-shared-dependents-have-one-adoption-record",
+    "adoption-imports-only-declared-public-subpaths",
+    "shared-envelope-migration-does-not-imply-domain-payload-migration",
+    "domain-maturity-does-not-advance",
+    "package-publication-remains-blocked",
+    "central-cli-has-no-development-package-dependency-or-import",
+    "registered-package-graph-remains-acyclic"
+  ]
+}

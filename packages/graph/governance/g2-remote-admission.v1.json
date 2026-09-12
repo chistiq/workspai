@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "workspai-graph-remote-admission.v1",
+  "package": "@workspai/graph",
+  "stage": "G2",
+  "status": "passed",
+  "sourceCommit": "78cc7020181a1646c9ebcbb231d27a8913a81e4e",
+  "sourceCommitSignature": {
+    "status": "verified",
+    "scheme": "gpg-eddsa",
+    "keyFingerprint": "18CF672100B83B0EBCE34937C9448C37DF763127"
+  },
+  "candidateClosureDigest": "sha256:be6e8f38602bc60e782ce98c0c5fb5e5640458491add78fded405c14dae07a45",
+  "implementationDigest": "sha256:2ea6fe0dd79707ac9680f25cb4d63bf7c0e0832c55c0eab5d528964d510771fa",
+  "workflow": {
+    "provider": "github-actions",
+    "name": "CI & Metrics Matrix",
+    "runId": "34294134197",
+    "runUrl": "https://github.com/chistiq/workspai/actions/runs/34294134197",
+    "conclusion": "success"
+  },
+  "platforms": [
+    {
+      "runner": "Linux",
+      "digest": "sha256:6881b55d55f98487bde96c7843de1535a7116d691672d1d152c9e75bc8a6e578",
+      "conclusion": "success"
+    },
+    {
+      "runner": "macOS",
+      "digest": "sha256:d5a90fd9d5252b9baff6b4d19630593a16447725b8fe18c784310a9b85de9b5b",
+      "conclusion": "success"
+    },
+    {
+      "runner": "Windows",
+      "digest": "sha256:6bac005cbd8f812005101b8f76636ad62d2c3c57d6ef42fd1ad4ea0a70c83548",
+      "conclusion": "success"
+    }
+  ],
+  "matrixAdmission": {
+    "jobId": "102294612806",
+    "jobName": "Admit Graph composition matrix",
+    "artifactId": "10083369150",
+    "conclusion": "success",
+    "requiredOperatingSystems": ["Linux", "macOS", "Windows"]
+  },
+  "repositoryGate": {
+    "jobName": "CI Gate",
+    "conclusion": "success"
+  },
+  "reviewedAt": "2026-09-09",
+  "failures": []
+}

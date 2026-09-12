@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "workspai.graph.cli-result.v1",
+  "command": "inspect",
+  "status": "complete",
+  "data": { "build": { "status": "complete" } },
+  "diagnostics": []
+}

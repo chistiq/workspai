@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/shared",
+  "stage": "SH3-A-multi-contract-generation",
+  "asOf": "2026-08-13",
+  "status": "approved",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Manifest, generated bindings, catalog, public subpaths and implementation documentation agree.",
+      "evidence": [
+        "packages/shared/governance/shared-package-gates.v1.json",
+        "packages/shared/schemas/generation-manifest.v2.json",
+        "packages/shared/test/governance/documentation-alignment.test.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Generation has explicit contract/schema/portfolio ceilings and dependency-aware isolated extension bindings.",
+      "evidence": [
+        "packages/shared/scripts/lib/generation-policy.mjs",
+        "packages/shared/scripts/generate-contracts.mjs",
+        "packages/shared/test/architecture/multi-contract-generation.test.ts"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Registry and validation subpaths remain isolated and all gzip/tarball budgets pass.",
+      "evidence": [
+        "packages/shared/scripts/check-bundle-budget.mjs",
+        "packages/shared/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Generator paths, references, cycles, resource ceilings, dynamic evaluation and hostile JSON boundaries fail closed.",
+      "evidence": [
+        "packages/shared/test/validation/resource-guard.test.ts",
+        "packages/shared/test/architecture/multi-contract-generation.test.ts",
+        "packages/shared/test/validation/resource-guard.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "No network, telemetry, credential access or absolute-path portable output is introduced.",
+      "evidence": [
+        "packages/shared/test/validation/semantic-hardening.test.ts",
+        "packages/shared/test/validation/semantic-hardening.test.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Portable paths and browser-safe ESM pass locally; Linux, macOS and Windows CI evidence is pending.",
+      "evidence": ["packages/shared/package.json", ".github/workflows/ci.yml"]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Shared remains a zero-runtime-dependency leaf and the central CLI bridge remains absent and prohibited.",
+      "evidence": [
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/shared/test/architecture/dependency-leaf.test.ts"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Two contracts generate deterministically and the immutable catalog validates itself and its bindings.",
+      "evidence": [
+        "packages/shared/schemas/generated/registry.v2.json",
+        "packages/shared/test/conformance/contract-catalog.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "blocked",
+      "summary": "Contract versions are explicit, but current/previous migration and adversarial compatibility belong to SH3-B and remain incomplete.",
+      "evidence": [
+        "packages/shared/governance/semantic-lock-decisions.v1.json",
+        "packages/shared/test/conformance/core-envelope.test.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Generation is bounded, check mode is non-mutating and artifact replacement is per-file atomic after complete portfolio validation.",
+      "evidence": [
+        "packages/shared/scripts/generate-contracts.mjs",
+        "packages/shared/test/architecture/multi-contract-generation.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Policy helpers, generated surfaces, conformance fixtures and traceability are separated and covered by layered tests.",
+      "evidence": [
+        "packages/shared/governance/shared-package-gates.v1.json",
+        "packages/shared/test/architecture/multi-contract-generation.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "pending-remote",
+      "summary": "Installed tarball, package allowlist and publication refusal pass locally; remote provenance and release admission remain pending.",
+      "evidence": [
+        "packages/shared/package.json",
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/scripts/refuse-publish.mjs"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "package-infrastructure",
+      "status": "passed",
+      "command": "npm run check:package-infrastructure",
+      "evidence": "Shared 66 tests, Graph 12 tests and all package boundaries passed locally."
+    },
+    {
+      "id": "cli-boundary-regression",
+      "status": "passed",
+      "command": "vitest run monorepo-workspace-boundary package-publish-contract",
+      "evidence": "17 central CLI boundary tests passed."
+    },
+    {
+      "id": "remote-os-matrix",
+      "status": "pending-remote",
+      "evidence": "Linux, macOS and Windows CI execution is required before admission."
+    },
+    {
+      "id": "runtime-dependency-audit",
+      "status": "passed",
+      "command": "npm audit --omit=dev --workspace @workspai/shared --workspace @workspai/graph --json",
+      "evidence": "Registry audit returned zero known runtime vulnerabilities on 2026-08-13."
+    }
+  ],
+  "measurements": {
+    "portfolioDigest": "sha256:9b4255252055e6d40dea5545f0f66183336894102c85f48ed7a598ac4aaebdec",
+    "generatedContracts": 2,
+    "generatedArtifacts": 11,
+    "coveragePercent": { "lines": 98.87, "functions": 100, "statements": 94.89, "branches": 90.65 },
+    "bundleGzipBytes": { "contracts": 438, "registry": 842, "validation": 24384, "root": 24938 },
+    "packedConsumer": {
+      "files": 27,
+      "compressedBytes": 59581,
+      "budgetBytes": 163840,
+      "runtimeDependencies": 0
+    }
+  },
+  "environment": { "local": ["linux", "node-24.18.1", "npm-10.8.2"], "remoteMatrix": "pending" },
+  "remainingRisks": [
+    "SH0 evidence and SH1 WIS semantic lock are not accepted.",
+    "Remote Linux, macOS and Windows CI evidence is pending.",
+    "SH3-B compatibility and SH3-C measured scale evidence are not complete.",
+    "Independent external-consumer proof is not complete."
+  ],
+  "nextStage": "SH3-B",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-08-14",
+    "rule": "Maintainer approved bounded SH3-B candidate work on 2026-08-14; pending remote evidence still cannot advance standalone admission."
+  }
+}
