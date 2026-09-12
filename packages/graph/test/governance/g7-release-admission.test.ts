@@ -105,7 +105,9 @@ function combine(directory: string, g6Path: string, sourceCommit: string, tested
   return { result, output };
 }
 
-function matrixFixture(options: { g6?: Record<string, unknown> } = {}) {
+function matrixFixture(
+  options: { g6?: Record<string, unknown>; report?: Record<string, unknown> } = {}
+) {
   const resultRoot = path.join(packageRoot, 'test-results');
   fs.mkdirSync(resultRoot, { recursive: true });
   const directory = fs.mkdtempSync(path.join(resultRoot, 'g7-release-matrix-'));
@@ -119,7 +121,7 @@ function matrixFixture(options: { g6?: Record<string, unknown> } = {}) {
   ] as const) {
     fs.writeFileSync(
       path.join(directory, `${runnerOs}.json`),
-      JSON.stringify(platformReport(runnerOs, platform, sourceCommit, testedCommit))
+      JSON.stringify(platformReport(runnerOs, platform, sourceCommit, testedCommit, options.report))
     );
   }
   const g6Path = path.join(directory, 'g6-candidate.fixture');
@@ -172,6 +174,42 @@ describe('Graph G7 release-candidate admission', () => {
       nextStageAuthorized: false,
       requiredRunnerOperatingSystems: ['Linux', 'Windows', 'macOS'],
       failures: [],
+    });
+  });
+
+  it('retains historical G7 verification after the admitted registry enters G8', () => {
+    const fixture = matrixFixture({ report: { registryStage: 'G8' } });
+    const { result, output } = combine(
+      fixture.directory,
+      fixture.g6Path,
+      fixture.sourceCommit,
+      fixture.testedCommit
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject({
+      status: 'verified-release-candidate',
+      candidatePassed: true,
+      failures: [],
+    });
+  });
+
+  it('rejects the unadmitted intermediate G7 registry state', () => {
+    const fixture = matrixFixture({ report: { registryStage: 'G7' } });
+    const { result, output } = combine(
+      fixture.directory,
+      fixture.g6Path,
+      fixture.sourceCommit,
+      fixture.testedCommit
+    );
+    expect(result.status).not.toBe(0);
+    expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject({
+      status: 'blocked',
+      candidatePassed: false,
+      failures: expect.arrayContaining([
+        'Linux: G7 release-candidate evidence is invalid',
+        'macOS: G7 release-candidate evidence is invalid',
+        'Windows: G7 release-candidate evidence is invalid',
+      ]),
     });
   });
 

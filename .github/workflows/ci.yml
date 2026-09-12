@@ -521,11 +521,17 @@ jobs:
           --tested-commit "${{ github.sha }}"
           --output artifacts/graph-g7-release-candidate.json
 
+      - name: Resolve Graph lifecycle stage
+        id: graph-lifecycle
+        run: >-
+          node -e "const fs=require('node:fs');const registry=require('./independent-packages.json');const graph=registry.packages.find((entry)=>entry.name==='@workspai/graph');if(!graph)throw new Error('Graph registry entry is missing');fs.appendFileSync(process.env.GITHUB_OUTPUT,'current_stage='+graph.currentStage+'\n')"
+
       - name: Attest Graph internal package provenance
         id: graph-package-provenance
         if: >-
           github.event_name == 'push' &&
-          github.ref == 'refs/heads/main'
+          github.ref == 'refs/heads/main' &&
+          steps.graph-lifecycle.outputs.current_stage == 'G5'
         uses: actions/attest@v4
         with:
           subject-path: artifacts/graph-package/*.tgz
@@ -534,7 +540,8 @@ jobs:
         id: graph-package-sbom
         if: >-
           github.event_name == 'push' &&
-          github.ref == 'refs/heads/main'
+          github.ref == 'refs/heads/main' &&
+          steps.graph-lifecycle.outputs.current_stage == 'G5'
         uses: actions/attest@v4
         with:
           subject-path: artifacts/graph-package/*.tgz
@@ -544,6 +551,7 @@ jobs:
         if: >-
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
+          steps.graph-lifecycle.outputs.current_stage == 'G5' &&
           steps.graph-package-provenance.outcome == 'success' &&
           steps.graph-package-sbom.outcome == 'success'
         env:
@@ -566,6 +574,7 @@ jobs:
         if: >-
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
+          steps.graph-lifecycle.outputs.current_stage == 'G5' &&
           steps.graph-package-provenance.outcome == 'success' &&
           steps.graph-package-sbom.outcome == 'success'
         run: >-
@@ -575,6 +584,7 @@ jobs:
 
       - name: Retain Graph G7 attestation bundle
         if: >-
+          steps.graph-lifecycle.outputs.current_stage == 'G5' &&
           steps.graph-package-provenance.outcome == 'success' &&
           steps.graph-package-sbom.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -590,6 +600,7 @@ jobs:
         if: >-
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
+          steps.graph-lifecycle.outputs.current_stage == 'G5' &&
           steps.graph-package-provenance.outcome == 'success' &&
           steps.graph-package-sbom.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -603,6 +614,7 @@ jobs:
         if: >-
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
+          steps.graph-lifecycle.outputs.current_stage == 'G5' &&
           steps.graph-package-provenance.outcome == 'success' &&
           steps.graph-package-sbom.outcome == 'success'
         uses: actions/upload-artifact@v4

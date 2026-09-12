@@ -192,4 +192,25 @@ describe('Graph G7 standalone admission finalization', () => {
       ],
     });
   });
+
+  it('prevents the protected-main workflow from replaying G7 promotion after G8 opens', () => {
+    const workflow = fs.readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const steps = workflow.split('\n      - name: ');
+    const lifecycleGuard = "steps.graph-lifecycle.outputs.current_stage == 'G5'";
+    const guardedSteps = [
+      'Attest Graph internal package provenance',
+      'Attest Graph internal package SBOM',
+      'Verify Graph G7 promotion evidence',
+      'Finalize Graph G7 standalone admission',
+      'Retain Graph G7 attestation bundle',
+      'Retain verified Graph G7 promotion evidence',
+      'Retain Graph G7 standalone admission decision',
+    ];
+
+    for (const name of guardedSteps) {
+      const step = steps.find((candidate) => candidate.startsWith(`${name}\n`));
+      expect(step, `${name} is missing from the CI workflow`).toBeDefined();
+      expect(step).toContain(lifecycleGuard);
+    }
+  });
 });

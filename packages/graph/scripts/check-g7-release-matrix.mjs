@@ -101,7 +101,7 @@ for (const name of fs
     report.provenance !== 'unattested' ||
     report.rollbackProcedure !== 'defined-unactivated' ||
     report.nextStageAuthorized !== false ||
-    report.registryStage !== 'G5'
+    !['G5', 'G8'].includes(report.registryStage)
   ) {
     failures.push(`${String(runnerOs)}: G7 release-candidate evidence is invalid`);
   }

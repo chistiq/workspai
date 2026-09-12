@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Kept the historical G7 release matrix verifiable after its retained admission
+  advances the registry to G8, while rejecting the intermediate G7 registry
+  state. Protected-main attestation and finalization now run only for the G5 to
+  G7 admission transition, preventing replay after G8 has opened.
 - Added a TypeScript-only bundle-input build target for clean internal CLI
   composition. Full Graph builds continue to produce and verify the bundled
   Rust/WASM artifact, while ordinary CLI bundling requires no Rust toolchain.
