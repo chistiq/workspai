@@ -91,9 +91,13 @@ const inProgressG4 =
   graph?.stageStatus === 'in-progress' &&
   graph?.latestClosure === 'packages/graph/governance/g3-stage-approval.v1.json';
 const admittedHistoricalG4 =
-  graph?.currentStage === 'G5' &&
-  graph?.stageStatus === 'local-source-complete' &&
-  graph?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json';
+  (graph?.currentStage === 'G5' &&
+    graph?.stageStatus === 'local-source-complete' &&
+    graph?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json') ||
+  (graph?.currentStage === 'G8' &&
+    graph?.stageStatus === 'in-progress' &&
+    graph?.standaloneStability === 'admitted' &&
+    graph?.latestClosure === 'packages/graph/governance/g7-stage-admission.v1.json');
 if (!inProgressG4 && !admittedHistoricalG4) {
   failures.push('Graph registry does not authorize in-progress G4 work');
 }

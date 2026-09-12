@@ -124,6 +124,7 @@
     "test:real-world": "node scripts/real-world-qualification.mjs",
     "test:real-world:enterprise": "node scripts/enterprise-workspace-qualification.mjs",
     "test:graph-shadow": "node --import tsx scripts/graph-shadow-qualification.ts",
+    "test:graph-shadow:live": "node --import tsx scripts/graph-live-shadow-qualification.ts",
     "check:english-text": "node ../../scripts/english-text-guard.mjs --all",
     "lint": "corepack npm run check:english-text && eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
@@ -193,6 +194,7 @@
     "yazl": "^3.3.1"
   },
   "devDependencies": {
+    "@workspai/graph": "0.0.0-development",
     "@eslint/eslintrc": "^3.3.3",
     "@size-limit/file": "12.1.0",
     "@types/cli-progress": "^3.11.6",

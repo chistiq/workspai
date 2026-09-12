@@ -103,12 +103,17 @@ const closure = readJson(closurePath);
 const inventory = readJson(inventoryPath);
 const sbom = readJson(sbomPath);
 
-if (
-  graph?.currentStage !== 'G5' ||
-  graph?.stageStatus !== 'local-source-complete' ||
-  graph?.standaloneStability !== 'not-admitted' ||
-  graph?.cliRuntimeIntegration !== 'prohibited-before-standalone-stability'
-) {
+const failClosedG5 =
+  graph?.currentStage === 'G5' &&
+  graph?.stageStatus === 'local-source-complete' &&
+  graph?.standaloneStability === 'not-admitted' &&
+  graph?.cliRuntimeIntegration === 'prohibited-before-standalone-stability';
+const admittedG8 =
+  graph?.currentStage === 'G8' &&
+  graph?.stageStatus === 'in-progress' &&
+  graph?.standaloneStability === 'admitted' &&
+  graph?.cliRuntimeIntegration === 'g8-shadow-comparison-only';
+if (!failClosedG5 && !admittedG8) {
   failures.push('Graph registry must remain fail-closed on G5');
 }
 if (

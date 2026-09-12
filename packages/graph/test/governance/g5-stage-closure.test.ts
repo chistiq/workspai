@@ -10,7 +10,7 @@ const readJson = (file: string): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
 
 describe('Graph G5 stage closure', () => {
-  it('registers G5 as locally complete in the independent package registry', () => {
+  it('retains G5 closure evidence after the registry advances to G8', () => {
     const repositoryRoot = path.resolve(packageRoot, '../..');
     const registry = JSON.parse(
       fs.readFileSync(path.join(repositoryRoot, 'independent-packages.json'), 'utf8')
@@ -23,10 +23,11 @@ describe('Graph G5 stage closure', () => {
       }[];
     };
     expect(registry.packages.find((entry) => entry.name === '@workspai/graph')).toMatchObject({
-      currentStage: 'G5',
-      stageStatus: 'local-source-complete',
-      latestClosure: 'packages/graph/governance/g5-stage-closure.v1.json',
+      currentStage: 'G8',
+      stageStatus: 'in-progress',
+      latestClosure: 'packages/graph/governance/g7-stage-admission.v1.json',
     });
+    expect(fs.existsSync(path.join(packageRoot, 'governance/g5-stage-closure.v1.json'))).toBe(true);
   });
 
   it('records local pass with remote admission still pending', () => {

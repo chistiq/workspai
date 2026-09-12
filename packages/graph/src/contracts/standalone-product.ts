@@ -7,7 +7,7 @@ export const GRAPH_CLI_RESULT_CONTRACT = defineWisContract({
 
 export const GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT = defineWisContract({
   id: 'workspai.graph.standalone-support-matrix',
-  version: '0.1.0-candidate',
+  version: '0.2.0-candidate',
 });
 
 export const GRAPH_CLI_RESULT_SCHEMA_VERSION = 'workspai.graph.cli-result.v1' as const;
@@ -291,13 +291,13 @@ export const GRAPH_STANDALONE_PACKED_JOBS = Object.freeze([
 
 export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   contract: GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT,
-  maturity: 'repository-preview-candidate',
+  maturity: 'internal-stable',
   distribution: 'internal-only',
   npmPublication: 'prohibited',
   publishable: false,
-  standaloneStable: false,
+  standaloneStable: true,
   publicPreview: false,
-  centralCliRuntime: 'prohibited',
+  centralCliRuntime: 'shadow-comparison-only',
   nativeAcceleration: 'bundled-wasm-candidate',
   rustEngineTarget: Object.freeze({
     implementation: 'bundled-conformance-candidate',
@@ -314,9 +314,9 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   network: 'deny',
   runtime: { node: '>=20.19.0' },
   platforms: Object.freeze({
-    linux: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
-    darwin: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
-    win32: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
+    linux: Object.freeze({ declared: true, remoteAdmission: 'admitted' }),
+    darwin: Object.freeze({ declared: true, remoteAdmission: 'admitted' }),
+    win32: Object.freeze({ declared: true, remoteAdmission: 'admitted' }),
   }),
   languages: Object.freeze({
     node: 'official-offline',
@@ -337,13 +337,12 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   queryCache: GRAPH_QUERY_CACHE_OPERATING_BOUNDARY,
   externalProviderSdk: Object.freeze({
     status: 'deferred',
-    until: 'standalone-stable',
+    until: 'cli-shadow-parity',
   }),
   publicPreviewMigrations: Object.freeze([] as const),
   packedJobs: Object.freeze(GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id)),
-  plannedCapabilities: Object.freeze(['standalone-stable', 'cli-shadow-parity'] as const),
+  plannedCapabilities: Object.freeze(['cli-shadow-parity'] as const),
   unsupportedCapabilities: Object.freeze([
-    'standalone-stable',
     'cli-runtime-bridge',
     'native-acceleration-as-primary',
   ] as const),
@@ -354,12 +353,9 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
     'query-cache-is-optional-injected-store',
     'overlays-do-not-publish-canonical-generations',
     'external-provider-sdk-deferred',
-    'signed-provenance-unattested',
     'rollback-defined-but-not-proven-under-cli-shadow-load',
     'retrieval-benchmark-is-synthetic-fixture-labelled',
-    'current-commit-cross-platform-admission-pending',
-    'standalone-stable-not-admitted',
-    'central-cli-runtime-prohibited',
+    'central-cli-primary-prohibited',
     'rust-engine-conformance-candidate-not-activated',
   ] as const),
 });

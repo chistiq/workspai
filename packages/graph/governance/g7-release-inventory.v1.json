@@ -318,6 +318,11 @@
       "sha256": "17633e2aedb2cbc4cc62336c05003516fe1f58e7618f3c49f96c71d5f1bb897a"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/standalone-support-matrix/v0.2.0-candidate",
+      "file": "schemas/standalone-support-matrix.v0.2.0-candidate.schema.json",
+      "sha256": "31f9c4aa4ae0ee61b37e3d1e9765b14881f3559eb74802d64995b0cdd4a9523d"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",
       "file": "schemas/structural-extractor-profile.v0.1.0-candidate.schema.json",
       "sha256": "fb178690cac4bbac8c99dee50e2ce6c0b5f1a18ee2108008fc8ab6d389b0bd81"

@@ -39,6 +39,11 @@ export interface LegacyGraphShadowInput {
 export interface PackageGraphShadowInput {
   graph: {
     contract: { id: string; version: string };
+    generation: {
+      inputsDigest: { algorithm: string; value: string };
+      providerSetDigest: { algorithm: string; value: string };
+      compositionPolicyDigest: { algorithm: string; value: string };
+    };
     nodes: readonly {
       id: string;
       kind: string;
@@ -59,6 +64,10 @@ export interface PackageGraphShadowInput {
     unsupportedZones: readonly { code: string }[];
     coverage: readonly { dimension: string; status: string }[];
   };
+  /** Complete portable proof locators when the host still owns provider batches. */
+  evidenceLocators?: readonly string[];
+  /** Portable identity renderings observed at the package digest boundary. */
+  identityRenderings?: Readonly<Record<string, string>>;
 }
 
 export interface GraphShadowExecutionRequest {
@@ -74,6 +83,9 @@ export interface GraphShadowExecutionRequest {
     maxDiagnostics: number;
   };
   signal?: AbortSignal;
+  expectedBinding?: Partial<
+    Pick<GraphShadowComparisonBinding, 'scopeDigest' | 'redactionAuthorizationDigest'>
+  >;
 }
 
 export const GRAPH_SHADOW_DEFAULT_LIMITS = Object.freeze({
@@ -121,6 +133,19 @@ export function createGraphShadowResourceBudgetDigest(
   limits: GraphShadowExecutionRequest['limits']
 ): string {
   return sha256(limits);
+}
+
+export function createGraphShadowProjectScopeDigest(projectId: string): string {
+  return sha256({ kind: 'project', projectIds: [projectId] });
+}
+
+export function createGraphShadowReadOnlyAuthorizationDigest(): string {
+  return sha256({
+    network: 'deny',
+    packageWrites: 'prohibited',
+    sensitiveFiles: 'omit-known',
+    secretValuesEmitted: false,
+  });
 }
 
 function isDigest(value: string): boolean {
@@ -184,15 +209,18 @@ function isPackageGraph(value: unknown): value is PackageGraphShadowInput {
   if (!isObject(value) || !isObject(value.graph) || !isObject(value.quality)) return false;
   if (
     !isObject(value.graph.contract) ||
-    value.graph.contract.id !== 'workspai.graph.canonical-graph'
+    value.graph.contract.id !== 'workspai.graph.canonical-graph' ||
+    !isObject(value.graph.generation)
   ) {
     return false;
   }
+  const graph = value.graph;
+  const generation = graph.generation as JsonObject;
   if (
-    !Array.isArray(value.graph.nodes) ||
-    !Array.isArray(value.graph.edges) ||
-    !Array.isArray(value.graph.unresolved) ||
-    !Array.isArray(value.graph.diagnostics) ||
+    !Array.isArray(graph.nodes) ||
+    !Array.isArray(graph.edges) ||
+    !Array.isArray(graph.unresolved) ||
+    !Array.isArray(graph.diagnostics) ||
     !Array.isArray(value.quality.unknownZones) ||
     !Array.isArray(value.quality.unsupportedZones) ||
     !Array.isArray(value.quality.coverage)
@@ -200,10 +228,19 @@ function isPackageGraph(value: unknown): value is PackageGraphShadowInput {
     return false;
   }
   return (
-    value.graph.nodes.every(
+    graph.nodes.every(
       (node) => isObject(node) && typeof node.id === 'string' && typeof node.kind === 'string'
     ) &&
-    value.graph.edges.every(
+    ['inputsDigest', 'providerSetDigest', 'compositionPolicyDigest'].every((key) => {
+      const digest = generation[key];
+      return (
+        isObject(digest) &&
+        digest.algorithm === 'sha256' &&
+        typeof digest.value === 'string' &&
+        /^[a-f0-9]{64}$/u.test(digest.value)
+      );
+    }) &&
+    graph.edges.every(
       (edge) =>
         isObject(edge) &&
         typeof edge.id === 'string' &&
@@ -218,7 +255,7 @@ function isPackageGraph(value: unknown): value is PackageGraphShadowInput {
             (evidence.relativeLocator === undefined || typeof evidence.relativeLocator === 'string')
         )
     ) &&
-    value.graph.diagnostics.every(
+    graph.diagnostics.every(
       (diagnostic) => isObject(diagnostic) && typeof diagnostic.code === 'string'
     ) &&
     value.quality.unknownZones.every((zone) => isObject(zone) && typeof zone.code === 'string') &&
@@ -230,7 +267,17 @@ function isPackageGraph(value: unknown): value is PackageGraphShadowInput {
         isObject(coverage) &&
         typeof coverage.dimension === 'string' &&
         typeof coverage.status === 'string'
-    )
+    ) &&
+    (value.evidenceLocators === undefined || isStringArray(value.evidenceLocators)) &&
+    (value.identityRenderings === undefined ||
+      (isObject(value.identityRenderings) &&
+        Object.keys(value.identityRenderings).length === graph.nodes.length &&
+        graph.nodes.every(
+          (node) =>
+            isObject(node) &&
+            typeof node.id === 'string' &&
+            typeof (value.identityRenderings as JsonObject)[node.id] === 'string'
+        )))
   );
 }
 
@@ -304,7 +351,10 @@ function isExecutionLimits(value: unknown): value is GraphShadowExecutionRequest
   );
 }
 
-function bindingFailures(binding: unknown): GraphShadowDifference[] {
+function bindingFailures(
+  binding: unknown,
+  expected: GraphShadowExecutionRequest['expectedBinding']
+): GraphShadowDifference[] {
   const failures: GraphShadowDifference[] = [];
   if (!isComparisonBinding(binding)) {
     return [
@@ -336,6 +386,17 @@ function bindingFailures(binding: unknown): GraphShadowDifference[] {
         code: 'GRAPH_SHADOW_VERSION_BINDING_INVALID',
         key,
         reason: `${key} must bind a version and a full Git commit.`,
+      });
+    }
+  }
+  for (const key of ['scopeDigest', 'redactionAuthorizationDigest'] as const) {
+    const expectedDigest = expected?.[key];
+    if (expectedDigest && binding[key] !== expectedDigest) {
+      failures.push({
+        area: 'binding',
+        code: 'GRAPH_SHADOW_CONTEXT_BINDING_MISMATCH',
+        key,
+        reason: `${key} does not match the prepared execution context.`,
       });
     }
   }
@@ -399,6 +460,7 @@ function runtimeFailures(
             )
         )
       : []),
+    ...(packageInput.evidenceLocators ?? []),
   ];
   if (
     locators.some(
@@ -424,6 +486,21 @@ function runtimeFailures(
       code: 'GRAPH_SHADOW_RESOURCE_BINDING_MISMATCH',
       reason: 'Resource limits do not match the comparison binding digest.',
     });
+  }
+  const semanticBindings = [
+    ['sourceFixtureDigest', packageInput.graph.generation.inputsDigest.value],
+    ['providerProfileDigest', packageInput.graph.generation.providerSetDigest.value],
+    ['graphPolicyDigest', packageInput.graph.generation.compositionPolicyDigest.value],
+  ] as const;
+  for (const [bindingKey, actualDigest] of semanticBindings) {
+    if (request.binding[bindingKey] !== `sha256:${actualDigest}`) {
+      failures.push({
+        area: 'binding',
+        code: 'GRAPH_SHADOW_SEMANTIC_BINDING_MISMATCH',
+        key: bindingKey,
+        reason: `${bindingKey} does not match the package generation that was executed.`,
+      });
+    }
   }
   const policy = request.policy ?? {};
   const customMappings = [
@@ -511,7 +588,11 @@ function compareGraphs(
     const identity = identityMappings[entity.identity.key] ?? entity.identity.key;
     return `${identity}\0${mapped(entity.kind, DEFAULT_KIND_MAPPINGS, policy.kindMappings)}`;
   });
-  const packageNodes = packageInput.graph.nodes.map((node) => `${node.id}\0${node.kind}`);
+  const packageIdentity = (nodeId: string): string =>
+    packageInput.identityRenderings?.[nodeId] ?? nodeId;
+  const packageNodes = packageInput.graph.nodes.map(
+    (node) => `${packageIdentity(node.id)}\0${node.kind}`
+  );
   compareSets(
     'node',
     'GRAPH_SHADOW_NODE_SET_DIFFERENT',
@@ -534,7 +615,7 @@ function compareGraphs(
     return `${from}\0${kind}\0${to}`;
   });
   const packageRelations = packageInput.graph.edges.map(
-    (edge) => `${edge.from}\0${edge.relation}\0${edge.to}`
+    (edge) => `${packageIdentity(edge.from)}\0${edge.relation}\0${packageIdentity(edge.to)}`
   );
   compareSets(
     'relation',
@@ -546,11 +627,13 @@ function compareGraphs(
   );
 
   const legacyProofLocators = legacy.proofs.map((proof) => proof.artifact);
-  const packageProofLocators = packageInput.graph.edges.flatMap((edge) =>
-    edge.proof.evidence.flatMap((evidence) =>
-      evidence.relativeLocator ? [evidence.relativeLocator] : []
-    )
-  );
+  const packageProofLocators =
+    packageInput.evidenceLocators ??
+    packageInput.graph.edges.flatMap((edge) =>
+      edge.proof.evidence.flatMap((evidence) =>
+        evidence.relativeLocator ? [evidence.relativeLocator] : []
+      )
+    );
   compareSets(
     'proof',
     'GRAPH_SHADOW_PROOF_LINEAGE_DIFFERENT',
@@ -659,7 +742,7 @@ function report(
 export async function runGraphShadowComparison(
   request: GraphShadowExecutionRequest
 ): Promise<GraphShadowParityReport> {
-  const bindingIssues = bindingFailures(request.binding);
+  const bindingIssues = bindingFailures(request.binding, request.expectedBinding);
   if (!isComparisonPolicy(request.policy)) {
     bindingIssues.push({
       area: 'binding',

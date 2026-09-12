@@ -54,6 +54,14 @@ async function fixture(): Promise<{
     JSON.stringify({
       graph: {
         contract: { id: 'workspai.graph.canonical-graph', version: '0.1.0-candidate' },
+        generation: {
+          inputsDigest: { algorithm: 'sha256', value: digest.slice('sha256:'.length) },
+          providerSetDigest: { algorithm: 'sha256', value: digest.slice('sha256:'.length) },
+          compositionPolicyDigest: {
+            algorithm: 'sha256',
+            value: digest.slice('sha256:'.length),
+          },
+        },
         nodes: [{ id: 'file:src/index.ts', kind: 'file' }],
         edges: [
           {

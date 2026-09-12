@@ -71,10 +71,16 @@ const baselinePath = option(
   '--verified-baseline',
   'packages/graph/governance/g7-verified-baseline.v1.json'
 );
+const retainedAdmissionPath = option(
+  '--retained-admission',
+  'packages/graph/governance/g7-retained-admission.v1.json'
+);
 const failures = [];
 const lock = readJson(lockPath);
 const policy = readJson(policyPath);
 const baseline = readJson(baselinePath);
+const retainedAdmission = readJson(retainedAdmissionPath);
+const sourceAdmissionPath = 'packages/graph/governance/g7-standalone-admission.v1.json';
 const graphManifest = readJson('packages/graph/package.json');
 const cliManifest = readJson('packages/cli/package.json');
 const ciWorkflow = fs.readFileSync(repositoryFile('.github/workflows/ci.yml'), 'utf8');
@@ -96,9 +102,19 @@ if (
 ) {
   failures.push('internal Graph contract lock identity or scope drifted');
 }
+const retainedSourceLedger =
+  retainedAdmission.sourceLedgerDigest === fileDigest(sourceAdmissionPath) &&
+  retainedAdmission.status === 'admitted' &&
+  retainedAdmission.nextStageAuthorized === true;
 if (lock.catalog?.path !== 'packages/graph/conformance/contract-catalog.v1.json') {
   failures.push('internal Graph contract lock must bind the canonical catalog');
-} else if (lock.catalog?.digest !== fileDigest(lock.catalog.path)) {
+} else if (
+  lock.catalog?.digest !== fileDigest(lock.catalog.path) &&
+  !(
+    retainedSourceLedger &&
+    lockPath === 'packages/graph/governance/g7-internal-contract-lock.v1.json'
+  )
+) {
   failures.push('internal Graph contract catalog digest drifted');
 }
 if (
@@ -258,31 +274,70 @@ if (
   failures.push('retained G7 baseline metadata is incomplete or overclaims admission');
 }
 
+const retainedArtifactRows = Object.values(retainedAdmission.retainedArtifacts ?? {});
+if (
+  retainedAdmission.schemaVersion !== 'workspai-graph-g7-retained-admission.v1' ||
+  retainedAdmission.package !== '@workspai/graph' ||
+  retainedAdmission.version !== graphManifest.version ||
+  retainedAdmission.repository !== 'chistiq/workspai' ||
+  retainedAdmission.ref !== 'refs/heads/main' ||
+  retainedAdmission.workflow !== '.github/workflows/ci.yml' ||
+  retainedAdmission.status !== 'admitted' ||
+  retainedAdmission.standaloneStable !== true ||
+  retainedAdmission.nextStage !== 'G8' ||
+  retainedAdmission.nextStageAuthorized !== true ||
+  retainedAdmission.authorizedRuntimeMode !== 'g8-shadow-comparison-only' ||
+  retainedAdmission.currentGraphAuthority !== 'official-internal-graph-capability' ||
+  retainedAdmission.distribution !== 'internal-only' ||
+  retainedAdmission.npmPublication !== 'prohibited' ||
+  retainedAdmission.sourceCommit !== retainedAdmission.testedCommit ||
+  !commitPattern.test(retainedAdmission.sourceCommit ?? '') ||
+  !/^[1-9][0-9]*$/u.test(retainedAdmission.runId ?? '') ||
+  !/^[1-9][0-9]*$/u.test(retainedAdmission.jobId ?? '') ||
+  !digestPattern.test(retainedAdmission.promotionEvidenceDigest ?? '') ||
+  !digestPattern.test(retainedAdmission.sourceLedgerDigest ?? '') ||
+  retainedArtifactRows.length !== 2 ||
+  !retainedArtifactRows.every(
+    (entry) =>
+      entry &&
+      typeof entry === 'object' &&
+      /^[1-9][0-9]*$/u.test(entry.id ?? '') &&
+      typeof entry.name === 'string' &&
+      entry.name.length > 0 &&
+      digestPattern.test(entry.digest ?? '')
+  ) ||
+  !Array.isArray(retainedAdmission.failures) ||
+  retainedAdmission.failures.length !== 0
+) {
+  failures.push('retained G7 standalone admission is incomplete or over-authorized');
+}
+
 if (
   graphManifest.private !== true ||
   graphManifest.scripts?.prepublishOnly !== 'node scripts/refuse-publish.mjs'
 ) {
   failures.push('Graph must remain private and refuse publication');
 }
-if (
-  cliManifest.dependencies?.['@workspai/graph'] !== undefined ||
-  cliManifest.optionalDependencies?.['@workspai/graph'] !== undefined
-) {
-  failures.push('central CLI cannot depend on Graph before G8 shadow admission');
+const cliGraphDependency =
+  cliManifest.dependencies?.['@workspai/graph'] ?? cliManifest.devDependencies?.['@workspai/graph'];
+if (cliGraphDependency !== undefined && cliGraphDependency !== graphManifest.version) {
+  failures.push('central CLI Graph dependency must exactly match the admitted internal package');
+}
+if (cliManifest.optionalDependencies?.['@workspai/graph'] !== undefined) {
+  failures.push('central CLI Graph dependency cannot be optional during governed shadow execution');
 }
 const cliRuntimeSources = collectSourceFiles(repositoryFile('packages/cli/src')).filter(
   (file) => !file.includes(`${path.sep}__tests__${path.sep}`)
 );
-if (
-  cliRuntimeSources.some((file) =>
-    /(?:from\s+|import\s*\()(['"])@workspai\/graph(?:\/[^'"]*)?\1/u.test(
-      fs.readFileSync(file, 'utf8')
-    )
+const cliRuntimeImports = cliRuntimeSources.filter((file) =>
+  /(?:from\s+|import\s*\()(['"])@workspai\/graph(?:\/[^'"]*)?\1/u.test(
+    fs.readFileSync(file, 'utf8')
   )
-) {
-  failures.push('central CLI runtime imports Graph before G8 shadow admission');
+).length;
+if (cliRuntimeImports > 0 && cliGraphDependency !== graphManifest.version) {
+  failures.push('central CLI imports Graph without an exact internal runtime dependency');
 }
-const portable = JSON.stringify({ lock, policy, baseline });
+const portable = JSON.stringify({ lock, policy, baseline, retainedAdmission });
 if (/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u.test(portable)) {
   failures.push('G7 operational evidence contains a machine-local path');
 }
@@ -290,13 +345,18 @@ if (/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u.test(portable)) {
 const report = {
   schemaVersion: 'workspai-graph-g7-operational-readiness-audit.v1',
   package: '@workspai/graph',
-  status: failures.length === 0 ? 'ready-for-current-commit-matrix' : 'invalid',
+  status: failures.length === 0 ? 'admitted-shadow-only' : 'invalid',
   contractEpoch: lock.contractEpoch,
   rollbackTarget: policy.rollback?.target,
-  centralCliRuntimeImports: 0,
+  centralCliRuntimeImports: cliRuntimeImports,
   baselineRunId: baseline.githubRunId,
   baselineAdmitted: false,
-  currentCommitEvidenceRequired: true,
+  admissionRunId: retainedAdmission.runId,
+  admissionCommit: retainedAdmission.sourceCommit,
+  standaloneStable: retainedAdmission.standaloneStable === true,
+  authorizedRuntimeMode: retainedAdmission.authorizedRuntimeMode,
+  currentGraphAuthority: retainedAdmission.currentGraphAuthority,
+  currentCommitEvidenceRequired: false,
   failures,
 };
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

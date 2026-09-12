@@ -32,4 +32,5 @@ export type { WorkspaiGraphRepositoryPreviewViewCandidate } from './repository-p
 export type { WorkspaiGraphRetrievalPlanCandidate } from './retrieval-plan.v0.1.0-candidate.js';
 export type { WorkspaiGraphReviewContextSliceCandidate } from './review-context-slice.v0.1.0-candidate.js';
 export type { WorkspaiGraphStandaloneSupportMatrixCandidate } from './standalone-support-matrix.v0.1.0-candidate.js';
+export type { WorkspaiGraphStandaloneSupportMatrixV020Candidate } from './standalone-support-matrix.v0.2.0-candidate.js';
 export type { WorkspaiGraphStructuralExtractorProfileCandidate } from './structural-extractor-profile.v0.1.0-candidate.js';

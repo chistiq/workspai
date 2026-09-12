@@ -90,13 +90,26 @@ function buildAudit(options) {
     'packages/graph/governance/g7-migration-rollback-policy.v1.json'
   );
   const verifiedBaseline = readJson('packages/graph/governance/g7-verified-baseline.v1.json');
+  const retainedAdmission = readJson('packages/graph/governance/g7-retained-admission.v1.json');
+  const admissionDigest = `sha256:${crypto
+    .createHash('sha256')
+    .update(fs.readFileSync(repositoryFile(options.manifest)))
+    .digest('hex')}`;
+  const retainedHistoricalLedger =
+    options.manifest === defaultManifest &&
+    retainedAdmission.status === 'admitted' &&
+    retainedAdmission.standaloneStable === true &&
+    retainedAdmission.nextStageAuthorized === true &&
+    retainedAdmission.authorizedRuntimeMode === 'g8-shadow-comparison-only' &&
+    retainedAdmission.currentGraphAuthority === 'official-internal-graph-capability' &&
+    retainedAdmission.sourceLedgerDigest === admissionDigest;
   const catalogDigest = `sha256:${crypto
     .createHash('sha256')
     .update(fs.readFileSync(repositoryFile('packages/graph/conformance/contract-catalog.v1.json')))
     .digest('hex')}`;
   if (
     contractLock.status !== 'locked-for-g8-shadow-bridge' ||
-    contractLock.catalog?.digest !== catalogDigest ||
+    (contractLock.catalog?.digest !== catalogDigest && !retainedHistoricalLedger) ||
     migrationPolicy.status !== 'defined-unactivated' ||
     migrationPolicy.runtime?.silentFallback !== 'prohibited' ||
     migrationPolicy.rollback?.target !== 'official-internal-graph-capability' ||
@@ -211,18 +224,27 @@ function buildAudit(options) {
       manifest.private !== true ||
       manifest.scripts?.prepublishOnly !== 'node scripts/refuse-publish.mjs' ||
       graphRegistry?.standaloneStability !== 'admitted' ||
-      graphRegistry?.currentStage !== 'G7' ||
+      !['G7', 'G8'].includes(graphRegistry?.currentStage) ||
+      (graphRegistry?.currentStage === 'G8' &&
+        graphRegistry?.cliRuntimeIntegration !== 'g8-shadow-comparison-only') ||
       !metadataClaimsStable
     ) {
       failures.push('admitted Graph state is not reflected by package, registry and metadata');
     }
   } else {
+    const retainedRegistryState =
+      retainedHistoricalLedger &&
+      graphRegistry?.currentStage === 'G8' &&
+      graphRegistry?.standaloneStability === 'admitted' &&
+      graphRegistry?.cliRuntimeIntegration === 'g8-shadow-comparison-only' &&
+      metadataClaimsStable;
     if (
       manifest.private !== true ||
       manifest.scripts?.prepublishOnly !== 'node scripts/refuse-publish.mjs' ||
-      graphRegistry?.standaloneStability !== 'not-admitted' ||
-      graphRegistry?.cliRuntimeIntegration !== 'prohibited-before-standalone-stability' ||
-      metadataClaimsStable
+      (!retainedRegistryState &&
+        (graphRegistry?.standaloneStability !== 'not-admitted' ||
+          graphRegistry?.cliRuntimeIntegration !== 'prohibited-before-standalone-stability' ||
+          metadataClaimsStable))
     ) {
       failures.push(
         'blocked Graph must retain every fail-closed publication and integration guard'

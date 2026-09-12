@@ -87,7 +87,7 @@ describe('Graph G6 platform admission', () => {
       admitted: false,
       nextStage: 'G7',
       nextStageAuthorized: false,
-      registryStage: 'G5',
+      registryStage: 'G8',
       nativeAcceleration: 'prohibited',
       failures: [],
     });

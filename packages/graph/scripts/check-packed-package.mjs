@@ -221,8 +221,8 @@ try {
   if (
     !isSafeUnactivatedRollback(packedProduct.GRAPH_ROLLBACK_PROCEDURE) ||
     packedProduct.GRAPH_SBOM_SPEC.provenance !== 'unattested' ||
-    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false ||
-    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== true ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'shadow-comparison-only' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.distribution !== 'internal-only' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication !== 'prohibited' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.baselineArtifact !==
@@ -231,7 +231,7 @@ try {
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.dynamicDownload !== 'prohibited'
   ) {
     throw new Error(
-      'installed Graph product claimed stability or attestation, or drifted from the safe rollback boundary'
+      'installed Graph product drifted from its admitted shadow-only or safe rollback boundary'
     );
   }
   if (
@@ -324,8 +324,8 @@ try {
         if (!contracts.GRAPH_QUERY_CONTRACT) process.exit(28);
         if (typeof conformance.validateGraphQuery !== 'function') process.exit(29);
         if (graph.GRAPH_STANDARD_COMPOSITION_POLICY.version !== '0.1.0-candidate') process.exit(26);
-        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false) process.exit(31);
-        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited') process.exit(32);
+        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== true) process.exit(31);
+        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'shadow-comparison-only') process.exit(32);
         if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.distribution !== 'internal-only') process.exit(42);
         if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication !== 'prohibited') process.exit(43);
         if (graph.GRAPH_PACKAGE_METADATA.plannedCapabilities.includes('incremental')) process.exit(33);
@@ -511,7 +511,7 @@ try {
         !text.includes('architectureConformance') ||
         !text.includes('entryPoints') ||
         !text.includes(GRAPH_CLI_RESULT_SCHEMA_VERSION) ||
-        !text.includes('Standalone-stable admission is not claimed')
+        !text.includes('CLI authority remains prohibited during G8 shadow comparison')
       ) {
         throw new Error(
           'packed Graph CLI help omitted published presets or the fail-closed banner'
@@ -760,6 +760,7 @@ try {
     'schemas/structural-extractor-profile.v0.1.0-candidate.schema.json',
     'schemas/cli-result.v0.1.0-candidate.schema.json',
     'schemas/standalone-support-matrix.v0.1.0-candidate.schema.json',
+    'schemas/standalone-support-matrix.v0.2.0-candidate.schema.json',
     'conformance/profile.json',
     'fixtures/g1/minimal-provider-manifest.json',
     'fixtures/g1/minimal-fact-batch.json',

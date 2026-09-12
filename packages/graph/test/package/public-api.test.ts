@@ -26,7 +26,7 @@ import {
 describe('@workspai/graph development package', () => {
   it('is explicitly non-publishable and honest about implemented capabilities', () => {
     expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
-    expect(GRAPH_PACKAGE_METADATA.maturity).toBe('repository-preview-candidate');
+    expect(GRAPH_PACKAGE_METADATA.maturity).toBe('internal-stable');
     expect(GRAPH_PACKAGE_METADATA.implementedCapabilities).toEqual([
       'package-status',
       'shared-adoption-conformance',
@@ -114,11 +114,9 @@ describe('@workspai/graph development package', () => {
       'partial-cli-exit-code-integrity',
       'rust-wasm-traversal-conformance-candidate',
       'packed-zero-rust-toolchain-runtime',
-    ]);
-    expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',
-      'cli-shadow-parity',
     ]);
+    expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual(['cli-shadow-parity']);
   });
 
   it('exports the G3 proof-carrying query candidate without claiming stable publication', () => {
@@ -137,15 +135,13 @@ describe('@workspai/graph development package', () => {
     expect(GRAPH_PACKAGE_METADATA.publishable).toBe(false);
   });
 
-  it('returns a WIS-shaped status without claiming standalone stability', () => {
+  it('returns a WIS-shaped status for the retained internal admission', () => {
     const result = getGraphPackageStatus({ kind: 'project', projectIds: ['project:fixture'] });
 
-    expect(result.status).toBe('partial');
+    expect(result.status).toBe('pass');
     expect(result.operationOutcome).toBe('succeeded');
     expect(result.payload).toBe(GRAPH_PACKAGE_METADATA);
-    expect(result.omissions).toEqual([
-      expect.objectContaining({ code: 'GRAPH_ENGINE_NOT_STANDALONE_STABLE' }),
-    ]);
+    expect(result.omissions).toEqual([]);
     expect(result.compatibility.unsupportedCapabilities).toEqual([
       ...GRAPH_STANDALONE_SUPPORT_MATRIX.unsupportedCapabilities,
     ]);
@@ -153,7 +149,7 @@ describe('@workspai/graph development package', () => {
     expect(result.compatibility.unsupportedCapabilities).not.toContain('persistence');
     expect(result.compatibility.unsupportedCapabilities).not.toContain('incremental');
     expect(GRAPH_CLI_EXIT_CODES.rejected).toBe(3);
-    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable).toBe(false);
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable).toBe(true);
     expect(validateWisCoreResultEnvelope(result)).toMatchObject({ valid: true });
   });
 

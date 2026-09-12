@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Added the first read-only G8 Graph package shadow bridge. It executes the
+  private package from an explicitly prepared project context, preserves the
+  released CLI as the sole authority, bundles all internal code and worker
+  assets into the public CLI artifact, and never falls back silently.
+- Added fail-closed artifact and live-project qualification runners with exact
+  scope, authorization, inventory, provider, policy, resource, version and
+  commit bindings. Comparisons cover semantic identities, relations, proof
+  lineage, unknowns, completeness and diagnostics rather than counts alone.
 - Added an explicit manual `primary` or `full` official-generator matrix choice;
   an all-generator executed `primary` run for the exact commit can satisfy the
   release gate, while targeted and contract-only runs remain ineligible.

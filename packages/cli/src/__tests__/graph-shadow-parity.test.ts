@@ -47,6 +47,11 @@ function packageGraph(): PackageGraphShadowInput {
   return {
     graph: {
       contract: { id: 'workspai.graph.canonical-graph', version: '0.1.0-candidate' },
+      generation: {
+        inputsDigest: { algorithm: 'sha256', value: digest.slice('sha256:'.length) },
+        providerSetDigest: { algorithm: 'sha256', value: digest.slice('sha256:'.length) },
+        compositionPolicyDigest: { algorithm: 'sha256', value: digest.slice('sha256:'.length) },
+      },
       nodes: [
         { id: 'project:app', kind: 'project' },
         { id: 'test:app', kind: 'test' },
@@ -90,6 +95,29 @@ describe('Graph package shadow parity', () => {
       },
     });
     expect(result.receipt.comparison.reportDigest).toMatch(/^sha256:[a-f0-9]{64}$/u);
+  });
+
+  it('uses package identity renderings without changing canonical node identifiers', async () => {
+    const candidate = packageGraph();
+    candidate.graph.nodes[0]!.id = `entity:workspai:project:sha256:${'1'.repeat(64)}`;
+    candidate.graph.nodes[1]!.id = `entity:workspai:test:sha256:${'2'.repeat(64)}`;
+    candidate.graph.edges[0]!.from = candidate.graph.nodes[0]!.id;
+    candidate.graph.edges[0]!.to = candidate.graph.nodes[1]!.id;
+    candidate.identityRenderings = {
+      [candidate.graph.nodes[0]!.id]: 'project:app',
+      [candidate.graph.nodes[1]!.id]: 'test:app',
+    };
+
+    const result = await runGraphShadowComparison({
+      profile: 'g8-rendered-identities',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+
+    expect(result.status).toBe('equivalent');
+    expect(result.differences).toEqual([]);
   });
 
   it('blocks a semantic regression instead of comparing counts only', async () => {
@@ -182,6 +210,32 @@ describe('Graph package shadow parity', () => {
     );
     expect(legacyExecution).not.toHaveBeenCalled();
     expect(packageExecution).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the executed package generation does not match its semantic binding', async () => {
+    const candidate = packageGraph();
+    candidate.graph.generation.providerSetDigest.value = 'c'.repeat(64);
+
+    const result = await runGraphShadowComparison({
+      profile: 'g8-semantic-binding',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.differences).toContainEqual(
+      expect.objectContaining({
+        code: 'GRAPH_SHADOW_SEMANTIC_BINDING_MISMATCH',
+        key: 'providerProfileDigest',
+      })
+    );
+    expect(result.receipt).toMatchObject({
+      authority: 'released-cli',
+      fallback: 'prohibited',
+      packageWrites: 'prohibited',
+    });
   });
 
   it('does not fall back when package execution fails', async () => {

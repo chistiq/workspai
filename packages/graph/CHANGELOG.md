@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Retained the exact protected-main G7 admission and opened only the authorized
+  G8 shadow-comparison mode. The released CLI remains authoritative while the
+  internal Graph package is bundled as a build-time dependency with no npm,
+  runtime-resolution or user-toolchain requirement.
+- Added a portable identity renderer at the Graph digest boundary plus complete
+  provider-fact evidence locators. Canonical hashed identities remain unchanged;
+  compatibility comparisons use only observed SHA-256 preimages and explicit,
+  versioned legacy mappings.
+- Added a live project qualification path that scopes legacy workspace truth,
+  executes the package read-only on the same prepared project and emits a
+  bounded authority receipt. Semantic generation digests must match the bound
+  inventory, provider set and composition policy before comparison is allowed.
 - Removed package-internal composition sources from every standalone CLI JSON
   envelope while retaining them for in-process incremental recomputation. This
   prevents duplicate provider facts from crossing the consumer boundary and

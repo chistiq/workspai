@@ -5,12 +5,12 @@ export const GRAPH_PACKAGE_STATUS_CONTRACT = defineWisContract({
   version: '0.1.0-draft',
 });
 
-export const GRAPH_PACKAGE_MATURITY = 'repository-preview-candidate' as const;
+export const GRAPH_PACKAGE_MATURITY = 'internal-stable' as const;
 
 export const GRAPH_PACKAGE_METADATA = Object.freeze({
   name: '@workspai/graph',
   version: '0.0.0-development',
-  maturity: GRAPH_PACKAGE_MATURITY,
+  maturity: 'internal-stable' as const,
   publishable: false,
   implementedCapabilities: [
     'package-status',
@@ -99,8 +99,9 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'partial-cli-exit-code-integrity',
     'rust-wasm-traversal-conformance-candidate',
     'packed-zero-rust-toolchain-runtime',
+    'standalone-stable',
   ] as const,
-  plannedCapabilities: ['standalone-stable', 'cli-shadow-parity'] as const,
+  plannedCapabilities: ['cli-shadow-parity'] as const,
 });
 
 export type GraphPackageMetadata = typeof GRAPH_PACKAGE_METADATA;

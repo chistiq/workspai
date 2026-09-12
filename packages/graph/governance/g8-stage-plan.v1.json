@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G8",
+  "status": "in-progress",
+  "authorizedBy": "packages/graph/governance/g7-stage-admission.v1.json",
+  "authorizedRuntimeMode": "g8-shadow-comparison-only",
+  "currentGraphAuthority": "official-internal-graph-capability",
+  "targetGraphAuthority": "package-authoritative-after-replacement-gate",
+  "checkpoints": [
+    {
+      "id": "prepared-context-bridge",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-shadow-bridge.ts",
+        "packages/cli/src/__tests__/graph-package-shadow-bridge.test.ts"
+      ]
+    },
+    {
+      "id": "artifact-compatibility-renderers",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-shadow-bridge.ts",
+        "packages/cli/src/graph-shadow-parity.ts",
+        "packages/graph/schemas/standalone-support-matrix.v0.2.0-candidate.schema.json",
+        "packages/cli/scripts/graph-shadow-qualification.ts",
+        "packages/cli/src/__tests__/graph-shadow-qualification.test.ts"
+      ]
+    },
+    {
+      "id": "legacy-package-shadow-execution",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/scripts/graph-live-shadow-qualification.ts",
+        "packages/cli/src/__tests__/graph-live-shadow-qualification.test.ts",
+        "packages/cli/scripts/enterprise-package-smoke.mjs"
+      ]
+    },
+    {
+      "id": "semantic-parity-corpus",
+      "status": "planned"
+    },
+    {
+      "id": "real-workspace-cross-platform-parity",
+      "status": "planned"
+    },
+    {
+      "id": "workspace-intelligence-consumer-parity",
+      "status": "planned"
+    },
+    {
+      "id": "rust-wasm-host-routing",
+      "status": "planned"
+    },
+    {
+      "id": "package-primary-replacement-decision",
+      "status": "planned"
+    }
+  ],
+  "invariants": [
+    "The released CLI remains the only Graph authority during shadow execution.",
+    "Shadow execution is read-only and cannot publish or mutate canonical generations.",
+    "No package failure may silently fall back or weaken a result.",
+    "Every comparison binds scope, provider, policy, redaction, authorization, budget, version and commit identities.",
+    "Count-only parity is prohibited; identities, semantics, proof, unknowns, quality and diagnostics are compared.",
+    "Rust and WASM remain internal execution adapters and never become a second Graph truth.",
+    "Users do not select an engine or install Rust tooling.",
+    "The packages remain private and npm publication stays prohibited."
+  ],
+  "nextStage": "G9",
+  "nextStageAuthorized": false
+}

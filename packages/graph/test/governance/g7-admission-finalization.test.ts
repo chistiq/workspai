@@ -155,7 +155,7 @@ describe('Graph G7 standalone admission finalization', () => {
     });
   });
 
-  it('emits an internal shadow-only decision without rewriting the source ledger', () => {
+  it('refuses to replay admission after the registry has entered G8', () => {
     const resultRoot = path.join(packageRoot, 'test-results');
     fs.mkdirSync(resultRoot, { recursive: true });
     const directory = fs.mkdtempSync(path.join(resultRoot, 'g7-admission-finalization-'));
@@ -177,17 +177,19 @@ describe('Graph G7 standalone admission finalization', () => {
       ],
       { cwd: packageRoot, encoding: 'utf8' }
     );
-    expect(result.status, result.stderr + result.stdout).toBe(0);
+    expect(result.status, result.stderr + result.stdout).toBe(1);
     expect(JSON.parse(fs.readFileSync(outputPath, 'utf8'))).toMatchObject({
-      status: 'admitted',
-      admitted: true,
-      standaloneStable: true,
+      status: 'blocked',
+      admitted: false,
+      standaloneStable: false,
       nextStage: 'G8',
-      nextStageAuthorized: true,
-      authorizedRuntimeMode: 'g8-shadow-comparison-only',
+      nextStageAuthorized: false,
+      authorizedRuntimeMode: 'none',
       currentGraphAuthority: 'official-internal-graph-capability',
       npmPublication: 'prohibited',
-      failures: [],
+      failures: [
+        'G7 transition requires the existing registry and CLI bridge to remain fail-closed',
+      ],
     });
   });
 });

@@ -2,14 +2,13 @@
 
 Evidence-backed, storage-neutral workspace graph engine for Workspai.
 
-Status: **internal repository preview candidate · development-only · npm publication prohibited**
+Status: **internal standalone stable · G8 shadow migration · npm publication prohibited**
 
-> This is the developing independent Graph implementation. The released
-> Workspai CLI already contains the current official internal graph capability.
-> Graph is not imported by or connected to the CLI runtime while it is under
-> development; CLI adoption is permitted only after internal standalone stability,
-> followed by explicit bridge, shadow-parity, replacement and legacy-removal
-> gates.
+> This is the admitted independent Graph implementation for internal Workspai
+> consumption. The released CLI remains the current Graph authority while G8
+> performs read-only, explicitly bound shadow comparisons. Package-primary
+> execution, silent fallback and legacy removal remain prohibited until their
+> separate replacement gates pass.
 
 The package is intentionally private and consumed only inside the Workspai
 monorepo. Package boundaries exist to isolate ownership, contracts, tests and
@@ -27,15 +26,16 @@ the admitted G1 contract layer, G2 reference engine and G3 query suites. It vali
 envelope identity, provider detection/manifests, FactBatch provenance and
 accounting, ontology-constrained canonical graphs, immutable generations,
 quality, binding completeness, proof paths, explicit unknowns and exact
-query-cache lifecycle envelopes. These are semantic reference candidates, not
-standalone-stability or release claims.
+query-cache lifecycle envelopes. These contracts are admitted for the declared
+internal standalone scope; they do not authorize central CLI replacement.
 
 The G5 profile-driven projection engine is available as bounded read views over
 the same immutable canonical generation. Generic projection, derived analytics
 and graph-slice helpers stay off the package root; the root surface exposes the
 fixed `source`, `structural` and `evidence` preview views plus the review-context
 slice. Incremental orchestration exists as a local G6 engine and is not exported
-from `@workspai/graph`. Standalone-stable admission is not claimed.
+from `@workspai/graph`. The package is standalone stable for its admitted
+internal scope; central CLI authority remains prohibited during G8 shadow comparison.
 
 Node hosts may explicitly import `@workspai/graph/adapters/node` to execute the
 portable reference-composition task outside the event loop. The package root
@@ -190,11 +190,9 @@ boundaries, cost, truncation and an explicit analytical claim level.
 Consumer contracts, API guidance, provider authoring, security, architecture
 and roadmaps are maintained once in the canonical Workspai documentation
 portfolio. They are intentionally not duplicated in this public package
-repository or npm artifact. The approved G3 evidence authorizes G4 repository
-preview work only; it does not claim standalone stability or release admission.
-G5 and G6 local engines exist as candidates. G7 local source is complete for
-the private packed product surface. G6 remote OS-matrix evidence, final internal
-contract policy, internal promotion and rollback proof, standalone-stable
-admission and G8 CLI integration remain unauthorized. Public npm release is not
-part of the current delivery path. The CycloneDX SBOM remains an internal
-verification artifact.
+repository or npm artifact. Protected-main run `34715037038` admitted the exact
+G7 internal artifact on Linux, macOS and Windows with provenance and CycloneDX
+attestations. The package is standalone stable for its declared internal scope.
+G8 authorizes read-only CLI shadow comparison only; the released CLI remains the
+sole Graph authority and package-primary execution remains prohibited. Public npm
+release is not part of the current delivery path.

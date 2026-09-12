@@ -39,6 +39,7 @@ describe('published monorepo workspace boundary', () => {
 
     const cliManifest = readJson('packages/cli/package.json') as {
       dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
       optionalDependencies?: Record<string, string>;
       peerDependencies?: Record<string, string>;
     };
@@ -49,5 +50,14 @@ describe('published monorepo workspace boundary', () => {
     };
     expect(cliRuntimeDependencies).not.toHaveProperty('@workspai/shared');
     expect(cliRuntimeDependencies).not.toHaveProperty('@workspai/graph');
+    expect(cliManifest.devDependencies).toHaveProperty('@workspai/graph', '0.0.0-development');
+
+    const bundleConfig = fs.readFileSync(
+      path.join(repositoryRoot, 'packages/cli/tsup.config.ts'),
+      'utf8'
+    );
+    expect(bundleConfig).toContain("'internal/graph-package-shadow-bridge':");
+    expect(bundleConfig).toContain("'internal/graph-reference-worker-entry':");
+    expect(bundleConfig).toContain("noExternal: ['@workspai/graph', '@workspai/shared']");
   });
 });

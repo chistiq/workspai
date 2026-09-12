@@ -78,9 +78,9 @@ describe('G7 standalone product contracts', () => {
     expect(validate(invalid)).toBe(false);
   });
 
-  it('publishes the support matrix against its schema without claiming stability', () => {
+  it('publishes the admitted internal support matrix without claiming CLI authority', () => {
     const { schema, validate } = compileSchema(
-      'standalone-support-matrix.v0.1.0-candidate.schema.json'
+      'standalone-support-matrix.v0.2.0-candidate.schema.json'
     );
     expect(
       (schema as { properties: { contract: { const: unknown } } }).properties.contract.const
@@ -88,9 +88,9 @@ describe('G7 standalone product contracts', () => {
     expect(validate(GRAPH_STANDALONE_SUPPORT_MATRIX), JSON.stringify(validate.errors)).toBe(true);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.distribution).toBe('internal-only');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication).toBe('prohibited');
-    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable).toBe(false);
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable).toBe(true);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.publicPreview).toBe(false);
-    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime).toBe('prohibited');
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime).toBe('shadow-comparison-only');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.nativeAcceleration).toBe('bundled-wasm-candidate');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget).toEqual({
       implementation: 'bundled-conformance-candidate',
@@ -104,7 +104,7 @@ describe('G7 standalone product contracts', () => {
     });
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.externalProviderSdk).toEqual({
       status: 'deferred',
-      until: 'standalone-stable',
+      until: 'cli-shadow-parity',
     });
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.publicPreviewMigrations).toEqual([]);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.plannedCapabilities).not.toContain('rust-wasm-engine');
@@ -117,7 +117,7 @@ describe('G7 standalone product contracts', () => {
     ]);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.limitations).toEqual(
       expect.arrayContaining([
-        'signed-provenance-unattested',
+        'central-cli-primary-prohibited',
         'rollback-defined-but-not-proven-under-cli-shadow-load',
         'retrieval-benchmark-is-synthetic-fixture-labelled',
         'rust-engine-conformance-candidate-not-activated',
