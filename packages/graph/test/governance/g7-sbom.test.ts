@@ -26,6 +26,9 @@ describe('Graph G7 SBOM candidate', () => {
     const bom = JSON.parse(
       fs.readFileSync(path.join(packageRoot, 'governance/g7-sbom.cdx.json'), 'utf8')
     ) as {
+      bomFormat: string;
+      specVersion: string;
+      serialNumber: string;
       components: {
         name: string;
         scope: string;
@@ -35,6 +38,15 @@ describe('Graph G7 SBOM candidate', () => {
       dependencies: { ref: string; dependsOn: string[] }[];
       metadata: { properties: { name: string; value: string }[] };
     };
+    expect(bom).toMatchObject({
+      bomFormat: 'CycloneDX',
+      specVersion: '1.6',
+      serialNumber: expect.stringMatching(
+        /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+      ),
+    });
+    // actions/attest detects CycloneDX only when all three fields are present.
+    expect(Boolean(bom.bomFormat && bom.serialNumber && bom.specVersion)).toBe(true);
     expect(JSON.stringify(bom)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
     expect(bom.metadata.properties).toEqual(
       expect.arrayContaining([

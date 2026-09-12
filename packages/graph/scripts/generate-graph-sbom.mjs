@@ -14,6 +14,7 @@ const snapshotPath = path.join(packageRoot, 'governance/g7-sbom.cdx.json');
 const rustManifestPath = path.join(repositoryRoot, 'crates/graph-engine/Cargo.toml');
 const rustArtifactPath = path.join(packageRoot, 'dist/native/graph-engine.wasm');
 const write = process.argv.includes('--write');
+const graphSbomUuidNamespace = Buffer.from('35db8b7f6f6d5acb9f79d327534ce2ce', 'hex');
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -65,6 +66,19 @@ function manifestString(source, key) {
   const match = source.match(new RegExp(`^${key}\\s*=\\s*"([^"]+)"`, 'm'));
   if (!match?.[1]) throw new Error(`Missing ${key} in Rust Graph manifest`);
   return match[1];
+}
+
+function deterministicUuidV5(name) {
+  const bytes = crypto
+    .createHash('sha1')
+    .update(graphSbomUuidNamespace)
+    .update(name, 'utf8')
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `urn:uuid:${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 const graphManifest = readJson(graphManifestPath);
@@ -185,9 +199,23 @@ const runtimeRefs = runtimeNames.map((name) =>
     : npmPurl(name, lockPackage(lock, name)?.entry.version ?? graphManifest.dependencies[name])
 );
 runtimeRefs.push(rustRef);
+const dependencies = [
+  { ref: graphRef, dependsOn: [...runtimeRefs].sort((left, right) => left.localeCompare(right)) },
+  ...runtimeRefs
+    .map((ref) => ({ ref, dependsOn: [] }))
+    .sort((left, right) => left.ref.localeCompare(right.ref)),
+];
+const serialNumber = deterministicUuidV5(
+  JSON.stringify({
+    subject: graphRef,
+    components,
+    dependencies,
+  })
+);
 const bom = {
   bomFormat: 'CycloneDX',
   specVersion: '1.6',
+  serialNumber,
   version: 1,
   metadata: {
     component: components.find((entry) => entry['bom-ref'] === graphRef),
@@ -198,13 +226,16 @@ const bom = {
     ],
   },
   components,
-  dependencies: [
-    { ref: graphRef, dependsOn: [...runtimeRefs].sort((left, right) => left.localeCompare(right)) },
-    ...runtimeRefs
-      .map((ref) => ({ ref, dependsOn: [] }))
-      .sort((left, right) => left.ref.localeCompare(right.ref)),
-  ],
+  dependencies,
 };
+
+if (
+  !/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+    serialNumber
+  )
+) {
+  failures.push('CycloneDX serialNumber must be a deterministic RFC 4122 UUIDv5 URN');
+}
 
 const serialized = JSON.stringify(bom);
 if (/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u.test(serialized)) {

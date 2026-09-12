@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added a deterministic RFC 4122 UUIDv5 serial number to the CycloneDX 1.6
+  snapshot so GitHub artifact attestation recognizes the SBOM without making
+  package output non-reproducible. The serial is derived from the package,
+  component and dependency graph and remains free of machine-local state.
+
 - Locked bridge-critical Graph wire contracts into an internal compatibility
   epoch and added machine-checked migration, incident, fallback and rollback
   policy. The existing CLI Graph remains authoritative, shadow writes and
