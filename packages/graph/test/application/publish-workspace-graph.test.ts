@@ -179,13 +179,17 @@ describe('writeWorkspaceGraphGeneration', () => {
     );
   });
 
-  it('refuses failed builds and never calls the store', async () => {
+  it('refuses partial, failed, and cancelled builds and never calls the store', async () => {
     const publish = vi.fn();
     const build = await workspaceBuild();
 
-    for (const status of ['failed', 'cancelled'] as const) {
+    for (const status of ['partial', 'failed', 'cancelled'] as const) {
       const result = await writeWorkspaceGraphGeneration({
-        build: { ...build, status, graph: undefined },
+        build: {
+          ...build,
+          status,
+          ...(status === 'partial' ? {} : { graph: undefined }),
+        },
         store: { publish },
         digest: ports().digest,
       });

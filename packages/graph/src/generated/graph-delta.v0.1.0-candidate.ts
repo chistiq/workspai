@@ -42,7 +42,23 @@ export interface WorkspaiGraphDeltaCandidate {
     /**
      * @maxItems 1000000
      */
+    changedNodes: string[];
+    /**
+     * @maxItems 1000000
+     */
     changedEdges: string[];
+    /**
+     * @maxItems 1000000
+     */
+    addedAssertions: string[];
+    /**
+     * @maxItems 1000000
+     */
+    removedAssertions: string[];
+    /**
+     * @maxItems 1000000
+     */
+    changedAssertions: string[];
   };
   /**
    * @maxItems 10000

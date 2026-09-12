@@ -41,7 +41,15 @@
     "changedInputs": [],
     "affectedProviders": [],
     "facts": { "added": [], "renewed": [], "removed": [], "invalidated": [] },
-    "graph": { "addedNodes": [], "removedNodes": [], "changedEdges": [] },
+    "graph": {
+      "addedNodes": [],
+      "removedNodes": [],
+      "changedNodes": [],
+      "changedEdges": [],
+      "addedAssertions": [],
+      "removedAssertions": [],
+      "changedAssertions": []
+    },
     "affectedProjections": [],
     "downstreamInvalidations": [],
     "execution": {

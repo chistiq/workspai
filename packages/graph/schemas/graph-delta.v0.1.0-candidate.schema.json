@@ -43,11 +43,27 @@
     "graph": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["addedNodes", "removedNodes", "changedEdges"],
+      "required": [
+        "addedNodes",
+        "removedNodes",
+        "changedNodes",
+        "changedEdges",
+        "addedAssertions",
+        "removedAssertions",
+        "changedAssertions"
+      ],
       "properties": {
         "addedNodes": { "type": "array", "maxItems": 1000000, "items": { "type": "string" } },
         "removedNodes": { "type": "array", "maxItems": 1000000, "items": { "type": "string" } },
-        "changedEdges": { "type": "array", "maxItems": 1000000, "items": { "type": "string" } }
+        "changedNodes": { "type": "array", "maxItems": 1000000, "items": { "type": "string" } },
+        "changedEdges": { "type": "array", "maxItems": 1000000, "items": { "type": "string" } },
+        "addedAssertions": { "type": "array", "maxItems": 1000000, "items": { "type": "string" } },
+        "removedAssertions": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": { "type": "string" }
+        },
+        "changedAssertions": { "type": "array", "maxItems": 1000000, "items": { "type": "string" } }
       }
     },
     "affectedProjections": { "type": "array", "maxItems": 10000, "items": { "type": "string" } },

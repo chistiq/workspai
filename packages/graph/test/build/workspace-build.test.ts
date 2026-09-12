@@ -54,8 +54,47 @@ const projectGraph: GraphCanonicalGraph = {
       scope: projectScope,
       identityScheme: GRAPH_IDENTITY_SCHEME,
     },
+    {
+      id: 'file:project-api:src/index.ts',
+      kind: 'file',
+      scope: projectScope,
+      identityScheme: GRAPH_IDENTITY_SCHEME,
+    },
   ],
-  edges: [],
+  edges: [
+    {
+      id: 'edge:project-api:contains-index',
+      relation: 'contains',
+      semantics: 'structural',
+      from: 'project:api',
+      to: 'file:project-api:src/index.ts',
+      state: 'accepted',
+      facts: ['fact:project-api:contains-index'],
+      derivations: ['observed'],
+      proof: {
+        policy: { id: 'workspai.graph.proof.standard', version: '1' },
+        state: 'supported',
+        evidence: [
+          {
+            id: 'evidence:project-api:index',
+            sourceKind: 'repository-file',
+            relativeLocator: 'src/index.ts',
+            digest,
+          },
+        ],
+        authorities: ['observed'],
+        corroborationGroups: [],
+        counterEvidence: [],
+        missingRequirements: [],
+        evaluatedAt: '2026-09-09T00:00:00.000Z',
+        inputDigest: digest,
+        explanationCode: 'PROJECT_CONTAINS_FILE',
+      },
+      freshness: { status: 'current' },
+      confidence: 1,
+      explanation: { code: 'PROJECT_CONTAINS_FILE', drivers: ['repository-file'] },
+    },
+  ],
   assertions: [],
   disputes: [],
   unresolved: [],
@@ -138,6 +177,18 @@ describe('buildWorkspaceGraph', () => {
     if (!result.accepted) return;
     expect(result.value.status).toBe('complete');
     expect(result.value.graph?.nodes.some((node) => node.kind === 'workspace')).toBe(true);
+    expect(result.value.graph?.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'file:project-api:src/index.ts' }),
+        expect.objectContaining({ id: 'workspace-membership:workspace:platform:project:api' }),
+      ])
+    );
+    expect(result.value.graph?.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'edge:project-api:contains-index' }),
+        expect.objectContaining({ relation: 'contains', from: 'workspace:workspace:platform' }),
+      ])
+    );
     expect(result.value.projectReferences[0]).toMatchObject({
       projectIdentity: 'project:api',
       graphGeneration: generation.id,
@@ -180,6 +231,40 @@ describe('buildWorkspaceGraph', () => {
     });
     expect(result.accepted).toBe(false);
     expect(result.issues[0]?.code).toBe('GRAPH_WORKSPACE_PROJECT_GENERATION_INVALID');
+  });
+
+  it('rejects project quality that is blocked or bound to a different generation', async () => {
+    for (const quality of [
+      { ...projectQuality, integrity: 'blocked' as const },
+      {
+        ...projectQuality,
+        generation: { ...projectQuality.generation, id: 'generation:different' },
+      },
+    ]) {
+      const result = await buildWorkspaceGraph({
+        context: {
+          workspaceId: workspaceScope.workspaceId,
+          root: '/portable/workspace',
+          scope: workspaceScope,
+        },
+        projects: [
+          {
+            projectIdentity: 'project:api',
+            graph: projectGraph,
+            quality,
+            artifactRef: '.workspai/reports/source-evidence-graph.json',
+            membership: 'linked',
+          },
+        ],
+        policy: {
+          network: 'deny',
+          redactionProfile: 'portable-default',
+          composition: GRAPH_STANDARD_COMPOSITION_POLICY,
+        },
+        ports: ports(),
+      });
+      expect(result).toMatchObject({ accepted: false, code: 'invalid-input' });
+    }
   });
 
   it('rejects workspace composition without admitted project graphs', async () => {

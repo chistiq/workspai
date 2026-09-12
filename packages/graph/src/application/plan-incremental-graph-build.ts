@@ -178,7 +178,11 @@ export function planIncrementalGraphBuild(
       graph: Object.freeze({
         addedNodes: Object.freeze([]),
         removedNodes: Object.freeze([]),
+        changedNodes: Object.freeze([]),
         changedEdges: Object.freeze([]),
+        addedAssertions: Object.freeze([]),
+        removedAssertions: Object.freeze([]),
+        changedAssertions: Object.freeze([]),
       }),
       affectedProjections: Object.freeze([]),
       downstreamInvalidations: Object.freeze([]),
@@ -256,7 +260,11 @@ export function planIncrementalGraphBuild(
     graph: Object.freeze({
       addedNodes: Object.freeze([]),
       removedNodes: Object.freeze([]),
+      changedNodes: Object.freeze([]),
       changedEdges: Object.freeze([]),
+      addedAssertions: Object.freeze([]),
+      removedAssertions: Object.freeze([]),
+      changedAssertions: Object.freeze([]),
     }),
     affectedProjections: Object.freeze([...shardReuse.invalidatedProjections]),
     downstreamInvalidations,

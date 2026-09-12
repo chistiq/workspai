@@ -34,7 +34,11 @@
   "graph": {
     "addedNodes": [],
     "removedNodes": [],
-    "changedEdges": []
+    "changedNodes": [],
+    "changedEdges": [],
+    "addedAssertions": [],
+    "removedAssertions": [],
+    "changedAssertions": []
   },
   "affectedProjections": ["workspai.graph.projection.dependency"],
   "downstreamInvalidations": ["query-cache:dependency-neighbors"],

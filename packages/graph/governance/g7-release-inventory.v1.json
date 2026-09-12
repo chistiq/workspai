@@ -210,7 +210,7 @@
     {
       "id": "https://schemas.workspai.dev/graph/graph-delta/v0.1.0-candidate",
       "file": "schemas/graph-delta.v0.1.0-candidate.schema.json",
-      "sha256": "51a837067090dcb49e716cf99fe32685007491fb7b7ccaa13ef4703453970663"
+      "sha256": "3464366e9290666ff41aa8807475caa4fb5a2926e9650d9aca79d61c46dc9cfb"
     },
     {
       "id": "https://schemas.workspai.dev/graph/quality/v0.1.0-candidate",
@@ -265,7 +265,7 @@
     {
       "id": "https://schemas.workspai.dev/graph/proposed-graph-delta/v0.1.0-candidate",
       "file": "schemas/proposed-graph-delta.v0.1.0-candidate.schema.json",
-      "sha256": "18553f2ce486bcf64c73f88759f0f8cf34915873fb504a60c0432d8b8bd6df15"
+      "sha256": "f985a922c31367506b40e7c902d32cce14b42374edf856d722e050bc2d576808"
     },
     {
       "id": "https://schemas.workspai.dev/graph/provider-detection/v0.1.0-candidate",

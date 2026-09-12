@@ -65,7 +65,15 @@ describe('planQueryCacheInvalidation', () => {
         changedInputs: [],
         affectedProviders: [],
         facts: { added: [], renewed: [], removed: [], invalidated: [] },
-        graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
+        graph: {
+          addedNodes: [],
+          removedNodes: [],
+          changedNodes: [],
+          changedEdges: [],
+          addedAssertions: [],
+          removedAssertions: [],
+          changedAssertions: [],
+        },
         affectedProjections: [],
         downstreamInvalidations: ['query-cache:dependency-neighbors'],
         execution: {
@@ -144,7 +152,15 @@ describe('planQueryCacheInvalidation', () => {
           changedInputs: [],
           affectedProviders: [],
           facts: { added: [], renewed: [], removed: [], invalidated: [] },
-          graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
+          graph: {
+            addedNodes: [],
+            removedNodes: [],
+            changedNodes: [],
+            changedEdges: [],
+            addedAssertions: [],
+            removedAssertions: [],
+            changedAssertions: [],
+          },
           affectedProjections: [],
           downstreamInvalidations: ['query-cache:dependency-neighbors'],
           execution: {

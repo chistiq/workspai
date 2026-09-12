@@ -1,4 +1,5 @@
 import { canonicalizeGraphValue } from '../conformance/canonical-value.js';
+import type { WisEvidenceReference } from '@workspai/shared/contracts';
 import type {
   GraphCanonicalGraph,
   GraphEdge,
@@ -7,11 +8,18 @@ import type {
   GraphQueryQuality,
 } from '../contracts/index.js';
 import {
+  GRAPH_SLICE_REQUEST_CONTRACT,
   GRAPH_SLICE_RESULT_CONTRACT,
   type GraphSliceExecution,
   type GraphSliceIntent,
   type GraphSliceRequest,
 } from '../contracts/graph-slice.js';
+import {
+  admittedRedactionPolicy,
+  createGraphScopePredicate,
+  redactGraphEdge,
+  redactGraphEvidence,
+} from './projection-policy.js';
 
 const DEFAULT_BUDGET = Object.freeze({
   maxDepth: 4,
@@ -86,6 +94,34 @@ export function createGraphSlice(
   request: GraphSliceRequest
 ): GraphSliceExecution {
   const budget = Object.freeze({ ...DEFAULT_BUDGET, ...(request.budget ?? {}) });
+  if (
+    request.contract.id !== GRAPH_SLICE_REQUEST_CONTRACT.id ||
+    request.contract.version !== GRAPH_SLICE_REQUEST_CONTRACT.version
+  ) {
+    return {
+      accepted: false,
+      issues: [
+        {
+          code: 'GRAPH_SLICE_CONTRACT_UNSUPPORTED',
+          path: '/contract',
+          message: 'Graph slice request contract is not supported by this engine version.',
+        },
+      ],
+    };
+  }
+  if (!admittedRedactionPolicy(request.redactionPolicy)) {
+    return {
+      accepted: false,
+      issues: [
+        {
+          code: 'GRAPH_SLICE_REDACTION_POLICY_UNSUPPORTED',
+          path: '/redactionPolicy',
+          message: 'Graph slice redaction policy is not admitted by this engine version.',
+        },
+      ],
+    };
+  }
+  const redactionPolicy = request.redactionPolicy;
   if (!validBudget(request.budget)) {
     return {
       accepted: false,
@@ -111,7 +147,8 @@ export function createGraphSlice(
     };
   }
 
-  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const withinScope = createGraphScopePredicate(graph, request.scope);
+  const nodesById = new Map(graph.nodes.filter(withinScope).map((node) => [node.id, node]));
   const seedSubjects = Object.freeze(
     [...new Set(request.subjects)].sort((left, right) => left.localeCompare(right))
   );
@@ -134,6 +171,8 @@ export function createGraphSlice(
       .filter(
         (edge) =>
           (frontier.includes(edge.from) || frontier.includes(edge.to)) &&
+          nodesById.has(edge.from) &&
+          nodesById.has(edge.to) &&
           !selectedEdgeIds.has(edge.id)
       )
       .sort((left, right) => {
@@ -162,7 +201,7 @@ export function createGraphSlice(
     frontier.splice(0, frontier.length, ...nextFrontier);
   }
 
-  const nodes = Object.freeze(
+  let nodes = Object.freeze(
     [...selectedNodeIds]
       .map((id) => nodesById.get(id))
       .filter((node): node is GraphEntityReference => Boolean(node))
@@ -170,7 +209,7 @@ export function createGraphSlice(
       .slice(0, budget.maxNodes)
   );
   const retainedNodeIds = new Set(nodes.map((node) => node.id));
-  const edges = Object.freeze(
+  let rawEdges = Object.freeze(
     graph.edges
       .filter(
         (edge) =>
@@ -181,24 +220,74 @@ export function createGraphSlice(
       .sort((left, right) => left.id.localeCompare(right.id))
       .slice(0, budget.maxEdges)
   );
-  const evidence = Object.freeze(
-    request.includeEvidence
-      ? edges.flatMap((edge) => edge.proof.evidence).slice(0, budget.maxEvidence)
-      : []
-  );
-  const payload = {
-    nodes,
-    edges,
-    paths: [] as const,
-    evidence,
-    unknownBoundaries: graph.unresolved.map((entry) => ({
+  const uniqueEvidence = new Map<string, WisEvidenceReference>();
+  if (request.includeEvidence) {
+    for (const edge of rawEdges) {
+      for (const candidate of edge.proof.evidence) {
+        const redacted = redactGraphEvidence(candidate, redactionPolicy);
+        if (redacted) {
+          const canonical = canonicalizeGraphValue(redacted);
+          uniqueEvidence.set(canonical.accepted ? canonical.value : redacted.id, redacted);
+        }
+      }
+    }
+  }
+  const allEvidence = [...uniqueEvidence.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, evidence]) => evidence)
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+  let evidence = Object.freeze(allEvidence.slice(0, budget.maxEvidence));
+  if (allEvidence.length > evidence.length) truncationReasons.push('evidence');
+  const sanitizedEdges = () => {
+    const permitted = new Set(evidence.map((entry) => entry.id));
+    return Object.freeze(
+      rawEdges.map((edge) =>
+        redactGraphEdge(edge, redactionPolicy, request.includeEvidence, permitted)
+      )
+    );
+  };
+  let edges = sanitizedEdges();
+  const unknownBoundaries = Object.freeze([
+    ...excludedSubjects.map((subject) => ({
+      code: 'graph.slice-subject-outside-boundary',
+      scope: subject,
+      reason: 'Requested subject is absent or outside the authorized slice scope.',
+    })),
+    ...graph.unresolved.map((entry) => ({
       code: 'graph.slice-unresolved-identity',
       scope: entry.id,
       reason: `Slice retained ${entry.candidates.length} unresolved identity candidates.`,
     })),
-  };
-  const bytes = contentBytes(payload) ?? 0;
-  if (bytes > budget.maxContentBytes) truncationReasons.push('content-bytes');
+  ]);
+  const payload = () => ({ nodes, edges, paths: [] as const, evidence, unknownBoundaries });
+  let bytes = contentBytes(payload()) ?? Number.POSITIVE_INFINITY;
+  while (bytes > budget.maxContentBytes) {
+    if (evidence.length > 0) {
+      evidence = Object.freeze(evidence.slice(0, -1));
+      edges = sanitizedEdges();
+    } else if (rawEdges.length > 0) {
+      rawEdges = Object.freeze(rawEdges.slice(0, -1));
+      edges = sanitizedEdges();
+    } else {
+      const removable = [...nodes].reverse().find((node) => !seedIds.has(node.id));
+      if (!removable) {
+        return {
+          accepted: false,
+          issues: [
+            {
+              code: 'GRAPH_SLICE_CONTENT_BUDGET_EXCEEDED',
+              path: '/budget/maxContentBytes',
+              message:
+                'The authorized seed payload cannot fit within the requested content budget.',
+            },
+          ],
+        };
+      }
+      nodes = Object.freeze(nodes.filter((node) => node.id !== removable.id));
+    }
+    bytes = contentBytes(payload()) ?? Number.POSITIVE_INFINITY;
+    if (!truncationReasons.includes('content-bytes')) truncationReasons.push('content-bytes');
+  }
 
   return {
     accepted: true,
@@ -220,7 +309,7 @@ export function createGraphSlice(
       edges,
       paths: Object.freeze([]),
       evidence,
-      unknownBoundaries: Object.freeze(payload.unknownBoundaries),
+      unknownBoundaries,
       proofSummary: proofSummary(edges),
       quality: Object.freeze({
         proofStates: proofSummary(edges),

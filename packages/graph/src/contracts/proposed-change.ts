@@ -59,7 +59,11 @@ export interface GraphProposedGraphDelta {
   readonly graph: {
     readonly addedNodes: readonly string[];
     readonly removedNodes: readonly string[];
+    readonly changedNodes: readonly string[];
     readonly changedEdges: readonly string[];
+    readonly addedAssertions: readonly string[];
+    readonly removedAssertions: readonly string[];
+    readonly changedAssertions: readonly string[];
   };
   readonly affectedProjections: readonly string[];
   readonly downstreamInvalidations: readonly string[];

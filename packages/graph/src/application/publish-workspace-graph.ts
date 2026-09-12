@@ -13,7 +13,7 @@ import type { GraphWorkspaceBuildResult } from './workspace-build-types.js';
 export interface GraphWorkspacePublicationIndex {
   readonly schemaVersion: 'workspai.graph.workspace-publication-index.v1';
   readonly generation: GraphPublicationManifest;
-  readonly buildStatus: 'complete' | 'partial';
+  readonly buildStatus: 'complete';
   readonly projectReferences: GraphWorkspaceBuildResult['projectReferences'];
   readonly artifacts: Readonly<
     Record<
@@ -79,7 +79,7 @@ async function artifact(
   };
 }
 
-/** Publishes one immutable workspace generation through an injected atomic store. */
+/** Publishes one complete immutable workspace generation through an injected atomic store. */
 export async function writeWorkspaceGraphGeneration(request: {
   readonly build: GraphWorkspaceBuildResult;
   readonly store: GraphProjectArtifactStorePort;
@@ -87,18 +87,14 @@ export async function writeWorkspaceGraphGeneration(request: {
   readonly signal?: AbortSignal;
 }): Promise<GraphWorkspacePublicationOutcome> {
   const { build } = request;
-  if (
-    (build.status !== 'complete' && build.status !== 'partial') ||
-    !build.graph ||
-    !build.quality.graph
-  ) {
+  if (build.status !== 'complete' || !build.graph || !build.quality.graph) {
     return failure(
       'invalid-build',
       'GRAPH_WORKSPACE_PUBLICATION_BUILD_INVALID',
-      'Only a successful workspace build with canonical graph quality can be published.'
+      'Only a complete workspace build with canonical graph quality can advance the current generation.'
     );
   }
-  const buildStatus: 'complete' | 'partial' = build.status;
+  const buildStatus = build.status;
   if (request.signal?.aborted) {
     return failure(
       'publication-failed',

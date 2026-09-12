@@ -193,7 +193,11 @@ export async function buildIncrementalRepoGraph(
   });
   const toRecompute = providersToExecute(
     registered,
-    [...planned.providersToRecompute, ...addedRequired],
+    [
+      ...planned.providersToRecompute,
+      ...addedRequired,
+      ...(planned.status === 'partial' ? registered : []),
+    ],
     request.providersToRecompute,
     reusable
   );
@@ -202,19 +206,22 @@ export async function buildIncrementalRepoGraph(
   );
 
   const inventoryFailed = inventory.status === 'failed' || inventory.status === 'cancelled';
-  const build = inventoryFailed
-    ? failedBuild(inventory.status === 'cancelled' ? 'cancelled' : 'failed', [
-        ...inventoryReread.diagnostics,
-        ...inventory.diagnostics,
-      ])
-    : await buildRepoGraph({
-        ...request,
-        admittedInputs,
-        compositionReuse: Object.freeze({
-          reusedSources,
-          providersToRecompute: toRecompute,
-        }),
-      });
+  const planningFailed = planned.status === 'failed';
+  const build =
+    inventoryFailed || planningFailed
+      ? failedBuild(inventory.status === 'cancelled' ? 'cancelled' : 'failed', [
+          ...inventoryReread.diagnostics,
+          ...inventory.diagnostics,
+          ...planned.diagnostics,
+        ])
+      : await buildRepoGraph({
+          ...request,
+          admittedInputs,
+          compositionReuse: Object.freeze({
+            reusedSources,
+            providersToRecompute: toRecompute,
+          }),
+        });
 
   const compositionSources = build.compositionSources ?? [];
   const shardDependencies = buildShardDependenciesFromSources(compositionSources, stamps);
@@ -317,11 +324,48 @@ export async function buildIncrementalRepoGraph(
     ]),
   });
 
+  const equivalenceBlocked = equivalence.equivalence === 'blocked';
+  const incrementalPartial = plan.status === 'partial';
+  const incrementalFailed = plan.status === 'failed';
+  const finalStatus =
+    equivalenceBlocked || incrementalFailed
+      ? ('failed' as const)
+      : incrementalPartial
+        ? ('partial' as const)
+        : build.status;
+  const finalDiagnostics = Object.freeze([
+    ...build.diagnostics,
+    ...equivalence.diagnostics,
+    ...queryCacheDiagnostics,
+  ]);
+  const graphQuality = build.quality.graph
+    ? Object.freeze({
+        ...build.quality.graph,
+        integrity:
+          equivalenceBlocked || incrementalFailed
+            ? ('blocked' as const)
+            : incrementalPartial && build.quality.graph.integrity === 'pass'
+              ? ('attention' as const)
+              : build.quality.graph.integrity,
+        incrementalEquivalence: equivalence.equivalence,
+        releaseClaims:
+          equivalenceBlocked || incrementalPartial || incrementalFailed
+            ? Object.freeze(
+                build.quality.graph.releaseClaims.filter(
+                  (claim) => claim !== 'publishable' && claim !== 'release-ready'
+                )
+              )
+            : build.quality.graph.releaseClaims,
+      })
+    : undefined;
+
   return Object.freeze({
     ...build,
-    diagnostics: Object.freeze([...build.diagnostics, ...queryCacheDiagnostics]),
+    status: finalStatus,
+    diagnostics: finalDiagnostics,
     quality: Object.freeze({
       ...build.quality,
+      ...(graphQuality ? { graph: graphQuality } : {}),
       unknownZones: Object.freeze([...inventory.unknownZones, ...build.quality.unknownZones]),
       unsupportedZones: Object.freeze([
         ...inventory.unsupportedZones,

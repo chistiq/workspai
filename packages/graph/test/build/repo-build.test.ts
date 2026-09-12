@@ -953,14 +953,18 @@ describe('writeGraphGeneration', () => {
     expect(publicationIndex.artifacts.quality?.digest).toMatch(/^[a-f0-9]{64}$/u);
   });
 
-  it('refuses failed or cancelled builds and never calls the store', async () => {
+  it('refuses partial, failed, or cancelled builds and never calls the store', async () => {
     const publish = vi.fn();
     const hostPorts = ports();
     const base = await buildRepoGraph(request([provider()], hostPorts));
 
-    for (const status of ['failed', 'cancelled'] as const) {
+    for (const status of ['partial', 'failed', 'cancelled'] as const) {
       const result = await writeGraphGeneration({
-        build: { ...base, status, graph: undefined },
+        build: {
+          ...base,
+          status,
+          ...(status === 'partial' ? {} : { graph: undefined }),
+        },
         store: { publish },
         digest: hostPorts.digest,
       });

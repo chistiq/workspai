@@ -99,6 +99,65 @@ describe('diffGraphGenerations', () => {
     expect(diff.changedEdges).toEqual(['edge:imports:1']);
   });
 
+  it('detects semantic node and edge changes beyond identity and proof state', () => {
+    const from = graph('generation:1', ['entity:a', 'entity:b']);
+    const to: GraphCanonicalGraph = {
+      ...graph('generation:2', ['entity:a', 'entity:b']),
+      nodes: graph('generation:2', ['entity:a', 'entity:b']).nodes.map((node) =>
+        node.id === 'entity:a'
+          ? { ...node, aliases: [{ id: 'entity:prior-a', reason: 'rename' as const }] }
+          : node
+      ),
+      edges: graph('generation:2', ['entity:a', 'entity:b']).edges.map((edge) => ({
+        ...edge,
+        confidence: 0.75,
+      })),
+    };
+
+    const diff = diffGraphGenerations({ from, to });
+    expect(diff.changedNodes).toEqual(['entity:a']);
+    expect(diff.changedEdges).toEqual(['edge:imports:1']);
+  });
+
+  it('detects changed assertions and renews their persisted facts', () => {
+    const withAssertion = (generationId: string, confidence: number): GraphCanonicalGraph => {
+      const source = graph(generationId, ['entity:a', 'entity:b']);
+      const proof = source.edges[0]!.proof;
+      return {
+        ...source,
+        assertions: [
+          {
+            contract: {
+              id: 'workspai.graph.nary-assertion',
+              version: '0.1.0-candidate',
+            },
+            id: 'assertion:route:1',
+            relation: 'routes-through',
+            profile: { id: 'workspai.graph.assertion.route', version: '1' },
+            participants: [
+              { role: 'source', entity: source.nodes[0]! },
+              { role: 'target', entity: source.nodes[1]! },
+            ],
+            facts: ['fact:assertion:1'],
+            derivation: 'computed',
+            state: 'accepted',
+            proof,
+            freshness: { status: 'current' },
+            confidence,
+          },
+        ],
+      };
+    };
+
+    const from = withAssertion('generation:1', 1);
+    const to = withAssertion('generation:2', 0.8);
+    const diff = diffGraphGenerations({ from, to });
+    const delta = summarizeCanonicalGraphDelta(from, to);
+    expect(diff.changedAssertions).toEqual(['assertion:route:1']);
+    expect(delta.graph.changedAssertions).toEqual(['assertion:route:1']);
+    expect(delta.facts.renewed).toContain('fact:assertion:1');
+  });
+
   it('warns when both graphs share one generation identity', () => {
     const source = graph('generation:1', ['entity:a']);
     const diff = diffGraphGenerations({ from: source, to: source });
@@ -111,7 +170,15 @@ describe('summarizeCanonicalGraphDelta', () => {
     const from = graph('generation:1', ['entity:a', 'entity:b']);
     const to = graph('generation:2', ['entity:a', 'entity:b']);
     expect(summarizeCanonicalGraphDelta(from, to)).toEqual({
-      graph: { addedNodes: [], removedNodes: [], changedEdges: [] },
+      graph: {
+        addedNodes: [],
+        removedNodes: [],
+        changedNodes: [],
+        changedEdges: [],
+        addedAssertions: [],
+        removedAssertions: [],
+        changedAssertions: [],
+      },
       facts: { added: [], renewed: [], removed: [], invalidated: [] },
     });
   });

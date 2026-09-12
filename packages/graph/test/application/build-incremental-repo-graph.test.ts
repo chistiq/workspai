@@ -254,7 +254,11 @@ describe('buildIncrementalRepoGraph', () => {
     expect(incremental.plan.delta.graph).toEqual({
       addedNodes: [],
       removedNodes: [],
+      changedNodes: [],
       changedEdges: [],
+      addedAssertions: [],
+      removedAssertions: [],
+      changedAssertions: [],
     });
     expect(incremental.plan.delta.facts).toEqual({
       added: [],
@@ -262,6 +266,34 @@ describe('buildIncrementalRepoGraph', () => {
       removed: [],
       invalidated: [],
     });
+
+    const mismatched = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target-mismatch',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      referenceGenerationDigest: { algorithm: 'sha256', value: 'f'.repeat(64) },
+      baseGraph: full.graph,
+    });
+    expect(mismatched.equivalence).toBe('blocked');
+    expect(mismatched.status).toBe('failed');
+    expect(mismatched.quality.graph).toMatchObject({
+      integrity: 'blocked',
+      incrementalEquivalence: 'blocked',
+    });
+    expect(mismatched.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'GRAPH_INCREMENTAL_EQUIVALENCE_MISMATCH' }),
+      ])
+    );
   });
 
   it('skips content hashing of unchanged files when a trusted Git journal is empty', async () => {

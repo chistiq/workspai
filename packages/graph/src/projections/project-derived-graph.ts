@@ -6,7 +6,6 @@ import type {
   GraphEntityReference,
   GraphProofState,
   GraphQualityReport,
-  GraphScope,
 } from '../contracts/index.js';
 import {
   GRAPH_DERIVED_PROJECTION_RESULT_CONTRACT,
@@ -23,6 +22,7 @@ import {
   type GraphDerivedProjectionResult,
   type GraphDerivedReviewRiskFinding,
 } from '../contracts/projection.js';
+import { admittedRedactionPolicy, createGraphScopePredicate } from './projection-policy.js';
 
 const DEFAULT_BUDGET: GraphDerivedProjectionBudget = Object.freeze({ maxItems: 500 });
 const MAX_BUDGET = 5_000;
@@ -56,27 +56,10 @@ function meetsProof(minimum: GraphProofState, actual: GraphProofState): boolean 
   return PROOF_RANK[actual] >= PROOF_RANK[minimum];
 }
 
-function scopeMatches(entity: GraphEntityReference, scope?: GraphScope): boolean {
-  if (!scope) return true;
-  if (scope.kind === 'workspace') {
-    return entity.scope.kind === 'workspace' && entity.scope.workspaceId === scope.workspaceId;
-  }
-  if (scope.kind === 'project') {
-    return (
-      entity.scope.kind === 'project' && scope.projectIds.includes(entity.scope.projectIds[0] ?? '')
-    );
-  }
-  return entity.scope.kind === scope.kind;
-}
-
-function scopedNodes(graph: GraphCanonicalGraph, scope?: GraphScope): GraphEntityReference[] {
-  return graph.nodes.filter((node) => scopeMatches(node, scope));
-}
-
 function scopedEdges(
   graph: GraphCanonicalGraph,
   nodesById: ReadonlyMap<string, GraphEntityReference>,
-  scope: GraphScope | undefined,
+  withinScope: (entity: GraphEntityReference) => boolean,
   profile: GraphDerivedProjectionProfile,
   allowedRelations?: ReadonlySet<string>,
   allowedKinds?: ReadonlySet<string>
@@ -87,7 +70,7 @@ function scopedEdges(
     const from = nodesById.get(edge.from);
     const to = nodesById.get(edge.to);
     if (!from || !to) return false;
-    if (!scopeMatches(from, scope) || !scopeMatches(to, scope)) return false;
+    if (!withinScope(from) || !withinScope(to)) return false;
     if (allowedKinds && (!allowedKinds.has(from.kind) || !allowedKinds.has(to.kind))) return false;
     return true;
   });
@@ -351,7 +334,20 @@ export function projectDerivedGraph(
   }
 
   const profile = request.profile;
-  const nodes = scopedNodes(graph, request.scope);
+  if (!admittedRedactionPolicy(profile.redactionPolicy)) {
+    return {
+      accepted: false,
+      issues: [
+        {
+          code: 'GRAPH_DERIVED_PROJECTION_REDACTION_POLICY_UNSUPPORTED',
+          path: '/profile/redactionPolicy',
+          message: 'Derived projection redaction policy is not admitted by this engine version.',
+        },
+      ],
+    };
+  }
+  const withinScope = createGraphScopePredicate(graph, request.scope);
+  const nodes = graph.nodes.filter(withinScope);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const omissions: WisOmission[] = [];
   let payload: Pick<
@@ -364,7 +360,7 @@ export function projectDerivedGraph(
     const edges = scopedEdges(
       graph,
       nodesById,
-      request.scope,
+      withinScope,
       profile,
       COMMUNITY_RELATIONS,
       COMMUNITY_ENTITY_KINDS
@@ -376,7 +372,7 @@ export function projectDerivedGraph(
     const edges = scopedEdges(
       graph,
       nodesById,
-      request.scope,
+      withinScope,
       profile,
       FLOW_RELATIONS,
       FLOW_ENTITY_KINDS
@@ -385,12 +381,12 @@ export function projectDerivedGraph(
     truncated = ranks.total > budget.maxItems;
     payload = { flowRanks: ranks.ranks };
   } else if (profile.kind === 'review-risk') {
-    const edges = scopedEdges(graph, nodesById, request.scope, profile);
+    const edges = scopedEdges(graph, nodesById, withinScope, profile);
     const findings = reviewFindings(nodes, edges, budget.maxItems);
     truncated = findings.total > budget.maxItems;
     payload = { reviewFindings: findings.findings };
   } else if (profile.kind === 'architecture-summary') {
-    const edges = scopedEdges(graph, nodesById, request.scope, profile);
+    const edges = scopedEdges(graph, nodesById, withinScope, profile);
     const summary = architectureSummary(nodes, edges, budget.maxItems);
     truncated = summary.totalHotspots > budget.maxItems;
     payload = {

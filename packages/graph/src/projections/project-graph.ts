@@ -6,7 +6,6 @@ import type {
   GraphEntityReference,
   GraphProofState,
   GraphQualityReport,
-  GraphScope,
 } from '../contracts/index.js';
 import {
   GRAPH_PROJECTION_RESULT_CONTRACT,
@@ -16,6 +15,12 @@ import {
   type GraphProjectionProfile,
   type GraphProjectionRequest,
 } from '../contracts/projection.js';
+import {
+  admittedRedactionPolicy,
+  createGraphScopePredicate,
+  redactGraphEdge,
+  redactGraphEvidence,
+} from './projection-policy.js';
 
 const DEFAULT_BUDGET: GraphProjectionBudget = Object.freeze({
   maxNodes: 5_000,
@@ -49,19 +54,6 @@ function validBudget(budget: GraphProjectionBudget): boolean {
 
 function evidenceKey(evidence: WisEvidenceReference): string {
   return `${evidence.id}\0${evidence.sourceKind}\0${evidence.relativeLocator}\0${evidence.digest?.algorithm ?? ''}\0${evidence.digest?.value ?? ''}`;
-}
-
-function scopeMatches(entity: GraphEntityReference, scope?: GraphScope): boolean {
-  if (!scope) return true;
-  if (scope.kind === 'workspace') {
-    return entity.scope.kind === 'workspace' && entity.scope.workspaceId === scope.workspaceId;
-  }
-  if (scope.kind === 'project') {
-    return (
-      entity.scope.kind === 'project' && scope.projectIds.includes(entity.scope.projectIds[0] ?? '')
-    );
-  }
-  return entity.scope.kind === scope.kind;
 }
 
 function meetsProof(minimum: GraphProofState | undefined, actual: GraphProofState): boolean {
@@ -103,7 +95,7 @@ function edgeMatchesProfile(
   edge: GraphEdge,
   profile: GraphProjectionProfile,
   nodesById: ReadonlyMap<string, GraphEntityReference>,
-  scope?: GraphScope
+  withinScope: (entity: GraphEntityReference) => boolean
 ): boolean {
   if (!profile.includeRelationSemantics.includes(edge.semantics)) return false;
   if (profile.includeRelations && !profile.includeRelations.includes(edge.relation)) return false;
@@ -114,7 +106,7 @@ function edgeMatchesProfile(
   const from = nodesById.get(edge.from);
   const to = nodesById.get(edge.to);
   if (!from || !to) return false;
-  if (!scopeMatches(from, scope) || !scopeMatches(to, scope)) return false;
+  if (!withinScope(from) || !withinScope(to)) return false;
   if (profile.includeEntityKinds.length === 0) return true;
   return (
     profile.includeEntityKinds.includes(from.kind) && profile.includeEntityKinds.includes(to.kind)
@@ -145,9 +137,35 @@ export function projectGraph(
   }
 
   const profile = request.profile;
+  if (profile.sourceGraphVersion !== graph.graphVersion) {
+    return {
+      accepted: false,
+      issues: [
+        {
+          code: 'GRAPH_PROJECTION_SOURCE_VERSION_UNSUPPORTED',
+          path: '/profile/sourceGraphVersion',
+          message: 'Projection profile source version must match the immutable graph version.',
+        },
+      ],
+    };
+  }
+  if (!admittedRedactionPolicy(profile.redactionPolicy)) {
+    return {
+      accepted: false,
+      issues: [
+        {
+          code: 'GRAPH_PROJECTION_REDACTION_POLICY_UNSUPPORTED',
+          path: '/profile/redactionPolicy',
+          message: 'Projection redaction policy is not admitted by this engine version.',
+        },
+      ],
+    };
+  }
+  const redactionPolicy = profile.redactionPolicy;
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const withinScope = createGraphScopePredicate(graph, request.scope);
   const candidateEdges = graph.edges
-    .filter((edge) => edgeMatchesProfile(edge, profile, nodesById, request.scope))
+    .filter((edge) => edgeMatchesProfile(edge, profile, nodesById, withinScope))
     .sort((left, right) => left.id.localeCompare(right.id));
   const candidateNodeIds = new Set<string>();
   for (const edge of candidateEdges) {
@@ -156,20 +174,24 @@ export function projectGraph(
   }
   if (profile.includeEntityKinds.length > 0) {
     for (const node of graph.nodes) {
-      if (profile.includeEntityKinds.includes(node.kind) && scopeMatches(node, request.scope)) {
+      if (profile.includeEntityKinds.includes(node.kind) && withinScope(node)) {
         candidateNodeIds.add(node.id);
       }
     }
   }
   const candidateNodes = graph.nodes
-    .filter((node) => candidateNodeIds.has(node.id) && scopeMatches(node, request.scope))
+    .filter((node) => candidateNodeIds.has(node.id) && withinScope(node))
     .sort((left, right) => left.id.localeCompare(right.id));
   const nodes = Object.freeze(candidateNodes.slice(0, budget.maxNodes));
   const retainedNodeIds = new Set(nodes.map((node) => node.id));
   const retainableEdges = candidateEdges.filter(
     (edge) => retainedNodeIds.has(edge.from) && retainedNodeIds.has(edge.to)
   );
-  const edges = Object.freeze(retainableEdges.slice(0, budget.maxEdges));
+  const edges = Object.freeze(
+    retainableEdges
+      .slice(0, budget.maxEdges)
+      .map((edge) => redactGraphEdge(edge, redactionPolicy, true))
+  );
   const uniqueEvidence = new Map<string, WisEvidenceReference>();
   if (
     profile.id === 'workspai.graph.projection.evidence' ||
@@ -177,7 +199,8 @@ export function projectGraph(
   ) {
     for (const edge of edges) {
       for (const evidence of edge.proof.evidence) {
-        uniqueEvidence.set(evidenceKey(evidence), evidence);
+        const redacted = redactGraphEvidence(evidence, redactionPolicy);
+        if (redacted) uniqueEvidence.set(evidenceKey(redacted), redacted);
       }
     }
   }

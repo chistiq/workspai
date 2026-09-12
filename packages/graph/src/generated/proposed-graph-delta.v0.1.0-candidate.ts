@@ -21,7 +21,11 @@ export interface WorkspaiGraphProposedGraphDeltaCandidate {
   graph: {
     addedNodes: string[];
     removedNodes: string[];
+    changedNodes: string[];
     changedEdges: string[];
+    addedAssertions: string[];
+    removedAssertions: string[];
+    changedAssertions: string[];
   };
   /**
    * @maxItems 10000

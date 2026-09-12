@@ -4,17 +4,20 @@ import type {
   GraphDiagnostic,
   GraphGenerationRef,
 } from '../contracts/index.js';
+import { canonicalizeGraphValue } from '../conformance/canonical-value.js';
 
 export interface GraphGenerationDiff {
   readonly from: GraphGenerationRef;
   readonly to: GraphGenerationRef;
   readonly addedNodes: readonly string[];
   readonly removedNodes: readonly string[];
+  readonly changedNodes: readonly string[];
   readonly addedEdges: readonly string[];
   readonly removedEdges: readonly string[];
   readonly changedEdges: readonly string[];
   readonly addedAssertions: readonly string[];
   readonly removedAssertions: readonly string[];
+  readonly changedAssertions: readonly string[];
   readonly limitations: readonly string[];
   readonly diagnostics: readonly GraphDiagnostic[];
 }
@@ -31,6 +34,16 @@ function diagnostic(
   message: string
 ): GraphDiagnostic {
   return Object.freeze({ code, severity, path, message });
+}
+
+function semanticEqual(left: unknown, right: unknown): boolean {
+  const canonicalLeft = canonicalizeGraphValue(left);
+  const canonicalRight = canonicalizeGraphValue(right);
+  return (
+    canonicalLeft.accepted &&
+    canonicalRight.accepted &&
+    canonicalLeft.value === canonicalRight.value
+  );
 }
 
 /**
@@ -53,24 +66,35 @@ export function diffGraphGenerations(request: {
     );
   }
 
-  const fromNodes = new Set(request.from.nodes.map((node) => node.id));
-  const toNodes = new Set(request.to.nodes.map((node) => node.id));
+  const fromNodes = new Map(request.from.nodes.map((node) => [node.id, node]));
+  const toNodes = new Map(request.to.nodes.map((node) => [node.id, node]));
   const fromEdges = new Map(request.from.edges.map((edge) => [edge.id, edge]));
   const toEdges = new Map(request.to.edges.map((edge) => [edge.id, edge]));
-  const fromAssertions = new Set(request.from.assertions.map((assertion) => assertion.id));
-  const toAssertions = new Set(request.to.assertions.map((assertion) => assertion.id));
+  const fromAssertions = new Map(
+    request.from.assertions.map((assertion) => [assertion.id, assertion])
+  );
+  const toAssertions = new Map(request.to.assertions.map((assertion) => [assertion.id, assertion]));
+
+  const changedNodes = [...toNodes.entries()]
+    .filter(([id, node]) => {
+      const prior = fromNodes.get(id);
+      return prior !== undefined && !semanticEqual(prior, node);
+    })
+    .map(([id]) => id)
+    .sort();
 
   const changedEdges = [...toEdges.entries()]
     .filter(([id, edge]) => {
       const prior = fromEdges.get(id);
-      return (
-        prior !== undefined &&
-        (prior.relation !== edge.relation ||
-          prior.state !== edge.state ||
-          prior.from !== edge.from ||
-          prior.to !== edge.to ||
-          prior.proof.state !== edge.proof.state)
-      );
+      return prior !== undefined && !semanticEqual(prior, edge);
+    })
+    .map(([id]) => id)
+    .sort();
+
+  const changedAssertions = [...toAssertions.entries()]
+    .filter(([id, assertion]) => {
+      const prior = fromAssertions.get(id);
+      return prior !== undefined && !semanticEqual(prior, assertion);
     })
     .map(([id]) => id)
     .sort();
@@ -78,17 +102,19 @@ export function diffGraphGenerations(request: {
   return Object.freeze({
     from: request.from.generation.reference,
     to: request.to.generation.reference,
-    addedNodes: Object.freeze([...toNodes].filter((id) => !fromNodes.has(id)).sort()),
-    removedNodes: Object.freeze([...fromNodes].filter((id) => !toNodes.has(id)).sort()),
+    addedNodes: Object.freeze([...toNodes.keys()].filter((id) => !fromNodes.has(id)).sort()),
+    removedNodes: Object.freeze([...fromNodes.keys()].filter((id) => !toNodes.has(id)).sort()),
+    changedNodes: Object.freeze(changedNodes),
     addedEdges: Object.freeze([...toEdges.keys()].filter((id) => !fromEdges.has(id)).sort()),
     removedEdges: Object.freeze([...fromEdges.keys()].filter((id) => !toEdges.has(id)).sort()),
     changedEdges: Object.freeze(changedEdges),
     addedAssertions: Object.freeze(
-      [...toAssertions].filter((id) => !fromAssertions.has(id)).sort()
+      [...toAssertions.keys()].filter((id) => !fromAssertions.has(id)).sort()
     ),
     removedAssertions: Object.freeze(
-      [...fromAssertions].filter((id) => !toAssertions.has(id)).sort()
+      [...fromAssertions.keys()].filter((id) => !toAssertions.has(id)).sort()
     ),
+    changedAssertions: Object.freeze(changedAssertions),
     limitations: Object.freeze([...DIFF_LIMITATIONS]),
     diagnostics: Object.freeze(diagnostics),
   });
@@ -140,6 +166,18 @@ function factsOnEdgeIds(graph: GraphCanonicalGraph, edgeIds: ReadonlySet<string>
   return ids;
 }
 
+function factsOnAssertionIds(
+  graph: GraphCanonicalGraph,
+  assertionIds: ReadonlySet<string>
+): Set<string> {
+  const ids = new Set<string>();
+  for (const assertion of graph.assertions) {
+    if (!assertionIds.has(assertion.id)) continue;
+    for (const fact of assertion.facts) ids.add(fact);
+  }
+  return ids;
+}
+
 /**
  * Fills GraphDelta graph/fact identity sets from two canonical graphs. Plan-time
  * overlays stay empty; this is post-composition accounting, not fact invention.
@@ -159,6 +197,12 @@ export function summarizeCanonicalGraphDelta(
   const invalidated = persisted.filter((id) => toDisputed.has(id) && !fromDisputed.has(id)).sort();
   const invalidatedSet = new Set(invalidated);
   const reemitted = factsOnEdgeIds(to, new Set([...diff.addedEdges, ...diff.changedEdges]));
+  for (const fact of factsOnAssertionIds(
+    to,
+    new Set([...diff.addedAssertions, ...diff.changedAssertions])
+  )) {
+    reemitted.add(fact);
+  }
   const renewed = persisted.filter((id) => !invalidatedSet.has(id) && reemitted.has(id)).sort();
   const changedEdges = [
     ...new Set([...diff.addedEdges, ...diff.removedEdges, ...diff.changedEdges]),
@@ -167,7 +211,11 @@ export function summarizeCanonicalGraphDelta(
     graph: Object.freeze({
       addedNodes: diff.addedNodes,
       removedNodes: diff.removedNodes,
+      changedNodes: diff.changedNodes,
       changedEdges: Object.freeze(changedEdges),
+      addedAssertions: diff.addedAssertions,
+      removedAssertions: diff.removedAssertions,
+      changedAssertions: diff.changedAssertions,
     }),
     facts: Object.freeze({
       added: Object.freeze(added),

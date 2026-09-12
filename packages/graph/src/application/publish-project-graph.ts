@@ -13,7 +13,7 @@ import type { GraphRepoBuildResult } from './repo-build-types.js';
 export interface GraphProjectPublicationIndex {
   readonly schemaVersion: 'workspai.graph.project-publication-index.v1';
   readonly generation: GraphPublicationManifest;
-  readonly buildStatus: 'complete' | 'partial';
+  readonly buildStatus: 'complete';
   readonly artifacts: Readonly<
     Record<
       Exclude<GraphProjectArtifactName, 'publication'>,
@@ -85,7 +85,7 @@ async function artifact(
 
 /**
  * Publishes one immutable project generation through an injected atomic store.
- * Failed and cancelled builds are never publishable and no host path enters the artifacts.
+ * Only complete, validated builds are publishable and no host path enters the artifacts.
  */
 export async function writeGraphGeneration(request: {
   readonly build: GraphRepoBuildResult;
@@ -94,18 +94,14 @@ export async function writeGraphGeneration(request: {
   readonly signal?: AbortSignal;
 }): Promise<GraphProjectPublicationOutcome> {
   const { build } = request;
-  if (
-    (build.status !== 'complete' && build.status !== 'partial') ||
-    !build.graph ||
-    !build.quality.graph
-  ) {
+  if (build.status !== 'complete' || !build.graph || !build.quality.graph) {
     return failure(
       'invalid-build',
       'GRAPH_PROJECT_PUBLICATION_BUILD_INVALID',
-      'Only a successful graph build with canonical graph quality can be published.'
+      'Only a complete graph build with canonical graph quality can advance the current generation.'
     );
   }
-  const buildStatus: 'complete' | 'partial' = build.status;
+  const buildStatus = build.status;
   if (request.signal?.aborted) {
     return failure(
       'publication-failed',

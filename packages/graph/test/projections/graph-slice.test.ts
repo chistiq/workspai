@@ -156,4 +156,90 @@ describe('createGraphSlice', () => {
     expect(slice.accepted).toBe(false);
     expect(slice.issues[0]?.code).toBe('GRAPH_SLICE_BUDGET_INVALID');
   });
+
+  it('does not leak embedded edge evidence when evidence is excluded', () => {
+    const slice = createGraphSlice(graph, {
+      contract: GRAPH_SLICE_REQUEST_CONTRACT,
+      intent: 'understand',
+      subjects: ['service:a'],
+      includeEvidence: false,
+      redactionPolicy: 'portable-default',
+    });
+    expect(slice.accepted).toBe(true);
+    if (!slice.accepted) return;
+    expect(slice.value.evidence).toEqual([]);
+    expect(slice.value.edges.every((edge) => edge.proof.evidence.length === 0)).toBe(true);
+  });
+
+  it('omits sensitive evidence locators from every returned surface', () => {
+    const sensitiveGraph: GraphCanonicalGraph = {
+      ...graph,
+      edges: graph.edges.map((edge) => ({
+        ...edge,
+        proof: {
+          ...edge.proof,
+          evidence: edge.proof.evidence.map((evidence) => ({
+            ...evidence,
+            relativeLocator: '.env.production',
+          })),
+        },
+      })),
+    };
+    const slice = createGraphSlice(sensitiveGraph, {
+      contract: GRAPH_SLICE_REQUEST_CONTRACT,
+      intent: 'impact',
+      subjects: ['service:a'],
+      includeEvidence: true,
+      redactionPolicy: 'portable-default',
+    });
+    expect(slice.accepted).toBe(true);
+    if (!slice.accepted) return;
+    expect(slice.value.evidence).toEqual([]);
+    expect(JSON.stringify(slice.value.edges)).not.toContain('.env.production');
+  });
+
+  it('enforces project scope before selecting seeds or traversing edges', () => {
+    const slice = createGraphSlice(graph, {
+      contract: GRAPH_SLICE_REQUEST_CONTRACT,
+      intent: 'impact',
+      subjects: ['service:a'],
+      scope: { kind: 'project', projectIds: ['project:other'] },
+      includeEvidence: true,
+      redactionPolicy: 'agent-local',
+    });
+    expect(slice.accepted).toBe(true);
+    if (!slice.accepted) return;
+    expect(slice.value.nodes).toEqual([]);
+    expect(slice.value.edges).toEqual([]);
+    expect(slice.value.unknownBoundaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'graph.slice-subject-outside-boundary' }),
+      ])
+    );
+  });
+
+  it('rejects unknown redaction policy and impossible content budgets', () => {
+    expect(
+      createGraphSlice(graph, {
+        contract: GRAPH_SLICE_REQUEST_CONTRACT,
+        intent: 'impact',
+        subjects: ['service:a'],
+        includeEvidence: true,
+        redactionPolicy: 'custom-unverified',
+      })
+    ).toMatchObject({ accepted: false });
+    expect(
+      createGraphSlice(graph, {
+        contract: GRAPH_SLICE_REQUEST_CONTRACT,
+        intent: 'impact',
+        subjects: ['service:a'],
+        budget: { maxContentBytes: 1 },
+        includeEvidence: false,
+        redactionPolicy: 'portable-default',
+      })
+    ).toMatchObject({
+      accepted: false,
+      issues: [expect.objectContaining({ code: 'GRAPH_SLICE_CONTENT_BUDGET_EXCEEDED' })],
+    });
+  });
 });
