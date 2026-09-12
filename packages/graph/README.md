@@ -2,19 +2,21 @@
 
 Evidence-backed, storage-neutral workspace graph engine for Workspai.
 
-Status: **repository preview candidate · development-only · not publishable**
+Status: **internal repository preview candidate · development-only · npm publication prohibited**
 
 > This is the developing independent Graph implementation. The released
 > Workspai CLI already contains the current official internal graph capability.
 > Graph is not imported by or connected to the CLI runtime while it is under
-> development; CLI adoption is permitted only after standalone stability,
+> development; CLI adoption is permitted only after internal standalone stability,
 > followed by explicit bridge, shadow-parity, replacement and legacy-removal
 > gates.
 
-The package is intentionally available for internal and community development
-before publication. Its root API exposes the admitted deterministic composer,
-the bounded proof-carrying query engine and the host-neutral G4 repository build
-candidate. Node filesystem access is isolated under `@workspai/graph/adapters/node`.
+The package is intentionally private and consumed only inside the Workspai
+monorepo. Package boundaries exist to isolate ownership, contracts, tests and
+runtime behavior, not to create an npm product. Its root API exposes the
+admitted deterministic composer, the bounded proof-carrying query engine and
+the host-neutral G4 repository build candidate. Node filesystem access is
+isolated under `@workspai/graph/adapters/node`.
 The G4 candidate now includes an explicitly invoked standalone executable and
 project-local atomic persistence. CLI replacement remains unavailable until its
 later shadow-parity and migration gates complete.
@@ -158,16 +160,18 @@ corepack npm --workspace @workspai/graph run pack:check
 corepack npm --workspace @workspai/graph run sbom:check
 corepack npm --workspace @workspai/graph run inventory:check
 corepack npm --workspace @workspai/graph run retrieval:check
+corepack npm --workspace @workspai/graph run admission:standalone:audit
 ```
 
 Do not add a central CLI bridge merely to make the package look complete. Each
 integration surface is released only at its roadmap gate with contract and
 fixture evidence.
 
-The canonical source, versioning, quality gates and any future npm publication
-remain in the `chistiq/workspai` monorepo. A future `workspai-graph` repository
-is a read-only discovery mirror and owns no tags, releases, workflows or npm
-publication.
+The canonical source, versioning and quality gates remain in the
+`chistiq/workspai` monorepo. npm publication is prohibited for the current
+architecture. If distribution strategy changes in the future, it requires a
+separate decision and admission process. A future `workspai-graph` repository
+is a read-only discovery mirror and owns no tags, releases or workflows.
 
 Queries are deterministic and bounded. Every accepted result identifies its
 immutable graph generation and carries paths, evidence, disputes, unknown
@@ -179,7 +183,8 @@ portfolio. They are intentionally not duplicated in this public package
 repository or npm artifact. The approved G3 evidence authorizes G4 repository
 preview work only; it does not claim standalone stability or release admission.
 G5 and G6 local engines exist as candidates. G7 local source is complete for
-the packed product surface. G6 remote OS-matrix evidence, signed provenance,
-independent retrieval accuracy, public preview, standalone-stable admission and
-G8 CLI integration remain unauthorized. The CycloneDX SBOM candidate is
-unattested.
+the private packed product surface. G6 remote OS-matrix evidence, final internal
+contract policy, internal promotion and rollback proof, standalone-stable
+admission and G8 CLI integration remain unauthorized. Public npm release is not
+part of the current delivery path. The CycloneDX SBOM remains an internal
+verification artifact.

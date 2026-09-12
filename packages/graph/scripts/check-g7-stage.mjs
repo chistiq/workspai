@@ -9,10 +9,7 @@ const planPath = 'packages/graph/governance/g7-stage-plan.v1.json';
 const closurePath = 'packages/graph/governance/g7-stage-closure.v1.json';
 const g6PlanPath = 'packages/graph/governance/g6-stage-plan.v1.json';
 const registryPath = 'independent-packages.json';
-const plannedCheckpoints = new Set([
-  'sbom-provenance-security-verification',
-  'g7-standalone-stable-admission',
-]);
+const plannedCheckpoints = new Set(['internal-promotion-and-rollback-verification']);
 
 function repositoryFile(relative) {
   if (

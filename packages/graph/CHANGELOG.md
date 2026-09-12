@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a fail-closed internal standalone admission ledger that binds Graph eligibility to every documented G7 gate and to the exact, private, lockfile-bound `@workspai/shared` workspace runtime.
+- Added adversarial admission tests so local candidates, forged stable claims, unsafe evidence paths and dependency drift cannot authorize G8 or central CLI consumption.
+
 - Added a fail-closed G7 release-candidate matrix that binds Linux, macOS and
   Windows package evidence to the admitted G6 candidate from the same source,
   tested commit and workflow run. The candidate verifies release inputs, SBOM

@@ -180,24 +180,27 @@
       ]
     },
     {
-      "id": "sbom-provenance-security-verification",
+      "id": "internal-promotion-and-rollback-verification",
       "status": "planned",
       "evidence": [
         "packages/graph/scripts/generate-graph-sbom.mjs",
+        "packages/graph/scripts/check-g7-release-matrix.mjs",
         "packages/graph/src/contracts/standalone-product.ts"
       ]
     },
     {
       "id": "g7-standalone-stable-admission",
-      "status": "planned",
+      "status": "implemented-local-candidate",
       "evidence": [
-        "packages/graph/governance/g6-stage-plan.v1.json",
-        "packages/graph/governance/g7-stage-plan.v1.json"
+        "packages/graph/governance/g7-standalone-admission.v1.json",
+        "packages/graph/scripts/check-standalone-admission.mjs",
+        "packages/graph/test/governance/g7-standalone-admission.test.ts"
       ]
     }
   ],
   "prohibitions": [
-    "No standalone-stable or public-preview claim without retained G6 OS-matrix evidence and a publish decision.",
+    "No internal standalone-stable claim without retained G6 OS-matrix evidence and an explicit internal adoption decision.",
+    "No npm publication of Shared or Graph; both packages remain private internal architecture.",
     "No central CLI runtime import or second Graph truth.",
     "No incremental orchestration on the package root API.",
     "No native acceleration claim without benchmark evidence and parity-checked adapters.",

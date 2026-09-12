@@ -57,7 +57,7 @@
     {
       "id": "portability-and-multiplatform",
       "status": "pending-remote",
-      "summary": "Local G7 checks pass; standalone-stable admission still requires retained G6 OS-matrix evidence and a publish decision.",
+      "summary": "Local G7 checks pass; internal standalone admission still requires retained G6 OS-matrix evidence and an internal adoption decision.",
       "evidence": [
         "packages/graph/governance/g6-stage-plan.v1.json",
         "packages/graph/governance/g7-stage-plan.v1.json"
@@ -110,8 +110,8 @@
     },
     {
       "id": "supply-chain-and-release-integrity",
-      "status": "passed",
-      "summary": "CycloneDX SBOM is unattested; packed contents and catalog digests are locked; signed provenance is not generated.",
+      "status": "pending-remote",
+      "summary": "CycloneDX SBOM and private packed contents are locally verified; public npm publication is intentionally outside the current architecture.",
       "evidence": [
         "packages/graph/scripts/generate-graph-sbom.mjs",
         "packages/graph/scripts/check-packed-package.mjs"
@@ -128,12 +128,17 @@
     {
       "id": "g7-local-source-checkpoints",
       "status": "passed",
-      "evidence": "All G7 stage-plan checkpoints except sbom-provenance-security-verification and g7-standalone-stable-admission are implemented-local-candidate."
+      "evidence": "All G7 stage-plan checkpoints except internal-promotion-and-rollback-verification are implemented-local-candidate."
     },
     {
-      "id": "remote-platform-and-publish",
+      "id": "remote-platform-and-internal-promotion",
       "status": "pending-remote",
-      "evidence": "The fail-closed G7 release-candidate matrix is implemented and chained to same-run G6 evidence. Retained remote results, signed provenance, a publish decision and rollback proof remain required before standalone-stable admission."
+      "evidence": "The fail-closed G7 release-candidate matrix is implemented and chained to same-run G6 evidence. Retained remote results plus internal promotion and rollback proof remain required before standalone admission."
+    },
+    {
+      "id": "standalone-stable-admission",
+      "status": "blocked",
+      "evidence": "The package-owned admission ledger verifies the private Shared workspace dependency and rejects stability while Graph lacks final internal contracts plus promotion and rollback proof."
     }
   ],
   "measurements": {
@@ -142,14 +147,14 @@
     "conformanceSuites": 23,
     "languageFixtures": 12,
     "providerCount": 12,
-    "testFiles": 76,
-    "tests": 523,
+    "testFiles": 77,
+    "tests": 528,
     "coverageStatementsPercent": 90.53,
     "coverageBranchesPercent": 85.11,
     "coverageFunctionsPercent": 93.33,
     "coverageLinesPercent": 92.13,
     "packedFiles": 107,
-    "packedCompressedBytes": 161000,
+    "packedCompressedBytes": 161336,
     "packedCompressedBudgetBytes": 294912,
     "publicInternalDocuments": 0,
     "cliRuntimeBridges": 0,
@@ -160,11 +165,12 @@
   },
   "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "pending" },
   "remainingRisks": [
-    "Standalone-stable admission still requires retained same-commit Linux, macOS and Windows G6 evidence plus a publish decision.",
-    "The CycloneDX SBOM candidate is unattested; npm provenance, SLSA and in-toto are not generated.",
+    "Internal standalone admission still requires retained same-commit Linux, macOS and Windows G6 evidence plus an internal adoption decision.",
+    "The private @workspai/shared runtime dependency must remain exact, lockfile-bound and covered by packed-consumer checks.",
+    "The CycloneDX SBOM is an internal artifact; public npm provenance is intentionally deferred.",
     "Retrieval scores are synthetic and fixture-labelled; they cannot support a public accuracy claim.",
     "Workspace composition from the packed executable remains partial until an injected onboarding adapter is supplied.",
-    "Rollback of a published package is not proven.",
+    "Rollback from internal Graph consumption to the existing CLI Graph path is not proven.",
     "Rust, native and WASM acceleration remain prohibited.",
     "Central CLI shadow parity and replacement remain prohibited until G8."
   ],

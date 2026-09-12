@@ -16,9 +16,10 @@ describe('Graph G7 documentation and export drift', () => {
     expect(GRAPH_PROJECTIONS_AVAILABLE).toBe(true);
     expect(readme).not.toMatch(/projection engine remains unavailable until G5/i);
     expect(readme).toMatch(/profile-driven projection/i);
-    expect(readme).toMatch(/not publishable/i);
+    expect(readme).toMatch(/npm publication prohibited/i);
     expect(readme).toMatch(/standalone-stable admission is not claimed/i);
-    expect(readme).toMatch(/signed\s+provenance/i);
+    expect(readme).toMatch(/internal promotion and rollback proof/i);
+    expect(readme).toMatch(/Public npm release is not\s+part of the current delivery path/i);
     expect(readme).toMatch(/GRAPH_QUERY_PRESETS/);
     expect(readme).not.toMatch(/public preview, SBOM and G8/i);
     expect(readme).not.toMatch(/\bincremental\b[\s\S]{0,40}unavailable/i);

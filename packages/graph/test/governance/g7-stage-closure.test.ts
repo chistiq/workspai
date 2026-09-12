@@ -51,7 +51,11 @@ describe('Graph G7 stage closure', () => {
     expect(checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'g7-local-source-checkpoints', status: 'passed' }),
-        expect.objectContaining({ id: 'remote-platform-and-publish', status: 'pending-remote' }),
+        expect.objectContaining({
+          id: 'remote-platform-and-internal-promotion',
+          status: 'pending-remote',
+        }),
+        expect.objectContaining({ id: 'standalone-stable-admission', status: 'blocked' }),
       ])
     );
     const dimensions = closure.dimensions as { id: string; status: string }[];

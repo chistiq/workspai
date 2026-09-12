@@ -56,10 +56,7 @@ describe('Graph G7 stage authorization', () => {
       ])
     );
     for (const checkpoint of checkpoints) {
-      if (
-        checkpoint.id === 'g7-standalone-stable-admission' ||
-        checkpoint.id === 'sbom-provenance-security-verification'
-      ) {
+      if (checkpoint.id === 'internal-promotion-and-rollback-verification') {
         expect(checkpoint.status).toBe('planned');
         continue;
       }

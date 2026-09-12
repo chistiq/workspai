@@ -25,11 +25,13 @@ const releaseFiles = [
   'packages/graph/scripts/check-packed-package.mjs',
   'packages/graph/scripts/check-g7-release-candidate.mjs',
   'packages/graph/scripts/check-g7-release-matrix.mjs',
+  'packages/graph/scripts/check-standalone-admission.mjs',
   'packages/graph/scripts/generate-g7-release-inventory.mjs',
   'packages/graph/scripts/generate-graph-sbom.mjs',
   '.github/workflows/ci.yml',
   inventoryPath,
   sbomPath,
+  'packages/graph/governance/g7-standalone-admission.v1.json',
 ];
 const fullSha = /^[a-f0-9]{40}$/u;
 const args = process.argv.slice(2);
