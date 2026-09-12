@@ -4,7 +4,7 @@
   "closureKind": "package-stability",
   "package": "@workspai/shared",
   "stage": "SH7-standalone-stability-admission",
-  "asOf": "2026-08-15",
+  "asOf": "2026-09-12",
   "status": "blocked",
   "advancesAdmissionGate": false,
   "dimensions": [
@@ -50,10 +50,10 @@
     {
       "id": "privacy-and-data-governance",
       "status": "passed",
-      "summary": "Library surfaces perform no I/O or telemetry, CLI results omit payloads and paths, and external-consumer evidence policy forbids raw source, payload, credentials and unconsented identity.",
+      "summary": "Library surfaces perform no I/O or telemetry, CLI results omit payloads and paths, and private internal consumption does not expose raw source, payloads or credentials.",
       "evidence": [
         "packages/shared/test/cli/external-validation.test.ts",
-        "packages/shared/governance/sh7-external-consumer-evidence-policy.v1.json",
+        "packages/shared/governance/sh7-standalone-admission.v1.json",
         "packages/shared/scripts/check-standalone-admission.mjs"
       ]
     },
@@ -80,7 +80,7 @@
     {
       "id": "correctness-and-determinism",
       "status": "passed",
-      "summary": "Thirteen Shared test files with 111 tests pass alongside deterministic generation, schema digests, strict semantic fixtures and installed artifact execution.",
+      "summary": "Thirteen Shared test files with 113 tests pass alongside deterministic generation, schema digests, strict semantic fixtures and installed artifact execution.",
       "evidence": [
         "packages/shared/test/conformance/core-envelope.test.ts",
         "packages/shared/test/conformance/core-envelope-compatibility.test.ts",
@@ -119,8 +119,8 @@
     },
     {
       "id": "supply-chain-and-release-integrity",
-      "status": "blocked",
-      "summary": "The installed tarball produces a validated CycloneDX 1.5 component and publication fails closed, but signed provenance, immutable release identity, staged rollout and rollback evidence do not exist.",
+      "status": "passed",
+      "summary": "The private installed tarball produces a validated CycloneDX 1.5 component, has zero runtime dependencies and remains protected from npm publication.",
       "evidence": [
         "packages/shared/scripts/check-packed-package.mjs",
         "packages/shared/scripts/refuse-publish.mjs",
@@ -147,31 +147,31 @@
       "evidence": "CI capture is configured; same-commit macOS and Windows artifacts have not yet been produced and reviewed"
     },
     {
-      "id": "independent-external-consumer-value",
-      "status": "failed",
-      "evidence": "No independently owned, consented, artifact-bound useful-consumer attestation exists"
+      "id": "registered-internal-graph-consumer",
+      "status": "passed",
+      "evidence": "Graph consumes the exact Shared workspace version through public subpaths and isolated packed tarballs"
     },
     {
       "id": "standalone-admission",
       "status": "failed",
-      "evidence": "2 gates passed, 2 passed locally, 5 await remote evidence and 4 are blocked; admission remains false"
+      "evidence": "2 gates passed, 4 passed locally, 4 await remote evidence and 3 are blocked; admission remains false"
     }
   ],
   "measurements": {
     "admissionGates": 13,
     "admissionPassed": 2,
-    "admissionPassedLocal": 2,
-    "admissionPendingRemote": 5,
-    "admissionBlocked": 4,
+    "admissionPassedLocal": 4,
+    "admissionPendingRemote": 4,
+    "admissionBlocked": 3,
     "admissionFailed": 0,
     "sharedTestFiles": 13,
-    "sharedTests": 111,
+    "sharedTests": 113,
     "coverageStatementsPercent": 96.3,
     "coverageBranchesPercent": 90.95,
     "coverageFunctionsPercent": 100,
     "coverageLinesPercent": 98.48,
     "sharedPackedFiles": 49,
-    "sharedPackedCompressedBytes": 58770,
+    "sharedPackedCompressedBytes": 58889,
     "sharedPackedCompressedBudgetBytes": 163840,
     "cycloneDxSpecVersion": "1.5",
     "runtimeDependencies": 0,
@@ -185,9 +185,9 @@
     "WIS RFC-0001/RFC-0002 and SH1 semantic-lock decisions remain unaccepted.",
     "Same-candidate macOS, Windows and real-browser run-bound evidence is absent.",
     "True platform peak-memory evidence is absent.",
-    "No independently owned external consumer has attested useful value against the exact artifact.",
-    "Signed provenance, immutable release identity, support/deprecation commitments and rollback evidence are absent.",
-    "Publication, standalone stability claims, SH8 and the central CLI bridge remain prohibited."
+    "Internal compatibility and migration commitments remain blocked by the normative semantic lock.",
+    "Commit-bound internal promotion and rollback evidence are absent.",
+    "npm publication remains prohibited; standalone stability claims, SH8 and the central CLI bridge remain unauthorized."
   ],
   "nextStage": "SH8",
   "nextStageAuthorized": false,

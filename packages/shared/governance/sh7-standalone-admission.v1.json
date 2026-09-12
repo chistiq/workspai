@@ -1,16 +1,21 @@
 {
   "schemaVersion": "workspai-shared-standalone-admission.v1",
-  "asOf": "2026-08-15",
+  "asOf": "2026-09-12",
   "package": "@workspai/shared",
   "version": "0.0.0-development",
   "status": "blocked",
   "admitted": false,
+  "standaloneStable": false,
+  "distribution": "internal-only",
+  "npmPublication": "prohibited",
+  "nextStage": "SH8",
+  "nextStageAuthorized": false,
   "policy": {
     "allRequiredGatesMustPass": true,
     "pendingIsBlocking": true,
     "localProxyCannotSatisfyRemoteEvidence": true,
-    "internalConsumerCannotSatisfyIndependentExternalValue": true,
-    "publicationMustRemainDisabledUntilAdmission": true,
+    "registeredInternalConsumerIsRequired": true,
+    "publicationMustRemainDisabledAfterAdmission": true,
     "cliBridgeMustRemainDisabledUntilAdmission": true
   },
   "gates": [
@@ -90,32 +95,36 @@
       "reason": "The package has zero runtime dependencies; local audit/hostile-input gates pass and the installed tarball produces a validated CycloneDX 1.5 component."
     },
     {
-      "id": "sbom-provenance-and-release-identity",
+      "id": "internal-artifact-integrity",
       "category": "supply-chain",
-      "status": "pending-remote",
-      "evidence": [".github/workflows/ci.yml", "packages/shared/package.json"],
-      "reason": "A local CycloneDX SBOM exists, but no signed release provenance or immutable npm release identity exists for the private candidate."
-    },
-    {
-      "id": "independent-external-consumer-value",
-      "category": "product",
-      "status": "blocked",
+      "status": "passed-local",
       "evidence": [
-        "packages/shared/governance/sh5-external-validation.v1.json",
-        "packages/shared/governance/sh6-domain-adoption.v1.json",
-        "packages/shared/governance/sh7-external-consumer-evidence-policy.v1.json"
+        "packages/shared/package.json",
+        "package-lock.json",
+        "packages/shared/scripts/check-packed-package.mjs"
       ],
-      "reason": "Isolated and Graph consumers prove mechanics, but neither is an independently owned external consumer/value report."
+      "reason": "The private packed artifact, zero-runtime-dependency boundary and CycloneDX component are verified locally without claiming an npm release."
     },
     {
-      "id": "support-deprecation-and-incident-policy",
+      "id": "registered-internal-graph-consumer",
+      "category": "product",
+      "status": "passed-local",
+      "evidence": [
+        "packages/shared/governance/sh6-domain-adoption.v1.json",
+        "packages/graph/package.json",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ],
+      "reason": "The private Graph package consumes the declared Shared subpaths through exact workspace and isolated packed-package boundaries."
+    },
+    {
+      "id": "internal-compatibility-and-migration-policy",
       "category": "operations",
       "status": "blocked",
       "evidence": ["packages/shared/README.md", "packages/shared/CHANGELOG.md"],
-      "reason": "Candidate documentation exists, but production support/deprecation commitments cannot activate before normative and release admission."
+      "reason": "Current and previous compatibility behavior exists, but the internal CLI migration promise cannot be final before normative semantic acceptance."
     },
     {
-      "id": "publication-and-rollback-readiness",
+      "id": "internal-promotion-and-rollback-readiness",
       "category": "release",
       "status": "blocked",
       "evidence": [
@@ -123,7 +132,7 @@
         "packages/shared/scripts/refuse-publish.mjs",
         "package-mirrors.json"
       ],
-      "reason": "Publication is correctly fail-closed; release provenance, staged rollout and rollback evidence do not yet exist."
+      "reason": "npm publication is intentionally disabled; commit-bound internal promotion and rollback to the existing CLI contract path are not yet proven."
     },
     {
       "id": "central-cli-bridge-absence",
@@ -136,5 +145,5 @@
       "reason": "The central CLI has no Shared/Graph runtime dependency or source import."
     }
   ],
-  "admissionRule": "Admission is allowed only when every gate is passed and separately reviewed; passed-local and pending-remote are not admission pass states."
+  "admissionRule": "Internal standalone admission is allowed only when every gate is passed and separately reviewed; passed-local and pending-remote are blocking. Shared remains private and npm publication stays prohibited after admission."
 }

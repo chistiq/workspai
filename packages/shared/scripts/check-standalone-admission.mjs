@@ -5,14 +5,30 @@ import { fileURLToPath } from 'node:url';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
-const manifestPath = path.join(packageRoot, 'governance/sh7-standalone-admission.v1.json');
+const defaultManifest = 'packages/shared/governance/sh7-standalone-admission.v1.json';
 const allowedStatuses = new Set(['passed', 'passed-local', 'pending-remote', 'blocked', 'failed']);
+const requiredGateIds = new Set([
+  'normative-semantic-lock',
+  'local-cumulative-quality',
+  'linux-installed-consumer',
+  'macos-installed-consumer',
+  'windows-installed-consumer',
+  'real-browser-runtime',
+  'peak-memory-profile',
+  'security-and-dependency-audit',
+  'internal-artifact-integrity',
+  'registered-internal-graph-consumer',
+  'internal-compatibility-and-migration-policy',
+  'internal-promotion-and-rollback-readiness',
+  'central-cli-bridge-absence',
+]);
 
 function parseArguments(argv) {
   const options = {
     allowBlocked: false,
     ciEvidence: false,
     json: false,
+    manifest: defaultManifest,
     output: undefined,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -20,10 +36,10 @@ function parseArguments(argv) {
     if (argument === '--allow-blocked') options.allowBlocked = true;
     else if (argument === '--ci-evidence') options.ciEvidence = true;
     else if (argument === '--json') options.json = true;
-    else if (argument === '--output') {
+    else if (argument === '--manifest' || argument === '--output') {
       const value = argv[index + 1];
-      if (!value || value.startsWith('-')) throw new Error('--output requires a relative path.');
-      options.output = value;
+      if (!value || value.startsWith('-')) throw new Error(`${argument} requires a relative path.`);
+      options[argument === '--manifest' ? 'manifest' : 'output'] = value;
       index += 1;
     } else throw new Error(`Unknown option: ${argument}`);
   }
@@ -49,11 +65,26 @@ function portableOutputPath(value) {
   return resolved;
 }
 
+function repositoryFile(value) {
+  const resolved = portableOutputPath(value);
+  if (!fs.existsSync(resolved) || !fs.lstatSync(resolved).isFile()) {
+    throw new Error(`Missing admission input: ${value}`);
+  }
+  if (fs.lstatSync(resolved).isSymbolicLink()) {
+    throw new Error(`Admission input cannot be a symlink: ${value}`);
+  }
+  return resolved;
+}
+
 function buildAudit(options) {
   const failures = [];
-  const manifest = readJson(manifestPath);
+  const manifest = readJson(repositoryFile(options.manifest));
   const packageManifest = readJson(path.join(packageRoot, 'package.json'));
   const packageGates = readJson(path.join(packageRoot, 'governance/shared-package-gates.v1.json'));
+  const registry = readJson(path.join(repositoryRoot, 'independent-packages.json'));
+  const sharedRegistry = (registry.packages ?? []).find(
+    (entry) => entry.name === packageManifest.name
+  );
 
   if (manifest.schemaVersion !== 'workspai-shared-standalone-admission.v1') {
     failures.push('unsupported standalone-admission schema');
@@ -61,13 +92,22 @@ function buildAudit(options) {
   if (manifest.package !== packageManifest.name || manifest.version !== packageManifest.version) {
     failures.push('admission package identity or version drifted');
   }
-  if (!Array.isArray(manifest.gates) || manifest.gates.length === 0) {
-    failures.push('admission manifest has no gates');
+  if (
+    manifest.distribution !== 'internal-only' ||
+    manifest.npmPublication !== 'prohibited' ||
+    manifest.nextStage !== 'SH8' ||
+    typeof manifest.nextStageAuthorized !== 'boolean' ||
+    typeof manifest.standaloneStable !== 'boolean'
+  ) {
+    failures.push('internal admission lifecycle or distribution policy drifted');
+  }
+  if (!Array.isArray(manifest.gates) || manifest.gates.length !== requiredGateIds.size) {
+    failures.push('admission manifest must contain exactly the required internal gates');
   }
 
   const gateIds = new Set();
   for (const gate of manifest.gates ?? []) {
-    if (typeof gate.id !== 'string' || gate.id.length === 0 || gateIds.has(gate.id)) {
+    if (!requiredGateIds.has(gate.id) || gateIds.has(gate.id)) {
       failures.push(`invalid or duplicate admission gate: ${String(gate.id)}`);
     }
     gateIds.add(gate.id);
@@ -92,6 +132,9 @@ function buildAudit(options) {
       }
     }
   }
+  for (const required of requiredGateIds) {
+    if (!gateIds.has(required)) failures.push(`missing required admission gate: ${required}`);
+  }
 
   const gates = manifest.gates ?? [];
   const summary = Object.fromEntries(
@@ -102,22 +145,41 @@ function buildAudit(options) {
   );
   const computedStatus = gates.some((gate) => gate.status === 'failed')
     ? 'failed'
-    : gates.every((gate) => gate.status === 'passed')
+    : gates.length === requiredGateIds.size && gates.every((gate) => gate.status === 'passed')
       ? 'admitted'
       : 'blocked';
 
-  if (manifest.status !== computedStatus || manifest.admitted !== (computedStatus === 'admitted')) {
+  const computedAdmitted = computedStatus === 'admitted';
+  if (
+    manifest.status !== computedStatus ||
+    manifest.admitted !== computedAdmitted ||
+    manifest.standaloneStable !== computedAdmitted ||
+    manifest.nextStageAuthorized !== computedAdmitted
+  ) {
     failures.push('declared admission status disagrees with gate statuses');
   }
+  if (
+    packageManifest.private !== true ||
+    packageManifest.scripts?.prepublishOnly !== 'node scripts/refuse-publish.mjs'
+  ) {
+    failures.push('Shared must remain private and refuse npm publication after admission');
+  }
   if (computedStatus !== 'admitted') {
-    if (packageManifest.private !== true) failures.push('blocked package must remain private');
-    if (packageManifest.scripts?.prepublishOnly !== 'node scripts/refuse-publish.mjs') {
-      failures.push('blocked package must retain the refusing publication guard');
-    }
     const sh7 = (packageGates.gates ?? []).find((gate) => gate.id === 'SH7');
     if (computedStatus === 'blocked' && sh7?.status !== 'blocked') {
       failures.push('machine package gate must report SH7 blocked after the admission decision');
     }
+    if (
+      sharedRegistry?.standaloneStability !== 'not-admitted' ||
+      sharedRegistry?.cliRuntimeIntegration !== 'prohibited-before-standalone-stability'
+    ) {
+      failures.push('blocked Shared must remain outside the central CLI runtime');
+    }
+  } else if (
+    sharedRegistry?.standaloneStability !== 'admitted' ||
+    sharedRegistry?.currentStage !== 'SH7'
+  ) {
+    failures.push('admitted Shared state is not reflected by the package registry');
   }
 
   let platformEvidence;
@@ -142,7 +204,12 @@ function buildAudit(options) {
     package: manifest.package,
     version: manifest.version,
     status: failures.length > 0 ? 'invalid' : computedStatus,
-    admitted: failures.length === 0 && computedStatus === 'admitted',
+    admitted: failures.length === 0 && computedAdmitted,
+    standaloneStable: failures.length === 0 && computedAdmitted,
+    distribution: 'internal-only',
+    npmPublication: 'prohibited',
+    nextStage: 'SH8',
+    nextStageAuthorized: failures.length === 0 && computedAdmitted,
     summary,
     blockingGates: gates
       .filter((gate) => gate.status !== 'passed')

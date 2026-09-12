@@ -26,10 +26,10 @@ describe('@workspai/shared documentation alignment', () => {
 
     expect(gates).toMatchObject({
       currentGate: 'SH0',
-      activeWorkstream: 'SH7-blocked-admission-evidence',
+      activeWorkstream: 'SH7-internal-admission-evidence',
       publishable: false,
     });
-    expect(readme).toContain('not publishable');
+    expect(readme).toContain('npm publication prohibited');
     expect(readme).toContain('documentation portfolio');
     expect(gates.blockers).not.toContain(
       'schema-to-type-to-validator generation is not implemented'

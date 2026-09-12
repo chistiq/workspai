@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Reframed SH7 around private internal consumption: Graph is the registered
+  consumer, workspace and packed-artifact integrity replace npm release gates,
+  and publication remains prohibited even after internal admission.
+
 - Added the SH7 fail-closed standalone-admission audit, run-bound CI platform
   evidence, installed-tarball CycloneDX validation and a privacy-safe external-
   consumer evidence policy. Publication and the CLI bridge remain blocked.

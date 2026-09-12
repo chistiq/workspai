@@ -1,10 +1,10 @@
 {
   "schemaVersion": "workspai-independent-package-gates.v1",
   "package": "@workspai/shared",
-  "asOf": "2026-08-15",
+  "asOf": "2026-09-12",
   "maturity": "contract-design",
   "currentGate": "SH0",
-  "activeWorkstream": "SH7-blocked-admission-evidence",
+  "activeWorkstream": "SH7-internal-admission-evidence",
   "publishable": false,
   "cliRuntimeIntegration": "prohibited-before-standalone-stability",
   "gates": [
@@ -99,7 +99,6 @@
       "status": "blocked",
       "requiredEvidence": [
         "governance/sh7-standalone-admission.v1.json",
-        "governance/sh7-external-consumer-evidence-policy.v1.json",
         "governance/sh7-stabilization-report.v1.json"
       ]
     }
@@ -112,7 +111,7 @@
     "SH4 local closure is approved; its remote cross-platform evidence remains pending",
     "SH5 local closure is approved; real-browser and remote cross-platform evidence remains pending",
     "SH6 local closure is approved and does not advance Graph maturity or Shared admission",
-    "independent external consumer value is not proven",
+    "registered internal Graph consumption passes locally but awaits retained remote evidence",
     "SH7 admission audit is blocked and SH8 is unauthorized",
     "bridgeability fixture cases are specified but frozen redacted payloads are not captured"
   ]

@@ -1,8 +1,8 @@
 # `@workspai/shared`
 
-Unpublished protocol foundation for independent Workspai packages.
+Private protocol foundation for internal Workspai packages.
 
-Status: **development-only · protocol foundation · not publishable**
+Status: **development-only · internal protocol foundation · npm publication prohibited**
 
 > This is the developing independent Shared implementation. The released
 > Workspai CLI currently uses its official internal contract and envelope
@@ -23,23 +23,23 @@ scale and adversarial gates while preserving explicit remote-browser and peak-
 memory limitations. SH5 adds explicit ESM `/browser` and `/node` entry points
 plus the development-only `workspai-shared` validator executable. The candidate can generate multiple
 independent schemas, types and standalone validators in one deterministic,
-dependency-aware portfolio. Publication remains blocked until the Shared
-roadmap's semantic-lock, compatibility, conformance and external-consumer gates
-pass.
+dependency-aware portfolio. npm publication is not part of the current delivery
+path. Internal admission remains blocked until semantic-lock, compatibility,
+conformance, remote-platform and rollback gates pass.
 SH6 additionally proves that the independently developing Graph package can
 consume the public contracts, compatibility, validation and registry subpaths
 from separately packed tarballs. This is adoption evidence only: it neither
 advances Graph maturity nor connects Shared to the central CLI.
-SH7 is an active standalone-stability audit. Its strict command intentionally
-returns exit `2` while normative, remote-platform, real-browser, provenance and
-independently owned external-consumer evidence remain incomplete. A blocked
-audit is not a failed local build and cannot be converted into admission by an
-internal fixture.
-Both `private: true` and a refusing `prepublishOnly` guard prevent accidental
-publication during development.
+SH7 is an active internal standalone-stability audit. Its strict command
+intentionally returns exit `2` while normative, remote-platform, real-browser,
+compatibility and internal rollback evidence remain incomplete. A blocked audit
+is not a failed local build and cannot be converted into admission by a fixture.
+Both `private: true` and a refusing `prepublishOnly` guard remain mandatory even
+after internal admission.
 
-The canonical source, versioning, quality gates and any future npm publication
-remain in the `chistiq/workspai` monorepo. A future package-focused GitHub
+The canonical source, versioning and quality gates remain in the
+`chistiq/workspai` monorepo. A future npm distribution would require a separate
+architecture decision and admission process. A future package-focused GitHub
 repository is a read-only discovery mirror, not a release or contribution
 authority.
 
