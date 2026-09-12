@@ -29,6 +29,11 @@ export {
   SOURCE_ENTRYPOINTS_PROVIDER_ID,
   createSourceEntrypointsProvider,
 } from './source-entrypoints.js';
+export {
+  PROTOBUF_TOPOLOGY_PROVIDER_ID,
+  createProtobufTopologyProvider,
+} from './protobuf-topology.js';
+export { BUILD_TOPOLOGY_PROVIDER_ID, createBuildTopologyProvider } from './build-topology.js';
 
 import type { GraphProviderRuntime } from '../contracts/provider.js';
 
@@ -42,6 +47,8 @@ import { createRepositoryRoutesProvider } from './repository-routes.js';
 import { createComposeTopologyProvider } from './compose-topology.js';
 import { createCodeownersProvider } from './codeowners.js';
 import { createSourceEntrypointsProvider } from './source-entrypoints.js';
+import { createProtobufTopologyProvider } from './protobuf-topology.js';
+import { createBuildTopologyProvider } from './build-topology.js';
 
 /** The deterministic, offline provider set admitted for the standalone repository preview. */
 export function createStandardRepositoryProviders(): readonly GraphProviderRuntime[] {
@@ -56,5 +63,7 @@ export function createStandardRepositoryProviders(): readonly GraphProviderRunti
     createComposeTopologyProvider(),
     createCodeownersProvider(),
     createSourceEntrypointsProvider(),
+    createProtobufTopologyProvider(),
+    createBuildTopologyProvider(),
   ]);
 }

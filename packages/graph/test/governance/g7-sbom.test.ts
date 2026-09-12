@@ -27,6 +27,7 @@ describe('Graph G7 SBOM candidate', () => {
       fs.readFileSync(path.join(packageRoot, 'governance/g7-sbom.cdx.json'), 'utf8')
     ) as {
       components: { name: string; scope: string }[];
+      dependencies: { ref: string; dependsOn: string[] }[];
       metadata: { properties: { name: string; value: string }[] };
     };
     expect(JSON.stringify(bom)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
@@ -38,6 +39,15 @@ describe('Graph G7 SBOM candidate', () => {
     );
     expect(bom.components.some((item) => item.name === '@workspai/graph')).toBe(true);
     expect(bom.components.some((item) => item.name === '@workspai/shared')).toBe(true);
+    expect(bom.components.some((item) => item.name === 'yaml')).toBe(true);
+    expect(
+      bom.dependencies.find((item) => item.ref.includes('%40workspai/graph@'))?.dependsOn
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('%40workspai/shared@'),
+        expect.stringContaining('yaml@2.9.0'),
+      ])
+    );
     expect(
       bom.components.every((item) => item.scope === 'required' || item.scope === 'excluded')
     ).toBe(true);

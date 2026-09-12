@@ -21,7 +21,18 @@ export interface WorkspaiGraphStructuralExtractorProfileCandidate {
  * via the `definition` "language".
  */
 export interface Language {
-  language: 'node' | 'python' | 'go' | 'java' | 'dotnet' | 'rust';
+  language:
+    | 'node'
+    | 'python'
+    | 'go'
+    | 'java'
+    | 'dotnet'
+    | 'rust'
+    | 'c-cpp'
+    | 'objective-c-matlab'
+    | 'php'
+    | 'ruby'
+    | 'swift';
   /**
    * @minItems 1
    * @maxItems 32

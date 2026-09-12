@@ -49,6 +49,13 @@
       "cliRuntimeIntegration": "prohibited-before-standalone-stability",
       "documentationAuthority": "workspai-docs:Packages/graph",
       "qualityPlanRef": "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md",
+      "approvedExternalRuntimeDependencies": [
+        {
+          "name": "yaml",
+          "version": "2.9.0",
+          "purpose": "Bounded safe-core parsing of Docker Compose declarations"
+        }
+      ],
       "latestClosure": "packages/graph/governance/g5-stage-closure.v1.json",
       "currentStage": "G5",
       "stageStatus": "local-source-complete"

@@ -189,7 +189,7 @@ describe('@workspai/graph development package', () => {
       credentials: 'deny',
     });
     const providers = createStandardRepositoryProviders();
-    expect(providers).toHaveLength(10);
+    expect(providers).toHaveLength(12);
     expect(Object.isFrozen(providers)).toBe(true);
   });
 });

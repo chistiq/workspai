@@ -320,7 +320,7 @@
     {
       "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",
       "file": "schemas/structural-extractor-profile.v0.1.0-candidate.schema.json",
-      "sha256": "21c48f143d318d59f26e3861a836529b404d1d6d9e247901408367db01f223e8"
+      "sha256": "69015dc77231632e92eaa4fcf255f62dd9b07644df2c997659a6fa2fc23ac3fe"
     }
   ],
   "packedArtifactSecurity": {

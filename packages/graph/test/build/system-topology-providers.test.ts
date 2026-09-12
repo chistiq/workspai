@@ -58,6 +58,38 @@ async function fixture(): Promise<string> {
   );
   await writeFile(path.join(root, 'src', 'currency', 'server.cpp'), 'int main() { return 0; }\n');
   await writeFile(path.join(root, 'dashboard.mlapp'), new Uint8Array([80, 75, 3, 4]));
+  await writeFile(
+    path.join(root, 'health.proto'),
+    [
+      'syntax = "proto3";',
+      'package workspai.health;',
+      'import "google/protobuf/empty.proto";',
+      'message HealthReply { string status = 1; }',
+      'service Health {',
+      '  rpc Check (google.protobuf.Empty) returns (HealthReply);',
+      '}',
+      '',
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(root, 'BUILD.bazel'),
+    [
+      'cc_library(',
+      '    name = "checkout",',
+      '    deps = ["//src/currency:currency"],',
+      ')',
+      '',
+    ].join('\n')
+  );
+  await writeFile(
+    path.join(root, 'CMakeLists.txt'),
+    [
+      'add_library(currency src/currency/server.cpp)',
+      'add_executable(checkout src/checkout/main.go)',
+      'target_link_libraries(checkout PRIVATE currency)',
+      '',
+    ].join('\n')
+  );
   const entrypoints: Readonly<Record<string, string>> = {
     'main.rs': 'fn main() {}\n',
     'Application.java': 'public class Application { public static void main(String[] args) {} }\n',
@@ -115,13 +147,14 @@ describe('system topology repository providers', () => {
     });
 
     if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
-    expect(result.graph.nodes.filter((node) => node.kind === 'service')).toHaveLength(2);
+    expect(result.graph.nodes.filter((node) => node.kind === 'service')).toHaveLength(3);
     expect(result.graph.nodes.some((node) => node.kind === 'team')).toBe(true);
     expect(result.graph.nodes.some((node) => node.kind === 'owner')).toBe(true);
     expect(result.graph.nodes.filter((node) => node.kind === 'command').length).toBeGreaterThan(15);
     expect(result.graph.edges.some((edge) => edge.relation === 'depends-on')).toBe(true);
     expect(result.graph.edges.some((edge) => edge.relation === 'owned-by')).toBe(true);
     expect(result.graph.edges.filter((edge) => edge.relation === 'deployed-as')).toHaveLength(2);
+    expect(result.graph.nodes.some((node) => node.kind === 'endpoint')).toBe(true);
     expect(result.graph.edges.every((edge) => edge.proof.evidence.length > 0)).toBe(true);
     expect(result.providers).toEqual(
       expect.arrayContaining([
@@ -135,6 +168,14 @@ describe('system topology repository providers', () => {
         }),
         expect.objectContaining({
           provider: expect.objectContaining({ id: 'workspai.graph.provider.source-entrypoints' }),
+          collection: 'complete',
+        }),
+        expect.objectContaining({
+          provider: expect.objectContaining({ id: 'workspai.graph.provider.protobuf-topology' }),
+          collection: 'complete',
+        }),
+        expect.objectContaining({
+          provider: expect.objectContaining({ id: 'workspai.graph.provider.build-topology' }),
           collection: 'complete',
         }),
       ])
@@ -175,7 +216,7 @@ describe('system topology repository providers', () => {
     });
 
     expect(result.status).toBe('partial');
-    expect(result.graph?.nodes.filter((node) => node.kind === 'service')).toHaveLength(1);
+    expect(result.graph?.edges.filter((edge) => edge.relation === 'deployed-as')).toHaveLength(1);
     expect(result.quality.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.compose-service-definition-invalid' })
     );

@@ -33,7 +33,21 @@
       "additionalProperties": false,
       "required": ["language", "extensions", "extractions", "unsupportedSyntax"],
       "properties": {
-        "language": { "enum": ["node", "python", "go", "java", "dotnet", "rust"] },
+        "language": {
+          "enum": [
+            "node",
+            "python",
+            "go",
+            "java",
+            "dotnet",
+            "rust",
+            "c-cpp",
+            "objective-c-matlab",
+            "php",
+            "ruby",
+            "swift"
+          ]
+        },
         "extensions": {
           "type": "array",
           "minItems": 1,

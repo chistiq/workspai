@@ -43,7 +43,11 @@ export {
   validateGraphProviderManifest,
   type GraphProviderOutputAdmission,
 } from './foundation.js';
-export { canonicalizeGraphValue, digestCanonicalGraphValue } from './canonical-json.js';
+export {
+  canonicalizeGraphValue,
+  digestCanonicalGraphValue,
+  measureCanonicalGraphValueBytes,
+} from './canonical-json.js';
 export { normalizeGraphEntityIdentity, resolveGraphEntityIdentity } from './identity.js';
 export { assessGraphEvidenceIndependence } from './lineage.js';
 export {

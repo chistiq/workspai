@@ -44,6 +44,36 @@
       "extensions": [".rs"],
       "extractions": ["static-imports"],
       "unsupportedSyntax": ["dynamic-library-load", "framework-route-macro"]
+    },
+    {
+      "language": "c-cpp",
+      "extensions": [".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["dynamic-library-load", "generated-include-path"]
+    },
+    {
+      "language": "objective-c-matlab",
+      "extensions": [".m", ".mm"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["runtime-class-load", "dynamic-path-import"]
+    },
+    {
+      "language": "php",
+      "extensions": [".php"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["variable-include", "runtime-class-load"]
+    },
+    {
+      "language": "ruby",
+      "extensions": [".rb"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["computed-require", "autoload"]
+    },
+    {
+      "language": "swift",
+      "extensions": [".swift"],
+      "extractions": ["static-imports"],
+      "unsupportedSyntax": ["dynamic-library-load"]
     }
   ]
 }

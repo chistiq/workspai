@@ -17,7 +17,10 @@ import {
   type GraphValidationResult,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
-import { canonicalizeGraphValue } from '../conformance/canonical-value.js';
+import {
+  canonicalizeGraphValue,
+  measureCanonicalGraphValueBytes,
+} from '../conformance/canonical-value.js';
 import { admitGraphProviderOutput } from '../conformance/foundation.js';
 import {
   validateCanonicalGraph,
@@ -50,7 +53,6 @@ interface EdgeCandidate {
 
 type PreparedComposition = GraphReferenceCompositionTaskOutput;
 
-const encoder = new TextEncoder();
 const MAX_COMPOSITION_SOURCES = 10_000;
 const MAX_COMPOSITION_FACTS = 10_000_000;
 const MAX_COMPOSITION_EDGES = 50_000_000;
@@ -72,8 +74,12 @@ function canonical(input: unknown): string {
   return result.value;
 }
 
-async function digest(input: unknown, ports: GraphExecutionPorts): Promise<WisDigestReference> {
-  return digestCanonicalGraphInput(input, ports.digest);
+async function digest(
+  input: unknown,
+  ports: GraphExecutionPorts,
+  maxBytes?: number
+): Promise<WisDigestReference> {
+  return digestCanonicalGraphInput(input, ports.digest, { ...(maxBytes ? { maxBytes } : {}) });
 }
 
 function scopeKey(entity: GraphEntityReference): string {
@@ -112,8 +118,14 @@ function deepFreeze<T>(input: T): Readonly<T> {
   return input;
 }
 
-function immutableCopy<T>(input: T): Readonly<T> {
-  return deepFreeze(JSON.parse(canonical(input)) as T);
+function immutableCopy<T>(input: T, maxBytes?: number): Readonly<T> {
+  const result = canonicalizeGraphValue(input, {
+    ...(maxBytes === undefined ? {} : { maxValues: maxBytes }),
+  });
+  if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
+  if (maxBytes !== undefined && new TextEncoder().encode(result.value).byteLength > maxBytes)
+    throw new Error('/: canonical value exceeds the configured byte budget');
+  return deepFreeze(JSON.parse(result.value) as T);
 }
 
 function aggregateCoverage(
@@ -1071,7 +1083,14 @@ export async function composeGraph(
         );
     }
     if (admissionIssues.length > 0) return failure('invalid-input', admissionIssues);
-    const normalizedSources = sortCanonical(admittedSources);
+    // Provider batches can be much larger than the standalone canonical-value
+    // budget. Their admitted identity is the deterministic ordering key; the
+    // complete payload is still bound by the semantic digests below.
+    const normalizedSources = [...admittedSources].sort((left, right) =>
+      `${left.manifest.id}\u0000${left.manifest.version}\u0000${left.batch.batchId}`.localeCompare(
+        `${right.manifest.id}\u0000${right.manifest.version}\u0000${right.batch.batchId}`
+      )
+    );
     const sourceIdentities = normalizedSources.map(
       (source) => `${source.manifest.id}@${source.manifest.version}:${source.batch.batchId}`
     );
@@ -1153,7 +1172,19 @@ export async function composeGraph(
       return failure('composition-failed', workerOutputValidation.issues);
     }
     const prepared = workerOutputValidation.value;
-    const actualOutputBytes = encoder.encode(canonical(prepared)).byteLength;
+    const measuredOutput = measureCanonicalGraphValueBytes(
+      prepared,
+      request.policy.maxWorkerOutputBytes
+    );
+    if (!measuredOutput.accepted) {
+      return failure(
+        measuredOutput.issues[0]?.message.includes('byte budget exceeded')
+          ? 'resource-limit'
+          : 'composition-failed',
+        measuredOutput.issues
+      );
+    }
+    const actualOutputBytes = measuredOutput.value;
     if (
       !Number.isFinite(workerResult.metrics.durationMs) ||
       workerResult.metrics.durationMs < 0 ||
@@ -1201,24 +1232,28 @@ export async function composeGraph(
     }
 
     const semanticDigests = {
-      ontology: await digest(request.ontology, ports),
+      ontology: await digest(request.ontology, ports, request.policy.maxWorkerOutputBytes),
       proofPolicies: await digest(
         request.ontology.relations.map((relation) => relation.proofPolicy),
-        ports
+        ports,
+        request.policy.maxWorkerOutputBytes
       ),
       inputs: await digest(
         sortCanonical(normalizedSources.flatMap((source) => source.batch.inputs)),
-        ports
+        ports,
+        request.policy.maxWorkerOutputBytes
       ),
       facts: await digest(
         sortCanonical(normalizedSources.flatMap((source) => source.batch.facts).map(semanticFact)),
-        ports
+        ports,
+        request.policy.maxWorkerOutputBytes
       ),
       providers: await digest(
         sortCanonical(normalizedSources.map((source) => source.manifest)),
-        ports
+        ports,
+        request.policy.maxWorkerOutputBytes
       ),
-      compositionPolicy: await digest(request.policy, ports),
+      compositionPolicy: await digest(request.policy, ports, request.policy.maxWorkerOutputBytes),
     };
 
     const evaluatedProofs = new Map(
@@ -1394,7 +1429,8 @@ export async function composeGraph(
           };
         }),
       },
-      ports
+      ports,
+      request.policy.maxWorkerOutputBytes
     );
     const generation: GraphGeneration = {
       reference: {
@@ -1483,16 +1519,16 @@ export async function composeGraph(
     if (!graphValidation.accepted) return failure('composition-failed', graphValidation.issues);
     const qualityValidation = validateGraphQualityReport(qualityDraft);
     if (!qualityValidation.accepted) return failure('composition-failed', qualityValidation.issues);
-    const graph = immutableCopy(graphDraft);
-    const quality = immutableCopy(qualityDraft);
+    const graph = immutableCopy(graphDraft, request.policy.maxWorkerOutputBytes);
+    const quality = immutableCopy(qualityDraft, request.policy.maxWorkerOutputBytes);
 
     return {
       accepted: true,
       value: deepFreeze({
         graph,
         quality,
-        decisions: immutableCopy(decisions),
-        semanticDigests: immutableCopy(semanticDigests),
+        decisions: immutableCopy(decisions, request.policy.maxWorkerOutputBytes),
+        semanticDigests: immutableCopy(semanticDigests, request.policy.maxWorkerOutputBytes),
       } satisfies GraphCompositionOutput),
       issues: [],
     };

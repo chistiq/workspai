@@ -219,6 +219,15 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
             }
             if (entry.isSymbolicLink() || !entry.isFile()) {
               omittedFiles += 1;
+              unsupportedZones.push({
+                code: entry.isSymbolicLink()
+                  ? 'graph.repository-symlink-unsupported'
+                  : 'graph.repository-special-entry-unsupported',
+                scope: locator,
+                reason: entry.isSymbolicLink()
+                  ? 'Symbolic links are not followed across the repository trust boundary.'
+                  : 'The repository entry is not a regular file or directory and cannot be inventoried safely.',
+              });
               diagnostics.push({
                 code: 'GRAPH_FILE_SPECIAL_ENTRY_OMITTED',
                 severity: 'info',
@@ -250,6 +259,12 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
                 path: locator,
                 message: 'Repository input exceeds the per-file inventory budget.',
               });
+              unknownZones.push({
+                code: 'graph.repository-file-size-truncated',
+                scope: locator,
+                reason:
+                  'File content and semantic relationships are unknown beyond the admitted per-file budget.',
+              });
               continue;
             }
             if (
@@ -258,6 +273,13 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
             ) {
               omittedFiles += 1;
               omittedBytes += stat.size;
+              if (!unknownZones.some((zone) => zone.code === 'graph.repository-budget-truncated'))
+                unknownZones.push({
+                  code: 'graph.repository-budget-truncated',
+                  scope: 'repository',
+                  reason:
+                    'Repository inventory stopped admitting files at the configured file or byte budget.',
+                });
               continue;
             }
             const stable = await readStableFile(target, request.maxFileBytes, request.signal);

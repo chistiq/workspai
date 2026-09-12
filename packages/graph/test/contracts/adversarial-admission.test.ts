@@ -13,6 +13,7 @@ import {
 } from '../../src/contracts/index.js';
 import {
   canonicalizeGraphValue,
+  measureCanonicalGraphValueBytes,
   validateCanonicalGraph,
   validateGraphFactBatch,
   validateGraphModelGenerationBinding,
@@ -246,5 +247,70 @@ describe('Graph G1 adversarial admission', () => {
     const hostile = Object.create(null) as Record<string, unknown>;
     hostile.__proto__ = { polluted: true };
     rejected(canonicalizeGraphValue(hostile));
+  });
+
+  it('measures large canonical values without the digest canonicalization value ceiling', () => {
+    const value = Array.from({ length: 250_000 }, (_, index) => ({ index, enabled: true }));
+    const expected = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    expect(measureCanonicalGraphValueBytes(value, expected)).toEqual({
+      accepted: true,
+      value: expected,
+      issues: [],
+    });
+    rejected(measureCanonicalGraphValueBytes(value, expected - 1));
+    rejected(measureCanonicalGraphValueBytes(value, 0));
+  });
+
+  it('keeps canonicalization deterministic across scalar and nested JSON boundaries', () => {
+    expect(canonicalizeGraphValue({ z: -0, a: [null, true, false, 'value', 1.5] })).toEqual({
+      accepted: true,
+      value: '{"a":[null,true,false,"value",1.5],"z":0}',
+      issues: [],
+    });
+    rejected(canonicalizeGraphValue(Number.POSITIVE_INFINITY));
+    rejected(canonicalizeGraphValue({ missing: undefined }));
+    rejected(canonicalizeGraphValue({ callback: () => undefined }));
+    rejected(canonicalizeGraphValue({ token: Symbol('token') }));
+    rejected(canonicalizeGraphValue({ count: 1n }));
+    rejected(canonicalizeGraphValue({ constructor: 'blocked' }));
+    rejected(canonicalizeGraphValue({}, { maxValues: 0 }));
+    rejected(canonicalizeGraphValue({}, { maxValues: 1.5 }));
+    rejected(canonicalizeGraphValue([1], { maxValues: 1 }));
+
+    const arrayCycle: unknown[] = [];
+    arrayCycle.push(arrayCycle);
+    rejected(canonicalizeGraphValue(arrayCycle));
+    const objectCycle: Record<string, unknown> = {};
+    objectCycle.self = objectCycle;
+    rejected(canonicalizeGraphValue(objectCycle));
+    let nested: unknown = null;
+    for (let depth = 0; depth < 258; depth += 1) nested = [nested];
+    rejected(canonicalizeGraphValue(nested));
+  });
+
+  it('measures every JSON shape and rejects unsafe measured values', () => {
+    const value = { z: -0, a: [null, true, false, 'value', 1.5] };
+    expect(measureCanonicalGraphValueBytes(value, 1_000)).toEqual({
+      accepted: true,
+      value: new TextEncoder().encode(JSON.stringify(value)).byteLength,
+      issues: [],
+    });
+    rejected(measureCanonicalGraphValueBytes(Number.NaN, 100));
+    rejected(measureCanonicalGraphValueBytes(undefined, 100));
+    rejected(measureCanonicalGraphValueBytes({ missing: undefined }, 100));
+    rejected(measureCanonicalGraphValueBytes({ callback: () => undefined }, 100));
+    rejected(measureCanonicalGraphValueBytes({ token: Symbol('token') }, 100));
+    rejected(measureCanonicalGraphValueBytes({ count: 1n }, 100));
+    rejected(measureCanonicalGraphValueBytes({ constructor: 'blocked' }, 100));
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    rejected(measureCanonicalGraphValueBytes(cycle, 100));
+    const arrayCycle: unknown[] = [];
+    arrayCycle.push(arrayCycle);
+    rejected(measureCanonicalGraphValueBytes(arrayCycle, 100));
+
+    let nested: unknown = null;
+    for (let depth = 0; depth < 258; depth += 1) nested = [nested];
+    rejected(measureCanonicalGraphValueBytes(nested, 10_000));
   });
 });

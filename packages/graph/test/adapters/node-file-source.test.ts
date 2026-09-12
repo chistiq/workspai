@@ -137,6 +137,29 @@ describe('Node repository file source', () => {
     expect(result.inputs).toHaveLength(1);
     expect(result.omittedFiles).toBe(1);
     expect(result.omittedBytes).toBeGreaterThan(0);
+    expect(result.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.repository-budget-truncated' })
+    );
+  });
+
+  it('reports oversized file content as unknown instead of silently omitting semantics', async () => {
+    const root = await fixture();
+    const source = createNodeGraphFileSource();
+    const result = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 10,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.repository-file-size-truncated' })
+    );
   });
 
   it('omits known sensitive inputs without reading their contents into provider inventory', async () => {

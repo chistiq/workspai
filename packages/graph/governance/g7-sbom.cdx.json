@@ -398,10 +398,14 @@
   "dependencies": [
     {
       "ref": "pkg:npm/%40workspai/graph@0.0.0-development",
-      "dependsOn": ["pkg:npm/%40workspai/shared@0.0.0-development"]
+      "dependsOn": ["pkg:npm/%40workspai/shared@0.0.0-development", "pkg:npm/yaml@2.9.0"]
     },
     {
       "ref": "pkg:npm/%40workspai/shared@0.0.0-development",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/yaml@2.9.0",
       "dependsOn": []
     }
   ]

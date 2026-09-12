@@ -319,7 +319,7 @@ try {
         };
         if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
         const standardProviders = providers.createStandardRepositoryProviders();
-        if (standardProviders.length !== 10 || !Object.isFrozen(standardProviders)) process.exit(30);
+        if (standardProviders.length !== 12 || !Object.isFrozen(standardProviders)) process.exit(30);
         const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
         if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
         const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
@@ -493,7 +493,7 @@ try {
       }
     },
     'providers-list': (envelope) => {
-      if (!Array.isArray(envelope.data) || envelope.data.length !== 10) {
+      if (!Array.isArray(envelope.data) || envelope.data.length !== 12) {
         throw new Error('packed Graph CLI provider inventory is incomplete');
       }
     },
@@ -710,7 +710,7 @@ try {
     'fixtures/g4/repositories/java/HealthController.java',
     'fixtures/g4/repositories/dotnet/Program.cs',
     'fixtures/g4/repositories/rust/main.rs',
-    'fixtures/g4/repositories/unsupported/app.rb',
+    'fixtures/g4/repositories/unsupported/app.dart',
     'fixtures/g6/minimal-changeset.json',
     'fixtures/g6/minimal-content-state-manifest.json',
     'fixtures/g6/minimal-graph-change-overlay.json',
@@ -948,6 +948,11 @@ try {
     ['java', 'imports', 'exposes'],
     ['dotnet', 'imports', 'exposes'],
     ['rust', 'imports', undefined],
+    ['c-cpp', 'imports', undefined],
+    ['objective-c-matlab', 'imports', undefined],
+    ['php', 'imports', undefined],
+    ['ruby', 'imports', undefined],
+    ['swift', 'imports', undefined],
   ];
   for (const [language, importRelation, routeRelation] of languageFixtures) {
     const fixtureRoot = path.join(installedRoot, 'fixtures/g4/repositories', language);

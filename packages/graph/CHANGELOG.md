@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Removed fixed canonical-value ceilings from policy-bounded large-repository
+  composition without weakening the default untrusted-value limit. Large
+  provider batches now sort by admitted identity and all semantic/content
+  digests retain exact canonical JSON semantics under the composition byte
+  budget.
+- Added evidence-backed static imports for C/C++, Objective-C/MATLAB, PHP,
+  Ruby and Swift, plus dedicated Protobuf service/RPC/schema topology and
+  Bazel/CMake target dependency providers. Relative module targets are encoded
+  as portable identities instead of failing whole source files.
+- Made symlink, special-entry and inventory-budget omissions explicit quality
+  boundaries. Symlinks remain unfollowed and sensitive inputs remain omitted.
+
 - Added evidence-backed Docker Compose service topology, CODEOWNERS ownership,
   cross-language source entry points, repository-wide Proto/GraphQL contract
   surfaces and MATLAB artifact classification. Repository quality now reports
@@ -48,8 +60,8 @@
   checkpoint stays planned until those reports exist.
 - Official G4 python, go, java, dotnet, rust and unsupported fixtures now have
   incremental/full generation-digest equivalence for single-file add, edit and
-  delete. Language-import providers re-observe added source files; package-json
-  stays reused, and an added Ruby file does not wake language-imports.
+  delete. Language-import providers re-observe added source files and
+  package-json stays reused.
 - Content-state locators are NFC-normalized across Merkle assembly, inventory,
   Git porcelain and skip-reread matching, so macOS NFD and Linux NFC occupy one
   tree slot. NFC-colliding filenames in one directory are omitted fail-closed.

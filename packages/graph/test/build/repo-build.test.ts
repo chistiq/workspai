@@ -299,9 +299,9 @@ describe('buildRepoGraph', () => {
   });
 
   it('keeps file topology but refuses complete structural coverage for an unsupported language', async () => {
-    const source = "require_relative 'billing'\n";
+    const source = "import 'package:billing/core.dart';\n";
     const sourceInput: GraphProviderInput = {
-      locator: 'app.rb',
+      locator: 'app.dart',
       mediaType: 'text/plain',
       byteLength: new TextEncoder().encode(source).byteLength,
       digest: {
@@ -310,7 +310,7 @@ describe('buildRepoGraph', () => {
       },
     };
     const result = await buildRepoGraph({
-      ...request(createStandardRepositoryProviders(), ports([sourceInput], { 'app.rb': source })),
+      ...request(createStandardRepositoryProviders(), ports([sourceInput], { 'app.dart': source })),
       ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
     });
 
@@ -319,7 +319,7 @@ describe('buildRepoGraph', () => {
     expect(result.quality.unsupportedZones).toContainEqual(
       expect.objectContaining({
         code: 'graph.source-language-unsupported',
-        scope: 'app.rb',
+        scope: 'app.dart',
       })
     );
   });

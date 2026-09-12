@@ -5,7 +5,18 @@ export const GRAPH_STRUCTURAL_EXTRACTOR_PROFILE_CONTRACT = defineWisContract({
   version: '0.1.0-candidate',
 });
 
-export type GraphStructuralLanguage = 'node' | 'python' | 'go' | 'java' | 'dotnet' | 'rust';
+export type GraphStructuralLanguage =
+  | 'node'
+  | 'python'
+  | 'go'
+  | 'java'
+  | 'dotnet'
+  | 'rust'
+  | 'c-cpp'
+  | 'objective-c-matlab'
+  | 'php'
+  | 'ruby'
+  | 'swift';
 export type GraphStructuralExtraction = 'static-imports' | 'literal-routes';
 
 export interface GraphStructuralLanguageProfile {
@@ -69,6 +80,36 @@ export const GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE: GraphStructuralExtract
         extensions: Object.freeze(['.rs']),
         extractions: Object.freeze(['static-imports'] as const),
         unsupportedSyntax: Object.freeze(['dynamic-library-load', 'framework-route-macro']),
+      }),
+      Object.freeze({
+        language: 'c-cpp',
+        extensions: Object.freeze(['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx']),
+        extractions: Object.freeze(['static-imports'] as const),
+        unsupportedSyntax: Object.freeze(['dynamic-library-load', 'generated-include-path']),
+      }),
+      Object.freeze({
+        language: 'objective-c-matlab',
+        extensions: Object.freeze(['.m', '.mm']),
+        extractions: Object.freeze(['static-imports'] as const),
+        unsupportedSyntax: Object.freeze(['runtime-class-load', 'dynamic-path-import']),
+      }),
+      Object.freeze({
+        language: 'php',
+        extensions: Object.freeze(['.php']),
+        extractions: Object.freeze(['static-imports'] as const),
+        unsupportedSyntax: Object.freeze(['variable-include', 'runtime-class-load']),
+      }),
+      Object.freeze({
+        language: 'ruby',
+        extensions: Object.freeze(['.rb']),
+        extractions: Object.freeze(['static-imports'] as const),
+        unsupportedSyntax: Object.freeze(['computed-require', 'autoload']),
+      }),
+      Object.freeze({
+        language: 'swift',
+        extensions: Object.freeze(['.swift']),
+        extractions: Object.freeze(['static-imports'] as const),
+        unsupportedSyntax: Object.freeze(['dynamic-library-load']),
       }),
     ]),
   });

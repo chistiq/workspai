@@ -5,7 +5,7 @@ import type { WisDigestReference } from '@workspai/shared/contracts';
 import type { GraphValidationResult } from '../contracts/index.js';
 import { canonicalizeGraphValue } from './canonical-value.js';
 
-export { canonicalizeGraphValue } from './canonical-value.js';
+export { canonicalizeGraphValue, measureCanonicalGraphValueBytes } from './canonical-value.js';
 
 export function digestCanonicalGraphValue(
   input: unknown

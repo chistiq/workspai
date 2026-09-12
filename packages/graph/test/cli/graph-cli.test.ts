@@ -481,7 +481,7 @@ describe('workspai-graph CLI', () => {
     const test = harness();
     expect(await runGraphCli(['providers', 'list', '--json'], test.io, test.dependencies)).toBe(0);
     const list = JSON.parse(test.output[0] ?? '{}') as { data: { id: string }[] };
-    expect(list.data).toHaveLength(10);
+    expect(list.data).toHaveLength(12);
     expect(list.data.every((provider) => provider.id.startsWith('workspai.graph.provider.'))).toBe(
       true
     );

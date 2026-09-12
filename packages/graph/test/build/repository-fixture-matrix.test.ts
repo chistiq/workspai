@@ -25,6 +25,11 @@ const supported = [
   ['java', 'imports', 'exposes'],
   ['dotnet', 'imports', 'exposes'],
   ['rust', 'imports', undefined],
+  ['c-cpp', 'imports', undefined],
+  ['objective-c-matlab', 'imports', undefined],
+  ['php', 'imports', undefined],
+  ['ruby', 'imports', undefined],
+  ['swift', 'imports', undefined],
 ] as const;
 
 function buildFixture(language: string) {

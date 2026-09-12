@@ -12,16 +12,27 @@ const encoder = new TextEncoder();
  */
 export async function digestCanonicalGraphInput(
   input: unknown,
-  digest: GraphDigestPort
+  digest: GraphDigestPort,
+  options: { readonly maxBytes?: number } = {}
 ): Promise<WisDigestReference> {
   if (digest.algorithm !== 'sha256') {
     throw new Error('Graph digest port must implement SHA-256.');
   }
-  const canonical = canonicalizeGraphValue(input);
+  const maxBytes = options.maxBytes;
+  if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)) {
+    throw new Error('Graph digest byte budget must be a positive safe integer.');
+  }
+  const canonical = canonicalizeGraphValue(input, {
+    ...(maxBytes === undefined ? {} : { maxValues: maxBytes }),
+  });
   if (!canonical.accepted) {
     throw new Error(canonical.issues[0]?.message ?? 'Canonicalization failed.');
   }
-  const value = await digest.digest(encoder.encode(canonical.value));
+  const bytes = encoder.encode(canonical.value);
+  if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
+    throw new Error('Graph digest input exceeded its byte budget.');
+  }
+  const value = await digest.digest(bytes);
   if (!/^[a-f0-9]{32,256}$/u.test(value)) {
     throw new Error('Graph digest port returned a non-canonical lowercase hexadecimal digest.');
   }

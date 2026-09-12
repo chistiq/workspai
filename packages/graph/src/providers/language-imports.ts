@@ -12,7 +12,17 @@ import {
 
 export const LANGUAGE_IMPORTS_PROVIDER_ID = 'workspai.graph.provider.language-imports';
 
-type Language = 'python' | 'go' | 'java' | 'dotnet' | 'rust';
+type Language =
+  | 'python'
+  | 'go'
+  | 'java'
+  | 'dotnet'
+  | 'rust'
+  | 'c-cpp'
+  | 'objective-c-matlab'
+  | 'php'
+  | 'ruby'
+  | 'swift';
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
 
@@ -22,6 +32,19 @@ const EXTENSION_LANGUAGE: Readonly<Record<string, Language>> = Object.freeze({
   '.java': 'java',
   '.cs': 'dotnet',
   '.rs': 'rust',
+  '.c': 'c-cpp',
+  '.cc': 'c-cpp',
+  '.cpp': 'c-cpp',
+  '.cxx': 'c-cpp',
+  '.h': 'c-cpp',
+  '.hh': 'c-cpp',
+  '.hpp': 'c-cpp',
+  '.hxx': 'c-cpp',
+  '.m': 'objective-c-matlab',
+  '.mm': 'objective-c-matlab',
+  '.php': 'php',
+  '.rb': 'ruby',
+  '.swift': 'swift',
 });
 
 function extension(locator: string): string {
@@ -41,12 +64,13 @@ function supportedInputs(inputs: readonly GraphProviderInput[]): GraphProviderIn
 }
 
 function stripComments(source: string, language: Language): string {
-  const withoutBlocks = language === 'python' ? source : source.replace(/\/\*[\s\S]*?\*\//gu, '');
+  const hashIsComment = language === 'python' || language === 'ruby';
+  const withoutBlocks = hashIsComment ? source : source.replace(/\/\*[\s\S]*?\*\//gu, '');
   return withoutBlocks
     .split(/\r?\n/u)
     .filter((line) => {
       const trimmed = line.trimStart();
-      return language === 'python' ? !trimmed.startsWith('#') : !trimmed.startsWith('//');
+      return hashIsComment ? !trimmed.startsWith('#') : !trimmed.startsWith('//');
     })
     .join('\n');
 }
@@ -75,6 +99,41 @@ function extractImports(source: string, language: Language): string[] {
   const syntax = stripComments(source, language);
   const imports: string[] = [];
   if (language === 'go') return extractGoImports(syntax);
+  if (language === 'c-cpp') {
+    for (const match of syntax.matchAll(/^\s*#\s*include\s*[<"]([^>"\r\n]+)[>"]/gmu))
+      if (match[1]) imports.push(match[1].trim());
+    return imports;
+  }
+  if (language === 'objective-c-matlab') {
+    for (const pattern of [
+      /^\s*#\s*(?:include|import)\s*[<"]([^>"\r\n]+)[>"]/gmu,
+      /^\s*import\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(?:\.\*)?)\s*;?\s*$/gmu,
+    ])
+      for (const match of syntax.matchAll(pattern)) if (match[1]) imports.push(match[1].trim());
+    return imports;
+  }
+  if (language === 'php') {
+    for (const pattern of [
+      /^\s*use\s+(?:function\s+|const\s+)?([^;{\r\n]+)\s*;/gmu,
+      /\b(?:require|require_once|include|include_once)\s*(?:\(\s*)?["']([^"']+)["']/gmu,
+    ])
+      for (const match of syntax.matchAll(pattern)) if (match[1]) imports.push(match[1].trim());
+    return imports;
+  }
+  if (language === 'ruby') {
+    for (const match of syntax.matchAll(
+      /^\s*(?:require|require_relative|load)\s*(?:\(\s*)?["']([^"']+)["']/gmu
+    ))
+      if (match[1]) imports.push(match[1].trim());
+    return imports;
+  }
+  if (language === 'swift') {
+    for (const match of syntax.matchAll(
+      /^\s*(?:@testable\s+|@_exported\s+)?import\s+(?:\w+\s+)?([A-Za-z_]\w*)/gmu
+    ))
+      if (match[1]) imports.push(match[1]);
+    return imports;
+  }
   const patterns: readonly RegExp[] =
     language === 'python'
       ? [/^\s*import\s+([A-Za-z_][\w.]*)/gmu, /^\s*from\s+([.A-Za-z_][\w.]*)\s+import\s+/gmu]
@@ -97,8 +156,26 @@ function unsupportedDynamicSyntax(source: string, language: Language): boolean {
     (language === 'java' && /\bClass\.forName\s*\(/u.test(source)) ||
     (language === 'dotnet' && /\bAssembly\.(?:Load|LoadFrom|LoadFile)\s*\(/u.test(source)) ||
     (language === 'go' && /\bplugin\.Open\s*\(/u.test(source)) ||
-    (language === 'rust' && /\blibloading\b/u.test(source))
+    (language === 'rust' && /\blibloading\b/u.test(source)) ||
+    (language === 'c-cpp' && /\b(?:dlopen|LoadLibrary(?:A|W)?)\s*\(/u.test(source)) ||
+    (language === 'objective-c-matlab' && /\b(?:NSClassFromString|dlopen)\s*\(/u.test(source)) ||
+    (language === 'php' &&
+      /\b(?:require_once|include_once|require|include)\b\s*\(?\s*\$/u.test(source)) ||
+    (language === 'ruby' &&
+      /\b(?:require_relative|require|load)\b\s*\(?\s*[^"'\s]/u.test(source)) ||
+    (language === 'swift' && /\bdlopen\s*\(/u.test(source))
   );
+}
+
+function importedModuleLocator(imported: string): string {
+  const segments = imported.split('/');
+  const requiresEncoding =
+    imported.includes('\\') ||
+    imported.startsWith('/') ||
+    /^[A-Za-z]:/u.test(imported) ||
+    segments.some((segment) => segment === '' || segment === '.' || segment === '..');
+  if (!requiresEncoding) return imported;
+  return `encoded/${encodeURIComponent(imported).replaceAll('.', '%2E')}`;
 }
 
 function warning(code: string, path: string, message: string): GraphDiagnostic {
@@ -127,7 +204,18 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
     },
     limits: { maxDurationMs: 30_000, maxFacts: MAX_FACTS, maxInputBytes: 128 * 1024 * 1024 },
     contractVersions: [GRAPH_FACT_BATCH_CONTRACT.version],
-    supportedInputs: ['python-source', 'go-source', 'java-source', 'dotnet-source', 'rust-source'],
+    supportedInputs: [
+      'python-source',
+      'go-source',
+      'java-source',
+      'dotnet-source',
+      'rust-source',
+      'c-cpp-source',
+      'objective-c-matlab-source',
+      'php-source',
+      'ruby-source',
+      'swift-source',
+    ],
     incremental: 'input' as const,
     identitySchemes: [GRAPH_IDENTITY_SCHEME],
   };
@@ -192,7 +280,7 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
             const target = await request.resolveIdentity({
               namespace: `${language}-module`,
               kind: 'module',
-              relativeLocator: imported,
+              relativeLocator: importedModuleLocator(imported),
               caseSensitivity: language === 'dotnet' ? 'insensitive' : 'sensitive',
               scope: request.scope,
             });

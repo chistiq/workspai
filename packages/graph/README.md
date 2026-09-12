@@ -79,23 +79,25 @@ An explicit write commits immutable, content-addressed artifacts below
 pointer records project-relative immutable artifact paths and their digests, so
 consumers do not need host paths or directory guessing to resolve a generation.
 
-The offline provider set currently covers file/package topology, static imports
-for Node, Python, Go, Java, .NET and Rust, literal route declarations for the
-first five of those profiles, cross-language source entry points, CODEOWNERS
-file ownership, Docker Compose service/dependency/image topology, repository
-contract/runtime/delivery surfaces, MATLAB artifact families and safe
-repository-local Git `HEAD` identity. Every admitted repository file remains in
-the inventory even when deeper semantics are unavailable. Computed routes,
-dynamic imports, source languages outside the structural profile and Git
+The offline provider set currently covers file/package topology and static
+imports for Node, Python, Go, Java, .NET, Rust, C/C++, Objective-C/MATLAB,
+PHP, Ruby and Swift. It also extracts literal route declarations for the first
+five profiles, Protobuf contracts, services, schemas and RPCs, declared Bazel
+and CMake target dependencies, cross-language source entry points, CODEOWNERS
+ownership, Docker Compose topology, repository contract/runtime/delivery
+surfaces, MATLAB artifact families and safe repository-local Git `HEAD`
+identity. Every admitted repository file remains in the inventory even when
+deeper semantics are unavailable. Computed routes and dependencies, dynamic
+imports, source languages outside the structural profile, symlinks and Git
 worktree indirection remain explicit unknown or unsupported zones rather than
 silent omissions. Git config, remotes, credentials and external worktree
 metadata are never ingested.
 
-MATLAB `.m`, protected `.p`, live-script `.mlx`, application `.mlapp` and
-platform-specific `.mex*` inputs are counted as code-depth candidates. MATLAB
-data, figure, toolbox and installer formats are preserved as artifact surfaces
-without being misreported as source code. Binary or packaged MATLAB payloads
-are never decoded by the preview provider.
+Text `.m` inputs use an explicitly ambiguous Objective-C/MATLAB static-import
+profile. Protected `.p`, live-script `.mlx`, application `.mlapp`, data,
+figure, toolbox, installer and platform-specific `.mex*` formats are preserved
+as artifact surfaces. Binary, protected or packaged MATLAB payloads are never
+decoded by the preview provider.
 
 The fixed `source`, `structural` and `evidence` preview views are bounded
 read-only selections over the same immutable canonical generation. They retain

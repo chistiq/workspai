@@ -137,6 +137,11 @@ for (const name of developmentNames) {
 components.sort((left, right) => left['bom-ref'].localeCompare(right['bom-ref']));
 const graphRef = npmPurl(graphManifest.name, graphManifest.version);
 const sharedRef = npmPurl(sharedManifest.name, sharedManifest.version);
+const runtimeRefs = runtimeNames.map((name) =>
+  name === '@workspai/shared'
+    ? sharedRef
+    : npmPurl(name, lockPackage(lock, name)?.entry.version ?? graphManifest.dependencies[name])
+);
 const bom = {
   bomFormat: 'CycloneDX',
   specVersion: '1.6',
@@ -151,8 +156,10 @@ const bom = {
   },
   components,
   dependencies: [
-    { ref: graphRef, dependsOn: runtimeNames.includes('@workspai/shared') ? [sharedRef] : [] },
-    { ref: sharedRef, dependsOn: [] },
+    { ref: graphRef, dependsOn: [...runtimeRefs].sort((left, right) => left.localeCompare(right)) },
+    ...runtimeRefs
+      .map((ref) => ({ ref, dependsOn: [] }))
+      .sort((left, right) => left.ref.localeCompare(right.ref)),
   ],
 };
 

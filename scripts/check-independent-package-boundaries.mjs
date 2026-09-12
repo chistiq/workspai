@@ -456,12 +456,46 @@ if (sharedRuntimeDependencies.length > 0) {
 }
 
 const graphDependencies = Object.keys(graph.dependencies ?? {});
+const graphRegistryEntry = registeredPackages.find(
+  (entry) => entry.name === "@workspai/graph",
+);
+const approvedGraphRuntimeDependencies =
+  graphRegistryEntry?.approvedExternalRuntimeDependencies ?? [];
+const approvedGraphDependencyNames = new Set();
+for (const dependency of approvedGraphRuntimeDependencies) {
+  if (
+    !dependency ||
+    typeof dependency.name !== "string" ||
+    dependency.name.length === 0 ||
+    typeof dependency.version !== "string" ||
+    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(dependency.version) ||
+    typeof dependency.purpose !== "string" ||
+    dependency.purpose.length === 0 ||
+    registeredNames.has(dependency.name) ||
+    approvedGraphDependencyNames.has(dependency.name)
+  ) {
+    fail("@workspai/graph has an invalid approved external runtime dependency");
+    continue;
+  }
+  approvedGraphDependencyNames.add(dependency.name);
+  if (graph.dependencies?.[dependency.name] !== dependency.version) {
+    fail(
+      `@workspai/graph must pin approved runtime dependency ${dependency.name} to ${dependency.version}`,
+    );
+  }
+}
+const expectedGraphDependencies = new Set([
+  "@workspai/shared",
+  ...approvedGraphDependencyNames,
+]);
 if (
-  graphDependencies.length !== 1 ||
-  graphDependencies[0] !== "@workspai/shared"
+  graphDependencies.length !== expectedGraphDependencies.size ||
+  graphDependencies.some(
+    (dependency) => !expectedGraphDependencies.has(dependency),
+  )
 ) {
   fail(
-    "@workspai/graph may depend only on @workspai/shared during standalone development",
+    "@workspai/graph runtime dependencies must be Shared or explicitly approved and exactly pinned",
   );
 }
 
