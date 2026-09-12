@@ -5,6 +5,9 @@
 - Added a TypeScript-only bundle-input build target for clean internal CLI
   composition. Full Graph builds continue to produce and verify the bundled
   Rust/WASM artifact, while ordinary CLI bundling requires no Rust toolchain.
+- Kept historical G6 matrix verification valid after the separately governed
+  G7 admission advances the registry to G8, while continuing to reject every
+  unadmitted intermediate stage and any weakened G6 evidence.
 - Retained the exact protected-main G7 admission and opened only the authorized
   G8 shadow-comparison mode. The released CLI remains authoritative while the
   internal Graph package is bundled as a build-time dependency with no npm,
