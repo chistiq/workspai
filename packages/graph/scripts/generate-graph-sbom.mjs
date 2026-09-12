@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { nativeEngineSourceEvidence } from './native-engine-evidence.mjs';
+
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
 const graphManifestPath = path.join(packageRoot, 'package.json');
@@ -84,6 +86,7 @@ const rustArtifact = fs.existsSync(rustArtifactPath)
   ? fs.readFileSync(rustArtifactPath)
   : undefined;
 if (!rustArtifact) failures.push('Bundled Rust Graph WASM artifact is missing');
+const rustSource = nativeEngineSourceEvidence();
 const components = [
   component(graphManifest.name, graphManifest.version, {
     scope: 'required',
@@ -99,16 +102,7 @@ const components = [
     purl: rustRef,
     scope: 'required',
     licenses: [{ license: { id: 'MIT' } }],
-    ...(rustArtifact
-      ? {
-          hashes: [
-            {
-              alg: 'SHA-256',
-              content: crypto.createHash('sha256').update(rustArtifact).digest('hex'),
-            },
-          ],
-        }
-      : {}),
+    hashes: [{ alg: 'SHA-256', content: rustSource.digest }],
     properties: [
       { name: 'workspai:dependencyKind', value: 'bundled-native-acceleration' },
       { name: 'workspai:workspace', value: 'true' },
@@ -119,6 +113,8 @@ const components = [
       { name: 'workspai:semanticAuthority', value: 'typescript' },
       { name: 'workspai:userToolchain', value: 'not-required' },
       { name: 'workspai:dynamicDownload', value: 'prohibited' },
+      { name: 'workspai:hashSubject', value: rustSource.scope },
+      { name: 'workspai:artifactDigestPolicy', value: 'bound-in-build-evidence' },
     ],
   },
 ];

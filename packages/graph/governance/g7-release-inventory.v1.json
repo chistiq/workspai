@@ -343,7 +343,8 @@
     "maxNodes": 1000000,
     "maxEdges": 5000000,
     "maxMemoryBytes": 268435456,
-    "bytes": 27219,
-    "sha256": "53ed898c9e0ae8b0f2a7f0a29dd92922ee6b5e2df8ca54a83ccbe2c1a5724615"
+    "sourceDigest": "7ac124b8f3fe9eae1d6ef0f8ce2e7406d9360b7db5ed9819410c9b5635d3e172",
+    "sourceDigestScope": "canonical-source-and-build-policy",
+    "artifactDigestPolicy": "bound-in-build-evidence"
   }
 }

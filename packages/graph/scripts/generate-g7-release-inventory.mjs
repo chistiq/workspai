@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { nativeEngineSourceEvidence } from './native-engine-evidence.mjs';
+
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const snapshotPath = path.join(packageRoot, 'governance/g7-release-inventory.v1.json');
 const write = process.argv.includes('--write');
@@ -83,6 +85,7 @@ const rustArtifact = fs.existsSync(rustArtifactPath)
   ? fs.readFileSync(rustArtifactPath)
   : undefined;
 if (!rustArtifact) failures.push('Bundled Rust Graph WASM artifact is missing');
+const rustSource = nativeEngineSourceEvidence();
 
 if (
   manifest.name !== '@workspai/graph' ||
@@ -156,10 +159,9 @@ const inventory = {
     maxNodes: 1000000,
     maxEdges: 5000000,
     maxMemoryBytes: 268435456,
-    bytes: rustArtifact?.byteLength ?? 0,
-    sha256: rustArtifact
-      ? crypto.createHash('sha256').update(rustArtifact).digest('hex')
-      : 'unavailable',
+    sourceDigest: rustSource.digest,
+    sourceDigestScope: rustSource.scope,
+    artifactDigestPolicy: 'bound-in-build-evidence',
   },
 };
 

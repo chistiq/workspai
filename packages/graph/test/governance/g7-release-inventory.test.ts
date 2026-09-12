@@ -57,8 +57,9 @@ describe('Graph G7 release inventory', () => {
         maxNodes: number;
         maxEdges: number;
         maxMemoryBytes: number;
-        bytes: number;
-        sha256: string;
+        sourceDigest: string;
+        sourceDigestScope: string;
+        artifactDigestPolicy: string;
       };
     };
 
@@ -93,10 +94,10 @@ describe('Graph G7 release inventory', () => {
       maxNodes: 1_000_000,
       maxEdges: 5_000_000,
       maxMemoryBytes: 268_435_456,
-      bytes: expect.any(Number),
-      sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      sourceDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      sourceDigestScope: 'canonical-source-and-build-policy',
+      artifactDigestPolicy: 'bound-in-build-evidence',
     });
-    expect(inventory.bundledNativeAcceleration.bytes).toBeGreaterThan(0);
     expect(inventory.schemas.length).toBeGreaterThan(0);
     expect(JSON.stringify(inventory)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
   });

@@ -55,6 +55,8 @@ describe('Graph G7 SBOM candidate', () => {
         { name: 'workspai:maxEdges', value: '5000000' },
         { name: 'workspai:maxMemoryBytes', value: '268435456' },
         { name: 'workspai:userToolchain', value: 'not-required' },
+        { name: 'workspai:hashSubject', value: 'canonical-source-and-build-policy' },
+        { name: 'workspai:artifactDigestPolicy', value: 'bound-in-build-evidence' },
       ])
     );
     expect(

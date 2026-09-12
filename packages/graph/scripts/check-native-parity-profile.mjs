@@ -4,6 +4,8 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { nativeEngineSourceEvidence } from './native-engine-evidence.mjs';
+
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
 const artifactPath = path.join(packageRoot, 'dist/native/graph-engine.wasm');
@@ -104,6 +106,7 @@ for (const profile of profiles) {
 }
 
 const artifact = fs.readFileSync(artifactPath);
+const sourceEvidence = nativeEngineSourceEvidence();
 const report = {
   schemaVersion: 'workspai.graph.native-parity-profile.v1',
   evidenceClass: 'local-unsigned-candidate',
@@ -112,6 +115,7 @@ const report = {
     bytes: artifact.byteLength,
     sha256: crypto.createHash('sha256').update(artifact).digest('hex'),
   },
+  source: sourceEvidence,
   activation: 'prohibited-until-cross-platform-admission',
   environment: {
     platform: process.platform,
