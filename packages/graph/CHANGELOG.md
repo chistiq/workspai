@@ -16,7 +16,7 @@
   PATH and without Cargo or Rust environment state while loading the bundled
   WASM engine; Rust sources and Cargo manifests are rejected from the artifact.
 
-- Added a deterministic RFC 4122 UUIDv5 serial number to the CycloneDX 1.6
+- Added a deterministic RFC 9562 UUIDv8 serial number derived with SHA-256 to the CycloneDX 1.6
   snapshot so GitHub artifact attestation recognizes the SBOM without making
   package output non-reproducible. The serial is derived from the package,
   component and dependency graph and remains free of machine-local state.

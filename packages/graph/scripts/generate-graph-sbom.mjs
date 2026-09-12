@@ -68,14 +68,14 @@ function manifestString(source, key) {
   return match[1];
 }
 
-function deterministicUuidV5(name) {
+function deterministicUuidV8(name) {
   const bytes = crypto
-    .createHash('sha1')
+    .createHash('sha256')
     .update(graphSbomUuidNamespace)
     .update(name, 'utf8')
     .digest()
     .subarray(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = bytes.toString('hex');
   return `urn:uuid:${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
@@ -205,7 +205,7 @@ const dependencies = [
     .map((ref) => ({ ref, dependsOn: [] }))
     .sort((left, right) => left.ref.localeCompare(right.ref)),
 ];
-const serialNumber = deterministicUuidV5(
+const serialNumber = deterministicUuidV8(
   JSON.stringify({
     subject: graphRef,
     components,
@@ -230,11 +230,11 @@ const bom = {
 };
 
 if (
-  !/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+  !/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
     serialNumber
   )
 ) {
-  failures.push('CycloneDX serialNumber must be a deterministic RFC 4122 UUIDv5 URN');
+  failures.push('CycloneDX serialNumber must be a deterministic RFC 9562 UUIDv8 URN');
 }
 
 const serialized = JSON.stringify(bom);

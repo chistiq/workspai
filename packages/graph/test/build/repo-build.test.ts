@@ -419,6 +419,8 @@ describe('buildRepoGraph', () => {
       Dockerfile: 'FROM scratch\n',
       '.github/workflows/ci.yml': 'name: CI\n',
       'tests/health.fixture': 'must never execute\n',
+      'src/test_health.fixture': 'must never execute\n',
+      [`src/health${'.spec'.repeat(20)}.fixture`]: 'must never execute\n',
     };
     const inputs = Object.entries(contents).map(([locator, content]) => ({
       locator,
@@ -453,9 +455,10 @@ describe('buildRepoGraph', () => {
         }),
         detection: 'applicable',
         collection: 'complete',
-        factCount: 4,
+        factCount: 6,
       })
     );
+    expect(result.graph.nodes.filter((node) => node.kind === 'test')).toHaveLength(3);
     expect(read).not.toHaveBeenCalled();
   });
 

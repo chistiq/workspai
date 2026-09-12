@@ -22,6 +22,24 @@ function basename(locator: string): string {
   return locator.slice(locator.lastIndexOf('/') + 1).toLowerCase();
 }
 
+function isTestSurface(locator: string, name: string): boolean {
+  const segments = locator.split('/');
+  if (
+    segments.some((segment) => ['test', 'tests', 'spec', 'specs', '__tests__'].includes(segment))
+  ) {
+    return true;
+  }
+  const extensionIndex = name.lastIndexOf('.');
+  if (extensionIndex <= 0) return false;
+  const stem = name.slice(0, extensionIndex);
+  return (
+    stem.endsWith('.test') ||
+    stem.endsWith('.spec') ||
+    stem.endsWith('_test') ||
+    stem.startsWith('test_')
+  );
+}
+
 function classify(input: GraphProviderInput): readonly SurfaceClassification[] {
   const locator = input.locator.toLowerCase();
   const name = basename(locator);
@@ -77,10 +95,7 @@ function classify(input: GraphProviderInput): readonly SurfaceClassification[] {
       sourceKind: 'delivery-declaration',
     });
   }
-  if (
-    /(?:^|\/)(?:test|tests|spec|specs|__tests__)\//u.test(locator) ||
-    /(?:^|\/)[^/]+(?:\.test|\.spec|_test|test_)\.[^/]+$/u.test(locator)
-  ) {
+  if (isTestSurface(locator, name)) {
     result.push({
       kind: 'test',
       family: 'delivery.test',

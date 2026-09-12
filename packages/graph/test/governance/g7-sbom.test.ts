@@ -42,7 +42,7 @@ describe('Graph G7 SBOM candidate', () => {
       bomFormat: 'CycloneDX',
       specVersion: '1.6',
       serialNumber: expect.stringMatching(
-        /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+        /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
       ),
     });
     // actions/attest detects CycloneDX only when all three fields are present.
