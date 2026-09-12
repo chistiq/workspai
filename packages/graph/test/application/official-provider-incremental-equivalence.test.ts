@@ -46,7 +46,22 @@ const scanProfileDigest = {
   value: createHash('sha256').update('g6-official-provider-scan-profile').digest('hex'),
 };
 const frozenNow = new Date('2026-09-10T12:00:00.000Z');
-const languages = ['node', 'python', 'go', 'java', 'dotnet', 'rust', 'unsupported'] as const;
+const languages = [
+  'node',
+  'python',
+  'go',
+  'java',
+  'dotnet',
+  'rust',
+  'c-cpp',
+  'objective-c-matlab',
+  'php',
+  'ruby',
+  'swift',
+  'elixir',
+  'kotlin',
+  'unsupported',
+] as const;
 const temporary: string[] = [];
 
 afterEach(async () => {
@@ -468,6 +483,24 @@ const crossLanguageMutations = [
     extra: 'extra.swift',
     extraBody: 'import Dispatch\n',
     editedBody: 'import Foundation\nimport Dispatch\n@testable import WorkspaiGraph\n',
+    importProvider: LANGUAGE_IMPORTS_PROVIDER_ID,
+  },
+  {
+    language: 'elixir',
+    existing: 'application.ex',
+    extra: 'extra.ex',
+    extraBody: 'defmodule Workspai.Extra do\n  alias Workspai.Graph\nend\n',
+    editedBody:
+      'defmodule Workspai.Application do\n  use Application\n  alias Workspai.Graph\n  import Workspai.Router\n  def start(_type, _args), do: {:ok, self()}\nend\n',
+    importProvider: LANGUAGE_IMPORTS_PROVIDER_ID,
+  },
+  {
+    language: 'kotlin',
+    existing: 'Application.kt',
+    extra: 'Extra.kt',
+    extraBody: 'import kotlin.collections.Set\n\nclass Extra\n',
+    editedBody:
+      'import java.time.Instant\nimport kotlin.collections.List as KList\n\n@RestController\nclass Application {\n  @GetMapping("/health")\n  fun health() = Instant.now().toString()\n}\n',
     importProvider: LANGUAGE_IMPORTS_PROVIDER_ID,
   },
   {

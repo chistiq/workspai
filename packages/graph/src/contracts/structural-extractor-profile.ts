@@ -16,7 +16,9 @@ export type GraphStructuralLanguage =
   | 'objective-c-matlab'
   | 'php'
   | 'ruby'
-  | 'swift';
+  | 'swift'
+  | 'elixir'
+  | 'kotlin';
 export type GraphStructuralExtraction = 'static-imports' | 'literal-routes';
 
 export interface GraphStructuralLanguageProfile {
@@ -110,6 +112,18 @@ export const GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE: GraphStructuralExtract
         extensions: Object.freeze(['.swift']),
         extractions: Object.freeze(['static-imports'] as const),
         unsupportedSyntax: Object.freeze(['dynamic-library-load']),
+      }),
+      Object.freeze({
+        language: 'elixir',
+        extensions: Object.freeze(['.ex', '.exs']),
+        extractions: Object.freeze(['static-imports', 'literal-routes'] as const),
+        unsupportedSyntax: Object.freeze(['dynamic-module-construction', 'computed-route']),
+      }),
+      Object.freeze({
+        language: 'kotlin',
+        extensions: Object.freeze(['.kt', '.kts']),
+        extractions: Object.freeze(['static-imports', 'literal-routes'] as const),
+        unsupportedSyntax: Object.freeze(['reflective-load', 'composed-route-annotation']),
       }),
     ]),
   });

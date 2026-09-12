@@ -559,9 +559,9 @@ describe('buildRepoGraph', () => {
     });
   });
 
-  it('abstains from dynamic, CommonJS and unresolved local import claims', async () => {
+  it('extracts literal module calls but abstains from computed and unresolved local claims', async () => {
     const source =
-      "import missing from './missing';\nconst legacy = require('./missing');\nvoid import('./lazy');\nvoid legacy; void missing;\n";
+      "import missing from './missing';\nconst legacy = require('./missing');\nvoid import('./lazy');\nconst computed = './computed';\nrequire(computed);\nvoid import(computed);\nvoid legacy; void missing;\n";
     const sourceInput: GraphProviderInput = {
       locator: 'src/index.ts',
       mediaType: 'text/typescript',
@@ -583,6 +583,59 @@ describe('buildRepoGraph', () => {
       expect.objectContaining({ code: 'graph.ecmascript-local-import-unresolved' })
     );
     expect(result.graph?.edges.filter((edge) => edge.relation === 'imports')).toHaveLength(0);
+  });
+
+  it('emits evidence-backed imports for literal CommonJS and dynamic module targets', async () => {
+    const source =
+      "const express = require('express');\nvoid import('@workspai/runtime');\nvoid express;\n";
+    const packageJson = JSON.stringify({
+      name: 'literal-module-calls',
+      dependencies: { express: 'fixture', '@workspai/runtime': 'fixture' },
+    });
+    const sourceInput: GraphProviderInput = {
+      locator: 'src/index.js',
+      mediaType: 'text/javascript',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const packageInput: GraphProviderInput = {
+      locator: 'package.json',
+      mediaType: 'application/json',
+      byteLength: new TextEncoder().encode(packageJson).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(packageJson).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph(
+      request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput, packageInput], {
+          'src/index.js': source,
+          'package.json': packageJson,
+        })
+      )
+    );
+
+    expect(result.quality.unknownZones).not.toContainEqual(
+      expect.objectContaining({ code: 'graph.ecmascript-dynamic-import-unsupported' })
+    );
+    const provider = result.providers.find(
+      (item) => item.provider.id === 'workspai.graph.provider.ecmascript-imports'
+    );
+    expect(provider).toMatchObject({ collection: 'complete', factCount: 2 });
+    const facts = result.compositionSources
+      ?.filter(
+        (composition) => composition.manifest.id === 'workspai.graph.provider.ecmascript-imports'
+      )
+      .flatMap((composition) => composition.batch.facts);
+    expect(facts).toHaveLength(2);
+    expect(
+      facts?.every((fact) => fact.evidence.some((item) => item.relativeLocator === 'src/index.js'))
+    ).toBe(true);
   });
 
   it('reports undecodable source as unknown while preserving independent file topology', async () => {

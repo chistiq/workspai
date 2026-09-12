@@ -31,6 +31,19 @@ function result(status: GraphRepoBuildResult['status']): GraphRepoBuildResult {
   };
 }
 
+function resultWithInternalCompositionSources(): GraphRepoBuildResult {
+  return {
+    ...result('complete'),
+    compositionSources: [
+      {
+        sourceId: 'internal-provider-state',
+        sourceKind: 'provider',
+        facts: [{ sensitive: 'must-not-cross-cli-boundary' }],
+      } as never,
+    ],
+  };
+}
+
 function harness(build: GraphRepoBuildResult = result('complete')): {
   readonly io: GraphCliIo;
   readonly output: string[];
@@ -216,6 +229,19 @@ describe('workspai-graph CLI', () => {
 
   it('routes dual-scope inspect through standalone orchestration', async () => {
     const test = harness();
+    test.dependencies.standalone = vi.fn(async () => ({
+      accepted: true as const,
+      value: {
+        status: 'partial' as const,
+        project: { build: resultWithInternalCompositionSources() },
+        workspace: {
+          status: 'handoff-unavailable' as const,
+          renewalCommand: 'workspai workspace link --project <path>',
+        },
+        diagnostics: [],
+      },
+      issues: [] as const,
+    }));
     expect(
       await runGraphCli(
         ['inspect', '.', '--mode', 'project-and-default-workspace', '--json'],
@@ -225,11 +251,15 @@ describe('workspai-graph CLI', () => {
     ).toBe(2);
     expect(test.dependencies.build).not.toHaveBeenCalled();
     expect(test.dependencies.standalone).toHaveBeenCalledOnce();
-    expect(JSON.parse(test.output[0] ?? '{}')).toMatchObject({
+    const payload = JSON.parse(test.output[0] ?? '{}') as {
+      data: { project: { build: Record<string, unknown> } };
+    };
+    expect(payload).toMatchObject({
       command: 'inspect',
       status: 'partial',
       data: { workspace: { status: 'handoff-unavailable' } },
     });
+    expect(payload.data.project.build).not.toHaveProperty('compositionSources');
   });
 
   it('rejects dual-scope inspect orchestration input before repository build', async () => {
@@ -307,7 +337,7 @@ describe('workspai-graph CLI', () => {
   });
 
   it('keeps inspect read-only unless write is explicit', async () => {
-    const test = harness();
+    const test = harness(resultWithInternalCompositionSources());
     expect(
       await runGraphCli(
         ['inspect', '.', '--mode', 'project-only', '--json'],
@@ -316,10 +346,15 @@ describe('workspai-graph CLI', () => {
       )
     ).toBe(0);
     expect(test.dependencies.publish).not.toHaveBeenCalled();
-    expect(JSON.parse(test.output[0] ?? '{}')).toMatchObject({
+    const payload = JSON.parse(test.output[0] ?? '{}') as {
+      data: { build: Record<string, unknown> };
+    };
+    expect(payload).toMatchObject({
       command: 'inspect',
       status: 'complete',
     });
+    expect(payload.data.build).not.toHaveProperty('compositionSources');
+    expect(payload.data.build).toHaveProperty('graph');
 
     expect(
       await runGraphCli(['inspect', '.', '--write', '--json'], test.io, test.dependencies)

@@ -275,6 +275,35 @@ function dualScopeCliStatus(
   return 'failed';
 }
 
+/**
+ * Removes package-internal recomputation state from consumer-facing output.
+ *
+ * Composition sources can be substantially larger than the canonical graph and
+ * are retained only so the in-process incremental builder can reuse provider
+ * facts. They are not part of the portable Graph product contract.
+ */
+function portableBuildResult(
+  build: GraphRepoBuildResult
+): Omit<GraphRepoBuildResult, 'compositionSources'> {
+  const { compositionSources: _internalCompositionSources, ...portable } = build;
+  return portable;
+}
+
+function portableStandaloneResult(
+  result: GraphStandaloneGraphExecution & { readonly accepted: true }
+): GraphStandaloneGraphExecution & { readonly accepted: true } {
+  return {
+    ...result,
+    value: {
+      ...result.value,
+      project: {
+        ...result.value.project,
+        build: portableBuildResult(result.value.project.build),
+      },
+    },
+  };
+}
+
 function defaultDependencies(): GraphCliDependencies {
   const workerUrl = new URL('./adapters/node/reference-worker-entry.js', import.meta.url);
   return {
@@ -416,12 +445,18 @@ export async function runGraphCli(
       );
       return GRAPH_CLI_EXIT_CODES.rejected;
     }
-    const status = dualScopeCliStatus(orchestration.value.status);
+    const portableOrchestration = portableStandaloneResult(orchestration);
+    const status = dualScopeCliStatus(portableOrchestration.value.status);
     emit(
       io,
       options.json,
       false,
-      envelope('inspect', status, orchestration.value, orchestration.value.diagnostics),
+      envelope(
+        'inspect',
+        status,
+        portableOrchestration.value,
+        portableOrchestration.value.diagnostics
+      ),
       `Graph inspect: ${orchestration.value.status}\nWorkspace: ${orchestration.value.workspace.status}${orchestration.value.workspace.renewalCommand ? `\nRenewal: ${orchestration.value.workspace.renewalCommand}` : ''}`
     );
     if (orchestration.value.status === 'failed') return GRAPH_CLI_EXIT_CODES.failed;
@@ -477,7 +512,12 @@ export async function runGraphCli(
         io,
         options.json,
         true,
-        envelope('inspect', 'failed', { build, publication }, publication.issues),
+        envelope(
+          'inspect',
+          'failed',
+          { build: portableBuildResult(build), publication },
+          publication.issues
+        ),
         `Graph publication failed. ${publication.issues.map((issue) => issue.message).join(' ')}`
       );
       return publication.issues.some((issue) => issue.code.includes('CANCELLED'))
@@ -503,7 +543,7 @@ export async function runGraphCli(
                 },
                 view: view.value,
               }
-            : { build }),
+            : { build: portableBuildResult(build) }),
           ...(publication ? { publication: publication.value } : {}),
         },
         build.diagnostics

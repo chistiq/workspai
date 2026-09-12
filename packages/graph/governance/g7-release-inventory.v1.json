@@ -315,12 +315,12 @@
     {
       "id": "https://schemas.workspai.dev/graph/standalone-support-matrix/v0.1.0-candidate",
       "file": "schemas/standalone-support-matrix.v0.1.0-candidate.schema.json",
-      "sha256": "746458c2cdd5d3806853c4cf52e92a0908c19071eab5236d738c13d660e2c016"
+      "sha256": "17633e2aedb2cbc4cc62336c05003516fe1f58e7618f3c49f96c71d5f1bb897a"
     },
     {
       "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",
       "file": "schemas/structural-extractor-profile.v0.1.0-candidate.schema.json",
-      "sha256": "69015dc77231632e92eaa4fcf255f62dd9b07644df2c997659a6fa2fc23ac3fe"
+      "sha256": "fb178690cac4bbac8c99dee50e2ce6c0b5f1a18ee2108008fc8ab6d389b0bd81"
     }
   ],
   "packedArtifactSecurity": {

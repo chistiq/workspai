@@ -24,6 +24,8 @@ const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
 const STATIC_IMPORT =
   /^\s*(?:import\s+(?:[^'";]+?\s+from\s+)?|export\s+[^'";]+?\s+from\s+)['"]([^'"\r\n]+)['"]/gmu;
+const LITERAL_COMMONJS_REQUIRE = /\brequire\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/gmu;
+const LITERAL_DYNAMIC_IMPORT = /\bimport\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/gmu;
 
 function extension(locator: string): string {
   const name = locator.slice(locator.lastIndexOf('/') + 1);
@@ -146,9 +148,11 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
           });
           const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
           const syntaxView = source.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '');
-          const specifiers = [...syntaxView.matchAll(STATIC_IMPORT)]
-            .map((match) => match[1])
-            .filter((specifier): specifier is string => Boolean(specifier));
+          const specifiers = [
+            ...[...syntaxView.matchAll(STATIC_IMPORT)].map((match) => match[1]),
+            ...[...syntaxView.matchAll(LITERAL_COMMONJS_REQUIRE)].map((match) => match[2]),
+            ...[...syntaxView.matchAll(LITERAL_DYNAMIC_IMPORT)].map((match) => match[2]),
+          ].filter((specifier): specifier is string => Boolean(specifier));
           const uniqueSpecifiers = [...new Set(specifiers)].sort((left, right) =>
             left.localeCompare(right)
           );
@@ -217,12 +221,14 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
               unknownZones: [],
             });
           }
-          if (/\brequire\s*\(|\bimport\s*\(/u.test(source)) {
+          const withoutLiteralModuleCalls = syntaxView
+            .replace(LITERAL_COMMONJS_REQUIRE, '')
+            .replace(LITERAL_DYNAMIC_IMPORT, '');
+          if (/\brequire\s*\(|\bimport\s*\(/u.test(withoutLiteralModuleCalls)) {
             unknownZones.push({
               code: 'graph.ecmascript-dynamic-import-unsupported',
               scope: input.locator,
-              reason:
-                'Dynamic import and CommonJS require targets are outside this static profile.',
+              reason: 'Computed CommonJS or dynamic import targets are outside this profile.',
             });
             outcome = outcome === 'omitted' ? outcome : 'unsupported';
           }

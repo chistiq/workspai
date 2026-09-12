@@ -45,7 +45,9 @@
             "objective-c-matlab",
             "php",
             "ruby",
-            "swift"
+            "swift",
+            "elixir",
+            "kotlin"
           ]
         },
         "extensions": {

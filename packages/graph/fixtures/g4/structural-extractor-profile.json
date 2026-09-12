@@ -74,6 +74,18 @@
       "extensions": [".swift"],
       "extractions": ["static-imports"],
       "unsupportedSyntax": ["dynamic-library-load"]
+    },
+    {
+      "language": "elixir",
+      "extensions": [".ex", ".exs"],
+      "extractions": ["static-imports", "literal-routes"],
+      "unsupportedSyntax": ["dynamic-module-construction", "computed-route"]
+    },
+    {
+      "language": "kotlin",
+      "extensions": [".kt", ".kts"],
+      "extractions": ["static-imports", "literal-routes"],
+      "unsupportedSyntax": ["reflective-load", "composed-route-annotation"]
     }
   ]
 }

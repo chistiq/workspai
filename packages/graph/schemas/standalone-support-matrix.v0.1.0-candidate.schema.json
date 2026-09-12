@@ -92,7 +92,22 @@
     "languages": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["node", "python", "go", "java", "dotnet", "rust", "unsupported"],
+      "required": [
+        "node",
+        "python",
+        "go",
+        "java",
+        "dotnet",
+        "rust",
+        "c-cpp",
+        "objective-c-matlab",
+        "php",
+        "ruby",
+        "swift",
+        "elixir",
+        "kotlin",
+        "unsupported"
+      ],
       "properties": {
         "node": { "const": "official-offline" },
         "python": { "const": "official-offline" },
@@ -100,6 +115,13 @@
         "java": { "const": "official-offline" },
         "dotnet": { "const": "official-offline" },
         "rust": { "const": "official-offline" },
+        "c-cpp": { "const": "official-offline" },
+        "objective-c-matlab": { "const": "official-offline" },
+        "php": { "const": "official-offline" },
+        "ruby": { "const": "official-offline" },
+        "swift": { "const": "official-offline" },
+        "elixir": { "const": "official-offline" },
+        "kotlin": { "const": "official-offline" },
         "unsupported": { "const": "abstention" }
       }
     },

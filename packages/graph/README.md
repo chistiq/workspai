@@ -86,8 +86,9 @@ consumers do not need host paths or directory guessing to resolve a generation.
 
 The offline provider set currently covers file/package topology and static
 imports for Node, Python, Go, Java, .NET, Rust, C/C++, Objective-C/MATLAB,
-PHP, Ruby and Swift. It also extracts literal route declarations for the first
-five profiles, Protobuf contracts, services, schemas and RPCs, declared Bazel
+PHP, Ruby, Swift, Elixir and Kotlin. It also extracts literal route declarations
+for Node, Python, Go, Java, .NET, Elixir and Kotlin, Protobuf contracts,
+services, schemas and RPCs, declared Bazel
 and CMake target dependencies, cross-language source entry points, CODEOWNERS
 ownership, Docker Compose topology, repository contract/runtime/delivery
 surfaces, MATLAB artifact families and safe repository-local Git `HEAD`

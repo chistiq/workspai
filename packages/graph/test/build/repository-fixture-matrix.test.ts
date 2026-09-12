@@ -30,6 +30,8 @@ const supported = [
   ['php', 'imports', undefined],
   ['ruby', 'imports', undefined],
   ['swift', 'imports', undefined],
+  ['elixir', 'imports', 'exposes'],
+  ['kotlin', 'imports', 'exposes'],
 ] as const;
 
 function buildFixture(language: string) {

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Removed package-internal composition sources from every standalone CLI JSON
+  envelope while retaining them for in-process incremental recomputation. This
+  prevents duplicate provider facts from crossing the consumer boundary and
+  roughly halves full Graph output on maintained large-repository fixtures.
+- Added evidence-backed Elixir and Kotlin static imports, literal routes and
+  add/edit/delete incremental equivalence fixtures. Their declared dynamic
+  module and computed-route surfaces remain explicit unknowns.
+- Promoted literal CommonJS `require()` and literal dynamic `import()` targets
+  into evidence-backed ECMAScript import edges while computed targets continue
+  to produce explicit unknown zones.
+
 - Added a fail-closed main-branch promotion verifier for the private Graph
   artifact. GitHub attestations must now verify against the official
   repository, signer workflow, exact source commit, hosted-runner policy,

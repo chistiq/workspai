@@ -27,6 +27,10 @@ const SUPPORTED_EXTENSIONS = new Set([
   '.go',
   '.java',
   '.cs',
+  '.ex',
+  '.exs',
+  '.kt',
+  '.kts',
 ]);
 
 interface LiteralRoute {
@@ -74,7 +78,7 @@ function syntaxView(source: string, sourceExtension: string): string {
   let escaped = false;
   let lineComment = false;
   let blockComment = false;
-  const python = sourceExtension === '.py';
+  const hashComment = ['.py', '.ex', '.exs'].includes(sourceExtension);
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index] ?? '';
     const next = source[index + 1] ?? '';
@@ -103,14 +107,14 @@ function syntaxView(source: string, sourceExtension: string): string {
     if (character === '"' || character === "'" || character === '`') {
       quote = character;
       result += character;
-    } else if (python && character === '#') {
+    } else if (hashComment && character === '#') {
       lineComment = true;
       result += ' ';
-    } else if (!python && character === '/' && next === '/') {
+    } else if (!hashComment && character === '/' && next === '/') {
       lineComment = true;
       result += '  ';
       index += 1;
-    } else if (!python && character === '/' && next === '*') {
+    } else if (!hashComment && character === '/' && next === '*') {
       blockComment = true;
       result += '  ';
       index += 1;
@@ -146,7 +150,7 @@ function extractLiteralRoutes(source: string, sourceExtension: string): LiteralR
       3,
       routes
     );
-  } else if (sourceExtension === '.java') {
+  } else if (['.java', '.kt', '.kts'].includes(sourceExtension)) {
     appendMatches(
       source,
       /@(Get|Post|Put|Patch|Delete)Mapping\s*\(\s*(?:value\s*=\s*)?(['"])([^'"\r\n]+)\2/gmu,
@@ -169,6 +173,14 @@ function extractLiteralRoutes(source: string, sourceExtension: string): LiteralR
       3,
       routes
     );
+  } else if (['.ex', '.exs'].includes(sourceExtension)) {
+    appendMatches(
+      source,
+      /^\s*(get|post|put|patch|delete|options|head)\s+(['"])([^'"\r\n]+)\2/gimu,
+      1,
+      3,
+      routes
+    );
   }
   return [
     ...new Map(routes.map((route) => [`${route.method}\0${route.path}`, route])).values(),
@@ -182,11 +194,13 @@ function containsUnresolvedRouteSyntax(source: string, sourceExtension: string):
   const candidate =
     sourceExtension === '.py'
       ? /@\s*(?:app|router)\s*\.\s*(?:get|post|put|patch|delete|options|head)\s*\(/giu
-      : sourceExtension === '.java'
-        ? /@(?:Get|Post|Put|Patch|Delete|Request)Mapping\s*\(/gu
-        : sourceExtension === '.cs'
-          ? /(?:\[Http(?:Get|Post|Put|Patch|Delete|Options|Head)\s*\(|\bMap(?:Get|Post|Put|Patch|Delete|Methods)\s*\()/gu
-          : /\b(?:app|router|server|[A-Za-z_]\w*)\s*\.\s*(?:get|post|put|patch|delete|options|head|all|any)\s*\(/giu;
+      : ['.ex', '.exs'].includes(sourceExtension)
+        ? /^\s*(?:get|post|put|patch|delete|options|head)\s+/gimu
+        : ['.java', '.kt', '.kts'].includes(sourceExtension)
+          ? /@(?:Get|Post|Put|Patch|Delete|Request)Mapping\s*\(/gu
+          : sourceExtension === '.cs'
+            ? /(?:\[Http(?:Get|Post|Put|Patch|Delete|Options|Head)\s*\(|\bMap(?:Get|Post|Put|Patch|Delete|Methods)\s*\()/gu
+            : /\b(?:app|router|server|[A-Za-z_]\w*)\s*\.\s*(?:get|post|put|patch|delete|options|head|all|any)\s*\(/giu;
   return (
     [...source.matchAll(candidate)].length > extractLiteralRoutes(source, sourceExtension).length
   );
@@ -214,7 +228,15 @@ export function createRepositoryRoutesProvider(): GraphProviderRuntime {
     },
     limits: { maxDurationMs: 30_000, maxFacts: MAX_FACTS, maxInputBytes: 128 * 1024 * 1024 },
     contractVersions: [GRAPH_FACT_BATCH_CONTRACT.version],
-    supportedInputs: ['node-source', 'python-source', 'go-source', 'java-source', 'dotnet-source'],
+    supportedInputs: [
+      'node-source',
+      'python-source',
+      'go-source',
+      'java-source',
+      'dotnet-source',
+      'elixir-source',
+      'kotlin-source',
+    ],
     incremental: 'input' as const,
     identitySchemes: [GRAPH_IDENTITY_SCHEME],
   };

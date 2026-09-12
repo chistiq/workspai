@@ -22,7 +22,9 @@ type Language =
   | 'objective-c-matlab'
   | 'php'
   | 'ruby'
-  | 'swift';
+  | 'swift'
+  | 'elixir'
+  | 'kotlin';
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
 
@@ -45,6 +47,10 @@ const EXTENSION_LANGUAGE: Readonly<Record<string, Language>> = Object.freeze({
   '.php': 'php',
   '.rb': 'ruby',
   '.swift': 'swift',
+  '.ex': 'elixir',
+  '.exs': 'elixir',
+  '.kt': 'kotlin',
+  '.kts': 'kotlin',
 });
 
 function extension(locator: string): string {
@@ -64,7 +70,7 @@ function supportedInputs(inputs: readonly GraphProviderInput[]): GraphProviderIn
 }
 
 function stripComments(source: string, language: Language): string {
-  const hashIsComment = language === 'python' || language === 'ruby';
+  const hashIsComment = language === 'python' || language === 'ruby' || language === 'elixir';
   const withoutBlocks = hashIsComment ? source : source.replace(/\/\*[\s\S]*?\*\//gu, '');
   return withoutBlocks
     .split(/\r?\n/u)
@@ -134,16 +140,25 @@ function extractImports(source: string, language: Language): string[] {
       if (match[1]) imports.push(match[1]);
     return imports;
   }
+  if (language === 'elixir') {
+    for (const match of syntax.matchAll(
+      /^\s*(?:alias|import|require|use)\s+([A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*)/gmu
+    ))
+      if (match[1]) imports.push(match[1]);
+    return imports;
+  }
   const patterns: readonly RegExp[] =
     language === 'python'
       ? [/^\s*import\s+([A-Za-z_][\w.]*)/gmu, /^\s*from\s+([.A-Za-z_][\w.]*)\s+import\s+/gmu]
       : language === 'java'
         ? [/^\s*import\s+(?:static\s+)?([A-Za-z_$][\w$.*]*)\s*;/gmu]
-        : language === 'dotnet'
-          ? [
-              /^\s*(?:global\s+)?using\s+(?:[A-Za-z_]\w*\s*=\s*)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gmu,
-            ]
-          : [/^\s*use\s+([^;\r\n]+)\s*;/gmu];
+        : language === 'kotlin'
+          ? [/^\s*import\s+([A-Za-z_$][\w$.*]*)(?:\s+as\s+[A-Za-z_]\w*)?\s*$/gmu]
+          : language === 'dotnet'
+            ? [
+                /^\s*(?:global\s+)?using\s+(?:[A-Za-z_]\w*\s*=\s*)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gmu,
+              ]
+            : [/^\s*use\s+([^;\r\n]+)\s*;/gmu];
   for (const pattern of patterns) {
     for (const match of syntax.matchAll(pattern)) if (match[1]) imports.push(match[1].trim());
   }
@@ -153,7 +168,7 @@ function extractImports(source: string, language: Language): string[] {
 function unsupportedDynamicSyntax(source: string, language: Language): boolean {
   return (
     (language === 'python' && /\b(?:__import__|importlib\.import_module)\s*\(/u.test(source)) ||
-    (language === 'java' && /\bClass\.forName\s*\(/u.test(source)) ||
+    ((language === 'java' || language === 'kotlin') && /\bClass\.forName\s*\(/u.test(source)) ||
     (language === 'dotnet' && /\bAssembly\.(?:Load|LoadFrom|LoadFile)\s*\(/u.test(source)) ||
     (language === 'go' && /\bplugin\.Open\s*\(/u.test(source)) ||
     (language === 'rust' && /\blibloading\b/u.test(source)) ||
@@ -163,7 +178,9 @@ function unsupportedDynamicSyntax(source: string, language: Language): boolean {
       /\b(?:require_once|include_once|require|include)\b\s*\(?\s*\$/u.test(source)) ||
     (language === 'ruby' &&
       /\b(?:require_relative|require|load)\b\s*\(?\s*[^"'\s]/u.test(source)) ||
-    (language === 'swift' && /\bdlopen\s*\(/u.test(source))
+    (language === 'swift' && /\bdlopen\s*\(/u.test(source)) ||
+    (language === 'elixir' &&
+      /\b(?:Module\.concat|Code\.(?:require_file|eval_file))\s*\(/u.test(source))
   );
 }
 
@@ -215,6 +232,8 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
       'php-source',
       'ruby-source',
       'swift-source',
+      'elixir-source',
+      'kotlin-source',
     ],
     incremental: 'input' as const,
     identitySchemes: [GRAPH_IDENTITY_SCHEME],

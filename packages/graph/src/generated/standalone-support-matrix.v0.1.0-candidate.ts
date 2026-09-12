@@ -38,6 +38,13 @@ export interface WorkspaiGraphStandaloneSupportMatrixCandidate {
     java: 'official-offline';
     dotnet: 'official-offline';
     rust: 'official-offline';
+    'c-cpp': 'official-offline';
+    'objective-c-matlab': 'official-offline';
+    php: 'official-offline';
+    ruby: 'official-offline';
+    swift: 'official-offline';
+    elixir: 'official-offline';
+    kotlin: 'official-offline';
     unsupported: 'abstention';
   };
   queryCache: {

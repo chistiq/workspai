@@ -32,7 +32,9 @@ export interface Language {
     | 'objective-c-matlab'
     | 'php'
     | 'ruby'
-    | 'swift';
+    | 'swift'
+    | 'elixir'
+    | 'kotlin';
   /**
    * @minItems 1
    * @maxItems 32

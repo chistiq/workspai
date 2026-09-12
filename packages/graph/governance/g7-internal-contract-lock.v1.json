@@ -6,7 +6,7 @@
   "contractEpoch": "graph-internal-v1",
   "catalog": {
     "path": "packages/graph/conformance/contract-catalog.v1.json",
-    "digest": "sha256:51f3a23f7cce8439e5f7a9c46c9c64009a8749db39183e6801110e08ca7a525a",
+    "digest": "sha256:6d663c1f74cd2ec15f576d0de48238d5d47dc4c601939af573cac71ccdfb4a79",
     "candidateNamesRemainWireIdentities": true
   },
   "compatibility": {
