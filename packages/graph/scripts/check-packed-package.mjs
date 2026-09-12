@@ -25,11 +25,28 @@ const {
 if (GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY.signedAttestation !== 'not-generated') {
   throw new Error('Packed artifact security boundary cannot claim attestation');
 }
-if (
-  GRAPH_ROLLBACK_PROCEDURE.status !== 'not-proven' ||
-  GRAPH_ROLLBACK_PROCEDURE.sourceRewrite !== 'prohibited'
-) {
-  throw new Error('Packed artifact cannot claim a proven rollback procedure');
+const SAFE_UNACTIVATED_ROLLBACK = Object.freeze({
+  status: 'defined-unactivated',
+  restores: 'official-internal-graph-capability',
+  activationDefault: 'off',
+  dataMigrationAtG7: 'none',
+  silentFallback: 'prohibited',
+  sourceRewrite: 'prohibited',
+});
+
+function isSafeUnactivatedRollback(procedure) {
+  if (!procedure || typeof procedure !== 'object' || Array.isArray(procedure)) return false;
+  const expectedEntries = Object.entries(SAFE_UNACTIVATED_ROLLBACK);
+  return (
+    Object.keys(procedure).length === expectedEntries.length &&
+    expectedEntries.every(([key, value]) => procedure[key] === value)
+  );
+}
+
+if (!isSafeUnactivatedRollback(GRAPH_ROLLBACK_PROCEDURE)) {
+  throw new Error(
+    'Packed artifact rollback must remain defined, unactivated, non-destructive and explicit'
+  );
 }
 if (!GRAPH_INCIDENT_CLASSES.includes('secret-or-path-leakage')) {
   throw new Error('Incident classes omitted secret or path leakage');
@@ -186,8 +203,7 @@ try {
     throw new Error('installed packed job table drifted from the workspace contract');
   }
   if (
-    packedProduct.GRAPH_ROLLBACK_PROCEDURE.status !== 'not-proven' ||
-    packedProduct.GRAPH_ROLLBACK_PROCEDURE.sourceRewrite !== 'prohibited' ||
+    !isSafeUnactivatedRollback(packedProduct.GRAPH_ROLLBACK_PROCEDURE) ||
     packedProduct.GRAPH_SBOM_SPEC.provenance !== 'unattested' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited' ||
@@ -198,7 +214,9 @@ try {
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.userToolchain !== 'prohibited' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.dynamicDownload !== 'prohibited'
   ) {
-    throw new Error('installed Graph product claimed stability, attestation or proven rollback');
+    throw new Error(
+      'installed Graph product claimed stability or attestation, or drifted from the safe rollback boundary'
+    );
   }
   if (
     JSON.stringify([...packedProduct.GRAPH_INCIDENT_CLASSES]) !==
