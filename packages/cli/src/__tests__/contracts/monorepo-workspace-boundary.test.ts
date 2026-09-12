@@ -52,6 +52,18 @@ describe('published monorepo workspace boundary', () => {
     expect(cliRuntimeDependencies).not.toHaveProperty('@workspai/graph');
     expect(cliManifest.devDependencies).toHaveProperty('@workspai/graph', '0.0.0-development');
 
+    const cliScripts = (cliManifest as { scripts?: Record<string, string> }).scripts;
+    const graphManifest = readJson('packages/graph/package.json') as {
+      scripts?: Record<string, string>;
+    };
+    expect(cliScripts?.prebuild).toBe('corepack npm run build:internal-graph-dependencies');
+    expect(cliScripts?.['build:internal-graph-dependencies']).toBe(
+      'corepack npm --workspace @workspai/shared run build && corepack npm --workspace @workspai/graph run build:bundle-input'
+    );
+    expect(graphManifest.scripts?.['build:bundle-input']).toBe(
+      'corepack npm run generate:check && tsup'
+    );
+
     const bundleConfig = fs.readFileSync(
       path.join(repositoryRoot, 'packages/cli/tsup.config.ts'),
       'utf8'

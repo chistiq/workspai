@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Made clean CLI builds prepare the private Shared and Graph bundle inputs in
+  dependency order, without invoking the Rust toolchain. Fresh CI runners no
+  longer depend on ignored workspace `dist` directories, while the public CLI
+  still embeds its internal Graph code instead of exposing runtime packages.
 - Added the first read-only G8 Graph package shadow bridge. It executes the
   private package from an explicitly prepared project context, preserves the
   released CLI as the sole authority, bundles all internal code and worker
