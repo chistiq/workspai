@@ -262,6 +262,7 @@ for (const entry of registry.packages ?? []) {
   if (
     ![
       "in-progress",
+      "local-source-complete",
       "closed-awaiting-approval",
       "approved",
       "blocked",
@@ -377,8 +378,25 @@ for (const entry of registry.packages ?? []) {
     );
   }
   if (
+    entry.stageStatus === "local-source-complete" &&
+    (closure.stage !== entry.currentStage ||
+      closure.status !==
+      "local-passed-remote-pending-awaiting-approval" ||
+      !hasRemotePending ||
+      closure.environment?.remoteMatrix !== "pending" ||
+      closure.advancesAdmissionGate !== false ||
+      closure.nextStageAuthorized !== false ||
+      closure.approval?.status !== "awaiting")
+  ) {
+    fail(
+      `${entry.name} local-source-complete stage requires a remote-pending, non-admitting closure awaiting approval`,
+    );
+  }
+  if (
     entry.stageStatus === "closed-awaiting-approval" &&
-    closure.approval?.status !== "awaiting"
+    (closure.status !== "passed-awaiting-approval" ||
+      hasRemotePending ||
+      closure.approval?.status !== "awaiting")
   ) {
     fail(`${entry.name} stage registry and closure approval state disagree`);
   }
