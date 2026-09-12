@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added a fail-closed G7 release-candidate matrix that binds Linux, macOS and
+  Windows package evidence to the admitted G6 candidate from the same source,
+  tested commit and workflow run. The candidate verifies release inputs, SBOM
+  and inventory digests without claiming provenance, publication, standalone
+  stability or authorization for the CLI bridge.
 - Deduplicated the ESM distribution through shared package-owned chunks. Root,
   provider, conformance, Node adapter, worker and executable entry points retain
   their declared exports while no longer embedding repeated engine copies.

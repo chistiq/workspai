@@ -51,6 +51,7 @@ describe('Graph G7 stage authorization', () => {
         'conformance-corpus-distribution',
         'packed-query-cache-and-workspace-fail-closed',
         'incident-and-rollback-boundary',
+        'g6-bound-cross-platform-release-candidate',
         'g7-standalone-stable-admission',
       ])
     );

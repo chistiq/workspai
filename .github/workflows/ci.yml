@@ -248,6 +248,24 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Capture Graph G7 release-candidate platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node packages/graph/scripts/check-g7-release-candidate.mjs
+          --ci-evidence
+          --output artifacts/graph-g7-release-candidate-${{ runner.os }}.json
+
+      - name: Upload Graph G7 release-candidate platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-release-candidate-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-g7-release-candidate-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
+
       # Shared parity contract gate (npm <-> extension snapshot)
       - name: Validate import stack parity contract snapshot
         run: npm --workspace workspai run test:parity-contract
@@ -419,6 +437,48 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  graph-g7-release-candidate:
+    name: Verify Graph G7 release candidate matrix
+    needs: [build-test-matrix, graph-g6-admission]
+    if: needs.build-test-matrix.result == 'success' && needs.graph-g6-admission.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout verified commit
+        uses: actions/checkout@v4
+
+      - name: Download Graph G7 platform evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: graph-g7-release-candidate-*
+          path: artifacts/graph-g7-release-platforms
+          merge-multiple: true
+
+      - name: Download admitted Graph G6 candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: graph-g6-admission-candidate
+          path: artifacts/graph-g6-candidate
+
+      - name: Verify Graph G7 release candidate matrix
+        run: >-
+          node packages/graph/scripts/check-g7-release-matrix.mjs
+          --evidence-directory artifacts/graph-g7-release-platforms
+          --g6-candidate artifacts/graph-g6-candidate/graph-g6-admission-candidate.json
+          --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
+          --tested-commit "${{ github.sha }}"
+          --output artifacts/graph-g7-release-candidate.json
+
+      - name: Upload verified Graph G7 release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-release-candidate
+          path: artifacts/graph-g7-release-candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
   phase4-runtime-contracts:
     name: Phase4 Runtime Contracts (${{ matrix.os }})
     needs: changes
@@ -479,6 +539,7 @@ jobs:
         graph-query-admission,
         graph-repository-preview-admission,
         graph-g6-admission,
+        graph-g7-release-candidate,
         phase4-runtime-contracts,
       ]
     runs-on: ubuntu-latest
@@ -493,6 +554,7 @@ jobs:
           GRAPH_QUERY_RESULT: ${{ needs.graph-query-admission.result }}
           GRAPH_REPOSITORY_PREVIEW_RESULT: ${{ needs.graph-repository-preview-admission.result }}
           GRAPH_G6_RESULT: ${{ needs.graph-g6-admission.result }}
+          GRAPH_G7_RELEASE_RESULT: ${{ needs.graph-g7-release-candidate.result }}
           PHASE4_REQUIRED: ${{ needs.changes.outputs.phase4 == 'true' }}
           PHASE4_FAST_RESULT: ${{ needs.phase4-fast-guard.result }}
           PHASE4_MATRIX_RESULT: ${{ needs.phase4-runtime-contracts.result }}
@@ -508,6 +570,7 @@ jobs:
             test "$GRAPH_QUERY_RESULT" = "success"
             test "$GRAPH_REPOSITORY_PREVIEW_RESULT" = "success"
             test "$GRAPH_G6_RESULT" = "success"
+            test "$GRAPH_G7_RELEASE_RESULT" = "success"
           fi
           if [[ "$PHASE4_REQUIRED" = "true" ]]; then
             test "$PHASE4_FAST_RESULT" = "success"

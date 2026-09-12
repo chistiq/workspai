@@ -133,7 +133,7 @@
     {
       "id": "remote-platform-and-publish",
       "status": "pending-remote",
-      "evidence": "Signed provenance, retained G6 OS-matrix evidence and a publish decision remain required before standalone-stable admission."
+      "evidence": "The fail-closed G7 release-candidate matrix is implemented and chained to same-run G6 evidence. Retained remote results, signed provenance, a publish decision and rollback proof remain required before standalone-stable admission."
     }
   ],
   "measurements": {
@@ -142,14 +142,14 @@
     "conformanceSuites": 23,
     "languageFixtures": 12,
     "providerCount": 12,
-    "testFiles": 75,
-    "tests": 519,
+    "testFiles": 76,
+    "tests": 523,
     "coverageStatementsPercent": 90.53,
     "coverageBranchesPercent": 85.11,
     "coverageFunctionsPercent": 93.33,
     "coverageLinesPercent": 92.13,
     "packedFiles": 107,
-    "packedCompressedBytes": 160869,
+    "packedCompressedBytes": 161000,
     "packedCompressedBudgetBytes": 294912,
     "publicInternalDocuments": 0,
     "cliRuntimeBridges": 0,
