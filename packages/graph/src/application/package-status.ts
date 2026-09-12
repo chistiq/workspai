@@ -45,7 +45,7 @@ export function getGraphPackageStatus(
       {
         code: 'GRAPH_ENGINE_NOT_STANDALONE_STABLE',
         reason:
-          'Query, persistence, G5 projections and the G6 incremental engine exist as local candidates. Standalone-stable admission, public preview, retained G6 OS-matrix evidence, signed provenance and the G8 CLI bridge remain incomplete.',
+          'Query, persistence, projections, incremental execution and bundled Rust WASM acceleration are qualified internal candidates. The current operational-policy commit still requires retained cross-platform admission before the G8 CLI shadow bridge can begin.',
         affectsStatus: true,
         recoverable: true,
         scope,

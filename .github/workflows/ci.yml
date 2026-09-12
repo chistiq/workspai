@@ -186,6 +186,22 @@ jobs:
       - name: Validate independent package infrastructure
         run: npm run check:package-infrastructure
 
+      - name: Pack Graph internal promotion artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p artifacts/graph-package
+          npm pack --workspace @workspai/graph --ignore-scripts --pack-destination artifacts/graph-package
+
+      - name: Upload Graph internal promotion artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-internal-package
+          path: artifacts/graph-package/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Capture Graph Rust WASM parity and performance evidence
         shell: bash
         env:
@@ -469,6 +485,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
 
     steps:
       - name: Checkout verified commit
@@ -487,6 +506,12 @@ jobs:
           name: graph-g6-admission-candidate
           path: artifacts/graph-g6-candidate
 
+      - name: Download Graph internal promotion artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: graph-internal-package
+          path: artifacts/graph-package
+
       - name: Verify Graph G7 release candidate matrix
         run: >-
           node packages/graph/scripts/check-g7-release-matrix.mjs
@@ -495,6 +520,38 @@ jobs:
           --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
           --tested-commit "${{ github.sha }}"
           --output artifacts/graph-g7-release-candidate.json
+
+      - name: Attest Graph internal package provenance
+        id: graph-package-provenance
+        if: >-
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/graph-package/*.tgz
+
+      - name: Attest Graph internal package SBOM
+        id: graph-package-sbom
+        if: >-
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/graph-package/*.tgz
+          sbom-path: packages/graph/governance/g7-sbom.cdx.json
+
+      - name: Retain Graph G7 attestation bundle
+        if: >-
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-release-attestation
+          path: |
+            ${{ steps.graph-package-provenance.outputs.bundle-path }}
+            ${{ steps.graph-package-sbom.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload verified Graph G7 release candidate
         uses: actions/upload-artifact@v4

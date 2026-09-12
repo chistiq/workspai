@@ -67,7 +67,7 @@ describe('Graph G7 release inventory', () => {
     expect(inventory.publishable).toBe(false);
     expect(inventory.standaloneStable).toBe(false);
     expect(inventory.signedAttestation).toBe('not-generated');
-    expect(inventory.rollbackProcedure).toBe('not-proven');
+    expect(inventory.rollbackProcedure).toBe('defined-unactivated');
     expect(inventory.publicInternalDocuments).toBe(0);
     expect(inventory.exports.subpaths).toEqual([...GRAPH_PUBLIC_EXPORT_MAP.subpaths]);
     expect(inventory.exports.rootValueExports).toEqual([

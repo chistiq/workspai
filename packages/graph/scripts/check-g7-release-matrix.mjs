@@ -99,7 +99,7 @@ for (const name of fs
     report.standaloneStable !== false ||
     report.publicPreview !== false ||
     report.provenance !== 'unattested' ||
-    report.rollbackProcedure !== 'not-proven' ||
+    report.rollbackProcedure !== 'defined-unactivated' ||
     report.nextStageAuthorized !== false ||
     report.registryStage !== 'G5'
   ) {
@@ -185,7 +185,7 @@ const candidate = {
   standaloneStable: false,
   publicPreview: false,
   provenance: 'unattested',
-  rollbackProcedure: 'not-proven',
+  rollbackProcedure: 'defined-unactivated',
   nextStage: 'G8',
   nextStageAuthorized: false,
   g6CandidateDigest: `sha256:${crypto

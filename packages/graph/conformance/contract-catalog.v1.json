@@ -170,7 +170,7 @@
     {
       "id": "https://schemas.workspai.dev/graph/standalone-support-matrix/v0.1.0-candidate",
       "file": "schemas/standalone-support-matrix.v0.1.0-candidate.schema.json",
-      "sha256": "b4928d3a403d84dd4c64b588d0e15eccadca8414d1f1be4da72f3c1d93553862"
+      "sha256": "746458c2cdd5d3806853c4cf52e92a0908c19071eab5236d738c13d660e2c016"
     },
     {
       "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",

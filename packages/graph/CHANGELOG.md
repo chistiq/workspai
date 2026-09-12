@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Locked bridge-critical Graph wire contracts into an internal compatibility
+  epoch and added machine-checked migration, incident, fallback and rollback
+  policy. The existing CLI Graph remains authoritative, shadow writes and
+  silent fallback are prohibited, and the bundled Rust WASM adapter still
+  requires no user toolchain or runtime download.
+- Retained the exact three-platform candidate baseline without treating it as
+  signed provenance or admission. The operational-policy commit must pass its
+  own Linux, macOS and Windows matrix and retain GitHub-signed SLSA provenance
+  plus SBOM attestations for the packed internal artifact before standalone
+  stability can open G8.
+
 - Aligned the executable support contract with private internal delivery. npm
   publication remains prohibited, `public-preview` is no longer a planned
   capability, and the committed G8 target is a product-bundled Rust/WASM engine

@@ -74,7 +74,9 @@ profile, G1 admit/reject corpus, G4 language fixtures, G6 schema fixtures and
 G7 CLI envelope fixtures. Contracted reject paths (unknown preset, missing
 subject, `--slice` on the wrong preset, `--write` on non-inspect, unknown
 provider, existing-workspace without `--workspace`) fail closed from the
-installed executable. Incident classes are exported; rollback is not proven.
+installed executable. Incident classes are exported. The G7 rollback boundary
+is defined and non-destructive while runtime activation remains off; G8 must
+prove it again under shadow execution before the package can become primary.
 
 An explicit write commits immutable, content-addressed artifacts below
 `.workspai/reports/graph-generations/` and advances the portable

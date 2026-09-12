@@ -9,7 +9,7 @@ const planPath = 'packages/graph/governance/g7-stage-plan.v1.json';
 const closurePath = 'packages/graph/governance/g7-stage-closure.v1.json';
 const g6PlanPath = 'packages/graph/governance/g6-stage-plan.v1.json';
 const registryPath = 'independent-packages.json';
-const plannedCheckpoints = new Set(['internal-promotion-and-rollback-verification']);
+const plannedCheckpoints = new Set();
 
 function repositoryFile(relative) {
   if (
@@ -59,7 +59,7 @@ if (
   plan.status !== 'local-source-complete' ||
   plan.nextStage !== 'G8' ||
   plan.nextStageAuthorized !== false ||
-  plan.nativeAcceleration?.status !== 'prohibited' ||
+  plan.nativeAcceleration?.status !== 'bundled-parity-qualified-candidate' ||
   plan.publicInternalDocuments !== 0
 ) {
   failures.push('G7 plan identity or fail-closed boundaries drifted');
@@ -132,7 +132,7 @@ if (!fs.existsSync(repositoryFile(closurePath))) {
   if (
     closure.measurements?.standaloneStable !== false ||
     closure.measurements?.signedAttestation !== 'not-generated' ||
-    closure.measurements?.rollbackProcedure !== 'not-proven' ||
+    closure.measurements?.rollbackProcedure !== 'defined-unactivated' ||
     closure.measurements?.cliRuntimeBridges !== 0 ||
     closure.measurements?.nativeTruthImplementations !== 0 ||
     closure.measurements?.publicInternalDocuments !== 0

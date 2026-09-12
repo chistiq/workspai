@@ -91,9 +91,9 @@ describe('G7 standalone product contracts', () => {
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable).toBe(false);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.publicPreview).toBe(false);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime).toBe('prohibited');
-    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.nativeAcceleration).toBe('prohibited');
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.nativeAcceleration).toBe('bundled-wasm-candidate');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget).toEqual({
-      implementation: 'required-in-g8',
+      implementation: 'bundled-conformance-candidate',
       baselineArtifact: 'product-bundled-wasm',
       activation: 'evidence-gated',
       semanticOwner: '@workspai/graph',
@@ -107,7 +107,7 @@ describe('G7 standalone product contracts', () => {
       until: 'standalone-stable',
     });
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.publicPreviewMigrations).toEqual([]);
-    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.plannedCapabilities).toContain('rust-wasm-engine');
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.plannedCapabilities).not.toContain('rust-wasm-engine');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.plannedCapabilities).not.toContain('public-preview');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.queryCache).toEqual(
       GRAPH_QUERY_CACHE_OPERATING_BOUNDARY
@@ -118,7 +118,7 @@ describe('G7 standalone product contracts', () => {
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.limitations).toEqual(
       expect.arrayContaining([
         'signed-provenance-unattested',
-        'rollback-procedure-not-proven',
+        'rollback-defined-but-not-proven-under-cli-shadow-load',
         'retrieval-benchmark-is-synthetic-fixture-labelled',
         'rust-engine-conformance-candidate-not-activated',
       ])
@@ -135,15 +135,18 @@ describe('G7 standalone product contracts', () => {
       secrets: 'rejected',
       catalogDigest: 'required',
       signedAttestation: 'not-generated',
-      rollbackProcedure: 'not-proven',
+      rollbackProcedure: 'defined-unactivated',
     });
     expect(GRAPH_RELEASE_INVENTORY_CONTRACT).toEqual({
       id: 'workspai.graph.release-inventory',
       version: '0.1.0-candidate',
     });
     expect(GRAPH_ROLLBACK_PROCEDURE).toEqual({
-      status: 'not-proven',
-      restores: 'last-supported-package-and-graph-generation',
+      status: 'defined-unactivated',
+      restores: 'official-internal-graph-capability',
+      activationDefault: 'off',
+      dataMigrationAtG7: 'none',
+      silentFallback: 'prohibited',
       sourceRewrite: 'prohibited',
     });
     expect([...GRAPH_INCIDENT_CLASSES]).toEqual([

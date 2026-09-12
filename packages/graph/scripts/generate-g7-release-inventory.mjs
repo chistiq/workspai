@@ -128,7 +128,7 @@ const inventory = {
   standaloneStable: false,
   provenance: 'unattested',
   signedAttestation: 'not-generated',
-  rollbackProcedure: 'not-proven',
+  rollbackProcedure: 'defined-unactivated',
   publicInternalDocuments: 0,
   exports: {
     subpaths,
@@ -147,7 +147,7 @@ const inventory = {
     secrets: 'rejected',
     catalogDigest: 'required',
     signedAttestation: 'not-generated',
-    rollbackProcedure: 'not-proven',
+    rollbackProcedure: 'defined-unactivated',
   },
   bundledNativeAcceleration: {
     engine: 'rust-wasm',

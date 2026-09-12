@@ -181,11 +181,13 @@
     },
     {
       "id": "internal-promotion-and-rollback-verification",
-      "status": "planned",
+      "status": "implemented-local-candidate",
       "evidence": [
-        "packages/graph/scripts/generate-graph-sbom.mjs",
-        "packages/graph/scripts/check-g7-release-matrix.mjs",
-        "packages/graph/src/contracts/standalone-product.ts"
+        "packages/graph/governance/g7-internal-contract-lock.v1.json",
+        "packages/graph/governance/g7-migration-rollback-policy.v1.json",
+        "packages/graph/governance/g7-verified-baseline.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/test/governance/g7-operational-readiness.test.ts"
       ]
     },
     {
@@ -207,9 +209,9 @@
     "No G8 bridge work until G7 standalone-stable admission."
   ],
   "nativeAcceleration": {
-    "status": "prohibited",
+    "status": "bundled-parity-qualified-candidate",
     "earliestDecisionStage": "G6",
-    "rule": "Rust, native and WASM execution remain blocked until benchmark evidence justifies a parity-checked adapter."
+    "rule": "The product-bundled Rust WASM adapter remains evidence-gated, keeps TypeScript as semantic authority, requires no user toolchain or download, and cannot become a second Graph truth."
   },
   "publicInternalDocuments": 0,
   "nextStage": "G8",

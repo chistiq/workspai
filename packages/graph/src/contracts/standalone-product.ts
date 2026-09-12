@@ -298,9 +298,9 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   standaloneStable: false,
   publicPreview: false,
   centralCliRuntime: 'prohibited',
-  nativeAcceleration: 'prohibited',
+  nativeAcceleration: 'bundled-wasm-candidate',
   rustEngineTarget: Object.freeze({
-    implementation: 'required-in-g8',
+    implementation: 'bundled-conformance-candidate',
     baselineArtifact: 'product-bundled-wasm',
     activation: 'evidence-gated',
     semanticOwner: '@workspai/graph',
@@ -314,9 +314,9 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   network: 'deny',
   runtime: { node: '>=20.19.0' },
   platforms: Object.freeze({
-    linux: Object.freeze({ declared: true, remoteAdmission: 'pending' }),
-    darwin: Object.freeze({ declared: true, remoteAdmission: 'pending' }),
-    win32: Object.freeze({ declared: true, remoteAdmission: 'pending' }),
+    linux: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
+    darwin: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
+    win32: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
   }),
   languages: Object.freeze({
     node: 'official-offline',
@@ -334,15 +334,11 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   }),
   publicPreviewMigrations: Object.freeze([] as const),
   packedJobs: Object.freeze(GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id)),
-  plannedCapabilities: Object.freeze([
-    'standalone-stable',
-    'rust-wasm-engine',
-    'cli-shadow-parity',
-  ] as const),
+  plannedCapabilities: Object.freeze(['standalone-stable', 'cli-shadow-parity'] as const),
   unsupportedCapabilities: Object.freeze([
     'standalone-stable',
     'cli-runtime-bridge',
-    'native-acceleration',
+    'native-acceleration-as-primary',
   ] as const),
   limitations: Object.freeze([
     'incremental-orchestration-not-on-root-api',
@@ -352,9 +348,9 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
     'overlays-do-not-publish-canonical-generations',
     'external-provider-sdk-deferred',
     'signed-provenance-unattested',
-    'rollback-procedure-not-proven',
+    'rollback-defined-but-not-proven-under-cli-shadow-load',
     'retrieval-benchmark-is-synthetic-fixture-labelled',
-    'g6-cross-platform-admission-pending',
+    'current-commit-cross-platform-admission-pending',
     'standalone-stable-not-admitted',
     'central-cli-runtime-prohibited',
     'rust-engine-conformance-candidate-not-activated',
@@ -393,7 +389,7 @@ export const GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY = Object.freeze({
   secrets: 'rejected',
   catalogDigest: 'required',
   signedAttestation: 'not-generated',
-  rollbackProcedure: 'not-proven',
+  rollbackProcedure: 'defined-unactivated',
 } as const);
 
 export const GRAPH_INCIDENT_CLASSES = Object.freeze([
@@ -407,8 +403,11 @@ export const GRAPH_INCIDENT_CLASSES = Object.freeze([
 ] as const);
 
 export const GRAPH_ROLLBACK_PROCEDURE = Object.freeze({
-  status: 'not-proven',
-  restores: 'last-supported-package-and-graph-generation',
+  status: 'defined-unactivated',
+  restores: 'official-internal-graph-capability',
+  activationDefault: 'off',
+  dataMigrationAtG7: 'none',
+  silentFallback: 'prohibited',
   sourceRewrite: 'prohibited',
 } as const);
 

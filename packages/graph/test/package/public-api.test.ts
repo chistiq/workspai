@@ -116,7 +116,6 @@ describe('@workspai/graph development package', () => {
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',
-      'rust-wasm-engine',
       'cli-shadow-parity',
     ]);
   });

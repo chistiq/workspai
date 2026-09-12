@@ -57,10 +57,11 @@
     {
       "id": "portability-and-multiplatform",
       "status": "pending-remote",
-      "summary": "Local G7 checks pass; internal standalone admission still requires retained G6 OS-matrix evidence and an internal adoption decision.",
+      "summary": "The prior exact candidate has retained Linux, macOS and Windows evidence; the operational-policy commit requires its own same-commit matrix before admission.",
       "evidence": [
-        "packages/graph/governance/g6-stage-plan.v1.json",
-        "packages/graph/governance/g7-stage-plan.v1.json"
+        "packages/graph/governance/g7-verified-baseline.v1.json",
+        "packages/graph/governance/g7-stage-plan.v1.json",
+        ".github/workflows/ci.yml"
       ]
     },
     {
@@ -93,10 +94,11 @@
     {
       "id": "resilience-and-operability",
       "status": "passed",
-      "summary": "Workspace inspect without an onboarding adapter stays partial and incident/rollback classes remain unattested and unproven.",
+      "summary": "Workspace inspect without an onboarding adapter stays partial; migration, explicit fallback and non-destructive rollback boundaries are machine-checked before any CLI activation.",
       "evidence": [
         "packages/graph/src/application/run-standalone-graph.ts",
-        "packages/graph/src/contracts/standalone-product.ts"
+        "packages/graph/governance/g7-migration-rollback-policy.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs"
       ]
     },
     {
@@ -128,17 +130,23 @@
     {
       "id": "g7-local-source-checkpoints",
       "status": "passed",
-      "evidence": "All G7 stage-plan checkpoints except internal-promotion-and-rollback-verification are implemented-local-candidate."
+      "evidence": "Every G7 source checkpoint is implemented; operational promotion still requires current-commit remote evidence."
+    },
+    {
+      "id": "g7-operational-readiness",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run admission:g7:operations",
+      "evidence": "The internal contract epoch, no-silent-fallback migration policy, zero-toolchain runtime boundary and non-destructive rollback target are machine-checked."
     },
     {
       "id": "remote-platform-and-internal-promotion",
       "status": "pending-remote",
-      "evidence": "The fail-closed G7 release-candidate matrix is implemented and chained to same-run G6 evidence. Retained remote results plus internal promotion and rollback proof remain required before standalone admission."
+      "evidence": "A prior exact candidate has retained three-platform evidence. The new contract-lock and rollback-policy release inputs require their own same-commit matrix before standalone admission."
     },
     {
       "id": "standalone-stable-admission",
       "status": "blocked",
-      "evidence": "The package-owned admission ledger verifies the private Shared workspace dependency and rejects stability while Graph lacks final internal contracts plus promotion and rollback proof."
+      "evidence": "The package-owned admission ledger verifies the private Shared dependency and rejects stability until the operational-policy commit receives retained same-commit promotion evidence."
     }
   ],
   "measurements": {
@@ -147,31 +155,33 @@
     "conformanceSuites": 23,
     "languageFixtures": 12,
     "providerCount": 12,
-    "testFiles": 77,
-    "tests": 528,
+    "testFiles": 79,
+    "tests": 537,
     "coverageStatementsPercent": 90.53,
     "coverageBranchesPercent": 85.11,
     "coverageFunctionsPercent": 93.33,
     "coverageLinesPercent": 92.13,
-    "packedFiles": 107,
-    "packedCompressedBytes": 161336,
+    "lastVerifiedBaselinePackedFiles": 107,
+    "lastVerifiedBaselinePackedCompressedBytes": 161336,
+    "lastVerifiedBaselineRunId": "34703877434",
     "packedCompressedBudgetBytes": 294912,
     "publicInternalDocuments": 0,
     "cliRuntimeBridges": 0,
     "nativeTruthImplementations": 0,
+    "bundledNativeAdapters": 1,
     "standaloneStable": false,
     "signedAttestation": "not-generated",
-    "rollbackProcedure": "not-proven"
+    "rollbackProcedure": "defined-unactivated"
   },
   "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "pending" },
   "remainingRisks": [
-    "Internal standalone admission still requires retained same-commit Linux, macOS and Windows G6 evidence plus an internal adoption decision.",
+    "Internal standalone admission still requires retained same-commit Linux, macOS and Windows evidence for the operational-policy commit.",
     "The private @workspai/shared runtime dependency must remain exact, lockfile-bound and covered by packed-consumer checks.",
-    "The CycloneDX SBOM is an internal artifact; public npm provenance is intentionally deferred.",
+    "The CycloneDX SBOM remains unattested locally; the current commit must retain its GitHub SLSA candidate attestation before admission.",
     "Retrieval scores are synthetic and fixture-labelled; they cannot support a public accuracy claim.",
     "Workspace composition from the packed executable remains partial until an injected onboarding adapter is supplied.",
-    "Rollback from internal Graph consumption to the existing CLI Graph path is not proven.",
-    "Rust, native and WASM acceleration remain prohibited.",
+    "Rollback is defined and non-destructive at G7 because runtime activation remains off; G8 must prove it again under shadow execution.",
+    "Bundled Rust WASM remains an evidence-gated adapter with TypeScript semantic authority and qualified fallback.",
     "Central CLI shadow parity and replacement remain prohibited until G8."
   ],
   "nextStage": "G8",

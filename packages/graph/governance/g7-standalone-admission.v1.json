@@ -59,13 +59,13 @@
     {
       "id": "final-internal-contract-policy",
       "category": "compatibility",
-      "status": "blocked",
+      "status": "passed-local",
       "evidence": [
-        "packages/graph/src/contracts/package-metadata.ts",
-        "packages/graph/governance/g7-stage-plan.v1.json",
-        "packages/graph/CHANGELOG.md"
+        "packages/graph/governance/g7-internal-contract-lock.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/test/governance/g7-operational-readiness.test.ts"
       ],
-      "reason": "The API, schema, ontology, proof and deprecation surfaces remain explicitly candidate contracts and are not yet locked for the central CLI bridge."
+      "reason": "Bridge-critical candidate wire identities are digest-locked into an internal compatibility epoch with explicit breaking, additive, extension and deprecation rules."
     },
     {
       "id": "cross-platform-release-evidence",
@@ -73,9 +73,10 @@
       "status": "pending-remote",
       "evidence": [
         ".github/workflows/ci.yml",
-        "packages/graph/scripts/check-g7-release-matrix.mjs"
+        "packages/graph/scripts/check-g7-release-matrix.mjs",
+        "packages/graph/governance/g7-verified-baseline.v1.json"
       ],
-      "reason": "A same-run Linux, macOS and Windows candidate is produced by CI, but no retained standalone-stable admission artifact exists."
+      "reason": "The prior exact candidate has retained three-platform metadata, but the operational-policy commit requires a new same-commit matrix before admission."
     },
     {
       "id": "shared-workspace-runtime-integrity",
@@ -113,24 +114,25 @@
     {
       "id": "internal-migration-and-incident-policy",
       "category": "operations",
-      "status": "blocked",
+      "status": "passed-local",
       "evidence": [
-        "packages/graph/README.md",
-        "packages/graph/CHANGELOG.md",
+        "packages/graph/governance/g7-migration-rollback-policy.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
         "packages/graph/src/contracts/standalone-product.ts"
       ],
-      "reason": "Candidate limitations and incident classes exist, but the internal CLI migration and compatibility commitments are not final."
+      "reason": "The internal migration boundary preserves the existing Graph authority, prohibits shadow writes and silent fallback, and binds deterministic incident telemetry."
     },
     {
       "id": "internal-promotion-and-rollback-proof",
       "category": "release",
-      "status": "blocked",
+      "status": "pending-remote",
       "evidence": [
-        "packages/graph/package.json",
-        "packages/graph/scripts/refuse-publish.mjs",
-        "package-mirrors.json"
+        "packages/graph/governance/g7-migration-rollback-policy.v1.json",
+        "packages/graph/governance/g7-verified-baseline.v1.json",
+        "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/package.json"
       ],
-      "reason": "npm publication is intentionally disabled; commit-bound internal promotion and rollback to the existing CLI Graph path are not yet proven."
+      "reason": "Rollback is locally proven non-destructive while activation is off; commit-bound three-platform evidence plus signed provenance and SBOM attestations for the packed internal artifact are still required before promotion."
     },
     {
       "id": "central-cli-bridge-absence",

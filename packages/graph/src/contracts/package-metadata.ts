@@ -99,7 +99,7 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'partial-cli-exit-code-integrity',
     'rust-wasm-traversal-conformance-candidate',
   ] as const,
-  plannedCapabilities: ['standalone-stable', 'rust-wasm-engine', 'cli-shadow-parity'] as const,
+  plannedCapabilities: ['standalone-stable', 'cli-shadow-parity'] as const,
 });
 
 export type GraphPackageMetadata = typeof GRAPH_PACKAGE_METADATA;

@@ -43,7 +43,7 @@
     "standaloneStable": { "const": false },
     "publicPreview": { "const": false },
     "centralCliRuntime": { "const": "prohibited" },
-    "nativeAcceleration": { "const": "prohibited" },
+    "nativeAcceleration": { "const": "bundled-wasm-candidate" },
     "rustEngineTarget": {
       "type": "object",
       "additionalProperties": false,
@@ -58,7 +58,7 @@
         "fallback"
       ],
       "properties": {
-        "implementation": { "const": "required-in-g8" },
+        "implementation": { "const": "bundled-conformance-candidate" },
         "baselineArtifact": { "const": "product-bundled-wasm" },
         "activation": { "const": "evidence-gated" },
         "semanticOwner": { "const": "@workspai/graph" },
@@ -151,14 +151,14 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "enum": ["standalone-stable", "rust-wasm-engine", "cli-shadow-parity"]
+        "enum": ["standalone-stable", "cli-shadow-parity"]
       }
     },
     "unsupportedCapabilities": {
       "type": "array",
       "minItems": 1,
       "items": {
-        "enum": ["standalone-stable", "cli-runtime-bridge", "native-acceleration"]
+        "enum": ["standalone-stable", "cli-runtime-bridge", "native-acceleration-as-primary"]
       }
     },
     "limitations": {
@@ -174,7 +174,7 @@
       "required": ["declared", "remoteAdmission"],
       "properties": {
         "declared": { "const": true },
-        "remoteAdmission": { "const": "pending" }
+        "remoteAdmission": { "const": "baseline-verified-current-pending" }
       }
     }
   }

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "workspai-graph-g7-verified-baseline.v1",
+  "package": "@workspai/graph",
+  "status": "verified-release-candidate-baseline",
+  "evidenceTrust": "retained-github-actions-metadata-unattested",
+  "sourceCommit": "bb95eed6a7af34fbced3370478dc775838c0e3f0",
+  "testedCommit": "19640e037b1a7e567e36f79a107b7b21a3f4c260",
+  "githubRunId": "34703877434",
+  "candidateArtifact": {
+    "id": "10300822591",
+    "digest": "sha256:8d75fa51f01f79742613690091093aa89aa1b6ef67b0c1a8c0106ea6a7009dc0"
+  },
+  "candidate": {
+    "passed": true,
+    "admitted": false,
+    "standaloneStable": false,
+    "rollbackProcedure": "not-proven",
+    "g6CandidateDigest": "sha256:8b9fa7e82907a1a6ffd9cb43f0a6306f0805d211c30ff541d3d8c5fd0c4ce3c2",
+    "releaseInputsDigest": "sha256:b1ffb367040eb16c2f510e74e872a1bf0086f944208b8c8009dedba31e88a8dd"
+  },
+  "platformEvidence": [
+    {
+      "runnerOs": "Linux",
+      "runnerArch": "X64",
+      "node": "v20.20.2",
+      "digest": "sha256:98086872d207ec498831835f553888801f4a5abd54010674643d453388e54bc4"
+    },
+    {
+      "runnerOs": "macOS",
+      "runnerArch": "ARM64",
+      "node": "v20.20.2",
+      "digest": "sha256:15e5a6dc55a06756afd6163dc73d986090060e67a38072554e9825b03bdb9bd7"
+    },
+    {
+      "runnerOs": "Windows",
+      "runnerArch": "X64",
+      "node": "v20.20.2",
+      "digest": "sha256:ba13aaed0af4a58464df0d62b01d9ebd3ee5b1b7991ecbf42f2ecc02e673c16c"
+    }
+  ],
+  "promotionState": "current-commit-matrix-required",
+  "claims": {
+    "signedAttestation": false,
+    "npmPublication": false,
+    "g8Authorized": false
+  }
+}

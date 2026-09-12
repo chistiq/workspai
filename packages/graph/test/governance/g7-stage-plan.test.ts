@@ -10,7 +10,7 @@ const readJson = (file: string): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
 
 describe('Graph G7 stage authorization', () => {
-  it('seals G7 local source while registry remains on G5', () => {
+  it('seals G7 operational source while registry remains fail-closed on G5', () => {
     const plan = readJson(path.join(packageRoot, 'governance/g7-stage-plan.v1.json'));
     const closure = readJson(path.join(packageRoot, 'governance/g7-stage-closure.v1.json'));
     expect(plan).toMatchObject({
@@ -19,7 +19,10 @@ describe('Graph G7 stage authorization', () => {
       nextStage: 'G8',
       nextStageAuthorized: false,
       publicInternalDocuments: 0,
-      nativeAcceleration: { status: 'prohibited', earliestDecisionStage: 'G6' },
+      nativeAcceleration: {
+        status: 'bundled-parity-qualified-candidate',
+        earliestDecisionStage: 'G6',
+      },
     });
     expect(closure).toMatchObject({
       stage: 'G7',
@@ -30,7 +33,7 @@ describe('Graph G7 stage authorization', () => {
       measurements: {
         standaloneStable: false,
         signedAttestation: 'not-generated',
-        rollbackProcedure: 'not-proven',
+        rollbackProcedure: 'defined-unactivated',
         cliRuntimeBridges: 0,
         nativeTruthImplementations: 0,
         publicInternalDocuments: 0,
@@ -56,10 +59,6 @@ describe('Graph G7 stage authorization', () => {
       ])
     );
     for (const checkpoint of checkpoints) {
-      if (checkpoint.id === 'internal-promotion-and-rollback-verification') {
-        expect(checkpoint.status).toBe('planned');
-        continue;
-      }
       expect(checkpoint.status).toBe('implemented-local-candidate');
     }
   });

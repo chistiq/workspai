@@ -40,7 +40,7 @@ describe('Graph G7 stage closure', () => {
       measurements: {
         standaloneStable: false,
         signedAttestation: 'not-generated',
-        rollbackProcedure: 'not-proven',
+        rollbackProcedure: 'defined-unactivated',
         cliRuntimeBridges: 0,
         nativeTruthImplementations: 0,
         publicInternalDocuments: 0,

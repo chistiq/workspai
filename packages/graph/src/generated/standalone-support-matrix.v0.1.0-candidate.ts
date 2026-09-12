@@ -9,9 +9,9 @@ export interface WorkspaiGraphStandaloneSupportMatrixCandidate {
   standaloneStable: false;
   publicPreview: false;
   centralCliRuntime: 'prohibited';
-  nativeAcceleration: 'prohibited';
+  nativeAcceleration: 'bundled-wasm-candidate';
   rustEngineTarget: {
-    implementation: 'required-in-g8';
+    implementation: 'bundled-conformance-candidate';
     baselineArtifact: 'product-bundled-wasm';
     activation: 'evidence-gated';
     semanticOwner: '@workspai/graph';
@@ -67,15 +67,15 @@ export interface WorkspaiGraphStandaloneSupportMatrixCandidate {
    * @minItems 1
    */
   plannedCapabilities: [
-    'standalone-stable' | 'rust-wasm-engine' | 'cli-shadow-parity',
-    ...('standalone-stable' | 'rust-wasm-engine' | 'cli-shadow-parity')[],
+    'standalone-stable' | 'cli-shadow-parity',
+    ...('standalone-stable' | 'cli-shadow-parity')[],
   ];
   /**
    * @minItems 1
    */
   unsupportedCapabilities: [
-    'standalone-stable' | 'cli-runtime-bridge' | 'native-acceleration',
-    ...('standalone-stable' | 'cli-runtime-bridge' | 'native-acceleration')[],
+    'standalone-stable' | 'cli-runtime-bridge' | 'native-acceleration-as-primary',
+    ...('standalone-stable' | 'cli-runtime-bridge' | 'native-acceleration-as-primary')[],
   ];
   /**
    * @minItems 1
@@ -88,5 +88,5 @@ export interface WorkspaiGraphStandaloneSupportMatrixCandidate {
  */
 export interface Platform {
   declared: true;
-  remoteAdmission: 'pending';
+  remoteAdmission: 'baseline-verified-current-pending';
 }

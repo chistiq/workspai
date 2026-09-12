@@ -32,7 +32,7 @@ function platformReport(
     standaloneStable: false,
     publicPreview: false,
     provenance: 'unattested',
-    rollbackProcedure: 'not-proven',
+    rollbackProcedure: 'defined-unactivated',
     nextStage: 'G8',
     nextStageAuthorized: false,
     registryStage: 'G5',
@@ -147,7 +147,7 @@ describe('Graph G7 release-candidate admission', () => {
       standaloneStable: false,
       publicPreview: false,
       provenance: 'unattested',
-      rollbackProcedure: 'not-proven',
+      rollbackProcedure: 'defined-unactivated',
       nextStageAuthorized: false,
       failures: [],
     });

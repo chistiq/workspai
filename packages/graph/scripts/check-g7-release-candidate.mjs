@@ -25,6 +25,7 @@ const releaseFiles = [
   'packages/graph/scripts/check-packed-package.mjs',
   'packages/graph/scripts/check-g7-release-candidate.mjs',
   'packages/graph/scripts/check-g7-release-matrix.mjs',
+  'packages/graph/scripts/check-g7-operational-readiness.mjs',
   'packages/graph/scripts/check-standalone-admission.mjs',
   'packages/graph/scripts/generate-g7-release-inventory.mjs',
   'packages/graph/scripts/generate-graph-sbom.mjs',
@@ -32,6 +33,9 @@ const releaseFiles = [
   inventoryPath,
   sbomPath,
   'packages/graph/governance/g7-standalone-admission.v1.json',
+  'packages/graph/governance/g7-internal-contract-lock.v1.json',
+  'packages/graph/governance/g7-migration-rollback-policy.v1.json',
+  'packages/graph/governance/g7-verified-baseline.v1.json',
 ];
 const fullSha = /^[a-f0-9]{40}$/u;
 const args = process.argv.slice(2);
@@ -126,7 +130,7 @@ if (
   inventory.publishable !== false ||
   inventory.standaloneStable !== false ||
   inventory.provenance !== 'unattested' ||
-  inventory.rollbackProcedure !== 'not-proven'
+  inventory.rollbackProcedure !== 'defined-unactivated'
 ) {
   failures.push('Release inventory must not claim publication, provenance or stability');
 }
@@ -166,7 +170,7 @@ const report = {
   standaloneStable: false,
   publicPreview: false,
   provenance: 'unattested',
-  rollbackProcedure: 'not-proven',
+  rollbackProcedure: 'defined-unactivated',
   nextStage: 'G8',
   nextStageAuthorized: false,
   registryStage: graph?.currentStage,

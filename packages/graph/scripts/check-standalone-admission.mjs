@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -84,6 +85,29 @@ function buildAudit(options) {
     repositoryFile('packages/graph/src/contracts/package-metadata.ts'),
     'utf8'
   );
+  const contractLock = readJson('packages/graph/governance/g7-internal-contract-lock.v1.json');
+  const migrationPolicy = readJson(
+    'packages/graph/governance/g7-migration-rollback-policy.v1.json'
+  );
+  const verifiedBaseline = readJson('packages/graph/governance/g7-verified-baseline.v1.json');
+  const catalogDigest = `sha256:${crypto
+    .createHash('sha256')
+    .update(fs.readFileSync(repositoryFile('packages/graph/conformance/contract-catalog.v1.json')))
+    .digest('hex')}`;
+  if (
+    contractLock.status !== 'locked-for-g8-shadow-bridge' ||
+    contractLock.catalog?.digest !== catalogDigest ||
+    migrationPolicy.status !== 'defined-unactivated' ||
+    migrationPolicy.runtime?.silentFallback !== 'prohibited' ||
+    migrationPolicy.rollback?.target !== 'official-internal-graph-capability' ||
+    migrationPolicy.promotion?.requiresSignedArtifactAttestation !== true ||
+    migrationPolicy.promotion?.requiresSignedSbomAttestation !== true ||
+    verifiedBaseline.status !== 'verified-release-candidate-baseline' ||
+    verifiedBaseline.candidate?.admitted !== false ||
+    verifiedBaseline.promotionState !== 'current-commit-matrix-required'
+  ) {
+    failures.push('Graph G7 operational readiness evidence is invalid');
+  }
 
   if (admission.schemaVersion !== 'workspai-graph-standalone-admission.v1') {
     failures.push('unsupported Graph standalone-admission schema');
