@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/canonical-graph/v0.1.0-candidate",
+  "title": "WorkspaiCanonicalGraphCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "graphVersion",
+    "generation",
+    "ontology",
+    "nodes",
+    "edges",
+    "assertions",
+    "disputes",
+    "unresolved",
+    "diagnostics"
+  ],
+  "properties": {
+    "contract": {
+      "const": { "id": "workspai.graph.canonical-graph", "version": "0.1.0-candidate" }
+    },
+    "graphVersion": { "type": "string", "minLength": 1 },
+    "generation": {
+      "type": "object",
+      "required": [
+        "reference",
+        "graphSchema",
+        "architectureEpoch",
+        "ontologySetDigest",
+        "proofPolicySetDigest",
+        "inputsDigest",
+        "factSetDigest",
+        "providerSetDigest",
+        "compositionPolicyDigest"
+      ]
+    },
+    "ontology": { "type": "array", "minItems": 1 },
+    "nodes": { "type": "array", "maxItems": 10000000 },
+    "edges": { "type": "array", "maxItems": 50000000 },
+    "assertions": { "type": "array", "maxItems": 10000000 },
+    "disputes": { "type": "array", "maxItems": 1000000 },
+    "unresolved": { "type": "array", "maxItems": 1000000 },
+    "diagnostics": { "type": "array", "maxItems": 10000 }
+  }
+}

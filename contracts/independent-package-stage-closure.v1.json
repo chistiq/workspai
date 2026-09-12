@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/packages/stage-closure/v1",
+  "title": "WorkspaiIndependentPackageStageClosureV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policyVersion",
+    "closureKind",
+    "package",
+    "stage",
+    "asOf",
+    "status",
+    "advancesAdmissionGate",
+    "dimensions",
+    "checks",
+    "measurements",
+    "environment",
+    "remainingRisks",
+    "nextStage",
+    "nextStageAuthorized",
+    "approval"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "workspai-independent-package-stage-closure.v1"
+    },
+    "policyVersion": { "const": "1.0.0-candidate" },
+    "closureKind": {
+      "enum": ["stage", "package-stability", "program-completion"]
+    },
+    "package": { "type": "string", "pattern": "^@workspai/[a-z][a-z0-9-]*$" },
+    "stage": { "$ref": "#/$defs/NonEmptyString" },
+    "asOf": { "type": "string", "format": "date" },
+    "status": {
+      "enum": [
+        "passed-awaiting-approval",
+        "local-passed-remote-pending-awaiting-approval",
+        "approved",
+        "blocked"
+      ]
+    },
+    "advancesAdmissionGate": { "type": "boolean" },
+    "dimensions": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/Dimension" }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Check" }
+    },
+    "measurements": { "type": "object", "additionalProperties": true },
+    "environment": { "$ref": "#/$defs/Environment" },
+    "remainingRisks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/NonEmptyString" }
+    },
+    "nextStage": { "type": ["string", "null"] },
+    "nextStageAuthorized": { "type": "boolean" },
+    "approval": { "$ref": "#/$defs/Approval" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "nextStageAuthorized": { "const": true } },
+        "required": ["nextStageAuthorized"]
+      },
+      "then": {
+        "properties": {
+          "approval": {
+            "type": "object",
+            "properties": { "status": { "const": "approved" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "local-passed-remote-pending-awaiting-approval" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "advancesAdmissionGate": { "const": false },
+          "environment": {
+            "type": "object",
+            "properties": { "remoteMatrix": { "const": "pending" } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "NonEmptyString": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "PortablePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "Dimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "summary", "evidence"],
+      "properties": {
+        "id": {
+          "enum": [
+            "architecture-and-contract-alignment",
+            "scalability-and-extensibility",
+            "performance-and-efficiency",
+            "security-and-abuse-resistance",
+            "privacy-and-data-governance",
+            "portability-and-multiplatform",
+            "package-independence",
+            "correctness-and-determinism",
+            "compatibility-and-evolution",
+            "resilience-and-operability",
+            "maintainability-and-testability",
+            "supply-chain-and-release-integrity"
+          ]
+        },
+        "status": {
+          "enum": ["passed", "pending-remote", "not-applicable", "blocked"]
+        },
+        "summary": { "$ref": "#/$defs/NonEmptyString" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/PortablePath" }
+        },
+        "justification": { "$ref": "#/$defs/NonEmptyString" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "not-applicable" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "justification": { "$ref": "#/$defs/NonEmptyString" }
+            },
+            "required": ["justification"]
+          }
+        }
+      ]
+    },
+    "Check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "evidence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/NonEmptyString" },
+        "status": {
+          "enum": ["passed", "failed", "pending-remote", "not-applicable"]
+        },
+        "command": { "$ref": "#/$defs/NonEmptyString" },
+        "evidence": { "$ref": "#/$defs/NonEmptyString" }
+      }
+    },
+    "Environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local", "remoteMatrix"],
+      "properties": {
+        "local": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/NonEmptyString" }
+        },
+        "remoteMatrix": {
+          "enum": ["passed", "pending", "failed", "not-applicable"]
+        }
+      }
+    },
+    "Approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requiredForNextStage", "rule"],
+      "properties": {
+        "status": { "enum": ["awaiting", "approved", "rejected"] },
+        "requiredForNextStage": { "type": "boolean" },
+        "approvedAt": { "type": "string", "format": "date" },
+        "rule": { "$ref": "#/$defs/NonEmptyString" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "approved" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "approvedAt": { "type": "string", "format": "date" }
+            },
+            "required": ["approvedAt"]
+          }
+        }
+      ]
+    }
+  }
+}

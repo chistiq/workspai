@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/derivation-lineage/v0.1.0-candidate",
+  "title": "WorkspaiGraphDerivationLineageCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["factId", "derivation", "evidenceRoots", "parentFactIds"],
+  "properties": {
+    "factId": { "type": "string", "minLength": 1 },
+    "derivation": {
+      "enum": ["observed", "extracted", "declared", "computed", "inferred", "generated", "imported"]
+    },
+    "evidenceRoots": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "parentFactIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

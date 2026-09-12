@@ -1,0 +1,25 @@
+{
+  "contract": { "id": "workspai.graph.provider-manifest", "version": "0.1.0-candidate" },
+  "id": "fixture.portable",
+  "version": "1.0.0",
+  "displayName": "Portable fixture provider",
+  "determinism": "deterministic",
+  "capabilities": {
+    "entityKinds": ["file"],
+    "relationKinds": ["contains"],
+    "relationSemantics": ["structural"],
+    "factFamilies": ["source.contains"],
+    "allowedClaims": ["observed"]
+  },
+  "permissions": {
+    "filesystem": "read",
+    "network": "deny",
+    "process": "deny",
+    "credentials": "deny"
+  },
+  "limits": { "maxDurationMs": 1000, "maxFacts": 100 },
+  "contractVersions": ["0.1.0-candidate"],
+  "supportedInputs": ["source-file"],
+  "incremental": "input",
+  "identitySchemes": [{ "id": "workspai.graph.portable-entity", "version": "1" }]
+}

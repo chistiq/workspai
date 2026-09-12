@@ -1,0 +1,28 @@
+{
+  "specVersion": "wis-candidate",
+  "coreVersion": "0.1.0-draft",
+  "schemaId": "https://schemas.workspai.dev/wis/core/result-envelope/0.1.0-draft",
+  "profile": { "id": "wis.profile.fixture", "version": "0.1.0-draft" },
+  "producer": { "id": "fixture-producer", "version": "1.0.0" },
+  "operation": "evaluate-fixture",
+  "scope": { "kind": "project", "projectIds": ["project:fixture"] },
+  "generation": {
+    "id": "generation:previous-partial:1",
+    "generatedAt": "2026-08-13T00:00:00.000Z"
+  },
+  "outcome": "partial",
+  "payload": { "vendorField": { "retained": true } },
+  "evidence": [],
+  "freshness": { "status": "unknown" },
+  "unknowns": [],
+  "omissions": [
+    {
+      "code": "FIXTURE_CAPABILITY_UNAVAILABLE",
+      "reason": "An optional previous-version capability was unavailable.",
+      "affectsStatus": true,
+      "recoverable": true
+    }
+  ],
+  "diagnostics": [],
+  "extensions": { "vendor.example": { "opaque": ["kept", 42, true] } }
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "workspai-shared-conformance-manifest.v1",
+  "contractVersion": "0.2.0-draft",
+  "status": "candidate",
+  "cases": [
+    { "file": "valid-pass.json", "valid": true },
+    { "file": "valid-partial.json", "valid": true },
+    {
+      "file": "invalid-additional-property.json",
+      "valid": false,
+      "phase": "structural",
+      "code": "WIS_STRUCTURAL_ADDITIONALPROPERTIES"
+    },
+    {
+      "file": "invalid-false-pass.json",
+      "valid": false,
+      "phase": "semantic",
+      "code": "WIS_SEMANTIC_FALSE_PASS"
+    },
+    {
+      "file": "invalid-local-path.json",
+      "valid": false,
+      "phase": "semantic",
+      "code": "WIS_SEMANTIC_NON_PORTABLE_LOCATOR"
+    },
+    {
+      "file": "invalid-empty-selection.json",
+      "valid": false,
+      "phase": "semantic",
+      "code": "WIS_SEMANTIC_EMPTY_SELECTION"
+    }
+  ]
+}

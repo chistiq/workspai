@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/wis/core/contract-catalog/0.1.0-draft",
+  "title": "WisContractCatalog",
+  "description": "Portable digest-bound catalog of generated WIS contracts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "portfolioDigest", "contracts"],
+  "properties": {
+    "schemaVersion": { "const": "workspai-shared-generated-registry.v2" },
+    "status": { "enum": ["candidate", "stable", "deprecated"] },
+    "portfolioDigest": { "$ref": "#/$defs/Sha256Digest" },
+    "contracts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/ContractEntry" }
+    }
+  },
+  "$defs": {
+    "NonEmptyString": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "Sha256Digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "ContractEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "id",
+        "title",
+        "version",
+        "dialect",
+        "source",
+        "digest",
+        "typeExport",
+        "validatorExport",
+        "dependencies"
+      ],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,127}$" },
+        "id": { "type": "string", "pattern": "^https://", "maxLength": 4096 },
+        "title": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]{0,127}$" },
+        "version": { "$ref": "#/$defs/NonEmptyString" },
+        "dialect": { "type": "string", "pattern": "^https://", "maxLength": 4096 },
+        "source": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$",
+          "maxLength": 4096
+        },
+        "digest": { "$ref": "#/$defs/Sha256Digest" },
+        "typeExport": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]{0,127}$" },
+        "validatorExport": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9]{0,127}$"
+        },
+        "dependencies": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^https://", "maxLength": 4096 }
+        }
+      }
+    }
+  }
+}

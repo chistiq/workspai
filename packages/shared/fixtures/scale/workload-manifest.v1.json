@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "workspai-shared-scale-workloads.v1",
+  "profile": "shared-scale-extension.v1-draft",
+  "seed": "workspai-shared-sh3c-v1",
+  "workloads": [
+    {
+      "id": "small",
+      "evidenceCount": 32,
+      "locatorLength": 64,
+      "warmups": 20,
+      "iterations": 100,
+      "maxSerializedBytes": 16384,
+      "p95BudgetMs": 10,
+      "p99BudgetMs": 30
+    },
+    {
+      "id": "normal",
+      "evidenceCount": 2500,
+      "locatorLength": 330,
+      "warmups": 5,
+      "iterations": 30,
+      "maxSerializedBytes": 1048576,
+      "p95BudgetMs": 50,
+      "p99BudgetMs": 150
+    },
+    {
+      "id": "large-node",
+      "evidenceCount": 8000,
+      "locatorLength": 1400,
+      "warmups": 1,
+      "iterations": 5,
+      "maxSerializedBytes": 16777216,
+      "p95BudgetMs": 750,
+      "p99BudgetMs": 1500,
+      "limits": {
+        "maxDepth": 64,
+        "maxNodes": 100000,
+        "maxStringLength": 16777216,
+        "maxTotalStringLength": 16777216,
+        "maxDiagnostics": 1000
+      }
+    },
+    {
+      "id": "browser-safe-proxy",
+      "evidenceCount": 5000,
+      "locatorLength": 600,
+      "warmups": 2,
+      "iterations": 10,
+      "maxSerializedBytes": 4194304,
+      "p95BudgetMs": 150,
+      "p99BudgetMs": 300,
+      "limits": {
+        "maxDepth": 32,
+        "maxNodes": 25000,
+        "maxStringLength": 1048576,
+        "maxTotalStringLength": 4194304,
+        "maxDiagnostics": 100
+      }
+    }
+  ],
+  "compatibility": {
+    "sourceWorkload": "normal",
+    "warmups": 3,
+    "iterations": 20,
+    "p95BudgetMs": 200,
+    "p99BudgetMs": 400
+  },
+  "soak": {
+    "sourceWorkload": "small",
+    "iterations": 1000,
+    "maxRetainedHeapBytes": 8388608
+  },
+  "concurrency": {
+    "sourceWorkload": "small",
+    "workers": 4,
+    "iterationsPerWorker": 50,
+    "maxDurationMs": 5000
+  },
+  "memory": {
+    "maxObservedHeapAmplification": 8
+  },
+  "coldLoad": {
+    "sourceWorkload": "small",
+    "iterations": 3,
+    "p95BudgetMs": 1000
+  }
+}

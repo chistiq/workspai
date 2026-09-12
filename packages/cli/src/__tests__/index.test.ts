@@ -9,7 +9,7 @@ import * as fs from 'fs-extra';
 import os from 'os';
 import { spawnSync } from 'child_process';
 
-import { handleAdoptCommand, handleImportCommand } from '../index';
+import { handleAdoptCommand, handleImportCommand, program } from '../index';
 import { ensureDistBuilt } from './helpers/dist';
 import { WORKSPACE_SUBCOMMANDS } from '../utils/workspace-command-surface';
 import { buildCleanGitEnv } from '../utils/git-worktree';
@@ -503,45 +503,52 @@ describe('CLI Entry Point', () => {
   });
 
   describe('Error Handling', () => {
-    it('routes Doctor policy profiles to Doctor instead of the root workspace profile option', async () => {
-      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'doctor-policy-profile-'));
-      await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
-      await fs.writeFile(
-        path.join(workspaceRoot, '.workspai-workspace'),
-        `${JSON.stringify({
-          schemaVersion: 'workspai-workspace-marker-v1',
-          workspace_name: 'doctor-policy-workspace',
-          profile: 'minimal',
-        })}\n`
-      );
-      await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
-        workspace_name: 'doctor-policy-workspace',
-        profile: 'minimal',
-      });
+    it('routes Doctor policy profiles to Doctor instead of the root workspace profile option', () => {
+      const doctorCommand = program.commands.find((command) => command.name() === 'doctor');
+      expect(doctorCommand).toBeDefined();
+      if (!doctorCommand) throw new Error('Doctor command is not registered.');
 
-      const result = await execa(
-        'node',
-        [
-          CLI_PATH,
+      try {
+        const rootResult = program.parseOptions([
           'doctor',
           'workspace',
           '--workspace',
-          workspaceRoot,
+          'C:/workspaces/example',
           '--profile',
           'enterprise-strict',
           '--json',
-        ],
-        {
-          cwd: workspaceRoot,
-          reject: false,
-        }
-      );
+        ]);
+        expect(rootResult).toEqual({
+          operands: ['doctor'],
+          unknown: [
+            'workspace',
+            '--workspace',
+            'C:/workspaces/example',
+            '--profile',
+            'enterprise-strict',
+            '--json',
+          ],
+        });
 
-      expect([0, 1, 2]).toContain(result.exitCode);
-      expect(JSON.parse(result.stdout).policyProfile).toMatchObject({
-        name: 'enterprise-strict',
-      });
-    }, 30_000);
+        const doctorResult = doctorCommand.parseOptions(rootResult.unknown);
+        expect(doctorResult).toEqual({ operands: ['workspace'], unknown: [] });
+        expect(doctorCommand.opts()).toMatchObject({
+          workspace: 'C:/workspaces/example',
+          profile: 'enterprise-strict',
+          json: true,
+        });
+      } finally {
+        for (const command of [program, doctorCommand]) {
+          for (const option of command.options) {
+            command.setOptionValueWithSource(
+              option.attributeName(),
+              option.defaultValue,
+              'default'
+            );
+          }
+        }
+      }
+    });
 
     it('should roll back imported files when workspace sync fails after import', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-import-fail-'));

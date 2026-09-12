@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G4",
+  "asOf": "2026-09-09",
+  "status": "local-passed-remote-pending-awaiting-approval",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Repository providers emit admitted facts into the single canonical Graph composition path.",
+      "evidence": [
+        "packages/graph/src/application/build-repo-graph.ts",
+        "packages/graph/src/providers/index.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Inventory, provider facts, preview views and review context slices have independent fixed ceilings.",
+      "evidence": [
+        "packages/graph/src/application/repo-build-types.ts",
+        "packages/graph/src/projections/review-context-slice.ts"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Repository work is bounded, worker-capable and query profiles remain below their declared local budgets.",
+      "evidence": [
+        "packages/graph/scripts/check-node-worker-adapter.mjs",
+        "packages/graph/scripts/check-query-profile.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Default execution denies network, process and credentials while path, symlink, parser, budget and publication boundaries fail closed.",
+      "evidence": [
+        "packages/graph/src/adapters/node/repository-file-source.ts",
+        "packages/graph/src/adapters/node/project-artifact-store.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Artifacts and evidence contain portable relative locators; Git remotes, config, credentials and machine-local paths are excluded.",
+      "evidence": [
+        "packages/graph/src/providers/git-head.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Local checks pass; retained same-commit Linux, macOS and Windows G4 evidence remains required.",
+      "evidence": [
+        "packages/graph/scripts/check-repository-preview-admission.mjs",
+        "packages/graph/scripts/check-repository-preview-matrix-admission.mjs",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "A packed consumer builds repositories, queries, slices and publishes without the central CLI runtime.",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Real multi-language fixtures, fixed views and slices preserve canonical identity, proof and stable ordering.",
+      "evidence": [
+        "packages/graph/test/build/repository-fixture-matrix.test.ts",
+        "packages/graph/test/projections/review-context-slice.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Structural extraction, preview and slice wire contracts are versioned candidates in the content-addressed catalog.",
+      "evidence": [
+        "packages/graph/conformance/contract-catalog.v1.json",
+        "packages/graph/src/contracts/structural-extractor-profile.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Unsupported languages, dynamic routes, unreadable inputs, truncation and unavailable Git state remain explicit quality evidence.",
+      "evidence": [
+        "packages/graph/src/providers/repository-routes.ts",
+        "packages/graph/src/providers/repository-files.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Providers, adapters, CLI, persistence and projections have package-owned contract, fixture and adversarial tests.",
+      "evidence": [
+        "packages/graph/governance/g4-stage-plan.v1.json",
+        "packages/graph/test/cli/graph-cli.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "The package remains private and packed output excludes source, tests, governance, scripts, maps and internal documents.",
+      "evidence": ["packages/graph/package.json", "packages/graph/scripts/check-packed-package.mjs"]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-package-check",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run check",
+      "evidence": "Package-owned build, contract, test, runtime, packed-consumer and admission gates pass locally."
+    },
+    {
+      "id": "repository-preview-consumer",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run pack:check",
+      "evidence": "An isolated installed tarball exercises preview, query, view, slice and explicit publication."
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Same-commit Linux, macOS and Windows G4 repository preview evidence is not yet retained."
+    }
+  ],
+  "measurements": {
+    "candidateSchemas": 24,
+    "languageFixtures": 7,
+    "providerCount": 7,
+    "testFiles": 30,
+    "tests": 226,
+    "coverageStatementsPercent": 90.53,
+    "coverageBranchesPercent": 87.84,
+    "coverageFunctionsPercent": 92.93,
+    "coverageLinesPercent": 92.21,
+    "packedFiles": 70,
+    "packedCompressedBytes": 197698,
+    "packedCompressedBudgetBytes": 262144,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "pending" },
+  "remainingRisks": [
+    "The signed candidate still requires retained Linux, Windows and macOS repository preview evidence.",
+    "YAML contract semantics and dynamic language constructs remain explicitly unparsed rather than guessed.",
+    "Workspace composition, generic projections and generic graph slices remain G5 work.",
+    "Rust, native and WASM acceleration remain prohibited until G6 measurements justify a parity-checked adapter.",
+    "Central CLI shadow parity and replacement remain prohibited until G8."
+  ],
+  "nextStage": "G5",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "awaiting",
+    "requiredForNextStage": true,
+    "rule": "A signed checkpoint plus retained same-commit Linux, Windows and macOS G4 evidence authorizes G5 only."
+  }
+}

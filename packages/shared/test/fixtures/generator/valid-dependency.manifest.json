@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "workspai-shared-generation-manifest.v2",
+  "status": "candidate",
+  "contracts": [
+    {
+      "key": "catalog",
+      "path": "schemas/src/wis-contract-catalog.v0.1.0-draft.schema.json",
+      "contractId": "https://schemas.workspai.dev/wis/core/contract-catalog/0.1.0-draft",
+      "version": "0.1.0-draft",
+      "typeExport": "WisContractCatalog",
+      "validatorExport": "validateWisContractCatalogStructure",
+      "outputStem": "catalog"
+    },
+    {
+      "key": "base",
+      "path": "test/fixtures/generator/base.schema.json",
+      "contractId": "https://schemas.workspai.dev/test/base",
+      "version": "test",
+      "typeExport": "TestBase",
+      "validatorExport": "validateTestBase",
+      "outputStem": "base"
+    },
+    {
+      "key": "dependent",
+      "path": "test/fixtures/generator/dependent.schema.json",
+      "contractId": "https://schemas.workspai.dev/test/dependent",
+      "version": "test",
+      "typeExport": "TestDependent",
+      "validatorExport": "validateTestDependent",
+      "outputStem": "dependent"
+    }
+  ],
+  "sharedOutputs": {
+    "contractsBarrel": "test/generated-fixture/contracts.ts",
+    "validatorsBarrel": "test/generated-fixture/validators.ts",
+    "vocabulary": "test/generated-fixture/vocabulary.ts",
+    "registryTypeScript": "test/generated-fixture/registry.ts",
+    "registryJson": "test/generated-fixture/registry.json",
+    "registrySchemaVersion": "workspai-shared-generated-registry.v2",
+    "registryContractId": "https://schemas.workspai.dev/wis/core/contract-catalog/0.1.0-draft"
+  }
+}

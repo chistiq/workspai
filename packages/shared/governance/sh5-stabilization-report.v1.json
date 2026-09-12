@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/shared",
+  "stage": "SH5-external-validation-preview",
+  "asOf": "2026-08-15",
+  "status": "approved",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Explicit browser and Node library entries remain separate from the thin executable adapter, while CLI JSON implements its shipped adapter schema.",
+      "evidence": [
+        "packages/shared/src/browser.ts",
+        "packages/shared/src/node.ts",
+        "packages/shared/src/cli/application.ts",
+        "packages/shared/schemas/cli/workspai-shared-cli-result.v1.schema.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "The executable resolves every generated registry contract by key or ID and generic validation now applies the same bounded preflight before standalone validators.",
+      "evidence": [
+        "packages/shared/src/validation/generated.ts",
+        "packages/shared/test/conformance/contract-catalog.test.ts",
+        "packages/shared/governance/sh5-external-validation.v1.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "The browser surface is 19,756 gzip bytes against 65,536 and installed CLI cold execution is 38.71ms against a 2,000ms cross-platform budget.",
+      "evidence": [
+        "packages/shared/scripts/check-runtime-surfaces.mjs",
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/governance/sh5-external-validation.v1.json"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "File/stdin input is byte-bounded, UTF-8 decoding is fatal, non-files and changed files fail closed, generic validation is resource-guarded, and spawn failures cannot masquerade as passing smoke tests.",
+      "evidence": [
+        "packages/shared/cli/index.ts",
+        "packages/shared/src/cli/application.ts",
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/test/cli/external-validation.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "CLI results omit payloads, migrated values and input locators; catalog output also removes maintainer source paths and no network, discovery or persistence exists.",
+      "evidence": [
+        "packages/shared/src/cli/application.ts",
+        "packages/shared/test/cli/external-validation.test.ts",
+        "packages/shared/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Browser-platform bundling and Linux Node ESM/file/stdin execution pass locally; real browser plus Linux, macOS and Windows CI evidence remains pending.",
+      "evidence": [
+        "packages/shared/scripts/check-runtime-surfaces.mjs",
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/package.json"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "The installed package retains zero runtime dependencies, all validation runs without Graph or the central CLI, and publication/CLI bridges remain prohibited.",
+      "evidence": [
+        "packages/shared/package.json",
+        "packages/shared/scripts/check-packed-package.mjs",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "All 107 tests pass with every tested JSON CLI result validated against the shipped strict schema and repeated catalog output remaining identical.",
+      "evidence": [
+        "packages/shared/test/cli/external-validation.test.ts",
+        "packages/shared/schemas/cli/workspai-shared-cli-result.v1.schema.json",
+        "packages/shared/test/conformance/contract-catalog.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "The compatibility command preserves current/previous negotiation semantics, reports migration and loss metadata, and never returns the migrated payload.",
+      "evidence": [
+        "packages/shared/src/cli/application.ts",
+        "packages/shared/test/cli/external-validation.test.ts",
+        "packages/shared/fixtures/compatibility/core-result-envelope/conformance-manifest.v1.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Usage, malformed JSON, unsupported contracts, invalid artifacts, interrupted reads and validator cancellation map to deterministic JSON and exit codes 1, 3 or 130.",
+      "evidence": [
+        "packages/shared/src/cli/application.ts",
+        "packages/shared/test/cli/external-validation.test.ts",
+        "packages/shared/schemas/cli/workspai-shared-cli-result.v1.schema.json"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "The pure CLI application is port-driven and unit-tested separately from the Node adapter, while canonical documentation and machine governance describe one aligned surface.",
+      "evidence": [
+        "packages/shared/src/cli/application.ts",
+        "packages/shared/cli/index.ts",
+        "packages/shared/governance/sh5-external-validation.v1.json",
+        "packages/shared/test/governance/documentation-alignment.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "A real 49-file tarball installs with lifecycle scripts disabled, imports every public subpath, executes the installed binary matrix and stays under 58,284 of 163,840 compressed bytes.",
+      "evidence": [
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/package.json",
+        "package-lock.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "shared-quality",
+      "status": "passed",
+      "command": "npm --workspace @workspai/shared run check",
+      "evidence": "12 test files and 107 tests passed; coverage, build, lint, formatting, scale, runtime surfaces and packed consumer passed"
+    },
+    {
+      "id": "browser-runtime",
+      "status": "passed",
+      "command": "npm --workspace @workspai/shared run runtime:check",
+      "evidence": "browser ESM executed at 19756/65536 gzip bytes with no Node builtin or dynamic evaluation; Node ESM passed"
+    },
+    {
+      "id": "installed-consumer-and-cli",
+      "status": "passed",
+      "command": "npm --workspace @workspai/shared run pack:check",
+      "evidence": "49 files; 58284/163840 compressed bytes; zero runtime dependencies; installed CLI matrix passed; cold max 38.71/2000ms"
+    },
+    {
+      "id": "package-infrastructure",
+      "status": "passed",
+      "command": "npm run check:package-infrastructure",
+      "evidence": "quality, dependency DAG, mirror, Shared and Graph cumulative gates passed"
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Real browser plus Linux, macOS and Windows CI evidence is not available in this local closure"
+    }
+  ],
+  "measurements": {
+    "publicLibrarySubpaths": 7,
+    "executableCommands": 3,
+    "cliJsonSchemaContracts": 1,
+    "maxInputBytes": 16777216,
+    "testFiles": 12,
+    "tests": 107,
+    "coverageStatementsPercent": 96.3,
+    "coverageBranchesPercent": 90.95,
+    "coverageFunctionsPercent": 100,
+    "coverageLinesPercent": 98.48,
+    "browserGzipBytes": 19756,
+    "browserGzipBudgetBytes": 65536,
+    "packedFiles": 49,
+    "packedCompressedBytes": 58284,
+    "packedCompressedBudgetBytes": 163840,
+    "runtimeDependencies": 0,
+    "cliColdMaxMs": 38.71,
+    "cliColdBudgetMs": 2000
+  },
+  "environment": {
+    "local": ["linux-6.12.101+deb13-amd64-x86_64", "node-24.18.1", "npm-10.8.2"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "Real browser plus Linux, macOS and Windows remote evidence remains pending and cannot be inferred from local browser-platform bundling.",
+    "SH0 evidence and SH1 WIS semantic lock remain unaccepted.",
+    "CommonJS is deliberately unsupported by the candidate and must not be inferred from ESM success.",
+    "External validation is proven with an isolated installed consumer, but independent third-party consumer value is not yet established.",
+    "Standalone publication and central CLI runtime integration remain prohibited."
+  ],
+  "nextStage": "SH6",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "approvedAt": "2026-08-15",
+    "requiredForNextStage": true,
+    "rule": "Approval authorizes bounded SH6 independent-domain adoption only; pending remote evidence cannot authorize publication, standalone admission or a central CLI bridge."
+  }
+}

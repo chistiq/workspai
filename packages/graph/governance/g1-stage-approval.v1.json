@@ -1,0 +1,162 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G1",
+  "asOf": "2026-09-08",
+  "status": "approved",
+  "advancesAdmissionGate": true,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "The candidate contract foundation remains bound to the accepted Graph truth boundary and its reviewed same-commit admission evidence.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Provider, ontology and bounded fact extension surfaces passed package and cross-platform admission without widening Graph truth ownership.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Contract budgets and packed-package limits passed the retained Linux, macOS and Windows matrix for the signed candidate.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Adversarial semantic admission and repository security gates passed on the exact signed candidate commit.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Portable locator, redaction and package allowlist controls passed without publishing governance files or local paths.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "passed",
+      "summary": "Same-commit Graph admission evidence passed and was retained for Linux, macOS and Windows before G2 authorization.",
+      "evidence": ["packages/graph/governance/g1-remote-admission.v1.json"]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Independent package boundaries and isolated packed consumption passed on all required operating systems.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Canonicalization, replay and semantic validation passed the same signed source commit across the required matrix.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Version and content-addressing guards passed without authorizing CLI integration or stable publication claims.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Partial, stale, unknown, cancelled and failed provider states remained explicit through all admitted platform lanes.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Generated contracts, permanent guards and package-owned evidence produced a reviewable and reproducible G1 checkpoint.",
+      "evidence": [
+        "packages/graph/governance/g1-stage-closure.v1.json",
+        "packages/graph/governance/g1-remote-admission.v1.json"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "The G1 source commit has a verified maintainer signature and passed the protected repository gate while publication remains disabled.",
+      "evidence": [
+        "packages/graph/governance/g1-remote-admission.v1.json",
+        "packages/graph/package.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "signed-source-checkpoint",
+      "status": "passed",
+      "evidence": "Commit 205d5f6f3b2a0caed828a27ec7a8012afc6f2eb6 has a verified maintainer GPG EdDSA signature."
+    },
+    {
+      "id": "same-commit-platform-matrix",
+      "status": "passed",
+      "evidence": "Linux, macOS and Windows Graph foundation admission artifacts were admitted by GitHub Actions run 34285709553."
+    },
+    {
+      "id": "repository-gate",
+      "status": "passed",
+      "evidence": "The aggregate CI Gate completed successfully for the admitted candidate."
+    }
+  ],
+  "measurements": {
+    "candidateSchemas": 16,
+    "testFiles": 13,
+    "tests": 71,
+    "remotePlatforms": 3,
+    "retainedPlatformArtifacts": 3,
+    "retainedAdmissionCandidates": 1,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": {
+    "local": ["linux", "node-20-or-newer"],
+    "remoteMatrix": "passed"
+  },
+  "remainingRisks": [
+    "G2 deterministic composition, proof policy and conflict resolution are not implemented.",
+    "Rust/native acceleration remains prohibited until TypeScript reference semantics exist and G6 measurements justify it.",
+    "Stable publication and CLI runtime replacement remain prohibited by later stage gates."
+  ],
+  "nextStage": "G2",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-09-08",
+    "rule": "The verified signed candidate and retained same-commit Linux, macOS and Windows matrix authorize G2 composition work only."
+  }
+}

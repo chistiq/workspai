@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/projection-result/v0.1.0-candidate",
+  "title": "WorkspaiGraphProjectionResultCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "profile",
+    "sourceGeneration",
+    "nodes",
+    "edges",
+    "evidence",
+    "unknownZones",
+    "unsupportedZones",
+    "omitted",
+    "cost",
+    "truncation"
+  ],
+  "properties": {
+    "contract": {
+      "const": { "id": "workspai.graph.projection-result", "version": "0.1.0-candidate" }
+    },
+    "profile": { "type": "object", "required": ["id", "version"] },
+    "sourceGeneration": {
+      "type": "object",
+      "required": ["id", "generatedAt", "contentDigest"]
+    },
+    "nodes": { "type": "array", "maxItems": 100000 },
+    "edges": { "type": "array", "maxItems": 500000 },
+    "evidence": { "type": "array", "maxItems": 100000 },
+    "unknownZones": { "type": "array", "maxItems": 100000 },
+    "unsupportedZones": { "type": "array", "maxItems": 100000 },
+    "omitted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityKinds", "relationSemantics", "relations"],
+      "properties": {
+        "entityKinds": { "type": "array", "items": { "type": "string" } },
+        "relationSemantics": { "type": "array", "items": { "type": "string" } },
+        "relations": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scannedNodes",
+        "scannedEdges",
+        "returnedNodes",
+        "returnedEdges",
+        "returnedEvidence"
+      ],
+      "properties": {
+        "scannedNodes": { "type": "integer", "minimum": 0 },
+        "scannedEdges": { "type": "integer", "minimum": 0 },
+        "returnedNodes": { "type": "integer", "minimum": 0 },
+        "returnedEdges": { "type": "integer", "minimum": 0 },
+        "returnedEvidence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["truncated", "reasons"],
+      "properties": {
+        "truncated": { "type": "boolean" },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["nodes", "edges", "evidence"] }
+        }
+      }
+    }
+  }
+}

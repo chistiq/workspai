@@ -1,0 +1,269 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  diffGraphGenerations,
+  summarizeCanonicalGraphDelta,
+} from '../../src/application/diff-graph-generations.js';
+import {
+  summarizeDeltaProcessingLedger,
+  summarizeInputProcessingLedger,
+} from '../../src/application/summarize-input-processing-ledger.js';
+import {
+  GRAPH_CANONICAL_GRAPH_CONTRACT,
+  GRAPH_IDENTITY_SCHEME,
+  type GraphCanonicalGraph,
+} from '../../src/contracts/index.js';
+
+const digest = { algorithm: 'sha256' as const, value: 'b'.repeat(64) };
+const scope = { kind: 'project' as const, projectIds: ['project:fixture'] as [string] };
+
+function graph(
+  id: string,
+  nodes: string[],
+  edgeState: 'accepted' | 'disputed' = 'accepted'
+): GraphCanonicalGraph {
+  return {
+    contract: GRAPH_CANONICAL_GRAPH_CONTRACT,
+    graphVersion: '0.1.0-candidate',
+    generation: {
+      reference: { id, generatedAt: '2026-09-09T20:00:00.000Z', contentDigest: digest },
+      graphSchema: GRAPH_CANONICAL_GRAPH_CONTRACT,
+      architectureEpoch: 'wis-graph-1',
+      ontologySetDigest: digest,
+      proofPolicySetDigest: digest,
+      inputsDigest: digest,
+      factSetDigest: digest,
+      providerSetDigest: digest,
+      compositionPolicyDigest: digest,
+    },
+    ontology: [],
+    nodes: nodes.map((nodeId) => ({
+      id: nodeId,
+      identityScheme: GRAPH_IDENTITY_SCHEME,
+      kind: 'file',
+      scope,
+    })),
+    edges:
+      nodes.length > 1
+        ? [
+            {
+              id: 'edge:imports:1',
+              relation: 'imports',
+              semantics: 'structural',
+              from: nodes[0]!,
+              to: nodes[1]!,
+              state: edgeState,
+              facts: ['fact:1'],
+              derivations: ['extracted'],
+              proof: {
+                policy: { id: 'workspai.graph.proof.structural', version: '1' },
+                state: edgeState === 'accepted' ? 'supported' : 'disputed',
+                authorities: ['observed'],
+                evidence: [],
+                corroborationGroups: [],
+                counterEvidence: [],
+                missingRequirements: [],
+                evaluatedAt: '2026-09-09T20:00:00.000Z',
+                inputDigest: digest,
+                explanationCode: 'STRUCTURAL_IMPORT',
+              },
+              freshness: { status: 'current' },
+              confidence: 1,
+              explanation: { code: 'ACCEPTED', drivers: ['observed-import'] },
+            },
+          ]
+        : [],
+    assertions: [],
+    disputes: [],
+    unresolved: [],
+    diagnostics: [],
+  };
+}
+
+describe('diffGraphGenerations', () => {
+  it('reports added and removed identities without ledger claims', () => {
+    const diff = diffGraphGenerations({
+      from: graph('generation:1', ['entity:a', 'entity:b']),
+      to: graph('generation:2', ['entity:b', 'entity:c']),
+    });
+    expect(diff.addedNodes).toEqual(['entity:c']);
+    expect(diff.removedNodes).toEqual(['entity:a']);
+    expect(diff.limitations.some((entry) => entry.includes('not an event ledger'))).toBe(true);
+  });
+
+  it('detects changed edge proof state', () => {
+    const diff = diffGraphGenerations({
+      from: graph('generation:1', ['entity:a', 'entity:b'], 'accepted'),
+      to: graph('generation:2', ['entity:a', 'entity:b'], 'disputed'),
+    });
+    expect(diff.changedEdges).toEqual(['edge:imports:1']);
+  });
+
+  it('detects semantic node and edge changes beyond identity and proof state', () => {
+    const from = graph('generation:1', ['entity:a', 'entity:b']);
+    const to: GraphCanonicalGraph = {
+      ...graph('generation:2', ['entity:a', 'entity:b']),
+      nodes: graph('generation:2', ['entity:a', 'entity:b']).nodes.map((node) =>
+        node.id === 'entity:a'
+          ? { ...node, aliases: [{ id: 'entity:prior-a', reason: 'rename' as const }] }
+          : node
+      ),
+      edges: graph('generation:2', ['entity:a', 'entity:b']).edges.map((edge) => ({
+        ...edge,
+        confidence: 0.75,
+      })),
+    };
+
+    const diff = diffGraphGenerations({ from, to });
+    expect(diff.changedNodes).toEqual(['entity:a']);
+    expect(diff.changedEdges).toEqual(['edge:imports:1']);
+  });
+
+  it('detects changed assertions and renews their persisted facts', () => {
+    const withAssertion = (generationId: string, confidence: number): GraphCanonicalGraph => {
+      const source = graph(generationId, ['entity:a', 'entity:b']);
+      const proof = source.edges[0]!.proof;
+      return {
+        ...source,
+        assertions: [
+          {
+            contract: {
+              id: 'workspai.graph.nary-assertion',
+              version: '0.1.0-candidate',
+            },
+            id: 'assertion:route:1',
+            relation: 'routes-through',
+            profile: { id: 'workspai.graph.assertion.route', version: '1' },
+            participants: [
+              { role: 'source', entity: source.nodes[0]! },
+              { role: 'target', entity: source.nodes[1]! },
+            ],
+            facts: ['fact:assertion:1'],
+            derivation: 'computed',
+            state: 'accepted',
+            proof,
+            freshness: { status: 'current' },
+            confidence,
+          },
+        ],
+      };
+    };
+
+    const from = withAssertion('generation:1', 1);
+    const to = withAssertion('generation:2', 0.8);
+    const diff = diffGraphGenerations({ from, to });
+    const delta = summarizeCanonicalGraphDelta(from, to);
+    expect(diff.changedAssertions).toEqual(['assertion:route:1']);
+    expect(delta.graph.changedAssertions).toEqual(['assertion:route:1']);
+    expect(delta.facts.renewed).toContain('fact:assertion:1');
+  });
+
+  it('warns when both graphs share one generation identity', () => {
+    const source = graph('generation:1', ['entity:a']);
+    const diff = diffGraphGenerations({ from: source, to: source });
+    expect(diff.diagnostics[0]?.code).toBe('GRAPH_GENERATION_DIFF_SAME_IDENTITY');
+  });
+});
+
+describe('summarizeCanonicalGraphDelta', () => {
+  it('leaves facts empty when graph identities are unchanged', () => {
+    const from = graph('generation:1', ['entity:a', 'entity:b']);
+    const to = graph('generation:2', ['entity:a', 'entity:b']);
+    expect(summarizeCanonicalGraphDelta(from, to)).toEqual({
+      graph: {
+        addedNodes: [],
+        removedNodes: [],
+        changedNodes: [],
+        changedEdges: [],
+        addedAssertions: [],
+        removedAssertions: [],
+        changedAssertions: [],
+      },
+      facts: { added: [], renewed: [], removed: [], invalidated: [] },
+    });
+  });
+
+  it('records added facts and nodes without inventing identifiers', () => {
+    const delta = summarizeCanonicalGraphDelta(
+      graph('generation:1', ['entity:a']),
+      graph('generation:2', ['entity:a', 'entity:b'])
+    );
+    expect(delta.graph.addedNodes).toEqual(['entity:b']);
+    expect(delta.graph.changedEdges).toEqual(['edge:imports:1']);
+    expect(delta.facts.added).toEqual(['fact:1']);
+    expect(delta.facts.removed).toEqual([]);
+    expect(delta.facts.renewed).toEqual([]);
+  });
+
+  it('marks persisted facts on a changed edge as renewed', () => {
+    const from = graph('generation:1', ['entity:a', 'entity:b']);
+    const to = {
+      ...graph('generation:2', ['entity:a', 'entity:b']),
+      edges: graph('generation:2', ['entity:a', 'entity:b']).edges.map((edge) => ({
+        ...edge,
+        relation: 're-exports',
+      })),
+    };
+    const delta = summarizeCanonicalGraphDelta(from, to);
+    expect(delta.graph.changedEdges).toEqual(['edge:imports:1']);
+    expect(delta.facts.renewed).toEqual(['fact:1']);
+    expect(delta.facts.added).toEqual([]);
+    expect(delta.facts.invalidated).toEqual([]);
+  });
+
+  it('invalidates persisted facts whose owning edge became disputed', () => {
+    const delta = summarizeCanonicalGraphDelta(
+      graph('generation:1', ['entity:a', 'entity:b'], 'accepted'),
+      graph('generation:2', ['entity:a', 'entity:b'], 'disputed')
+    );
+    expect(delta.facts.invalidated).toEqual(['fact:1']);
+    expect(delta.facts.renewed).toEqual([]);
+  });
+});
+
+describe('summarizeInputProcessingLedger', () => {
+  it('counts every processing outcome without fabricating facts', () => {
+    const ledger = summarizeInputProcessingLedger([
+      {
+        input: { locator: 'src/index.ts', digest },
+        provider: { id: 'workspai.graph.provider.fixture', version: '1' },
+        stage: { id: 'stage', version: '1' },
+        outcome: 'processed',
+        diagnostics: [],
+      },
+      {
+        input: { locator: 'src/skip.ts', digest },
+        provider: { id: 'workspai.graph.provider.fixture', version: '1' },
+        stage: { id: 'stage', version: '1' },
+        outcome: 'unchanged',
+        diagnostics: [],
+      },
+    ]);
+    expect(ledger.processed).toBe(1);
+    expect(ledger.unchanged).toBe(1);
+    expect(ledger.failed).toBe(0);
+  });
+
+  it('summarizes delta execution processing records', () => {
+    const ledger = summarizeDeltaProcessingLedger({
+      detected: 1,
+      scanned: 1,
+      parsed: 1,
+      recomputed: 0,
+      skippedByDigest: 1,
+      unsupported: 0,
+      failed: 0,
+      truncation: [],
+      processing: [
+        {
+          input: { locator: 'src/skip.ts', digest },
+          provider: { id: 'workspai.graph.provider.fixture', version: '1' },
+          stage: { id: 'stage', version: '1' },
+          outcome: 'unchanged',
+          diagnostics: [],
+        },
+      ],
+    });
+    expect(ledger.unchanged).toBe(1);
+  });
+});

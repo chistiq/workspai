@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "workspai-shared-external-validation.v1",
+  "asOf": "2026-08-15",
+  "status": "candidate-stabilized-local-review-pending",
+  "package": "@workspai/shared",
+  "publication": "blocked",
+  "librarySurfaces": [
+    {
+      "subpath": "@workspai/shared/browser",
+      "moduleFormat": "esm",
+      "runtime": "browser-neutral",
+      "nodeBuiltins": "forbidden",
+      "dynamicEvaluation": "forbidden",
+      "gzipBudgetBytes": 65536
+    },
+    {
+      "subpath": "@workspai/shared/node",
+      "moduleFormat": "esm",
+      "runtime": "node>=20.19.0"
+    }
+  ],
+  "unsupportedModuleFormats": ["commonjs"],
+  "executable": {
+    "name": "workspai-shared",
+    "input": "explicit-regular-file-or-stdin",
+    "maxInputBytes": 16777216,
+    "network": "forbidden",
+    "discovery": "forbidden",
+    "persistence": "forbidden",
+    "payloadEcho": "forbidden",
+    "pathEcho": "forbidden",
+    "coldExecutionBudgetMs": 2000,
+    "commands": [
+      "schema list",
+      "validate <file|-> --contract <key-or-id>",
+      "compatibility <file|->"
+    ],
+    "jsonSchema": "schemas/cli/workspai-shared-cli-result.v1.schema.json",
+    "exitCodes": {
+      "0": "succeeded",
+      "1": "usage-input-or-internal-failure",
+      "3": "contract-or-compatibility-failure",
+      "130": "cancelled"
+    }
+  },
+  "installedConsumerMatrix": [
+    "all-public-subpath-imports",
+    "schema-list-json",
+    "valid-file-validation",
+    "invalid-file-validation",
+    "unknown-contract-before-input",
+    "non-file-rejection",
+    "previous-version-stdin-compatibility",
+    "malformed-stdin-rejection"
+  ],
+  "invariants": [
+    "shared-remains-a-zero-runtime-dependency-leaf",
+    "browser-and-node-library-surfaces-do-not-import-the-cli-adapter",
+    "generic-contract-validation-runs-resource-preflight",
+    "every-tested-json-result-validates-against-the-shipped-cli-schema",
+    "the-central-cli-does-not-import-the-development-package",
+    "preview-evidence-does-not-authorize-publication"
+  ]
+}

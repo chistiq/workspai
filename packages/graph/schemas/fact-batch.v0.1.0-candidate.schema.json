@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/fact-batch/v0.1.0-candidate",
+  "title": "WorkspaiGraphFactBatchCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "provider",
+    "batchId",
+    "scope",
+    "inputs",
+    "facts",
+    "diagnostics",
+    "coverage",
+    "unknownZones",
+    "unsupportedZones",
+    "redaction",
+    "status",
+    "processing"
+  ],
+  "properties": {
+    "contract": { "const": { "id": "workspai.graph.fact-batch", "version": "0.1.0-candidate" } },
+    "provider": { "$ref": "#/$defs/identity" },
+    "batchId": { "$ref": "#/$defs/id" },
+    "scope": { "type": "object" },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000000,
+      "items": { "$ref": "#/$defs/input" }
+    },
+    "facts": { "type": "array", "maxItems": 10000000, "items": { "$ref": "#/$defs/fact" } },
+    "diagnostics": { "type": "array", "maxItems": 10000, "items": { "type": "object" } },
+    "coverage": { "type": "array", "maxItems": 10000, "items": { "type": "object" } },
+    "unknownZones": { "type": "array", "maxItems": 10000, "items": { "type": "object" } },
+    "unsupportedZones": { "type": "array", "maxItems": 10000, "items": { "type": "object" } },
+    "redaction": { "type": "object", "required": ["policy", "redacted", "omitted"] },
+    "status": { "enum": ["complete", "partial", "failed", "cancelled"] },
+    "processing": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": {
+        "type": "object",
+        "required": ["input", "provider", "stage", "outcome", "diagnostics"]
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "version": { "$ref": "#/$defs/id" } }
+    },
+    "digest": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "$ref": "#/$defs/id" },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{32,256}$" }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "digest"],
+      "properties": {
+        "locator": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "required": [
+        "factId",
+        "factType",
+        "subject",
+        "predicate",
+        "object",
+        "scope",
+        "evidence",
+        "provenance",
+        "derivation",
+        "authority",
+        "confidence",
+        "freshness",
+        "truthLifecycle",
+        "observedAt",
+        "inputDigest",
+        "unknownZones"
+      ],
+      "properties": {
+        "factId": { "$ref": "#/$defs/id" },
+        "factType": { "$ref": "#/$defs/id" },
+        "subject": { "type": "object" },
+        "predicate": { "$ref": "#/$defs/id" },
+        "object": { "type": "object" },
+        "scope": { "type": "object" },
+        "evidence": { "type": "array", "minItems": 1 },
+        "provenance": { "$ref": "#/$defs/identity" },
+        "derivation": {
+          "enum": [
+            "observed",
+            "extracted",
+            "declared",
+            "computed",
+            "inferred",
+            "generated",
+            "imported"
+          ]
+        },
+        "authority": { "enum": ["declared", "observed", "verified", "inferred"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "freshness": { "type": "object" },
+        "truthLifecycle": { "type": "object" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "inputDigest": { "$ref": "#/$defs/digest" },
+        "unknownZones": { "type": "array" }
+      }
+    }
+  }
+}

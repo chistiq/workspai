@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/query-cache-invalidation/v0.1.0-candidate",
+  "title": "WorkspaiGraphQueryCacheInvalidationCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "keyDigests", "reason"],
+  "properties": {
+    "contract": {
+      "const": { "id": "workspai.graph.query-cache-invalidation", "version": "0.1.0-candidate" }
+    },
+    "keyDigests": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "object", "required": ["algorithm", "value"] }
+    },
+    "reason": {
+      "enum": [
+        "generation",
+        "ontology",
+        "proof-policy",
+        "profile",
+        "scope",
+        "redaction",
+        "authorization",
+        "corruption"
+      ]
+    }
+  }
+}

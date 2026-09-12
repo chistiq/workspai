@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G4",
+  "status": "in-progress",
+  "authorizedBy": "packages/graph/governance/g3-stage-approval.v1.json",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g4",
+    "workspai-docs:Packages/graph/PROVIDER_AUTHORING.md",
+    "workspai-docs:Packages/graph/STANDALONE_AND_WORKSPACE_INTEGRATION.md",
+    "workspai-docs:Packages/graph/SECURITY_AND_PRIVACY.md",
+    "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "host-neutral-repository-build",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/build-repo-graph.ts",
+        "packages/graph/test/build/repo-build.test.ts"
+      ]
+    },
+    {
+      "id": "bounded-node-file-inventory",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/adapters/node/repository-file-source.ts",
+        "packages/graph/test/adapters/node-file-source.test.ts"
+      ]
+    },
+    {
+      "id": "initial-offline-provider-set",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/providers/index.ts",
+        "packages/graph/src/providers/codeowners.ts",
+        "packages/graph/src/providers/compose-topology.ts",
+        "packages/graph/src/providers/git-head.ts",
+        "packages/graph/src/providers/repository-routes.ts",
+        "packages/graph/src/providers/source-entrypoints.ts",
+        "packages/graph/test/build/repo-build.test.ts",
+        "packages/graph/test/build/system-topology-providers.test.ts",
+        "packages/graph/test/adapters/node-file-source.test.ts"
+      ]
+    },
+    {
+      "id": "declarative-structural-extractor-profile",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/schemas/structural-extractor-profile.v0.1.0-candidate.schema.json",
+        "packages/graph/fixtures/g4/structural-extractor-profile.json",
+        "packages/graph/src/contracts/structural-extractor-profile.ts",
+        "packages/graph/test/contracts/structural-extractor-profile.test.ts"
+      ]
+    },
+    {
+      "id": "multi-language-repository-fixtures",
+      "status": "implemented-local-candidate",
+      "evidence": ["packages/graph/test/build/repository-fixture-matrix.test.ts"]
+    },
+    {
+      "id": "fixed-repository-preview-views",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/schemas/repository-preview-view.v0.1.0-candidate.schema.json",
+        "packages/graph/src/projections/index.ts",
+        "packages/graph/test/projections/repository-preview-views.test.ts"
+      ]
+    },
+    {
+      "id": "bounded-review-context-slice",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/schemas/review-context-slice.v0.1.0-candidate.schema.json",
+        "packages/graph/src/projections/review-context-slice.ts",
+        "packages/graph/test/projections/review-context-slice.test.ts",
+        "packages/graph/test/cli/graph-cli.test.ts"
+      ]
+    },
+    {
+      "id": "installed-repository-preview",
+      "status": "implemented-local-candidate",
+      "evidence": ["packages/graph/scripts/check-packed-package.mjs"]
+    },
+    {
+      "id": "standalone-executable-surfaces",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/package.json",
+        "packages/graph/src/cli.ts",
+        "packages/graph/test/cli/graph-cli.test.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "project-local-atomic-persistence",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/ports/index.ts",
+        "packages/graph/src/application/publish-project-graph.ts",
+        "packages/graph/src/adapters/node/project-artifact-store.ts",
+        "packages/graph/test/adapters/node-project-artifact-store.test.ts"
+      ]
+    },
+    {
+      "id": "g4-cross-platform-admission",
+      "status": "planned",
+      "evidence": [".github/workflows/ci.yml"]
+    }
+  ],
+  "defaultSecurityProfile": {
+    "sourceAccess": "read-only-within-resolved-root",
+    "network": "deny",
+    "processExecution": "deny",
+    "credentials": "deny",
+    "implicitMetadataWrites": "deny"
+  },
+  "requiredLanguageFixtures": ["node", "python", "go", "java", "dotnet"],
+  "additionalBestEffortLanguageFixtures": ["rust"],
+  "prohibitions": [
+    "No repository-controlled code, package manager, build or hook execution in the default profile.",
+    "No implicit network, credential access or metadata write.",
+    "No empty success for unsupported, excluded, failed or truncated zones.",
+    "No provider bypass around FactBatch admission or canonical composition.",
+    "No central CLI runtime import or second Graph truth.",
+    "No workspace graph, stable publication or CLI replacement claim."
+  ],
+  "nativeAcceleration": {
+    "status": "prohibited",
+    "earliestDecisionStage": "G6",
+    "rule": "Rust source analysis is a provider capability; Rust, native and WASM execution may accelerate only benchmark-proven hot paths behind parity-checked adapters."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G5",
+  "nextStageAuthorized": false
+}

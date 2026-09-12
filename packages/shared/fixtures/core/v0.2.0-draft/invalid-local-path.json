@@ -1,0 +1,24 @@
+{
+  "specVersion": "wis-candidate",
+  "coreVersion": "0.2.0-draft",
+  "schemaId": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft",
+  "profile": { "id": "wis.profile.fixture", "version": "0.1.0-draft" },
+  "producer": { "id": "fixture-producer", "version": "1.0.0" },
+  "operation": "evaluate-fixture",
+  "operationOutcome": "succeeded",
+  "scope": { "kind": "workspace", "workspaceId": "workspace:fixture" },
+  "generation": { "id": "generation:path:1", "generatedAt": "2026-08-13T00:00:00Z" },
+  "status": "attention",
+  "evidence": [
+    {
+      "id": "evidence:local-path",
+      "sourceKind": "source-file",
+      "relativeLocator": "/home/example/private/source.ts"
+    }
+  ],
+  "freshness": { "status": "current" },
+  "unknowns": [],
+  "omissions": [],
+  "diagnostics": [],
+  "compatibility": { "status": "compatible" }
+}

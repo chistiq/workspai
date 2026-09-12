@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "workspai-graph-design-lock.v1",
+  "package": "@workspai/graph",
+  "stage": "G0",
+  "acceptedAt": "2026-09-08",
+  "documentationAuthority": "workspai-docs:Packages/graph",
+  "documents": [
+    {
+      "id": "architecture",
+      "sha256": "580bb95cac2e6d00322182b0295a864046f76c33f92cb118405d24c8f8e8bf2a"
+    },
+    {
+      "id": "product-specification",
+      "sha256": "68ccf4a9f01a7dcefb3835cbeaf7ff7293d10920fe9ce209378ad53f46ce6d83"
+    },
+    {
+      "id": "contracts-and-ontology",
+      "sha256": "a5d6f16d93bab8948fd6c0527b4516c754d85d56f843b62ee756c4590ad0003b"
+    },
+    {
+      "id": "roadmap",
+      "sha256": "73bdc7bacabcb7b92b72348a9faef123cbccbe6e0a89c009e71d230ea9b46d95"
+    },
+    {
+      "id": "quality-and-stage-gates",
+      "sha256": "45aeab3ad0d1cb7c273b358b19dfdb5645192dd7fbd45600b7412ddcde13a5b6"
+    },
+    {
+      "id": "security-and-privacy",
+      "sha256": "8a5aabdb164d987a8cc8d3d9c8c38b7b90c033980d2310514bc08460ed789295"
+    },
+    {
+      "id": "reference-landscape",
+      "sha256": "5f9da528705209a2e3da6a09bf6b6f296d760b93d738d745a5243e9467a6bf3b"
+    },
+    {
+      "id": "traceability",
+      "sha256": "b334c43fcc0e9a7a9a1d29b0efdfb3000eded82aff08e0a1b75d75a068422c6d"
+    }
+  ],
+  "acceptedDecisions": [
+    {
+      "id": "ADR-0002",
+      "sha256": "f4daa8a2577d4f691fd06ed397f71b3db38ff358295e1b59a9be77a93bca6e2c"
+    },
+    {
+      "id": "ADR-0003",
+      "sha256": "56d0f72a561178f09d6362a03aed4f8693e0d714c4a4bd2bf7b73be0312cd696"
+    },
+    {
+      "id": "ADR-0005",
+      "sha256": "6e21cc2d968a0f0c71f9db6d4be6a7f3bfb33eeea2e02fe6c058bcb994f15401"
+    },
+    {
+      "id": "ADR-0014",
+      "sha256": "3ff25c650fcc65a8e0f130bf717c6f538242483e60443b354c2bd4bb81d870a2"
+    }
+  ],
+  "locks": {
+    "canonicalTruthOwner": "@workspai/graph",
+    "referenceRuntime": "typescript-node",
+    "nativeAcceleration": "optional-port-after-measured-bottleneck",
+    "cliBridge": "prohibited-before-standalone-stability",
+    "publicInternalDocumentation": "prohibited"
+  }
+}

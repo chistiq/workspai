@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/proof-policy/v0.1.0-candidate",
+  "title": "WorkspaiGraphProofPolicyCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "id",
+    "version",
+    "minimumAuthority",
+    "minimumIndependentRoots",
+    "verificationRequired",
+    "allowDisputed",
+    "allowStale"
+  ],
+  "properties": {
+    "contract": { "const": { "id": "workspai.graph.proof-policy", "version": "0.1.0-candidate" } },
+    "id": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "minimumAuthority": { "enum": ["declared", "observed", "verified", "inferred"] },
+    "minimumIndependentRoots": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "verificationRequired": { "type": "boolean" },
+    "allowDisputed": { "type": "boolean" },
+    "allowStale": { "type": "boolean" }
+  }
+}

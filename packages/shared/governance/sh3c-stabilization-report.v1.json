@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/shared",
+  "stage": "SH3-C-scale-and-conformance",
+  "asOf": "2026-08-14",
+  "status": "approved",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Scale behavior is governed by one manifest, one executable runner, immutable runtime ceilings and canonical documentation.",
+      "evidence": [
+        "packages/shared/fixtures/scale/workload-manifest.v1.json",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json",
+        "packages/shared/test/governance/documentation-alignment.test.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Small, normal, large-Node and browser-safe proxy classes plus maximum extension namespaces are deterministic and bounded.",
+      "evidence": [
+        "packages/shared/fixtures/scale/workload-manifest.v1.json",
+        "packages/shared/scripts/check-scale-profile.mjs",
+        "packages/shared/test/scale/scale-workload-contract.test.ts"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "pending-remote",
+      "summary": "Local percentile, observed-heap, soak, cold-load and bundle budgets pass; real-browser timing and true peak RSS profiling remain remote evidence.",
+      "evidence": [
+        "packages/shared/governance/sh3c-scale-baseline.v1.json",
+        "packages/shared/scripts/check-bundle-budget.mjs",
+        "packages/shared/scripts/check-scale-profile.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Immutable hard ceilings, extreme-depth rejection, extension overflow and prototype-pollution controls fail closed.",
+      "evidence": [
+        "packages/shared/src/validation/limits.ts",
+        "packages/shared/scripts/check-scale-profile.mjs",
+        "packages/shared/test/validation/resource-guard.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "The pure validator and scale corpus use synthetic portable data without filesystem, credential, telemetry or network access.",
+      "evidence": [
+        "packages/shared/scripts/lib/scale-workloads.mjs",
+        "packages/shared/test/architecture/dependency-leaf.test.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Browser/CSP bundling and Node proxy workloads pass locally; real browser plus Linux, macOS and Windows evidence is pending.",
+      "evidence": [
+        "packages/shared/scripts/check-bundle-budget.mjs",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "All runtime limits and cancellation remain browser-neutral with zero runtime dependencies and no CLI bridge.",
+      "evidence": [
+        "packages/shared/package.json",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Workloads are byte-deterministic; repeated, soak and worker-thread validations return identical valid outcomes.",
+      "evidence": [
+        "packages/shared/scripts/lib/scale-workloads.mjs",
+        "packages/shared/scripts/scale-worker.mjs",
+        "packages/shared/test/scale/scale-workload-contract.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "A near-1MiB previous envelope migrates within budget and unknown extensions remain governed by existing compatibility semantics.",
+      "evidence": [
+        "packages/shared/scripts/check-scale-profile.mjs",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Cooperative pre-cancellation, diagnostic ceilings, 1,000-run soak and bounded worker timeout behavior are observable and fail closed.",
+      "evidence": [
+        "packages/shared/src/validation/resource-guard.ts",
+        "packages/shared/scripts/check-scale-profile.mjs",
+        "packages/shared/test/validation/semantic-hardening.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Workload construction, live measurement, machine baseline, unit contracts and limitations are independently reviewable.",
+      "evidence": [
+        "packages/shared/fixtures/scale/workload-manifest.v1.json",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json",
+        "packages/shared/test/scale/scale-workload-contract.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "pending-remote",
+      "summary": "The real tarball ships the scale manifest and passes locally; remote provenance, audit and publication admission remain pending.",
+      "evidence": [
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/scripts/refuse-publish.mjs"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "shared-cumulative-check",
+      "status": "passed",
+      "command": "npm run check --workspace @workspai/shared",
+      "evidence": "11 files and 85 tests passed with generation, type, lint, format, coverage, build, transitive bundle, live scale and installed-tarball gates."
+    },
+    {
+      "id": "live-scale-profile",
+      "status": "passed",
+      "command": "npm run scale:check --workspace @workspai/shared",
+      "evidence": "All four workload classes, compatibility, extensions, cancellation, adversarial depth, soak, concurrency and cold-load budgets passed."
+    },
+    {
+      "id": "package-infrastructure",
+      "status": "passed",
+      "command": "npm run check:package-infrastructure",
+      "evidence": "Shared 85 tests, Graph 12 tests, package quality, dependency boundaries, mirror policy, builds and installed tarballs passed."
+    },
+    {
+      "id": "cli-boundary-regression",
+      "status": "passed",
+      "command": "vitest run monorepo-workspace-boundary package-publish-contract",
+      "evidence": "17 central CLI boundary and publication-contract tests passed; no runtime bridge was introduced."
+    },
+    {
+      "id": "remote-os-browser-profiler-matrix",
+      "status": "pending-remote",
+      "evidence": "Linux, macOS, Windows, real-browser timing and platform peak-memory profiling are required before admission."
+    }
+  ],
+  "measurements": {
+    "portfolioDigest": "sha256:15e091961df7e19218960a21f7ef01989663333f09de97d85b554753f9a76306",
+    "coveragePercent": {
+      "lines": 97.72,
+      "functions": 100,
+      "statements": 94.56,
+      "branches": 89.23
+    },
+    "transitiveBundleGzipBytes": {
+      "contracts": 399,
+      "compatibility": 38731,
+      "registry": 911,
+      "validation": 38682,
+      "root": 40130
+    },
+    "scaleBaseline": "packages/shared/governance/sh3c-scale-baseline.v1.json",
+    "largestWorkloadBytes": 11848735,
+    "largestWorkloadP95Ms": 67.858,
+    "normalObservedHeapAmplification": 6.542,
+    "largeObservedHeapAmplification": 1.687,
+    "soakIterations": 1000,
+    "concurrentValidations": 200,
+    "packedConsumer": {
+      "files": 41,
+      "compressedBytes": 53418,
+      "budgetBytes": 163840,
+      "runtimeDependencies": 0
+    }
+  },
+  "environment": {
+    "local": ["linux", "node-24.18.1", "npm-10.8.2", "i7-11370H", "24.98GB-memory"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "SH0 evidence and SH1 WIS semantic lock are not accepted.",
+    "Remote Linux, macOS, Windows and real-browser evidence is pending.",
+    "True peak RSS requires platform-profiler confirmation; local evidence is checkpoint heap sampling.",
+    "Alternative validator parity is explicitly deferred until a backend adapter contract is admitted.",
+    "Independent external-consumer proof is not complete."
+  ],
+  "nextStage": "SH4",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-08-14",
+    "rule": "Bounded SH4 internal-consumer migration is approved. Pending remote scale evidence still cannot advance standalone admission or authorize publication."
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "workspai-shared-compatibility-fixtures.v1",
+  "currentVersion": "0.2.0-draft",
+  "supportedPreviousVersions": ["0.1.0-draft"],
+  "cases": [
+    {
+      "file": "current-valid.json",
+      "expectedStatus": "exact",
+      "expectedResultStatus": "pass"
+    },
+    {
+      "file": "previous-valid-pass.json",
+      "expectedStatus": "migrated",
+      "expectedResultStatus": "pass"
+    },
+    {
+      "file": "previous-valid-partial-with-extension.json",
+      "expectedStatus": "migrated",
+      "expectedResultStatus": "partial",
+      "preservesExtensions": true
+    },
+    {
+      "file": "previous-invalid-additional-property.json",
+      "expectedStatus": "invalid",
+      "expectedCode": "WIS_COMPATIBILITY_PREVIOUS_ADDITIONALPROPERTIES"
+    },
+    {
+      "file": "unsupported-version.json",
+      "expectedStatus": "unsupported",
+      "expectedCode": "WIS_COMPATIBILITY_UNSUPPORTED_CORE_VERSION"
+    }
+  ]
+}

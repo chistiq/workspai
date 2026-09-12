@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G3",
+  "status": "in-progress",
+  "authorizedBy": "packages/graph/governance/g2-stage-approval.v1.json",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g3",
+    "workspai-docs:Packages/graph/RETRIEVAL_QUALITY_AND_BENCHMARKS.md",
+    "workspai-docs:Packages/graph/CONTRACT_AND_ARCHITECTURE_INTELLIGENCE.md",
+    "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "proof-policy-and-proof-carrying-paths",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/assess-proof.ts",
+        "packages/graph/src/application/query-graph.ts"
+      ]
+    },
+    {
+      "id": "cross-layer-binding-profiles",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/query-presets.ts",
+        "packages/graph/test/query/query-engine.test.ts"
+      ]
+    },
+    {
+      "id": "bounded-deterministic-query",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/query-graph.ts",
+        "packages/graph/scripts/check-query-profile.mjs"
+      ]
+    },
+    {
+      "id": "result-provenance-and-abstention",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/query.ts",
+        "packages/graph/test/query/query-engine.test.ts"
+      ]
+    },
+    {
+      "id": "semantic-cache-safety",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/query-cache.ts",
+        "packages/graph/test/query/query-engine.test.ts"
+      ]
+    },
+    {
+      "id": "g3-cross-platform-admission",
+      "status": "configured-awaiting-remote-evidence",
+      "evidence": [
+        "packages/graph/scripts/check-query-admission.mjs",
+        "packages/graph/scripts/check-query-matrix-admission.mjs",
+        ".github/workflows/ci.yml"
+      ]
+    }
+  ],
+  "prohibitions": [
+    "No natural-language or model-dependent query semantics.",
+    "No result without immutable generation, proof paths, evidence, disputes and unknown boundaries.",
+    "No cache fallback across authorization, redaction or semantic dependency changes.",
+    "No structural consequence claim from mixed semantic paths.",
+    "No stable publication or central CLI runtime replacement."
+  ],
+  "nativeAcceleration": {
+    "status": "prohibited",
+    "earliestDecisionStage": "G6",
+    "rule": "Rust, native and WASM may accelerate only benchmark-proven hot paths behind parity-checked adapters."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G4",
+  "nextStageAuthorized": false
+}

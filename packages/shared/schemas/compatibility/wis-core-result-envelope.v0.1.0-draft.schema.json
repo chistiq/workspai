@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/wis/core/result-envelope/0.1.0-draft",
+  "title": "WisCoreResultEnvelopeV01",
+  "description": "Frozen previous-major compatibility contract for the WIS Core result envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specVersion",
+    "coreVersion",
+    "schemaId",
+    "profile",
+    "producer",
+    "operation",
+    "scope",
+    "generation",
+    "outcome",
+    "evidence",
+    "freshness",
+    "unknowns",
+    "omissions",
+    "diagnostics"
+  ],
+  "properties": {
+    "specVersion": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/NonEmptyIdentifier"
+    },
+    "coreVersion": { "const": "0.1.0-draft" },
+    "schemaId": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/NonEmptyIdentifier"
+    },
+    "profile": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/ProfileReference"
+    },
+    "artifactId": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/NonEmptyIdentifier"
+    },
+    "producer": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/ProducerReference"
+    },
+    "operation": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/NonEmptyIdentifier"
+    },
+    "scope": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/ScopeReference"
+    },
+    "generation": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/GenerationReference"
+    },
+    "outcome": { "enum": ["pass", "attention", "blocked", "partial", "failed"] },
+    "payload": true,
+    "evidence": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/EvidenceReference"
+      }
+    },
+    "freshness": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/FreshnessSummary"
+    },
+    "unknowns": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/UnknownRecord"
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/OmissionRecord"
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/Diagnostic"
+      }
+    },
+    "extensions": {
+      "$ref": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft#/$defs/Extensions"
+    }
+  }
+}

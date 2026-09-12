@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "workspai-shared-cli-bridgeability-fixtures.v1",
+  "status": "manifest-only",
+  "purpose": "Prove a future adapter can preserve released CLI meaning without making the CLI a Shared runtime dependency.",
+  "capturePolicy": {
+    "network": "forbidden",
+    "secrets": "forbidden",
+    "timestamps": "normalized",
+    "absolutePaths": "replace-with-logical-scope-and-portable-relative-path",
+    "hostIdentity": "remove",
+    "ordering": "canonical",
+    "sourceMutation": "forbidden"
+  },
+  "cases": [
+    {
+      "id": "cli-operation-success-error",
+      "family": "result-envelope",
+      "source": "packages/cli/src/contracts/cli-operation-result-contract.ts",
+      "requiredOutcomes": ["success", "error"]
+    },
+    {
+      "id": "intelligence-stage-verdicts",
+      "family": "status",
+      "source": "packages/cli/src/contracts/workspace-intelligence-run-contract.ts",
+      "requiredOutcomes": ["passed", "blocked", "failed", "skipped"]
+    },
+    {
+      "id": "graph-proof-and-partial-provider",
+      "family": "evidence",
+      "source": "packages/cli/src/contracts/workspace-knowledge-graph-contract.ts",
+      "requiredOutcomes": ["proof-backed", "partial", "diagnostic"]
+    },
+    {
+      "id": "model-evidence-path-redaction",
+      "family": "artifact-reference",
+      "source": "packages/cli/src/workspace-model.ts",
+      "requiredOutcomes": ["portable-relative-path", "redacted-local-root"]
+    },
+    {
+      "id": "doctor-diagnostic-freshness",
+      "family": "freshness",
+      "source": "packages/cli/src/doctor.ts",
+      "requiredOutcomes": ["current", "stale", "unknown"]
+    },
+    {
+      "id": "verify-evidence-verdicts",
+      "family": "status",
+      "source": "packages/cli/src/workspace-verify.ts",
+      "requiredOutcomes": ["ready", "attention", "blocked", "missing-evidence"]
+    },
+    {
+      "id": "compatibility-negotiation",
+      "family": "compatibility",
+      "source": "packages/cli/src/workspace-profile-compatibility.ts",
+      "requiredOutcomes": ["compatible", "conditional", "incompatible"]
+    },
+    {
+      "id": "bounded-and-interrupted-results",
+      "family": "resource",
+      "source": "packages/cli/src/workspace-knowledge-graph-query.ts",
+      "requiredOutcomes": ["truncated", "cancelled", "unknown-extension"]
+    }
+  ]
+}

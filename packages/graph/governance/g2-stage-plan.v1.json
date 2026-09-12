@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G2",
+  "status": "in-progress",
+  "authorizedBy": "packages/graph/governance/g1-stage-approval.v1.json",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g2",
+    "workspai-docs:Packages/graph/ARCHITECTURE.md#ports",
+    "workspai-docs:Packages/graph/CONTRACTS_AND_ONTOLOGY.md",
+    "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "deterministic-reference-composition",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/compose-graph.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "identity-alias-and-collision-resolution",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/compose-graph.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "proof-conflict-and-quality",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/compose-graph.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "bounded-worker-protocol",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/ports/index.ts",
+        "packages/graph/src/adapters/node/index.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "worker-output-trust-boundary",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/compose-graph.ts",
+        "packages/graph/test/composition/reference-engine.test.ts"
+      ]
+    },
+    {
+      "id": "amplification-property-and-adversarial-corpus",
+      "status": "implemented-local-candidate",
+      "evidence": ["packages/graph/test/composition/reference-engine.test.ts"]
+    },
+    {
+      "id": "real-worker-event-loop-matrix",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/adapters/node/index.ts",
+        "packages/graph/src/adapters/node/reference-worker-entry.ts",
+        "packages/graph/scripts/check-node-worker-adapter.mjs"
+      ]
+    },
+    {
+      "id": "g2-cross-platform-admission",
+      "status": "configured-awaiting-remote-evidence",
+      "evidence": [
+        "packages/graph/governance/g2-stage-closure.v1.json",
+        "packages/graph/scripts/check-composition-admission.mjs",
+        "packages/graph/scripts/check-composition-matrix-admission.mjs",
+        ".github/workflows/ci.yml"
+      ]
+    }
+  ],
+  "prohibitions": [
+    "No central CLI runtime import or graph bridge.",
+    "No filesystem, terminal, process-exit, network or model dependency in composition semantics.",
+    "No provider-order, score-only or first-observed conflict winner.",
+    "No partial authoritative graph on cancellation or worker failure.",
+    "No stable, publishable or standalone-admitted claim before later stage gates."
+  ],
+  "nativeAcceleration": {
+    "status": "prohibited",
+    "earliestDecisionStage": "G6",
+    "rule": "Rust, native and WASM implementations may accelerate only measured hot paths after TypeScript reference semantics and parity fixtures are closed."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G3",
+  "nextStageAuthorized": false
+}

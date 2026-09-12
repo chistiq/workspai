@@ -1,0 +1,199 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "package-stability",
+  "package": "@workspai/shared",
+  "stage": "SH7-standalone-stability-admission",
+  "asOf": "2026-09-12",
+  "status": "blocked",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "blocked",
+      "summary": "Package boundaries and documentation align, but WIS RFC-0001/RFC-0002 and SH1 semantic-lock decisions are not accepted and therefore cannot support a stable contract claim.",
+      "evidence": [
+        "packages/shared/governance/semantic-lock-decisions.v1.json",
+        "packages/shared/governance/sh7-standalone-admission.v1.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Deterministic multi-contract generation, extension bounds, workload classes and registered domain adoption remain executable without adding domain rules to Shared.",
+      "evidence": [
+        "packages/shared/schemas/generation-manifest.v2.json",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json",
+        "packages/shared/governance/sh6-domain-adoption.v1.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "pending-remote",
+      "summary": "Local latency, bundle, tarball, soak and retained-heap budgets pass; real-browser timing and platform peak-memory profiling remain required.",
+      "evidence": [
+        "packages/shared/scripts/check-scale-profile.mjs",
+        "packages/shared/scripts/check-runtime-surfaces.mjs",
+        "packages/shared/governance/sh3c-scale-baseline.v1.json"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Hostile resource, generator, path, file, UTF-8, cancellation, prototype, package-content and accidental-publication boundaries pass locally with zero runtime dependencies.",
+      "evidence": [
+        "packages/shared/test/validation/resource-guard.test.ts",
+        "packages/shared/test/validation/semantic-hardening.test.ts",
+        "packages/shared/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Library surfaces perform no I/O or telemetry, CLI results omit payloads and paths, and private internal consumption does not expose raw source, payloads or credentials.",
+      "evidence": [
+        "packages/shared/test/cli/external-validation.test.ts",
+        "packages/shared/governance/sh7-standalone-admission.v1.json",
+        "packages/shared/scripts/check-standalone-admission.mjs"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Linux installed-library and CLI evidence passes and CI now retains run-bound OS attestations, but same-candidate macOS, Windows and real-browser artifacts have not run and been reviewed.",
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "packages/shared/scripts/check-standalone-admission.mjs",
+        "packages/shared/governance/sh7-standalone-admission.v1.json"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Shared remains a dependency leaf, Graph consumes public subpaths through an acyclic exact-version edge, and the central CLI has no developing-package dependency or import.",
+      "evidence": [
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/shared/governance/sh6-domain-adoption.v1.json",
+        "packages/shared/package.json"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Thirteen Shared test files with 113 tests pass alongside deterministic generation, schema digests, strict semantic fixtures and installed artifact execution.",
+      "evidence": [
+        "packages/shared/test/conformance/core-envelope.test.ts",
+        "packages/shared/test/conformance/core-envelope-compatibility.test.ts",
+        "packages/shared/test/governance/sh7-admission.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "blocked",
+      "summary": "Current/previous negotiation and explicit migration losses pass, but a stable compatibility promise cannot precede acceptance of the normative SH1 semantics.",
+      "evidence": [
+        "packages/shared/src/compatibility/core-result-envelope.ts",
+        "packages/shared/governance/semantic-lock-decisions.v1.json",
+        "packages/shared/governance/sh7-standalone-admission.v1.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Cancellation, bounded diagnostics, invalid input, unsupported versions and CLI exit semantics are deterministic; the admission audit distinguishes invalid, failed and blocked outcomes.",
+      "evidence": [
+        "packages/shared/src/cli/application.ts",
+        "packages/shared/scripts/check-standalone-admission.mjs",
+        "packages/shared/test/governance/sh7-admission.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Machine registries, permanent quality policy, stage closures, canonical documentation, drift tests and an executable admission decision keep package claims reviewable and extensible.",
+      "evidence": [
+        "independent-package-quality-policy.v1.json",
+        "scripts/check-independent-package-quality.mjs",
+        "packages/shared/test/governance/documentation-alignment.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "The private installed tarball produces a validated CycloneDX 1.5 component, has zero runtime dependencies and remains protected from npm publication.",
+      "evidence": [
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/scripts/refuse-publish.mjs",
+        "packages/shared/governance/sh7-standalone-admission.v1.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "cumulative-package-infrastructure",
+      "status": "passed",
+      "command": "npm run check:package-infrastructure",
+      "evidence": "Shared and Graph quality, dependency, mirror, generation, coverage, build, scale, packed-consumer, SBOM and admission-audit gates passed locally"
+    },
+    {
+      "id": "strict-admission-decision",
+      "status": "passed",
+      "command": "npm --workspace @workspai/shared run admission:check",
+      "evidence": "The strict decision correctly reported blocked with exit 2 and did not authorize admission"
+    },
+    {
+      "id": "remote-platform-attestations",
+      "status": "pending-remote",
+      "evidence": "CI capture is configured; same-commit macOS and Windows artifacts have not yet been produced and reviewed"
+    },
+    {
+      "id": "registered-internal-graph-consumer",
+      "status": "passed",
+      "evidence": "Graph consumes the exact Shared workspace version through public subpaths and isolated packed tarballs"
+    },
+    {
+      "id": "standalone-admission",
+      "status": "failed",
+      "evidence": "2 gates passed, 4 passed locally, 4 await remote evidence and 3 are blocked; admission remains false"
+    }
+  ],
+  "measurements": {
+    "admissionGates": 13,
+    "admissionPassed": 2,
+    "admissionPassedLocal": 4,
+    "admissionPendingRemote": 4,
+    "admissionBlocked": 3,
+    "admissionFailed": 0,
+    "sharedTestFiles": 13,
+    "sharedTests": 113,
+    "coverageStatementsPercent": 96.3,
+    "coverageBranchesPercent": 90.95,
+    "coverageFunctionsPercent": 100,
+    "coverageLinesPercent": 98.48,
+    "sharedPackedFiles": 49,
+    "sharedPackedCompressedBytes": 58889,
+    "sharedPackedCompressedBudgetBytes": 163840,
+    "cycloneDxSpecVersion": "1.5",
+    "runtimeDependencies": 0,
+    "graphRegressionTests": 20
+  },
+  "environment": {
+    "local": ["linux-6.12.101+deb13-amd64-x86_64", "node-24.18.1", "npm-10.8.2"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "WIS RFC-0001/RFC-0002 and SH1 semantic-lock decisions remain unaccepted.",
+    "Same-candidate macOS, Windows and real-browser run-bound evidence is absent.",
+    "True platform peak-memory evidence is absent.",
+    "Internal compatibility and migration commitments remain blocked by the normative semantic lock.",
+    "Commit-bound internal promotion and rollback evidence are absent.",
+    "npm publication remains prohibited; standalone stability claims, SH8 and the central CLI bridge remain unauthorized."
+  ],
+  "nextStage": "SH8",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "awaiting",
+    "requiredForNextStage": true,
+    "rule": "This blocked package-stability closure cannot be approved or authorize SH8 until every required SH7 gate is passed with reviewed evidence."
+  }
+}

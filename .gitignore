@@ -5,6 +5,7 @@
 # Dependencies and build output
 node_modules/
 dist/
+/target/
 
 # Local editor and environment files
 .env

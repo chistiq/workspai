@@ -1,0 +1,181 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/shared",
+  "stage": "SH3-B-current-previous-compatibility",
+  "asOf": "2026-08-14",
+  "status": "approved",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Compatibility is an isolated public subpath backed by manifest-generated contracts and canonical documentation.",
+      "evidence": [
+        "packages/shared/src/compatibility/index.ts",
+        "packages/shared/schemas/generation-manifest.v2.json",
+        "packages/shared/test/governance/documentation-alignment.test.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Supported versions are explicit, frozen and registry-backed; compatibility-only types do not collide with the current public type barrel.",
+      "evidence": [
+        "packages/shared/scripts/generate-contracts.mjs",
+        "packages/shared/schemas/compatibility/wis-core-result-envelope.v0.1.0-draft.schema.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Shared ESM chunks reduce packed size while gates measure full transitive browser bundles instead of entry stubs.",
+      "evidence": [
+        "packages/shared/tsup.config.ts",
+        "packages/shared/scripts/check-bundle-budget.mjs",
+        "packages/shared/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Resource inspection precedes version access; accessors, invalid previous contracts and unknown versions fail closed.",
+      "evidence": [
+        "packages/shared/src/compatibility/core-result-envelope.ts",
+        "packages/shared/test/conformance/core-envelope-compatibility.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Negotiation performs no filesystem, network, telemetry or credential access and emits no local paths.",
+      "evidence": [
+        "packages/shared/src/compatibility/core-result-envelope.ts",
+        "packages/shared/test/architecture/dependency-leaf.test.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Browser-neutral ESM and installed package execution pass locally; Linux, macOS and Windows CI evidence remains pending.",
+      "evidence": ["packages/shared/scripts/check-bundle-budget.mjs", ".github/workflows/ci.yml"]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Shared retains zero runtime dependencies and no central CLI runtime bridge was added.",
+      "evidence": [
+        "packages/shared/package.json",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Current input is exact; previous input migrates deterministically and the migrated result is revalidated against the current contract.",
+      "evidence": [
+        "packages/shared/fixtures/compatibility/core-result-envelope/conformance-manifest.v1.json",
+        "packages/shared/test/conformance/core-envelope-compatibility.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "One supported previous version has forward-only migration with explicit migration/loss records and opaque extension preservation.",
+      "evidence": [
+        "packages/shared/schemas/compatibility/wis-core-result-envelope.v0.1.0-draft.schema.json",
+        "packages/shared/src/compatibility/core-result-envelope.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Invalid, missing and unsupported version states return stable discriminated results without throwing or guessing migrations.",
+      "evidence": [
+        "packages/shared/src/compatibility/core-result-envelope.ts",
+        "packages/shared/test/conformance/core-envelope-compatibility.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Frozen fixtures, generated bindings, compatibility policy and consumer tests are separated and traceable.",
+      "evidence": [
+        "packages/shared/fixtures/compatibility/core-result-envelope/conformance-manifest.v1.json",
+        "packages/shared/test/conformance/core-envelope-compatibility.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "pending-remote",
+      "summary": "The real tarball imports compatibility and migrates a shipped fixture locally; remote provenance and publication admission remain pending.",
+      "evidence": [
+        "packages/shared/scripts/check-packed-package.mjs",
+        "packages/shared/scripts/refuse-publish.mjs"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "shared-complete-check",
+      "status": "passed",
+      "command": "npm run check --workspace @workspai/shared",
+      "evidence": "10 files and 78 tests passed with generation, types, lint, format, coverage, build, transitive size and packed-consumer gates."
+    },
+    {
+      "id": "packed-compatibility-consumer",
+      "status": "passed",
+      "command": "npm run pack:check --workspace @workspai/shared",
+      "evidence": "Installed tarball imported /compatibility and migrated the shipped previous fixture with zero runtime dependencies."
+    },
+    {
+      "id": "remote-os-matrix",
+      "status": "pending-remote",
+      "evidence": "Linux, macOS and Windows CI execution is required before admission."
+    }
+  ],
+  "measurements": {
+    "portfolioDigest": "sha256:15e091961df7e19218960a21f7ef01989663333f09de97d85b554753f9a76306",
+    "generatedContracts": 3,
+    "generatedArtifacts": 14,
+    "compatibilityCases": 12,
+    "coveragePercent": {
+      "lines": 97.26,
+      "functions": 100,
+      "statements": 94.11,
+      "branches": 88.78
+    },
+    "transitiveBundleGzipBytes": {
+      "contracts": 399,
+      "compatibility": 38645,
+      "registry": 911,
+      "validation": 38561,
+      "root": 40021
+    },
+    "packedConsumer": {
+      "files": 40,
+      "compressedBytes": 51906,
+      "budgetBytes": 163840,
+      "runtimeDependencies": 0
+    }
+  },
+  "environment": {
+    "local": ["linux", "node-24.18.1", "npm-10.8.2"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "SH0 evidence and SH1 WIS semantic lock are not accepted.",
+    "Remote Linux, macOS and Windows CI evidence is pending.",
+    "SH3-C measured scale evidence is not implemented or authorized.",
+    "Independent external-consumer proof is not complete."
+  ],
+  "nextStage": "SH3-C",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-08-14",
+    "rule": "Maintainer approved bounded SH3-C scale and conformance work on 2026-08-14; pending remote evidence still cannot advance standalone admission."
+  }
+}

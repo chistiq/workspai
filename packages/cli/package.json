@@ -123,6 +123,7 @@
     "test:runtime-matrix:full": "node scripts/runtime-acceptance-matrix.mjs --full",
     "test:real-world": "node scripts/real-world-qualification.mjs",
     "test:real-world:enterprise": "node scripts/enterprise-workspace-qualification.mjs",
+    "test:graph-shadow": "node --import tsx scripts/graph-shadow-qualification.ts",
     "check:english-text": "node ../../scripts/english-text-guard.mjs --all",
     "lint": "corepack npm run check:english-text && eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",

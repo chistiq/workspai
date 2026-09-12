@@ -1,0 +1,194 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/shared",
+  "stage": "SH6-independent-domain-adoption",
+  "asOf": "2026-08-15",
+  "status": "approved",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Graph owns a domain conformance boundary over four public Shared subpaths; contract identity moved to the Graph contracts layer and neither package imports the central CLI.",
+      "evidence": [
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/src/contracts/package-metadata.ts",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "The registry-derived gate requires exactly one adoption record for every registered Shared-dependent package, while unregistered placeholder consumers remain forbidden.",
+      "evidence": [
+        "independent-packages.json",
+        "packages/shared/governance/sh6-domain-adoption.v1.json",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "The adoption boundary reuses bounded Shared validation and registry lookup; the complete Graph tarball remains 6,737 of 262,144 compressed bytes.",
+      "evidence": [
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "The boundary fails closed for malformed or unsupported Core envelopes, foreign producers, unsupported Graph schemas, cancellation and implicit domain migration.",
+      "evidence": [
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/test/contracts/shared-adoption.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Rejected adoption results contain bounded diagnostics without returning or echoing the untrusted domain payload, and the boundary performs no filesystem, network or telemetry operation.",
+      "evidence": [
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/test/contracts/shared-adoption.test.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Platform-neutral ESM, local Linux execution and isolated tarball installation pass; macOS and Windows remote evidence remains pending.",
+      "evidence": [
+        "packages/graph/tsup.config.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/shared/scripts/check-runtime-surfaces.mjs"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "Shared remains a zero-runtime-dependency leaf; Graph depends only on the exact development Shared version; publication and the CLI bridge remain prohibited.",
+      "evidence": [
+        "packages/shared/package.json",
+        "packages/graph/package.json",
+        "scripts/check-independent-package-boundaries.mjs"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Graph's 20 tests and Shared's 107 tests pass; exact current artifacts deterministically produce an accepted result with the generated registry contract digest.",
+      "evidence": [
+        "packages/graph/test/contracts/shared-adoption.test.ts",
+        "packages/graph/test/contracts/shared-interoperability.test.ts",
+        "packages/shared/src/generated/registry.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Shared Core negotiation remains reusable, but a migrated envelope returns domain-contract-migration-required instead of silently authorizing a Graph payload version.",
+      "evidence": [
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/test/contracts/shared-adoption.test.ts",
+        "packages/shared/src/compatibility/core-result-envelope.ts"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Every rejection has a typed stable status and bounded diagnostic; Shared cancellation propagates without partial domain interpretation.",
+      "evidence": [
+        "packages/graph/src/conformance/shared-adoption.ts",
+        "packages/graph/test/contracts/shared-adoption.test.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "One machine adoption manifest, one executable registry/DAG guard and canonical documentation keep implementation, public claims and stage state aligned.",
+      "evidence": [
+        "packages/shared/governance/sh6-domain-adoption.v1.json",
+        "scripts/check-independent-package-boundaries.mjs",
+        "packages/shared/test/governance/documentation-alignment.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "Separately packed Shared and Graph tarballs install with lifecycle scripts disabled; the installed Graph consumer executes the adoption boundary while development paths remain excluded.",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/shared/scripts/check-packed-package.mjs",
+        "package-lock.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-domain-adoption",
+      "status": "passed",
+      "command": "npm --workspace @workspai/graph run check",
+      "evidence": "6 test files and 20 tests passed; type, lint, format, build and the installed dual-tarball consumer passed"
+    },
+    {
+      "id": "shared-regression",
+      "status": "passed",
+      "command": "npm --workspace @workspai/shared run check",
+      "evidence": "12 test files and 107 tests passed with prior generation, coverage, browser, scale, CLI and packed-consumer gates intact"
+    },
+    {
+      "id": "dependency-and-governance",
+      "status": "passed",
+      "command": "npm run check:package-boundaries",
+      "evidence": "2-package DAG passed with exact adopter/subpath/evidence parity and no central CLI runtime bridge"
+    },
+    {
+      "id": "package-infrastructure",
+      "status": "passed",
+      "command": "npm run check:package-infrastructure",
+      "evidence": "quality, boundaries, mirrors, Shared and Graph cumulative gates passed"
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "macOS and Windows installed-consumer evidence is not available in this local closure"
+    }
+  ],
+  "measurements": {
+    "registeredPackages": 2,
+    "registeredSharedAdopters": 1,
+    "sharedPublicSubpathsExercised": 4,
+    "graphTestFiles": 6,
+    "graphTests": 20,
+    "sharedTestFiles": 12,
+    "sharedTests": 107,
+    "graphPackedFiles": 16,
+    "graphPackedCompressedBytes": 6737,
+    "graphPackedCompressedBudgetBytes": 262144,
+    "sharedPackedFiles": 49,
+    "sharedPackedCompressedBytes": 58402,
+    "sharedRuntimeDependencies": 0,
+    "centralCliPackageDependencies": 0
+  },
+  "environment": {
+    "local": ["linux-6.12.101+deb13-amd64-x86_64", "node-24.18.1", "npm-10.8.2"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "macOS and Windows installed-consumer evidence remains pending.",
+    "Graph is the only currently registered domain adopter; placeholders are forbidden and later adopters must pass the same gate when admitted.",
+    "Graph remains contract-design/G0 and this closure proves no graph-engine capability.",
+    "SH0 evidence and SH1 WIS semantic lock remain unaccepted.",
+    "Independent external consumer value, standalone publication and the central CLI bridge remain unproven and prohibited."
+  ],
+  "nextStage": "SH7",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "approvedAt": "2026-08-15",
+    "requiredForNextStage": true,
+    "rule": "Approval authorizes the SH7 standalone-stability admission audit only; it does not waive remote, normative, security, provenance or independent external-consumer evidence."
+  }
+}

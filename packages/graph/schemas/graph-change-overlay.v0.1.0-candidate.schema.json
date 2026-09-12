@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/change-overlay/v0.1.0-candidate",
+  "title": "WorkspaiGraphChangeOverlayCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "id",
+    "baseGeneration",
+    "proposal",
+    "status",
+    "proposedChangeSet",
+    "predictedDelta",
+    "quality",
+    "unknownZones",
+    "diagnostics",
+    "generatedAt"
+  ],
+  "properties": {
+    "contract": {
+      "const": { "id": "workspai.graph.change-overlay", "version": "0.1.0-candidate" }
+    },
+    "id": { "type": "string", "minLength": 1 },
+    "baseGeneration": {
+      "type": "object",
+      "required": ["id", "generatedAt", "contentDigest"],
+      "properties": {
+        "id": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "contentDigest": { "type": "object" }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "digest"],
+      "properties": {
+        "kind": {
+          "enum": ["patch", "working-tree", "branch", "pull-request", "external"]
+        },
+        "identity": { "type": "string" },
+        "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "status": { "enum": ["complete", "partial", "failed", "stale"] },
+    "proposedChangeSet": { "type": "object" },
+    "predictedDelta": { "type": "object" },
+    "quality": { "type": "object" },
+    "unknownZones": { "type": "array" },
+    "diagnostics": { "type": "array" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  }
+}

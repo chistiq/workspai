@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "workspai-shared-semantic-lock-decisions.v1",
+  "status": "review-pending",
+  "asOf": "2026-08-13",
+  "normativeSources": [
+    {
+      "id": "WIS-RFC-0001",
+      "status": "proposed-ready-for-maintainer-review"
+    },
+    {
+      "id": "WIS-RFC-0002",
+      "status": "proposed-ready-for-maintainer-review"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "SL-001",
+      "subject": "contract-authority",
+      "decision": "released-wis-schema-and-semantic-fixtures",
+      "binding": "typescript-reference-binding-not-normative-source"
+    },
+    {
+      "id": "SL-002",
+      "subject": "result-status",
+      "decision": ["pass", "attention", "blocked", "partial", "failed"],
+      "separateFrom": "operation-outcome"
+    },
+    {
+      "id": "SL-003",
+      "subject": "operation-outcome",
+      "decision": ["succeeded", "failed", "cancelled"]
+    },
+    {
+      "id": "SL-004",
+      "subject": "scope",
+      "decision": ["project", "workspace", "selection", "organization"],
+      "constraint": "organization-is-profile-gated"
+    },
+    {
+      "id": "SL-005",
+      "subject": "generation",
+      "decision": "immutable-id-time-parents-and-optional-algorithm-qualified-digest"
+    },
+    {
+      "id": "SL-006",
+      "subject": "portability",
+      "decision": "logical-identities-and-normalized-relative-locators",
+      "forbidden": "absolute-paths-in-portable-contracts"
+    },
+    {
+      "id": "SL-007",
+      "subject": "diagnostic-severity",
+      "decision": ["info", "warning", "error"],
+      "adapterAlias": {
+        "warn": "warning"
+      }
+    },
+    {
+      "id": "SL-008",
+      "subject": "compatibility",
+      "decision": ["compatible", "conditionally-compatible", "incompatible"],
+      "constraint": "explicit-baseline-capability-loss-and-migration"
+    },
+    {
+      "id": "SL-009",
+      "subject": "extensions",
+      "decision": "bounded-namespaced-inert-and-round-trip-preserved"
+    },
+    {
+      "id": "SL-010",
+      "subject": "operation-result-coherence",
+      "decision": "failed-outcome-iff-failed-status; cancelled-outcome-allows-only-partial-or-failed-status"
+    }
+  ],
+  "unresolved": [
+    "exact serialized ID and digest reference shapes",
+    "final freshness-state vocabulary",
+    "minimum compatibility loss and migration record",
+    "canonical extension byte depth and member limits",
+    "whether confidence is Core optional or profile only"
+  ],
+  "admissionRule": "SH1 cannot pass until both RFCs are accepted, every unresolved item is closed or explicitly deferred, and generated schema fixtures prove the decisions."
+}

@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "workspai-shared-scale-baseline.v1",
+  "profile": "shared-scale-extension.v1-draft",
+  "measuredAt": "2026-08-14",
+  "status": "local-passed-remote-evidence-pending",
+  "claimBoundary": "This is a reproducible local reference measurement, not a universal hardware or browser performance claim.",
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "node": "v24.18.1",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz",
+    "logicalCpus": 8,
+    "totalMemoryBytes": 24980140032,
+    "exposedGc": true
+  },
+  "workloads": [
+    {
+      "id": "small",
+      "serializedBytes": 5200,
+      "iterations": 100,
+      "p50Ms": 0.13,
+      "p95Ms": 0.249,
+      "p99Ms": 0.293
+    },
+    {
+      "id": "normal",
+      "serializedBytes": 1018223,
+      "iterations": 30,
+      "p50Ms": 8.486,
+      "p95Ms": 9.752,
+      "p99Ms": 9.764,
+      "observedHeapAmplification": 6.542
+    },
+    {
+      "id": "large-node",
+      "serializedBytes": 11848735,
+      "iterations": 5,
+      "p50Ms": 66.738,
+      "p95Ms": 67.858,
+      "p99Ms": 67.858,
+      "observedHeapAmplification": 1.687
+    },
+    {
+      "id": "browser-safe-proxy",
+      "serializedBytes": 3445759,
+      "iterations": 10,
+      "p50Ms": 23.665,
+      "p95Ms": 24.145,
+      "p99Ms": 24.145
+    }
+  ],
+  "compatibility": {
+    "iterations": 20,
+    "p50Ms": 17.795,
+    "p95Ms": 22.605,
+    "p99Ms": 27.672
+  },
+  "extensions": {
+    "namespaces": 32,
+    "roundTrip": "passed",
+    "overflowRejection": "passed",
+    "prototypePollution": "not-observed"
+  },
+  "cancellation": {
+    "preCancelledLargeTraversal": "passed",
+    "checkpointModel": "cooperative-resource-traversal"
+  },
+  "adversarial": {
+    "extremeDepth": "rejected-without-recursion-overflow",
+    "hardLimitOverride": "rejected",
+    "diagnosticCeiling": 1000
+  },
+  "soak": {
+    "iterations": 1000,
+    "retainedHeapBytes": 253280,
+    "budgetBytes": 8388608
+  },
+  "concurrency": {
+    "workers": 4,
+    "validations": 200,
+    "durationMs": 85.17,
+    "deterministic": true
+  },
+  "coldLoad": {
+    "iterations": 3,
+    "p95Ms": 12.963,
+    "budgetMs": 1000
+  },
+  "limitations": [
+    {
+      "id": "real-browser-device-timing",
+      "status": "pending-remote",
+      "impact": "Browser-safe code is CSP-bundled and proxy-timed under Node; real browser/device timing is required before admission."
+    },
+    {
+      "id": "true-peak-rss-profiling",
+      "status": "pending-remote",
+      "impact": "Local heap values are synchronous post-validation checkpoints; a platform profiler must confirm true peak RSS."
+    },
+    {
+      "id": "alternative-validator-adapter",
+      "status": "explicitly-deferred",
+      "impact": "No public validator-backend adapter contract is admitted. Adding a second backend now would create an unstable API; parity becomes mandatory before such an adapter can be exposed."
+    },
+    {
+      "id": "structural-validator-interruption",
+      "status": "documented-limitation",
+      "impact": "Cancellation is checked during bounded resource traversal; one synchronous precompiled structural-validator invocation is atomic."
+    }
+  ]
+}

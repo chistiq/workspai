@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/review-context-slice/v0.1.0-candidate",
+  "title": "WorkspaiGraphReviewContextSliceCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "profile",
+    "sourceGeneration",
+    "sourceQueryDigest",
+    "entities",
+    "paths",
+    "evidence",
+    "disputes",
+    "unknownBoundaries",
+    "sourceCost",
+    "quality",
+    "analysis",
+    "cost",
+    "truncation"
+  ],
+  "properties": {
+    "contract": {
+      "const": { "id": "workspai.graph.review-context-slice", "version": "0.1.0-candidate" }
+    },
+    "profile": { "type": "object", "required": ["id", "version"] },
+    "sourceGeneration": {
+      "type": "object",
+      "required": ["id", "generatedAt", "contentDigest"]
+    },
+    "sourceQueryDigest": {
+      "type": "object",
+      "required": ["algorithm", "value"]
+    },
+    "entities": { "type": "array", "maxItems": 10000 },
+    "paths": { "type": "array", "maxItems": 10000 },
+    "evidence": { "type": "array", "maxItems": 10000 },
+    "disputes": { "type": "array", "maxItems": 10000 },
+    "unknownBoundaries": { "type": "array", "maxItems": 10000 },
+    "sourceCost": { "type": "object" },
+    "quality": { "type": "object" },
+    "analysis": { "type": "object" },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateItems", "returnedItems", "contentBytes"],
+      "properties": {
+        "candidateItems": { "type": "integer", "minimum": 0 },
+        "returnedItems": { "type": "integer", "minimum": 0 },
+        "contentBytes": { "type": "integer", "minimum": 0, "maximum": 10485760 }
+      }
+    },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["truncated", "reasons"],
+      "properties": {
+        "truncated": { "type": "boolean" },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["entities", "paths", "evidence", "disputes", "unknown-zones", "content-bytes"]
+          }
+        }
+      }
+    }
+  }
+}

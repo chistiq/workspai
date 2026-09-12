@@ -84,10 +84,23 @@ describe('npm publish contract', () => {
     };
 
     expect(rootPackage.private).toBe(true);
-    expect(rootPackage.workspaces).toEqual(['packages/cli', 'packages/wspai']);
+    expect(rootPackage.workspaces).toEqual([
+      'packages/shared',
+      'packages/graph',
+      'packages/cli',
+      'packages/wspai',
+    ]);
     expect(rootPackage.workspaces).not.toContain('packages/*');
-    expect(rootPackage.workspaces).not.toContain('packages/graph');
-    expect(rootPackage.workspaces).not.toContain('packages/shared');
+    for (const independentPackage of ['shared', 'graph']) {
+      const independentManifest = JSON.parse(
+        fs.readFileSync(
+          path.join(monorepoRoot, 'packages', independentPackage, 'package.json'),
+          'utf8'
+        )
+      ) as { private?: boolean; scripts?: Record<string, string> };
+      expect(independentManifest.private).toBe(true);
+      expect(independentManifest.scripts?.prepublishOnly).toBe('node scripts/refuse-publish.mjs');
+    }
     expect(rootPackage.scripts?.postinstall).toBe('node scripts/check-cross-platform-lockfile.mjs');
     expect(rootPackage.scripts?.['prepush:check']).toContain('run check:cross-platform-lockfile');
 

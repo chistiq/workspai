@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/quality/v0.1.0-candidate",
+  "title": "WorkspaiGraphQualityCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "generation",
+    "integrity",
+    "determinism",
+    "incrementalEquivalence",
+    "coverage",
+    "proofStates",
+    "unknownZones",
+    "unsupportedZones",
+    "staleZones",
+    "conflicts",
+    "orphans",
+    "providerFailures",
+    "releaseClaims"
+  ],
+  "properties": {
+    "contract": { "const": { "id": "workspai.graph.quality", "version": "0.1.0-candidate" } },
+    "generation": { "type": "object", "required": ["id", "generatedAt", "contentDigest"] },
+    "integrity": { "$ref": "#/$defs/verdict" },
+    "determinism": { "$ref": "#/$defs/verdict" },
+    "incrementalEquivalence": { "$ref": "#/$defs/verdict" },
+    "coverage": {
+      "type": "array",
+      "items": { "type": "object", "required": ["dimension", "status"] }
+    },
+    "proofStates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supported",
+        "corroborated",
+        "verified",
+        "disputed",
+        "insufficient",
+        "unresolved"
+      ],
+      "properties": {
+        "supported": { "$ref": "#/$defs/count" },
+        "corroborated": { "$ref": "#/$defs/count" },
+        "verified": { "$ref": "#/$defs/count" },
+        "disputed": { "$ref": "#/$defs/count" },
+        "insufficient": { "$ref": "#/$defs/count" },
+        "unresolved": { "$ref": "#/$defs/count" }
+      }
+    },
+    "unknownZones": { "type": "array" },
+    "unsupportedZones": { "type": "array" },
+    "staleZones": { "type": "array" },
+    "conflicts": { "type": "array" },
+    "orphans": { "type": "array" },
+    "providerFailures": { "type": "array" },
+    "releaseClaims": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+  },
+  "$defs": {
+    "verdict": { "enum": ["pass", "attention", "blocked", "not-assessed"] },
+    "count": { "type": "integer", "minimum": 0 }
+  }
+}

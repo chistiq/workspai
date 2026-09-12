@@ -1,0 +1,7 @@
+{
+  "name": "graph-node-fixture",
+  "private": true,
+  "dependencies": {
+    "express": "0.0.0-fixture"
+  }
+}

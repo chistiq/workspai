@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/retrieval-plan/v0.1.0-candidate",
+  "title": "WorkspaiGraphRetrievalPlanCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "profile", "candidates", "selected", "budget"],
+  "properties": {
+    "contract": {
+      "const": { "id": "workspai.graph.retrieval-plan", "version": "0.1.0-candidate" }
+    },
+    "profile": { "type": "object", "required": ["id", "version"] },
+    "candidates": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["strategy", "eligible", "estimatedEdgeVisits", "sufficiency", "reasons"]
+      }
+    },
+    "selected": { "enum": ["direct", "graph", "hybrid"] },
+    "fallbackReason": { "type": "string", "minLength": 1 },
+    "budget": { "type": "object", "required": ["maxDepth", "maxNodes", "maxEdges", "maxEvidence"] }
+  }
+}

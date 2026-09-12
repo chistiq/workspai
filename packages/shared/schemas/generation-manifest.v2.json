@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "workspai-shared-generation-manifest.v2",
+  "status": "candidate",
+  "sourceAuthority": "review-pending-wis-schema",
+  "contracts": [
+    {
+      "key": "contract-catalog",
+      "path": "schemas/src/wis-contract-catalog.v0.1.0-draft.schema.json",
+      "contractId": "https://schemas.workspai.dev/wis/core/contract-catalog/0.1.0-draft",
+      "version": "0.1.0-draft",
+      "typeExport": "WisContractCatalog",
+      "validatorExport": "validateWisContractCatalogStructure",
+      "outputStem": "wis-contract-catalog"
+    },
+    {
+      "key": "core-result-envelope",
+      "path": "schemas/src/wis-core-result-envelope.v0.2.0-draft.schema.json",
+      "contractId": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft",
+      "version": "0.2.0-draft",
+      "typeExport": "WisCoreResultEnvelope",
+      "validatorExport": "validateWisCoreResultEnvelopeStructure",
+      "outputStem": "wis-core-result-envelope",
+      "vocabulary": {
+        "WIS_CORE_CONTRACT_VERSION": { "pointer": "/properties/coreVersion/const" },
+        "WIS_RESULT_STATUSES": { "pointer": "/properties/status/enum" },
+        "WIS_OPERATION_OUTCOMES": { "pointer": "/properties/operationOutcome/enum" },
+        "WIS_DIAGNOSTIC_SEVERITIES": {
+          "pointer": "/$defs/Diagnostic/properties/severity/enum"
+        },
+        "WIS_COMPATIBILITY_STATUSES": {
+          "pointer": "/$defs/CompatibilitySummary/properties/status/enum"
+        },
+        "WIS_SCOPE_KINDS": {
+          "pointers": [
+            "/$defs/ProjectScope/properties/kind/const",
+            "/$defs/WorkspaceScope/properties/kind/const",
+            "/$defs/SelectionScope/properties/kind/const",
+            "/$defs/OrganizationScope/properties/kind/const"
+          ]
+        }
+      }
+    },
+    {
+      "key": "core-result-envelope-v0-1",
+      "path": "schemas/compatibility/wis-core-result-envelope.v0.1.0-draft.schema.json",
+      "contractId": "https://schemas.workspai.dev/wis/core/result-envelope/0.1.0-draft",
+      "version": "0.1.0-draft",
+      "typeExport": "WisCoreResultEnvelopeV01",
+      "validatorExport": "validateWisCoreResultEnvelopeV01Structure",
+      "outputStem": "wis-core-result-envelope-v0-1-draft",
+      "publicTypeBarrel": false
+    }
+  ],
+  "sharedOutputs": {
+    "contractsBarrel": "src/generated/contracts.ts",
+    "validatorsBarrel": "src/generated/validators.ts",
+    "vocabulary": "src/generated/vocabulary.ts",
+    "registryTypeScript": "src/generated/registry.ts",
+    "registryJson": "schemas/generated/registry.v2.json",
+    "registrySchemaVersion": "workspai-shared-generated-registry.v2",
+    "registryContractId": "https://schemas.workspai.dev/wis/core/contract-catalog/0.1.0-draft"
+  },
+  "obsoleteOutputs": ["schemas/generated/registry.v1.json"],
+  "toolchain": {
+    "jsonSchemaDialect": "2020-12",
+    "typeEmitter": "json-schema-to-typescript@15.0.4",
+    "validatorCompiler": "ajv@8.20.0",
+    "standaloneBundler": "esbuild@0.28.1",
+    "validatorMode": "strict-standalone-esm"
+  },
+  "determinism": {
+    "contractOrdering": "manifest-order",
+    "canonicalDigest": "sha256-over-recursively-key-sorted-json",
+    "portfolioDigest": "sha256-over-ordered-contract-id-and-digest-pairs",
+    "networkDuringGeneration": "forbidden",
+    "timestampsInOutputs": "forbidden",
+    "checkModeMutation": "forbidden"
+  }
+}

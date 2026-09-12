@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/provider-detection/v0.1.0-candidate",
+  "title": "WorkspaiGraphProviderDetectionCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "provider",
+    "status",
+    "matchedInputs",
+    "missingPermissions",
+    "diagnostics"
+  ],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.provider-detection",
+        "version": "0.1.0-candidate"
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "version": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "status": {
+      "enum": ["applicable", "not-applicable", "blocked", "unknown"]
+    },
+    "matchedInputs": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "missingPermissions": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "enum": ["filesystem", "network", "process", "credentials"] }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "$ref": "#/$defs/identifier" },
+          "message": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[a-z0-9][a-z0-9._:/#@+\\-]*$"
+    }
+  }
+}

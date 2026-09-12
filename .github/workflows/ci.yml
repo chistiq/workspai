@@ -126,6 +126,15 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # Rust is a build-time concern only. End users receive the bundled WASM
+      # artifact and never need Cargo, rustc or a runtime download.
+      - name: Setup pinned Rust Graph build toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85.1"
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+
       # Setup Python (Linux & macOS only)
       - name: Setup Python
         if: runner.os != 'Windows'
@@ -172,6 +181,131 @@ jobs:
       # Organization ownership and public-link contract
       - name: Validate Chistiq brand contract
         run: npm run check:brand
+
+      # Independent package boundaries, evidence, mirrors and package checks
+      - name: Validate independent package infrastructure
+        run: npm run check:package-infrastructure
+
+      - name: Pack Graph internal promotion artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p artifacts/graph-package
+          npm pack --workspace @workspai/graph --ignore-scripts --pack-destination artifacts/graph-package
+
+      - name: Upload Graph internal promotion artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-internal-package
+          path: artifacts/graph-package/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Capture Graph Rust WASM parity and performance evidence
+        shell: bash
+        env:
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          npm --workspace @workspai/graph run native:profile --
+          --output artifacts/graph-native-parity-${{ runner.os }}.json
+
+      - name: Upload Graph Rust WASM parity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-native-parity-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-native-parity-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Capture Shared standalone-admission platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+        run: >-
+          npm --workspace @workspai/shared run admission:audit --
+          --ci-evidence --json
+          --output artifacts/shared-standalone-admission-${{ runner.os }}.json
+
+      - name: Upload Shared standalone-admission platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-standalone-admission-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/shared-standalone-admission-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Capture Graph query-admission platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node packages/graph/scripts/check-query-admission.mjs
+          --ci-evidence --json
+          --output artifacts/graph-query-admission-${{ runner.os }}.json
+
+      - name: Upload Graph query-admission platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-query-admission-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-query-admission-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Capture Graph repository-preview platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node packages/graph/scripts/check-repository-preview-admission.mjs
+          --ci-evidence --json
+          --output artifacts/graph-repository-preview-admission-${{ runner.os }}.json
+
+      - name: Upload Graph repository-preview platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-repository-preview-admission-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-repository-preview-admission-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Capture Graph G6 platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node packages/graph/scripts/check-g6-admission.mjs
+          --ci-evidence --json
+          --output artifacts/graph-g6-admission-${{ runner.os }}.json
+
+      - name: Upload Graph G6 platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g6-admission-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-g6-admission-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Capture Graph G7 release-candidate platform evidence
+        shell: bash
+        env:
+          WORKSPAI_PACKAGE_INFRASTRUCTURE_PASSED: "1"
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node packages/graph/scripts/check-g7-release-candidate.mjs
+          --ci-evidence
+          --output artifacts/graph-g7-release-candidate-${{ runner.os }}.json
+
+      - name: Upload Graph G7 release-candidate platform evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-release-candidate-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-g7-release-candidate-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
 
       # Shared parity contract gate (npm <-> extension snapshot)
       - name: Validate import stack parity contract snapshot
@@ -239,6 +373,253 @@ jobs:
           name: rapidkit-coverage
           fail_ci_if_error: false
 
+  graph-query-admission:
+    name: Admit Graph query matrix
+    needs: build-test-matrix
+    if: needs.build-test-matrix.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout admitted commit
+        uses: actions/checkout@v4
+
+      - name: Download Graph query evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: graph-query-admission-*
+          path: artifacts/graph-query-platforms
+          merge-multiple: true
+
+      - name: Verify complete Graph query matrix
+        run: >-
+          node packages/graph/scripts/check-query-matrix-admission.mjs
+          --evidence-directory artifacts/graph-query-platforms
+          --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
+          --tested-commit "${{ github.sha }}"
+          --output artifacts/graph-query-admission-candidate.json
+
+      - name: Upload Graph query admission candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-query-admission-candidate
+          path: artifacts/graph-query-admission-candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
+  graph-repository-preview-admission:
+    name: Admit Graph repository preview matrix
+    needs: build-test-matrix
+    if: needs.build-test-matrix.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout admitted commit
+        uses: actions/checkout@v4
+
+      - name: Download Graph repository preview evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: graph-repository-preview-admission-*
+          path: artifacts/graph-repository-preview-platforms
+          merge-multiple: true
+
+      - name: Verify complete Graph repository preview matrix
+        run: >-
+          node packages/graph/scripts/check-repository-preview-matrix-admission.mjs
+          --evidence-directory artifacts/graph-repository-preview-platforms
+          --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
+          --tested-commit "${{ github.sha }}"
+          --output artifacts/graph-repository-preview-admission-candidate.json
+
+      - name: Upload Graph repository preview admission candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-repository-preview-admission-candidate
+          path: artifacts/graph-repository-preview-admission-candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
+  graph-g6-admission:
+    name: Admit Graph G6 matrix
+    needs: build-test-matrix
+    if: needs.build-test-matrix.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout admitted commit
+        uses: actions/checkout@v4
+
+      - name: Download Graph G6 evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: graph-g6-admission-*
+          path: artifacts/graph-g6-platforms
+          merge-multiple: true
+
+      - name: Verify complete Graph G6 matrix
+        run: >-
+          node packages/graph/scripts/check-g6-matrix-admission.mjs
+          --evidence-directory artifacts/graph-g6-platforms
+          --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
+          --tested-commit "${{ github.sha }}"
+          --output artifacts/graph-g6-admission-candidate.json
+
+      - name: Upload Graph G6 admission candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g6-admission-candidate
+          path: artifacts/graph-g6-admission-candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
+  graph-g7-release-candidate:
+    name: Verify Graph G7 release candidate matrix
+    needs: [build-test-matrix, graph-g6-admission]
+    if: needs.build-test-matrix.result == 'success' && needs.graph-g6-admission.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
+    steps:
+      - name: Checkout verified commit
+        uses: actions/checkout@v4
+
+      - name: Download Graph G7 platform evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: graph-g7-release-candidate-*
+          path: artifacts/graph-g7-release-platforms
+          merge-multiple: true
+
+      - name: Download admitted Graph G6 candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: graph-g6-admission-candidate
+          path: artifacts/graph-g6-candidate
+
+      - name: Download Graph internal promotion artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: graph-internal-package
+          path: artifacts/graph-package
+
+      - name: Verify Graph G7 release candidate matrix
+        run: >-
+          node packages/graph/scripts/check-g7-release-matrix.mjs
+          --evidence-directory artifacts/graph-g7-release-platforms
+          --g6-candidate artifacts/graph-g6-candidate/graph-g6-admission-candidate.json
+          --source-commit "${{ github.event.pull_request.head.sha || github.sha }}"
+          --tested-commit "${{ github.sha }}"
+          --output artifacts/graph-g7-release-candidate.json
+
+      - name: Attest Graph internal package provenance
+        id: graph-package-provenance
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/graph-package/*.tgz
+
+      - name: Attest Graph internal package SBOM
+        id: graph-package-sbom
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/graph-package/*.tgz
+          sbom-path: packages/graph/governance/g7-sbom.cdx.json
+
+      - name: Verify Graph G7 promotion evidence
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node packages/graph/scripts/check-g7-promotion-evidence.mjs
+          --artifact-directory artifacts/graph-package
+          --provenance-bundle "${{ steps.graph-package-provenance.outputs.bundle-path }}"
+          --sbom-bundle "${{ steps.graph-package-sbom.outputs.bundle-path }}"
+          --release-candidate artifacts/graph-g7-release-candidate.json
+          --sbom packages/graph/governance/g7-sbom.cdx.json
+          --repository "${{ github.repository }}"
+          --source-commit "${{ github.sha }}"
+          --tested-commit "${{ github.sha }}"
+          --run-id "${{ github.run_id }}"
+          --ref "${{ github.ref }}"
+          --output artifacts/graph-g7-promotion-evidence.json
+
+      - name: Finalize Graph G7 standalone admission
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        run: >-
+          node packages/graph/scripts/finalize-g7-standalone-admission.mjs
+          --promotion-evidence artifacts/graph-g7-promotion-evidence.json
+          --output artifacts/graph-g7-standalone-admission-decision.json
+
+      - name: Retain Graph G7 attestation bundle
+        if: >-
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-release-attestation
+          path: |
+            ${{ steps.graph-package-provenance.outputs.bundle-path }}
+            ${{ steps.graph-package-sbom.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain verified Graph G7 promotion evidence
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-promotion-evidence
+          path: artifacts/graph-g7-promotion-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain Graph G7 standalone admission decision
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-standalone-admission-decision
+          path: artifacts/graph-g7-standalone-admission-decision.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload verified Graph G7 release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-release-candidate
+          path: artifacts/graph-g7-release-candidate.json
+          if-no-files-found: error
+          retention-days: 30
+
   phase4-runtime-contracts:
     name: Phase4 Runtime Contracts (${{ matrix.os }})
     needs: changes
@@ -296,6 +677,10 @@ jobs:
         docs-quality,
         phase4-fast-guard,
         build-test-matrix,
+        graph-query-admission,
+        graph-repository-preview-admission,
+        graph-g6-admission,
+        graph-g7-release-candidate,
         phase4-runtime-contracts,
       ]
     runs-on: ubuntu-latest
@@ -307,6 +692,10 @@ jobs:
           DOCS_RESULT: ${{ needs.docs-quality.result }}
           HEAVY_REQUIRED: ${{ needs.changes.outputs.heavy == 'true' }}
           HEAVY_RESULT: ${{ needs.build-test-matrix.result }}
+          GRAPH_QUERY_RESULT: ${{ needs.graph-query-admission.result }}
+          GRAPH_REPOSITORY_PREVIEW_RESULT: ${{ needs.graph-repository-preview-admission.result }}
+          GRAPH_G6_RESULT: ${{ needs.graph-g6-admission.result }}
+          GRAPH_G7_RELEASE_RESULT: ${{ needs.graph-g7-release-candidate.result }}
           PHASE4_REQUIRED: ${{ needs.changes.outputs.phase4 == 'true' }}
           PHASE4_FAST_RESULT: ${{ needs.phase4-fast-guard.result }}
           PHASE4_MATRIX_RESULT: ${{ needs.phase4-runtime-contracts.result }}
@@ -319,6 +708,10 @@ jobs:
           fi
           if [[ "$HEAVY_REQUIRED" = "true" ]]; then
             test "$HEAVY_RESULT" = "success"
+            test "$GRAPH_QUERY_RESULT" = "success"
+            test "$GRAPH_REPOSITORY_PREVIEW_RESULT" = "success"
+            test "$GRAPH_G6_RESULT" = "success"
+            test "$GRAPH_G7_RELEASE_RESULT" = "success"
           fi
           if [[ "$PHASE4_REQUIRED" = "true" ]]; then
             test "$PHASE4_FAST_RESULT" = "success"

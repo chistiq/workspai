@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/query-cache-reuse/v0.1.0-candidate",
+  "title": "WorkspaiGraphQueryCacheReuseCandidate",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "reusable", "status", "entryDigest"],
+      "properties": {
+        "contract": {
+          "const": { "id": "workspai.graph.query-cache-reuse", "version": "0.1.0-candidate" }
+        },
+        "reusable": { "const": true },
+        "status": { "const": "exact" },
+        "entryDigest": { "type": "object", "required": ["algorithm", "value"] }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "reusable", "status", "reasons"],
+      "properties": {
+        "contract": {
+          "const": { "id": "workspai.graph.query-cache-reuse", "version": "0.1.0-candidate" }
+        },
+        "reusable": { "const": false },
+        "status": { "enum": ["miss", "stale", "denied", "incompatible", "corrupt"] },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        }
+      }
+    }
+  ]
+}

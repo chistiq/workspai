@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "workspai-graph-remote-admission.v1",
+  "package": "@workspai/graph",
+  "stage": "G3",
+  "status": "passed",
+  "sourceCommit": "ed18cd5cb435711e742a4dfd99d3778635bf695d",
+  "testedCommit": "608abcc17036c67a86af48085e1d3d2eb9fb7c17",
+  "sourceCommitSignature": {
+    "status": "verified",
+    "scheme": "gpg-eddsa",
+    "keyFingerprint": "18CF672100B83B0EBCE34937C9448C37DF763127"
+  },
+  "candidateClosureDigest": "sha256:4c5806247a3715d1f17515be8e3e6ee3af7ff855e5661b10bc3318508d6be040",
+  "planDigest": "sha256:d50be0305b651e83e3c243c62558228180a18e21b493bdf50f474d860557c969",
+  "implementationDigest": "sha256:cd6b8d86a5b1498a199832dfc8ba8bf58563719b81f542dcbb593a5327c1b421",
+  "workflow": {
+    "provider": "github-actions",
+    "name": "CI & Metrics Matrix",
+    "runId": "34356880325",
+    "runUrl": "https://github.com/chistiq/workspai/actions/runs/34356880325",
+    "event": "pull_request",
+    "conclusion": "success"
+  },
+  "platforms": [
+    {
+      "runner": "Linux",
+      "architecture": "X64",
+      "node": "v20.20.2",
+      "artifactId": "10106178631",
+      "digest": "sha256:a5f6dbe4fd3d5e7b735f4db6a666935da9da0fe104628dae45b6abc7f1bf4917",
+      "conclusion": "success"
+    },
+    {
+      "runner": "macOS",
+      "architecture": "ARM64",
+      "node": "v20.20.2",
+      "artifactId": "10106182118",
+      "digest": "sha256:4cc8ffa3b56ce57f7c70f5b09b6cd473f898448f65468116d8e50db5bf6b8099",
+      "conclusion": "success"
+    },
+    {
+      "runner": "Windows",
+      "architecture": "X64",
+      "node": "v20.20.2",
+      "artifactId": "10106221764",
+      "digest": "sha256:ddf8d074e9049feb82f1324edb232d767cf448a247f091236049bd6fae8a999d",
+      "conclusion": "success"
+    }
+  ],
+  "matrixAdmission": {
+    "jobId": "102489122277",
+    "jobName": "Admit Graph query matrix",
+    "artifactId": "10106763301",
+    "artifactDigest": "sha256:7c6602ca53856e21e9a531f13f63fc1069702a01b4392768013bdaa8402f09f3",
+    "conclusion": "success",
+    "requiredOperatingSystems": ["Linux", "macOS", "Windows"]
+  },
+  "repositoryGate": {
+    "jobId": "102489191417",
+    "jobName": "CI Gate",
+    "conclusion": "success"
+  },
+  "reviewedAt": "2026-09-09",
+  "failures": []
+}

@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G3",
+  "asOf": "2026-09-09",
+  "status": "local-passed-remote-pending-awaiting-approval",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "Queries consume canonical generations without creating a second Graph truth.",
+      "evidence": [
+        "packages/graph/src/application/query-graph.ts",
+        "packages/graph/src/contracts/query.ts"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "Traversal, evidence, pages and pending paths are bounded through versioned profiles.",
+      "evidence": [
+        "packages/graph/src/application/query-graph.ts",
+        "packages/graph/scripts/check-query-profile.mjs"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "Small, normal and large query profiles remain below declared local p95 budgets.",
+      "evidence": ["packages/graph/scripts/check-query-profile.mjs"]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Malformed generations, identities, cursors, budgets and semantic cache drift fail closed.",
+      "evidence": [
+        "packages/graph/test/query/query-engine.test.ts",
+        "packages/graph/src/application/query-cache.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Scope, redaction and authorization are exact cache dependencies and artifacts remain portable.",
+      "evidence": [
+        "packages/graph/src/application/query-cache.ts",
+        "packages/graph/scripts/check-packed-package.mjs"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Local checks pass; same-commit Linux, macOS and Windows G3 evidence remains required.",
+      "evidence": [
+        "packages/graph/scripts/check-query-admission.mjs",
+        "packages/graph/scripts/check-query-matrix-admission.mjs",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "The model-free query engine is consumed from an isolated package without a CLI runtime import.",
+      "evidence": [
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/graph/test/architecture/package-boundaries.test.ts"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "Normalization, ordering, profiles, pagination and replay are executable invariants.",
+      "evidence": [
+        "packages/graph/src/application/query-graph.ts",
+        "packages/graph/test/query/query-engine.test.ts"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Versioned proof, binding, query, result and retrieval contracts fail closed.",
+      "evidence": [
+        "packages/graph/src/conformance/query.ts",
+        "packages/graph/conformance/contract-catalog.v1.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "Unknowns, disputes, freshness, cost, truncation and analytical limits remain machine-readable.",
+      "evidence": [
+        "packages/graph/src/contracts/query.ts",
+        "packages/graph/src/application/query-graph.ts"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Query, proof, cache, scale and governance rules have package-owned executable evidence.",
+      "evidence": [
+        "packages/graph/governance/g3-stage-plan.v1.json",
+        "packages/graph/test/governance/g3-stage-plan.test.ts"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "Packed query exports pass while source, tests, governance, scripts and maps stay excluded.",
+      "evidence": ["packages/graph/scripts/check-packed-package.mjs", "packages/graph/package.json"]
+    }
+  ],
+  "checks": [
+    {
+      "id": "graph-package-check",
+      "status": "passed",
+      "command": "corepack npm --workspace @workspai/graph run check",
+      "evidence": "Package gates pass locally."
+    },
+    {
+      "id": "package-infrastructure",
+      "status": "passed",
+      "command": "corepack npm run check:package-infrastructure",
+      "evidence": "Repository-wide package gates pass after closure recording."
+    },
+    {
+      "id": "remote-platform-matrix",
+      "status": "pending-remote",
+      "evidence": "Same-commit Linux, macOS and Windows G3 query evidence is not yet retained."
+    }
+  ],
+  "measurements": {
+    "candidateSchemas": 21,
+    "testFiles": 20,
+    "tests": 132,
+    "coverageStatementsPercent": 90.66,
+    "coverageBranchesPercent": 88.99,
+    "coverageFunctionsPercent": 92.98,
+    "coverageLinesPercent": 92.4,
+    "querySmallEdges": 100,
+    "querySmallP95Milliseconds": 0.883,
+    "queryNormalEdges": 5000,
+    "queryNormalP95Milliseconds": 6.7,
+    "queryLargeEdges": 25000,
+    "queryLargeP95Milliseconds": 42.165,
+    "packedFiles": 52,
+    "packedCompressedBytes": 78682,
+    "packedCompressedBudgetBytes": 262144,
+    "publicInternalDocuments": 0,
+    "cliRuntimeBridges": 0,
+    "nativeTruthImplementations": 0
+  },
+  "environment": { "local": ["linux", "node-20-or-newer"], "remoteMatrix": "pending" },
+  "remainingRisks": [
+    "The signed candidate still requires retained Linux, Windows and macOS query evidence.",
+    "Empirical retrieval relevance and analytical accuracy remain explicitly unassessed.",
+    "Rust, native and WASM remain prohibited until G6 measurements justify an adapter.",
+    "Persistence, incremental execution, publication and CLI replacement remain later-stage work."
+  ],
+  "nextStage": "G4",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "awaiting",
+    "requiredForNextStage": true,
+    "rule": "A signed checkpoint plus retained same-commit Linux, Windows and macOS G3 evidence authorizes G4 only."
+  }
+}

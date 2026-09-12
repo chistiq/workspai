@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/evidence-independence/v0.1.0-candidate",
+  "title": "WorkspaiGraphEvidenceIndependenceCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["independent", "roots", "rejectedPairs"],
+  "properties": {
+    "independent": { "type": "boolean" },
+    "roots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "rejectedPairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["left", "right", "reason"],
+        "properties": {
+          "left": { "type": "string" },
+          "right": { "type": "string" },
+          "reason": { "enum": ["same-root", "ancestor", "generated-sibling"] }
+        }
+      }
+    }
+  }
+}

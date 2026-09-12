@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G5",
+  "status": "local-source-complete",
+  "authorizedBy": "local-source-continuation",
+  "authority": [
+    "workspai-docs:Packages/graph/ROADMAP.md#phase-g5",
+    "workspai-docs:Packages/graph/adr/0002-one-canonical-graph-versioned-projections.md",
+    "workspai-docs:Packages/graph/adr/0005-dual-scope-project-and-workspace-artifacts.md",
+    "workspai-docs:Packages/graph/STANDALONE_AND_WORKSPACE_INTEGRATION.md",
+    "workspai-docs:Packages/graph/CONTRACTS_AND_ONTOLOGY.md"
+  ],
+  "checkpoints": [
+    {
+      "id": "versioned-projection-profile-and-result",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/projection.ts",
+        "packages/graph/schemas/projection-result.v0.1.0-candidate.schema.json",
+        "packages/graph/src/projections/projection-profiles.ts",
+        "packages/graph/src/projections/project-graph.ts",
+        "packages/graph/test/projections/project-graph.test.ts"
+      ]
+    },
+    {
+      "id": "generic-graph-slice-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/graph-slice.ts",
+        "packages/graph/schemas/graph-slice-result.v0.1.0-candidate.schema.json",
+        "packages/graph/src/projections/create-graph-slice.ts",
+        "packages/graph/test/projections/graph-slice.test.ts"
+      ]
+    },
+    {
+      "id": "workspace-graph-composition",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/build-workspace-graph.ts",
+        "packages/graph/src/application/workspace-build-types.ts",
+        "packages/graph/test/build/workspace-build.test.ts"
+      ]
+    },
+    {
+      "id": "workspace-onboarding-port",
+      "status": "implemented-local-candidate",
+      "evidence": ["packages/graph/src/contracts/workspace-integration.ts"]
+    },
+    {
+      "id": "derived-projection-profiles",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/projection.ts",
+        "packages/graph/schemas/derived-projection-result.v0.1.0-candidate.schema.json",
+        "packages/graph/src/projections/derived-projection-profiles.ts",
+        "packages/graph/src/projections/project-derived-graph.ts",
+        "packages/graph/test/projections/project-derived-graph.test.ts"
+      ]
+    },
+    {
+      "id": "standalone-dual-scope-orchestration",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/application/run-standalone-graph.ts",
+        "packages/graph/src/application/publish-workspace-graph.ts",
+        "packages/graph/test/application/run-standalone-graph.test.ts"
+      ]
+    },
+    {
+      "id": "workspace-artifact-store-adapter",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/adapters/node/workspace-artifact-store.ts",
+        "packages/graph/src/adapters/node/publication-artifact-store.ts",
+        "packages/graph/test/adapters/node-workspace-artifact-store.test.ts"
+      ]
+    },
+    {
+      "id": "g5-cross-platform-admission",
+      "status": "planned",
+      "evidence": [".github/workflows/ci.yml"]
+    }
+  ],
+  "prohibitions": [
+    "No projection or slice may mutate canonical graph truth.",
+    "No workspace graph may re-extract repository sources.",
+    "No central CLI runtime import or implicit workspace creation.",
+    "No empty success for unsupported, truncated or failed composition zones.",
+    "No incremental engine, native acceleration or CLI bridge claim."
+  ],
+  "nativeAcceleration": {
+    "status": "prohibited",
+    "earliestDecisionStage": "G6",
+    "rule": "Rust, native and WASM execution remain blocked until G6 benchmark evidence."
+  },
+  "publicInternalDocuments": 0,
+  "nextStage": "G6",
+  "nextStageAuthorized": false
+}

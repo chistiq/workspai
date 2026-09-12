@@ -1,0 +1,25 @@
+{
+  "contract": { "id": "workspai.graph.change-set", "version": "0.1.0-candidate" },
+  "id": "changeset:fixture:1",
+  "baseGeneration": "generation:base",
+  "inputs": [
+    {
+      "kind": "edited",
+      "locator": "src/index.ts",
+      "inputKind": "source-file",
+      "scanProfileDigest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "priorDigest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "nextDigest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    }
+  ],
+  "causes": [{ "kind": "content", "source": "content-state-comparison" }]
+}

@@ -1,0 +1,6 @@
+{
+  "id": "/home/example/source.ts",
+  "identityScheme": { "id": "workspai.graph.portable-entity", "version": "1" },
+  "kind": "file",
+  "scope": { "kind": "project", "projectIds": ["project:fixture"] }
+}

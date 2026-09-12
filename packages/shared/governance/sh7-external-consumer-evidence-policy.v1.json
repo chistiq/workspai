@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "workspai-shared-external-consumer-evidence-policy.v1",
+  "asOf": "2026-08-15",
+  "status": "required-not-satisfied",
+  "independence": {
+    "consumerOwnership": "not-controlled-by-package-maintainer",
+    "installation": "exact-packed-artifact",
+    "monorepoSourceImports": "forbidden",
+    "centralCliDependency": "forbidden",
+    "fixtureOnlyConsumer": "insufficient",
+    "internalWorkspaiPackage": "insufficient"
+  },
+  "requiredAttestation": {
+    "schemaVersion": "workspai-shared-external-consumer-attestation.v1",
+    "requiredFields": [
+      "attestationId",
+      "consumerClass",
+      "independentOwner",
+      "packageName",
+      "packageVersion",
+      "tarballSha256",
+      "runtime",
+      "platform",
+      "useCases",
+      "contractsUsed",
+      "outcomes",
+      "limitations",
+      "valueAssessment",
+      "consent",
+      "attestedAt"
+    ],
+    "minimumUseCases": 2,
+    "requiredOutcomes": [
+      "installation-from-tarball",
+      "valid-artifact-accepted",
+      "invalid-artifact-rejected",
+      "diagnostics-consumed-without-terminal-parsing"
+    ],
+    "valueAssessment": ["useful", "not-useful", "inconclusive"],
+    "admissionValue": "useful"
+  },
+  "privacy": {
+    "rawSource": "prohibited",
+    "rawArtifactPayload": "prohibited",
+    "absolutePaths": "prohibited",
+    "credentialsAndSecrets": "prohibited",
+    "personalIdentity": "optional-redacted",
+    "publicEvidence": "consent-required",
+    "acceptedProof": [
+      "redacted-attestation",
+      "immutable-public-reference-plus-sha256",
+      "maintainer-verified-private-reference-plus-redacted-summary"
+    ]
+  },
+  "rejectionRules": [
+    "maintainer-authored-demo-does-not-prove-external-value",
+    "successful-install-without-a-real-use-case-is-insufficient",
+    "terminal-output-screenshot-without-machine-result-consumption-is-insufficient",
+    "an-attestation-without-exact-artifact-identity-is-insufficient",
+    "paid-or-incentivized-evidence-must-be-disclosed",
+    "failed-and-inconclusive-results-must-not-be-omitted"
+  ],
+  "admissionRule": "At least one independently owned consumer must submit a consented, artifact-bound attestation with two real use cases and a useful value assessment; internal fixtures and Graph adoption remain regression evidence only."
+}

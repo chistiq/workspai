@@ -1,0 +1,45 @@
+{
+  "contracts": [
+    {
+      "dependencies": [],
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "digest": "sha256:0e821f6cc6ecb78fba84c888f5912d030e377d04a6956f5270a329affc3b9cf4",
+      "id": "https://schemas.workspai.dev/wis/core/contract-catalog/0.1.0-draft",
+      "key": "contract-catalog",
+      "source": "schemas/src/wis-contract-catalog.v0.1.0-draft.schema.json",
+      "title": "WisContractCatalog",
+      "typeExport": "WisContractCatalog",
+      "validatorExport": "validateWisContractCatalogStructure",
+      "version": "0.1.0-draft"
+    },
+    {
+      "dependencies": [],
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "digest": "sha256:e1d46c17b7f9a1cabab66c3392ce6c6b4a6b69278026f0d743c7680fc42ebeaa",
+      "id": "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft",
+      "key": "core-result-envelope",
+      "source": "schemas/src/wis-core-result-envelope.v0.2.0-draft.schema.json",
+      "title": "WisCoreResultEnvelope",
+      "typeExport": "WisCoreResultEnvelope",
+      "validatorExport": "validateWisCoreResultEnvelopeStructure",
+      "version": "0.2.0-draft"
+    },
+    {
+      "dependencies": [
+        "https://schemas.workspai.dev/wis/core/result-envelope/0.2.0-draft"
+      ],
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "digest": "sha256:37348ddc103b283ca545e3cc89020b1f254b2bece1834b0822a0a5b7eb607aa9",
+      "id": "https://schemas.workspai.dev/wis/core/result-envelope/0.1.0-draft",
+      "key": "core-result-envelope-v0-1",
+      "source": "schemas/compatibility/wis-core-result-envelope.v0.1.0-draft.schema.json",
+      "title": "WisCoreResultEnvelopeV01",
+      "typeExport": "WisCoreResultEnvelopeV01",
+      "validatorExport": "validateWisCoreResultEnvelopeV01Structure",
+      "version": "0.1.0-draft"
+    }
+  ],
+  "portfolioDigest": "sha256:15e091961df7e19218960a21f7ef01989663333f09de97d85b554753f9a76306",
+  "schemaVersion": "workspai-shared-generated-registry.v2",
+  "status": "candidate"
+}
