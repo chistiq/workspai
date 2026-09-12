@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added evidence-backed Docker Compose service topology, CODEOWNERS ownership,
+  cross-language source entry points, repository-wide Proto/GraphQL contract
+  surfaces and MATLAB artifact classification. Repository quality now reports
+  recognized-code semantic depth separately from complete file inventory.
+- Aligned `inspect` and `query` process exits with their JSON envelope so an
+  honest `partial` result returns exit code `2` instead of silent success.
+- Seeded contract and architecture traversal from relevant entity kinds,
+  preserved evidence on entry-point paths and prevented unrelated high-degree
+  nodes from exhausting contract-topology budgets.
+
 - Packed published reject paths and `--target` from the installed executable,
   and execute shipped G4 language fixtures plus G6/G7 envelope fixtures from
   the tarball. Public accuracy, signed provenance and standalone-stable

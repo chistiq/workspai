@@ -351,7 +351,16 @@ function traverse(
 ): TraversalOutput {
   const starts = query.subject
     ? [query.subject]
-    : [...nodeById.keys()].sort((a, b) => a.localeCompare(b));
+    : [...nodeById.values()]
+        .filter((node) => {
+          if (query.kind === 'contract-topology')
+            return ['api', 'contract', 'endpoint', 'schema'].includes(node.kind);
+          if (query.kind === 'architecture-conformance')
+            return ['workspace', 'repository', 'project', 'service'].includes(node.kind);
+          return true;
+        })
+        .map((node) => node.id)
+        .sort((left, right) => left.localeCompare(right));
   const queue = starts.map((id) => ({ nodeIds: [id], edges: [] as GraphEdge[] }));
   const paths: GraphPath[] = [];
   const seenStates = new Set<string>();
@@ -370,6 +379,25 @@ function traverse(
     for (const edge of edges) {
       const next = nextEntity(edge, nodeId, query.direction);
       if (!next) continue;
+      const nextNode = nodeById.get(next);
+      if (
+        query.kind === 'contract-topology' &&
+        ![
+          'api',
+          'contract',
+          'endpoint',
+          'file',
+          'gate',
+          'module',
+          'project',
+          'repository',
+          'schema',
+          'service',
+          'symbol',
+          'test',
+        ].includes(nextNode?.kind ?? '')
+      )
+        continue;
       visitedEdges += 1;
       if (visitedEdges > query.budget.maxEdges) {
         truncationReasons.add('edges');
@@ -595,7 +623,19 @@ export async function queryGraph(
     const entryNodes = graph.nodes.filter(
       (node) => scopedNodeIds.has(node.id) && ['api', 'command', 'endpoint'].includes(node.kind)
     );
-    paths = entryNodes.map((node) => toPath(graph, nodeById, [node.id], []));
+    paths = entryNodes.flatMap((node) => {
+      const declarations = graph.edges
+        .filter(
+          (edge) =>
+            edge.to === node.id &&
+            ['declares', 'exposes'].includes(edge.relation) &&
+            edgeAllowed(edge, query)
+        )
+        .sort((left, right) => left.id.localeCompare(right.id));
+      return declarations.length > 0
+        ? declarations.map((edge) => toPath(graph, nodeById, [edge.from, node.id], [edge]))
+        : [toPath(graph, nodeById, [node.id], [])];
+    });
     traversal = {
       paths,
       visitedNodes: graph.nodes.length,
@@ -630,7 +670,19 @@ export async function queryGraph(
   const nodeResults = [
     ...new Map(pagePaths.flatMap((path) => path.nodes).map((node) => [node.id, node])).values(),
   ].sort((left, right) => left.id.localeCompare(right.id));
-  const result = query.kind === 'operational-risk' ? pagePaths.map(operationalRisk) : nodeResults;
+  const result =
+    query.kind === 'operational-risk'
+      ? pagePaths.map(operationalRisk)
+      : query.kind === 'entry-points'
+        ? [
+            ...new Map(
+              pagePaths
+                .map((path) => path.nodes.at(-1))
+                .filter((node): node is GraphEntityReference => Boolean(node))
+                .map((node) => [node.id, node])
+            ).values(),
+          ].sort((left, right) => left.id.localeCompare(right.id))
+        : nodeResults;
   const relevantFactIds = new Set(
     pagePaths.flatMap((path) =>
       path.hops.flatMap((hop) => graph.edges.find((edge) => edge.id === hop.edgeId)?.facts ?? [])

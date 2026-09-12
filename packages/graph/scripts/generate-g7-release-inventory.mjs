@@ -46,6 +46,18 @@ function packedJobIds(source) {
   return [...source.slice(start, end).matchAll(/id: '([^']+)'/g)].map((item) => item[1]);
 }
 
+function packedCompressedBudget(source) {
+  const match = source.match(
+    /GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY[\s\S]*?maxCompressedBytes:\s*([\d_]+)/u
+  );
+  if (!match?.[1]) throw new Error('Cannot extract packed Graph byte budget');
+  const value = Number(match[1].replaceAll('_', ''));
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error('Packed Graph byte budget must be a positive safe integer');
+  }
+  return value;
+}
+
 const failures = [];
 const manifest = readJson(path.join(packageRoot, 'package.json'));
 const catalog = readJson(path.join(packageRoot, 'conformance/contract-catalog.v1.json'));
@@ -62,6 +74,7 @@ const rootForbiddenValueExports = frozenStringArray(
   'GRAPH_ROOT_FORBIDDEN_VALUE_EXPORTS'
 );
 const packedJobs = packedJobIds(productSource);
+const maxCompressedBytes = packedCompressedBudget(productSource);
 const incidents = frozenStringArray(productSource, 'GRAPH_INCIDENT_CLASSES');
 const profile = readJson(path.join(packageRoot, 'conformance/profile.json'));
 const exported = namedValueExports(rootSource);
@@ -119,6 +132,7 @@ const inventory = {
   conformanceProfile: profile,
   schemas: catalog.contracts,
   packedArtifactSecurity: {
+    maxCompressedBytes,
     sourceMaps: 'excluded',
     governance: 'excluded',
     machineLocalPaths: 'rejected',

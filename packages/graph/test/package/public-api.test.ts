@@ -69,6 +69,10 @@ describe('@workspai/graph development package', () => {
       'official-offline-repository-providers',
       'node-repository-preview-adapter',
       'repository-contract-runtime-delivery-surfaces',
+      'compose-service-dependency-topology',
+      'codeowners-file-ownership',
+      'cross-language-source-entrypoints',
+      'matlab-artifact-surfaces',
       'safe-local-git-head-evidence',
       'declarative-structural-extractor-profile',
       'literal-route-extraction',
@@ -107,6 +111,7 @@ describe('@workspai/graph development package', () => {
       'incident-rollback-boundary-candidate',
       'packed-version-1-query-preset-jobs',
       'packed-installed-product-corpus',
+      'partial-cli-exit-code-integrity',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',
@@ -184,7 +189,7 @@ describe('@workspai/graph development package', () => {
       credentials: 'deny',
     });
     const providers = createStandardRepositoryProviders();
-    expect(providers).toHaveLength(7);
+    expect(providers).toHaveLength(10);
     expect(Object.isFrozen(providers)).toBe(true);
   });
 });

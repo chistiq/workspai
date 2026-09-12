@@ -324,6 +324,7 @@
     }
   ],
   "packedArtifactSecurity": {
+    "maxCompressedBytes": 294912,
     "sourceMaps": "excluded",
     "governance": "excluded",
     "machineLocalPaths": "rejected",

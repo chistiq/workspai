@@ -357,6 +357,34 @@ describe('workspai-graph CLI', () => {
     });
   });
 
+  it('uses exit 2 whenever inspect or query emits an honest partial result', async () => {
+    const inspect = harness(result('partial'));
+    expect(
+      await runGraphCli(
+        ['inspect', '.', '--mode', 'project-only', '--json'],
+        inspect.io,
+        inspect.dependencies
+      )
+    ).toBe(2);
+    expect(JSON.parse(inspect.output[0] ?? '{}')).toMatchObject({
+      command: 'inspect',
+      status: 'partial',
+    });
+
+    const query = harness(result('partial'));
+    expect(
+      await runGraphCli(
+        ['query', '.', '--preset', 'entryPoints', '--json'],
+        query.io,
+        query.dependencies
+      )
+    ).toBe(2);
+    expect(JSON.parse(query.output[0] ?? '{}')).toMatchObject({
+      command: 'query',
+      status: 'partial',
+    });
+  });
+
   it('runs admitted presets and reports query contract failures', async () => {
     const test = harness();
     expect(
@@ -453,7 +481,7 @@ describe('workspai-graph CLI', () => {
     const test = harness();
     expect(await runGraphCli(['providers', 'list', '--json'], test.io, test.dependencies)).toBe(0);
     const list = JSON.parse(test.output[0] ?? '{}') as { data: { id: string }[] };
-    expect(list.data).toHaveLength(7);
+    expect(list.data).toHaveLength(10);
     expect(list.data.every((provider) => provider.id.startsWith('workspai.graph.provider.'))).toBe(
       true
     );

@@ -12,7 +12,7 @@ import {
 export const REPOSITORY_SURFACES_PROVIDER_ID = 'workspai.graph.provider.repository-surfaces';
 
 interface SurfaceClassification {
-  readonly kind: 'contract' | 'container' | 'workflow' | 'test';
+  readonly kind: 'artifact' | 'contract' | 'container' | 'workflow' | 'test';
   readonly family: string;
   readonly predicate: 'declares' | 'contains';
   readonly sourceKind: string;
@@ -28,13 +28,25 @@ function classify(input: GraphProviderInput): readonly SurfaceClassification[] {
   const result: SurfaceClassification[] = [];
   if (
     /(?:^|\/)(?:openapi|swagger|asyncapi)(?:\.[^/]+)?\.(?:json|ya?ml)$/u.test(locator) ||
-    /(?:^|\/)contracts?\/[^/]+\.(?:json|ya?ml|proto|graphql|gql)$/u.test(locator)
+    /(?:^|\/)contracts?\/[^/]+\.(?:json|ya?ml|proto|graphql|gql)$/u.test(locator) ||
+    /\.(?:proto|graphql|gql)$/u.test(locator)
   ) {
     result.push({
       kind: 'contract',
       family: 'declaration.contract',
       predicate: 'declares',
       sourceKind: 'contract-declaration',
+    });
+  }
+  if (
+    /\.(?:mat|fig|mlx|mlapp|mltbx|mlappinstall|mlpkginstall|p)$/u.test(locator) ||
+    /\.mex[a-z0-9_]*$/u.test(locator)
+  ) {
+    result.push({
+      kind: 'artifact',
+      family: 'artifact.matlab',
+      predicate: 'declares',
+      sourceKind: 'matlab-artifact',
     });
   }
   if (
@@ -93,7 +105,7 @@ export function createRepositorySurfacesProvider(): GraphProviderRuntime {
     displayName: 'Repository contracts, runtime and delivery surfaces',
     determinism: 'deterministic' as const,
     capabilities: {
-      entityKinds: ['repository', 'contract', 'container', 'workflow', 'test'],
+      entityKinds: ['repository', 'artifact', 'contract', 'container', 'workflow', 'test'],
       relationKinds: ['declares', 'contains'],
       relationSemantics: ['declarative', 'structural'] as const,
       factFamilies: [

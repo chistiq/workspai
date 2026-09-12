@@ -13,6 +13,7 @@ const consumerRoot = path.join(temporaryRoot, 'consumer');
 const npmCache = path.join(temporaryRoot, 'npm-cache');
 const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
 const typescriptCli = toolRequire.resolve('typescript/bin/tsc');
+const yamlRoot = path.dirname(toolRequire.resolve('yaml/package.json'));
 const {
   GRAPH_CLI_RESULT_SCHEMA_VERSION,
   GRAPH_INCIDENT_CLASSES,
@@ -108,7 +109,7 @@ function packedFiles(installedRoot) {
 }
 
 try {
-  for (const sourceRoot of [sharedRoot, packageRoot]) {
+  for (const sourceRoot of [sharedRoot, yamlRoot, packageRoot]) {
     runNpm(
       ['pack', '--loglevel=notice', '--ignore-scripts', '--pack-destination', temporaryRoot],
       sourceRoot
@@ -120,11 +121,12 @@ try {
     .map((entry) => path.join(temporaryRoot, entry));
   const sharedTarball = tarballs.find((entry) => path.basename(entry).includes('workspai-shared'));
   const graphTarball = tarballs.find((entry) => path.basename(entry).includes('workspai-graph'));
-  if (!sharedTarball || !graphTarball || tarballs.length !== 2) {
-    throw new Error(`expected one Shared and one Graph tarball; found ${tarballs.length}`);
+  const yamlTarball = tarballs.find((entry) => /^yaml-/u.test(path.basename(entry)));
+  if (!sharedTarball || !yamlTarball || !graphTarball || tarballs.length !== 3) {
+    throw new Error(`expected one Shared, YAML and Graph tarball; found ${tarballs.length}`);
   }
   const compressedBytes = fs.statSync(graphTarball).size;
-  const compressedBudgetBytes = 256 * 1024;
+  const compressedBudgetBytes = GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY.maxCompressedBytes;
   if (compressedBytes > compressedBudgetBytes) {
     throw new Error(
       `packed Graph package is ${compressedBytes} compressed bytes; budget is ${compressedBudgetBytes}`
@@ -145,6 +147,18 @@ try {
       '--no-fund',
       '--package-lock=false',
       sharedTarball,
+    ],
+    consumerRoot
+  );
+  runNpm(
+    [
+      'install',
+      '--offline',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      '--package-lock=false',
+      yamlTarball,
     ],
     consumerRoot
   );
@@ -305,7 +319,7 @@ try {
         };
         if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
         const standardProviders = providers.createStandardRepositoryProviders();
-        if (standardProviders.length !== 7 || !Object.isFrozen(standardProviders)) process.exit(30);
+        if (standardProviders.length !== 10 || !Object.isFrozen(standardProviders)) process.exit(30);
         const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
         if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
         const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
@@ -479,7 +493,7 @@ try {
       }
     },
     'providers-list': (envelope) => {
-      if (!Array.isArray(envelope.data) || envelope.data.length !== 7) {
+      if (!Array.isArray(envelope.data) || envelope.data.length !== 10) {
         throw new Error('packed Graph CLI provider inventory is incomplete');
       }
     },

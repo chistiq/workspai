@@ -32,6 +32,9 @@ const KNOWN_SOURCE_EXTENSIONS = new Set([
   '.kts',
   '.lua',
   '.m',
+  '.mlx',
+  '.mlapp',
+  '.p',
   '.mm',
   '.php',
   '.rb',
@@ -45,6 +48,13 @@ function extension(locator: string): string {
   const basename = locator.slice(locator.lastIndexOf('/') + 1);
   const dot = basename.lastIndexOf('.');
   return dot <= 0 ? '' : basename.slice(dot).toLowerCase();
+}
+
+function isKnownSourceExtension(value: string): boolean {
+  // MEX modules are executable code surfaces even though their platform suffix
+  // varies. MATLAB data, figures, toolboxes and installers remain artifacts,
+  // not source-code coverage candidates.
+  return KNOWN_SOURCE_EXTENSIONS.has(value) || /^\.mex[a-z0-9_]*$/u.test(value);
 }
 
 export function createRepositoryFilesProvider(): GraphProviderRuntime {
@@ -102,18 +112,24 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
 
       const facts: GraphWorkspaceFact[] = [];
       const inputs = request.inputs.filter((input) => !input.locator.startsWith('.git/'));
+      const recognizedCodeInputs = inputs.filter((input) =>
+        isKnownSourceExtension(extension(input.locator))
+      );
+      const semanticallySupportedInputs = recognizedCodeInputs.filter((input) =>
+        SUPPORTED_SOURCE_EXTENSIONS.has(extension(input.locator))
+      );
       const unsupportedZones = inputs
         .filter((input) => {
           const sourceExtension = extension(input.locator);
           return (
-            KNOWN_SOURCE_EXTENSIONS.has(sourceExtension) &&
+            isKnownSourceExtension(sourceExtension) &&
             !SUPPORTED_SOURCE_EXTENSIONS.has(sourceExtension)
           );
         })
         .map((input) => ({
           code: 'graph.source-language-unsupported',
           scope: input.locator,
-          reason: `Structural extraction does not support ${extension(input.locator)} source files.`,
+          reason: `Semantic extraction is not admitted for ${extension(input.locator)} inputs; inventory and provenance remain preserved.`,
         }));
       for (const [index, input] of inputs.entries()) {
         if (request.signal?.aborted) throw new Error('Repository file collection was cancelled.');
@@ -169,6 +185,11 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
             dimension: 'repository-files',
             observed: inputs.length,
             expected: inputs.length,
+          },
+          {
+            dimension: 'recognized-code-semantic-depth',
+            observed: semanticallySupportedInputs.length,
+            expected: recognizedCodeInputs.length,
           },
         ],
         unknownZones: [],

@@ -108,7 +108,8 @@
     "admission:foundation:matrix": "node scripts/check-foundation-matrix-admission.mjs"
   },
   "dependencies": {
-    "@workspai/shared": "0.0.0-development"
+    "@workspai/shared": "0.0.0-development",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

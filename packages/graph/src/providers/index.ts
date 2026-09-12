@@ -23,6 +23,12 @@ export {
   REPOSITORY_ROUTES_PROVIDER_ID,
   createRepositoryRoutesProvider,
 } from './repository-routes.js';
+export { COMPOSE_TOPOLOGY_PROVIDER_ID, createComposeTopologyProvider } from './compose-topology.js';
+export { CODEOWNERS_PROVIDER_ID, createCodeownersProvider } from './codeowners.js';
+export {
+  SOURCE_ENTRYPOINTS_PROVIDER_ID,
+  createSourceEntrypointsProvider,
+} from './source-entrypoints.js';
 
 import type { GraphProviderRuntime } from '../contracts/provider.js';
 
@@ -33,6 +39,9 @@ import { createLanguageImportsProvider } from './language-imports.js';
 import { createRepositorySurfacesProvider } from './repository-surfaces.js';
 import { createGitHeadProvider } from './git-head.js';
 import { createRepositoryRoutesProvider } from './repository-routes.js';
+import { createComposeTopologyProvider } from './compose-topology.js';
+import { createCodeownersProvider } from './codeowners.js';
+import { createSourceEntrypointsProvider } from './source-entrypoints.js';
 
 /** The deterministic, offline provider set admitted for the standalone repository preview. */
 export function createStandardRepositoryProviders(): readonly GraphProviderRuntime[] {
@@ -44,5 +53,8 @@ export function createStandardRepositoryProviders(): readonly GraphProviderRunti
     createRepositorySurfacesProvider(),
     createGitHeadProvider(),
     createRepositoryRoutesProvider(),
+    createComposeTopologyProvider(),
+    createCodeownersProvider(),
+    createSourceEntrypointsProvider(),
   ]);
 }

@@ -43,6 +43,7 @@ export const GRAPH_QUERY_PRESETS = Object.freeze({
   }),
   contractTopology: preset('workspai.graph.query.contract-topology', 'contract-topology', {
     strategy: 'graph',
+    direction: 'both',
   }),
   architectureConformance: preset(
     'workspai.graph.query.architecture-conformance',

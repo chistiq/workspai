@@ -54,6 +54,10 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'official-offline-repository-providers',
     'node-repository-preview-adapter',
     'repository-contract-runtime-delivery-surfaces',
+    'compose-service-dependency-topology',
+    'codeowners-file-ownership',
+    'cross-language-source-entrypoints',
+    'matlab-artifact-surfaces',
     'safe-local-git-head-evidence',
     'declarative-structural-extractor-profile',
     'literal-route-extraction',
@@ -92,6 +96,7 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'incident-rollback-boundary-candidate',
     'packed-version-1-query-preset-jobs',
     'packed-installed-product-corpus',
+    'partial-cli-exit-code-integrity',
   ] as const,
   plannedCapabilities: ['standalone-stable', 'public-preview', 'cli-shadow-parity'] as const,
 });

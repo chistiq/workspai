@@ -81,11 +81,21 @@ consumers do not need host paths or directory guessing to resolve a generation.
 
 The offline provider set currently covers file/package topology, static imports
 for Node, Python, Go, Java, .NET and Rust, literal route declarations for the
-first five of those profiles, repository contract/runtime/delivery surfaces and
-safe repository-local Git `HEAD` identity. Computed routes, dynamic imports,
-unsupported source languages and Git worktree indirection remain explicit
-unknown or unsupported zones. Git config, remotes, credentials and external
-worktree metadata are never ingested.
+first five of those profiles, cross-language source entry points, CODEOWNERS
+file ownership, Docker Compose service/dependency/image topology, repository
+contract/runtime/delivery surfaces, MATLAB artifact families and safe
+repository-local Git `HEAD` identity. Every admitted repository file remains in
+the inventory even when deeper semantics are unavailable. Computed routes,
+dynamic imports, source languages outside the structural profile and Git
+worktree indirection remain explicit unknown or unsupported zones rather than
+silent omissions. Git config, remotes, credentials and external worktree
+metadata are never ingested.
+
+MATLAB `.m`, protected `.p`, live-script `.mlx`, application `.mlapp` and
+platform-specific `.mex*` inputs are counted as code-depth candidates. MATLAB
+data, figure, toolbox and installer formats are preserved as artifact surfaces
+without being misreported as source code. Binary or packaged MATLAB payloads
+are never decoded by the preview provider.
 
 The fixed `source`, `structural` and `evidence` preview views are bounded
 read-only selections over the same immutable canonical generation. They retain

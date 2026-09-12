@@ -113,6 +113,7 @@ describe('G7 standalone product contracts', () => {
     );
     expect(GRAPH_SBOM_SPEC.provenance).toBe('unattested');
     expect(GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY).toEqual({
+      maxCompressedBytes: 294_912,
       sourceMaps: 'excluded',
       governance: 'excluded',
       machineLocalPaths: 'rejected',

@@ -510,7 +510,7 @@ export async function runGraphCli(
       ),
       `Graph preview: ${build.status}\nFiles: ${build.metrics.inputFiles}\nNodes: ${view?.accepted ? view.value.nodes.length : build.graph.nodes.length}\nEdges: ${view?.accepted ? view.value.edges.length : build.graph.edges.length}${options.view ? `\nView: ${options.view}` : ''}${publication ? `\nPublication: ${publication.value.status}` : ''}`
     );
-    return GRAPH_CLI_EXIT_CODES.success;
+    return build.status === 'partial' ? GRAPH_CLI_EXIT_CODES.partial : GRAPH_CLI_EXIT_CODES.success;
   }
   if (options.command === 'quality') {
     emit(
@@ -581,7 +581,7 @@ export async function runGraphCli(
     ),
     `Graph query: ${build.status}\nPreset: ${options.preset ?? ''}${slice?.accepted ? '\nOutput: bounded review context slice' : ''}`
   );
-  return GRAPH_CLI_EXIT_CODES.success;
+  return build.status === 'partial' ? GRAPH_CLI_EXIT_CODES.partial : GRAPH_CLI_EXIT_CODES.success;
 }
 
 export async function main(): Promise<void> {

@@ -374,6 +374,7 @@ export const GRAPH_RELEASE_INVENTORY_CONTRACT = defineWisContract({
 });
 
 export const GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY = Object.freeze({
+  maxCompressedBytes: 294_912,
   sourceMaps: 'excluded',
   governance: 'excluded',
   machineLocalPaths: 'rejected',
