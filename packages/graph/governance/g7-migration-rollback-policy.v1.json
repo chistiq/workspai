@@ -39,6 +39,10 @@
     "requiresNativeParityWhenBundled": true,
     "requiresSignedArtifactAttestation": true,
     "requiresSignedSbomAttestation": true,
+    "requiresProtectedMainPush": true,
+    "requiresRepositoryAndSignerWorkflowVerification": true,
+    "requiresExactArtifactAndSbomBinding": true,
+    "requiresTransparencyWitness": true,
     "requiresExplicitAdmissionLedger": true,
     "npmPublication": "prohibited"
   }

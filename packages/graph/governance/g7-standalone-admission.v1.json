@@ -130,9 +130,13 @@
         "packages/graph/governance/g7-migration-rollback-policy.v1.json",
         "packages/graph/governance/g7-verified-baseline.v1.json",
         "packages/graph/scripts/check-g7-operational-readiness.mjs",
+        "packages/graph/scripts/check-g7-promotion-evidence.mjs",
+        "packages/graph/scripts/finalize-g7-standalone-admission.mjs",
+        "packages/graph/test/governance/g7-promotion-evidence.test.ts",
+        "packages/graph/test/governance/g7-admission-finalization.test.ts",
         "packages/graph/package.json"
       ],
-      "reason": "Rollback is locally proven non-destructive while activation is off; commit-bound three-platform evidence plus signed provenance and SBOM attestations for the packed internal artifact are still required before promotion."
+      "reason": "Rollback is locally proven non-destructive while activation is off; the main-branch workflow must retain a fail-closed proof binding the exact artifact, commit, three-platform candidate, signer identity, provenance and CycloneDX attestation before promotion."
     },
     {
       "id": "central-cli-bridge-absence",

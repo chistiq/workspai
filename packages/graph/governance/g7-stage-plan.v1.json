@@ -191,6 +191,24 @@
       ]
     },
     {
+      "id": "signed-main-commit-promotion-evidence",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/scripts/check-g7-promotion-evidence.mjs",
+        "packages/graph/test/governance/g7-promotion-evidence.test.ts",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "same-run-standalone-admission-decision",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/scripts/finalize-g7-standalone-admission.mjs",
+        "packages/graph/test/governance/g7-admission-finalization.test.ts",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
       "id": "g7-standalone-stable-admission",
       "status": "implemented-local-candidate",
       "evidence": [

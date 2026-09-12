@@ -88,6 +88,28 @@ describe('Graph G7 operational readiness', () => {
     );
   });
 
+  it('rejects promotion without exact signed artifact and workflow identity binding', () => {
+    const target = fixture(
+      'promotion-policy.json',
+      'governance/g7-migration-rollback-policy.v1.json'
+    );
+    const policy = JSON.parse(fs.readFileSync(target, 'utf8')) as {
+      promotion: {
+        requiresRepositoryAndSignerWorkflowVerification: boolean;
+        requiresExactArtifactAndSbomBinding: boolean;
+      };
+    };
+    policy.promotion.requiresRepositoryAndSignerWorkflowVerification = false;
+    policy.promotion.requiresExactArtifactAndSbomBinding = false;
+    fs.writeFileSync(target, JSON.stringify(policy));
+
+    const result = run(['--operations-policy', portable(target)]);
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout).failures).toContain(
+      'Graph internal promotion policy is incomplete'
+    );
+  });
+
   it('rejects retained evidence that claims admission or omits a platform', () => {
     const target = fixture('baseline.json', 'governance/g7-verified-baseline.v1.json');
     const baseline = JSON.parse(fs.readFileSync(target, 'utf8')) as {

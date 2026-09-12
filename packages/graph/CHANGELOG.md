@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a fail-closed main-branch promotion verifier for the private Graph
+  artifact. GitHub attestations must now verify against the official
+  repository, signer workflow, exact source commit, hosted-runner policy,
+  packed tarball digest and committed CycloneDX predicate before a retained
+  promotion proof can be created. A same-run finalizer converts only that
+  verified proof and the canonical fail-closed ledger into a retained internal
+  admission decision, avoiding a circular commit-and-attest transition while
+  limiting the next stage to G8 shadow comparison.
+
 - Hardened the installed-package smoke against accidental Rust runtime
   dependencies. The packed Graph consumer and CLI now execute with an isolated
   PATH and without Cargo or Rust environment state while loading the bundled

@@ -524,8 +524,8 @@ jobs:
       - name: Attest Graph internal package provenance
         id: graph-package-provenance
         if: >-
-          github.event_name == 'push' ||
-          github.event.pull_request.head.repo.full_name == github.repository
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
         uses: actions/attest@v4
         with:
           subject-path: artifacts/graph-package/*.tgz
@@ -533,12 +533,45 @@ jobs:
       - name: Attest Graph internal package SBOM
         id: graph-package-sbom
         if: >-
-          github.event_name == 'push' ||
-          github.event.pull_request.head.repo.full_name == github.repository
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
         uses: actions/attest@v4
         with:
           subject-path: artifacts/graph-package/*.tgz
           sbom-path: packages/graph/governance/g7-sbom.cdx.json
+
+      - name: Verify Graph G7 promotion evidence
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node packages/graph/scripts/check-g7-promotion-evidence.mjs
+          --artifact-directory artifacts/graph-package
+          --provenance-bundle "${{ steps.graph-package-provenance.outputs.bundle-path }}"
+          --sbom-bundle "${{ steps.graph-package-sbom.outputs.bundle-path }}"
+          --release-candidate artifacts/graph-g7-release-candidate.json
+          --sbom packages/graph/governance/g7-sbom.cdx.json
+          --repository "${{ github.repository }}"
+          --source-commit "${{ github.sha }}"
+          --tested-commit "${{ github.sha }}"
+          --run-id "${{ github.run_id }}"
+          --ref "${{ github.ref }}"
+          --output artifacts/graph-g7-promotion-evidence.json
+
+      - name: Finalize Graph G7 standalone admission
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        run: >-
+          node packages/graph/scripts/finalize-g7-standalone-admission.mjs
+          --promotion-evidence artifacts/graph-g7-promotion-evidence.json
+          --output artifacts/graph-g7-standalone-admission-decision.json
 
       - name: Retain Graph G7 attestation bundle
         if: >-
@@ -550,6 +583,32 @@ jobs:
           path: |
             ${{ steps.graph-package-provenance.outputs.bundle-path }}
             ${{ steps.graph-package-sbom.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain verified Graph G7 promotion evidence
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-promotion-evidence
+          path: artifacts/graph-g7-promotion-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain Graph G7 standalone admission decision
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.graph-package-provenance.outcome == 'success' &&
+          steps.graph-package-sbom.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-g7-standalone-admission-decision
+          path: artifacts/graph-g7-standalone-admission-decision.json
           if-no-files-found: error
           retention-days: 30
 

@@ -26,6 +26,8 @@ const releaseFiles = [
   'packages/graph/scripts/check-g7-release-candidate.mjs',
   'packages/graph/scripts/check-g7-release-matrix.mjs',
   'packages/graph/scripts/check-g7-operational-readiness.mjs',
+  'packages/graph/scripts/check-g7-promotion-evidence.mjs',
+  'packages/graph/scripts/finalize-g7-standalone-admission.mjs',
   'packages/graph/scripts/check-standalone-admission.mjs',
   'packages/graph/scripts/generate-g7-release-inventory.mjs',
   'packages/graph/scripts/generate-graph-sbom.mjs',

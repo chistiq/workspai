@@ -78,6 +78,14 @@ const baseline = readJson(baselinePath);
 const graphManifest = readJson('packages/graph/package.json');
 const cliManifest = readJson('packages/cli/package.json');
 const ciWorkflow = fs.readFileSync(repositoryFile('.github/workflows/ci.yml'), 'utf8');
+const promotionVerifier = fs.readFileSync(
+  repositoryFile('packages/graph/scripts/check-g7-promotion-evidence.mjs'),
+  'utf8'
+);
+const admissionFinalizer = fs.readFileSync(
+  repositoryFile('packages/graph/scripts/finalize-g7-standalone-admission.mjs'),
+  'utf8'
+);
 
 if (
   lock.schemaVersion !== 'workspai-graph-internal-contract-lock.v1' ||
@@ -174,6 +182,10 @@ if (
   policy.promotion?.requiresNativeParityWhenBundled !== true ||
   policy.promotion?.requiresSignedArtifactAttestation !== true ||
   policy.promotion?.requiresSignedSbomAttestation !== true ||
+  policy.promotion?.requiresProtectedMainPush !== true ||
+  policy.promotion?.requiresRepositoryAndSignerWorkflowVerification !== true ||
+  policy.promotion?.requiresExactArtifactAndSbomBinding !== true ||
+  policy.promotion?.requiresTransparencyWitness !== true ||
   policy.promotion?.requiresExplicitAdmissionLedger !== true ||
   policy.promotion?.npmPublication !== 'prohibited'
 ) {
@@ -187,9 +199,36 @@ if (
   (ciWorkflow.match(/subject-path:\s*artifacts\/graph-package\/\*\.tgz/gu) ?? []).length !== 2 ||
   !/sbom-path:\s*packages\/graph\/governance\/g7-sbom\.cdx\.json/u.test(ciWorkflow) ||
   !/name:\s*graph-internal-package/u.test(ciWorkflow) ||
-  !/name:\s*graph-g7-release-attestation/u.test(ciWorkflow)
+  !/name:\s*graph-g7-release-attestation/u.test(ciWorkflow) ||
+  !/name:\s*Verify Graph G7 promotion evidence/u.test(ciWorkflow) ||
+  !/check-g7-promotion-evidence\.mjs/u.test(ciWorkflow) ||
+  !/name:\s*graph-g7-promotion-evidence/u.test(ciWorkflow) ||
+  !/name:\s*Finalize Graph G7 standalone admission/u.test(ciWorkflow) ||
+  !/finalize-g7-standalone-admission\.mjs/u.test(ciWorkflow) ||
+  !/name:\s*graph-g7-standalone-admission-decision/u.test(ciWorkflow) ||
+  !/github\.event_name == 'push'[\s\S]*?github\.ref == 'refs\/heads\/main'/u.test(ciWorkflow)
 ) {
   failures.push('Graph G7 workflow does not retain signed candidate provenance');
+}
+if (
+  !promotionVerifier.includes("const officialRepository = 'chistiq/workspai'") ||
+  !promotionVerifier.includes("const provenancePredicateType = 'https://slsa.dev/provenance/v1'") ||
+  !promotionVerifier.includes("const sbomPredicateType = 'https://cyclonedx.org/bom'") ||
+  !promotionVerifier.includes("'--signer-workflow'") ||
+  !promotionVerifier.includes("'--signer-digest'") ||
+  !promotionVerifier.includes("'--source-digest'") ||
+  !promotionVerifier.includes("'--source-ref'") ||
+  !promotionVerifier.includes("'--deny-self-hosted-runners'")
+) {
+  failures.push('Graph G7 promotion verifier identity or attestation policy drifted');
+}
+if (
+  !admissionFinalizer.includes('workspai-graph-g7-standalone-admission-decision.v1') ||
+  !admissionFinalizer.includes("'g8-shadow-comparison-only'") ||
+  !admissionFinalizer.includes("currentGraphAuthority: 'official-internal-graph-capability'") ||
+  !admissionFinalizer.includes("npmPublication: 'prohibited'")
+) {
+  failures.push('Graph G7 admission finalizer transition policy drifted');
 }
 
 const platformRows = Array.isArray(baseline.platformEvidence) ? baseline.platformEvidence : [];
