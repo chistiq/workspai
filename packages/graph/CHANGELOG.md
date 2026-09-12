@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Hardened the installed-package smoke against accidental Rust runtime
+  dependencies. The packed Graph consumer and CLI now execute with an isolated
+  PATH and without Cargo or Rust environment state while loading the bundled
+  WASM engine; Rust sources and Cargo manifests are rejected from the artifact.
+
 - Added a deterministic RFC 4122 UUIDv5 serial number to the CycloneDX 1.6
   snapshot so GitHub artifact attestation recognizes the SBOM without making
   package output non-reproducible. The serial is derived from the package,

@@ -11,6 +11,7 @@ const sharedRoot = path.resolve(packageRoot, '../shared');
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-graph-pack-'));
 const consumerRoot = path.join(temporaryRoot, 'consumer');
 const npmCache = path.join(temporaryRoot, 'npm-cache');
+const emptyRuntimePath = path.join(temporaryRoot, 'end-user-runtime-path');
 const toolRequire = createRequire(path.join(packageRoot, 'package.json'));
 const typescriptCli = toolRequire.resolve('typescript/bin/tsc');
 const yamlRoot = path.dirname(toolRequire.resolve('yaml/package.json'));
@@ -125,6 +126,20 @@ function packedFiles(installedRoot) {
   return files;
 }
 
+function endUserRuntimeEnvironment() {
+  const environment = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    const normalized = key.toLowerCase();
+    if (normalized === 'path' || normalized.startsWith('cargo') || normalized.startsWith('rust')) {
+      continue;
+    }
+    environment[key] = value;
+  }
+  environment.PATH = emptyRuntimePath;
+  environment.WORKSPAI_GRAPH_RUNTIME_PROBE = 'zero-rust-toolchain';
+  return environment;
+}
+
 try {
   for (const sourceRoot of [sharedRoot, yamlRoot, packageRoot]) {
     runNpm(
@@ -151,6 +166,7 @@ try {
   }
 
   fs.mkdirSync(consumerRoot, { recursive: true });
+  fs.mkdirSync(emptyRuntimePath, { recursive: true });
   fs.writeFileSync(
     path.join(consumerRoot, 'package.json'),
     `${JSON.stringify({ private: true, type: 'module' }, null, 2)}\n`,
@@ -300,6 +316,8 @@ try {
         import * as testing from '@workspai/graph/testing';
         import { buildNodeRepoGraph, createNodeGraphReferenceWorkerPool, createNodeRustWasmGraphNativePort } from '@workspai/graph/adapters/node';
         import { validateWisCoreResultEnvelope } from '@workspai/shared/validation';
+        if (process.env.WORKSPAI_GRAPH_RUNTIME_PROBE !== 'zero-rust-toolchain') process.exit(44);
+        if (Object.keys(process.env).some((key) => /^(?:CARGO|RUST)/iu.test(key))) process.exit(45);
         if (!graph.GRAPH_PACKAGE_METADATA) process.exit(10);
         if (typeof graph.composeGraph !== 'function') process.exit(25);
         if (typeof graph.queryGraph !== 'function') process.exit(27);
@@ -432,7 +450,13 @@ try {
         if (existsSync('.workspai')) throw new Error('Repository preview created forbidden metadata');
       `,
     ],
-    { cwd: consumerRoot, encoding: 'utf8' }
+    {
+      cwd: consumerRoot,
+      encoding: 'utf8',
+      env: endUserRuntimeEnvironment(),
+      timeout: 120_000,
+      maxBuffer: 32 * 1024 * 1024,
+    }
   );
   if (smoke.error || smoke.status !== 0) {
     throw new Error(
@@ -445,6 +469,7 @@ try {
     const result = spawnSync(process.execPath, [cliPath, ...args], {
       cwd: consumerRoot,
       encoding: 'utf8',
+      env: endUserRuntimeEnvironment(),
       timeout: 120_000,
       maxBuffer: 32 * 1024 * 1024,
     });
@@ -676,6 +701,7 @@ try {
       const result = spawnSync(process.execPath, [cliPath, ...args], {
         cwd: consumerRoot,
         encoding: 'utf8',
+        env: endUserRuntimeEnvironment(),
         timeout: 30_000,
         maxBuffer: 32 * 1024 * 1024,
       });
@@ -778,6 +804,16 @@ try {
   }
   if (paths.some((entry) => entry.endsWith('.map'))) {
     throw new Error('packed Graph package leaks source maps');
+  }
+  if (
+    paths.some(
+      (entry) =>
+        (entry.endsWith('.rs') && !entry.startsWith('fixtures/')) ||
+        path.posix.basename(entry) === 'Cargo.toml' ||
+        path.posix.basename(entry) === 'Cargo.lock'
+    )
+  ) {
+    throw new Error('packed Graph package leaks Rust build-time sources or manifests');
   }
   if (
     paths.some(

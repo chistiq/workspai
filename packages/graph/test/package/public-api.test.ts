@@ -113,6 +113,7 @@ describe('@workspai/graph development package', () => {
       'packed-installed-product-corpus',
       'partial-cli-exit-code-integrity',
       'rust-wasm-traversal-conformance-candidate',
+      'packed-zero-rust-toolchain-runtime',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',

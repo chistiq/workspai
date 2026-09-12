@@ -98,6 +98,7 @@ export const GRAPH_PACKAGE_METADATA = Object.freeze({
     'packed-installed-product-corpus',
     'partial-cli-exit-code-integrity',
     'rust-wasm-traversal-conformance-candidate',
+    'packed-zero-rust-toolchain-runtime',
   ] as const,
   plannedCapabilities: ['standalone-stable', 'cli-shadow-parity'] as const,
 });
