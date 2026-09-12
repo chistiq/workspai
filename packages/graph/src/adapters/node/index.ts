@@ -23,6 +23,11 @@ import { createNodeGraphFileSource } from './repository-file-source.js';
 export { createNodeGraphFileSource } from './repository-file-source.js';
 export { createNodeProjectArtifactStore } from './project-artifact-store.js';
 export { createNodeWorkspaceArtifactStore } from './workspace-artifact-store.js';
+export {
+  GraphNativeAdapterLoadError,
+  createNodeRustWasmGraphNativePort,
+  type GraphNativeAdapterLoadErrorCode,
+} from './rust-wasm-engine.js';
 
 export interface NodeRepoGraphBuildRequest {
   readonly root: string;

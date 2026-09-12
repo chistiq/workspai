@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Aligned the executable support contract with private internal delivery. npm
+  publication remains prohibited, `public-preview` is no longer a planned
+  capability, and the committed G8 target is a product-bundled Rust/WASM engine
+  whose activation remains parity, performance, recovery and portability gated.
+
 - Added a fail-closed internal standalone admission ledger that binds Graph eligibility to every documented G7 gate and to the exact, private, lockfile-bound `@workspai/shared` workspace runtime.
 - Added adversarial admission tests so local candidates, forged stable claims, unsafe evidence paths and dependency drift cannot authorize G8 or central CLI consumption.
 

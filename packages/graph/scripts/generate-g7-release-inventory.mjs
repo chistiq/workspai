@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const snapshotPath = path.join(packageRoot, 'governance/g7-release-inventory.v1.json');
 const write = process.argv.includes('--write');
+const rustArtifactPath = path.join(packageRoot, 'dist/native/graph-engine.wasm');
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -78,6 +79,10 @@ const maxCompressedBytes = packedCompressedBudget(productSource);
 const incidents = frozenStringArray(productSource, 'GRAPH_INCIDENT_CLASSES');
 const profile = readJson(path.join(packageRoot, 'conformance/profile.json'));
 const exported = namedValueExports(rootSource);
+const rustArtifact = fs.existsSync(rustArtifactPath)
+  ? fs.readFileSync(rustArtifactPath)
+  : undefined;
+if (!rustArtifact) failures.push('Bundled Rust Graph WASM artifact is missing');
 
 if (
   manifest.name !== '@workspai/graph' ||
@@ -140,6 +145,21 @@ const inventory = {
     catalogDigest: 'required',
     signedAttestation: 'not-generated',
     rollbackProcedure: 'not-proven',
+  },
+  bundledNativeAcceleration: {
+    engine: 'rust-wasm',
+    activation: 'evidence-gated',
+    semanticAuthority: 'typescript',
+    userToolchain: 'not-required',
+    dynamicDownload: 'prohibited',
+    abiVersion: 1,
+    maxNodes: 1000000,
+    maxEdges: 5000000,
+    maxMemoryBytes: 268435456,
+    bytes: rustArtifact?.byteLength ?? 0,
+    sha256: rustArtifact
+      ? crypto.createHash('sha256').update(rustArtifact).digest('hex')
+      : 'unavailable',
   },
 };
 

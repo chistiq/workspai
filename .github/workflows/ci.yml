@@ -126,6 +126,15 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # Rust is a build-time concern only. End users receive the bundled WASM
+      # artifact and never need Cargo, rustc or a runtime download.
+      - name: Setup pinned Rust Graph build toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85.1"
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+
       # Setup Python (Linux & macOS only)
       - name: Setup Python
         if: runner.os != 'Windows'
@@ -176,6 +185,22 @@ jobs:
       # Independent package boundaries, evidence, mirrors and package checks
       - name: Validate independent package infrastructure
         run: npm run check:package-infrastructure
+
+      - name: Capture Graph Rust WASM parity and performance evidence
+        shell: bash
+        env:
+          WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          npm --workspace @workspai/graph run native:profile --
+          --output artifacts/graph-native-parity-${{ runner.os }}.json
+
+      - name: Upload Graph Rust WASM parity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-native-parity-${{ runner.os }}-node-${{ matrix.node-version }}
+          path: artifacts/graph-native-parity-${{ runner.os }}.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Capture Shared standalone-admission platform evidence
         shell: bash

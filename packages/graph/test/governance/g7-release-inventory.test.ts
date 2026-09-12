@@ -47,6 +47,19 @@ describe('Graph G7 release inventory', () => {
       conformanceProfile: { id: string; version: string; maturity: string };
       schemas: { file: string; sha256: string }[];
       packedArtifactSecurity: typeof GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY;
+      bundledNativeAcceleration: {
+        engine: string;
+        activation: string;
+        semanticAuthority: string;
+        userToolchain: string;
+        dynamicDownload: string;
+        abiVersion: number;
+        maxNodes: number;
+        maxEdges: number;
+        maxMemoryBytes: number;
+        bytes: number;
+        sha256: string;
+      };
     };
 
     expect(inventory.contract).toEqual(GRAPH_RELEASE_INVENTORY_CONTRACT);
@@ -70,6 +83,20 @@ describe('Graph G7 release inventory', () => {
       maturity: 'query-candidate',
     });
     expect(inventory.packedArtifactSecurity).toEqual(GRAPH_PACKED_ARTIFACT_SECURITY_BOUNDARY);
+    expect(inventory.bundledNativeAcceleration).toEqual({
+      engine: 'rust-wasm',
+      activation: 'evidence-gated',
+      semanticAuthority: 'typescript',
+      userToolchain: 'not-required',
+      dynamicDownload: 'prohibited',
+      abiVersion: 1,
+      maxNodes: 1_000_000,
+      maxEdges: 5_000_000,
+      maxMemoryBytes: 268_435_456,
+      bytes: expect.any(Number),
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(inventory.bundledNativeAcceleration.bytes).toBeGreaterThan(0);
     expect(inventory.schemas.length).toBeGreaterThan(0);
     expect(JSON.stringify(inventory)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
   });

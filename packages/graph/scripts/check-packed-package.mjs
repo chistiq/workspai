@@ -190,7 +190,13 @@ try {
     packedProduct.GRAPH_ROLLBACK_PROCEDURE.sourceRewrite !== 'prohibited' ||
     packedProduct.GRAPH_SBOM_SPEC.provenance !== 'unattested' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false ||
-    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited'
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.distribution !== 'internal-only' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication !== 'prohibited' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.baselineArtifact !==
+      'product-bundled-wasm' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.userToolchain !== 'prohibited' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.dynamicDownload !== 'prohibited'
   ) {
     throw new Error('installed Graph product claimed stability, attestation or proven rollback');
   }
@@ -274,7 +280,7 @@ try {
         import * as providers from '@workspai/graph/providers';
         import * as conformance from '@workspai/graph/conformance';
         import * as testing from '@workspai/graph/testing';
-      import { buildNodeRepoGraph, createNodeGraphReferenceWorkerPool } from '@workspai/graph/adapters/node';
+        import { buildNodeRepoGraph, createNodeGraphReferenceWorkerPool, createNodeRustWasmGraphNativePort } from '@workspai/graph/adapters/node';
         import { validateWisCoreResultEnvelope } from '@workspai/shared/validation';
         if (!graph.GRAPH_PACKAGE_METADATA) process.exit(10);
         if (typeof graph.composeGraph !== 'function') process.exit(25);
@@ -284,6 +290,8 @@ try {
         if (graph.GRAPH_STANDARD_COMPOSITION_POLICY.version !== '0.1.0-candidate') process.exit(26);
         if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false) process.exit(31);
         if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited') process.exit(32);
+        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.distribution !== 'internal-only') process.exit(42);
+        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication !== 'prohibited') process.exit(43);
         if (graph.GRAPH_PACKAGE_METADATA.plannedCapabilities.includes('incremental')) process.exit(33);
         if (graph.GRAPH_PACKAGE_METADATA.plannedCapabilities.includes('profile-driven-projection')) process.exit(34);
         if (!graph.GRAPH_CLI_EXIT_CODES || graph.GRAPH_CLI_EXIT_CODES.rejected !== 3) process.exit(35);
@@ -341,6 +349,19 @@ try {
         });
         if (workerResult.status !== 'complete') {
           throw new Error('Packed Graph worker failed: ' + JSON.stringify(workerResult));
+        }
+        const native = await createNodeRustWasmGraphNativePort();
+        if (native.descriptor.userToolchain !== 'not-required' || native.descriptor.dynamicDownload !== 'prohibited') {
+          throw new Error('Packed Rust Graph engine exposed a user toolchain or download dependency');
+        }
+        const nativeTraversal = native.traverseReachable({
+          nodeCount: 5,
+          edges: [[0, 2], [0, 1], [2, 4], [1, 3], [0, 1]],
+          start: 0,
+          maxDepth: 2,
+        });
+        if (nativeTraversal.status !== 'complete' || nativeTraversal.nodes.join(',') !== '0,1,2,3,4') {
+          throw new Error('Packed Rust Graph engine failed deterministic traversal parity');
         }
         const preview = await buildNodeRepoGraph({ root: process.cwd() });
         if (!['complete', 'partial'].includes(preview.status) || !preview.graph || preview.metrics.inputFiles < 2) {
@@ -671,6 +692,7 @@ try {
     'dist/adapters/node/index.js',
     'dist/adapters/node/index.d.ts',
     'dist/adapters/node/reference-worker-entry.js',
+    'dist/native/graph-engine.wasm',
     'conformance/contract-catalog.v1.json',
     'schemas/entity-identity.v0.1.0-candidate.schema.json',
     'schemas/fact-batch.v0.1.0-candidate.schema.json',

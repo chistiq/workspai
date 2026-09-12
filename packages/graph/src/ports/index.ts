@@ -62,6 +62,54 @@ export interface GraphWorkerPoolPort {
   ): Promise<GraphWorkerTaskResult<TOutput>>;
 }
 
+/**
+ * Narrow acceleration boundary for deterministic, semantics-free graph work.
+ *
+ * The TypeScript domain remains the authority for identity, policy, evidence,
+ * proof and publication. A native implementation may only accelerate the
+ * operation described by this port and must be parity-qualified before a host
+ * selects it.
+ */
+export interface GraphNativeEngineDescriptor {
+  readonly engine: 'rust-wasm';
+  readonly abiVersion: 1;
+  readonly artifact: 'product-bundled';
+  readonly semanticAuthority: 'typescript';
+  readonly dynamicDownload: 'prohibited';
+  readonly userToolchain: 'not-required';
+  readonly maxNodes: number;
+  readonly maxEdges: number;
+  readonly maxMemoryBytes: number;
+}
+
+export interface GraphNativeTraversalRequest {
+  readonly nodeCount: number;
+  readonly edges: readonly (readonly [from: number, to: number])[];
+  readonly start: number;
+  readonly maxDepth: number;
+}
+
+export interface GraphNativeTraversalResult {
+  readonly status: 'complete' | 'rejected' | 'failed';
+  readonly nodes: readonly number[];
+  readonly diagnostics: readonly {
+    readonly code: string;
+    readonly severity: 'error';
+    readonly path: '/native/traversal';
+    readonly message: string;
+  }[];
+  readonly metrics: {
+    readonly durationMs: number;
+    readonly inputEdges: number;
+    readonly outputNodes: number;
+  };
+}
+
+export interface GraphNativePort {
+  readonly descriptor: GraphNativeEngineDescriptor;
+  traverseReachable(request: GraphNativeTraversalRequest): GraphNativeTraversalResult;
+}
+
 export interface GraphExecutionPorts {
   readonly clock: GraphClockPort;
   readonly digest: GraphDigestPort;

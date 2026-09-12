@@ -3,11 +3,23 @@
 export interface WorkspaiGraphStandaloneSupportMatrixCandidate {
   contract: { id: 'workspai.graph.standalone-support-matrix'; version: '0.1.0-candidate' };
   maturity: 'repository-preview-candidate';
+  distribution: 'internal-only';
+  npmPublication: 'prohibited';
   publishable: false;
   standaloneStable: false;
   publicPreview: false;
   centralCliRuntime: 'prohibited';
   nativeAcceleration: 'prohibited';
+  rustEngineTarget: {
+    implementation: 'required-in-g8';
+    baselineArtifact: 'product-bundled-wasm';
+    activation: 'evidence-gated';
+    semanticOwner: '@workspai/graph';
+    referenceRuntime: 'typescript-node';
+    userToolchain: 'prohibited';
+    dynamicDownload: 'prohibited';
+    fallback: 'parity-qualified-typescript';
+  };
   defaultMode: 'project-only';
   workspaceParticipation: 'typed-handoff-optional';
   network: 'deny';
@@ -55,15 +67,15 @@ export interface WorkspaiGraphStandaloneSupportMatrixCandidate {
    * @minItems 1
    */
   plannedCapabilities: [
-    'standalone-stable' | 'public-preview' | 'cli-shadow-parity',
-    ...('standalone-stable' | 'public-preview' | 'cli-shadow-parity')[],
+    'standalone-stable' | 'rust-wasm-engine' | 'cli-shadow-parity',
+    ...('standalone-stable' | 'rust-wasm-engine' | 'cli-shadow-parity')[],
   ];
   /**
    * @minItems 1
    */
   unsupportedCapabilities: [
-    'standalone-stable' | 'public-preview' | 'cli-runtime-bridge' | 'native-acceleration',
-    ...('standalone-stable' | 'public-preview' | 'cli-runtime-bridge' | 'native-acceleration')[],
+    'standalone-stable' | 'cli-runtime-bridge' | 'native-acceleration',
+    ...('standalone-stable' | 'cli-runtime-bridge' | 'native-acceleration')[],
   ];
   /**
    * @minItems 1

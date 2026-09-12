@@ -86,15 +86,29 @@ describe('G7 standalone product contracts', () => {
       (schema as { properties: { contract: { const: unknown } } }).properties.contract.const
     ).toEqual(GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT);
     expect(validate(GRAPH_STANDALONE_SUPPORT_MATRIX), JSON.stringify(validate.errors)).toBe(true);
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.distribution).toBe('internal-only');
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication).toBe('prohibited');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable).toBe(false);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.publicPreview).toBe(false);
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime).toBe('prohibited');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.nativeAcceleration).toBe('prohibited');
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget).toEqual({
+      implementation: 'required-in-g8',
+      baselineArtifact: 'product-bundled-wasm',
+      activation: 'evidence-gated',
+      semanticOwner: '@workspai/graph',
+      referenceRuntime: 'typescript-node',
+      userToolchain: 'prohibited',
+      dynamicDownload: 'prohibited',
+      fallback: 'parity-qualified-typescript',
+    });
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.externalProviderSdk).toEqual({
       status: 'deferred',
       until: 'standalone-stable',
     });
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.publicPreviewMigrations).toEqual([]);
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.plannedCapabilities).toContain('rust-wasm-engine');
+    expect(GRAPH_STANDALONE_SUPPORT_MATRIX.plannedCapabilities).not.toContain('public-preview');
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.queryCache).toEqual(
       GRAPH_QUERY_CACHE_OPERATING_BOUNDARY
     );
@@ -106,6 +120,7 @@ describe('G7 standalone product contracts', () => {
         'signed-provenance-unattested',
         'rollback-procedure-not-proven',
         'retrieval-benchmark-is-synthetic-fixture-labelled',
+        'rust-engine-conformance-candidate-not-activated',
       ])
     );
     expect(GRAPH_STANDALONE_SUPPORT_MATRIX.limitations).not.toContain(

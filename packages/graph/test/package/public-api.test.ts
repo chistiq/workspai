@@ -106,16 +106,17 @@ describe('@workspai/graph development package', () => {
       'cyclonedx-sbom-candidate',
       'synthetic-retrieval-benchmark',
       'packed-artifact-security-scan',
-      'public-release-inventory-candidate',
+      'internal-promotion-inventory-candidate',
       'packed-conformance-corpus',
       'incident-rollback-boundary-candidate',
       'packed-version-1-query-preset-jobs',
       'packed-installed-product-corpus',
       'partial-cli-exit-code-integrity',
+      'rust-wasm-traversal-conformance-candidate',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual([
       'standalone-stable',
-      'public-preview',
+      'rust-wasm-engine',
       'cli-shadow-parity',
     ]);
   });

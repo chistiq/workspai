@@ -13,6 +13,7 @@ import {
 } from '../../src/contracts/index.js';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const repositoryRoot = path.resolve(packageRoot, '../..');
 const sourceRoot = path.join(packageRoot, 'src');
 
 function sourceFiles(directory: string): string[] {
@@ -41,6 +42,27 @@ describe('Graph architecture boundaries', () => {
 
     expect(packageManifest.private).toBe(true);
     expect(packageManifest.scripts?.prepublishOnly).toBe('node scripts/refuse-publish.mjs');
+  });
+
+  it('keeps Rust a private, product-bundled acceleration boundary', () => {
+    const workspaceManifest = fs.readFileSync(path.join(repositoryRoot, 'Cargo.toml'), 'utf8');
+    const engineManifest = fs.readFileSync(
+      path.join(repositoryRoot, 'crates/graph-engine/Cargo.toml'),
+      'utf8'
+    );
+    const packageManifest = JSON.parse(
+      fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')
+    ) as { files?: readonly string[]; scripts?: Record<string, string> };
+    const ci = fs.readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+
+    expect(workspaceManifest).toMatch(/members\s*=\s*\["crates\/graph-engine"\]/);
+    expect(engineManifest).toMatch(/publish\s*=\s*false/);
+    expect(engineManifest).toMatch(/\[dependencies\]\s*$/m);
+    expect(fs.existsSync(path.join(repositoryRoot, 'Cargo.lock'))).toBe(true);
+    expect(packageManifest.files).not.toContain('crates');
+    expect(packageManifest.scripts?.['native:build']).toBe('node scripts/build-rust-wasm.mjs');
+    expect(ci).toContain('toolchain: "1.85.1"');
+    expect(ci).toContain('targets: wasm32-unknown-unknown');
   });
 
   it('never imports the central CLI or consumer frameworks', () => {

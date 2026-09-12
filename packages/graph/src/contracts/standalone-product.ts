@@ -292,11 +292,23 @@ export const GRAPH_STANDALONE_PACKED_JOBS = Object.freeze([
 export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   contract: GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT,
   maturity: 'repository-preview-candidate',
+  distribution: 'internal-only',
+  npmPublication: 'prohibited',
   publishable: false,
   standaloneStable: false,
   publicPreview: false,
   centralCliRuntime: 'prohibited',
   nativeAcceleration: 'prohibited',
+  rustEngineTarget: Object.freeze({
+    implementation: 'required-in-g8',
+    baselineArtifact: 'product-bundled-wasm',
+    activation: 'evidence-gated',
+    semanticOwner: '@workspai/graph',
+    referenceRuntime: 'typescript-node',
+    userToolchain: 'prohibited',
+    dynamicDownload: 'prohibited',
+    fallback: 'parity-qualified-typescript',
+  }),
   defaultMode: 'project-only',
   workspaceParticipation: 'typed-handoff-optional',
   network: 'deny',
@@ -324,12 +336,11 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   packedJobs: Object.freeze(GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id)),
   plannedCapabilities: Object.freeze([
     'standalone-stable',
-    'public-preview',
+    'rust-wasm-engine',
     'cli-shadow-parity',
   ] as const),
   unsupportedCapabilities: Object.freeze([
     'standalone-stable',
-    'public-preview',
     'cli-runtime-bridge',
     'native-acceleration',
   ] as const),
@@ -346,6 +357,7 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
     'g6-cross-platform-admission-pending',
     'standalone-stable-not-admitted',
     'central-cli-runtime-prohibited',
+    'rust-engine-conformance-candidate-not-activated',
   ] as const),
 });
 

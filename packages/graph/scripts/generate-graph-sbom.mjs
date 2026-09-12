@@ -9,6 +9,8 @@ const graphManifestPath = path.join(packageRoot, 'package.json');
 const sharedManifestPath = path.join(repositoryRoot, 'packages/shared/package.json');
 const lockPath = path.join(repositoryRoot, 'package-lock.json');
 const snapshotPath = path.join(packageRoot, 'governance/g7-sbom.cdx.json');
+const rustManifestPath = path.join(repositoryRoot, 'crates/graph-engine/Cargo.toml');
+const rustArtifactPath = path.join(packageRoot, 'dist/native/graph-engine.wasm');
 const write = process.argv.includes('--write');
 
 function readJson(file) {
@@ -57,9 +59,16 @@ function component(name, version, options) {
   };
 }
 
+function manifestString(source, key) {
+  const match = source.match(new RegExp(`^${key}\\s*=\\s*"([^"]+)"`, 'm'));
+  if (!match?.[1]) throw new Error(`Missing ${key} in Rust Graph manifest`);
+  return match[1];
+}
+
 const graphManifest = readJson(graphManifestPath);
 const sharedManifest = readJson(sharedManifestPath);
 const lock = readJson(lockPath);
+const rustManifest = fs.readFileSync(rustManifestPath, 'utf8');
 const failures = [];
 
 if (graphManifest.name !== '@workspai/graph' || graphManifest.publishable === true) {
@@ -68,6 +77,13 @@ if (graphManifest.name !== '@workspai/graph' || graphManifest.publishable === tr
 
 const runtimeNames = Object.keys(graphManifest.dependencies ?? {});
 const developmentNames = Object.keys(graphManifest.devDependencies ?? {});
+const rustName = manifestString(rustManifest, 'name');
+const rustVersion = manifestString(rustManifest, 'version');
+const rustRef = `pkg:cargo/${rustName}@${rustVersion}`;
+const rustArtifact = fs.existsSync(rustArtifactPath)
+  ? fs.readFileSync(rustArtifactPath)
+  : undefined;
+if (!rustArtifact) failures.push('Bundled Rust Graph WASM artifact is missing');
 const components = [
   component(graphManifest.name, graphManifest.version, {
     scope: 'required',
@@ -75,6 +91,36 @@ const components = [
     workspace: true,
     license: graphManifest.license,
   }),
+  {
+    type: 'library',
+    'bom-ref': rustRef,
+    name: rustName,
+    version: rustVersion,
+    purl: rustRef,
+    scope: 'required',
+    licenses: [{ license: { id: 'MIT' } }],
+    ...(rustArtifact
+      ? {
+          hashes: [
+            {
+              alg: 'SHA-256',
+              content: crypto.createHash('sha256').update(rustArtifact).digest('hex'),
+            },
+          ],
+        }
+      : {}),
+    properties: [
+      { name: 'workspai:dependencyKind', value: 'bundled-native-acceleration' },
+      { name: 'workspai:workspace', value: 'true' },
+      { name: 'workspai:abiVersion', value: '1' },
+      { name: 'workspai:maxNodes', value: '1000000' },
+      { name: 'workspai:maxEdges', value: '5000000' },
+      { name: 'workspai:maxMemoryBytes', value: '268435456' },
+      { name: 'workspai:semanticAuthority', value: 'typescript' },
+      { name: 'workspai:userToolchain', value: 'not-required' },
+      { name: 'workspai:dynamicDownload', value: 'prohibited' },
+    ],
+  },
 ];
 
 for (const name of runtimeNames) {
@@ -142,6 +188,7 @@ const runtimeRefs = runtimeNames.map((name) =>
     ? sharedRef
     : npmPurl(name, lockPackage(lock, name)?.entry.version ?? graphManifest.dependencies[name])
 );
+runtimeRefs.push(rustRef);
 const bom = {
   bomFormat: 'CycloneDX',
   specVersion: '1.6',

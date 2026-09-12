@@ -26,7 +26,12 @@ describe('Graph G7 SBOM candidate', () => {
     const bom = JSON.parse(
       fs.readFileSync(path.join(packageRoot, 'governance/g7-sbom.cdx.json'), 'utf8')
     ) as {
-      components: { name: string; scope: string }[];
+      components: {
+        name: string;
+        scope: string;
+        hashes?: { alg: string; content: string }[];
+        properties?: { name: string; value: string }[];
+      }[];
       dependencies: { ref: string; dependsOn: string[] }[];
       metadata: { properties: { name: string; value: string }[] };
     };
@@ -40,12 +45,25 @@ describe('Graph G7 SBOM candidate', () => {
     expect(bom.components.some((item) => item.name === '@workspai/graph')).toBe(true);
     expect(bom.components.some((item) => item.name === '@workspai/shared')).toBe(true);
     expect(bom.components.some((item) => item.name === 'yaml')).toBe(true);
+    const rustEngine = bom.components.find((item) => item.name === 'workspai-graph-engine');
+    expect(rustEngine?.hashes).toEqual([
+      { alg: 'SHA-256', content: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    ]);
+    expect(rustEngine?.properties).toEqual(
+      expect.arrayContaining([
+        { name: 'workspai:maxNodes', value: '1000000' },
+        { name: 'workspai:maxEdges', value: '5000000' },
+        { name: 'workspai:maxMemoryBytes', value: '268435456' },
+        { name: 'workspai:userToolchain', value: 'not-required' },
+      ])
+    );
     expect(
       bom.dependencies.find((item) => item.ref.includes('%40workspai/graph@'))?.dependsOn
     ).toEqual(
       expect.arrayContaining([
         expect.stringContaining('%40workspai/shared@'),
         expect.stringContaining('yaml@2.9.0'),
+        'pkg:cargo/workspai-graph-engine@0.0.0',
       ])
     );
     expect(

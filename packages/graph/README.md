@@ -17,9 +17,10 @@ runtime behavior, not to create an npm product. Its root API exposes the
 admitted deterministic composer, the bounded proof-carrying query engine and
 the host-neutral G4 repository build candidate. Node filesystem access is
 isolated under `@workspai/graph/adapters/node`.
-The G4 candidate now includes an explicitly invoked standalone executable and
-project-local atomic persistence. CLI replacement remains unavailable until its
-later shadow-parity and migration gates complete.
+The G4 candidate now includes an explicitly invoked internal executable and
+project-local atomic persistence for conformance and product composition. CLI
+replacement remains unavailable until its later shadow-parity and migration
+gates complete.
 
 The current `/conformance` surface includes the SH6 Shared-adoption boundary,
 the admitted G1 contract layer, G2 reference engine and G3 query suites. It validates WIS
@@ -63,17 +64,17 @@ workspai-graph providers list
 workspai-graph inspect . --write --json
 ```
 
-Published query presets are `GRAPH_QUERY_PRESETS`. Subject-required presets
+Contracted query presets are `GRAPH_QUERY_PRESETS`. Subject-required presets
 fail closed without `--subject`. Existing-workspace inspect without
 `--workspace` is rejected.
 
 Workspace inspect without an injected onboarding adapter stays `partial` with
 `handoff-unavailable`. The packed tarball ships the query-candidate conformance
 profile, G1 admit/reject corpus, G4 language fixtures, G6 schema fixtures and
-G7 CLI envelope fixtures. Published reject paths (unknown preset, missing
+G7 CLI envelope fixtures. Contracted reject paths (unknown preset, missing
 subject, `--slice` on the wrong preset, `--write` on non-inspect, unknown
 provider, existing-workspace without `--workspace`) fail closed from the
-installed executable. Incident classes are published; rollback is not proven.
+installed executable. Incident classes are exported; rollback is not proven.
 
 An explicit write commits immutable, content-addressed artifacts below
 `.workspai/reports/graph-generations/` and advances the portable
@@ -110,7 +111,7 @@ central-CLI consumption.
 
 JSON executable results use `schemaVersion` `workspai.graph.cli-result.v1`.
 Exit codes are `0` success, `2` partial, `1` failed, `3` rejected, `4`
-publication failed and `130` cancelled. The published support and limitations
+publication failed and `130` cancelled. The exported support and limitations
 matrix is `GRAPH_STANDALONE_SUPPORT_MATRIX`; query-cache storage is optional and
 injected, never a default network or host cache, and query result envelopes do
 not carry a `cache` field.
@@ -172,6 +173,12 @@ The canonical source, versioning and quality gates remain in the
 architecture. If distribution strategy changes in the future, it requires a
 separate decision and admission process. A future `workspai-graph` repository
 is a read-only discovery mirror and owns no tags, releases or workflows.
+
+The committed G8 target is a Graph-owned Rust core delivered first as a bundled
+WASM asset. Runtime activation remains prohibited in G7 and later requires
+TypeScript parity, end-to-end performance, recovery, portability and product-
+bundle evidence. Users never install Cargo, resolve an unpublished package or
+select an implementation engine.
 
 Queries are deterministic and bounded. Every accepted result identifies its
 immutable graph generation and carries paths, evidence, disputes, unknown
