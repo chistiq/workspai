@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Deduplicated the ESM distribution through shared package-owned chunks. Root,
+  provider, conformance, Node adapter, worker and executable entry points retain
+  their declared exports while no longer embedding repeated engine copies.
 - Removed fixed canonical-value ceilings from policy-bounded large-repository
   composition without weakening the default untrusted-value limit. Large
   provider batches now sort by admitted identity and all semantic/content

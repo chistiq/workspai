@@ -17,7 +17,7 @@ export default defineConfig({
   outDir: 'dist',
   clean: true,
   bundle: true,
-  splitting: false,
+  splitting: true,
   sourcemap: true,
   dts: true,
   treeshake: true,

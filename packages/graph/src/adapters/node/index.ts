@@ -35,6 +35,16 @@ export interface NodeRepoGraphBuildRequest {
   readonly workerUrl?: URL;
 }
 
+function packagedReferenceWorkerUrl(): URL {
+  try {
+    const adapterEntry = import.meta.resolve('@workspai/graph/adapters/node');
+    return new URL('./reference-worker-entry.js', adapterEntry);
+  } catch {
+    // Source-level and non-package consumers retain the adjacent-entry fallback.
+    return new URL('./reference-worker-entry.js', import.meta.url);
+  }
+}
+
 function emptyResult<TOutput>(
   status: 'failed' | 'cancelled' | 'resource-limit',
   code: string,
@@ -61,7 +71,7 @@ function emptyResult<TOutput>(
  * cannot redefine composition semantics.
  */
 export function createNodeGraphReferenceWorkerPool(
-  workerUrl: URL = new URL('./reference-worker-entry.js', import.meta.url)
+  workerUrl: URL = packagedReferenceWorkerUrl()
 ): GraphWorkerPoolPort {
   return {
     execute<TInput, TOutput>(

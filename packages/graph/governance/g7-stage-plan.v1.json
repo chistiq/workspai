@@ -135,6 +135,7 @@
         "packages/graph/src/contracts/standalone-product.ts",
         "packages/graph/scripts/generate-g7-release-inventory.mjs",
         "packages/graph/governance/g7-release-inventory.v1.json",
+        "packages/graph/tsup.config.ts",
         "packages/graph/scripts/check-packed-package.mjs",
         "packages/graph/test/governance/g7-release-inventory.test.ts"
       ]
