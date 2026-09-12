@@ -38,7 +38,11 @@
     },
     {
       "id": "semantic-parity-corpus",
-      "status": "planned"
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/test-data/graph-shadow/semantic-parity-corpus.v1.json",
+        "packages/cli/src/__tests__/graph-shadow-parity.test.ts"
+      ]
     },
     {
       "id": "real-workspace-cross-platform-parity",

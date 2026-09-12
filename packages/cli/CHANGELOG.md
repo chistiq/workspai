@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Added a versioned G8 semantic shadow-parity corpus covering identity,
+  relation, proof lineage, unknown accounting, completeness, diagnostics and
+  explicitly reviewed improvements while the released CLI remains authoritative.
 - Made clean CLI builds prepare the private Shared and Graph bundle inputs in
   dependency order, without invoking the Rust toolchain. Fresh CI runners no
   longer depend on ignored workspace `dist` directories, while the public CLI

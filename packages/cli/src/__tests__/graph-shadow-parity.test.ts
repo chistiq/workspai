@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -10,6 +14,7 @@ import {
 
 const digest = `sha256:${'a'.repeat(64)}`;
 const commit = 'b'.repeat(40);
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const binding = {
   sourceFixtureDigest: digest,
   scopeDigest: digest,
@@ -73,6 +78,88 @@ function packageGraph(): PackageGraphShadowInput {
 }
 
 describe('Graph package shadow parity', () => {
+  it('passes the versioned semantic parity corpus without count-only shortcuts', async () => {
+    interface CorpusCase {
+      id: string;
+      legacySecondKind?: string;
+      packageSecondKind?: string;
+      packageSecondIdentity?: string;
+      legacyRelation?: string;
+      packageRelation?: string;
+      packageProofLocator?: string;
+      packageUnknownCodes?: string[];
+      packageCoverageStatus?: string;
+      packageDiagnosticCodes?: string[];
+      packageExtraNode?: boolean;
+      approvedDifferences?: Record<
+        string,
+        'truth-depth-improvement' | 'intentional-contract-change' | 'legacy-false-claim'
+      >;
+      expectedStatus: 'equivalent' | 'different' | 'incomparable';
+      expectedDifferenceCodes: string[];
+    }
+    const corpus = JSON.parse(
+      fs.readFileSync(
+        path.join(packageRoot, 'test-data/graph-shadow/semantic-parity-corpus.v1.json'),
+        'utf8'
+      )
+    ) as {
+      schemaVersion: string;
+      profile: string;
+      cases: CorpusCase[];
+    };
+    expect(corpus.schemaVersion).toBe('workspai.graph-shadow-semantic-corpus.v1');
+    expect(new Set(corpus.cases.map((item) => item.id)).size).toBe(corpus.cases.length);
+
+    for (const item of corpus.cases) {
+      const legacyCandidate = legacy();
+      const packageCandidate = packageGraph();
+      legacyCandidate.entities[1]!.kind = item.legacySecondKind ?? 'test';
+      legacyCandidate.relations[0]!.kind = item.legacyRelation ?? 'depends-on';
+      packageCandidate.graph.nodes[1]!.kind = item.packageSecondKind ?? 'test';
+      packageCandidate.graph.nodes[1]!.id = item.packageSecondIdentity ?? 'test:app';
+      packageCandidate.graph.edges[0]!.to = packageCandidate.graph.nodes[1]!.id;
+      packageCandidate.graph.edges[0]!.relation = item.packageRelation ?? 'depends-on';
+      packageCandidate.evidenceLocators = [item.packageProofLocator ?? 'tests/app.test.ts'];
+      packageCandidate.quality.unknownZones = (item.packageUnknownCodes ?? []).map((code) => ({
+        code,
+      }));
+      packageCandidate.quality.coverage = [
+        { dimension: 'semantic-depth', status: item.packageCoverageStatus ?? 'pass' },
+      ];
+      packageCandidate.graph.diagnostics = (item.packageDiagnosticCodes ?? []).map((code) => ({
+        code,
+      }));
+      if (item.packageExtraNode) {
+        packageCandidate.graph.nodes = [
+          ...packageCandidate.graph.nodes,
+          { id: 'module:deeper', kind: 'module' },
+        ];
+      }
+
+      const result = await runGraphShadowComparison({
+        profile: corpus.profile,
+        binding,
+        limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+        ...(item.approvedDifferences
+          ? { policy: { approvedDifferences: item.approvedDifferences } }
+          : {}),
+        legacy: async () => legacyCandidate,
+        package: async () => packageCandidate,
+      });
+
+      expect(result.status, item.id).toBe(item.expectedStatus);
+      expect(result.differences.map((difference) => difference.code).sort(), item.id).toEqual(
+        [...item.expectedDifferenceCodes].sort()
+      );
+      expect(result.receipt).toMatchObject({
+        authority: 'released-cli',
+        packageWrites: 'prohibited',
+        fallback: 'prohibited',
+      });
+    }
+  });
+
   it('compares explicit semantic aliases without changing released CLI authority', async () => {
     const result = await runGraphShadowComparison({
       profile: 'g8-fixture',

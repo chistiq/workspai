@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added the versioned G8 semantic shadow-parity corpus as CLI bridge evidence.
+  It rejects identity, relation, proof, unknown, completeness and diagnostic
+  regressions while reviewed improvements remain non-equivalent.
 - Kept the historical G7 release matrix verifiable after its retained admission
   advances the registry to G8, while rejecting the intermediate G7 registry
   state. Protected-main attestation and finalization now run only for the G5 to
