@@ -35,6 +35,8 @@ describe('G8 real-workspace evidence contracts', () => {
 
     expect(validate(valid), JSON.stringify(validate.errors)).toBe(true);
     expect(validate(invalid)).toBe(false);
+    expect(JSON.stringify(invalid)).toMatch(/\/home\/example\//);
+    expect(JSON.stringify(invalid)).not.toMatch(/\/home\/runner(?:\/|$)/);
   });
 
   it('rejects G9 authorization and unbounded evidence collections', () => {

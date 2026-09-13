@@ -12,7 +12,7 @@
   "authorizedRuntimeMode": "package-primary",
   "mappingVersion": "latest",
   "inventoryDigest": "not-a-digest",
-  "sourceFixtureDigest": "/home/runner/secret",
+  "sourceFixtureDigest": "/home/example/secret",
   "scopeDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "providerProfileDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "graphPolicyDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",

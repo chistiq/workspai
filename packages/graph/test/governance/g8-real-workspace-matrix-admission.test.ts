@@ -387,7 +387,7 @@ describe('Graph G8 real-workspace matrix admission', () => {
     });
 
     const leaked = platformReport('Windows', 'win32', {
-      environment: { platform: 'win32', architecture: 'x64', node: '/home/runner/secret' },
+      environment: { platform: 'win32', architecture: 'x64', node: '/home/example/secret' },
     });
     const leakedResult = runAdmission(
       createEvidenceDirectory({

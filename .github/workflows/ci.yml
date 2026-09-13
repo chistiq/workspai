@@ -308,6 +308,8 @@ jobs:
           retention-days: 30
 
       - name: Capture Graph G8 real-workspace platform evidence
+        id: g8-real-workspace-capture
+        continue-on-error: true
         shell: bash
         env:
           WORKSPAI_ADMISSION_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -316,6 +318,7 @@ jobs:
           npm --workspace workspai run test:graph-shadow:real-workspace -- --mode platform-report --output artifacts/graph-g8-real-workspace-${{ runner.os }}.json
 
       - name: Upload Graph G8 real-workspace platform evidence
+        if: steps.g8-real-workspace-capture.outcome == 'success' || steps.g8-real-workspace-capture.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: graph-g8-real-workspace-${{ runner.os }}-node-${{ matrix.node-version }}

@@ -178,6 +178,13 @@ if (
 ) {
   failures.push('G8 real-workspace cross-platform CI evidence lane is missing');
 }
+const g8Capture = workflow.slice(
+  workflow.indexOf('Capture Graph G8 real-workspace platform evidence'),
+  workflow.indexOf('Upload Graph G8 real-workspace platform evidence')
+);
+if (!g8Capture.includes('continue-on-error: true')) {
+  failures.push('G8 platform capture cannot abort the matrix before evidence upload');
+}
 const realWorkspacePolicy = readJson(
   'packages/cli/test-data/graph-shadow/real-workspace-policy.v1.json'
 );
