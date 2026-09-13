@@ -13,7 +13,9 @@
   runtime, and does not require `tsx` for installed users. Matrix verification
   recomputes the qualification digest and binds package commits to the tested
   SHA. Linux, macOS and Windows admission stays pending until the remote matrix
-  is retained. The released CLI remains the sole Graph authority.
+  is retained. The G7 release inventory snapshot now includes the G8
+  real-workspace evidence schemas. The released CLI remains the sole Graph
+  authority.
 - Added the versioned G8 semantic shadow-parity corpus as CLI bridge evidence.
   It rejects identity, relation, proof, unknown, completeness and diagnostic
   regressions while reviewed improvements remain non-equivalent.

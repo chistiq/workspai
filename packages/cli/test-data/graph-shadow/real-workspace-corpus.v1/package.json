@@ -7,8 +7,5 @@
   "scripts": {
     "start": "node src/index.ts",
     "test": "node --test tests/catalog.test.ts tests/orders.test.ts"
-  },
-  "dependencies": {
-    "fastify": "5.1.0"
   }
 }

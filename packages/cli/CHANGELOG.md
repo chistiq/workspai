@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   treated as cross-platform evidence. Isolated child execution is terminated at
   the deadline. The harness is repository and CI TypeScript only: it forks a
   `.ts` worker with `tsx`, is not a published CLI runtime capability, and does
-  not add `tsx` as a user install dependency. Platform reports require semantic
+  not add `tsx` as a user install dependency. The representative corpus has no
+  third-party runtime dependencies, so Security Audit does not treat its
+  manifest as a product package. Platform reports require semantic
   equivalence, measured read-only execution, and recomputed qualification
   digests. Remote Linux, macOS and Windows admission remains pending, and the
   released CLI remains authoritative.
