@@ -51,7 +51,10 @@ import {
 import { projectWorkspaceKnowledgeGraph } from './workspace-knowledge-graph-projection.js';
 import { buildWorkspaceKnowledgeGraph } from './workspace-knowledge-graph.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
-import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
+import {
+  WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION,
+  type WorkspaceKnowledgeGraph,
+} from './contracts/workspace-knowledge-graph-contract.js';
 import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from './contracts/workspace-intelligence-runtime-registry.js';
 import { hashCanonicalJson } from './workspace-model-hash.js';
 
@@ -777,7 +780,7 @@ async function qualifyOne(input: {
         });
     if (
       isObject(graph) &&
-      graph.schemaVersion === 'workspace-knowledge-graph.v1' &&
+      graph.schemaVersion === WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION &&
       isObject(graph.source) &&
       Array.isArray(graph.providers)
     ) {
