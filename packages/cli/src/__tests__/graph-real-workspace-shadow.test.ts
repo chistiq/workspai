@@ -182,6 +182,20 @@ describe('Graph real-workspace shadow qualification', () => {
     expect(JSON.stringify(result)).not.toContain(corpusRoot);
     expect(JSON.stringify(result)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
     expect([0, 2, 4]).toContain(exitCode);
+    const corpus = result.observations.find((item) => item.id === 'committed-node-service');
+    expect(corpus?.packageExecution).toMatchObject({ status: 'complete' });
+    expect(corpus?.comparison).toEqual(
+      expect.objectContaining({
+        status: 'different',
+        regressions: 4,
+        differenceCodes: expect.arrayContaining([
+          'GRAPH_SHADOW_NODE_SET_DIFFERENT',
+          'GRAPH_SHADOW_PROOF_LINEAGE_DIFFERENT',
+          'GRAPH_SHADOW_RELATION_SET_DIFFERENT',
+          'GRAPH_SHADOW_UNKNOWN_ACCOUNTING_DIFFERENT',
+        ]),
+      })
+    );
   });
 
   it('records exact semantic equivalence for identical mapped graphs', async () => {
@@ -566,7 +580,8 @@ describe('Graph real-workspace shadow qualification', () => {
     };
 
     expect(harness).toContain('./graph-real-workspace-shadow-worker.ts');
-    expect(harness).toContain("execArgv: ['--import', 'tsx']");
+    expect(harness).toContain('isolationExecArgv()');
+    expect(harness).toContain("createRequire(import.meta.url).resolve('tsx')");
     expect(worker).toContain('Repository and CI source execution only');
     expect(bundleConfig).not.toMatch(/graph-real-workspace-shadow-worker/);
     expect(manifest.files ?? []).not.toContain('src');

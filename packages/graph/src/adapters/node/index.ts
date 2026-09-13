@@ -40,6 +40,22 @@ export interface NodeRepoGraphBuildRequest {
   readonly workerUrl?: URL;
 }
 
+function inheritedWorkerExecArgv(workerUrl: URL): string[] {
+  const javascriptWorker = workerUrl.pathname.endsWith('.js');
+  const args: string[] = [];
+  const source = process.execArgv.filter((argument) => !argument.startsWith('--input-type'));
+  for (let index = 0; index < source.length; index += 1) {
+    const argument = source[index];
+    const next = source[index + 1];
+    if (javascriptWorker && argument === '--import' && next === 'tsx') {
+      index += 1;
+      continue;
+    }
+    args.push(argument);
+  }
+  return args;
+}
+
 function packagedReferenceWorkerUrl(): URL {
   try {
     const adapterEntry = import.meta.resolve('@workspai/graph/adapters/node');
@@ -109,8 +125,9 @@ export function createNodeGraphReferenceWorkerPool(
         try {
           worker = new Worker(workerUrl, {
             // Eval/STDIN-only flags inherited from a host process make file-backed
-            // workers fail before startup. Preserve all other host execution flags.
-            execArgv: process.execArgv.filter((argument) => !argument.startsWith('--input-type')),
+            // workers fail before startup. Bare `--import tsx` also fails after the
+            // host chdirs away from the package, so JavaScript workers drop it.
+            execArgv: inheritedWorkerExecArgv(workerUrl),
           });
         } catch (error) {
           resolve(

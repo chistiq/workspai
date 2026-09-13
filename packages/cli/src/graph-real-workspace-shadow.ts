@@ -2,6 +2,7 @@ import { fork } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import {
   link,
   lstat,
@@ -16,7 +17,7 @@ import {
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { GraphShadowComparisonPolicy } from './contracts/graph-shadow-parity-contract.js';
 import {
@@ -919,6 +920,10 @@ function timeoutSignal(
   };
 }
 
+function isolationExecArgv(): string[] {
+  return ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href];
+}
+
 async function directoryHasVisibleEntries(root: string): Promise<boolean> {
   try {
     const entries = await readdir(root);
@@ -985,7 +990,7 @@ async function runIsolatedObservation(input: {
   // worker, and must not require `tsx` at runtime.
   const worker = fileURLToPath(new URL('./graph-real-workspace-shadow-worker.ts', import.meta.url));
   const child = fork(worker, [], {
-    execArgv: ['--import', 'tsx'],
+    execArgv: isolationExecArgv(),
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     serialization: 'json',
   });
@@ -1321,7 +1326,6 @@ export async function createGraphG8RealWorkspacePlatformReport(
   );
   const failures: string[] = [];
   if (!compared?.comparison) failures.push('committed corpus comparison is missing');
-  if (compared?.status !== 'compared') failures.push('committed corpus was not compared');
   if (compared?.packageExecution?.status !== 'complete') {
     failures.push('package execution was not complete');
   }

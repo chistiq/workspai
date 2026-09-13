@@ -16,13 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observed when explicitly provided, are not trusted baselines, and are never
   treated as cross-platform evidence. Isolated child execution is terminated at
   the deadline. The harness is repository and CI TypeScript only: it forks a
-  `.ts` worker with `tsx`, is not a published CLI runtime capability, and does
-  not add `tsx` as a user install dependency. The representative corpus has no
-  third-party runtime dependencies, so Security Audit does not treat its
-  manifest as a product package. Platform reports require semantic
-  equivalence, measured read-only execution, and recomputed qualification
-  digests. Remote Linux, macOS and Windows admission remains pending, and the
-  released CLI remains authoritative.
+  `.ts` worker with an absolute `tsx` loader, is not a published CLI runtime
+  capability, and does not add `tsx` as a user install dependency. Nested Graph
+  composition workers still start after the child chdirs to a write sentinel.
+  The representative corpus has no third-party runtime dependencies, so
+  Security Audit does not treat its manifest as a product package. Platform
+  reports require semantic equivalence, measured read-only execution, and
+  recomputed qualification digests. Remote Linux, macOS and Windows admission
+  remains pending, and the released CLI remains authoritative.
 - Retried transient Windows `EPERM`, `EBUSY` and `EACCES` failures when
   replacing the shared workspace registry so concurrent registrations cannot
   disappear behind a swallowed optional-registry warning.

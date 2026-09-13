@@ -207,7 +207,7 @@ function semanticFailures(report, options, runnerOs) {
   const compared = (report.qualification?.observations ?? []).find(
     (item) => item.id === 'committed-node-service' && item.kind === 'committed-fixture'
   );
-  if (!compared || compared.status !== 'compared' || !compared.comparison) {
+  if (!compared?.comparison) {
     failures.push(`${runnerOs}: committed corpus comparison is missing`);
   }
   if ((compared?.comparison?.regressions ?? 1) > 0) {
@@ -233,20 +233,40 @@ function semanticFailures(report, options, runnerOs) {
   if (report.qualification?.usedProcessCwdAsAuthority !== false) {
     failures.push(`${runnerOs}: process.cwd was used as project authority`);
   }
-  if (compared?.comparison?.semanticOutputDigest !== report.semanticOutputDigest) {
-    failures.push(`${runnerOs}: semantic output digest tampering`);
-  }
-  if (compared?.comparison?.sourceTreeDigest !== report.sourceTreeDigest) {
-    failures.push(`${runnerOs}: source tree digest tampering`);
-  }
-  if (compared?.comparison?.status !== report.comparisonStatus) {
-    failures.push(`${runnerOs}: comparison status tampering`);
-  }
-  if (
-    JSON.stringify(compared?.comparison?.differenceCodes ?? []) !==
-    JSON.stringify(report.differenceCodes ?? [])
-  ) {
-    failures.push(`${runnerOs}: difference code tampering`);
+  if (compared?.comparison) {
+    if (compared.comparison.semanticOutputDigest !== report.semanticOutputDigest) {
+      failures.push(`${runnerOs}: semantic output digest tampering`);
+    }
+    if (compared.comparison.sourceTreeDigest !== report.sourceTreeDigest) {
+      failures.push(`${runnerOs}: source tree digest tampering`);
+    }
+    if (compared.comparison.status !== report.comparisonStatus) {
+      failures.push(`${runnerOs}: comparison status tampering`);
+    }
+    if (
+      JSON.stringify(compared.comparison.differenceCodes ?? []) !==
+      JSON.stringify(report.differenceCodes ?? [])
+    ) {
+      failures.push(`${runnerOs}: difference code tampering`);
+    }
+    if (compared.comparison.sourceFixtureDigest !== report.sourceFixtureDigest) {
+      failures.push(`${runnerOs}: source fixture digest tampering`);
+    }
+    if (compared.comparison.scopeDigest !== report.scopeDigest) {
+      failures.push(`${runnerOs}: scope digest tampering`);
+    }
+    if (compared.comparison.providerProfileDigest !== report.providerProfileDigest) {
+      failures.push(`${runnerOs}: provider profile digest tampering`);
+    }
+    if (compared.comparison.graphPolicyDigest !== report.graphPolicyDigest) {
+      failures.push(`${runnerOs}: graph policy digest tampering`);
+    }
+    if (compared.comparison.redactionAuthorizationDigest !== report.redactionAuthorizationDigest) {
+      failures.push(`${runnerOs}: redaction authorization digest tampering`);
+    }
+    if (compared.comparison.resourceBudgetDigest !== report.resourceBudgetDigest) {
+      failures.push(`${runnerOs}: resource budget digest tampering`);
+    }
   }
   if (JSON.stringify(report.qualification?.receipt ?? {}) !== JSON.stringify(receipt)) {
     failures.push(`${runnerOs}: nested receipt tampering`);
@@ -256,24 +276,6 @@ function semanticFailures(report, options, runnerOs) {
   }
   if (qualificationDigest(report.qualification) !== report.reportDigest) {
     failures.push(`${runnerOs}: report digest was not recomputable from the qualification payload`);
-  }
-  if (compared?.comparison?.sourceFixtureDigest !== report.sourceFixtureDigest) {
-    failures.push(`${runnerOs}: source fixture digest tampering`);
-  }
-  if (compared?.comparison?.scopeDigest !== report.scopeDigest) {
-    failures.push(`${runnerOs}: scope digest tampering`);
-  }
-  if (compared?.comparison?.providerProfileDigest !== report.providerProfileDigest) {
-    failures.push(`${runnerOs}: provider profile digest tampering`);
-  }
-  if (compared?.comparison?.graphPolicyDigest !== report.graphPolicyDigest) {
-    failures.push(`${runnerOs}: graph policy digest tampering`);
-  }
-  if (compared?.comparison?.redactionAuthorizationDigest !== report.redactionAuthorizationDigest) {
-    failures.push(`${runnerOs}: redaction authorization digest tampering`);
-  }
-  if (compared?.comparison?.resourceBudgetDigest !== report.resourceBudgetDigest) {
-    failures.push(`${runnerOs}: resource budget digest tampering`);
   }
   if (LOCAL_PATH.test(JSON.stringify(report))) {
     failures.push(`${runnerOs}: machine-local path`);

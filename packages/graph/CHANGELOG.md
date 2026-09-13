@@ -14,11 +14,12 @@
   recomputes the qualification digest and binds package commits to the tested
   SHA. Linux, macOS and Windows admission stays pending until the remote matrix
   is retained. The G7 release inventory snapshot now includes the G8
-  real-workspace evidence schemas. Fail-closed platform reports still exit 4
-  until semantic equivalence, but CI captures them without aborting the OS
-  matrix. Packed invalid fixtures use `/home/example` so Linux runners do not
-  treat them as leaked host paths. The released CLI remains the sole Graph
-  authority.
+  real-workspace evidence schemas. Isolated qualification resolves `tsx` by
+  absolute URL so nested Graph composition workers still start after the child
+  chdirs to a write sentinel. Fail-closed platform reports still exit 4 until
+  semantic equivalence, but CI captures them without aborting the OS matrix.
+  Packed invalid fixtures use `/home/example` so Linux runners do not treat
+  them as leaked host paths. The released CLI remains the sole Graph authority.
 - Added the versioned G8 semantic shadow-parity corpus as CLI bridge evidence.
   It rejects identity, relation, proof, unknown, completeness and diagnostic
   regressions while reviewed improvements remain non-equivalent.
