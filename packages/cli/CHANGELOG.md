@@ -22,8 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The representative corpus has no third-party runtime dependencies, so
   Security Audit does not treat its manifest as a product package. Platform
   reports require semantic equivalence, measured read-only execution, and
-  recomputed qualification digests. Remote Linux, macOS and Windows admission
-  remains pending, and the released CLI remains authoritative.
+  recomputed qualification digests. Temporary copies retry Windows
+  `ENOTEMPTY` cleanup after isolated children are killed. Remote Linux, macOS
+  and Windows admission remains pending, and the released CLI remains
+  authoritative.
 - Retried transient Windows `EPERM`, `EBUSY` and `EACCES` failures when
   replacing the shared workspace registry so concurrent registrations cannot
   disappear behind a swallowed optional-registry warning.

@@ -44,7 +44,11 @@ const digest = (value: string): string =>
   `sha256:${createHash('sha256').update(value).digest('hex')}`;
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    roots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
+  );
 });
 
 function scopedLegacy() {
@@ -582,6 +586,8 @@ describe('Graph real-workspace shadow qualification', () => {
     expect(harness).toContain('./graph-real-workspace-shadow-worker.ts');
     expect(harness).toContain('isolationExecArgv()');
     expect(harness).toContain("createRequire(import.meta.url).resolve('tsx')");
+    expect(harness).toContain('async function removeTemporaryRoot');
+    expect(harness).toContain('maxRetries: 10');
     expect(worker).toContain('Repository and CI source execution only');
     expect(bundleConfig).not.toMatch(/graph-real-workspace-shadow-worker/);
     expect(manifest.files ?? []).not.toContain('src');

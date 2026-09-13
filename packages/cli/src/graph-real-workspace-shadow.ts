@@ -942,6 +942,15 @@ async function terminateChild(child: ReturnType<typeof fork>): Promise<void> {
   await once(child, 'exit').catch(() => undefined);
 }
 
+async function removeTemporaryRoot(root: string): Promise<void> {
+  await rm(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: process.platform === 'win32' ? 100 : 10,
+  });
+}
+
 async function withCwdObservation<T>(
   projectRoot: string,
   work: () => Promise<T>
@@ -1234,7 +1243,7 @@ export async function runGraphRealWorkspaceQualification(
         usedProcessCwdAsAuthority = true;
       }
     }
-    await Promise.all(temporaryRoots.map((root) => rm(root, { recursive: true, force: true })));
+    await Promise.all(temporaryRoots.map((root) => removeTemporaryRoot(root)));
   }
   if (
     timed.signal.aborted &&
