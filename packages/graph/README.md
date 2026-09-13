@@ -194,5 +194,10 @@ repository or npm artifact. Protected-main run `34715037038` admitted the exact
 G7 internal artifact on Linux, macOS and Windows with provenance and CycloneDX
 attestations. The package is standalone stable for its declared internal scope.
 G8 authorizes read-only CLI shadow comparison only; the released CLI remains the
-sole Graph authority and package-primary execution remains prohibited. Public npm
-release is not part of the current delivery path.
+sole Graph authority and package-primary execution remains prohibited. A local
+real-workspace qualification candidate now exists for a representative committed
+Node corpus with zero default approved differences. That harness is repository
+and CI TypeScript only; it is not a published CLI runtime and does not require
+`tsx` for installed users. Local reference copies are not admission,
+`incomparable` is not cross-platform parity, and Linux/macOS/Windows admission
+remains pending. Public npm release is not part of the current delivery path.

@@ -98,6 +98,7 @@
     "admission:g7:platform": "node scripts/check-g7-release-candidate.mjs",
     "admission:g7:matrix": "node scripts/check-g7-release-matrix.mjs",
     "admission:g8:audit": "node scripts/check-g8-stage.mjs",
+    "admission:g8:matrix": "node scripts/check-g8-real-workspace-matrix-admission.mjs",
     "admission:standalone:audit": "node scripts/check-standalone-admission.mjs --allow-blocked",
     "admission:standalone:check": "node scripts/check-standalone-admission.mjs",
     "sbom:check": "node scripts/generate-graph-sbom.mjs",

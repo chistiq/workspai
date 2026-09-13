@@ -88,7 +88,7 @@ export interface GraphShadowExecutionRequest {
   >;
 }
 
-export const GRAPH_SHADOW_DEFAULT_LIMITS = Object.freeze({
+export const GRAPH_SHADOW_DEFAULT_LIMITS: GraphShadowExecutionRequest['limits'] = Object.freeze({
   maxNodes: 1_000_000,
   maxRelations: 5_000_000,
   maxProofs: 5_000_000,

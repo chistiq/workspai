@@ -8,6 +8,8 @@ export type { WorkspaiGraphDerivedProjectionResultCandidate } from './derived-pr
 export type { WorkspaiGraphEntityIdentityCandidate } from './entity-identity.v0.1.0-candidate.js';
 export type { WorkspaiGraphEvidenceIndependenceCandidate } from './evidence-independence.v0.1.0-candidate.js';
 export type { WorkspaiGraphFactBatchCandidate } from './fact-batch.v0.1.0-candidate.js';
+export type { WorkspaiGraphG8RealWorkspaceMatrixAdmissionCandidate } from './g8-real-workspace-matrix-admission.v1-candidate.js';
+export type { WorkspaiGraphG8RealWorkspacePlatformReportCandidate } from './g8-real-workspace-platform-report.v1-candidate.js';
 export type { WorkspaiGraphGenerationPublicationCandidate } from './generation-publication.v0.1.0-candidate.js';
 export type { WorkspaiGraphChangeOverlayCandidate } from './graph-change-overlay.v0.1.0-candidate.js';
 export type { WorkspaiGraphDeltaCandidate } from './graph-delta.v0.1.0-candidate.js';

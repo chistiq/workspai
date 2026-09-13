@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "workspai.graph-g8-real-workspace-platform-report.v1-candidate",
+  "package": "@workspai/graph",
+  "stage": "G8",
+  "checkpoint": "real-workspace-cross-platform-parity",
+  "status": "passed-platform",
+  "admitted": true,
+  "nextStage": "G9",
+  "nextStageAuthorized": true,
+  "crossPlatformAdmission": "complete",
+  "currentGraphAuthority": "package-authoritative",
+  "authorizedRuntimeMode": "package-primary",
+  "mappingVersion": "latest",
+  "inventoryDigest": "not-a-digest",
+  "sourceFixtureDigest": "/home/runner/secret",
+  "scopeDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "providerProfileDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "graphPolicyDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "redactionAuthorizationDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "resourceBudgetDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "reportDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "packageExecutionStatus": "complete",
+  "environment": { "platform": "linux", "architecture": "x64", "node": "v20.19.0" },
+  "platformEvidence": { "status": "passed", "runnerOs": "Linux", "runnerArch": "X64" },
+  "ci": {
+    "provider": "github-actions",
+    "runId": "1234567890",
+    "event": "pull_request",
+    "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "testedCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "versions": {
+    "cli": { "version": "0.75.1", "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    "graphPackage": {
+      "version": "0.0.0-development",
+      "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "qualification": {
+    "schemaVersion": "workspai.graph-real-workspace-qualification.v1-candidate",
+    "profile": "g8-real-workspace.v1",
+    "inventoryDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mappingVersion": "workspai.graph-shadow-mapping.v1",
+    "observations": [
+      {
+        "id": "committed-fixture",
+        "kind": "committed-fixture",
+        "projectId": "real-workspace-fixture",
+        "status": "compared"
+      }
+    ],
+    "mutatedCanonicalArtifacts": false,
+    "usedProcessCwdAsAuthority": false,
+    "receipt": {
+      "schemaVersion": "workspai.graph-model-authority-receipt.v1-candidate",
+      "epoch": "package-authoritative",
+      "executionPath": "package",
+      "comparison": {
+        "status": "equivalent",
+        "profile": "g8-real-workspace.v1",
+        "reportDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "authority": "package-authoritative",
+      "packageWrites": "allowed",
+      "fallback": "silent"
+    }
+  },
+  "receipt": {
+    "schemaVersion": "workspai.graph-model-authority-receipt.v1-candidate",
+    "epoch": "package-authoritative",
+    "executionPath": "package",
+    "comparison": {
+      "status": "equivalent",
+      "profile": "g8-real-workspace.v1",
+      "reportDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "authority": "package-authoritative",
+    "packageWrites": "allowed",
+    "fallback": "silent"
+  },
+  "failures": []
+}

@@ -1,0 +1,14 @@
+{
+  "name": "node-catalog-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic catalog and order service used as a G8 representative committed corpus.",
+  "scripts": {
+    "start": "node src/index.ts",
+    "test": "node --test tests/catalog.test.ts tests/orders.test.ts"
+  },
+  "dependencies": {
+    "fastify": "5.1.0"
+  }
+}

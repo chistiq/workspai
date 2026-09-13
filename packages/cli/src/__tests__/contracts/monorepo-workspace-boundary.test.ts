@@ -70,6 +70,7 @@ describe('published monorepo workspace boundary', () => {
     );
     expect(bundleConfig).toContain("'internal/graph-package-shadow-bridge':");
     expect(bundleConfig).toContain("'internal/graph-reference-worker-entry':");
+    expect(bundleConfig).not.toMatch(/graph-real-workspace-shadow-worker/);
     expect(bundleConfig).toContain("noExternal: ['@workspai/graph', '@workspai/shared']");
   });
 });

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a bounded, read-only G8 real-workspace shadow qualification harness.
+  Approved differences default to none; any exception must be a bound record
+  for one corpus, source-tree digest, difference code and reason. Cross-platform
+  admission requires semantic equivalence on the representative committed Node
+  corpus, not `incomparable` with blanket approvals. Local `grpc` and
+  `opentelemetry-demo` copies remain optional observations and are not trusted
+  baselines. Isolated child execution is terminated at the deadline. The
+  harness remains a repository and CI TypeScript tool, not a published CLI
+  runtime, and does not require `tsx` for installed users. Matrix verification
+  recomputes the qualification digest and binds package commits to the tested
+  SHA. Linux, macOS and Windows admission stays pending until the remote matrix
+  is retained. The released CLI remains the sole Graph authority.
 - Added the versioned G8 semantic shadow-parity corpus as CLI bridge evidence.
   It rejects identity, relation, proof, unknown, completeness and diagnostic
   regressions while reviewed improvements remain non-equivalent.

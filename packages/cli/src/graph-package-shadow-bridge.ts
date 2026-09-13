@@ -30,6 +30,7 @@ export interface PreparedProjectGraphShadowRequest {
   readonly binding: GraphShadowComparisonBinding;
   readonly policy?: GraphShadowComparisonPolicy;
   readonly legacy: () => Promise<LegacyGraphShadowInput>;
+  readonly package?: () => Promise<PackageGraphShadowInput | undefined>;
   readonly signal?: AbortSignal;
   readonly limits?: typeof GRAPH_SHADOW_DEFAULT_LIMITS;
 }
@@ -145,6 +146,24 @@ export async function runPreparedProjectGraphShadow(
       !path.isAbsolute(request.context.projectRoot)
     ) {
       throw new Error('Prepared Graph shadow context is invalid.');
+    }
+    if (request.package) {
+      const input = await request.package();
+      if (!input?.graph) {
+        packageExecution = { status: 'partial', inputFiles: 0, providerFacts: 0 };
+        return undefined;
+      }
+      packageExecution = {
+        status: 'complete',
+        inputFiles: input.evidenceLocators?.length ?? 1,
+        providerFacts: 1,
+        semanticBinding: {
+          sourceFixtureDigest: `sha256:${input.graph.generation.inputsDigest.value}`,
+          providerProfileDigest: `sha256:${input.graph.generation.providerSetDigest.value}`,
+          graphPolicyDigest: `sha256:${input.graph.generation.compositionPolicyDigest.value}`,
+        },
+      };
+      return input;
     }
     const basePorts = createNodeGraphProductHostPorts({
       signal: request.signal,

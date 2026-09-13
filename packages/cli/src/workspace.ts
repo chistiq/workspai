@@ -48,6 +48,8 @@ interface WorkspaceOptions {
 // crashed owner can never be recovered by the same acquisition attempt.
 const WORKSPACE_REGISTRY_LOCK_STALE_MS = 30_000;
 const WORKSPACE_REGISTRY_LOCK_ACQUIRE_TIMEOUT_MS = 45_000;
+const WORKSPACE_REGISTRY_REPLACE_RETRY_LIMIT = 8;
+const WORKSPACE_REGISTRY_REPLACE_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
 type GitInitSpinner = {
   start(text?: string): GitInitSpinner;
@@ -299,6 +301,45 @@ async function writeWorkspaceRegistryFileAtomically(
   );
 }
 
+function isTransientWorkspaceRegistryReplaceError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === 'string' && WORKSPACE_REGISTRY_REPLACE_RETRY_CODES.has(code);
+}
+
+async function waitForWorkspaceRegistryRetry(attempt: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+}
+
+async function replaceWorkspaceRegistryFile(
+  temporaryPath: string,
+  registryFile: string
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < WORKSPACE_REGISTRY_REPLACE_RETRY_LIMIT; attempt += 1) {
+    try {
+      await fs.rename(temporaryPath, registryFile);
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST' && !isTransientWorkspaceRegistryReplaceError(error)) {
+        throw error;
+      }
+      try {
+        await fsExtra.move(temporaryPath, registryFile, { overwrite: true });
+        return;
+      } catch (moveError) {
+        lastError = moveError;
+        if (!isTransientWorkspaceRegistryReplaceError(moveError)) {
+          throw moveError;
+        }
+        await waitForWorkspaceRegistryRetry(attempt);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function writeWorkspaceRegistryBytesAtomically(
   registryFile: string,
   content: string | Buffer
@@ -314,13 +355,7 @@ async function writeWorkspaceRegistryBytesAtomically(
     } finally {
       await handle.close();
     }
-    try {
-      await fs.rename(temporaryPath, registryFile);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST' && code !== 'EPERM') throw error;
-      await fsExtra.move(temporaryPath, registryFile, { overwrite: true });
-    }
+    await replaceWorkspaceRegistryFile(temporaryPath, registryFile);
   } finally {
     await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
   }

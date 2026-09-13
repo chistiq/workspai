@@ -116,6 +116,23 @@ for (const checkpoint of checkpoints) {
       }
     }
   }
+  if (checkpoint.id === 'real-workspace-cross-platform-parity' && checkpoint.status === 'passed') {
+    failures.push(
+      'real-workspace cross-platform admission cannot be marked passed without retained remote evidence'
+    );
+  }
+  if (
+    checkpoint.id === 'real-workspace-cross-platform-parity' &&
+    checkpoint.crossPlatformAdmission &&
+    checkpoint.crossPlatformAdmission !== 'pending'
+  ) {
+    failures.push(
+      'real-workspace cross-platform admission must remain pending until the remote matrix is retained'
+    );
+  }
+  if (checkpoint.id === 'package-primary-replacement-decision' && checkpoint.status !== 'planned') {
+    failures.push('package-primary replacement remains unauthorized during G8 shadow comparison');
+  }
 }
 for (const checkpoint of requiredCheckpoints) {
   if (!checkpointIds.has(checkpoint)) failures.push(`missing G8 checkpoint: ${checkpoint}`);
@@ -152,6 +169,72 @@ if (
   !bundleConfig.includes("noExternal: ['@workspai/graph', '@workspai/shared']")
 ) {
   failures.push('prepared CLI bridge or internal product bundling is incomplete');
+}
+const workflow = fs.readFileSync(repositoryFile('.github/workflows/ci.yml'), 'utf8');
+if (
+  !workflow.includes('graph-g8-real-workspace-') ||
+  !workflow.includes('check-g8-real-workspace-matrix-admission.mjs') ||
+  !workflow.includes('graph-g8-real-workspace-parity')
+) {
+  failures.push('G8 real-workspace cross-platform CI evidence lane is missing');
+}
+const realWorkspacePolicy = readJson(
+  'packages/cli/test-data/graph-shadow/real-workspace-policy.v1.json'
+);
+const realWorkspaceApprovals = readJson(
+  'packages/cli/test-data/graph-shadow/real-workspace-approvals.v1.json'
+);
+const realWorkspaceInventory = readJson(
+  'packages/cli/test-data/graph-shadow/real-workspace-inventory.v1.json'
+);
+if (Object.keys(realWorkspacePolicy.approvedDifferences ?? { forbidden: true }).length !== 0) {
+  failures.push('real-workspace policy cannot carry unbound approved differences');
+}
+if (
+  realWorkspaceApprovals.schemaVersion !== 'workspai.graph-real-workspace-approvals.v1' ||
+  !Array.isArray(realWorkspaceApprovals.records)
+) {
+  failures.push('real-workspace approvals ledger is missing');
+}
+const approvedByCorpus = new Map();
+for (const record of realWorkspaceApprovals.records ?? []) {
+  const key = `${record.corpusId}:${record.sourceTreeDigest}`;
+  const codes = approvedByCorpus.get(key) ?? new Set();
+  codes.add(record.code);
+  approvedByCorpus.set(key, codes);
+}
+const primaryDifferenceCodes = [
+  'GRAPH_SHADOW_NODE_SET_DIFFERENT',
+  'GRAPH_SHADOW_RELATION_SET_DIFFERENT',
+  'GRAPH_SHADOW_PROOF_LINEAGE_DIFFERENT',
+  'GRAPH_SHADOW_UNKNOWN_ACCOUNTING_DIFFERENT',
+  'GRAPH_SHADOW_COMPLETENESS_DIFFERENT',
+  'GRAPH_SHADOW_DIAGNOSTICS_DIFFERENT',
+];
+for (const codes of approvedByCorpus.values()) {
+  if (primaryDifferenceCodes.every((code) => codes.has(code))) {
+    failures.push('real-workspace approvals cannot blanket every semantic difference class');
+  }
+}
+const crossPlatform = (realWorkspaceInventory.required ?? []).filter((entry) =>
+  (entry.requiredFor ?? []).includes('cross-platform')
+);
+if (
+  crossPlatform.length !== 1 ||
+  crossPlatform[0]?.id !== 'committed-node-service' ||
+  crossPlatform[0]?.trustedBaseline !== true
+) {
+  failures.push('G8 matrix inventory must declare exactly one trusted committed corpus');
+}
+if ((realWorkspaceInventory.optionalLocalReferences ?? []).some((entry) => entry.trustedBaseline)) {
+  failures.push('local reference repositories cannot be trusted baselines');
+}
+if (
+  !fs.existsSync(
+    repositoryFile('packages/cli/test-data/graph-shadow/real-workspace-corpus.v1/src/index.ts')
+  )
+) {
+  failures.push('committed real-workspace corpus is missing');
 }
 if (/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u.test(JSON.stringify({ plan, admission }))) {
   failures.push('G8 governance contains a machine-local path');

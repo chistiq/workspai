@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Added a read-only G8 real-workspace shadow qualification system. The
+  representative committed Node corpus is the only matrix admission input.
+  Difference approvals default to zero and must be bound to a corpus,
+  source-tree digest and code. Optional local reference repositories are
+  observed when explicitly provided, are not trusted baselines, and are never
+  treated as cross-platform evidence. Isolated child execution is terminated at
+  the deadline. The harness is repository and CI TypeScript only: it forks a
+  `.ts` worker with `tsx`, is not a published CLI runtime capability, and does
+  not add `tsx` as a user install dependency. Platform reports require semantic
+  equivalence, measured read-only execution, and recomputed qualification
+  digests. Remote Linux, macOS and Windows admission remains pending, and the
+  released CLI remains authoritative.
+- Retried transient Windows `EPERM`, `EBUSY` and `EACCES` failures when
+  replacing the shared workspace registry so concurrent registrations cannot
+  disappear behind a swallowed optional-registry warning.
 - Added a versioned G8 semantic shadow-parity corpus covering identity,
   relation, proof lineage, unknown accounting, completeness, diagnostics and
   explicitly reviewed improvements while the released CLI remains authoritative.

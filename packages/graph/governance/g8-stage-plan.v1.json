@@ -46,7 +46,25 @@
     },
     {
       "id": "real-workspace-cross-platform-parity",
-      "status": "planned"
+      "status": "implemented-local-candidate",
+      "crossPlatformAdmission": "pending",
+      "evidence": [
+        "packages/cli/src/graph-real-workspace-shadow.ts",
+        "packages/cli/src/graph-real-workspace-shadow-worker.ts",
+        "packages/cli/scripts/graph-real-workspace-shadow-qualification.ts",
+        "packages/cli/src/contracts/graph-real-workspace-shadow-contract.ts",
+        "packages/cli/test-data/graph-shadow/real-workspace-inventory.v1.json",
+        "packages/cli/test-data/graph-shadow/real-workspace-policy.v1.json",
+        "packages/cli/test-data/graph-shadow/real-workspace-approvals.v1.json",
+        "packages/cli/test-data/graph-shadow/real-workspace-fixture.v1/src/index.ts",
+        "packages/cli/test-data/graph-shadow/real-workspace-corpus.v1/src/index.ts",
+        "packages/cli/src/__tests__/graph-real-workspace-shadow.test.ts",
+        "packages/graph/schemas/g8-real-workspace-platform-report.v1-candidate.schema.json",
+        "packages/graph/schemas/g8-real-workspace-matrix-admission.v1-candidate.schema.json",
+        "packages/graph/scripts/check-g8-real-workspace-matrix-admission.mjs",
+        "packages/graph/test/governance/g8-real-workspace-matrix-admission.test.ts",
+        ".github/workflows/ci.yml"
+      ]
     },
     {
       "id": "workspace-intelligence-consumer-parity",
@@ -69,7 +87,8 @@
     "Count-only parity is prohibited; identities, semantics, proof, unknowns, quality and diagnostics are compared.",
     "Rust and WASM remain internal execution adapters and never become a second Graph truth.",
     "Users do not select an engine or install Rust tooling.",
-    "The packages remain private and npm publication stays prohibited."
+    "The packages remain private and npm publication stays prohibited.",
+    "Real-workspace qualification is a repository and CI TypeScript harness; it is not a published CLI runtime capability and must not require tsx for installed users."
   ],
   "nextStage": "G9",
   "nextStageAuthorized": false

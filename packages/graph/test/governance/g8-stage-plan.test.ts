@@ -45,6 +45,17 @@ describe('Graph G8 stage authorization', () => {
       nextStageAuthorized: true,
       approval: { status: 'approved' },
     });
+    const realWorkspace = (
+      plan.checkpoints as { id: string; status: string; crossPlatformAdmission?: string }[]
+    ).find((checkpoint) => checkpoint.id === 'real-workspace-cross-platform-parity');
+    const replacement = (plan.checkpoints as { id: string; status: string }[]).find(
+      (checkpoint) => checkpoint.id === 'package-primary-replacement-decision'
+    );
+    expect(realWorkspace).toMatchObject({
+      status: 'implemented-local-candidate',
+      crossPlatformAdmission: 'pending',
+    });
+    expect(replacement).toMatchObject({ status: 'planned' });
     expect(JSON.stringify({ admission, transition, plan })).not.toMatch(
       /(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u
     );
@@ -60,6 +71,7 @@ describe('Graph G8 stage authorization', () => {
         expect.stringMatching(/No package failure may silently fall back/i),
         expect.stringMatching(/Users do not select an engine/i),
         expect.stringMatching(/npm publication stays prohibited/i),
+        expect.stringMatching(/repository and CI TypeScript harness/i),
       ])
     );
   });
