@@ -27,7 +27,7 @@ function result(status: GraphRepoBuildResult['status']): GraphRepoBuildResult {
     },
     providers: [],
     diagnostics: [],
-    metrics: { inputFiles: 1, inputBytes: 1, providerFacts: 1, omittedFiles: 0 },
+    metrics: { inputFiles: 1, inputBytes: 1, providerFacts: 1, omittedFiles: 0, omittedBytes: 0 },
   };
 }
 

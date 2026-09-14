@@ -25,6 +25,7 @@ export {
   classifyInventoryDirectoryName,
   classifyInventorySurfaceLocator,
   classifyInventoryWalkSkip,
+  comparePortableInventoryNames,
   inventoryOmissionAccounting,
   inventorySurfaceExcludedDirectoryNames,
   inventorySurfaceOmissionCode,

@@ -2,12 +2,10 @@
 
 ## Unreleased
 
-- Added Graph-owned source-declaration, language and documentation-surface
-  providers. Workspace containment stays opt-in and requires host-supplied
-  identity evidence. Symbol and call caps emit truncation unknowns and
-  partial completeness. Regex extraction remains explicitly
-  confidence-bounded and leaves ambiguous calls unknown. G8 comparison now
-  splits leftover identities instead of aggregating whole sets. Cross-platform
+- Inventory policyDigest now binds complete walk budgets, directory truncation
+  is `partially-enumerated`, and omittedBytes travel through repo-build metrics
+  into shadow execution receipts. Bounded walks stop at the file or byte budget
+  instead of scanning remaining trees. Cross-platform
   admission and package-primary replacement remain unauthorized.
   Approved differences default to none; any exception must be a bound record
   for one corpus, source-tree digest, difference code and reason. Cross-platform

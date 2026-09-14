@@ -110,7 +110,7 @@
     {
       "id": "https://schemas.workspai.dev/graph/inventory-surface/v1",
       "file": "schemas/inventory-surface.v1.schema.json",
-      "sha256": "cd452a90a398d35e91d255687be90eefc022eadcc57cf8d32611bda77604840b"
+      "sha256": "c728edb8019348d2685df7b8346c3c8789d5225d09f245f9b90219e6acaa986d"
     },
     {
       "id": "https://schemas.workspai.dev/graph/locator-identity/v1",

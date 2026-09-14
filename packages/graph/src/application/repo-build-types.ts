@@ -53,6 +53,7 @@ export interface GraphRepoBuildMetrics {
   readonly inputBytes: number;
   readonly providerFacts: number;
   readonly omittedFiles: number;
+  readonly omittedBytes: number;
   readonly omittedFileAccounting?: 'enumerated' | 'unknown-subtrees';
   readonly omittedByteAccounting?: 'measured' | 'unknown-subtrees';
   readonly omittedSubtrees?: readonly GraphOmittedSubtree[];

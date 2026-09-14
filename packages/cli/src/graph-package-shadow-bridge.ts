@@ -37,6 +37,8 @@ export interface PreparedProjectGraphShadowResult {
   readonly packageExecution: {
     readonly status: 'complete' | 'partial' | 'failed' | 'cancelled' | 'not-executed';
     readonly inputFiles: number;
+    readonly omittedFiles: number;
+    readonly omittedBytes: number;
     readonly providerFacts: number;
     readonly workspaceId: string;
     readonly semanticBinding?: {
@@ -64,6 +66,8 @@ export async function runPreparedProjectGraphShadow(
   let packageExecution: PreparedProjectGraphShadowResult['packageExecution'] = {
     status: 'not-executed',
     inputFiles: 0,
+    omittedFiles: 0,
+    omittedBytes: 0,
     providerFacts: 0,
     workspaceId: request.context.workspaceId,
   };
@@ -75,6 +79,8 @@ export async function runPreparedProjectGraphShadow(
         packageExecution = {
           status: 'partial',
           inputFiles: 0,
+          omittedFiles: 0,
+          omittedBytes: 0,
           providerFacts: 0,
           workspaceId: request.context.workspaceId,
         };
@@ -83,6 +89,8 @@ export async function runPreparedProjectGraphShadow(
       packageExecution = {
         status: 'complete',
         inputFiles: input.evidenceLocators?.length ?? 1,
+        omittedFiles: 0,
+        omittedBytes: 0,
         providerFacts: 1,
         workspaceId: request.context.workspaceId,
         semanticBinding: {
@@ -101,6 +109,8 @@ export async function runPreparedProjectGraphShadow(
     packageExecution = {
       status: built.status,
       inputFiles: built.inputFiles,
+      omittedFiles: built.omittedFiles,
+      omittedBytes: built.omittedBytes,
       providerFacts: built.providerFacts,
       workspaceId: request.context.workspaceId,
       ...(built.semanticBinding ? { semanticBinding: built.semanticBinding } : {}),

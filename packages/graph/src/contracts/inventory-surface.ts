@@ -73,6 +73,39 @@ export const GRAPH_INVENTORY_OMITTED_SUBTREE_COUNT_STATES = Object.freeze([
 
 export const GRAPH_INVENTORY_OMITTED_SUBTREE_BYTE_STATES = Object.freeze(['not-measured'] as const);
 
+export const GRAPH_INVENTORY_OMITTED_SUBTREE_ENUMERATION_STATES = Object.freeze([
+  'not-enumerated',
+  'partially-enumerated',
+] as const);
+
+export type GraphOmittedSubtreeCountState =
+  (typeof GRAPH_INVENTORY_OMITTED_SUBTREE_COUNT_STATES)[number];
+export type GraphOmittedSubtreeByteState =
+  (typeof GRAPH_INVENTORY_OMITTED_SUBTREE_BYTE_STATES)[number];
+export type GraphOmittedSubtreeEnumeration =
+  (typeof GRAPH_INVENTORY_OMITTED_SUBTREE_ENUMERATION_STATES)[number];
+
+export const GRAPH_INVENTORY_POLICY_MATERIAL_KIND = 'inventory-walk-policy' as const;
+
+export const GRAPH_INVENTORY_POLICY_MATERIAL_BUDGET_KEYS = Object.freeze([
+  'maxFiles',
+  'maxTotalBytes',
+  'maxFileBytes',
+  'maxDepth',
+  'maxDirectoryEntries',
+] as const);
+
+export type GraphInventoryWalkBudgetKey =
+  (typeof GRAPH_INVENTORY_POLICY_MATERIAL_BUDGET_KEYS)[number];
+
+export type GraphInventoryWalkBudgets = {
+  readonly maxFiles: number;
+  readonly maxTotalBytes: number;
+  readonly maxFileBytes: number;
+  readonly maxDepth: number;
+  readonly maxDirectoryEntries: number;
+};
+
 export const GRAPH_INVENTORY_GENERATED_ARTIFACT_CLASSES = Object.freeze([
   'generated',
   'declared-generated',
@@ -91,6 +124,9 @@ export const GRAPH_INVENTORY_SURFACE_LAW = Object.freeze({
   walkSkipEvidenceKinds: GRAPH_INVENTORY_WALK_SKIP_EVIDENCE_KINDS,
   omittedSubtreeCountStates: GRAPH_INVENTORY_OMITTED_SUBTREE_COUNT_STATES,
   omittedSubtreeByteStates: GRAPH_INVENTORY_OMITTED_SUBTREE_BYTE_STATES,
+  omittedSubtreeEnumerationStates: GRAPH_INVENTORY_OMITTED_SUBTREE_ENUMERATION_STATES,
+  policyMaterialKind: GRAPH_INVENTORY_POLICY_MATERIAL_KIND,
+  policyMaterialBudgetKeys: GRAPH_INVENTORY_POLICY_MATERIAL_BUDGET_KEYS,
   hiddenDirectoryDefault: 'repository-configuration' as const,
   generatedArtifactClasses: GRAPH_INVENTORY_GENERATED_ARTIFACT_CLASSES,
   ambiguousDirectoryDefault: 'source' as const,
@@ -99,9 +135,10 @@ export const GRAPH_INVENTORY_SURFACE_LAW = Object.freeze({
 export interface GraphOmittedSubtree {
   readonly locator: string;
   readonly class: GraphInventorySurfaceClass;
-  readonly count: 'not-enumerated';
-  readonly bytes: 'not-measured';
-  readonly enumeration: 'not-enumerated';
+  readonly count: GraphOmittedSubtreeCountState | number;
+  readonly bytes: GraphOmittedSubtreeByteState | number;
+  readonly enumeration: GraphOmittedSubtreeEnumeration;
+  readonly enumeratedEntryCount: number;
   readonly reason: string;
   readonly code: string;
   readonly evidenceKind: GraphInventoryWalkSkipEvidenceKind;

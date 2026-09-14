@@ -936,6 +936,8 @@ async function qualifyOne(input: {
       packageExecution: {
         status: discovery.packageExecution.status,
         inputFiles: discovery.packageExecution.inputFiles,
+        omittedFiles: discovery.packageExecution.omittedFiles,
+        omittedBytes: discovery.packageExecution.omittedBytes,
         providerFacts: discovery.packageExecution.providerFacts,
         workspaceId: discovery.packageExecution.workspaceId,
       },
@@ -997,6 +999,8 @@ async function qualifyOne(input: {
     packageExecution: {
       status: result.packageExecution.status,
       inputFiles: result.packageExecution.inputFiles,
+      omittedFiles: result.packageExecution.omittedFiles,
+      omittedBytes: result.packageExecution.omittedBytes,
       providerFacts: result.packageExecution.providerFacts,
       workspaceId: result.packageExecution.workspaceId,
     },

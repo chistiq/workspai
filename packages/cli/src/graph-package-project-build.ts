@@ -20,6 +20,8 @@ export interface PreparedPackageProjectBuildContext {
 export interface PreparedPackageProjectBuildResult {
   readonly status: 'complete' | 'partial' | 'failed' | 'cancelled';
   readonly inputFiles: number;
+  readonly omittedFiles: number;
+  readonly omittedBytes: number;
   readonly providerFacts: number;
   readonly comparison?: PackageGraphShadowInput;
   readonly semanticBinding?: {
@@ -193,6 +195,8 @@ export async function buildPreparedProjectPackageGraph(input: {
   return {
     status: result.status,
     inputFiles: result.metrics.inputFiles,
+    omittedFiles: result.metrics.omittedFiles,
+    omittedBytes: result.metrics.omittedBytes,
     providerFacts: result.metrics.providerFacts,
     ...(comparison ? { comparison } : {}),
     ...(result.graph

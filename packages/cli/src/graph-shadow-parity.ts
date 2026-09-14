@@ -95,6 +95,8 @@ export interface PackageGraphShadowInput {
       class: string;
       count: 'not-enumerated' | number;
       bytes: 'not-measured' | number;
+      enumeration?: 'not-enumerated' | 'partially-enumerated';
+      enumeratedEntryCount?: number;
       policyDigest?: string;
     }[];
   };

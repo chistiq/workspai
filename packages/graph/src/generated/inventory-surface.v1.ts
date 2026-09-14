@@ -42,6 +42,15 @@ export interface WorkspaiGraphInventorySurfaceCandidate {
   ];
   omittedSubtreeCountStates: ['not-enumerated'];
   omittedSubtreeByteStates: ['not-measured'];
+  omittedSubtreeEnumerationStates: ['not-enumerated', 'partially-enumerated'];
+  policyMaterialKind: 'inventory-walk-policy';
+  policyMaterialBudgetKeys: [
+    'maxFiles',
+    'maxTotalBytes',
+    'maxFileBytes',
+    'maxDepth',
+    'maxDirectoryEntries',
+  ];
   hiddenDirectoryDefault: 'repository-configuration';
   generatedArtifactClasses: ['generated', 'declared-generated', 'observed-generated', 'vendored'];
   ambiguousDirectoryDefault: 'source';

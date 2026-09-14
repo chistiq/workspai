@@ -861,6 +861,8 @@ describe('buildRepoGraph', () => {
 
       expect(result.status).toBe(status);
       expect(result.quality.unknownZones).toHaveLength(1);
+      expect(result.metrics.omittedFiles).toBe(1);
+      expect(result.metrics.omittedBytes).toBe(10);
       expect(detect).not.toHaveBeenCalled();
     }
   );

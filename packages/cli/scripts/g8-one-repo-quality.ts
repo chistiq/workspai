@@ -86,6 +86,7 @@ async function main(): Promise<void> {
       contentDigest: result.graph?.generation.reference.contentDigest.value ?? null,
       inputFiles: result.metrics.inputFiles,
       omittedFiles: result.metrics.omittedFiles,
+      omittedBytes: result.metrics.omittedBytes,
       omittedFileAccounting: result.metrics.omittedFileAccounting ?? null,
       omittedByteAccounting: result.metrics.omittedByteAccounting ?? null,
       omittedSubtreeCount: result.metrics.omittedSubtrees?.length ?? 0,
@@ -105,6 +106,8 @@ async function main(): Promise<void> {
           class: subtree.class,
           count: subtree.count,
           bytes: subtree.bytes,
+          enumeration: subtree.enumeration,
+          enumeratedEntryCount: subtree.enumeratedEntryCount,
           evidenceKind: subtree.evidenceKind,
           policyDigest: subtree.policyDigest,
         }))

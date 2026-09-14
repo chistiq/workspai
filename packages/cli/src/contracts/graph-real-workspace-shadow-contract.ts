@@ -108,6 +108,8 @@ export interface GraphRealWorkspaceObservation {
   readonly packageExecution?: {
     readonly status: 'complete' | 'partial' | 'failed' | 'cancelled' | 'not-executed';
     readonly inputFiles: number;
+    readonly omittedFiles: number;
+    readonly omittedBytes: number;
     readonly providerFacts: number;
     readonly workspaceId: string;
   };

@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - G8 shadow comparison now emits directional leftover identities, relations,
-  proofs and unknown families after mapping version `v2`. Duplicated project
+  proofs and unknown families after mapping version `v2`. Package execution
+  receipts now carry `omittedFiles` and `omittedBytes` from Graph inventory
+  metrics. Duplicated project
   prefixes and generated `.workspai` locators are normalized only in the
   comparison projection. Encoded unsafe locators fail closed after decode.
   Difference approvals must bind mapping version, key and set digest; code-only

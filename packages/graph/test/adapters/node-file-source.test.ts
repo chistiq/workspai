@@ -52,6 +52,7 @@ describe('Node repository file source', () => {
         count: 'not-enumerated',
         bytes: 'not-measured',
         enumeration: 'not-enumerated',
+        enumeratedEntryCount: 0,
         evidenceKind: 'universal-dependency-store',
         code: 'graph.repository-vendored-directory',
       }),
@@ -230,6 +231,8 @@ describe('Node repository file source', () => {
           count: 'not-enumerated',
           bytes: 'not-measured',
           evidenceKind: 'resource-budget',
+          enumeration: 'not-enumerated',
+          enumeratedEntryCount: 0,
         }),
       ])
     );
@@ -252,6 +255,16 @@ describe('Node repository file source', () => {
     expect(result.status).toBe('partial');
     expect(result.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.repository-directory-truncated' })
+    );
+    expect(result.omittedSubtrees).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          enumeration: 'partially-enumerated',
+          class: 'resource-bounded',
+          evidenceKind: 'resource-budget',
+          code: 'graph.repository-directory-truncated',
+        }),
+      ])
     );
   });
 

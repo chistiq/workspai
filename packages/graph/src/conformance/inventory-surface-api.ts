@@ -3,7 +3,9 @@ import {
   classifyInventoryDirectoryName,
   classifyInventorySurfaceLocator,
   classifyInventoryWalkSkip,
+  comparePortableInventoryNames,
   inventorySurfaceExcludedDirectoryNames,
+  inventorySurfacePolicyMaterial,
   omittedSubtreeComparisonToken,
 } from '../domain/inventory-surface.js';
 
@@ -18,6 +20,8 @@ export const GRAPH_INVENTORY_SURFACE = Object.freeze({
   classifyDirectoryName: classifyInventoryDirectoryName,
   classifyLocator: classifyInventorySurfaceLocator,
   classifyWalkSkip: classifyInventoryWalkSkip,
+  compareNames: comparePortableInventoryNames,
   excludedDirectoryNames: inventorySurfaceExcludedDirectoryNames,
+  policyMaterial: inventorySurfacePolicyMaterial,
   omittedSubtreeComparisonToken,
 });

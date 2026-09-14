@@ -15,6 +15,9 @@
     "walkSkipEvidenceKinds",
     "omittedSubtreeCountStates",
     "omittedSubtreeByteStates",
+    "omittedSubtreeEnumerationStates",
+    "policyMaterialKind",
+    "policyMaterialBudgetKeys",
     "hiddenDirectoryDefault",
     "generatedArtifactClasses",
     "ambiguousDirectoryDefault"
@@ -74,6 +77,15 @@
     },
     "omittedSubtreeByteStates": {
       "const": ["not-measured"]
+    },
+    "omittedSubtreeEnumerationStates": {
+      "const": ["not-enumerated", "partially-enumerated"]
+    },
+    "policyMaterialKind": {
+      "const": "inventory-walk-policy"
+    },
+    "policyMaterialBudgetKeys": {
+      "const": ["maxFiles", "maxTotalBytes", "maxFileBytes", "maxDepth", "maxDirectoryEntries"]
     },
     "hiddenDirectoryDefault": {
       "const": "repository-configuration"

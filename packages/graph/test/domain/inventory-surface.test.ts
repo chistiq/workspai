@@ -10,8 +10,11 @@ import {
   classifyInventoryDirectoryName,
   classifyInventorySurfaceLocator,
   classifyInventoryWalkSkip,
+  comparePortableInventoryNames,
+  inventoryOmissionAccounting,
   inventorySurfaceExcludedDirectoryNames,
   inventorySurfaceOmissionCode,
+  inventorySurfacePolicyMaterial,
   isPolicyExcludedFileName,
 } from '../../src/domain/inventory-surface.js';
 import { classifyGeneratedArtifactLocator } from '../../src/domain/generated-artifact.js';
@@ -123,6 +126,86 @@ describe('inventory-surface policy', () => {
     expect(excluded).not.toContain('vendor');
     expect(excluded).not.toContain('.github');
     expect(excluded).not.toContain('.workspai');
+  });
+
+  it('binds every walk budget into policy material and uses portable name order', () => {
+    expect([...GRAPH_INVENTORY_SURFACE_LAW.omittedSubtreeEnumerationStates]).toEqual([
+      'not-enumerated',
+      'partially-enumerated',
+    ]);
+    expect([...GRAPH_INVENTORY_SURFACE_LAW.policyMaterialBudgetKeys]).toEqual([
+      'maxFiles',
+      'maxTotalBytes',
+      'maxFileBytes',
+      'maxDepth',
+      'maxDirectoryEntries',
+    ]);
+    expect(comparePortableInventoryNames('alpha.ts', 'mu.ts')).toBeLessThan(0);
+    expect(comparePortableInventoryNames('Caf\u00e9', 'Cafe\u0301')).toBe(0);
+    const left = inventorySurfacePolicyMaterial({
+      excludedDirectories: ['node_modules', '.git'],
+      evidenceKind: 'resource-budget',
+      budgets: {
+        maxFiles: 10,
+        maxTotalBytes: 20,
+        maxFileBytes: 3,
+        maxDepth: 4,
+        maxDirectoryEntries: 5,
+      },
+      sensitiveFiles: 'omit-known',
+    });
+    const right = inventorySurfacePolicyMaterial({
+      excludedDirectories: ['.git', 'node_modules'],
+      evidenceKind: 'resource-budget',
+      budgets: {
+        maxFiles: 10,
+        maxTotalBytes: 20,
+        maxFileBytes: 3,
+        maxDepth: 4,
+        maxDirectoryEntries: 5,
+      },
+      sensitiveFiles: 'omit-known',
+    });
+    expect(left).toBe(right);
+    expect(left).toContain('maxFiles=10');
+    expect(left).toContain('maxTotalBytes=20');
+    expect(left).toContain('maxFileBytes=3');
+    expect(left).toContain('maxDepth=4');
+    expect(left).toContain('maxDirectoryEntries=5');
+    expect(left).toContain('sensitiveFiles=omit-known');
+    expect(
+      inventorySurfacePolicyMaterial({
+        excludedDirectories: ['.git', 'node_modules'],
+        evidenceKind: 'resource-budget',
+        budgets: {
+          maxFiles: 11,
+          maxTotalBytes: 20,
+          maxFileBytes: 3,
+          maxDepth: 4,
+          maxDirectoryEntries: 5,
+        },
+        sensitiveFiles: 'omit-known',
+      })
+    ).not.toBe(left);
+    expect(
+      inventoryOmissionAccounting([
+        {
+          locator: 'leftover',
+          class: 'resource-bounded',
+          count: 'not-enumerated',
+          bytes: 'not-measured',
+          enumeration: 'partially-enumerated',
+          enumeratedEntryCount: 2,
+          reason: 'fixture',
+          code: 'graph.repository-directory-truncated',
+          evidenceKind: 'resource-budget',
+          policyDigest: 'sha256:00',
+        },
+      ])
+    ).toEqual({
+      omittedFileAccounting: 'unknown-subtrees',
+      omittedByteAccounting: 'unknown-subtrees',
+    });
   });
 
   it('does not hardcode product, repository, or fixture names into classification', () => {

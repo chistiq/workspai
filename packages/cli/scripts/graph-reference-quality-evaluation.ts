@@ -376,6 +376,10 @@ async function evaluateOne(referenceRoot: string, project: string): Promise<unkn
         inputFiles: first.metrics.inputFiles,
         inputBytes: first.metrics.inputBytes,
         omittedFiles: omitted,
+        omittedBytes: first.metrics.omittedBytes,
+        omittedFileAccounting: first.metrics.omittedFileAccounting ?? null,
+        omittedByteAccounting: first.metrics.omittedByteAccounting ?? null,
+        omittedSubtreeCount: first.metrics.omittedSubtrees?.length ?? 0,
         truncated,
         completeness: truncated
           ? 'partial'

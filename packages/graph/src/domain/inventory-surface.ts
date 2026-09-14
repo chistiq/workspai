@@ -1,7 +1,9 @@
 import {
+  GRAPH_INVENTORY_POLICY_MATERIAL_BUDGET_KEYS,
   GRAPH_INVENTORY_SURFACE_CONTRACT,
   GRAPH_INVENTORY_SURFACE_LAW,
   type GraphInventorySurfaceClass,
+  type GraphInventoryWalkBudgets,
   type GraphInventoryWalkSkipEvidenceKind,
   type GraphOmittedSubtree,
 } from '../contracts/inventory-surface.js';
@@ -18,6 +20,18 @@ const AMBIGUOUS_VENDOR = new Set<string>(GRAPH_INVENTORY_SURFACE_LAW.ambiguousVe
 
 function normalizeSegment(name: string): string {
   return name.normalize('NFC').toLowerCase();
+}
+
+/**
+ * Portable directory-entry order. `localeCompare` is ICU-dependent and must
+ * not decide which entries survive truncation on Linux, macOS, or Windows.
+ */
+export function comparePortableInventoryNames(left: string, right: string): number {
+  const normalizedLeft = left.normalize('NFC');
+  const normalizedRight = right.normalize('NFC');
+  if (normalizedLeft < normalizedRight) return -1;
+  if (normalizedLeft > normalizedRight) return 1;
+  return 0;
 }
 
 /**
@@ -87,7 +101,7 @@ export function inventorySurfaceExcludedDirectoryNames(): readonly string[] {
       ...GRAPH_INVENTORY_SURFACE_LAW.vcsMetadataDirectoryMarkers,
       ...GRAPH_INVENTORY_SURFACE_LAW.dependencyStoreDirectoryMarkers,
       ...GRAPH_INVENTORY_SURFACE_LAW.environmentStoreDirectoryMarkers,
-    ].sort((left, right) => left.localeCompare(right))
+    ].sort(comparePortableInventoryNames)
   );
 }
 
@@ -146,14 +160,22 @@ export function classifyInventorySurfaceLocator(
 export function inventorySurfacePolicyMaterial(input: {
   readonly excludedDirectories: readonly string[];
   readonly evidenceKind: GraphInventoryWalkSkipEvidenceKind;
+  readonly budgets: GraphInventoryWalkBudgets;
+  readonly sensitiveFiles: 'omit-known';
 }): string {
   const excluded = [...input.excludedDirectories]
     .map((name) => name.normalize('NFC'))
-    .sort((left, right) => left.localeCompare(right));
+    .sort(comparePortableInventoryNames);
+  const budgetLines = GRAPH_INVENTORY_POLICY_MATERIAL_BUDGET_KEYS.map(
+    (key) => `${key}=${String(input.budgets[key])}`
+  );
   return [
     GRAPH_INVENTORY_SURFACE_CONTRACT.id,
     GRAPH_INVENTORY_SURFACE_CONTRACT.version,
+    GRAPH_INVENTORY_SURFACE_LAW.policyMaterialKind,
     input.evidenceKind,
+    ...budgetLines,
+    `sensitiveFiles=${input.sensitiveFiles}`,
     excluded.join('\n'),
   ].join('\0');
 }
@@ -165,10 +187,11 @@ export function inventoryOmissionAccounting(omittedSubtrees: readonly GraphOmitt
   readonly omittedFileAccounting: GraphInventoryFileAccounting;
   readonly omittedByteAccounting: GraphInventoryByteAccounting;
 } {
-  const unknown = omittedSubtrees.length > 0;
+  const unknownCount = omittedSubtrees.some((subtree) => subtree.count === 'not-enumerated');
+  const unknownBytes = omittedSubtrees.some((subtree) => subtree.bytes === 'not-measured');
   return {
-    omittedFileAccounting: unknown ? 'unknown-subtrees' : 'enumerated',
-    omittedByteAccounting: unknown ? 'unknown-subtrees' : 'measured',
+    omittedFileAccounting: unknownCount ? 'unknown-subtrees' : 'enumerated',
+    omittedByteAccounting: unknownBytes ? 'unknown-subtrees' : 'measured',
   };
 }
 

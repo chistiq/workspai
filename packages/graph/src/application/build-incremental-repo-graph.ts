@@ -55,6 +55,7 @@ function failedBuild(
       inputBytes: 0,
       providerFacts: 0,
       omittedFiles: 0,
+      omittedBytes: 0,
     }),
   });
 }
