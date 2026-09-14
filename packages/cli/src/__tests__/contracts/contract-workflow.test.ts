@@ -51,7 +51,13 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(npmPackage.scripts['contracts:prepush']).toContain('--require-clean');
     expect(rootPackage.scripts['prepush:check']).toContain('contracts:prepush');
     expect(preCommit).toContain('sync:shared-contracts -- --stage-git');
-    expect(preCommit).toContain('run contracts:check:local');
+    expect(preCommit).toContain('CHECK_SHARED_CONTRACTS');
+    expect(preCommit).toContain('CHECK_CORE_CONTRACTS');
+    expect(preCommit).toContain('run check:shared-contracts');
+    expect(preCommit).toContain('run check:generated-contracts');
+    expect(preCommit).toContain('run check:agent-customization-drift');
+    expect(preCommit).toContain('run check:contracts');
+    expect(preCommit).not.toContain('run contracts:check:local');
     expect(preCommit).not.toContain('run validate:contracts');
     expect(releaseWorkflow).not.toContain("'Consumer Contract Parity'");
   });
