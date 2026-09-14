@@ -41,7 +41,40 @@
       "status": "implemented-local-candidate",
       "evidence": [
         "packages/cli/test-data/graph-shadow/semantic-parity-corpus.v1.json",
-        "packages/cli/src/__tests__/graph-shadow-parity.test.ts"
+        "packages/cli/src/__tests__/graph-shadow-parity.test.ts",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
+        "packages/cli/src/graph-shadow-unknown-contract.ts"
+      ]
+    },
+    {
+      "id": "package-locator-identity-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/foundation.ts",
+        "packages/graph/src/conformance/locator-identity-api.ts",
+        "packages/graph/schemas/locator-identity.v1.schema.json",
+        "packages/graph/conformance/contract-catalog.v1.json",
+        "packages/graph/governance/g7-release-inventory.v1.json",
+        "packages/graph/test/conformance/locator-identity-contract.test.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
+        "packages/cli/src/__tests__/graph-shadow-comparison-projection.test.ts"
+      ]
+    },
+    {
+      "id": "package-semantic-parity-contracts",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/semantic-parity.ts",
+        "packages/graph/src/conformance/semantic-parity-api.ts",
+        "packages/graph/schemas/unknown-cause.v1.schema.json",
+        "packages/graph/schemas/generated-artifact.v1.schema.json",
+        "packages/graph/schemas/comparable-surface.v1.schema.json",
+        "packages/graph/test/conformance/semantic-parity-contract.test.ts",
+        "packages/cli/src/graph-shadow-unknown-contract.ts",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
+        "packages/cli/src/graph-package-compatibility-renderer.ts",
+        "packages/cli/src/__tests__/graph-package-compatibility-renderer.test.ts"
       ]
     },
     {
@@ -51,11 +84,12 @@
       "evidence": [
         "packages/cli/src/graph-real-workspace-shadow.ts",
         "packages/cli/src/graph-real-workspace-shadow-worker.ts",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
         "packages/cli/scripts/graph-real-workspace-shadow-qualification.ts",
         "packages/cli/src/contracts/graph-real-workspace-shadow-contract.ts",
         "packages/cli/test-data/graph-shadow/real-workspace-inventory.v1.json",
         "packages/cli/test-data/graph-shadow/real-workspace-policy.v1.json",
-        "packages/cli/test-data/graph-shadow/real-workspace-approvals.v1.json",
+        "packages/cli/test-data/graph-shadow/real-workspace-approvals.v2.json",
         "packages/cli/test-data/graph-shadow/real-workspace-fixture.v1/src/index.ts",
         "packages/cli/test-data/graph-shadow/real-workspace-corpus.v1/src/index.ts",
         "packages/cli/src/__tests__/graph-real-workspace-shadow.test.ts",
@@ -85,6 +119,9 @@
     "No package failure may silently fall back or weaken a result.",
     "Every comparison binds scope, provider, policy, redaction, authorization, budget, version and commit identities.",
     "Count-only parity is prohibited; identities, semantics, proof, unknowns, quality and diagnostics are compared.",
+    "Locator identity is owned by the versioned Graph package contract; CLI shadow comparison consumes that contract.",
+    "Unknown-cause, generated-artifact, and comparable-surface laws are owned by the versioned Graph package; CLI shadow comparison consumes those contracts.",
+    "Compatibility renderer must not fabricate, upgrade, or delete proof.",
     "Rust and WASM remain internal execution adapters and never become a second Graph truth.",
     "Users do not select an engine or install Rust tooling.",
     "The packages remain private and npm publication stays prohibited.",

@@ -1,0 +1,48 @@
+/* Generated from schemas/inventory-surface.v1.schema.json. Do not edit. */
+
+export interface WorkspaiGraphInventorySurfaceCandidate {
+  contract: { id: 'workspai.graph.inventory-surface'; version: '1' };
+  classes: [
+    'source',
+    'repository-configuration',
+    'generated',
+    'declared-generated',
+    'observed-generated',
+    'vendored',
+    'vcs-metadata',
+    'ignored',
+    'policy-excluded',
+    'binary',
+    'unsafe-path',
+    'inaccessible',
+    'resource-bounded',
+    'unsupported',
+    'unknown-classification',
+  ];
+  vcsMetadataDirectoryMarkers: ['.git', '.hg', '.svn'];
+  dependencyStoreDirectoryMarkers: ['node_modules'];
+  environmentStoreDirectoryMarkers: ['.venv'];
+  ambiguousOutputDirectoryNames: [
+    'dist',
+    'build',
+    'coverage',
+    'target',
+    'bin',
+    'obj',
+    'out',
+    'generated',
+  ];
+  ambiguousVendorDirectoryNames: ['vendor', 'third_party', 'venv'];
+  walkSkipEvidenceKinds: [
+    'universal-vcs-metadata',
+    'universal-dependency-store',
+    'universal-environment-store',
+    'host-inventory-exclusion',
+    'resource-budget',
+  ];
+  omittedSubtreeCountStates: ['not-enumerated'];
+  omittedSubtreeByteStates: ['not-measured'];
+  hiddenDirectoryDefault: 'repository-configuration';
+  generatedArtifactClasses: ['generated', 'declared-generated', 'observed-generated', 'vendored'];
+  ambiguousDirectoryDefault: 'source';
+}

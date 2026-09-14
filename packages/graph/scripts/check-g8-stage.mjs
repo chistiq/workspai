@@ -52,6 +52,8 @@ const requiredCheckpoints = new Set([
   'artifact-compatibility-renderers',
   'legacy-package-shadow-execution',
   'semantic-parity-corpus',
+  'package-locator-identity-contract',
+  'package-semantic-parity-contracts',
   'real-workspace-cross-platform-parity',
   'workspace-intelligence-consumer-parity',
   'rust-wasm-host-routing',
@@ -189,7 +191,7 @@ const realWorkspacePolicy = readJson(
   'packages/cli/test-data/graph-shadow/real-workspace-policy.v1.json'
 );
 const realWorkspaceApprovals = readJson(
-  'packages/cli/test-data/graph-shadow/real-workspace-approvals.v1.json'
+  'packages/cli/test-data/graph-shadow/real-workspace-approvals.v2.json'
 );
 const realWorkspaceInventory = readJson(
   'packages/cli/test-data/graph-shadow/real-workspace-inventory.v1.json'
@@ -197,11 +199,46 @@ const realWorkspaceInventory = readJson(
 if (Object.keys(realWorkspacePolicy.approvedDifferences ?? { forbidden: true }).length !== 0) {
   failures.push('real-workspace policy cannot carry unbound approved differences');
 }
+const expectedMappingVersion = 'workspai.graph-shadow-mapping.v2';
 if (
-  realWorkspaceApprovals.schemaVersion !== 'workspai.graph-real-workspace-approvals.v1' ||
+  realWorkspaceApprovals.schemaVersion !== 'workspai.graph-real-workspace-approvals.v2' ||
   !Array.isArray(realWorkspaceApprovals.records)
 ) {
   failures.push('real-workspace approvals ledger is missing');
+}
+if (
+  realWorkspaceInventory.mappingVersion !== expectedMappingVersion ||
+  realWorkspacePolicy.mappingVersion !== expectedMappingVersion ||
+  realWorkspaceApprovals.mappingVersion !== expectedMappingVersion
+) {
+  failures.push(
+    'real-workspace mapping versions are not bound to workspai.graph-shadow-mapping.v2'
+  );
+}
+const portableInventoryId = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/u;
+const inventoryEntries = [
+  ...(realWorkspaceInventory.required ?? []),
+  ...(realWorkspaceInventory.optionalLocalReferences ?? []),
+];
+if (
+  inventoryEntries.some(
+    (entry) => typeof entry.workspaceId !== 'string' || !portableInventoryId.test(entry.workspaceId)
+  )
+) {
+  failures.push('real-workspace inventory entries must declare an explicit workspaceId');
+}
+if ((realWorkspaceInventory.required ?? []).some((entry) => entry.workspaceId === entry.id)) {
+  failures.push('committed real-workspace inventory cannot use corpus id as workspaceId');
+}
+const historicalApprovals = readJson(
+  'packages/cli/test-data/graph-shadow/real-workspace-approvals.v1.json'
+);
+if (
+  historicalApprovals.schemaVersion !== 'workspai.graph-real-workspace-approvals.v1' ||
+  historicalApprovals.mappingVersion !== 'workspai.graph-shadow-mapping.v1' ||
+  (historicalApprovals.records ?? []).length !== 0
+) {
+  failures.push('historical real-workspace approvals v1 must keep mapping v1');
 }
 const approvedByCorpus = new Map();
 for (const record of realWorkspaceApprovals.records ?? []) {
@@ -211,12 +248,19 @@ for (const record of realWorkspaceApprovals.records ?? []) {
   approvedByCorpus.set(key, codes);
 }
 const primaryDifferenceCodes = [
-  'GRAPH_SHADOW_NODE_SET_DIFFERENT',
-  'GRAPH_SHADOW_RELATION_SET_DIFFERENT',
-  'GRAPH_SHADOW_PROOF_LINEAGE_DIFFERENT',
-  'GRAPH_SHADOW_UNKNOWN_ACCOUNTING_DIFFERENT',
+  'GRAPH_SHADOW_NODE_LEGACY_ONLY',
+  'GRAPH_SHADOW_NODE_PACKAGE_ONLY',
+  'GRAPH_SHADOW_RELATION_LEGACY_ONLY',
+  'GRAPH_SHADOW_RELATION_PACKAGE_ONLY',
+  'GRAPH_SHADOW_PROOF_LEGACY_ONLY',
+  'GRAPH_SHADOW_PROOF_PACKAGE_ONLY',
+  'GRAPH_SHADOW_PROOF_GENERATED_WORKSPACE_CONTROL',
+  'GRAPH_SHADOW_UNKNOWN_FAMILY_UNMAPPED',
+  'GRAPH_SHADOW_UNKNOWN_ZONE_LEGACY_ONLY',
+  'GRAPH_SHADOW_UNKNOWN_ZONE_PACKAGE_ONLY',
   'GRAPH_SHADOW_COMPLETENESS_DIFFERENT',
-  'GRAPH_SHADOW_DIAGNOSTICS_DIFFERENT',
+  'GRAPH_SHADOW_DIAGNOSTIC_LEGACY_ONLY',
+  'GRAPH_SHADOW_DIAGNOSTIC_PACKAGE_ONLY',
 ];
 for (const codes of approvedByCorpus.values()) {
   if (primaryDifferenceCodes.every((code) => codes.has(code))) {

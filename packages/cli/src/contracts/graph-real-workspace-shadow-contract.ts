@@ -17,18 +17,28 @@ export const GRAPH_G8_REAL_WORKSPACE_PLATFORM_REPORT_SCHEMA_VERSION =
 export const GRAPH_G8_REAL_WORKSPACE_MATRIX_ADMISSION_SCHEMA_VERSION =
   'workspai.graph-g8-real-workspace-matrix-admission.v1-candidate' as const;
 
-export const GRAPH_REAL_WORKSPACE_APPROVALS_SCHEMA_VERSION =
+export const GRAPH_REAL_WORKSPACE_APPROVALS_V1_SCHEMA_VERSION =
   'workspai.graph-real-workspace-approvals.v1' as const;
+
+export const GRAPH_REAL_WORKSPACE_APPROVALS_SCHEMA_VERSION =
+  'workspai.graph-real-workspace-approvals.v2' as const;
 
 export const GRAPH_REAL_WORKSPACE_PROFILE = 'g8-real-workspace.v1' as const;
 
 export const GRAPH_REAL_WORKSPACE_PRIMARY_DIFFERENCE_CODES = [
-  'GRAPH_SHADOW_NODE_SET_DIFFERENT',
-  'GRAPH_SHADOW_RELATION_SET_DIFFERENT',
-  'GRAPH_SHADOW_PROOF_LINEAGE_DIFFERENT',
-  'GRAPH_SHADOW_UNKNOWN_ACCOUNTING_DIFFERENT',
+  'GRAPH_SHADOW_NODE_LEGACY_ONLY',
+  'GRAPH_SHADOW_NODE_PACKAGE_ONLY',
+  'GRAPH_SHADOW_RELATION_LEGACY_ONLY',
+  'GRAPH_SHADOW_RELATION_PACKAGE_ONLY',
+  'GRAPH_SHADOW_PROOF_LEGACY_ONLY',
+  'GRAPH_SHADOW_PROOF_PACKAGE_ONLY',
+  'GRAPH_SHADOW_PROOF_GENERATED_WORKSPACE_CONTROL',
+  'GRAPH_SHADOW_UNKNOWN_FAMILY_UNMAPPED',
+  'GRAPH_SHADOW_UNKNOWN_ZONE_LEGACY_ONLY',
+  'GRAPH_SHADOW_UNKNOWN_ZONE_PACKAGE_ONLY',
   'GRAPH_SHADOW_COMPLETENESS_DIFFERENT',
-  'GRAPH_SHADOW_DIAGNOSTICS_DIFFERENT',
+  'GRAPH_SHADOW_DIAGNOSTIC_LEGACY_ONLY',
+  'GRAPH_SHADOW_DIAGNOSTIC_PACKAGE_ONLY',
 ] as const;
 
 export type GraphRealWorkspaceTargetKind = 'committed-fixture' | 'local-reference';
@@ -40,6 +50,7 @@ export interface GraphRealWorkspaceInventoryEntry {
   readonly id: string;
   readonly kind: GraphRealWorkspaceTargetKind;
   readonly projectId: string;
+  readonly workspaceId: string;
   readonly relativeRoot?: string;
   readonly directoryName?: string;
   readonly trustedBaseline: boolean;
@@ -57,7 +68,10 @@ export interface GraphRealWorkspaceInventory {
 export interface GraphRealWorkspaceApprovalRecord {
   readonly corpusId: string;
   readonly sourceTreeDigest: string;
+  readonly mappingVersion: string;
   readonly code: string;
+  readonly key: string;
+  readonly setDigest: string;
   readonly classification: Exclude<GraphShadowDifferenceClass, 'regression'>;
   readonly reason: string;
 }
@@ -88,12 +102,14 @@ export interface GraphRealWorkspaceObservation {
   readonly id: string;
   readonly kind: GraphRealWorkspaceTargetKind;
   readonly projectId: string;
+  readonly workspaceId: string;
   readonly status: GraphRealWorkspaceObservationStatus;
   readonly reason?: string;
   readonly packageExecution?: {
     readonly status: 'complete' | 'partial' | 'failed' | 'cancelled' | 'not-executed';
     readonly inputFiles: number;
     readonly providerFacts: number;
+    readonly workspaceId: string;
   };
   readonly comparison?: {
     readonly status: GraphShadowComparisonStatus;
@@ -112,6 +128,12 @@ export interface GraphRealWorkspaceObservation {
     readonly resourceBudgetDigest: string;
   };
   readonly report?: GraphShadowParityReport;
+  readonly copyBudget?: {
+    readonly observedFiles: number;
+    readonly maxCopiedFiles: number;
+    readonly maxCopiedFileBytes: number;
+    readonly truncated: boolean;
+  };
 }
 
 export interface GraphRealWorkspaceQualificationResult {

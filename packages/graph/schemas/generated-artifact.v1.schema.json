@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/generated-artifact/v1",
+  "title": "WorkspaiGraphGeneratedArtifactCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "treatments", "defaultTreatment", "omissionClasses"],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.generated-artifact",
+        "version": "1"
+      }
+    },
+    "treatments": {
+      "const": ["include", "exclude", "bounded-unknown"]
+    },
+    "defaultTreatment": {
+      "const": "bounded-unknown"
+    },
+    "omissionClasses": {
+      "const": ["generated", "vendored"]
+    }
+  }
+}

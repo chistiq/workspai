@@ -1,5 +1,5 @@
 {
   "schemaVersion": "workspai.graph-shadow-comparison-policy.v1",
-  "mappingVersion": "workspai.graph-shadow-mapping.v1",
+  "mappingVersion": "workspai.graph-shadow-mapping.v2",
   "approvedDifferences": {}
 }

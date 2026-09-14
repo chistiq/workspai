@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/inventory-surface/v1",
+  "title": "WorkspaiGraphInventorySurfaceCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "classes",
+    "vcsMetadataDirectoryMarkers",
+    "dependencyStoreDirectoryMarkers",
+    "environmentStoreDirectoryMarkers",
+    "ambiguousOutputDirectoryNames",
+    "ambiguousVendorDirectoryNames",
+    "walkSkipEvidenceKinds",
+    "omittedSubtreeCountStates",
+    "omittedSubtreeByteStates",
+    "hiddenDirectoryDefault",
+    "generatedArtifactClasses",
+    "ambiguousDirectoryDefault"
+  ],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.inventory-surface",
+        "version": "1"
+      }
+    },
+    "classes": {
+      "const": [
+        "source",
+        "repository-configuration",
+        "generated",
+        "declared-generated",
+        "observed-generated",
+        "vendored",
+        "vcs-metadata",
+        "ignored",
+        "policy-excluded",
+        "binary",
+        "unsafe-path",
+        "inaccessible",
+        "resource-bounded",
+        "unsupported",
+        "unknown-classification"
+      ]
+    },
+    "vcsMetadataDirectoryMarkers": {
+      "const": [".git", ".hg", ".svn"]
+    },
+    "dependencyStoreDirectoryMarkers": {
+      "const": ["node_modules"]
+    },
+    "environmentStoreDirectoryMarkers": {
+      "const": [".venv"]
+    },
+    "ambiguousOutputDirectoryNames": {
+      "const": ["dist", "build", "coverage", "target", "bin", "obj", "out", "generated"]
+    },
+    "ambiguousVendorDirectoryNames": {
+      "const": ["vendor", "third_party", "venv"]
+    },
+    "walkSkipEvidenceKinds": {
+      "const": [
+        "universal-vcs-metadata",
+        "universal-dependency-store",
+        "universal-environment-store",
+        "host-inventory-exclusion",
+        "resource-budget"
+      ]
+    },
+    "omittedSubtreeCountStates": {
+      "const": ["not-enumerated"]
+    },
+    "omittedSubtreeByteStates": {
+      "const": ["not-measured"]
+    },
+    "hiddenDirectoryDefault": {
+      "const": "repository-configuration"
+    },
+    "generatedArtifactClasses": {
+      "const": ["generated", "declared-generated", "observed-generated", "vendored"]
+    },
+    "ambiguousDirectoryDefault": {
+      "const": "source"
+    }
+  }
+}

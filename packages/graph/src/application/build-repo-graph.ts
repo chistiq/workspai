@@ -11,6 +11,11 @@ import type {
   GraphProviderRunSummary,
   GraphValidationIssue,
 } from '../contracts/index.js';
+import {
+  inventoryOmissionAccounting,
+  inventorySurfaceExcludedDirectoryNames,
+} from '../domain/inventory-surface.js';
+import { structurizeUnknownZone } from '../domain/unknown-cause.js';
 
 import { composeGraph } from './compose-graph.js';
 import { GRAPH_STANDARD_COMPOSITION_POLICY } from './composition-types.js';
@@ -33,19 +38,7 @@ export const GRAPH_STANDARD_REPO_BUILD_POLICY: Readonly<GraphRepoBuildPolicy> = 
     maxDepth: 64,
     maxDirectoryEntries: 100_000,
   }),
-  excludedDirectories: Object.freeze([
-    '.git',
-    '.workspai',
-    'node_modules',
-    'dist',
-    'build',
-    'coverage',
-    'target',
-    'bin',
-    'obj',
-    '.venv',
-    'venv',
-  ]),
+  excludedDirectories: inventorySurfaceExcludedDirectoryNames(),
   sensitiveFiles: 'omit-known',
   composition: GRAPH_STANDARD_COMPOSITION_POLICY,
 });
@@ -334,13 +327,20 @@ function emptyResult(
   zones: {
     readonly unknownZones: GraphRepoBuildResult['quality']['unknownZones'];
     readonly unsupportedZones: GraphRepoBuildResult['quality']['unsupportedZones'];
-  } = { unknownZones: [], unsupportedZones: [] }
+    readonly omittedSubtrees?: GraphRepoBuildResult['quality']['omittedSubtrees'];
+  } = { unknownZones: [], unsupportedZones: [] },
+  accounting: {
+    readonly omittedFileAccounting?: GraphRepoBuildResult['metrics']['omittedFileAccounting'];
+    readonly omittedByteAccounting?: GraphRepoBuildResult['metrics']['omittedByteAccounting'];
+  } = {}
 ): GraphRepoBuildResult {
+  const omittedSubtrees = Object.freeze([...(zones.omittedSubtrees ?? [])]);
   return {
     status,
     quality: {
       unknownZones: zones.unknownZones,
       unsupportedZones: zones.unsupportedZones,
+      omittedSubtrees,
       providerFailures: providerSummaries
         .filter(
           (summary) =>
@@ -359,6 +359,9 @@ function emptyResult(
       inputBytes,
       providerFacts: providerSummaries.reduce((sum, summary) => sum + summary.factCount, 0),
       omittedFiles,
+      omittedFileAccounting: accounting.omittedFileAccounting,
+      omittedByteAccounting: accounting.omittedByteAccounting,
+      omittedSubtrees,
     },
   };
 }
@@ -418,6 +421,9 @@ export async function buildRepoGraph(
         diagnostics: [],
         omittedFiles: 0,
         omittedBytes: 0,
+        omittedFileAccounting: 'enumerated',
+        omittedByteAccounting: 'measured',
+        omittedSubtrees: Object.freeze([]),
         unknownZones: [],
         unsupportedZones: [],
       };
@@ -456,9 +462,16 @@ export async function buildRepoGraph(
   }
 
   diagnostics.push(...inventory.diagnostics);
+  const inventoryOmittedSubtrees = Object.freeze([...(inventory.omittedSubtrees ?? [])]);
+  const inventoryAccounting = inventoryOmissionAccounting(inventoryOmittedSubtrees);
   const inventoryZones = {
-    unknownZones: inventory.unknownZones,
-    unsupportedZones: inventory.unsupportedZones,
+    unknownZones: inventory.unknownZones.map((zone) =>
+      structurizeUnknownZone(zone, { provider: 'graph.repository-inventory', stage: 'inventory' })
+    ),
+    unsupportedZones: inventory.unsupportedZones.map((zone) =>
+      structurizeUnknownZone(zone, { provider: 'graph.repository-inventory', stage: 'inventory' })
+    ),
+    omittedSubtrees: inventoryOmittedSubtrees,
   };
   const inventoryValidation = validateInventory(inventory.inputs, request.policy);
   if (inventoryValidation.length > 0) {
@@ -470,7 +483,8 @@ export async function buildRepoGraph(
       inventory.inputs.length,
       0,
       inventory.omittedFiles,
-      inventoryZones
+      inventoryZones,
+      inventoryAccounting
     );
   }
   const inputBytes = inventory.inputs.reduce((sum, input) => sum + input.byteLength, 0);
@@ -482,7 +496,8 @@ export async function buildRepoGraph(
       inventory.inputs.length,
       inputBytes,
       inventory.omittedFiles,
-      inventoryZones
+      inventoryZones,
+      inventoryAccounting
     );
   }
   if (inventory.status === 'failed') {
@@ -493,7 +508,8 @@ export async function buildRepoGraph(
       inventory.inputs.length,
       inputBytes,
       inventory.omittedFiles,
-      inventoryZones
+      inventoryZones,
+      inventoryAccounting
     );
   }
 
@@ -939,11 +955,12 @@ export async function buildRepoGraph(
       unknownZones: [
         ...inventory.unknownZones,
         ...sources.flatMap((source) => source.batch.unknownZones),
-      ],
+      ].map((zone) => structurizeUnknownZone(zone, { stage: 'repository-build' })),
       unsupportedZones: [
         ...inventory.unsupportedZones,
         ...sources.flatMap((source) => source.batch.unsupportedZones),
-      ],
+      ].map((zone) => structurizeUnknownZone(zone, { stage: 'repository-build' })),
+      omittedSubtrees: inventoryOmittedSubtrees,
       providerFailures: summaries
         .filter(
           (summary) =>
@@ -962,6 +979,9 @@ export async function buildRepoGraph(
       inputBytes,
       providerFacts: summaries.reduce((sum, summary) => sum + summary.factCount, 0),
       omittedFiles: inventory.omittedFiles,
+      omittedFileAccounting: inventoryAccounting.omittedFileAccounting,
+      omittedByteAccounting: inventoryAccounting.omittedByteAccounting,
+      omittedSubtrees: inventoryOmittedSubtrees,
     },
   };
 }

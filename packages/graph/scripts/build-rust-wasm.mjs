@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -84,4 +85,6 @@ if (
 
 mkdirSync(path.dirname(destination), { recursive: true });
 copyFileSync(source, destination);
+const digest = createHash('sha256').update(bytes).digest('hex');
+writeFileSync(`${destination}.sha256`, `${digest}\n`);
 process.stdout.write(`Graph Rust WASM built: ${statSync(destination).size} bytes\n`);

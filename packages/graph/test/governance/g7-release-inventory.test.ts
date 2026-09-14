@@ -41,6 +41,8 @@ describe('Graph G7 release inventory', () => {
         subpaths: string[];
         rootValueExports: string[];
         rootForbiddenValueExports: string[];
+        contractsValueExports: string[];
+        conformanceValueExports: string[];
       };
       packedJobs: string[];
       incidents: string[];
@@ -76,6 +78,56 @@ describe('Graph G7 release inventory', () => {
     expect(inventory.exports.rootForbiddenValueExports).toEqual([
       ...GRAPH_PUBLIC_EXPORT_MAP.rootForbiddenValueExports,
     ]);
+    expect(inventory.exports.contractsValueExports).toEqual([
+      ...GRAPH_PUBLIC_EXPORT_MAP.contractsValueExports,
+    ]);
+    expect(inventory.exports.conformanceValueExports).toEqual([
+      ...GRAPH_PUBLIC_EXPORT_MAP.conformanceValueExports,
+    ]);
+    expect(inventory.exports.contractsValueExports).toEqual(
+      expect.arrayContaining([
+        'GRAPH_LOCATOR_IDENTITY_CONTRACT',
+        'GRAPH_LOCATOR_IDENTITY_LAW',
+        'GRAPH_UNKNOWN_CAUSE_CONTRACT',
+        'GRAPH_GENERATED_ARTIFACT_CONTRACT',
+        'GRAPH_COMPARABLE_SURFACE_CONTRACT',
+        'GRAPH_INVENTORY_SURFACE_CONTRACT',
+      ])
+    );
+    expect(inventory.exports.conformanceValueExports).toEqual(
+      expect.arrayContaining([
+        'GRAPH_LOCATOR_IDENTITY',
+        'GRAPH_LOCATOR_IDENTITY_CONTRACT',
+        'GRAPH_UNKNOWN_CAUSE',
+        'GRAPH_GENERATED_ARTIFACT',
+        'GRAPH_COMPARABLE_SURFACE',
+        'GRAPH_INVENTORY_SURFACE',
+      ])
+    );
+    expect(inventory.schemas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'https://schemas.workspai.dev/graph/locator-identity/v1',
+          file: 'schemas/locator-identity.v1.schema.json',
+        }),
+        expect.objectContaining({
+          id: 'https://schemas.workspai.dev/graph/unknown-cause/v1',
+          file: 'schemas/unknown-cause.v1.schema.json',
+        }),
+        expect.objectContaining({
+          id: 'https://schemas.workspai.dev/graph/generated-artifact/v1',
+          file: 'schemas/generated-artifact.v1.schema.json',
+        }),
+        expect.objectContaining({
+          id: 'https://schemas.workspai.dev/graph/comparable-surface/v1',
+          file: 'schemas/comparable-surface.v1.schema.json',
+        }),
+        expect.objectContaining({
+          id: 'https://schemas.workspai.dev/graph/inventory-surface/v1',
+          file: 'schemas/inventory-surface.v1.schema.json',
+        }),
+      ])
+    );
     expect(inventory.packedJobs).toEqual(GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id));
     expect(inventory.incidents).toEqual([...GRAPH_INCIDENT_CLASSES]);
     expect(inventory.conformanceProfile).toMatchObject({

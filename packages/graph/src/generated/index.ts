@@ -2,6 +2,7 @@ export type { WorkspaiGraphBindingProfileCandidate } from './binding-profile.v0.
 export type { WorkspaiCanonicalGraphCandidate } from './canonical-graph.v0.1.0-candidate.js';
 export type { WorkspaiGraphChangeSetCandidate } from './changeset.v0.1.0-candidate.js';
 export type { WorkspaiGraphCliResultCandidate } from './cli-result.v0.1.0-candidate.js';
+export type { WorkspaiGraphComparableSurfaceCandidate } from './comparable-surface.v1.js';
 export type { WorkspaiGraphContentStateManifestCandidate } from './content-state-manifest.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivationLineageCandidate } from './derivation-lineage.v0.1.0-candidate.js';
 export type { WorkspaiGraphDerivedProjectionResultCandidate } from './derived-projection-result.v0.1.0-candidate.js';
@@ -10,6 +11,7 @@ export type { WorkspaiGraphEvidenceIndependenceCandidate } from './evidence-inde
 export type { WorkspaiGraphFactBatchCandidate } from './fact-batch.v0.1.0-candidate.js';
 export type { WorkspaiGraphG8RealWorkspaceMatrixAdmissionCandidate } from './g8-real-workspace-matrix-admission.v1-candidate.js';
 export type { WorkspaiGraphG8RealWorkspacePlatformReportCandidate } from './g8-real-workspace-platform-report.v1-candidate.js';
+export type { WorkspaiGraphGeneratedArtifactCandidate } from './generated-artifact.v1.js';
 export type { WorkspaiGraphGenerationPublicationCandidate } from './generation-publication.v0.1.0-candidate.js';
 export type { WorkspaiGraphChangeOverlayCandidate } from './graph-change-overlay.v0.1.0-candidate.js';
 export type { WorkspaiGraphDeltaCandidate } from './graph-delta.v0.1.0-candidate.js';
@@ -17,6 +19,8 @@ export type { WorkspaiGraphQualityCandidate } from './graph-quality.v0.1.0-candi
 export type { WorkspaiGraphQueryResultCandidate } from './graph-query-result.v0.1.0-candidate.js';
 export type { WorkspaiGraphQueryCandidate } from './graph-query.v0.1.0-candidate.js';
 export type { WorkspaiGraphSliceResultCandidate } from './graph-slice-result.v0.1.0-candidate.js';
+export type { WorkspaiGraphInventorySurfaceCandidate } from './inventory-surface.v1.js';
+export type { WorkspaiGraphLocatorIdentityCandidate } from './locator-identity.v1.js';
 export type { WorkspaiGraphModelGenerationBindingCandidate } from './model-generation-binding.v0.1.0-candidate.js';
 export type { WorkspaiGraphNaryAssertionCandidate } from './nary-assertion.v0.1.0-candidate.js';
 export type { WorkspaiGraphOntologyProfileCandidate } from './ontology-profile.v0.1.0-candidate.js';
@@ -36,3 +40,4 @@ export type { WorkspaiGraphReviewContextSliceCandidate } from './review-context-
 export type { WorkspaiGraphStandaloneSupportMatrixCandidate } from './standalone-support-matrix.v0.1.0-candidate.js';
 export type { WorkspaiGraphStandaloneSupportMatrixV020Candidate } from './standalone-support-matrix.v0.2.0-candidate.js';
 export type { WorkspaiGraphStructuralExtractorProfileCandidate } from './structural-extractor-profile.v0.1.0-candidate.js';
+export type { WorkspaiGraphUnknownCauseCandidate } from './unknown-cause.v1.js';

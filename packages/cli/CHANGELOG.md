@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Added a read-only G8 real-workspace shadow qualification system. The
+- G8 shadow comparison now emits directional leftover identities, relations,
+  proofs and unknown families after mapping version `v2`. Duplicated project
+  prefixes and generated `.workspai` locators are normalized only in the
+  comparison projection. Encoded unsafe locators fail closed after decode.
+  Difference approvals must bind mapping version, key and set digest; code-only
+  fallbacks are rejected. The approvals ledger is `v2`. The released CLI remains
+  authoritative. The
   representative committed Node corpus is the only matrix admission input.
   Difference approvals default to zero and must be bound to a corpus,
   source-tree digest and code. Optional local reference repositories are

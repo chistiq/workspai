@@ -18,9 +18,15 @@ import {
   GRAPH_STANDARD_COMPOSITION_POLICY,
   composeGraph,
   executeGraphReferenceCompositionTask,
+  type GraphCompositionPolicy,
   type GraphCompositionRequest,
+  type GraphCompositionResult,
   type GraphCompositionSource,
 } from '../../src/index.js';
+import {
+  estimateCanonicalJsonBytes,
+  planGraphCompositionShards,
+} from '../../src/application/plan-composition-shards.js';
 import type {
   GraphExecutionPorts,
   GraphWorkerTaskRequest,
@@ -151,6 +157,15 @@ function ports(overrides: Partial<GraphExecutionPorts> = {}): GraphExecutionPort
     digest: {
       algorithm: 'sha256',
       digest: async (input) => createHash('sha256').update(input).digest('hex'),
+      createStreamingDigest: () => {
+        const hash = createHash('sha256');
+        return {
+          update: (chunk: Uint8Array) => {
+            hash.update(chunk);
+          },
+          digest: async () => hash.digest('hex'),
+        };
+      },
     },
     cancellation: { aborted: false, throwIfAborted: () => undefined },
     scheduler: { yield: async () => undefined },
@@ -186,6 +201,127 @@ function seededShuffle<T>(values: readonly T[], seed: number): T[] {
     [output[index], output[target]] = [output[target] as T, output[index] as T];
   }
   return output;
+}
+
+function padSources(count = 12): GraphCompositionSource[] {
+  return Array.from({ length: count }, (_, index) =>
+    source(`provider:eq-pad:${index}`, [
+      fact(`provider:eq-pad:${index}`, `fact:eq-pad:${index}`, `entity:eq-pad-target:${index}`, {
+        subject: entity(`entity:eq-pad-source:${index}`),
+      }),
+    ])
+  );
+}
+
+function sourcesForSharding(
+  base: readonly GraphCompositionSource[]
+): readonly GraphCompositionSource[] {
+  return [...base, ...padSources()];
+}
+
+function workerBudgetThatForcesShards(
+  sources: readonly GraphCompositionSource[],
+  minShards = 2
+): number {
+  const groups = new Map<string, number>();
+  for (const item of sources) {
+    for (const itemFact of item.batch.facts) {
+      groups.set(
+        itemFact.factId,
+        (groups.get(itemFact.factId) ?? 0) + estimateCanonicalJsonBytes(itemFact)
+      );
+    }
+  }
+  const groupBytes = [...groups.values()];
+  const maxGroup = Math.max(...groupBytes, 1);
+  const totalFacts = groupBytes.reduce((total, bytes) => total + bytes, 0);
+  for (const multiplier of [2, 1.75, 1.6, 1.5, 1.4]) {
+    const budget = Math.max(maxGroup * 4, Math.ceil(totalFacts * multiplier));
+    if (budget <= totalFacts) continue;
+    const plan = planGraphCompositionShards(sources, budget);
+    if (plan.status === 'ready' && plan.shards.length >= minShards) {
+      return budget;
+    }
+  }
+  throw new Error(`fixture did not force ${minShards} composition shards`);
+}
+
+function singleShotPolicy(policy: GraphCompositionPolicy): GraphCompositionPolicy {
+  return {
+    ...policy,
+    maxWorkerOutputBytes: GRAPH_STANDARD_COMPOSITION_POLICY.maxWorkerOutputBytes,
+  };
+}
+
+function shardedPolicy(
+  sources: readonly GraphCompositionSource[],
+  policy: GraphCompositionPolicy,
+  minShards = 2
+): GraphCompositionPolicy {
+  return {
+    ...policy,
+    maxWorkerOutputBytes: workerBudgetThatForcesShards(sources, minShards),
+  };
+}
+
+function compositionSemantics(result: GraphCompositionResult) {
+  if (!result.accepted) {
+    return {
+      accepted: false as const,
+      code: result.code,
+      issues: result.issues,
+    };
+  }
+  const graph = result.value.graph;
+  return {
+    accepted: true as const,
+    issues: result.issues,
+    nodes: graph.nodes,
+    edges: graph.edges,
+    disputes: graph.disputes,
+    unresolved: graph.unresolved,
+    diagnostics: graph.diagnostics,
+    assertions: graph.assertions,
+    ontology: graph.ontology,
+    decisions: result.value.decisions,
+    quality: {
+      integrity: result.value.quality.integrity,
+      determinism: result.value.quality.determinism,
+      coverage: result.value.quality.coverage,
+      proofStates: result.value.quality.proofStates,
+      unknownZones: result.value.quality.unknownZones,
+      unsupportedZones: result.value.quality.unsupportedZones,
+      providerFailures: result.value.quality.providerFailures,
+    },
+    inputsDigest: graph.generation.inputsDigest,
+    factSetDigest: graph.generation.factSetDigest,
+    providerSetDigest: graph.generation.providerSetDigest,
+    ontologySetDigest: graph.generation.ontologySetDigest,
+    proofPolicySetDigest: graph.generation.proofPolicySetDigest,
+  };
+}
+
+async function composeSingleAndSharded(
+  request: GraphCompositionRequest,
+  minShards = 2
+): Promise<{
+  readonly sources: readonly GraphCompositionSource[];
+  readonly planShards: number;
+  readonly single: GraphCompositionResult;
+  readonly sharded: GraphCompositionResult;
+}> {
+  const sources = sourcesForSharding(request.sources);
+  const singlePolicy = singleShotPolicy(request.policy);
+  const shardPolicy = shardedPolicy(sources, request.policy, minShards);
+  const plan = planGraphCompositionShards(sources, shardPolicy.maxWorkerOutputBytes);
+  if (plan.status !== 'ready') {
+    throw new Error(`sharded plan failed: ${plan.code}`);
+  }
+  const [single, sharded] = await Promise.all([
+    composeGraph({ ...request, sources, policy: singlePolicy }, ports()),
+    composeGraph({ ...request, sources, policy: shardPolicy }, ports()),
+  ]);
+  return { sources, planShards: plan.shards.length, single, sharded };
 }
 
 describe('Graph G2 reference composition engine', () => {
@@ -900,7 +1036,7 @@ describe('Graph G2 reference composition engine', () => {
               request.input as GraphCompositionRequest
             );
             const candidate = prepared.candidates[0];
-            if (!candidate) throw new Error('Expected a composition candidate.');
+            if (!candidate?.facts[0]) throw new Error('Expected a composition candidate.');
             return {
               status: 'complete' as const,
               output: {
@@ -910,10 +1046,8 @@ describe('Graph G2 reference composition engine', () => {
                     ...candidate,
                     facts: [
                       {
-                        fact: {
-                          ...candidate.facts[0]?.fact,
-                          confidence: 1,
-                        },
+                        factId: candidate.facts[0].factId,
+                        fact: { confidence: 1 },
                       },
                     ],
                   },
@@ -978,4 +1112,355 @@ describe('Graph G2 reference composition engine', () => {
     expect(result).toMatchObject({ accepted: false, code: 'cancelled' });
     expect(result).not.toHaveProperty('value.graph');
   });
+});
+
+describe('sharded composition equivalence', () => {
+  it('keeps independent edges identical to single-shot composition', async () => {
+    const sources = [
+      source(
+        'provider:a',
+        Array.from({ length: 8 }, (_, index) =>
+          fact('provider:a', `fact:${index}`, `entity:target-${index}`)
+        )
+      ),
+    ];
+    const { planShards, single, sharded } = await composeSingleAndSharded({
+      ontology,
+      sources,
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+    });
+    expect(planShards).toBeGreaterThan(1);
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('preserves functional conflicts across shards', async () => {
+    const { planShards, single, sharded } = await composeSingleAndSharded({
+      ontology,
+      sources: [
+        source('provider:a', [fact('provider:a', 'fact:a', 'entity:first')]),
+        source('provider:b', [fact('provider:b', 'fact:b', 'entity:second')]),
+      ],
+      policy: { ...GRAPH_STANDARD_COMPOSITION_POLICY, functionalRelations: ['imports'] },
+    });
+    expect(planShards).toBeGreaterThan(1);
+    expect(sharded).toMatchObject({ accepted: true });
+    if (!sharded.accepted) return;
+    const conflicted = sharded.value.graph.edges.filter((edge) => edge.from === 'entity:source');
+    expect(conflicted).toHaveLength(2);
+    expect(conflicted.every((edge) => edge.state === 'disputed')).toBe(true);
+    expect(sharded.value.decisions.map((decision) => decision.explanation.code)).toEqual(
+      expect.arrayContaining(['GRAPH_EDGE_FUNCTIONAL_CONFLICT'])
+    );
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('aggregates multiple facts for one edge across shards', async () => {
+    const { planShards, single, sharded } = await composeSingleAndSharded({
+      ontology,
+      sources: [
+        source('provider:a', [fact('provider:a', 'fact:a', 'entity:target')]),
+        source('provider:b', [fact('provider:b', 'fact:b', 'entity:target')]),
+      ],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+    });
+    expect(planShards).toBeGreaterThan(1);
+    expect(sharded).toMatchObject({ accepted: true });
+    if (!sharded.accepted) return;
+    const target = sharded.value.graph.edges.find((edge) => edge.to === 'entity:target');
+    expect(target).toMatchObject({
+      facts: ['fact:a', 'fact:b'],
+      proof: { state: 'corroborated' },
+    });
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('keeps duplicate fact identities in one shard and matches single-shot collision handling', async () => {
+    const sources = sourcesForSharding([
+      source('provider:a', [fact('provider:a', 'fact:duplicate', 'entity:first')]),
+      source('provider:b', [fact('provider:b', 'fact:duplicate', 'entity:second')]),
+    ]);
+    const shardPolicy = shardedPolicy(sources, GRAPH_STANDARD_COMPOSITION_POLICY);
+    const plan = planGraphCompositionShards(sources, shardPolicy.maxWorkerOutputBytes);
+    expect(plan.status).toBe('ready');
+    if (plan.status !== 'ready') return;
+    expect(plan.shards.length).toBeGreaterThan(1);
+    const duplicateShards = plan.shards.filter((shard) =>
+      shard.some((item) =>
+        item.batch.facts.some((itemFact) => itemFact.factId === 'fact:duplicate')
+      )
+    );
+    expect(duplicateShards).toHaveLength(1);
+    expect(
+      duplicateShards[0]
+        ?.flatMap((item) => item.batch.facts)
+        .filter((itemFact) => itemFact.factId === 'fact:duplicate')
+    ).toHaveLength(2);
+    const [single, sharded] = await Promise.all([
+      composeGraph(
+        { ontology, sources, policy: singleShotPolicy(GRAPH_STANDARD_COMPOSITION_POLICY) },
+        ports()
+      ),
+      composeGraph({ ontology, sources, policy: shardPolicy }, ports()),
+    ]);
+    expect(sharded).toMatchObject({ accepted: true });
+    if (!sharded.accepted) return;
+    expect(sharded.value.decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          state: 'unresolved',
+          explanation: expect.objectContaining({ code: 'GRAPH_FACT_ID_COLLISION' }),
+        }),
+      ])
+    );
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('keeps rejected and unresolved facts out of traversable edges after a merge', async () => {
+    const { planShards, single, sharded } = await composeSingleAndSharded({
+      ontology,
+      sources: [
+        source('provider:a', [
+          fact('provider:a', 'fact:inferred', 'entity:target', {
+            authority: 'inferred',
+            derivation: 'inferred',
+          }),
+        ]),
+        source('provider:b', [
+          fact('provider:b', 'fact:unknown', 'entity:unknown', {
+            freshness: { status: 'unknown' },
+          }),
+        ]),
+        source('provider:c', [fact('provider:c', 'fact:current', 'entity:healthy')]),
+      ],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+    });
+    expect(planShards).toBeGreaterThan(1);
+    expect(sharded).toMatchObject({ accepted: true });
+    if (!sharded.accepted) return;
+    expect(sharded.value.decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ state: 'rejected', includedInGraph: false }),
+        expect.objectContaining({ state: 'unresolved', includedInGraph: false }),
+      ])
+    );
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('preserves alias-cycle unresolved identity across a global freeze', async () => {
+    const first = fact('provider:a', 'fact:first', 'entity:target', {
+      subject: {
+        ...entity('entity:first'),
+        aliases: [{ id: 'entity:second', reason: 'provider-alias' }],
+      },
+    });
+    const second = fact('provider:b', 'fact:second', 'entity:target', {
+      subject: {
+        ...entity('entity:second'),
+        aliases: [{ id: 'entity:first', reason: 'provider-alias' }],
+      },
+    });
+    const { planShards, single, sharded } = await composeSingleAndSharded({
+      ontology,
+      sources: [source('provider:a', [first]), source('provider:b', [second])],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+    });
+    expect(planShards).toBeGreaterThan(1);
+    expect(sharded).toMatchObject({ accepted: true });
+    if (!sharded.accepted) return;
+    expect(sharded.value.graph.unresolved).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: expect.stringContaining('unresolved:alias-cycle:') }),
+      ])
+    );
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('fails closed on cyclic lineage identically for single-shot and sharded plans', async () => {
+    const facts = [
+      fact('provider:a', 'fact:a', 'entity:target'),
+      fact('provider:a', 'fact:b', 'entity:target'),
+    ];
+    const request = {
+      ontology,
+      sources: [source('provider:a', facts)],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+      lineages: [
+        {
+          factId: 'fact:a',
+          derivation: 'extracted' as const,
+          evidenceRoots: ['root:a'],
+          parentFactIds: ['fact:b'],
+        },
+        {
+          factId: 'fact:b',
+          derivation: 'extracted' as const,
+          evidenceRoots: ['root:b'],
+          parentFactIds: ['fact:a'],
+        },
+      ],
+    };
+    const { single, sharded } = await composeSingleAndSharded(request);
+    expect(single).toMatchObject({
+      accepted: false,
+      issues: [expect.objectContaining({ code: 'GRAPH_COMPOSITION_LINEAGE_CYCLE' })],
+    });
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('aggregates lineage proof groups identically after a merge', async () => {
+    const facts = [
+      fact('provider:a', 'fact:a', 'entity:target'),
+      fact('provider:b', 'fact:b', 'entity:target'),
+    ];
+    const { planShards, single, sharded } = await composeSingleAndSharded({
+      ontology,
+      sources: [
+        source('provider:a', [facts[0] as (typeof facts)[number]]),
+        source('provider:b', [facts[1] as (typeof facts)[number]]),
+      ],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+      lineages: [
+        {
+          factId: 'fact:a',
+          derivation: 'extracted',
+          evidenceRoots: ['root:a'],
+          parentFactIds: [],
+        },
+        {
+          factId: 'fact:b',
+          derivation: 'extracted',
+          evidenceRoots: ['root:b'],
+          parentFactIds: [],
+        },
+      ],
+    });
+    expect(planShards).toBeGreaterThan(1);
+    expect(sharded).toMatchObject({ accepted: true });
+    if (!sharded.accepted) return;
+    const grouped = sharded.value.graph.edges.find((edge) => edge.to === 'entity:target');
+    expect(grouped?.proof.corroborationGroups).toEqual([
+      expect.objectContaining({
+        root: 'root:a',
+        evidence: [expect.objectContaining({ id: 'evidence:fact:a' })],
+      }),
+      expect.objectContaining({
+        root: 'root:b',
+        evidence: [expect.objectContaining({ id: 'evidence:fact:b' })],
+      }),
+    ]);
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('is invariant to shuffled source order between single-shot and sharded composition', async () => {
+    const canonical = sourcesForSharding([
+      source('provider:a', [fact('provider:a', 'fact:a', 'entity:target')]),
+      source('provider:b', [fact('provider:b', 'fact:b', 'entity:target')]),
+      source('provider:c', [fact('provider:c', 'fact:c', 'entity:other')]),
+    ]);
+    const shuffled = seededShuffle(canonical, 20260913);
+    expect(shuffled.map((item) => item.manifest.id)).not.toEqual(
+      canonical.map((item) => item.manifest.id)
+    );
+    const shardPolicy = shardedPolicy(shuffled, GRAPH_STANDARD_COMPOSITION_POLICY);
+    const plan = planGraphCompositionShards(shuffled, shardPolicy.maxWorkerOutputBytes);
+    expect(plan.status).toBe('ready');
+    if (plan.status === 'ready') expect(plan.shards.length).toBeGreaterThan(1);
+    const [single, sharded] = await Promise.all([
+      composeGraph(
+        {
+          ontology,
+          sources: canonical,
+          policy: singleShotPolicy(GRAPH_STANDARD_COMPOSITION_POLICY),
+        },
+        ports()
+      ),
+      composeGraph({ ontology, sources: shuffled, policy: shardPolicy }, ports()),
+    ]);
+    expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
+  });
+
+  it('fails closed when a single fact identity exceeds the shard payload budget', async () => {
+    const sources = [source('provider:a', [fact('provider:a', 'fact:huge', 'entity:target')])];
+    const plan = planGraphCompositionShards(sources, 256);
+    expect(plan).toMatchObject({
+      status: 'failed',
+      code: 'GRAPH_COMPOSITION_FACT_TOO_LARGE',
+    });
+    const composed = await composeGraph(
+      {
+        ontology,
+        sources,
+        policy: { ...GRAPH_STANDARD_COMPOSITION_POLICY, maxWorkerOutputBytes: 256 },
+      },
+      ports()
+    );
+    expect(composed).toMatchObject({
+      accepted: false,
+      code: 'resource-limit',
+    });
+    expect(composed).not.toHaveProperty('value');
+    if (composed.accepted) return;
+    expect(composed.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'GRAPH_COMPOSITION_FACT_TOO_LARGE' }),
+      ])
+    );
+  });
+
+  it.each(['failed', 'cancelled'] as const)(
+    'does not publish a graph when a middle shard is %s',
+    async (status) => {
+      const sources = sourcesForSharding([
+        source('provider:a', [fact('provider:a', 'fact:a', 'entity:first')]),
+        source('provider:b', [fact('provider:b', 'fact:b', 'entity:second')]),
+      ]);
+      const policy = shardedPolicy(sources, GRAPH_STANDARD_COMPOSITION_POLICY, 3);
+      const plan = planGraphCompositionShards(sources, policy.maxWorkerOutputBytes);
+      expect(plan.status).toBe('ready');
+      if (plan.status !== 'ready') return;
+      expect(plan.shards.length).toBeGreaterThanOrEqual(3);
+      let shardIndex = 0;
+      const result = await composeGraph(
+        { ontology, sources, policy },
+        ports({
+          workers: {
+            async execute<TInput, TOutput>(request: GraphWorkerTaskRequest<TInput>) {
+              shardIndex += 1;
+              if (shardIndex === 2) {
+                return {
+                  status,
+                  diagnostics:
+                    status === 'failed'
+                      ? [
+                          {
+                            code: 'WORKER_FAILED',
+                            severity: 'error' as const,
+                            path: '/worker',
+                            message: 'Middle shard failed safely.',
+                          },
+                        ]
+                      : [],
+                  metrics: { durationMs: 1, inputBytes: 1, outputBytes: 0 },
+                };
+              }
+              return {
+                status: 'complete',
+                output: executeGraphReferenceCompositionTask(
+                  request.input as GraphCompositionRequest
+                ) as TOutput,
+                diagnostics: [],
+                metrics: { durationMs: 0, inputBytes: 0, outputBytes: 0 },
+              };
+            },
+          },
+        })
+      );
+      expect(shardIndex).toBe(2);
+      expect(result).toMatchObject({
+        accepted: false,
+        code: status === 'cancelled' ? 'cancelled' : 'composition-failed',
+      });
+      expect(result).not.toHaveProperty('value');
+    }
+  );
 });

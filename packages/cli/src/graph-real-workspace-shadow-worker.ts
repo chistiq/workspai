@@ -40,6 +40,7 @@ process.on('message', (message: IsolatedQualifyMessage) => {
           id: observation.id,
           kind: observation.kind,
           projectId: observation.projectId,
+          workspaceId: observation.workspaceId,
           status: observation.status,
           ...(observation.reason ? { reason: observation.reason } : {}),
           ...(observation.packageExecution

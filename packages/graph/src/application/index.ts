@@ -1,3 +1,12 @@
+export {
+  classifyGraphInventoryOmission,
+  excludedDirectoryOmissionCode,
+  inventoryCodesPreventCompleteness,
+  inventoryOmissionIsResourceTruncation,
+  summarizeGraphInventoryOmissions,
+  GRAPH_INVENTORY_OMISSION_CLASSES,
+  type GraphInventoryOmissionClass,
+} from './classify-inventory-omissions.js';
 export { GRAPH_PACKAGE_STATUS_CONTRACT, getGraphPackageStatus } from './package-status.js';
 export {
   GRAPH_STANDARD_COMPOSITION_POLICY,
@@ -28,6 +37,11 @@ export {
 export { planQueryCacheInvalidation } from './plan-query-cache-invalidation.js';
 export type { GraphQueryCacheInvalidationRequest } from './plan-query-cache-invalidation.js';
 export { GRAPH_STANDARD_REPO_BUILD_POLICY, buildRepoGraph } from './build-repo-graph.js';
+export {
+  referenceGraphNativeTraversal,
+  routeGraphNativeTraversal,
+  type GraphNativeTraversalRoute,
+} from './route-native-traversal.js';
 export type {
   GraphIncrementalRepoBuildRequest,
   GraphIncrementalRepoBuildResult,

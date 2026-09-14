@@ -89,6 +89,8 @@ function args(files: Awaited<ReturnType<typeof fixture>>): string[] {
     files.projectRoot,
     '--project-id',
     'project-a',
+    '--workspace-id',
+    'live-workspace',
     '--binding',
     files.binding,
     '--profile',
@@ -114,7 +116,7 @@ describe('Graph live shadow qualification', () => {
     expect(result).toMatchObject({
       schemaVersion: 'workspai.graph-live-shadow-qualification.v1-candidate',
       project: { id: 'project-a' },
-      packageExecution: { status: 'complete', inputFiles: 1 },
+      packageExecution: { status: 'complete', inputFiles: 2 },
       report: {
         status: 'different',
         metrics: { legacyNodes: 1 },

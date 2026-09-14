@@ -23,6 +23,11 @@
       "sha256": "c52ac87c25aca437e007e913030f933887844a3eacdb1ef8fe58ad7309c83ae8"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/comparable-surface/v1",
+      "file": "schemas/comparable-surface.v1.schema.json",
+      "sha256": "676523e9aa67367c70ed8d8e3dc037e1527b6b49fe215eea30bb1b8ebc46b77f"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/content-state-manifest/v0.1.0-candidate",
       "file": "schemas/content-state-manifest.v0.1.0-candidate.schema.json",
       "sha256": "07faf8452599fbd5b7f1f48955df0a41c654eb2a285beabb7c6da87a96a36766"
@@ -63,6 +68,11 @@
       "sha256": "9b1321386cda1b2bce014d8fc957fd558dd07d946354fba88ef934d49cf09334"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/generated-artifact/v1",
+      "file": "schemas/generated-artifact.v1.schema.json",
+      "sha256": "a118cc826d1bbc3e985ab13604e096ac117492287ce94e80339145e23f4df1ea"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/generation-publication/v0.1.0-candidate",
       "file": "schemas/generation-publication.v0.1.0-candidate.schema.json",
       "sha256": "aa44741f640c0aa8e6f8a7a8bf627200141a56bf73870fd4822204248eaf4c58"
@@ -96,6 +106,16 @@
       "id": "https://schemas.workspai.dev/graph/graph-slice-result/v0.1.0-candidate",
       "file": "schemas/graph-slice-result.v0.1.0-candidate.schema.json",
       "sha256": "ef085427cc1b01856ca3d1e36ea4109033078a942cca89a36b10abcdbd331d84"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/inventory-surface/v1",
+      "file": "schemas/inventory-surface.v1.schema.json",
+      "sha256": "cd452a90a398d35e91d255687be90eefc022eadcc57cf8d32611bda77604840b"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/locator-identity/v1",
+      "file": "schemas/locator-identity.v1.schema.json",
+      "sha256": "624bdf2eae5a9ca197b12f75f6de251df20b853df6a0314622ed49e6f02feb54"
     },
     {
       "id": "https://schemas.workspai.dev/graph/model-generation-binding/v0.1.0-candidate",
@@ -191,6 +211,11 @@
       "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",
       "file": "schemas/structural-extractor-profile.v0.1.0-candidate.schema.json",
       "sha256": "fb178690cac4bbac8c99dee50e2ce6c0b5f1a18ee2108008fc8ab6d389b0bd81"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/unknown-cause/v1",
+      "file": "schemas/unknown-cause.v1.schema.json",
+      "sha256": "8f5969b0ef442e6d29b725961ff5582619dd1a9faace17c9890ce76a8d020f3e"
     }
   ]
 }

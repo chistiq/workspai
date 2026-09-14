@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-- Added a bounded, read-only G8 real-workspace shadow qualification harness.
+- Added Graph-owned source-declaration, language and documentation-surface
+  providers. Workspace containment stays opt-in and requires host-supplied
+  identity evidence. Symbol and call caps emit truncation unknowns and
+  partial completeness. Regex extraction remains explicitly
+  confidence-bounded and leaves ambiguous calls unknown. G8 comparison now
+  splits leftover identities instead of aggregating whole sets. Cross-platform
+  admission and package-primary replacement remain unauthorized.
   Approved differences default to none; any exception must be a bound record
   for one corpus, source-tree digest, difference code and reason. Cross-platform
   admission requires semantic equivalence on the representative committed Node

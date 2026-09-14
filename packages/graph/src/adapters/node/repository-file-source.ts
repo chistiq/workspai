@@ -8,8 +8,25 @@ import type {
   GraphUnknownZone,
   GraphUnsupportedZone,
 } from '../../contracts/index.js';
-import { graphInputMediaType } from '../../domain/input-media-type.js';
+import type { GraphOmittedSubtree } from '../../contracts/inventory-surface.js';
+import {
+  excludedDirectoryOmissionCode,
+  inventoryCodesPreventCompleteness,
+} from '../../application/classify-inventory-omissions.js';
 import { normalizePortableLocator } from '../../domain/content-state-merkle.js';
+import { graphInputMediaType } from '../../domain/input-media-type.js';
+import {
+  classifyInventoryWalkSkip,
+  inventoryOmissionAccounting,
+  inventorySurfacePolicyMaterial,
+  isPolicyExcludedFileName,
+  omittedSubtreesPreventCompleteness,
+} from '../../domain/inventory-surface.js';
+import {
+  graphUnknownObservation,
+  graphUnsupportedObservation,
+  structurizeUnknownZone,
+} from '../../domain/unknown-cause.js';
 import type {
   GraphFileInventoryRequest,
   GraphFileInventoryResult,
@@ -79,13 +96,93 @@ function inside(root: string, target: string): boolean {
 }
 
 function knownSensitiveFile(name: string): boolean {
-  const normalized = name.toLowerCase();
-  return (
-    normalized === '.env' ||
-    normalized.startsWith('.env.') ||
-    ['id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519', 'credentials.json'].includes(normalized) ||
-    ['.key', '.pem', '.p12', '.pfx'].some((extension) => normalized.endsWith(extension))
+  return isPolicyExcludedFileName(name);
+}
+
+function structurizeInventoryZones<
+  T extends { readonly code: string; readonly scope: string; readonly reason: string },
+>(zones: readonly T[]): GraphUnknownZone[] {
+  return zones.map((zone) =>
+    structurizeUnknownZone(zone, {
+      provider: 'graph.repository-inventory',
+      stage: 'inventory',
+    })
   );
+}
+
+function policyDigest(
+  excludedDirectories: readonly string[],
+  evidenceKind: GraphOmittedSubtree['evidenceKind']
+): string {
+  return `sha256:${createHash('sha256')
+    .update(inventorySurfacePolicyMaterial({ excludedDirectories, evidenceKind }))
+    .digest('hex')}`;
+}
+
+function recordOmittedSubtree(input: {
+  readonly locator: string;
+  readonly directoryName: string;
+  readonly excludedDirectories: readonly string[];
+  readonly evidenceKind?: GraphOmittedSubtree['evidenceKind'];
+  readonly code?: string;
+  readonly class?: GraphOmittedSubtree['class'];
+  readonly reason: string;
+}): GraphOmittedSubtree {
+  const skip =
+    input.evidenceKind && input.code && input.class
+      ? {
+          class: input.class,
+          evidenceKind: input.evidenceKind,
+          code: input.code,
+        }
+      : (classifyInventoryWalkSkip(input.directoryName) ?? {
+          class: 'policy-excluded' as const,
+          evidenceKind: 'host-inventory-exclusion' as const,
+          code: excludedDirectoryOmissionCode(input.directoryName),
+        });
+  return Object.freeze({
+    locator: input.locator,
+    class: skip.class,
+    count: 'not-enumerated',
+    bytes: 'not-measured',
+    enumeration: 'not-enumerated',
+    reason: input.reason,
+    code: skip.code,
+    evidenceKind: skip.evidenceKind,
+    policyDigest: policyDigest(input.excludedDirectories, skip.evidenceKind),
+  });
+}
+
+function finishInventory(input: {
+  readonly statusHint?: GraphFileInventoryResult['status'];
+  readonly inputs: GraphProviderInput[];
+  readonly diagnostics: GraphDiagnostic[];
+  readonly omittedFiles: number;
+  readonly omittedBytes: number;
+  readonly omittedSubtrees: readonly GraphOmittedSubtree[];
+  readonly unknownZones: readonly GraphUnknownZone[];
+  readonly unsupportedZones: readonly GraphUnsupportedZone[];
+}): GraphFileInventoryResult {
+  const omissionCodes = [
+    ...input.unknownZones.map((zone) => zone.code),
+    ...input.unsupportedZones.map((zone) => zone.code),
+    ...input.diagnostics.map((diagnostic) => diagnostic.code),
+  ];
+  const accounting = inventoryOmissionAccounting(input.omittedSubtrees);
+  const partial =
+    inventoryCodesPreventCompleteness(omissionCodes) ||
+    omittedSubtreesPreventCompleteness(input.omittedSubtrees);
+  return {
+    status: input.statusHint ?? (partial ? 'partial' : 'complete'),
+    inputs: input.inputs,
+    diagnostics: input.diagnostics,
+    omittedFiles: input.omittedFiles,
+    omittedBytes: input.omittedBytes,
+    ...accounting,
+    omittedSubtrees: Object.freeze([...input.omittedSubtrees]),
+    unknownZones: structurizeInventoryZones(input.unknownZones),
+    unsupportedZones: structurizeInventoryZones(input.unsupportedZones),
+  };
 }
 
 async function readStableFile(
@@ -122,6 +219,7 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
       const diagnostics: GraphDiagnostic[] = [];
       const unknownZones: GraphUnknownZone[] = [];
       const unsupportedZones: GraphUnsupportedZone[] = [];
+      const omittedSubtrees: GraphOmittedSubtree[] = [];
       const inputs: GraphProviderInput[] = [];
       let omittedFiles = 0;
       let omittedBytes = 0;
@@ -140,26 +238,46 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
         const pending = [{ directory: root, depth: 0 }];
         while (pending.length > 0) {
           if (request.signal?.aborted) {
-            return {
-              status: 'cancelled',
+            return finishInventory({
+              statusHint: 'cancelled',
               inputs,
               diagnostics,
               omittedFiles,
               omittedBytes,
+              omittedSubtrees,
               unknownZones,
               unsupportedZones,
-            };
+            });
           }
           const current = pending.pop();
           if (!current) continue;
           const entries = [];
           for await (const entry of await fs.opendir(current.directory)) {
             if (entries.length >= request.maxDirectoryEntries) {
-              unknownZones.push({
-                code: 'graph.repository-directory-truncated',
-                scope: portableLocator(root, current.directory) ?? 'repository',
-                reason: 'Directory traversal stopped at the admitted entry budget.',
-              });
+              const scope = portableLocator(root, current.directory) ?? 'repository';
+              omittedSubtrees.push(
+                recordOmittedSubtree({
+                  locator: scope,
+                  directoryName: path.posix.basename(scope),
+                  excludedDirectories: request.excludedDirectories,
+                  evidenceKind: 'resource-budget',
+                  code: 'graph.repository-directory-truncated',
+                  class: 'resource-bounded',
+                  reason:
+                    'Directory traversal stopped at the admitted entry budget and did not enumerate the remaining subtree.',
+                })
+              );
+              unknownZones.push(
+                graphUnknownObservation({
+                  code: 'graph.repository-directory-truncated',
+                  scope,
+                  reason: 'Directory traversal stopped at the admitted entry budget.',
+                  cause: 'resource-bound',
+                  stage: 'inventory',
+                  provider: 'graph.repository-inventory',
+                  classificationOrigin: 'structured-producer',
+                })
+              );
               break;
             }
             entries.push(entry);
@@ -206,15 +324,68 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               continue;
             }
             if (entry.isDirectory()) {
-              if (!excluded.has(entry.name.normalize('NFC'))) {
-                if (current.depth >= request.maxDepth) {
-                  unknownZones.push({
+              if (excluded.has(entry.name.normalize('NFC'))) {
+                const skip = classifyInventoryWalkSkip(entry.name) ?? {
+                  class: 'policy-excluded' as const,
+                  evidenceKind: 'host-inventory-exclusion' as const,
+                  code: excludedDirectoryOmissionCode(entry.name),
+                };
+                const subtree = recordOmittedSubtree({
+                  locator,
+                  directoryName: entry.name,
+                  excludedDirectories: request.excludedDirectories,
+                  evidenceKind: skip.evidenceKind,
+                  code: skip.code,
+                  class: skip.class,
+                  reason:
+                    skip.evidenceKind === 'universal-vcs-metadata'
+                      ? 'VCS metadata is a universal inventory safety boundary and was not enumerated.'
+                      : skip.evidenceKind === 'host-inventory-exclusion'
+                        ? 'Directory was excluded by host-supplied inventory policy without enumerating its contents.'
+                        : 'A high-confidence dependency or environment store was excluded without enumerating its contents.',
+                });
+                omittedSubtrees.push(subtree);
+                unsupportedZones.push(
+                  graphUnsupportedObservation({
+                    code: skip.code,
+                    scope: locator,
+                    reason: subtree.reason,
+                    cause:
+                      skip.class === 'vendored' ? 'generated-or-vendor-policy' : 'inventory-policy',
+                    stage: 'inventory',
+                    provider: 'graph.repository-inventory',
+                    evidence: [
+                      `evidence-kind:${skip.evidenceKind}`,
+                      `policy-digest:${subtree.policyDigest}`,
+                    ],
+                    classificationOrigin: 'structured-producer',
+                  })
+                );
+              } else if (current.depth >= request.maxDepth) {
+                const subtree = recordOmittedSubtree({
+                  locator,
+                  directoryName: entry.name,
+                  excludedDirectories: request.excludedDirectories,
+                  evidenceKind: 'resource-budget',
+                  code: 'graph.repository-depth-truncated',
+                  class: 'resource-bounded',
+                  reason:
+                    'Repository traversal stopped at the admitted depth budget and did not enumerate this subtree.',
+                });
+                omittedSubtrees.push(subtree);
+                unknownZones.push(
+                  graphUnknownObservation({
                     code: 'graph.repository-depth-truncated',
                     scope: locator,
-                    reason: 'Repository traversal stopped at the admitted depth budget.',
-                  });
-                } else pending.push({ directory: target, depth: current.depth + 1 });
-              }
+                    reason: subtree.reason,
+                    cause: 'resource-bound',
+                    stage: 'inventory',
+                    provider: 'graph.repository-inventory',
+                    evidence: [`policy-digest:${subtree.policyDigest}`],
+                    classificationOrigin: 'structured-producer',
+                  })
+                );
+              } else pending.push({ directory: target, depth: current.depth + 1 });
               continue;
             }
             if (entry.isSymbolicLink() || !entry.isFile()) {
@@ -243,11 +414,18 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
             if (request.sensitiveFiles === 'omit-known' && knownSensitiveFile(entry.name)) {
               omittedFiles += 1;
               omittedBytes += stat.size;
-              unsupportedZones.push({
-                code: 'graph.sensitive-input-omitted',
-                scope: locator,
-                reason: 'A known sensitive file was excluded by the default repository policy.',
-              });
+              unsupportedZones.push(
+                graphUnsupportedObservation({
+                  code: 'graph.sensitive-input-omitted',
+                  scope: locator,
+                  reason: 'A known sensitive file was excluded by the default repository policy.',
+                  cause: 'inventory-policy',
+                  stage: 'inventory',
+                  provider: 'graph.repository-inventory',
+                  evidence: ['evidence-kind:sensitive-file-policy'],
+                  classificationOrigin: 'structured-producer',
+                })
+              );
               continue;
             }
             if (stat.size > request.maxFileBytes) {
@@ -353,21 +531,18 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           }
         }
         inputs.sort((left, right) => left.locator.localeCompare(right.locator));
-        return {
-          status:
-            omittedFiles > 0 || unknownZones.length > 0 || unsupportedZones.length > 0
-              ? 'partial'
-              : 'complete',
+        return finishInventory({
           inputs,
           diagnostics,
           omittedFiles,
           omittedBytes,
+          omittedSubtrees,
           unknownZones,
           unsupportedZones,
-        };
+        });
       } catch {
-        return {
-          status: request.signal?.aborted ? 'cancelled' : 'failed',
+        return finishInventory({
+          statusHint: request.signal?.aborted ? 'cancelled' : 'failed',
           inputs: [],
           diagnostics: [
             {
@@ -383,9 +558,10 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           ],
           omittedFiles,
           omittedBytes,
+          omittedSubtrees,
           unknownZones,
           unsupportedZones,
-        };
+        });
       }
     },
 

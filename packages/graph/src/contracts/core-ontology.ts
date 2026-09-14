@@ -16,6 +16,7 @@ const entities = Object.freeze([
   ['package', 'source'],
   ['file', 'source'],
   ['symbol', 'source'],
+  ['language', 'source'],
   ['branch', 'source'],
   ['revision', 'source'],
   ['api', 'interface'],
@@ -77,6 +78,7 @@ const seeds: readonly RelationSeed[] = [
   ['exposes', 'structural', ['system', 'source'], ['interface', 'messaging']],
   ['imports', 'structural', ['source'], ['source']],
   ['exports', 'structural', ['source'], ['source', 'interface']],
+  ['defines', 'structural', ['source'], ['source', 'interface']],
   ['calls', 'behavioral', ['source', 'interface', 'system'], ['source', 'interface', 'system']],
   ['implements', 'structural', ['source', 'system'], ['interface', 'governance']],
   [
@@ -85,6 +87,7 @@ const seeds: readonly RelationSeed[] = [
     ['system', 'source', 'interface', 'runtime', 'delivery'],
     ['system', 'source', 'interface', 'messaging', 'data', 'runtime', 'delivery'],
   ],
+  ['uses-language', 'declarative', ['system'], ['source']],
   ['reads-from', 'behavioral', ['system', 'source'], ['data', 'messaging']],
   ['writes-to', 'behavioral', ['system', 'source'], ['data', 'messaging']],
   [

@@ -24,6 +24,7 @@ interface LiveQualificationOptions {
   readonly legacy: string;
   readonly projectRoot: string;
   readonly projectId: string;
+  readonly workspaceId: string;
   readonly binding: string;
   readonly policy?: string;
   readonly profile: string;
@@ -58,6 +59,7 @@ function parseArgs(args: readonly string[]): LiveQualificationOptions {
     '--legacy',
     '--project-root',
     '--project-id',
+    '--workspace-id',
     '--binding',
     '--policy',
     '--profile',
@@ -66,13 +68,24 @@ function parseArgs(args: readonly string[]): LiveQualificationOptions {
   for (const key of values.keys()) {
     if (!allowed.has(key)) throw new Error(`Unsupported qualification argument: ${key}`);
   }
-  for (const required of ['--legacy', '--project-root', '--project-id', '--binding', '--profile']) {
+  for (const required of [
+    '--legacy',
+    '--project-root',
+    '--project-id',
+    '--workspace-id',
+    '--binding',
+    '--profile',
+  ]) {
     if (!values.has(required)) throw new Error(`${required} is required.`);
   }
   const projectId = values.get('--project-id') as string;
+  const workspaceId = values.get('--workspace-id') as string;
   const profile = values.get('--profile') as string;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/u.test(projectId)) {
     throw new Error('--project-id must be a portable identifier.');
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/u.test(workspaceId)) {
+    throw new Error('--workspace-id must be a portable identifier.');
   }
   if (!/^[a-z0-9][a-z0-9._-]{0,127}$/u.test(profile)) {
     throw new Error('--profile must be a portable identifier.');
@@ -81,6 +94,7 @@ function parseArgs(args: readonly string[]): LiveQualificationOptions {
     legacy: values.get('--legacy') as string,
     projectRoot: values.get('--project-root') as string,
     projectId,
+    workspaceId,
     binding: values.get('--binding') as string,
     ...(values.get('--policy') ? { policy: values.get('--policy') } : {}),
     profile,
@@ -156,7 +170,11 @@ export async function runGraphLiveShadowQualification(
     resolveProjectRoot(options.projectRoot),
   ]);
   const execution = await runPreparedProjectGraphShadow({
-    context: { projectId: options.projectId, projectRoot },
+    context: {
+      projectId: options.projectId,
+      projectRoot,
+      workspaceId: options.workspaceId,
+    },
     profile: options.profile,
     binding: binding as GraphShadowComparisonBinding,
     policy: policy as GraphShadowComparisonPolicy | undefined,

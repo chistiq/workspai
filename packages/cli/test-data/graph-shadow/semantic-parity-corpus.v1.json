@@ -21,28 +21,36 @@
       "packageSecondIdentity": "test:renamed",
       "expectedStatus": "different",
       "expectedDifferenceCodes": [
-        "GRAPH_SHADOW_NODE_SET_DIFFERENT",
-        "GRAPH_SHADOW_RELATION_SET_DIFFERENT"
+        "GRAPH_SHADOW_NODE_LEGACY_ONLY",
+        "GRAPH_SHADOW_NODE_PACKAGE_ONLY",
+        "GRAPH_SHADOW_RELATION_LEGACY_ONLY",
+        "GRAPH_SHADOW_RELATION_PACKAGE_ONLY"
       ]
     },
     {
       "id": "relation-regression",
       "packageRelation": "deployed-as",
       "expectedStatus": "different",
-      "expectedDifferenceCodes": ["GRAPH_SHADOW_RELATION_SET_DIFFERENT"]
+      "expectedDifferenceCodes": [
+        "GRAPH_SHADOW_RELATION_LEGACY_ONLY",
+        "GRAPH_SHADOW_RELATION_PACKAGE_ONLY"
+      ]
     },
     {
       "id": "proof-lineage-regression",
       "packageProofLocator": "tests/renamed.test.ts",
       "expectedStatus": "different",
-      "expectedDifferenceCodes": ["GRAPH_SHADOW_PROOF_LINEAGE_DIFFERENT"]
+      "expectedDifferenceCodes": [
+        "GRAPH_SHADOW_PROOF_LEGACY_ONLY",
+        "GRAPH_SHADOW_PROOF_PACKAGE_ONLY"
+      ]
     },
     {
       "id": "unknown-accounting-regression",
       "packageUnknownCodes": ["GRAPH_DYNAMIC_IMPORT_UNKNOWN"],
       "expectedStatus": "different",
       "expectedDifferenceCodes": [
-        "GRAPH_SHADOW_UNKNOWN_ACCOUNTING_DIFFERENT",
+        "GRAPH_SHADOW_UNKNOWN_ZONE_PACKAGE_ONLY",
         "GRAPH_SHADOW_COMPLETENESS_DIFFERENT"
       ]
     },
@@ -56,16 +64,16 @@
       "id": "diagnostic-regression",
       "packageDiagnosticCodes": ["GRAPH_PROVIDER_PARTIAL"],
       "expectedStatus": "different",
-      "expectedDifferenceCodes": ["GRAPH_SHADOW_DIAGNOSTICS_DIFFERENT"]
+      "expectedDifferenceCodes": ["GRAPH_SHADOW_DIAGNOSTIC_PACKAGE_ONLY"]
     },
     {
       "id": "reviewed-truth-depth-improvement",
       "packageExtraNode": true,
       "approvedDifferences": {
-        "GRAPH_SHADOW_NODE_SET_DIFFERENT": "truth-depth-improvement"
+        "GRAPH_SHADOW_NODE_PACKAGE_ONLY": "truth-depth-improvement"
       },
       "expectedStatus": "incomparable",
-      "expectedDifferenceCodes": ["GRAPH_SHADOW_NODE_SET_DIFFERENT"]
+      "expectedDifferenceCodes": ["GRAPH_SHADOW_NODE_PACKAGE_ONLY"]
     }
   ]
 }

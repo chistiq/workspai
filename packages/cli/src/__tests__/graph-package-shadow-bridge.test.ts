@@ -42,7 +42,7 @@ async function request(): Promise<PreparedProjectGraphShadowRequest> {
   roots.push(projectRoot);
   await writeFile(path.join(projectRoot, 'README.md'), '# fixture\n');
   return {
-    context: { projectId: 'fixture', projectRoot },
+    context: { projectId: 'fixture', projectRoot, workspaceId: 'fixture' },
     profile: 'g8-prepared-project.v1',
     binding: {
       sourceFixtureDigest: digest('source'),
@@ -64,7 +64,8 @@ describe('prepared project Graph shadow bridge', () => {
     const result = await runPreparedProjectGraphShadow(input);
 
     expect(result.packageExecution.status).not.toBe('not-executed');
-    expect(result.packageExecution.inputFiles).toBe(1);
+    expect(result.packageExecution.workspaceId).toBe('fixture');
+    expect(result.packageExecution.inputFiles).toBe(2);
     expect(result.packageExecution.semanticBinding).toEqual({
       sourceFixtureDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
       providerProfileDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
@@ -122,5 +123,70 @@ describe('prepared project Graph shadow bridge', () => {
     expect(result.report.status).toBe('failed');
     expect(result.report.receipt.fallback).toBe('prohibited');
     expect(result.packageExecution.status).toBe('not-executed');
+  });
+
+  it('binds host-supplied workspace identity without deriving it from projectId inside the provider', async () => {
+    const input = await request();
+    const result = await runPreparedProjectGraphShadow({
+      ...input,
+      context: { ...input.context, workspaceId: 'platform-workspace' },
+      legacy: async () => ({
+        schemaVersion: 'workspace-knowledge-graph.v1',
+        entities: [
+          {
+            id: 'legacy:workspace',
+            kind: 'workspace',
+            identity: { key: 'workspace:platform-workspace' },
+            proofIds: [],
+          },
+          {
+            id: 'legacy:project',
+            kind: 'project',
+            identity: { key: 'project:fixture' },
+            proofIds: [],
+          },
+        ],
+        relations: [
+          {
+            id: 'legacy:contains',
+            from: 'legacy:workspace',
+            to: 'legacy:project',
+            kind: 'contains',
+            proofIds: [],
+          },
+        ],
+        proofs: [],
+        quality: { unknownCount: 0, completeness: { status: 'complete' } },
+        diagnostics: [],
+      }),
+    });
+    expect(result.packageExecution.status).toBe('complete');
+    expect(result.packageExecution.workspaceId).toBe('platform-workspace');
+    expect(
+      result.report.differences.filter(
+        (item) =>
+          (item.code === 'GRAPH_SHADOW_NODE_LEGACY_ONLY' ||
+            item.code === 'GRAPH_SHADOW_NODE_PACKAGE_ONLY') &&
+          item.key === 'workspace'
+      )
+    ).toEqual([]);
+    expect(
+      result.report.differences.filter(
+        (item) => item.code === 'GRAPH_SHADOW_RELATION_LEGACY_ONLY' && item.key === 'contains'
+      )
+    ).toEqual([]);
+  });
+
+  it('rejects a prepared context that omits host workspace identity', async () => {
+    const input = await request();
+    const { buildPreparedProjectPackageGraph } = await import('../graph-package-project-build.js');
+    await expect(
+      buildPreparedProjectPackageGraph({
+        context: {
+          projectId: input.context.projectId,
+          projectRoot: input.context.projectRoot,
+        } as never,
+      })
+    ).rejects.toThrow('Prepared Graph project context is invalid.');
   });
 });

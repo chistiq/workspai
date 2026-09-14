@@ -124,6 +124,7 @@ describe('Graph G1 graph-domain contracts', () => {
         'service',
         'file',
         'symbol',
+        'language',
         'endpoint',
         'deployment',
         'test',
@@ -135,7 +136,9 @@ describe('Graph G1 graph-domain contracts', () => {
       expect.arrayContaining([
         'contains',
         'imports',
+        'defines',
         'calls',
+        'uses-language',
         'depends-on',
         'owned-by',
         'verified-by',

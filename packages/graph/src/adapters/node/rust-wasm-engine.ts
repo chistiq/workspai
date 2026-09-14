@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import type {
@@ -15,6 +16,8 @@ const UINT32_MAX = 0xffff_ffff;
 export type GraphNativeAdapterLoadErrorCode =
   | 'GRAPH_NATIVE_ARTIFACT_UNAVAILABLE'
   | 'GRAPH_NATIVE_ARTIFACT_INVALID'
+  | 'GRAPH_NATIVE_ARTIFACT_DIGEST_MISSING'
+  | 'GRAPH_NATIVE_ARTIFACT_DIGEST_MISMATCH'
   | 'GRAPH_NATIVE_DYNAMIC_IMPORT_PROHIBITED'
   | 'GRAPH_NATIVE_ABI_EXPORT_MISSING'
   | 'GRAPH_NATIVE_ABI_VERSION_MISMATCH'
@@ -37,6 +40,7 @@ interface WasmMemory {
 interface WasmApi {
   compile(bytes: Uint8Array): Promise<unknown>;
   instantiate(module: unknown, imports: Record<string, never>): Promise<{ exports: unknown }>;
+  Instance: new (module: unknown, imports: Record<string, never>) => { exports: unknown };
   Module: {
     imports(module: unknown): readonly unknown[];
   };
@@ -162,6 +166,44 @@ function packagedEngineUrl(): URL {
   }
 }
 
+function declaredDigestUrl(engineUrl: URL): URL {
+  return new URL(`${engineUrl.href}.sha256`);
+}
+
+/**
+ * Reclaims traversal buffers without deallocating pointers that belong to a
+ * trapped instance. Reinitialize first on trap; never free stale pointers
+ * against a replacement engine.
+ */
+export function reclaimBundledEngineBuffers(input: {
+  readonly trapped: boolean;
+  readonly dealloc: () => void;
+  readonly reinitialize: () => void;
+}): void {
+  if (input.trapped) {
+    input.reinitialize();
+    return;
+  }
+  try {
+    input.dealloc();
+  } catch {
+    input.reinitialize();
+  }
+}
+
+async function readDeclaredArtifactDigest(engineUrl: URL): Promise<string> {
+  let declared: string;
+  try {
+    declared = (await readFile(declaredDigestUrl(engineUrl), 'utf8')).trim();
+  } catch (error) {
+    throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_ARTIFACT_DIGEST_MISSING', error);
+  }
+  if (!/^[a-f0-9]{64}$/u.test(declared)) {
+    throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_ARTIFACT_DIGEST_MISSING');
+  }
+  return declared;
+}
+
 /** Loads the product-bundled engine. It performs no download and never invokes Cargo. */
 export async function createNodeRustWasmGraphNativePort(
   engineUrl: URL = packagedEngineUrl()
@@ -171,6 +213,14 @@ export async function createNodeRustWasmGraphNativePort(
     bytes = await readFile(engineUrl);
   } catch (error) {
     throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_ARTIFACT_UNAVAILABLE', error);
+  }
+  const artifactDigest = {
+    algorithm: 'sha256' as const,
+    value: createHash('sha256').update(bytes).digest('hex'),
+  };
+  const declaredDigest = await readDeclaredArtifactDigest(engineUrl);
+  if (declaredDigest !== artifactDigest.value) {
+    throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_ARTIFACT_DIGEST_MISMATCH');
   }
   const wasm = (globalThis as unknown as { readonly WebAssembly: WasmApi }).WebAssembly;
   let module: unknown;
@@ -182,14 +232,16 @@ export async function createNodeRustWasmGraphNativePort(
   if (wasm.Module.imports(module).length !== 0) {
     throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_DYNAMIC_IMPORT_PROHIBITED');
   }
-  let instance: { exports: unknown };
-  try {
-    instance = await wasm.instantiate(module, {});
-  } catch (error) {
-    throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_ARTIFACT_INVALID', error);
-  }
-  assertExports(instance.exports);
-  const engine = instance.exports;
+  const instantiate = (): GraphEngineExports => {
+    const instance = new wasm.Instance(module, {});
+    assertExports(instance.exports);
+    return instance.exports;
+  };
+  let engine = instantiate();
+
+  const reinitialize = (): void => {
+    engine = instantiate();
+  };
 
   return Object.freeze({
     descriptor: Object.freeze({
@@ -203,6 +255,7 @@ export async function createNodeRustWasmGraphNativePort(
       maxEdges: MAX_EDGES,
       maxMemoryBytes: MAX_MEMORY_BYTES,
     }),
+    artifactDigest: Object.freeze(artifactDigest),
     traverseReachable(request: GraphNativeTraversalRequest): GraphNativeTraversalResult {
       const startedAt = performance.now();
       const invalid = validateRequest(request);
@@ -214,6 +267,7 @@ export async function createNodeRustWasmGraphNativePort(
       const outputCapacity = request.nodeCount;
       let edgePointer = 0;
       let outputPointer = 0;
+      let trapped = false;
       try {
         edgePointer = engine.graph_engine_alloc_u32(edgeWordCount);
         outputPointer = engine.graph_engine_alloc_u32(outputCapacity);
@@ -268,6 +322,7 @@ export async function createNodeRustWasmGraphNativePort(
         const nodes = Array.from(new Uint32Array(engine.memory.buffer, outputPointer, length));
         return result('complete', request, startedAt, nodes);
       } catch (error) {
+        trapped = true;
         return result(
           'failed',
           request,
@@ -277,8 +332,20 @@ export async function createNodeRustWasmGraphNativePort(
           error instanceof Error ? error.message : 'Bundled engine execution failed.'
         );
       } finally {
-        if (edgePointer !== 0) engine.graph_engine_dealloc_u32(edgePointer, edgeWordCount);
-        if (outputPointer !== 0) engine.graph_engine_dealloc_u32(outputPointer, outputCapacity);
+        reclaimBundledEngineBuffers({
+          trapped,
+          dealloc: () => {
+            if (edgePointer !== 0) engine.graph_engine_dealloc_u32(edgePointer, edgeWordCount);
+            if (outputPointer !== 0) engine.graph_engine_dealloc_u32(outputPointer, outputCapacity);
+          },
+          reinitialize: () => {
+            try {
+              reinitialize();
+            } catch {
+              // Isolation already failed closed; the next call re-throws on use.
+            }
+          },
+        });
       }
     },
   });

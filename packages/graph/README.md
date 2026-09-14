@@ -86,7 +86,16 @@ consumers do not need host paths or directory guessing to resolve a generation.
 
 The offline provider set currently covers file/package topology and static
 imports for Node, Python, Go, Java, .NET, Rust, C/C++, Objective-C/MATLAB,
-PHP, Ruby, Swift, Elixir and Kotlin. It also extracts literal route declarations
+PHP, Ruby, Swift, Elixir and Kotlin. It also extracts observed source
+declarations, local call candidates, language identities and authored
+README/ARCHITECTURE/CONTRIBUTING/SECURITY documents. Workspace/repository
+containment is not part of the standard repository set; it is an opt-in
+provider that requires host-supplied `workspai.workspace-identity` evidence.
+Declaration and call extraction is regex-bounded at confidence
+0.7 and does not claim compiler-complete knowledge: ambiguous calls,
+unreadable inputs and per-file symbol or call caps remain explicit unknown
+zones with partial completeness. The set also extracts
+literal route declarations
 for Node, Python, Go, Java, .NET, Elixir and Kotlin, Protobuf contracts,
 services, schemas and RPCs, declared Bazel
 and CMake target dependencies, cross-language source entry points, CODEOWNERS

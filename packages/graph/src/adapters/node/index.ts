@@ -8,8 +8,18 @@ import type {
   GraphWorkerTaskResult,
 } from '../../ports/index.js';
 import type { GraphProductHostPorts } from '../../ports/index.js';
-import { buildRepoGraph, GRAPH_STANDARD_REPO_BUILD_POLICY } from '../../application/index.js';
-import type { GraphRepoBuildPolicy, GraphRepoBuildResult } from '../../application/index.js';
+import {
+  GRAPH_STANDARD_REPO_BUILD_POLICY,
+  buildContentStateManifest,
+  buildIncrementalRepoGraph,
+  buildRepoGraph,
+  buildShardDependenciesFromSources,
+  collectGraphSemanticDependencies,
+  contentStateLeavesFromProviderInputs,
+  type GraphIncrementalRepoBuildResult,
+  type GraphRepoBuildPolicy,
+  type GraphRepoBuildResult,
+} from '../../application/index.js';
 import {
   CORE_GRAPH_ONTOLOGY_PROFILE,
   type GraphOntologyProfile,
@@ -26,6 +36,7 @@ export { createNodeWorkspaceArtifactStore } from './workspace-artifact-store.js'
 export {
   GraphNativeAdapterLoadError,
   createNodeRustWasmGraphNativePort,
+  reclaimBundledEngineBuffers,
   type GraphNativeAdapterLoadErrorCode,
 } from './rust-wasm-engine.js';
 
@@ -220,6 +231,15 @@ export function createNodeGraphProductHostPorts(
     digest: {
       algorithm: 'sha256',
       digest: async (input) => createHash('sha256').update(input).digest('hex'),
+      createStreamingDigest: () => {
+        const hash = createHash('sha256');
+        return {
+          update: (chunk: Uint8Array) => {
+            hash.update(chunk);
+          },
+          digest: async () => hash.digest('hex'),
+        };
+      },
     },
     cancellation: {
       get aborted() {
@@ -254,5 +274,82 @@ export function buildNodeRepoGraph(
       signal: request.signal,
       workerUrl: request.workerUrl,
     }),
+  });
+}
+
+const NODE_INCREMENTAL_SCAN_PROFILE = Object.freeze({
+  algorithm: 'sha256' as const,
+  value: createHash('sha256').update('workspai.graph.node-product-scan-profile.v1').digest('hex'),
+});
+
+export interface NodeIncrementalRepoGraphBuildRequest extends NodeRepoGraphBuildRequest {
+  readonly base: GraphRepoBuildResult;
+}
+
+/**
+ * Runs skip-reread incremental rebuild through the Node product host.
+ * This host has no change journal, so skip-reread is not trusted unless a
+ * journal port is later injected. Equivalence against the same tree is still
+ * assessed.
+ */
+export async function buildNodeIncrementalRepoGraph(
+  request: NodeIncrementalRepoGraphBuildRequest
+): Promise<GraphIncrementalRepoBuildResult> {
+  if (!request.base.graph || !request.base.compositionSources) {
+    throw new Error(
+      'Incremental Node Graph build requires a complete base generation with composition sources.'
+    );
+  }
+  const scope = request.scope ?? {
+    kind: 'project',
+    projectIds: ['project:implicit-single-repository'],
+  };
+  const ontology = request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE;
+  const providers = request.providers ?? createStandardRepositoryProviders();
+  const policy = request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY;
+  const ports = createNodeGraphProductHostPorts({
+    signal: request.signal,
+    workerUrl: request.workerUrl,
+  });
+  const inventory = await ports.fileSource.inventory({
+    root: request.root,
+    maxFiles: policy.limits.maxFiles,
+    maxTotalBytes: policy.limits.maxTotalBytes,
+    maxFileBytes: policy.limits.maxFileBytes,
+    maxDepth: policy.limits.maxDepth,
+    maxDirectoryEntries: policy.limits.maxDirectoryEntries,
+    excludedDirectories: policy.excludedDirectories,
+    sensitiveFiles: policy.sensitiveFiles,
+    signal: request.signal,
+  });
+  const stamps = await collectGraphSemanticDependencies({
+    ontology,
+    compositionPolicy: policy.composition,
+    redactionProfile: policy.redactionProfile,
+    providerManifests: providers.map((provider) => provider.manifest),
+    digest: ports.digest,
+  });
+  const baseManifest = buildContentStateManifest({
+    scope,
+    generatedAt: request.base.graph.generation.reference.generatedAt,
+    scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+    leaves: contentStateLeavesFromProviderInputs(inventory.inputs, NODE_INCREMENTAL_SCAN_PROFILE),
+    shardDependencies: buildShardDependenciesFromSources(request.base.compositionSources, stamps),
+  });
+  return buildIncrementalRepoGraph({
+    root: request.root,
+    scope,
+    ontology,
+    providers,
+    policy,
+    ports,
+    baseManifest,
+    baseGeneration: request.base.graph.generation.reference.id,
+    targetGeneration: `${request.base.graph.generation.reference.id}:incremental`,
+    baseSources: request.base.compositionSources,
+    providersToRecompute: [],
+    scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+    referenceGenerationDigest: request.base.graph.generation.reference.contentDigest,
+    baseGraph: request.base.graph,
   });
 }

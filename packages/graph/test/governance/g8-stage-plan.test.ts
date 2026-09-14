@@ -48,6 +48,12 @@ describe('Graph G8 stage authorization', () => {
     const realWorkspace = (
       plan.checkpoints as { id: string; status: string; crossPlatformAdmission?: string }[]
     ).find((checkpoint) => checkpoint.id === 'real-workspace-cross-platform-parity');
+    const identity = (plan.checkpoints as { id: string; status: string }[]).find(
+      (checkpoint) => checkpoint.id === 'package-locator-identity-contract'
+    );
+    const semanticParity = (plan.checkpoints as { id: string; status: string }[]).find(
+      (checkpoint) => checkpoint.id === 'package-semantic-parity-contracts'
+    );
     const replacement = (plan.checkpoints as { id: string; status: string }[]).find(
       (checkpoint) => checkpoint.id === 'package-primary-replacement-decision'
     );
@@ -55,6 +61,8 @@ describe('Graph G8 stage authorization', () => {
       status: 'implemented-local-candidate',
       crossPlatformAdmission: 'pending',
     });
+    expect(identity).toMatchObject({ status: 'implemented-local-candidate' });
+    expect(semanticParity).toMatchObject({ status: 'implemented-local-candidate' });
     expect(replacement).toMatchObject({ status: 'planned' });
     expect(JSON.stringify({ admission, transition, plan })).not.toMatch(
       /(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u
@@ -72,6 +80,9 @@ describe('Graph G8 stage authorization', () => {
         expect.stringMatching(/Users do not select an engine/i),
         expect.stringMatching(/npm publication stays prohibited/i),
         expect.stringMatching(/repository and CI TypeScript harness/i),
+        expect.stringMatching(/Locator identity is owned by the versioned Graph package contract/i),
+        expect.stringMatching(/Unknown-cause, generated-artifact, and comparable-surface/i),
+        expect.stringMatching(/must not fabricate, upgrade, or delete proof/i),
       ])
     );
   });

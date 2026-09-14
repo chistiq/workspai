@@ -4,27 +4,45 @@ import {
   type GraphEntityIdentityNormalization,
   type GraphValidationResult,
 } from '../contracts/index.js';
+import { GRAPH_LOCATOR_IDENTITY } from './locator-identity-api.js';
 import type { GraphDigestPort } from '../ports/index.js';
 
 const TOKEN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
+const WINDOWS_DRIVE = /^[A-Za-z]:/u;
 
 export function normalizeGraphEntityIdentity(
   input: GraphEntityIdentityInput
 ): GraphValidationResult<GraphEntityIdentityNormalization> {
   const namespace = input.namespace.normalize('NFC').toLowerCase();
   const kind = input.kind.normalize('NFC').toLowerCase();
-  let locator = input.relativeLocator.normalize('NFC').replaceAll('\\', '/');
-  locator = locator.replace(/^\.\//u, '').replace(/\/{2,}/gu, '/');
-  if (input.caseSensitivity === 'insensitive') locator = locator.toLocaleLowerCase('en-US');
+  const classified = GRAPH_LOCATOR_IDENTITY.classify(input.relativeLocator, kind);
+  if (classified.class === 'unsafe') {
+    return {
+      accepted: false,
+      issues: [
+        {
+          code: 'GRAPH_ENTITY_IDENTITY_INPUT_INVALID',
+          path: '/relativeLocator',
+          message:
+            'Entity identity requires a portable repository-relative locator, an opaque declared locator, and a bounded namespace.',
+        },
+      ],
+    };
+  }
+  let locator = classified.locator;
+  if (input.caseSensitivity === 'insensitive' && classified.class === 'portable') {
+    locator = locator.toLocaleLowerCase('en-US');
+  }
   if (
     !TOKEN.test(namespace) ||
     !TOKEN.test(kind) ||
     locator.length === 0 ||
     locator.length > 4096 ||
-    locator.startsWith('/') ||
-    /^[A-Za-z]:/u.test(locator) ||
-    locator.split('/').some((segment) => segment === '..' || segment.length === 0) ||
-    locator.includes('\0')
+    locator.includes('\0') ||
+    (classified.class === 'portable' &&
+      (locator.startsWith('/') ||
+        WINDOWS_DRIVE.test(locator) ||
+        locator.split('/').some((segment) => segment === '..' || segment.length === 0)))
   ) {
     return {
       accepted: false,
@@ -33,7 +51,7 @@ export function normalizeGraphEntityIdentity(
           code: 'GRAPH_ENTITY_IDENTITY_INPUT_INVALID',
           path: '/relativeLocator',
           message:
-            'Entity identity requires a portable repository-relative locator and bounded namespace.',
+            'Entity identity requires a portable repository-relative locator, an opaque declared locator, and a bounded namespace.',
         },
       ],
     };

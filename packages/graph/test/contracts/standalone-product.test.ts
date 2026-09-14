@@ -176,6 +176,22 @@ describe('G7 standalone product contracts', () => {
       expect(exported).not.toContain(forbidden);
       expect(rootApi).not.toMatch(new RegExp(`\\b${forbidden}\\b`));
     }
+
+    const contractsApi = namedValueExports(
+      fs.readFileSync(path.join(root, 'src/contracts/index.ts'), 'utf8')
+    );
+    const conformanceApi = namedValueExports(
+      fs.readFileSync(path.join(root, 'src/conformance/index.ts'), 'utf8')
+    );
+    expect(GRAPH_PUBLIC_EXPORT_MAP.subpaths).toEqual(
+      expect.arrayContaining(['./contracts', './conformance'])
+    );
+    for (const name of GRAPH_PUBLIC_EXPORT_MAP.contractsValueExports) {
+      expect(contractsApi, `./contracts omits ${name}`).toContain(name);
+    }
+    for (const name of GRAPH_PUBLIC_EXPORT_MAP.conformanceValueExports) {
+      expect(conformanceApi, `./conformance omits ${name}`).toContain(name);
+    }
   });
 
   it('keeps packed standalone jobs aligned with the pack checker and exit contract', () => {

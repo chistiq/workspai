@@ -1,4 +1,4 @@
-import type { GraphValidationIssue, GraphValidationResult } from '../contracts/index.js';
+import type { GraphValidationResult } from '../contracts/index.js';
 
 type CanonicalJson =
   null | boolean | number | string | CanonicalJson[] | { [key: string]: CanonicalJson };
@@ -56,6 +56,18 @@ function normalize(
   throw new Error(`${path}: non-JSON value`);
 }
 
+function canonicalizationFailure(error: unknown): GraphValidationResult<never>['issues'] {
+  const message = error instanceof Error ? error.message : 'Canonicalization failed.';
+  const separator = message.indexOf(':');
+  return [
+    {
+      code: 'GRAPH_CANONICALIZATION_REJECTED',
+      path: separator >= 0 ? message.slice(0, separator) : '',
+      message,
+    },
+  ];
+}
+
 export function canonicalizeGraphValue(
   input: unknown,
   options: { readonly maxValues?: number } = {}
@@ -71,17 +83,196 @@ export function canonicalizeGraphValue(
       issues: [],
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Canonicalization failed.';
-    const separator = message.indexOf(':');
-    const issues: GraphValidationIssue[] = [
-      {
-        code: 'GRAPH_CANONICALIZATION_REJECTED',
-        path: separator >= 0 ? message.slice(0, separator) : '',
-        message,
-      },
-    ];
-    return { accepted: false, issues };
+    return { accepted: false, issues: canonicalizationFailure(error) };
   }
+}
+
+export interface CanonicalGraphByteSink {
+  write(chunk: Uint8Array): void;
+}
+
+export interface StreamCanonicalGraphValueOptions {
+  readonly maxValues?: number;
+  readonly maxBytes?: number;
+  readonly throwIfAborted?: () => void;
+  readonly yieldEvery?: number;
+  readonly yield?: () => void | Promise<void>;
+}
+
+/**
+ * Emits the same UTF-8 bytes as `canonicalizeGraphValue` without retaining the
+ * complete canonical JSON string. Worker transport budgets must not be passed
+ * as maxBytes: that cap is only for callers that intentionally bound a payload.
+ */
+export async function streamCanonicalGraphValue(
+  input: unknown,
+  sink: CanonicalGraphByteSink,
+  options: StreamCanonicalGraphValueOptions = {}
+): Promise<GraphValidationResult<{ readonly bytes: number }>> {
+  try {
+    const maxValues = options.maxValues ?? MAX_CANONICAL_VALUES;
+    if (!Number.isSafeInteger(maxValues) || maxValues <= 0) {
+      throw new Error('/maxValues: value budget must be a positive safe integer');
+    }
+    if (
+      options.maxBytes !== undefined &&
+      (!Number.isSafeInteger(options.maxBytes) || options.maxBytes <= 0)
+    ) {
+      throw new Error('/maxBytes: byte budget must be a positive safe integer');
+    }
+    const state = { count: 0, bytes: 0, visits: 0 };
+    await streamNormalized(
+      input,
+      '',
+      new Set(),
+      state,
+      0,
+      maxValues,
+      options.maxBytes,
+      sink,
+      options
+    );
+    return { accepted: true, value: { bytes: state.bytes }, issues: [] };
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return { accepted: false, issues: canonicalizationFailure(error) };
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name: string }).name === 'AbortError'
+  );
+}
+
+export function cloneCanonicalGraphValue<T>(
+  input: T,
+  options: { readonly maxValues?: number } = {}
+): GraphValidationResult<T> {
+  try {
+    const maxValues = options.maxValues ?? MAX_CANONICAL_VALUES;
+    if (!Number.isSafeInteger(maxValues) || maxValues <= 0) {
+      throw new Error('/maxValues: value budget must be a positive safe integer');
+    }
+    return {
+      accepted: true,
+      value: normalize(input, '', new Set(), { count: 0 }, 0, maxValues) as T,
+      issues: [],
+    };
+  } catch (error) {
+    return { accepted: false, issues: canonicalizationFailure(error) };
+  }
+}
+
+async function streamNormalized(
+  value: unknown,
+  path: string,
+  active: Set<object>,
+  state: { count: number; bytes: number; visits: number },
+  depth: number,
+  maxValues: number,
+  maxBytes: number | undefined,
+  sink: CanonicalGraphByteSink,
+  options: StreamCanonicalGraphValueOptions
+): Promise<void> {
+  options.throwIfAborted?.();
+  state.count += 1;
+  state.visits += 1;
+  if (state.count > maxValues) throw new Error(`${path}: value budget exceeded`);
+  if (depth > MAX_CANONICAL_DEPTH) throw new Error(`${path}: nesting budget exceeded`);
+  const yieldEvery = options.yieldEvery ?? 4096;
+  if (options.yield && state.visits % yieldEvery === 0) {
+    await options.yield();
+    options.throwIfAborted?.();
+  }
+
+  const emit = (text: string): void => {
+    const bytes = utf8.encode(text);
+    state.bytes += bytes.byteLength;
+    if (maxBytes !== undefined && state.bytes > maxBytes) {
+      throw new Error(`${path}: byte budget exceeded`);
+    }
+    sink.write(bytes);
+  };
+
+  if (value === null) {
+    emit('null');
+    return;
+  }
+  if (typeof value === 'boolean') {
+    emit(value ? 'true' : 'false');
+    return;
+  }
+  if (typeof value === 'string') {
+    emit(JSON.stringify(value));
+    return;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`${path}: non-finite number`);
+    emit(JSON.stringify(Object.is(value, -0) ? 0 : value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    if (active.has(value)) throw new Error(`${path}: cyclic value`);
+    active.add(value);
+    emit('[');
+    for (const [index, item] of value.entries()) {
+      if (index > 0) emit(',');
+      await streamNormalized(
+        item,
+        `${path}/${index}`,
+        active,
+        state,
+        depth + 1,
+        maxValues,
+        maxBytes,
+        sink,
+        options
+      );
+    }
+    emit(']');
+    active.delete(value);
+    return;
+  }
+  if (typeof value === 'object' && value !== null) {
+    if (active.has(value)) throw new Error(`${path}: cyclic value`);
+    active.add(value);
+    const keys = Object.keys(value).sort();
+    emit('{');
+    for (const [index, key] of keys.entries()) {
+      if (FORBIDDEN_KEYS.has(key)) throw new Error(`${path}/${key}: forbidden key`);
+      const item = (value as Record<string, unknown>)[key];
+      if (
+        item === undefined ||
+        typeof item === 'function' ||
+        typeof item === 'symbol' ||
+        typeof item === 'bigint'
+      ) {
+        throw new Error(`${path}/${key}: non-JSON value`);
+      }
+      if (index > 0) emit(',');
+      emit(JSON.stringify(key));
+      emit(':');
+      await streamNormalized(
+        item,
+        `${path}/${key}`,
+        active,
+        state,
+        depth + 1,
+        maxValues,
+        maxBytes,
+        sink,
+        options
+      );
+    }
+    emit('}');
+    active.delete(value);
+    return;
+  }
+  throw new Error(`${path}: non-JSON value`);
 }
 
 function addMeasuredBytes(

@@ -1,0 +1,9 @@
+{
+  "contract": {
+    "id": "workspai.graph.locator-identity",
+    "version": "1"
+  },
+  "opaqueDeclaredPrefixes": ["encoded", "targets"],
+  "maxUriDecodeRounds": 8,
+  "classes": ["portable", "opaque", "unsafe"]
+}

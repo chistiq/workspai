@@ -6,7 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   GRAPH_SHADOW_DEFAULT_LIMITS,
+  GRAPH_SHADOW_MAPPING_VERSION,
+  createGraphShadowBoundedSetDigest,
   createGraphShadowResourceBudgetDigest,
+  graphShadowApprovalLookupKey,
   runGraphShadowComparison,
   type LegacyGraphShadowInput,
   type PackageGraphShadowInput,
@@ -142,7 +145,26 @@ describe('Graph package shadow parity', () => {
         binding,
         limits: GRAPH_SHADOW_DEFAULT_LIMITS,
         ...(item.approvedDifferences
-          ? { policy: { approvedDifferences: item.approvedDifferences } }
+          ? {
+              policy: {
+                mappingVersion: GRAPH_SHADOW_MAPPING_VERSION,
+                approvedDifferences: Object.fromEntries(
+                  Object.entries(item.approvedDifferences).map(([code, classification]) => {
+                    if (code.includes('::')) return [code, classification];
+                    const setDigest = createGraphShadowBoundedSetDigest(['module:deeper\0module']);
+                    return [
+                      graphShadowApprovalLookupKey(
+                        GRAPH_SHADOW_MAPPING_VERSION,
+                        code,
+                        'module',
+                        setDigest
+                      ),
+                      classification,
+                    ];
+                  })
+                ),
+              },
+            }
           : {}),
         legacy: async () => legacyCandidate,
         package: async () => packageCandidate,
@@ -158,6 +180,33 @@ describe('Graph package shadow parity', () => {
         fallback: 'prohibited',
       });
     }
+  });
+
+  it('projects duplicated project prefixes onto matching package file identities', async () => {
+    const legacyCandidate = legacy();
+    legacyCandidate.entities = [
+      {
+        id: 'legacy:file',
+        kind: 'file',
+        identity: { key: 'file:app:app/tests/app.test.ts' },
+        proofIds: ['p1'],
+      },
+    ];
+    legacyCandidate.relations = [];
+    const candidate = packageGraph();
+    candidate.graph.nodes = [{ id: 'entity:workspai:file:sha256:file', kind: 'file' }];
+    candidate.graph.edges = [];
+    candidate.identityRenderings = {
+      'entity:workspai:file:sha256:file': 'entity:workspai:file:tests%2Fapp.test.ts',
+    };
+    const result = await runGraphShadowComparison({
+      profile: 'g8-prefix-projection',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    expect(result.differences.filter((item) => item.area === 'node')).toEqual([]);
   });
 
   it('compares explicit semantic aliases without changing released CLI authority', async () => {
@@ -219,11 +268,19 @@ describe('Graph package shadow parity', () => {
     });
 
     expect(result.status).toBe('different');
-    expect(result.differences).toContainEqual(
-      expect.objectContaining({
-        code: 'GRAPH_SHADOW_RELATION_SET_DIFFERENT',
-        classification: 'regression',
-      })
+    expect(result.differences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'GRAPH_SHADOW_RELATION_LEGACY_ONLY',
+          key: 'owned-by',
+          classification: 'regression',
+        }),
+        expect.objectContaining({
+          code: 'GRAPH_SHADOW_RELATION_PACKAGE_ONLY',
+          key: 'depends-on',
+          classification: 'regression',
+        }),
+      ])
     );
   });
 
@@ -248,7 +305,7 @@ describe('Graph package shadow parity', () => {
     });
 
     const difference = result.differences.find(
-      (item) => item.code === 'GRAPH_SHADOW_NODE_SET_DIFFERENT'
+      (item) => item.code === 'GRAPH_SHADOW_NODE_LEGACY_ONLY' && item.key === 'file'
     );
     expect(difference?.legacy).toMatchObject({
       count: 150,
@@ -266,8 +323,14 @@ describe('Graph package shadow parity', () => {
       binding,
       limits: GRAPH_SHADOW_DEFAULT_LIMITS,
       policy: {
+        mappingVersion: GRAPH_SHADOW_MAPPING_VERSION,
         approvedDifferences: {
-          GRAPH_SHADOW_NODE_SET_DIFFERENT: 'truth-depth-improvement',
+          [graphShadowApprovalLookupKey(
+            GRAPH_SHADOW_MAPPING_VERSION,
+            'GRAPH_SHADOW_NODE_PACKAGE_ONLY',
+            'module',
+            createGraphShadowBoundedSetDigest(['module:deeper\0module'])
+          )]: 'truth-depth-improvement',
         },
       },
       legacy: async () => legacy(),
@@ -463,5 +526,279 @@ describe('Graph package shadow parity', () => {
     );
     expect(legacyExecution).not.toHaveBeenCalled();
     expect(packageExecution).not.toHaveBeenCalled();
+  });
+
+  it('rejects code-only and code-plus-key approval fallbacks before either Graph path executes', async () => {
+    const legacyExecution = vi.fn(async () => legacy());
+    const packageExecution = vi.fn(async () => packageGraph());
+    const codeOnly = await runGraphShadowComparison({
+      profile: 'g8-fixture',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      policy: {
+        mappingVersion: GRAPH_SHADOW_MAPPING_VERSION,
+        approvedDifferences: { GRAPH_SHADOW_NODE_PACKAGE_ONLY: 'truth-depth-improvement' },
+      },
+      legacy: legacyExecution,
+      package: packageExecution,
+    });
+    expect(codeOnly.status).toBe('failed');
+    expect(codeOnly.differences).toContainEqual(
+      expect.objectContaining({ code: 'GRAPH_SHADOW_POLICY_INVALID' })
+    );
+    expect(legacyExecution).not.toHaveBeenCalled();
+
+    const codeAndKey = await runGraphShadowComparison({
+      profile: 'g8-fixture',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      policy: {
+        mappingVersion: GRAPH_SHADOW_MAPPING_VERSION,
+        approvedDifferences: {
+          'GRAPH_SHADOW_NODE_PACKAGE_ONLY::module': 'truth-depth-improvement',
+        },
+      },
+      legacy: legacyExecution,
+      package: packageExecution,
+    });
+    expect(codeAndKey.status).toBe('failed');
+    expect(codeAndKey.differences).toContainEqual(
+      expect.objectContaining({ code: 'GRAPH_SHADOW_POLICY_INVALID' })
+    );
+  });
+
+  it('fails closed when encoded identity locators would otherwise compare equal', async () => {
+    const legacyCandidate = legacy();
+    legacyCandidate.entities = [
+      {
+        id: 'legacy:file',
+        kind: 'file',
+        identity: { key: 'file:app:%2e%2e%2fsecret.ts' },
+        proofIds: [],
+      },
+    ];
+    legacyCandidate.relations = [];
+    legacyCandidate.proofs = [];
+    const candidate = packageGraph();
+    candidate.graph.nodes = [{ id: 'entity:workspai:file:sha256:file', kind: 'file' }];
+    candidate.graph.edges = [];
+    candidate.identityRenderings = {
+      'entity:workspai:file:sha256:file': 'entity:workspai:file:%2e%2e%2fsecret.ts',
+    };
+    const result = await runGraphShadowComparison({
+      profile: 'g8-encoded-identity',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    expect(result.status).toBe('failed');
+    expect(result.differences).toContainEqual(
+      expect.objectContaining({
+        code: 'GRAPH_SHADOW_UNSAFE_IDENTITY',
+        key: 'locator',
+        package: expect.objectContaining({ count: 1, truncated: false }),
+        legacy: expect.objectContaining({ count: 1, truncated: false }),
+      })
+    );
+    expect(result.differences.some((item) => item.classification !== 'regression')).toBe(false);
+  });
+
+  it('fails closed when deeply encoded identity locators would otherwise remain comparable', async () => {
+    let encoded = '../secret.ts';
+    for (let layer = 0; layer < 25; layer += 1) encoded = encodeURIComponent(encoded);
+    const legacyCandidate = legacy();
+    legacyCandidate.entities = [
+      {
+        id: 'legacy:file',
+        kind: 'file',
+        identity: { key: `file:app:${encoded}` },
+        proofIds: [],
+      },
+    ];
+    legacyCandidate.relations = [];
+    legacyCandidate.proofs = [];
+    const candidate = packageGraph();
+    candidate.graph.nodes = [{ id: 'entity:workspai:file:sha256:file', kind: 'file' }];
+    candidate.graph.edges = [];
+    candidate.identityRenderings = {
+      'entity:workspai:file:sha256:file': `entity:workspai:file:${encoded}`,
+    };
+    const result = await runGraphShadowComparison({
+      profile: 'g8-deep-encoded-identity',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    expect(result.status).toBe('failed');
+    expect(result.differences).toContainEqual(
+      expect.objectContaining({ code: 'GRAPH_SHADOW_UNSAFE_IDENTITY' })
+    );
+    expect(result.differences.some((item) => item.classification !== 'regression')).toBe(false);
+  });
+
+  it('reports generated-artifact proofs directionally with independent digests', async () => {
+    const legacyCandidate = legacy();
+    legacyCandidate.proofs = [{ id: 'p1', artifact: 'node_modules/legacy-graph.json' }];
+    const candidate = packageGraph();
+    candidate.evidenceLocators = ['node_modules/package-graph.json'];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-generated-control-direction',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    const generated = result.differences.filter(
+      (item) => item.code === 'GRAPH_SHADOW_PROOF_GENERATED_WORKSPACE_CONTROL'
+    );
+    expect(generated).toHaveLength(2);
+    const legacyOnly = generated.find((item) => item.key === 'generatedLegacyControl');
+    const packageOnly = generated.find((item) => item.key === 'generatedPackageControl');
+    expect(legacyOnly?.legacy?.sample).toEqual(['node_modules/legacy-graph.json']);
+    expect(legacyOnly?.package?.count).toBe(0);
+    expect(packageOnly?.package?.sample).toEqual(['node_modules/package-graph.json']);
+    expect(packageOnly?.legacy?.count).toBe(0);
+    expect(legacyOnly?.legacy?.digest).not.toBe(packageOnly?.package?.digest);
+    expect(packageOnly?.legacy?.sample ?? []).not.toContain('node_modules/package-graph.json');
+  });
+
+  it('does not attribute package generated workspace-control proofs to the legacy summary', async () => {
+    const candidate = packageGraph();
+    candidate.evidenceLocators = ['node_modules/graph.json', 'tests/app.test.ts'];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-package-generated-control',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+    const generated = result.differences.filter(
+      (item) => item.code === 'GRAPH_SHADOW_PROOF_GENERATED_WORKSPACE_CONTROL'
+    );
+    expect(generated).toEqual([
+      expect.objectContaining({
+        key: 'generatedPackageControl',
+        package: expect.objectContaining({
+          sample: ['node_modules/graph.json'],
+        }),
+        legacy: expect.objectContaining({ count: 0 }),
+      }),
+    ]);
+    expect(generated[0]?.legacy?.sample ?? []).not.toContain('node_modules/graph.json');
+  });
+
+  it('fails closed when encoded proof locators bypass the raw-path check', async () => {
+    const candidate = packageGraph();
+    candidate.evidenceLocators = ['%2e%2e%2fsecret.ts'];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-encoded-proof',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+    expect(result.status).toBe('failed');
+    expect(result.differences).toContainEqual(
+      expect.objectContaining({ code: 'GRAPH_SHADOW_NON_PORTABLE_EVIDENCE' })
+    );
+  });
+
+  it('keeps each unknown leftover as its own regression and does not group by cause', async () => {
+    const candidate = packageGraph();
+    candidate.quality.unknownZones = [
+      { code: 'graph.source-call-ambiguous', scope: 'src/a.ts' },
+      { code: 'graph.source-call-ambiguous', scope: 'src/b.ts' },
+      { code: 'graph.ecmascript-local-import-unresolved', scope: 'src/c.ts' },
+      { code: 'graph.source-language-unsupported', scope: 'app.dart' },
+      { code: 'graph.novel-future-code', scope: 'src/d.ts' },
+    ];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-unknown-cause-grouping',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+    expect(result.status).toBe('different');
+    const packageUnknown = result.differences.filter(
+      (item) => item.code === 'GRAPH_SHADOW_UNKNOWN_ZONE_PACKAGE_ONLY'
+    );
+    expect(packageUnknown).toHaveLength(5);
+    expect(packageUnknown.every((item) => item.classification === 'regression')).toBe(true);
+    expect(result.metrics.regressions).toBeGreaterThanOrEqual(5);
+    expect(packageUnknown.map((item) => item.key).sort()).toEqual([
+      'package-unknown-zone::graph.ecmascript-local-import-unresolved@src/c.ts',
+      'package-unknown-zone::graph.novel-future-code@src/d.ts',
+      'package-unknown-zone::graph.source-call-ambiguous@src/a.ts',
+      'package-unknown-zone::graph.source-call-ambiguous@src/b.ts',
+      'package-unknown-zone::graph.source-language-unsupported@app.dart',
+    ]);
+    expect(
+      packageUnknown.every((item) => {
+        const summary = item.package as { count: number; truncated: boolean; digest: string };
+        return summary.count === 1 && summary.truncated === false && summary.digest.length > 0;
+      })
+    ).toBe(true);
+    expect(
+      new Set(packageUnknown.map((item) => (item.package as { digest: string }).digest)).size
+    ).toBe(5);
+  });
+
+  it('treats generated and vendored proof locators as generated-artifact without a product-directory special case', async () => {
+    const candidate = packageGraph();
+    candidate.evidenceLocators = ['node_modules/left-pad/index.js', 'tests/app.test.ts'];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-generated-output-policy',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+    const generated = result.differences.filter(
+      (item) => item.code === 'GRAPH_SHADOW_PROOF_GENERATED_WORKSPACE_CONTROL'
+    );
+    expect(generated).toEqual([
+      expect.objectContaining({
+        key: 'generatedPackageControl',
+        package: expect.objectContaining({ sample: ['node_modules/left-pad/index.js'] }),
+      }),
+    ]);
+  });
+
+  it('compares omitted subtrees by class and locator instead of treating unmeasured skips as zero', async () => {
+    const candidate = packageGraph();
+    candidate.quality = {
+      ...candidate.quality,
+      omittedSubtrees: [
+        {
+          locator: 'node_modules',
+          class: 'vendored',
+          count: 'not-enumerated',
+          bytes: 'not-measured',
+          policyDigest: digest,
+        },
+      ],
+    };
+    const result = await runGraphShadowComparison({
+      profile: 'g8-omitted-subtree-accounting',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+    const omitted = result.differences.filter(
+      (item) => item.code === 'GRAPH_SHADOW_OMITTED_SUBTREE_PACKAGE_ONLY'
+    );
+    expect(omitted).toEqual([
+      expect.objectContaining({
+        key: 'vendored',
+        package: expect.objectContaining({ sample: ['node_modules\0vendored'] }),
+      }),
+    ]);
+    expect(
+      result.differences.some((item) => item.code === 'GRAPH_SHADOW_OMITTED_SUBTREE_LEGACY_ONLY')
+    ).toBe(false);
   });
 });

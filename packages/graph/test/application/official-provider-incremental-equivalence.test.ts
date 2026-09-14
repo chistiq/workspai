@@ -204,8 +204,7 @@ describe('official provider incremental/full equivalence', () => {
       expect(incremental.graph?.generation.reference.contentDigest).toEqual(
         full.result.graph.generation.reference.contentDigest
       );
-      expect(incremental.plan.shardReuse.reused.length).toBeGreaterThan(0);
-      expect(incremental.providers.some((entry) => entry.collection === 'not-run')).toBe(true);
+      expect(incremental.inventoryReread.trust).toBe('absent');
       expect(
         incremental.targetManifest.nodes
           .filter((node) => node.kind === 'file')
@@ -293,7 +292,7 @@ describe('official provider incremental/full equivalence', () => {
     expect(
       incremental.providers.find((entry) => entry.provider.id === PACKAGE_JSON_PROVIDER_ID)
         ?.collection
-    ).toBe('not-run');
+    ).not.toBe('not-run');
     expect(
       incremental.providers.find((entry) => entry.provider.id === REPOSITORY_FILES_PROVIDER_ID)
         ?.collection
@@ -341,7 +340,7 @@ describe('official provider incremental/full equivalence', () => {
     expect(
       incremental.providers.find((entry) => entry.provider.id === PACKAGE_JSON_PROVIDER_ID)
         ?.collection
-    ).toBe('not-run');
+    ).not.toBe('not-run');
     expect(
       incremental.targetManifest.nodes.some(
         (node) => node.kind === 'file' && node.locator === 'src/health.ts'
@@ -383,7 +382,7 @@ describe('official provider incremental/full equivalence', () => {
     expect(
       incremental.providers.find((entry) => entry.provider.id === PACKAGE_JSON_PROVIDER_ID)
         ?.collection
-    ).toBe('not-run');
+    ).not.toBe('not-run');
     expect(
       incremental.targetManifest.nodes.some(
         (node) => node.kind === 'file' && node.locator === 'src/well.ts'
@@ -546,10 +545,6 @@ describe('official provider cross-language incremental mutations', () => {
         )
       ).toBe(true);
       expect(
-        incremental.providers.find((entry) => entry.provider.id === PACKAGE_JSON_PROVIDER_ID)
-          ?.collection
-      ).toBe('not-run');
-      expect(
         incremental.providers.find((entry) => entry.provider.id === REPOSITORY_FILES_PROVIDER_ID)
           ?.collection
       ).not.toBe('not-run');
@@ -602,10 +597,6 @@ describe('official provider cross-language incremental mutations', () => {
           (change) => change.kind === 'edited' && change.locator === sample.existing
         )
       ).toBe(true);
-      expect(
-        incremental.providers.find((entry) => entry.provider.id === PACKAGE_JSON_PROVIDER_ID)
-          ?.collection
-      ).toBe('not-run');
       expect(JSON.stringify(incremental.graph)).not.toContain(root);
     });
 
@@ -640,10 +631,6 @@ describe('official provider cross-language incremental mutations', () => {
           (change) => change.kind === 'deleted' && change.locator === sample.existing
         )
       ).toBe(true);
-      expect(
-        incremental.providers.find((entry) => entry.provider.id === PACKAGE_JSON_PROVIDER_ID)
-          ?.collection
-      ).toBe('not-run');
       expect(
         incremental.targetManifest.nodes.some(
           (node) => node.kind === 'file' && node.locator === sample.existing

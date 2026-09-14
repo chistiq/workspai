@@ -10,6 +10,7 @@ import {
   type GraphProviderRuntime,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
+import { opaqueGraphDeclaredLocator } from '../domain/locator-identity.js';
 
 export const BUILD_TOPOLOGY_PROVIDER_ID = 'workspai.graph.provider.build-topology';
 
@@ -175,7 +176,7 @@ export function parseCmakeBuildDocument(source: string): BuildDocument {
 }
 
 function safeTargetLocator(value: string): string {
-  return `targets/${encodeURIComponent(value).replaceAll('.', '%2E')}`;
+  return opaqueGraphDeclaredLocator('targets', value);
 }
 
 export function createBuildTopologyProvider(): GraphProviderRuntime {

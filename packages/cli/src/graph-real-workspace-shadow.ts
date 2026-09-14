@@ -23,6 +23,7 @@ import type { GraphShadowComparisonPolicy } from './contracts/graph-shadow-parit
 import {
   GRAPH_G8_REAL_WORKSPACE_PLATFORM_REPORT_SCHEMA_VERSION,
   GRAPH_REAL_WORKSPACE_APPROVALS_SCHEMA_VERSION,
+  GRAPH_REAL_WORKSPACE_APPROVALS_V1_SCHEMA_VERSION,
   GRAPH_REAL_WORKSPACE_INVENTORY_SCHEMA_VERSION,
   GRAPH_REAL_WORKSPACE_PRIMARY_DIFFERENCE_CODES,
   GRAPH_REAL_WORKSPACE_PROFILE,
@@ -43,9 +44,13 @@ import {
 import { runPreparedProjectGraphShadow } from './graph-package-shadow-bridge.js';
 import {
   GRAPH_SHADOW_DEFAULT_LIMITS,
+  GRAPH_SHADOW_MAPPING_VERSION,
   createGraphShadowProjectScopeDigest,
   createGraphShadowReadOnlyAuthorizationDigest,
   createGraphShadowResourceBudgetDigest,
+  graphShadowApprovalLookupKey,
+  graphShadowDifferenceSetDigest,
+  GRAPH_SHADOW_UNSAFE_DIFFERENCE_CODES,
   type LegacyGraphShadowInput,
   type PackageGraphShadowInput,
 } from './graph-shadow-parity.js';
@@ -63,7 +68,7 @@ const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const DEFAULT_REPOSITORY_ROOT = path.resolve(PACKAGE_ROOT, '../..');
 const INVENTORY_RELATIVE = 'packages/cli/test-data/graph-shadow/real-workspace-inventory.v1.json';
 const POLICY_RELATIVE = 'packages/cli/test-data/graph-shadow/real-workspace-policy.v1.json';
-const APPROVALS_RELATIVE = 'packages/cli/test-data/graph-shadow/real-workspace-approvals.v1.json';
+const APPROVALS_RELATIVE = 'packages/cli/test-data/graph-shadow/real-workspace-approvals.v2.json';
 const CANONICAL_WRITE_NAMES = new Set(['.workspai', 'graph-generation.json']);
 const PRIMARY_DIFFERENCE_CODES = new Set(GRAPH_REAL_WORKSPACE_PRIMARY_DIFFERENCE_CODES);
 const LOCAL_PATH_LEAK = /(?:[A-Za-z]:[\\/]|\/home\/|\/Users\/|\\\\)/u;
@@ -317,10 +322,19 @@ function isInventory(value: unknown): value is GraphRealWorkspaceInventory {
     Array.isArray(value.required) &&
     Array.isArray(value.optionalLocalReferences) &&
     [...value.required, ...value.optionalLocalReferences].every((entry) => {
-      if (!isObject(entry) || typeof entry.id !== 'string' || typeof entry.projectId !== 'string') {
+      if (
+        !isObject(entry) ||
+        typeof entry.id !== 'string' ||
+        typeof entry.projectId !== 'string' ||
+        typeof entry.workspaceId !== 'string'
+      ) {
         return false;
       }
-      if (!PORTABLE_PROJECT_ID.test(entry.id) || !PORTABLE_PROJECT_ID.test(entry.projectId)) {
+      if (
+        !PORTABLE_PROJECT_ID.test(entry.id) ||
+        !PORTABLE_PROJECT_ID.test(entry.projectId) ||
+        !PORTABLE_PROJECT_ID.test(entry.workspaceId)
+      ) {
         return false;
       }
       if (entry.kind === 'committed-fixture') {
@@ -426,6 +440,39 @@ async function resolveLocalReference(
   }
 }
 
+async function measureRealTree(
+  source: string,
+  limits: GraphRealWorkspaceLimits,
+  depth = 0
+): Promise<{ readonly files: number; readonly oversizeFiles: number }> {
+  if (depth > limits.maxCopyDepth) throw new Error('Fixture copy exceeded its directory budget.');
+  const entries = await readdir(source, { withFileTypes: true });
+  if (entries.length > limits.maxEntriesPerDirectory) {
+    throw new Error('Fixture copy exceeded its file budget.');
+  }
+  let files = 0;
+  let oversizeFiles = 0;
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') && !CANONICAL_WRITE_NAMES.has(entry.name)) continue;
+    const from = path.join(source, entry.name);
+    const metadata = await lstat(from);
+    if (metadata.isSymbolicLink()) throw new Error('Fixture copy cannot follow symbolic links.');
+    if (metadata.isDirectory()) {
+      const nested = await measureRealTree(from, limits, depth + 1);
+      files += nested.files;
+      oversizeFiles += nested.oversizeFiles;
+      continue;
+    }
+    if (!metadata.isFile()) continue;
+    if (metadata.size > limits.maxCopiedFileBytes) {
+      oversizeFiles += 1;
+      continue;
+    }
+    files += 1;
+  }
+  return { files, oversizeFiles };
+}
+
 async function copyRealTree(
   source: string,
   destination: string,
@@ -509,40 +556,83 @@ function treeChanged(
   return Object.keys(after).some((key) => CANONICAL_WRITE_NAMES.has(key.split('/')[0] ?? ''));
 }
 
-function isApprovals(value: unknown): value is GraphRealWorkspaceApprovals {
-  if (!isObject(value)) return false;
-  if (value.schemaVersion !== GRAPH_REAL_WORKSPACE_APPROVALS_SCHEMA_VERSION) return false;
-  if (typeof value.mappingVersion !== 'string' || !MAPPING_VERSION.test(value.mappingVersion)) {
+function isV2ApprovalRecord(record: unknown): record is GraphRealWorkspaceApprovalRecord {
+  if (!isObject(record)) return false;
+  if (
+    typeof record.corpusId !== 'string' ||
+    typeof record.sourceTreeDigest !== 'string' ||
+    typeof record.mappingVersion !== 'string' ||
+    typeof record.code !== 'string' ||
+    typeof record.key !== 'string' ||
+    typeof record.setDigest !== 'string' ||
+    typeof record.reason !== 'string'
+  ) {
     return false;
   }
-  if (!Array.isArray(value.records) || value.records.length > 32) return false;
+  if (!PORTABLE_PROJECT_ID.test(record.corpusId) || !SHA256.test(record.sourceTreeDigest)) {
+    return false;
+  }
+  if (!MAPPING_VERSION.test(record.mappingVersion) || !SHA256.test(record.setDigest)) {
+    return false;
+  }
+  if (record.key.length === 0 || record.key.length > 128) return false;
+  if (record.reason.length < 24 || record.reason.length > 512) return false;
+  if (
+    record.classification !== 'intentional-contract-change' &&
+    record.classification !== 'truth-depth-improvement' &&
+    record.classification !== 'legacy-false-claim'
+  ) {
+    return false;
+  }
+  if ((GRAPH_SHADOW_UNSAFE_DIFFERENCE_CODES as readonly string[]).includes(record.code)) {
+    return false;
+  }
+  return true;
+}
+
+export function parseGraphRealWorkspaceApprovals(value: unknown): GraphRealWorkspaceApprovals {
+  if (!isObject(value) || !Array.isArray(value.records) || value.records.length > 32) {
+    throw new Error('Real-workspace approvals failed their semantic contract.');
+  }
+  if (typeof value.mappingVersion !== 'string' || !MAPPING_VERSION.test(value.mappingVersion)) {
+    throw new Error('Real-workspace approvals failed their semantic contract.');
+  }
+  if (value.schemaVersion === GRAPH_REAL_WORKSPACE_APPROVALS_V1_SCHEMA_VERSION) {
+    if (value.records.length !== 0) {
+      throw new Error(
+        'Real-workspace approvals v1 records cannot be loaded; migrate to workspai.graph-real-workspace-approvals.v2.'
+      );
+    }
+    return {
+      schemaVersion: GRAPH_REAL_WORKSPACE_APPROVALS_SCHEMA_VERSION,
+      mappingVersion: value.mappingVersion,
+      records: [],
+    };
+  }
+  if (value.schemaVersion !== GRAPH_REAL_WORKSPACE_APPROVALS_SCHEMA_VERSION) {
+    throw new Error('Real-workspace approvals failed their semantic contract.');
+  }
   const seen = new Set<string>();
-  return value.records.every((record) => {
-    if (
-      !isObject(record) ||
-      typeof record.corpusId !== 'string' ||
-      typeof record.sourceTreeDigest !== 'string' ||
-      typeof record.code !== 'string' ||
-      typeof record.reason !== 'string'
-    ) {
-      return false;
+  const records: GraphRealWorkspaceApprovalRecord[] = [];
+  for (const record of value.records) {
+    if (!isV2ApprovalRecord(record)) {
+      throw new Error('Real-workspace approvals failed their semantic contract.');
     }
-    if (!PORTABLE_PROJECT_ID.test(record.corpusId) || !SHA256.test(record.sourceTreeDigest)) {
-      return false;
+    if (record.mappingVersion !== value.mappingVersion) {
+      throw new Error('Approval record mappingVersion is not bound to the ledger mappingVersion.');
     }
-    if (record.reason.length < 24 || record.reason.length > 512) return false;
-    if (
-      record.classification !== 'intentional-contract-change' &&
-      record.classification !== 'truth-depth-improvement' &&
-      record.classification !== 'legacy-false-claim'
-    ) {
-      return false;
+    const key = `${record.corpusId}:${record.sourceTreeDigest}:${record.code}:${record.key}:${record.setDigest}`;
+    if (seen.has(key)) {
+      throw new Error('Real-workspace approvals failed their semantic contract.');
     }
-    const key = `${record.corpusId}:${record.sourceTreeDigest}:${record.code}`;
-    if (seen.has(key)) return false;
     seen.add(key);
-    return true;
-  });
+    records.push(record);
+  }
+  return {
+    schemaVersion: GRAPH_REAL_WORKSPACE_APPROVALS_SCHEMA_VERSION,
+    mappingVersion: value.mappingVersion,
+    records,
+  };
 }
 
 function rejectBlanketApprovals(records: readonly GraphRealWorkspaceApprovalRecord[]): void {
@@ -562,16 +652,32 @@ function rejectBlanketApprovals(records: readonly GraphRealWorkspaceApprovalReco
 async function loadApprovals(
   repositoryRoot: string,
   maxControlBytes: number
-): Promise<readonly GraphRealWorkspaceApprovalRecord[]> {
+): Promise<GraphRealWorkspaceApprovals> {
   const parsed = await readBoundedJson(
     path.resolve(repositoryRoot, ...APPROVALS_RELATIVE.split('/')),
     maxControlBytes
   );
-  if (!isApprovals(parsed)) {
-    throw new Error('Real-workspace approvals failed their semantic contract.');
+  const approvals = parseGraphRealWorkspaceApprovals(parsed);
+  rejectBlanketApprovals(approvals.records);
+  return approvals;
+}
+
+export function assertExactGraphShadowMappingBinding(input: {
+  readonly inventoryMappingVersion: string;
+  readonly policyMappingVersion: string;
+  readonly approvalsLedgerMappingVersion: string;
+}): void {
+  const versions = [
+    input.inventoryMappingVersion,
+    input.policyMappingVersion,
+    input.approvalsLedgerMappingVersion,
+    GRAPH_SHADOW_MAPPING_VERSION,
+  ];
+  if (versions.some((version) => version !== GRAPH_SHADOW_MAPPING_VERSION)) {
+    throw new Error(
+      'Real-workspace inventory, policy, approvals ledger and GRAPH_SHADOW_MAPPING_VERSION must be identical.'
+    );
   }
-  rejectBlanketApprovals(parsed.records);
-  return parsed.records;
 }
 
 function policyForCorpus(
@@ -585,8 +691,19 @@ function policyForCorpus(
     'intentional-contract-change' | 'truth-depth-improvement' | 'legacy-false-claim'
   > = {};
   for (const record of records) {
-    if (record.corpusId === corpusId && record.sourceTreeDigest === sourceTreeDigest) {
-      approvedDifferences[record.code] = record.classification;
+    if (
+      record.corpusId === corpusId &&
+      record.sourceTreeDigest === sourceTreeDigest &&
+      record.mappingVersion === mappingVersion
+    ) {
+      approvedDifferences[
+        graphShadowApprovalLookupKey(
+          record.mappingVersion,
+          record.code,
+          record.key,
+          record.setDigest
+        )
+      ] = record.classification;
     }
   }
   rejectBlanketApprovals(records);
@@ -745,6 +862,7 @@ async function qualifyOne(input: {
       id: input.entry.id,
       kind: input.entry.kind,
       projectId: input.entry.projectId,
+      workspaceId: input.entry.workspaceId,
       status: 'failed',
       reason: 'cancelled',
     };
@@ -793,7 +911,11 @@ async function qualifyOne(input: {
     return graph as LegacyGraphShadowInput;
   };
   const discovery = await runPreparedProjectGraphShadow({
-    context: { projectId: input.entry.projectId, projectRoot: input.projectRoot },
+    context: {
+      projectId: input.entry.projectId,
+      projectRoot: input.projectRoot,
+      workspaceId: input.entry.workspaceId,
+    },
     profile: GRAPH_REAL_WORKSPACE_PROFILE,
     binding: placeholderBinding,
     policy,
@@ -808,17 +930,23 @@ async function qualifyOne(input: {
       id: input.entry.id,
       kind: input.entry.kind,
       projectId: input.entry.projectId,
+      workspaceId: input.entry.workspaceId,
       status: 'failed',
       reason: 'partial-package-execution',
       packageExecution: {
         status: discovery.packageExecution.status,
         inputFiles: discovery.packageExecution.inputFiles,
         providerFacts: discovery.packageExecution.providerFacts,
+        workspaceId: discovery.packageExecution.workspaceId,
       },
     };
   }
   const result = await runPreparedProjectGraphShadow({
-    context: { projectId: input.entry.projectId, projectRoot: input.projectRoot },
+    context: {
+      projectId: input.entry.projectId,
+      projectRoot: input.projectRoot,
+      workspaceId: input.entry.workspaceId,
+    },
     profile: GRAPH_REAL_WORKSPACE_PROFILE,
     binding: {
       ...placeholderBinding,
@@ -834,21 +962,25 @@ async function qualifyOne(input: {
   });
   const report = result.report;
   const semantic = semanticOutputDigestFrom(report);
-  const boundCodes = input.approvals
-    .filter(
-      (record) =>
-        record.corpusId === input.entry.id && record.sourceTreeDigest === input.sourceTreeDigest
-    )
-    .map((record) => record.code)
-    .sort((left, right) => left.localeCompare(right));
-  const exactApprovalMatch =
-    semantic.codes.length === boundCodes.length &&
-    semantic.codes.every((code, index) => code === boundCodes[index]);
+  const boundRecords = input.approvals.filter(
+    (record) =>
+      record.corpusId === input.entry.id &&
+      record.sourceTreeDigest === input.sourceTreeDigest &&
+      record.mappingVersion === input.mappingVersion
+  );
   const boundIncomparable =
     report.status === 'incomparable' &&
     report.metrics.regressions === 0 &&
-    exactApprovalMatch &&
-    report.metrics.approvedDifferences === boundCodes.length;
+    report.differences.length > 0 &&
+    report.differences.every((difference) =>
+      boundRecords.some(
+        (record) =>
+          record.code === difference.code &&
+          record.key === difference.key &&
+          record.setDigest === graphShadowDifferenceSetDigest(difference)
+      )
+    ) &&
+    boundRecords.length === report.differences.length;
   const unapproved =
     report.metrics.regressions > 0 ||
     report.status === 'failed' ||
@@ -859,12 +991,14 @@ async function qualifyOne(input: {
     id: input.entry.id,
     kind: input.entry.kind,
     projectId: input.entry.projectId,
+    workspaceId: input.entry.workspaceId,
     status: unapproved ? 'failed' : 'compared',
     ...(unapproved ? { reason: 'unapproved-semantic-difference' } : {}),
     packageExecution: {
       status: result.packageExecution.status,
       inputFiles: result.packageExecution.inputFiles,
       providerFacts: result.packageExecution.providerFacts,
+      workspaceId: result.packageExecution.workspaceId,
     },
     comparison: {
       status: report.status,
@@ -989,6 +1123,7 @@ async function runIsolatedObservation(input: {
     id: input.payload.entry.id,
     kind: input.payload.entry.kind,
     projectId: input.payload.entry.projectId,
+    workspaceId: input.payload.entry.workspaceId,
     status: 'failed',
     reason: input.signal?.aborted ? 'cancelled' : 'timeout',
   };
@@ -1097,13 +1232,29 @@ export async function runGraphRealWorkspaceQualification(
     repositoryRoot,
     limits.maxControlBytes
   );
-  const loadedPolicy = request.policy ?? (await loadPolicy(repositoryRoot, limits.maxControlBytes));
+  const filePolicy = await loadPolicy(repositoryRoot, limits.maxControlBytes);
+  const loadedPolicy = request.policy ?? filePolicy;
+  const fileApprovals = await loadApprovals(repositoryRoot, limits.maxControlBytes);
+  assertExactGraphShadowMappingBinding({
+    inventoryMappingVersion: inventory.mappingVersion,
+    policyMappingVersion: loadedPolicy.mappingVersion ?? '',
+    approvalsLedgerMappingVersion: fileApprovals.mappingVersion,
+  });
+  if (filePolicy.mappingVersion !== loadedPolicy.mappingVersion) {
+    throw new Error(
+      'Real-workspace inventory, policy, approvals ledger and GRAPH_SHADOW_MAPPING_VERSION must be identical.'
+    );
+  }
   const unboundApprovals = loadedPolicy.approvedDifferences ?? {};
   if (Object.keys(unboundApprovals).length > 0) {
     throw new Error('Real-workspace policy cannot carry unbound approved differences.');
   }
-  const approvals =
-    request.approvals ?? (await loadApprovals(repositoryRoot, limits.maxControlBytes));
+  const approvals = request.approvals ?? fileApprovals.records;
+  if (approvals.some((record) => record.mappingVersion !== GRAPH_SHADOW_MAPPING_VERSION)) {
+    throw new Error(
+      'Real-workspace inventory, policy, approvals ledger and GRAPH_SHADOW_MAPPING_VERSION must be identical.'
+    );
+  }
   rejectBlanketApprovals(approvals);
   const testedCommit = COMMIT.test(process.env.GITHUB_SHA ?? '')
     ? (process.env.GITHUB_SHA as string)
@@ -1122,6 +1273,7 @@ export async function runGraphRealWorkspaceQualification(
     id: entry.id,
     kind: entry.kind,
     projectId: entry.projectId,
+    workspaceId: entry.workspaceId,
     status: 'failed' as const,
     reason,
   });
@@ -1211,6 +1363,7 @@ export async function runGraphRealWorkspaceQualification(
             id: entry.id,
             kind: entry.kind,
             projectId: entry.projectId,
+            workspaceId: entry.workspaceId,
             status: 'unavailable-local-observation',
             reason: resolved.reason,
           });
@@ -1218,15 +1371,37 @@ export async function runGraphRealWorkspaceQualification(
         }
         const projectRoot = await mkdtemp(path.join(os.tmpdir(), `workspai-g8-${entry.id}-`));
         temporaryRoots.push(projectRoot);
+        let copyBudget: GraphRealWorkspaceObservation['copyBudget'];
         try {
+          const measured = await measureRealTree(resolved.root, limits);
+          copyBudget = {
+            observedFiles: measured.files + measured.oversizeFiles,
+            maxCopiedFiles: limits.maxCopiedFiles,
+            maxCopiedFileBytes: limits.maxCopiedFileBytes,
+            truncated: measured.oversizeFiles > 0 || measured.files > limits.maxCopiedFiles,
+          };
+          if (copyBudget.truncated) {
+            observations.push({
+              id: entry.id,
+              kind: entry.kind,
+              projectId: entry.projectId,
+              workspaceId: entry.workspaceId,
+              status: 'unavailable-local-observation',
+              reason: 'reference-exceeded-copy-budget',
+              copyBudget,
+            });
+            continue;
+          }
           await copyRealTree(resolved.root, projectRoot, limits, { files: 0 });
         } catch {
           observations.push({
             id: entry.id,
             kind: entry.kind,
             projectId: entry.projectId,
+            workspaceId: entry.workspaceId,
             status: 'unavailable-local-observation',
             reason: 'reference-exceeded-copy-budget',
+            ...(copyBudget ? { copyBudget } : {}),
           });
           continue;
         }
@@ -1253,6 +1428,7 @@ export async function runGraphRealWorkspaceQualification(
       id: 'timeout',
       kind: 'committed-fixture',
       projectId: 'timeout',
+      workspaceId: 'timeout',
       status: 'failed',
       reason: request.signal?.aborted ? 'cancelled' : 'timeout',
     });

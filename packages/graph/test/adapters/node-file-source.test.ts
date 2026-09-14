@@ -40,7 +40,23 @@ describe('Node repository file source', () => {
       sensitiveFiles: 'omit-known',
     });
 
-    expect(result).toMatchObject({ status: 'complete', omittedFiles: 0, omittedBytes: 0 });
+    expect(result.status).toBe('complete');
+    expect(result.omittedFiles).toBe(0);
+    expect(result.omittedBytes).toBe(0);
+    expect(result.omittedFileAccounting).toBe('unknown-subtrees');
+    expect(result.omittedByteAccounting).toBe('unknown-subtrees');
+    expect(result.omittedSubtrees).toEqual([
+      expect.objectContaining({
+        locator: 'node_modules',
+        class: 'vendored',
+        count: 'not-enumerated',
+        bytes: 'not-measured',
+        enumeration: 'not-enumerated',
+        evidenceKind: 'universal-dependency-store',
+        code: 'graph.repository-vendored-directory',
+      }),
+    ]);
+    expect(result.omittedSubtrees?.[0]?.policyDigest).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(result.inputs.map((input) => input.locator)).toEqual(['package.json', 'src/index.ts']);
     expect(result.inputs).toEqual(
       expect.arrayContaining([
@@ -177,7 +193,7 @@ describe('Node repository file source', () => {
       sensitiveFiles: 'omit-known',
     });
 
-    expect(result.status).toBe('partial');
+    expect(result.status).toBe('complete');
     expect(result.inputs.map((input) => input.locator)).not.toContain('.env.production');
     expect(result.unsupportedZones).toContainEqual(
       expect.objectContaining({ code: 'graph.sensitive-input-omitted' })
@@ -205,6 +221,17 @@ describe('Node repository file source', () => {
     expect(result.inputs.map((input) => input.locator)).not.toContain('a/b/hidden.ts');
     expect(result.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.repository-depth-truncated', scope: 'a' })
+    );
+    expect(result.omittedSubtrees).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          locator: 'a',
+          class: 'resource-bounded',
+          count: 'not-enumerated',
+          bytes: 'not-measured',
+          evidenceKind: 'resource-budget',
+        }),
+      ])
     );
   });
 
@@ -275,7 +302,7 @@ describe('Node repository file source', () => {
       sensitiveFiles: 'omit-known',
     });
 
-    expect(result.status).toBe('partial');
+    expect(result.status).toBe('complete');
     expect(result.inputs.map((candidate) => candidate.locator)).not.toContain('.git');
     expect(result.unsupportedZones).toContainEqual(
       expect.objectContaining({ code: 'graph.git-indirection-unsupported' })
@@ -360,6 +387,33 @@ describe('Node repository file source', () => {
     expect(result.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.unicode-locator-collision' })
     );
+    expect(result.status).toBe('partial');
     expect(result.inputs.some((input) => input.locator.endsWith('Caf\u00e9.ts'))).toBe(false);
+  });
+
+  it('keeps symlink and vendored policy omissions bounded-complete instead of truncated', async () => {
+    const root = await fixture();
+    await fs.symlink(path.join(root, 'src', 'index.ts'), path.join(root, 'src', 'alias.ts'));
+    const source = createNodeGraphFileSource();
+    const result = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+    });
+    expect(result.status).toBe('complete');
+    expect(result.unsupportedZones).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'graph.repository-symlink-unsupported' }),
+        expect.objectContaining({ code: 'graph.repository-vendored-directory' }),
+      ])
+    );
+    expect(result.unknownZones).toEqual([]);
+    expect(result.inputs.map((input) => input.locator)).not.toContain('src/alias.ts');
+    expect(JSON.stringify(result)).not.toContain(root);
   });
 });
