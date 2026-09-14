@@ -11,6 +11,11 @@ import {
   microsoftAgentFrameworkPythonAdapter,
 } from '../agent-frameworks/index.js';
 import {
+  MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
+  MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
+  packageVersion,
+} from '../agent-frameworks/version-policy.js';
+import {
   AGENT_FRAMEWORK_CHANGE_PLAN_CONTRACT_PATH,
   validateAgentFrameworkAdapterManifest,
   type AgentFrameworkAdapterManifest,
@@ -102,9 +107,15 @@ describe('Microsoft Agent Framework adapters', () => {
       first.files.find((file) => file.path.endsWith('/pyproject.toml'))?.content ?? '';
     expect(entrypoint).toContain('.workspai/reports/project-context-agent.json');
     expect(entrypoint).toContain('_CONTEXT_LIMIT = 131_072');
-    expect(dependencies).toContain('agent-framework-core==1.17.0');
-    expect(dependencies).toContain('agent-framework-foundry==1.12.0');
-    expect(dependencies).toContain('azure-identity==1.25.3');
+    expect(dependencies).toContain(
+      `agent-framework-core==${packageVersion(MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE, 'agent-framework-core')}`
+    );
+    expect(dependencies).toContain(
+      `agent-framework-foundry==${packageVersion(MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE, 'agent-framework-foundry')}`
+    );
+    expect(dependencies).toContain(
+      `azure-identity==${packageVersion(MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE, 'azure-identity')}`
+    );
     expect(await fs.readdir(root)).toEqual([]);
   });
 
@@ -126,8 +137,12 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(entrypoint).toContain('WorkspaiContext.LoadAsync');
     expect(contextLoader).toContain('project-context-agent.json');
     expect(contextLoader).toContain('const long ContextLimit = 131_072');
-    expect(project).toContain('Microsoft.Agents.AI.Foundry" Version="1.20.0-preview.260831.1"');
-    expect(project).toContain('Azure.Identity" Version="1.21.0"');
+    expect(project).toContain(
+      `Microsoft.Agents.AI.Foundry" Version="${packageVersion(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, 'Microsoft.Agents.AI.Foundry')}"`
+    );
+    expect(project).toContain(
+      `Azure.Identity" Version="${packageVersion(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, 'Azure.Identity')}"`
+    );
     expect(project).toContain('<Compile Remove="tests/**/*.cs" />');
     expect(testProject).toContain('<OutputType>Exe</OutputType>');
     expect(testProject).toContain('<UseMicrosoftTestingPlatformRunner>true');
@@ -229,9 +244,9 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(resolution.status).toBe('blocked');
     expect(resolution.blockers).toEqual(
       expect.arrayContaining([
-        'missing admitted lane: linux/python/1.17.0',
-        'missing admitted lane: darwin/python/1.17.0',
-        'missing admitted lane: win32/python/1.17.0',
+        `missing admitted lane: linux/python/${MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion}`,
+        `missing admitted lane: darwin/python/${MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion}`,
+        `missing admitted lane: win32/python/${MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion}`,
       ])
     );
   });
