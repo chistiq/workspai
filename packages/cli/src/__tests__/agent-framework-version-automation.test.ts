@@ -15,7 +15,7 @@ function actionReferences(workflow: string): string[] {
 }
 
 describe('agent framework version automation', () => {
-  it('discovers on trusted code, proposes a PR, and dispatches admission without auto-merge', () => {
+  it('discovers registry candidates without committing, opening a PR, or regenerating contracts', () => {
     const source = read('.github/workflows/agent-framework-version-discovery.yml');
     const workflow = YAML.parse(source);
 
@@ -23,25 +23,21 @@ describe('agent framework version automation', () => {
     expect(workflow.on).toHaveProperty('workflow_dispatch');
     expect(workflow.on).not.toHaveProperty('pull_request_target');
     expect(workflow.permissions).toEqual({
-      actions: 'write',
-      contents: 'write',
-      'pull-requests': 'write',
+      contents: 'read',
     });
     expect(source).toContain('ref: ${{ github.event.repository.default_branch }}');
     expect(source).toContain('persist-credentials: false');
-    expect(source).toContain('gh auth setup-git');
     expect(source).toContain('propose-agent-framework-version-update.ts');
     expect(source).toContain(
-      'git commit --no-verify -m "chore(agent-frameworks): propose admitted baseline updates"'
+      'git diff -- packages/cli/src/agent-frameworks/version-baselines.v1.json'
     );
-    expect(source).toContain('git push --no-verify --force-with-lease=');
-    expect(source).toContain('git push --no-verify origin "HEAD:refs/heads/$AUTOMATION_BRANCH"');
+    expect(source).not.toContain('gh auth setup-git');
+    expect(source).not.toContain('git commit');
+    expect(source).not.toContain('git push');
+    expect(source).not.toContain('gh pr create');
+    expect(source).not.toContain('sync:shared-contracts');
+    expect(source).not.toContain('gh workflow run');
     expect(source).not.toContain('quality:push');
-    expect(source).not.toContain('prepush:check');
-    expect(source).toContain('candidate_tree="$(git write-tree)"');
-    expect(source).toContain('changed=false');
-    expect(source).toContain('gh pr create');
-    expect(source).toContain('gh workflow run agent-framework-conformance.yml');
     expect(source).not.toMatch(/gh\s+pr\s+merge|--auto/);
   });
 
