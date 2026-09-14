@@ -64,6 +64,13 @@
       "title": "[Feature]: Enforce JSON, event, and exit conformance for every command",
       "labels": ["area: cli", "needs-triage"],
       "contributorRoute": false
+    },
+        {
+      "backlogId": "B027",
+      "number": 63,
+      "title": "[Feature]: Expand governed agent framework adapter coverage",
+      "labels": ["area: cli", "area: ci","needs-triage"],
+      "contributorRoute": false
     }
   ]
 }
