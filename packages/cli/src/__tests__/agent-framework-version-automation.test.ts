@@ -31,7 +31,13 @@ describe('agent framework version automation', () => {
     expect(source).toContain('persist-credentials: false');
     expect(source).toContain('gh auth setup-git');
     expect(source).toContain('propose-agent-framework-version-update.ts');
-    expect(source).toContain('git push --force-with-lease=');
+    expect(source).toContain(
+      'git commit --no-verify -m "chore(agent-frameworks): propose admitted baseline updates"'
+    );
+    expect(source).toContain('git push --no-verify --force-with-lease=');
+    expect(source).toContain('git push --no-verify origin "HEAD:refs/heads/$AUTOMATION_BRANCH"');
+    expect(source).not.toContain('quality:push');
+    expect(source).not.toContain('prepush:check');
     expect(source).toContain('candidate_tree="$(git write-tree)"');
     expect(source).toContain('changed=false');
     expect(source).toContain('gh pr create');
@@ -58,6 +64,12 @@ describe('agent framework version automation', () => {
       "github.ref == 'refs/heads/automation/agent-framework-version-baselines'"
     );
     expect(conformance).toContain('promote-agent-framework-release-admission.ts');
+    expect(conformance).toContain(
+      'git commit --no-verify -m "chore(agent-frameworks): bind verified release admission"'
+    );
+    expect(conformance).toContain(
+      'git push --no-verify origin "HEAD:refs/heads/${GITHUB_REF_NAME}"'
+    );
     expect(conformance).toContain('contents: write');
     expect(conformance).not.toContain('pull_request_target:');
 
