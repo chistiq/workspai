@@ -47,7 +47,7 @@ describe('agent framework version policy', () => {
       `${MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion} · Workspai verified stable baseline`
     );
     expect(formatAgentFrameworkVersionPolicy(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE)).toBe(
-      '1.20.0 · Workspai verified preview baseline'
+      `${MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE.frameworkVersion} · Workspai verified preview baseline`
     );
     expect(
       packageVersion(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, 'Microsoft.Agents.AI.Foundry')
