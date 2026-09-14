@@ -459,6 +459,38 @@ describe('workspace contract registry', () => {
     });
   });
 
+  it('does not assign a synthetic HTTP port to a governed agent kit and keeps authored env names', async () => {
+    const workspacePath = await makeTempDir('rk-contract-agent-kit-');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'agent-ws',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, 'harbor-app', '.workspai', 'project.json'), {
+      name: 'harbor-app',
+      runtime: 'python',
+      framework: 'microsoft-agent-framework',
+      kit: 'agent.microsoft.python',
+      kit_name: 'agent.microsoft.python',
+      contracts: {
+        owns: [],
+        apis: [],
+        publishes: [],
+        consumes: [],
+        dependsOn: [],
+        env: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
+      },
+    });
+
+    const { contract } = await writeWorkspaceContract({ workspacePath });
+    expect(contract.projects.find((project) => project.slug === 'harbor-app')).toMatchObject({
+      runtime: 'python',
+      kit: 'agent.microsoft.python',
+      ports: [],
+      contracts: {
+        env: ['FOUNDRY_MODEL', 'FOUNDRY_PROJECT_ENDPOINT'],
+      },
+    });
+  });
+
   it('does not preserve a synthetic HTTP port for an adopted VS Code extension', async () => {
     const workspacePath = await makeTempDir('rk-contract-vscode-ws-');
     const externalProjectPath = await makeTempDir('rk-contract-vscode-project-');

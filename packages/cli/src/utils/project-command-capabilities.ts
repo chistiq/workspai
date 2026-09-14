@@ -257,13 +257,16 @@ export function resolveProjectCommandCapabilities(
   }
 
   for (const command of RUNTIME_COMMANDS) {
+    const nestedFleetCovered =
+      FLEET_STAGE_COMMANDS.has(command) &&
+      polyglotFleetStages.has(command as WorkspaceRunStageName);
     const runtimeSupported =
       isRuntimeLifecycleCommandSupported(projectRoot, command, detection, runtimeCommandSupport) ||
-      (hasNpmRuntimeExecutor(detection.runtime) &&
-        FLEET_STAGE_COMMANDS.has(command) &&
-        polyglotFleetStages.has(command as WorkspaceRunStageName));
+      (hasNpmRuntimeExecutor(detection.runtime) && nestedFleetCovered);
     const owner = resolveRuntimeCommandOwner(command, detection);
-    const execution = resolveRuntimeCommandExecutionScope(command, runtimeSupported);
+    const execution = nestedFleetCovered
+      ? { executionScope: 'fleet' as const, fleetEligible: true }
+      : resolveRuntimeCommandExecutionScope(command, runtimeSupported);
     commandMap[command] = capability(command, {
       owner,
       status: runtimeSupported ? 'supported' : 'unsupported',

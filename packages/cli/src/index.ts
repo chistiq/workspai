@@ -1160,18 +1160,32 @@ async function finalizeCreatedProjectWorkspace(
     await registerProjectInWorkspaceStrict(workspacePath, projectName, projectPath);
     await syncWorkspaceContract({ workspacePath, strict: true });
     const { syncProjectIntelligenceLens } = await import('./project-intelligence-lens.js');
-    await syncProjectIntelligenceLens({
-      workspacePath,
-      projectPath,
-      projectName,
-      relationship: relationship === 'adopted' ? 'adopted' : 'managed',
-      mode: 'managed',
+    const lensRelationship = relationship === 'adopted' ? 'adopted' : 'managed';
+    const syncProjectLens = async () =>
+      syncProjectIntelligenceLens({
+        workspacePath,
+        projectPath,
+        projectName,
+        relationship: lensRelationship,
+        mode: 'managed',
+      });
+    const hasDeferredScaffold = typeof options.beforeCommit === 'function';
+    await syncProjectLens();
+    // Agent kits plan PCC against this baseline, then write nested runtime
+    // files. Keep the registration-time sync silent so "freshness sealed" is
+    // not claimed before those files exist.
+    await syncWorkspaceContractAfterProjectChange(workspacePath, {
+      strict: true,
+      silent: hasDeferredScaffold,
     });
-    await syncWorkspaceContractAfterProjectChange(workspacePath, { strict: true });
     await options.beforeCommit?.({
       workspacePath,
       registerCompensation: transaction.registerCompensation,
     });
+    if (hasDeferredScaffold) {
+      await syncWorkspaceContractAfterProjectChange(workspacePath, { strict: true });
+      await syncProjectLens();
+    }
     await transaction.commit();
   } catch (error) {
     await rollbackProjectLifecycleTransaction(transaction, error);
@@ -1633,6 +1647,7 @@ Options:
   --skip-python-engine       Skip RapidKit Core installation for now
   --skip-git                 Do not initialize git
   --dry-run                  Show the planned workspace without writing files
+  --json                     Emit one machine-readable operation result
 
 Mental model:
   Repository
@@ -1826,6 +1841,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       const skipPythonEngine =
         args.includes('--skip-python-engine') || args.includes('--no-python-engine');
       const hasDryRun = args.includes('--dry-run');
+      const hasJson = args.includes('--json');
       const providedName = args[2] && !args[2].startsWith('-') ? args[2] : undefined;
       const installMethodRaw = readFlagValue(args, '--install-method');
       const installMethod =
@@ -1850,7 +1866,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         if (hasYes) {
           workspaceName = 'my-workspace';
         } else {
-          if (process.stdin.isTTY) {
+          if (process.stdin.isTTY && !hasJson) {
             showIntro('create workspace');
           }
           const workspaceAnswers = (await prompt([
@@ -1936,7 +1952,24 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         installMethod,
         profile: workspaceProfile,
         parentDirectory: path.dirname(targetPath),
+        suppressReceipt: hasJson,
+        json: hasJson,
       });
+
+      if (hasJson) {
+        console.log(
+          JSON.stringify(
+            cliOperationSuccess('create workspace', {
+              name: workspaceName.trim(),
+              workspacePath: targetPath,
+              profile: workspaceProfile ?? 'minimal',
+              dryRun: hasDryRun,
+            }),
+            null,
+            2
+          )
+        );
+      }
 
       return 0;
     } catch (e) {

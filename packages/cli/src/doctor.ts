@@ -62,6 +62,7 @@ import {
   projectMetadataCandidates,
   workspaceMetadataCandidates,
 } from './utils/workspace-paths.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import { readWorkspaceMarker, resolveWorkspaceRegistrationName } from './workspace-marker.js';
 import { getProbeTimeoutMs } from './utils/command-timeouts.js';
 import { executableAvailable } from './utils/executable-availability.js';
@@ -2043,7 +2044,10 @@ async function collectWorkspaceProjectPaths(workspacePath: string): Promise<stri
 
     const registeredProjects = await resolveWorkspaceRegisteredProjects(workspacePath);
     for (const registeredProject of registeredProjects.summary.projects) {
-      const projectPath = path.resolve(workspacePath, registeredProject.relativePath);
+      const projectPath = resolveWorkspaceProjectFilesystemPath(
+        workspacePath,
+        registeredProject.relativePath
+      );
       if (await hasDoctorProjectSurface(projectPath)) {
         projectPaths.add(projectPath);
         governedProjectRoots.add(projectPath);
@@ -2052,9 +2056,11 @@ async function collectWorkspaceProjectPaths(workspacePath: string): Promise<stri
 
     const importedProjects = await readImportedProjectsRegistry(workspacePath);
     for (const importedProject of importedProjects) {
-      const projectPath = path.isAbsolute(importedProject.path)
-        ? importedProject.path
-        : path.join(workspacePath, importedProject.path);
+      const projectPath = resolveWorkspaceProjectFilesystemPath(
+        workspacePath,
+        importedProject.relativePath || importedProject.name,
+        importedProject.path ? { absolutePath: importedProject.path } : {}
+      );
       if (await hasDoctorProjectSurface(projectPath)) {
         const resolvedProjectPath = path.resolve(projectPath);
         projectPaths.add(resolvedProjectPath);

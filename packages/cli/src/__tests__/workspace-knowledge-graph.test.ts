@@ -2703,6 +2703,11 @@ describe('workspace knowledge graph', () => {
     expect(
       searchKnowledgeGraph(graph, { query: 'checkout service', kind: 'api' }).entities[0]?.id
     ).toBe(services[0].id);
+    expect(
+      queryKnowledgeEntities(graph, 'api', 'frontend').some(
+        (entity) => entity.label === 'CheckoutService'
+      )
+    ).toBe(true);
     const frontendScope = searchKnowledgeGraph(graph, {
       query: 'checkout service schema',
       projectId: 'frontend',

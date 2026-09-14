@@ -68,6 +68,11 @@ import {
   writeWorkspaceArtifactJsonSetAcrossRoots,
 } from './utils/artifact-path-compat.js';
 import {
+  publishableWorkspaceProjectIdentity,
+  resolveWorkspaceProjectFilesystemPath,
+} from './utils/workspace-project-paths.js';
+import { resolveWorkspaceProfileCompatibility } from './workspace-profile-compatibility.js';
+import {
   buildProjectKnowledgeGraphReference,
   type ProjectKnowledgeGraphReference,
   workspaceModelProjectRoot,
@@ -323,6 +328,18 @@ const SKIP_DIRS = new Set([
 function toPosixRelative(workspacePath: string, targetPath: string): string {
   const relativePath = path.relative(workspacePath, targetPath) || '.';
   return relativePath.split(path.sep).join('/');
+}
+
+function filesystemRelativeProjectKey(
+  workspacePath: string,
+  project: Pick<WorkspaceModelProject, 'path' | 'absolutePath'>
+): string {
+  return toPosixRelative(
+    workspacePath,
+    resolveWorkspaceProjectFilesystemPath(workspacePath, project.path, {
+      ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+    })
+  );
 }
 
 async function readJsonIfExists(filePath: string): Promise<Record<string, unknown> | null> {
@@ -644,18 +661,18 @@ async function evidenceRef(
 }
 
 async function projectEvidenceRefs(
-  workspacePath: string,
+  _workspacePath: string,
   projectPath: string,
-  includeEvidence: boolean
+  includeEvidence: boolean,
+  portableProjectPath: string
 ): Promise<Record<string, WorkspaceModelEvidenceRef | null>> {
-  const projectRelative = toPosixRelative(workspacePath, projectPath);
   const projectReportPrefix = '.workspai/reports';
   const projectEvidence = (fileName: string) =>
     evidenceRef(
       projectPath,
       `${projectReportPrefix}/${fileName}`,
       includeEvidence,
-      `${projectRelative}/${projectReportPrefix}/${fileName}`
+      `${portableProjectPath}/${projectReportPrefix}/${fileName}`
     );
   const projectDoctor = await projectEvidence('doctor-project-last-run.json');
   const legacyProjectDoctor =
@@ -733,10 +750,16 @@ async function buildProjectModel(
     projectPath,
     declaration: options.contractProject?.governance,
   });
+  const portablePath = publishableWorkspaceProjectIdentity({
+    workspacePath,
+    projectPath,
+    projectName,
+    declaredRelativePath: options.contractProject?.relativePath,
+  });
 
   return {
     name: projectName,
-    path: toPosixRelative(workspacePath, projectPath),
+    path: portablePath,
     ...(options.includeAbsolutePaths ? { absolutePath: projectPath } : {}),
     kind,
     category: categorizeWorkspaceProjectKind(kind),
@@ -764,7 +787,12 @@ async function buildProjectModel(
     },
     importantFiles: await collectImportantFiles(projectPath),
     governance,
-    evidence: await projectEvidenceRefs(workspacePath, projectPath, options.includeEvidence),
+    evidence: await projectEvidenceRefs(
+      workspacePath,
+      projectPath,
+      options.includeEvidence,
+      portablePath
+    ),
     provenance: {
       path: options.contractProject
         ? 'workspace contract declaration reconciled with filesystem discovery'
@@ -892,6 +920,30 @@ function validateWorkspaceModel(
     );
   }
 
+  if (model.workspace.profile) {
+    const profileCompatibility = resolveWorkspaceProfileCompatibility({
+      profile: model.workspace.profile,
+      runtimes: model.summary.runtimes,
+    });
+    if (!profileCompatibility.ok) {
+      issues.push(
+        issue(
+          'warning',
+          'workspace.profile.mismatch',
+          [
+            profileCompatibility.message,
+            profileCompatibility.recommendedCommand
+              ? `Keep the current profile and run ${profileCompatibility.recommendedCommand} when you want the recommended profile.`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join(' '),
+          'workspace.profile'
+        )
+      );
+    }
+  }
+
   if (!model.contracts.exists) {
     issues.push(
       issue(
@@ -921,9 +973,9 @@ function validateWorkspaceModel(
       );
     }
 
-    const projectRoot = path.isAbsolute(project.path)
-      ? project.path
-      : path.resolve(model.workspace.root, project.path);
+    const projectRoot = resolveWorkspaceProjectFilesystemPath(model.workspace.root, project.path, {
+      ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+    });
     if (!fsExtra.existsSync(projectRoot)) {
       issues.push(
         issue(
@@ -980,7 +1032,6 @@ function validateWorkspaceModel(
       const capability = project.commands.map[commandName];
       if (
         !capability ||
-        capability.status !== 'supported' ||
         capability.fleetEligible !== true ||
         capability.executionScope !== 'fleet'
       ) {
@@ -1403,9 +1454,11 @@ async function discoverWorkspaceModelInputs(workspacePath: string, observableSca
 
   const contractProjectPaths = new Map<string, WorkspaceContract['projects'][number]>();
   for (const project of workspaceContract?.projects ?? []) {
-    const projectPath = project.externalPath
-      ? path.resolve(workspacePath, project.externalPath)
-      : path.resolve(workspacePath, project.relativePath);
+    const projectPath = resolveWorkspaceProjectFilesystemPath(
+      workspacePath,
+      project.relativePath,
+      project.externalPath ? { absolutePath: project.externalPath } : {}
+    );
     contractProjectPaths.set(projectPath, project);
   }
   const projectPaths = collectUniquePaths([
@@ -1424,7 +1477,11 @@ async function discoverWorkspaceModelInputs(workspacePath: string, observableSca
     ),
     ...contractProjectPaths.keys(),
     ...importedProjects.map((project) =>
-      path.isAbsolute(project.path) ? project.path : path.join(workspacePath, project.path)
+      resolveWorkspaceProjectFilesystemPath(
+        workspacePath,
+        project.relativePath || project.name,
+        project.path ? { absolutePath: project.path } : {}
+      )
     ),
   ]);
   return { marker, workspaceJson, workspaceContract, contractProjectPaths, projectPaths };
@@ -1797,7 +1854,7 @@ export async function buildWorkspaceModelIncremental(
   const changedOrAddedRel = new Set([...changed, ...added]);
   const reuseProjectModels = new Map<string, WorkspaceModelProject>();
   for (const project of cached.model.projects) {
-    const rel = project.path.split(path.sep).join('/');
+    const rel = filesystemRelativeProjectKey(workspacePath, project);
     if (!changedOrAddedRel.has(rel) && !removed.has(rel)) {
       reuseProjectModels.set(rel, project);
     }
@@ -1808,7 +1865,7 @@ export async function buildWorkspaceModelIncremental(
   const changedProjectIds = new Set<string>();
   let renameDetected = false;
   for (const project of cached.model.projects) {
-    const rel = project.path.split(path.sep).join('/');
+    const rel = filesystemRelativeProjectKey(workspacePath, project);
     if (changed.has(rel)) {
       changedProjectIds.add(project.name);
     }
@@ -1830,12 +1887,12 @@ export async function buildWorkspaceModelIncremental(
   // Detect a rename among changed projects (cached name vs rebuilt name); if so,
   // the scoped graph result may be stale, so rebuild fully for correctness.
   for (const project of cached.model.projects) {
-    const rel = project.path.split(path.sep).join('/');
+    const rel = filesystemRelativeProjectKey(workspacePath, project);
     if (!changed.has(rel)) {
       continue;
     }
     const rebuilt = model.projects.find(
-      (candidate) => candidate.path.split(path.sep).join('/') === rel
+      (candidate) => filesystemRelativeProjectKey(workspacePath, candidate) === rel
     );
     if (rebuilt && rebuilt.name !== project.name) {
       renameDetected = true;

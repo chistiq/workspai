@@ -172,9 +172,11 @@ describe('workspace intelligence model', () => {
     expect(model.projects).toHaveLength(1);
     expect(model.projects[0]).toMatchObject({
       name: 'platform',
+      path: 'external/platform',
       runtime: 'node',
       runtimeCandidates: ['node', 'go', 'dotnet', 'python'],
     });
+    expect(model.projects[0].path.startsWith('..')).toBe(false);
     expect(model.identity.runtimeFamilies).toEqual(['dotnet', 'go', 'node', 'python']);
     expect(model.summary.runtimes).toEqual(['dotnet', 'go', 'node', 'python']);
   });
@@ -703,6 +705,11 @@ describe('workspace intelligence model', () => {
       ])
     );
     expect(model.projects[0].importantFiles.length).toBeLessThanOrEqual(19);
+    expect(
+      model.validation.issues.filter(
+        (issue) => issue.code === 'project.commands.fleet-stage-invalid'
+      )
+    ).toEqual([]);
   });
 
   it('publishes the pinned Rust toolchain as an important project control surface', async () => {

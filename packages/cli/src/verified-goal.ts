@@ -18,6 +18,7 @@ import {
 } from './utils/artifact-path-compat.js';
 import { runWorkspaceIntelligenceChain } from './workspace-intelligence-runner.js';
 import { buildWorkspaceModel, type WorkspaceModelProject } from './workspace-model.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import { runWorkspaceStage } from './workspace-run.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
@@ -46,13 +47,22 @@ export type VerifiedGoalScope =
       projects: Array<{ projectName: string; projectPath: string }>;
     };
 
+function projectFilesystemPath(
+  workspacePath: string,
+  project: Pick<WorkspaceModelProject, 'path' | 'absolutePath'>
+): string {
+  return resolveWorkspaceProjectFilesystemPath(workspacePath, project.path, {
+    ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+  });
+}
+
 function scopeMatchesProject(
   workspacePath: string,
   scope: VerifiedGoalScope,
-  project: { name: string; path: string }
+  project: Pick<WorkspaceModelProject, 'name' | 'path' | 'absolutePath'>
 ): boolean {
   if (scope.kind === 'workspace') return true;
-  const absolutePath = path.resolve(workspacePath, project.path);
+  const absolutePath = projectFilesystemPath(workspacePath, project);
   if (scope.kind === 'project') {
     return project.name === scope.projectName || absolutePath === path.resolve(scope.projectPath);
   }
@@ -360,7 +370,7 @@ async function dependencySafetyBaseline(
     NonNullable<VerifiedGoalContract['dependencySafetyBaseline']>['manifests'][number]
   >();
   for (const project of projects) {
-    const projectPath = path.resolve(workspacePath, project.path);
+    const projectPath = projectFilesystemPath(workspacePath, project);
     const discovered = await discoverDependencyManifestPaths(projectPath);
     for (const absolutePath of discovered) {
       const name = path.basename(absolutePath);
@@ -571,14 +581,14 @@ async function resolveScope(
         projects: selected
           .map((project) => ({
             projectName: project.name,
-            projectPath: path.resolve(workspacePath, project.path),
+            projectPath: projectFilesystemPath(workspacePath, project),
           }))
           .sort((left, right) => left.projectName.localeCompare(right.projectName)),
       },
     };
   }
   const matches = model.projects.filter((project) => {
-    const absolutePath = path.resolve(workspacePath, project.path);
+    const absolutePath = projectFilesystemPath(workspacePath, project);
     return (
       project.name === requested ||
       project.path === requested ||
@@ -593,7 +603,7 @@ async function resolveScope(
     );
   }
   const project = matches[0];
-  const projectPath = path.resolve(workspacePath, project.path);
+  const projectPath = projectFilesystemPath(workspacePath, project);
   return {
     project,
     scope: { kind: 'project', projectName: project.name, projectPath },
@@ -850,7 +860,7 @@ async function coverageMeasurementForScope(input: {
     results.push({
       projectName: project.name,
       result: await coverageMeasurement({
-        projectPath: path.resolve(input.workspacePath, project.path),
+        projectPath: projectFilesystemPath(input.workspacePath, project),
         target: input.target,
         run: input.run,
         runtime: input.runtime,

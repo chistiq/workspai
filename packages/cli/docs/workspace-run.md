@@ -48,6 +48,14 @@ nested directory is already an explicit workspace project, an aggregate parent
 does not execute that child's runtime unit again. `--plan --json` exposes the
 resulting ownership so operators can review the exact units before execution.
 
+Microsoft Agent Framework projects keep their executable manifest under
+`agents/<instance>/`. Workspace Run treats that nested `pyproject.toml` or
+`.csproj` as its own unit (`python3 -m compileall .`,
+`python3 -m unittest discover -s tests`, `python3 main.py`, or the matching
+.NET commands). An empty legacy root manifest is ignored only when it still
+matches the exact older Workspai shell and a real `agents/primary` runtime
+exists. Any user edit restores the root as an independent unit.
+
 Planning and `init` do not require Doctor or release-readiness evidence. Real
 `test`, `build`, and `start` runs enforce the `doctor-workspace` and `readiness`
 gates by default. A failed gate prevents project commands from starting and is

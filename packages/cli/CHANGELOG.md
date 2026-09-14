@@ -7,11 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.2] - 2026-09-14
+
 ### Changed
 
+- Pinned Microsoft Agent Framework tested baselines to Python `1.18.0` with
+  `agent-framework-foundry` `1.13.0`, and .NET `1.21.0` with Foundry preview
+  `1.21.0-preview.260911.1`, `Microsoft.NET.Test.Sdk` `18.10.0`, and
+  `xunit.v3.mtp-v2` `4.0.1`.
+- Made weekly agent-framework version discovery report-only so a newer
+  registry version cannot commit, open a pull request, or regenerate Create
+  contracts before a reviewed pin update.
 - Added an explicit manual `primary` or `full` official-generator matrix choice;
   an all-generator executed `primary` run for the exact commit can satisfy the
   release gate, while targeted and contract-only runs remain ineligible.
+
+### Fixed
+
+- Re-observe Model, Graph, and project grounding after a governed agent
+  scaffold so Create does not seal registration-time evidence before the nested
+  `agents/<instance>` runtime exists.
+- Stop assigning a synthetic HTTP port to Microsoft Agent Framework kits and
+  keep authored Foundry environment names on the workspace contract.
 
 ## [0.75.1] - 2026-09-08
 

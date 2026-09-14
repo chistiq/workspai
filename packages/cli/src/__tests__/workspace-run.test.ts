@@ -196,6 +196,56 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     await fsExtra.remove(projectPath);
   });
 
+  it('resolves a portable adopted identity from the canonical model without scanning workspace/external', async () => {
+    const workspacePath = await fsExtra.mkdtemp(
+      path.join(os.tmpdir(), 'rk-workspace-run-portable-')
+    );
+    const projectPath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-polyglot-portable-'));
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'linked-sdk',
+      runtime: 'node',
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'node', 'package.json'), {
+      scripts: { test: 'node --test', build: 'tsc' },
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'go', 'go.mod'), 'module example.test/sdk\n');
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      kind: 'rapidkit.workspace.contract',
+      schemaVersion: 1,
+      workspace: { name: 'probe' },
+      projects: [
+        {
+          slug: 'linked-sdk',
+          relativePath: 'external/linked-sdk',
+          externalPath: projectPath,
+        },
+      ],
+    });
+    await fsExtra.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json'),
+      {
+        projects: [{ name: 'linked-sdk', path: 'external/linked-sdk' }],
+      }
+    );
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockClear();
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      scope: 'project:external/linked-sdk',
+      planOnly: true,
+      json: true,
+    });
+
+    expect(report.summary.selectedCount).toBe(1);
+    expect(report.projects[0]?.projectName).toBe('linked-sdk');
+    expect(fs.existsSync(path.join(workspacePath, 'external', 'linked-sdk'))).toBe(false);
+
+    await fsExtra.remove(workspacePath);
+    await fsExtra.remove(projectPath);
+  });
+
   it('reports the wrapper command that a single-runtime plan will actually execute', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-plan-'));
     const projectPath = await createProjectWithoutContext(workspacePath, 'go-api');

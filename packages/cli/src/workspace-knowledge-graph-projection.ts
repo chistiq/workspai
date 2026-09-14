@@ -1,5 +1,4 @@
-import path from 'node:path';
-
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import type {
   WorkspaceKnowledgeDiagnostic,
   WorkspaceKnowledgeEntity,
@@ -240,5 +239,7 @@ export function workspaceModelProjectRoot(
   workspacePath: string,
   project: Pick<WorkspaceModelProject, 'path' | 'absolutePath'>
 ): string {
-  return path.resolve(project.absolutePath ?? path.join(workspacePath, project.path));
+  return resolveWorkspaceProjectFilesystemPath(workspacePath, project.path, {
+    ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+  });
 }

@@ -1214,6 +1214,40 @@ describe('CLI Entry Point', () => {
       }
     });
 
+    it('emits a single JSON document for create workspace --json', async () => {
+      const { stdout, exitCode } = await execa(
+        'node',
+        [
+          CLI_PATH,
+          'create',
+          'workspace',
+          'json-create-ws',
+          '--yes',
+          '--dry-run',
+          '--json',
+          '--no-update-check',
+        ],
+        {
+          cwd: TEST_DIR,
+          env: { ...process.env, WORKSPAI_STATE_DIR: path.join(TEST_DIR, 'state') },
+        }
+      );
+      expect(exitCode).toBe(0);
+      expect(() => JSON.parse(stdout)).not.toThrow();
+      expect(JSON.parse(stdout)).toMatchObject({
+        schemaVersion: 'workspai-cli-operation-result-v1',
+        operation: 'create workspace',
+        status: 'success',
+        artifact: {
+          name: 'json-create-ws',
+          profile: 'minimal',
+          dryRun: true,
+        },
+      });
+      expect(stdout).not.toContain('Workspace ready');
+      expect(stdout).not.toContain('Dry-run mode');
+    });
+
     it('uses the fleet-size worker default when parallel mode omits max-workers', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-workers-default-'));
       await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '');

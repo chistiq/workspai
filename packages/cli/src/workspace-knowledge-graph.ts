@@ -32,6 +32,7 @@ import {
   type WorkspaceKnowledgeTrust,
 } from './contracts/workspace-knowledge-graph-contract.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import { workspaceModelProjectTopology, type WorkspaceModel } from './workspace-model.js';
 import { buildPolyglotLifecyclePlan } from './polyglot-lifecycle-plan.js';
 import {
@@ -1271,6 +1272,24 @@ type KnowledgeGraphFingerprintProject = {
   absolutePath?: string;
 };
 
+function resolveKnowledgeProjectRoot(
+  workspacePath: string,
+  project: { id?: string; path: string; absolutePath?: string },
+  contract?: WorkspaceContract | null
+): string {
+  const contractProject = contract?.projects.find(
+    (entry) =>
+      entry.relativePath === project.path ||
+      (project.id !== undefined &&
+        (entry.slug === project.id || entry.relativePath === `external/${project.id}`))
+  );
+  return resolveWorkspaceProjectFilesystemPath(workspacePath, project.path, {
+    ...(project.absolutePath || contractProject?.externalPath
+      ? { absolutePath: project.absolutePath ?? contractProject?.externalPath }
+      : {}),
+  });
+}
+
 type KnowledgeGraphFingerprintInventories = {
   workspaceFiles?: readonly string[];
   projectFiles?: ReadonlyMap<string, readonly string[]>;
@@ -1770,9 +1789,7 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
   const workspacePath = path.resolve(input.workspacePath);
   const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
   const projectRoots = projects.map((project) =>
-    project.absolutePath
-      ? path.resolve(project.absolutePath)
-      : path.resolve(workspacePath, project.path)
+    resolveKnowledgeProjectRoot(workspacePath, project)
   );
   const workspaceInventory =
     input.inventories?.workspaceInventory ??
@@ -1810,9 +1827,7 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
       inventoryStrategy: scopedWorkspaceInventory.strategy,
     }),
     ...projects.map(async (project) => {
-      const root = project.absolutePath
-        ? path.resolve(project.absolutePath)
-        : path.resolve(workspacePath, project.path);
+      const root = resolveKnowledgeProjectRoot(workspacePath, project);
       const providedFiles = input.inventories?.projectFiles?.get(project.id);
       const inventory =
         input.inventories?.projectInventories?.get(project.id) ??
@@ -1895,9 +1910,7 @@ export async function workspaceKnowledgeGraphInputsMatchLiveState(input: {
   const workspacePath = path.resolve(input.workspacePath);
   const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
   const projectRoots = projects.map((project) =>
-    project.absolutePath
-      ? path.resolve(project.absolutePath)
-      : path.resolve(workspacePath, project.path)
+    resolveKnowledgeProjectRoot(workspacePath, project)
   );
   const projectById = new Map(projects.map((project) => [project.id, project] as const));
 
@@ -1905,11 +1918,7 @@ export async function workspaceKnowledgeGraphInputsMatchLiveState(input: {
     const project =
       expectedScope.kind === 'project' ? projectById.get(expectedScope.id) : undefined;
     if (expectedScope.kind === 'project' && !project) return false;
-    const root = project
-      ? project.absolutePath
-        ? path.resolve(project.absolutePath)
-        : path.resolve(workspacePath, project.path)
-      : workspacePath;
+    const root = project ? resolveKnowledgeProjectRoot(workspacePath, project) : workspacePath;
 
     if (expectedScope.strategy === 'git-worktree-v2') {
       const fastMatch = await persistedGitFingerprintMatches({
@@ -6793,7 +6802,7 @@ export async function buildWorkspaceKnowledgeGraph(
     .map((project) => {
       const root = project.absolutePath
         ? path.resolve(project.absolutePath)
-        : path.resolve(workspacePath, project.path);
+        : resolveKnowledgeProjectRoot(workspacePath, project, options.contract);
       const workspaceRelative = path.relative(workspacePath, root);
       const outsideWorkspace =
         workspaceRelative.startsWith(`..${path.sep}`) ||

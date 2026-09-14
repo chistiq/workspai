@@ -23,6 +23,7 @@ import {
 } from './utils/artifact-path-compat.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 
 const GOAL_INDEX_CONTRACT_PATH = 'contracts/workspace-intelligence/goal-index.v1.json';
 const GOAL_LIFECYCLE_RESULT_CONTRACT_PATH =
@@ -199,8 +200,10 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
     const project = modelRecord.projects?.find((item) => item.name === evidence.project);
     if (!project)
       throw new Error(`Goal measurement project binding is missing: ${evidence.project}`);
-    const projectRoot = path.resolve(
-      project.absolutePath ?? path.join(workspacePath, project.path ?? evidence.project)
+    const projectRoot = resolveWorkspaceProjectFilesystemPath(
+      workspacePath,
+      project.path ?? evidence.project,
+      project.absolutePath ? { absolutePath: project.absolutePath } : {}
     );
     const evidencePath = path.resolve(projectRoot, evidence.path);
     if (evidencePath !== projectRoot && !evidencePath.startsWith(`${projectRoot}${path.sep}`)) {
