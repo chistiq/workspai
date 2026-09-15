@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Raised per-file declaration and per-symbol call extraction bounds so typical
+  library modules are not truncated at 100 declarations or 20 call sites.
 - Added local G8 Workspace Intelligence consumer-parity and CLI host routing for
   the bundled Rust/WASM traversal engine. Every inventoried consumer can run
   against a package shadow candidate, TypeScript remains semantic authority, and

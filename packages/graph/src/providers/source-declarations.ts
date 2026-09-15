@@ -17,8 +17,8 @@ export const SOURCE_DECLARATIONS_PROVIDER_ID = 'workspai.graph.provider.source-d
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
-export const MAX_SYMBOLS_PER_FILE = 100;
-export const MAX_CALLS_PER_SYMBOL = 20;
+export const MAX_SYMBOLS_PER_FILE = 500;
+export const MAX_CALLS_PER_SYMBOL = 80;
 const SOURCE_EXTENSIONS = new Set([
   '.cjs',
   '.cts',

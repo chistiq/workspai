@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Adaptive source-structure extraction now uses the deep-scan file window
+  instead of 25% of it, so large polyglot inventories are not stuck at the
+  2,000-file floor after deep scan already admitted more candidates.
 - G8 Workspace Intelligence consumers now have a package shadow adapter for
   source projection, query, overlay, Doctor/MCP/runner surfaces and a typed
   authority receipt. Production still uses the released CLI composer. Host
