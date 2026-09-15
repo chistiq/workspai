@@ -39,6 +39,10 @@ import {
 import { resolveFrameworkRegistryEntry } from './framework-registry.js';
 import { firstExistingWorkspaceArtifactPath } from './utils/artifact-path-compat.js';
 import {
+  resolveWorkspaceProjectFilesystemPath,
+  workspaceProjectScopeIdentities,
+} from './utils/workspace-project-paths.js';
+import {
   projectMetadataCandidates,
   workspaceMetadataCandidates,
   workspaceMetadataPath,
@@ -324,7 +328,9 @@ async function discoverWorkspaceProjects(workspacePath: string): Promise<string[
       const model = await readJsonFile<{ projects?: Array<{ path?: unknown }> }>(modelPath);
       const modeledProjects = (model.projects ?? [])
         .map((project) =>
-          typeof project.path === 'string' ? path.resolve(workspacePath, project.path) : null
+          typeof project.path === 'string'
+            ? resolveWorkspaceProjectFilesystemPath(workspacePath, project.path)
+            : null
         )
         .filter((projectPath): projectPath is string => Boolean(projectPath))
         .filter((projectPath, index, values) => values.indexOf(projectPath) === index)
@@ -394,12 +400,12 @@ async function filterProjectsByScope(
   const requested = normalizePathForMatch(normalizedScope).toLowerCase();
   const matched: string[] = [];
   for (const projectPath of projects) {
-    const relativePath = normalizePathForMatch(path.relative(workspacePath, projectPath));
-    const basename = path.basename(projectPath);
     const declaredName = await readProjectDeclaredName(projectPath);
-    const candidates = [relativePath, basename, declaredName]
-      .filter((item): item is string => typeof item === 'string' && item.length > 0)
-      .map((item) => normalizePathForMatch(item).toLowerCase());
+    const candidates = workspaceProjectScopeIdentities({
+      workspacePath,
+      projectPath,
+      declaredName,
+    }).map((item) => normalizePathForMatch(item).toLowerCase());
     if (candidates.includes(requested)) {
       matched.push(projectPath);
     }

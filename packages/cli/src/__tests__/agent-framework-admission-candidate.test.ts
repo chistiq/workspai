@@ -75,7 +75,16 @@ async function fixture(): Promise<{
 }
 
 afterEach(async () => {
-  await Promise.all(temporaryRoots.splice(0).map((root) => fs.rm(root, { recursive: true })));
+  // Lane hashing is parallel. A rejected candidate can still have in-flight
+  // Windows file reads, so retry ENOTEMPTY/EBUSY during tree removal.
+  for (const root of temporaryRoots.splice(0)) {
+    await fs.rm(root, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 10 : 0,
+      retryDelay: 100,
+    });
+  }
 });
 
 describe('agent framework admission candidate', () => {

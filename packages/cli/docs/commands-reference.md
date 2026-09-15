@@ -58,7 +58,7 @@ compatibility view. See [Workspai Live Activity](./workspace-live-activity.md).
 
 ```bash
 npx workspai create # Guided create or existing-software ingestion
-npx workspai create workspace <name> [--profile <profile>] [--yes] [--here|--output <parent-dir>] [--skip-python-engine] [--skip-git] [--dry-run] [--install-method <poetry|venv|pipx>]
+npx workspai create workspace <name> [--profile <profile>] [--yes] [--here|--output <parent-dir>] [--skip-python-engine] [--skip-git] [--dry-run] [--json] [--install-method <poetry|venv|pipx>]
 npx workspai bootstrap [--profile <profile>] [--ci] [--json] [--compliance-only]
 npx workspai setup <python|node|go|java|dotnet|rust|php> [--warm-deps]
 npx workspai pipeline [--json] [--strict] [--skip-verify] [--skip-analyze] [--skip-autopilot] [--autopilot-mode <audit|safe-fix|enforce>] [--agent-sync|--no-agent-sync]
@@ -80,6 +80,8 @@ npx workspai change resume --change <change-id> --to <authorized|executing|verif
 npx workspai change abort --change <change-id> --reason <text> [--actor <identity>] [--json]
 npx workspai change capsule validate --change <change-id> [--workspace <path>] [--json]
 npx workspai change capsule export --change <change-id> --output <path> [--workspace <path>] [--json]
+npx workspai create project agent.microsoft.python <name> [--agent-name <name>] [--skip-git]
+npx workspai create project agent.microsoft.dotnet <name> [--agent-name <name>] [--skip-git]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
 npx workspai agent framework list [--json]
 npx workspai agent framework plan --project <name> --runtime <python|dotnet> --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
@@ -273,16 +275,21 @@ Blocked receipts exit `2`; strict mode also maps degraded evidence to exit `2`.
 See [Canonical-first agent entry](./agent-entry.md).
 
 `agent framework` is the governed bridge between Workspai evidence and an
-agent runtime. `list` exposes only exact release-admitted baselines. `plan`
-creates or reuses a scoped Goal, begins a Proof-Carrying Change, and attaches a
-hash-bound file plan without writing project files. `attach` shows that plan
-and requires an interactive confirmation or explicit `--yes` before granting
-the filesystem effect and writing an isolated `agents/<name>` directory.
-Dependency installation, credentials, generated-code execution, and model
-provider calls are never implied by that approval. `apply` is the automation
-counterpart for a plan that was separately authorized with `change authorize`.
-Any adapter, version, manifest, runtime, or platform drift invalidates its
-bundled release admission until the complete conformance matrix passes again.
+agent runtime. `list` exposes only exact release-admitted baselines: Python
+`1.18.0` and .NET `1.21.0` in this CLI version. `plan` creates or reuses a
+scoped Goal, begins a Proof-Carrying Change, and attaches a hash-bound file
+plan without writing project files. `attach` shows that plan and requires an
+interactive confirmation or explicit `--yes` before granting the filesystem
+effect and writing an isolated `agents/<name>` directory. `create project
+agent.microsoft.python|dotnet` uses the same admitted lifecycle for a new
+project: it registers the project, plans against a Model baseline, writes the
+nested runtime, then re-observes Model/Graph before it claims Intelligence is
+sealed. Dependency installation, credentials, generated-code execution, and
+model provider calls are never implied by that approval. `apply` is the
+automation counterpart for a plan that was separately authorized with
+`change authorize`. Any adapter, version, manifest, runtime, or platform drift
+invalidates its bundled release admission until the complete conformance matrix
+passes again. The generated Change remains open until `change verify`.
 
 `workspace feedback record` is a non-interactive machine interface. It requires
 exactly one JSON object on stdin and `--json`; an empty stdin or interactive TTY

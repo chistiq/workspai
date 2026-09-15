@@ -83,6 +83,35 @@ function queryIndex(graph: WorkspaceKnowledgeGraph): WorkspaceKnowledgeQueryInde
   return index;
 }
 
+function projectBoundEntityIds(graph: WorkspaceKnowledgeGraph, projectId: string): Set<string> {
+  const projectEntityIds = new Set(
+    graph.entities
+      .filter(
+        (entity) =>
+          entity.kind === 'project' &&
+          (entity.projectId === projectId || entity.label === projectId)
+      )
+      .map((entity) => entity.id)
+  );
+  const scoped = new Set<string>(projectEntityIds);
+  for (const relation of graph.relations) {
+    if (projectEntityIds.has(relation.from)) scoped.add(relation.to);
+    if (projectEntityIds.has(relation.to)) scoped.add(relation.from);
+  }
+  return scoped;
+}
+
+export function entityMatchesProjectScope(
+  graph: WorkspaceKnowledgeGraph,
+  entity: WorkspaceKnowledgeEntity,
+  projectId?: string
+): boolean {
+  if (!projectId) return true;
+  if (entity.projectId === projectId) return true;
+  if (entity.projectId !== undefined) return false;
+  return projectBoundEntityIds(graph, projectId).has(entity.id);
+}
+
 export function resolveKnowledgeTarget(
   graph: WorkspaceKnowledgeGraph,
   query: string,
@@ -92,8 +121,8 @@ export function resolveKnowledgeTarget(
   const exactRelation = index.relationsById.get(query);
   if (exactRelation) return { found: true, targetType: 'relation', relation: exactRelation };
   const needle = normalized(query);
-  const matches = (index.entitiesByAlias.get(needle) ?? []).filter(
-    (entity) => !projectId || entity.projectId === projectId
+  const matches = (index.entitiesByAlias.get(needle) ?? []).filter((entity) =>
+    entityMatchesProjectScope(graph, entity, projectId)
   );
   if (matches.length === 1) return { found: true, targetType: 'entity', entity: matches[0] };
   return {
@@ -233,7 +262,7 @@ export function queryKnowledgeEntities(
     .filter(
       (entity) =>
         (!kind || entity.kind === (kind as WorkspaceKnowledgeEntityKind)) &&
-        (!projectId || entity.projectId === projectId)
+        entityMatchesProjectScope(graph, entity, projectId)
     )
     .sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label));
 }
@@ -1003,29 +1032,11 @@ export function searchKnowledgeGraph(
       : Math.min(defaultMinimumTermMatches, Math.max(1, Math.trunc(options.minimumTermMatches)));
   const limit = Math.max(1, Math.min(Math.trunc(options.limit ?? 12), 100));
   const relationsPerEntity = Math.max(0, Math.min(Math.trunc(options.relationsPerEntity ?? 4), 20));
-  const scopedSharedEntityIds = new Set<string>();
-  if (options.projectId) {
-    const projectEntityIds = new Set(
-      graph.entities
-        .filter(
-          (entity) =>
-            entity.kind === 'project' &&
-            (entity.projectId === options.projectId || entity.label === options.projectId)
-        )
-        .map((entity) => entity.id)
-    );
-    for (const relation of graph.relations) {
-      if (projectEntityIds.has(relation.from)) scopedSharedEntityIds.add(relation.to);
-      if (projectEntityIds.has(relation.to)) scopedSharedEntityIds.add(relation.from);
-    }
-  }
   const documents = graph.entities
     .filter(
       (entity) =>
         (!options.kind || entity.kind === options.kind) &&
-        (!options.projectId ||
-          entity.projectId === options.projectId ||
-          (entity.projectId === undefined && scopedSharedEntityIds.has(entity.id)))
+        entityMatchesProjectScope(graph, entity, options.projectId)
     )
     .map(searchDocument);
   const inverseDocumentFrequency = new Map(

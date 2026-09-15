@@ -16,6 +16,7 @@ import {
   writeWorkspaceArtifactJson,
 } from './utils/artifact-path-compat.js';
 import { workspaceMetadataCandidates } from './utils/workspace-paths.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
@@ -92,7 +93,13 @@ function readContractProjectPaths(workspacePath: string): string[] {
         const relativePath =
           typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
         const registeredPath = externalPath || relativePath;
-        return registeredPath ? path.resolve(workspacePath, registeredPath) : '';
+        return registeredPath
+          ? resolveWorkspaceProjectFilesystemPath(
+              workspacePath,
+              relativePath || registeredPath,
+              externalPath ? { absolutePath: externalPath } : {}
+            )
+          : '';
       })
       .filter(Boolean);
   } catch {
@@ -118,13 +125,14 @@ function resolveReadinessProjectPath(startPath: string, workspacePath: string): 
         const record = toObjectRecord(entry);
         const externalPath =
           typeof record.externalPath === 'string' ? record.externalPath.trim() : '';
-        if (externalPath) {
-          return path.resolve(workspacePath, externalPath);
-        }
         const relativePath =
           typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
-        if (relativePath) {
-          return path.join(workspacePath, relativePath);
+        if (externalPath || relativePath) {
+          return resolveWorkspaceProjectFilesystemPath(
+            workspacePath,
+            relativePath || externalPath,
+            externalPath ? { absolutePath: externalPath } : {}
+          );
         }
       }
     } catch {
@@ -765,7 +773,7 @@ export async function evaluateReleaseReadiness(
       contractProjectPaths.length > 0
         ? contractProjectPaths
         : registered.summary.projects.map((project) =>
-            path.resolve(workspacePath, project.relativePath)
+            resolveWorkspaceProjectFilesystemPath(workspacePath, project.relativePath)
           );
     effectiveRuntime = registeredProjectPaths.map((registeredProjectPath) =>
       detectProjectRuntime(registeredProjectPath)

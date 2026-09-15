@@ -36,6 +36,7 @@ import { runWorkspaceIntelligenceChain } from './workspace-intelligence-runner.j
 import { assertWorkspaceKnowledgeGraphSourceBinding } from './workspace-knowledge-graph.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
 import type { WorkspaceModel, WorkspaceModelProject } from './workspace-model.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import { hashCanonicalJson, hashWorkspaceModel } from './workspace-model-hash.js';
 
 const GOAL_PACK_CONTRACT_PATH = 'contracts/workspace-intelligence/goal-pack.v1.json' as const;
@@ -183,7 +184,9 @@ function normalizePortablePath(value: string): string {
 }
 
 function projectAbsolutePath(workspacePath: string, project: WorkspaceModelProject): string {
-  return path.resolve(project.absolutePath ?? path.join(workspacePath, project.path));
+  return resolveWorkspaceProjectFilesystemPath(workspacePath, project.path, {
+    ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+  });
 }
 
 function selectProject(input: {

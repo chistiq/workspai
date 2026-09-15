@@ -313,6 +313,10 @@ describe('project command capabilities', () => {
     expect(capabilities.lifecycleCoverage).toBe('primary-runtime-only');
     expect(capabilities.fleetStages).toEqual(expect.arrayContaining(['init', 'test', 'build']));
     expect(capabilities.fleetStages).not.toContain('start');
+    expect(capabilities.commandMap.build).toMatchObject({
+      fleetEligible: true,
+      executionScope: 'fleet',
+    });
     expect(capabilities.commandMap.build.reason).toContain('primary dotnet adapter');
     expect(capabilities.commandMap.build.reason).toContain('workspace fleet planning');
   });

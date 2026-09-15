@@ -8,9 +8,25 @@ import {
   MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
   packageVersion,
   selectLatestRegistryVersion,
+  type AgentFrameworkVersionBaseline,
 } from '../agent-frameworks/version-policy.js';
 import { discoverAgentFrameworkVersions } from '../agent-frameworks/version-discovery.js';
 import { buildAgentFrameworkVersionPromotion } from '../agent-frameworks/version-promotion.js';
+
+function pythonDiscoveryFixture(): AgentFrameworkVersionBaseline {
+  const baseline = structuredClone(MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE);
+  const packages = baseline.packages.map((dependency) => {
+    if (dependency.name === 'agent-framework-core') {
+      return { ...dependency, version: '1.17.0' };
+    }
+    return dependency;
+  });
+  return {
+    ...baseline,
+    frameworkVersion: '1.17.0',
+    packages,
+  };
+}
 
 describe('agent framework version policy', () => {
   it('keeps every built-in on an explicit latest-admitted, nonautomatic policy', () => {
@@ -28,10 +44,10 @@ describe('agent framework version policy', () => {
 
   it('labels stable and preview baselines truthfully', () => {
     expect(formatAgentFrameworkVersionPolicy(MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE)).toBe(
-      '1.17.0 · Workspai verified stable baseline'
+      `${MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion} · Workspai verified stable baseline`
     );
     expect(formatAgentFrameworkVersionPolicy(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE)).toBe(
-      '1.20.0 · Workspai verified preview baseline'
+      `${MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE.frameworkVersion} · Workspai verified preview baseline`
     );
     expect(
       packageVersion(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, 'Microsoft.Agents.AI.Foundry')
@@ -64,16 +80,15 @@ describe('agent framework version policy', () => {
   });
 
   it('discovers candidates without mutating or promoting the admitted baseline', async () => {
+    const baseline = pythonDiscoveryFixture();
     const report = await discoverAgentFrameworkVersions({
-      baselines: [MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE],
+      baselines: [baseline],
       generatedAt: '2026-09-06T00:00:00.000Z',
       fetcher: async (url) => ({
         ok: true,
         status: 200,
         async json() {
-          const admitted = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.packages.find(
-            (dependency) => dependency.registryUrl === url
-          );
+          const admitted = baseline.packages.find((dependency) => dependency.registryUrl === url);
           if (!admitted) throw new Error(`Unexpected registry URL: ${url}`);
           return {
             releases: {
@@ -109,16 +124,15 @@ describe('agent framework version policy', () => {
   });
 
   it('builds a reviewable promotion while preserving policy and binding the core version', async () => {
+    const baseline = pythonDiscoveryFixture();
     const report = await discoverAgentFrameworkVersions({
-      baselines: [MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE],
+      baselines: [baseline],
       generatedAt: '2026-09-06T00:00:00.000Z',
       fetcher: async (url) => ({
         ok: true,
         status: 200,
         async json() {
-          const dependency = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.packages.find(
-            (candidate) => candidate.registryUrl === url
-          );
+          const dependency = baseline.packages.find((candidate) => candidate.registryUrl === url);
           if (!dependency) throw new Error(`Unexpected registry URL: ${url}`);
           return {
             releases: {
@@ -129,10 +143,7 @@ describe('agent framework version policy', () => {
         },
       }),
     });
-    const promotion = buildAgentFrameworkVersionPromotion(
-      [MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE],
-      report
-    );
+    const promotion = buildAgentFrameworkVersionPromotion([baseline], report);
 
     expect(promotion).toMatchObject({
       changed: true,
@@ -152,19 +163,18 @@ describe('agent framework version policy', () => {
       admissionRequired: true,
       frameworkVersion: '1.18.0',
     });
-    expect(MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion).toBe('1.17.0');
+    expect(baseline.frameworkVersion).toBe('1.17.0');
   });
 
   it('refuses stale or incomplete discovery evidence', async () => {
+    const baseline = pythonDiscoveryFixture();
     const report = await discoverAgentFrameworkVersions({
-      baselines: [MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE],
+      baselines: [baseline],
       fetcher: async (url) => ({
         ok: true,
         status: 200,
         async json() {
-          const dependency = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.packages.find(
-            (candidate) => candidate.registryUrl === url
-          );
+          const dependency = baseline.packages.find((candidate) => candidate.registryUrl === url);
           if (!dependency) throw new Error(`Unexpected registry URL: ${url}`);
           return { releases: { [dependency.version]: [{ yanked: false }] } };
         },
@@ -172,8 +182,8 @@ describe('agent framework version policy', () => {
     });
     report.adapters[0]!.packages[0]!.admittedVersion = '0.0.0';
 
-    expect(() =>
-      buildAgentFrameworkVersionPromotion([MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE], report)
-    ).toThrow('Discovery package identity does not match');
+    expect(() => buildAgentFrameworkVersionPromotion([baseline], report)).toThrow(
+      'Discovery package identity does not match'
+    );
   });
 });

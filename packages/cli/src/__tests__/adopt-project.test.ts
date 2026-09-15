@@ -382,6 +382,10 @@ describe('adopt-project', () => {
       name: 'portal-web',
       runtime: 'node',
     });
+    await fsExtra.writeJson(path.join(existingNodeProject, 'package.json'), {
+      name: 'portal-web',
+      dependencies: { next: '^15.0.0' },
+    });
     const projectPath = await makeTempDir('rapidkit-adopt-minimal-fastapi-source-');
     await fsExtra.writeFile(path.join(projectPath, 'requirements.txt'), 'fastapi\n');
 
@@ -396,6 +400,16 @@ describe('adopt-project', () => {
       profile: 'minimal',
       recommendedProfile: 'polyglot',
       message: 'minimal profile mismatch: multiple runtimes detected [node, python].',
+    });
+    const model = await buildWorkspaceModel({ workspacePath });
+    expect(model.validation.status).not.toBe('failed');
+    expect(model.validation.issues.map((issue) => issue.code)).toContain(
+      'workspace.profile.mismatch'
+    );
+    expect(
+      model.validation.issues.find((issue) => issue.code === 'workspace.profile.mismatch')
+    ).toMatchObject({
+      severity: 'warning',
     });
   });
 
@@ -465,10 +479,11 @@ describe('adopt-project', () => {
     expect(model.projects).toEqual([
       expect.objectContaining({
         name: 'orders-api',
-        path: path.relative(workspacePath, projectPath).split(path.sep).join('/'),
+        path: 'external/orders-api',
         framework: 'express',
       }),
     ]);
+    expect(model.validation.status).not.toBe('failed');
 
     const contractSync = await syncWorkspaceContract({ workspacePath });
     expect(contractSync.addedProjects).toEqual([]);

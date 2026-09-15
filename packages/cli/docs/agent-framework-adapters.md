@@ -88,14 +88,15 @@ verified from the Microsoft source tree:
 
 | Adapter                            | Tested framework | Runtime         | Authored detection                         |
 | ---------------------------------- | ---------------- | --------------- | ------------------------------------------ |
-| `microsoft-agent-framework-python` | `1.17.0`         | Python `>=3.10` | `agent-framework` PyPI package family      |
-| `microsoft-agent-framework-dotnet` | `1.20.0`         | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
+| `microsoft-agent-framework-python` | `1.18.0`         | Python `>=3.10` | `agent-framework` PyPI package family      |
+| `microsoft-agent-framework-dotnet` | `1.21.0`         | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
 
 The first provider profile pins its integration independently: Python uses
-`agent-framework-foundry` `1.12.0`, while .NET uses
-`Microsoft.Agents.AI.Foundry` `1.20.0-preview.260831.1` over the stable
-`Microsoft.Agents.AI` `1.20.0` core. Preview integration status is not
-misrepresented as framework stability.
+`agent-framework-foundry` `1.13.0`, while .NET uses
+`Microsoft.Agents.AI.Foundry` `1.21.0-preview.260911.1` over the stable
+`Microsoft.Agents.AI` `1.21.0` core. Preview integration status is not
+misrepresented as framework stability. The dedicated .NET test project pins
+`Microsoft.NET.Test.Sdk` `18.10.0` and `xunit.v3.mtp-v2` `4.0.1`.
 
 Each adapter implements detection, scaffold and attach planning, managed-file
 rendering, project context, validation, and runtime resolution. It never
@@ -203,11 +204,27 @@ npx workspai create project agent.microsoft.python support-agent
 npx workspai create project agent.microsoft.dotnet operations-agent
 ```
 
-Create writes a minimal runtime identity, registers the project, creates the
-Goal and PCC, applies the adapter-owned scaffold, and records its ownership
-receipt before committing the project lifecycle transaction. A failed scaffold
+Create writes a minimal runtime identity, registers the project, seals a
+Model/Graph baseline so the adapter can plan, applies the adapter-owned scaffold
+inside that Change, then re-observes Model, Graph, and project grounding against
+the nested runtime. The interactive wizard exposes these kits under the **AI
+Agent** category only because they are release-admitted. A failed scaffold
 rolls back the new directory and workspace registration. Detection itself
 remains read-only and never authorizes writes.
+
+The nested instance is the only executable unit. `workspace run --plan` should
+show `agents/<instance>` with compile, standard-library `unittest` or the
+dedicated .NET test project, and `python3 main.py` / `dotnet run` as
+evidence-backed stages. Create does not install packages or call a model. The
+Change stays `open` until:
+
+```bash
+npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai change verify --change <change-id> --json
+```
+
+`--strict` is for workspace readiness blockers in other projects. Independent
+verification of this Change is `change verify`.
 
 A workspace may contain multiple independently scoped framework adapters. A
 project that deliberately connects two frameworks must declare that bridge;
@@ -257,8 +274,10 @@ and unadvertised runtimes fail closed.
 
 The generic boundary was hardened against two deliberately different
 integration shapes: a filesystem-first Node.js framework and the
-multi-language Microsoft Agent Framework. Only the Microsoft adapters are now
-implemented, and their preview state still prevents premature selection.
+multi-language Microsoft Agent Framework. Only the Microsoft adapters are
+implemented. They are selectable for Create and Attach only while their exact
+manifest digest, framework baseline, runtime, and platform list remain in the
+reviewed release-admission inventory.
 
 ## Implementation sequence
 
@@ -267,9 +286,9 @@ implemented, and their preview state still prevents premature selection.
 2. Use the framework-neutral registry, detector, and bounded manifest loader.
 3. Review the Microsoft Python and .NET digest-bound evidence produced by the
    full conformance matrix.
-4. Keep automated upstream discovery separate from release authority: open or
-   refresh one version pull request, rerun the full matrix, bind the exact green
-   candidate, then rely on protected-branch review before merge.
+4. Keep automated upstream discovery separate from release authority: report
+   newer registry versions, then update pins only through a reviewed change.
+   Re-run the full matrix before treating a new pin as independently proven.
 5. Admit another framework only after its create and attach paths share these
    ownership, rollback, and verification guarantees.
 

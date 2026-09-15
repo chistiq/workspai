@@ -1181,6 +1181,8 @@ interface CreateProjectOptions {
   parentDirectory?: string;
   /** Defer the standalone workspace receipt when creation is one step in a larger command. */
   suppressReceipt?: boolean;
+  /** Machine-readable callers: skip human receipts and dry-run prose. */
+  json?: boolean;
 }
 
 export async function createProject(
@@ -1203,6 +1205,7 @@ export async function createProject(
     profile,
     parentDirectory,
     suppressReceipt = false,
+    json = false,
   } = options;
 
   // Default to 'rapidkit' directory
@@ -1220,21 +1223,23 @@ export async function createProject(
 
   // Dry-run mode - show what would be created
   if (dryRun) {
-    const defaultProfile = profile || (yes ? 'minimal' : undefined);
-    const defaultInstallMethod =
-      providedInstallMethod || userConfig.defaultInstallMethod || 'poetry';
-    const defaultPythonVersion = userConfig.pythonVersion || '3.10';
-    await showDryRun(
-      projectPath,
-      name,
-      demoMode,
-      userConfig,
-      defaultProfile,
-      defaultInstallMethod,
-      defaultPythonVersion,
-      skipGit,
-      skipPythonEngine
-    );
+    if (!json) {
+      const defaultProfile = profile || (yes ? 'minimal' : undefined);
+      const defaultInstallMethod =
+        providedInstallMethod || userConfig.defaultInstallMethod || 'poetry';
+      const defaultPythonVersion = userConfig.pythonVersion || '3.10';
+      await showDryRun(
+        projectPath,
+        name,
+        demoMode,
+        userConfig,
+        defaultProfile,
+        defaultInstallMethod,
+        defaultPythonVersion,
+        skipGit,
+        skipPythonEngine
+      );
+    }
     return;
   }
 

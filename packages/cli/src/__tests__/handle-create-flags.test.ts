@@ -144,15 +144,39 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
         path.join(workspacePath, '.workspai', 'agent-frameworks', 'ownership')
       )
     ).toBe(true);
+    expect(await fsExtra.pathExists(path.join(projectPath, 'pyproject.toml'))).toBe(false);
     const contract = await fsExtra.readJson(
       path.join(workspacePath, '.workspai', 'workspace.contract.json')
     );
     expect(contract.projects).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ slug: 'support-agent', runtime: 'python' }),
+        expect.objectContaining({
+          slug: 'support-agent',
+          runtime: 'python',
+          kit: 'agent.microsoft.python',
+          ports: [],
+          contracts: expect.objectContaining({
+            env: expect.arrayContaining(['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL']),
+          }),
+        }),
       ])
     );
-  }, 60_000);
+    const model = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
+    );
+    const modeled = model.projects.find(
+      (project: { name?: string }) => project.name === 'support-agent'
+    );
+    expect(modeled).toMatchObject({
+      kind: 'agent',
+      framework: 'microsoft-agent-framework',
+      kit: 'agent.microsoft.python',
+      path: 'support-agent',
+    });
+    expect(modeled.commands.fleetStages).toEqual(
+      expect.arrayContaining(['init', 'test', 'build', 'start'])
+    );
+  }, 90_000);
 
   it('rolls back project registration when the governed scaffold cannot be planned', async () => {
     await create.createProject('agent-workspace', {

@@ -18,6 +18,7 @@ import {
   type WorkspaceGraphNode,
 } from './contracts/workspace-dependency-graph-contract.js';
 import { computeGraphCentrality } from './workspace-graph-centrality.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import { computeInputsHash } from './contracts/freshness-metadata-contract.js';
 import {
   WORKSPACE_CONTRACT_PATH,
@@ -156,9 +157,9 @@ function buildProjectIndex(
     if (idToDir.has(project.name)) {
       continue;
     }
-    const dir = project.absolutePath
-      ? path.resolve(project.absolutePath)
-      : path.resolve(workspacePath, project.path);
+    const dir = resolveWorkspaceProjectFilesystemPath(workspacePath, project.path, {
+      ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
+    });
     idToDir.set(project.name, dir);
     if (!dirToId.has(dir)) {
       dirToId.set(dir, project.name);

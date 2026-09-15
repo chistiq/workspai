@@ -7,12 +7,12 @@
       "runtime": "python",
       "policy": "latest-admitted",
       "releaseChannel": "stable",
-      "frameworkVersion": "1.17.0",
+      "frameworkVersion": "1.18.0",
       "packages": [
         {
           "ecosystem": "pypi",
           "name": "agent-framework-core",
-          "version": "1.17.0",
+          "version": "1.18.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://pypi.org/pypi/agent-framework-core/json"
@@ -20,7 +20,7 @@
         {
           "ecosystem": "pypi",
           "name": "agent-framework-foundry",
-          "version": "1.12.0",
+          "version": "1.13.0",
           "channel": "stable",
           "role": "framework-integration",
           "registryUrl": "https://pypi.org/pypi/agent-framework-foundry/json"
@@ -43,12 +43,12 @@
       "runtime": "dotnet",
       "policy": "latest-admitted",
       "releaseChannel": "preview",
-      "frameworkVersion": "1.20.0",
+      "frameworkVersion": "1.21.0",
       "packages": [
         {
           "ecosystem": "nuget",
           "name": "Microsoft.Agents.AI",
-          "version": "1.20.0",
+          "version": "1.21.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json"
@@ -56,7 +56,7 @@
         {
           "ecosystem": "nuget",
           "name": "Microsoft.Agents.AI.Foundry",
-          "version": "1.20.0-preview.260831.1",
+          "version": "1.21.0-preview.260911.1",
           "channel": "preview",
           "role": "framework-integration",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai.foundry/index.json"
@@ -72,7 +72,7 @@
         {
           "ecosystem": "nuget",
           "name": "Microsoft.NET.Test.Sdk",
-          "version": "18.0.0",
+          "version": "18.10.0",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.net.test.sdk/index.json"
@@ -80,7 +80,7 @@
         {
           "ecosystem": "nuget",
           "name": "xunit.v3.mtp-v2",
-          "version": "3.2.2",
+          "version": "4.0.1",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/xunit.v3.mtp-v2/index.json"

@@ -68,7 +68,7 @@ export async function initializeAgentFrameworkProjectRoot(input: {
   await fsExtra.ensureDir(input.projectPath);
   await fsExtra.writeFile(
     path.join(input.projectPath, 'README.md'),
-    `# ${input.projectName}\n\nThis agent project is governed by Workspai and uses ${input.kit.label}.\n\nThe runtime files under \`agents/\` are created through a Goal-bound, Proof-Carrying Change. Dependencies are pinned recommendations and are not installed automatically.\n\n## Start here\n\n1. Run Workspace Intelligence from the workspace root and resolve any blocking readiness evidence.\n2. Open \`agents/primary/README.md\` for the exact install, verify, and run commands.\n3. Set required credentials only in your shell or approved secret store; never commit them.\n4. Verify the generated Change before treating this scaffold as release-ready.\n`,
+    `# ${input.projectName}\n\nThis agent project is governed by Workspai and uses ${input.kit.label}.\n\nThe runtime files under \`agents/\` are created through a Goal-bound, Proof-Carrying Change. Dependencies are pinned recommendations and are not installed automatically.\n\n## Start here\n\n1. Create already refreshes Model and Graph for the nested agent runtime. From the workspace root, run Workspace Intelligence \`--strict\` if other projects still block readiness.\n2. Open \`agents/primary/README.md\` for the exact install, verify, and run commands.\n3. Set required credentials only in your shell or approved secret store; never commit them.\n4. Verify the generated Change before treating this scaffold as release-ready.\n`,
     { encoding: 'utf8', flag: 'wx' }
   );
   await fsExtra.writeFile(

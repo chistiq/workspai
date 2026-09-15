@@ -14,6 +14,7 @@ import {
   writeWorkspaceArtifactJson,
 } from './artifact-path-compat.js';
 import { assertWorkspaceArtifactContract } from '../contracts/artifact-contract-registry.js';
+import { resolveWorkspaceProjectFilesystemPath } from './workspace-project-paths.js';
 import { projectMetadataCandidates, workspaceMetadataCandidates } from './workspace-paths.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS,
@@ -274,6 +275,23 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
+function uniqueSortedStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))].sort(
+    (left, right) => left.localeCompare(right)
+  );
+}
+
+function projectJsonContractsEnv(payload: Record<string, unknown>): string[] {
+  const contracts = payload.contracts;
+  if (!contracts || typeof contracts !== 'object' || Array.isArray(contracts)) return [];
+  return normalizeStringArray((contracts as { env?: unknown }).env);
+}
+
+function isNonServiceKit(kit?: string): boolean {
+  const value = (kit || '').toLowerCase();
+  return value.includes('vscode-extension') || value.includes('agent.microsoft');
+}
+
 function normalizeProjectPorts(payload: Record<string, unknown>): WorkspaceContractPort[] {
   const explicitPorts = Array.isArray(payload.ports) ? payload.ports : [];
   const normalized = explicitPorts
@@ -429,7 +447,7 @@ function projectKindFromKit(kit?: string): string | undefined {
 function defaultPortForKit(kit?: string, runtime?: string): number | null {
   const value = (kit || '').toLowerCase();
   const runtimeValue = (runtime || '').toLowerCase();
-  if (value.includes('vscode-extension')) return null;
+  if (isNonServiceKit(kit)) return null;
   if (value.includes('fastapi')) return 8000;
   if (value.includes('nestjs')) return 3000;
   if (value.includes('springboot')) return 8080;
@@ -460,7 +478,7 @@ function mergeProjectContract(
   const preferredPort = defaultPortForKit(discovered.kit, discovered.runtime);
   const existingPorts = existing?.ports || [];
   const discoveredPorts = discovered.ports || [];
-  const nonServiceExtension = (discovered.kit || '').toLowerCase().includes('vscode-extension');
+  const nonServiceExtension = isNonServiceKit(discovered.kit);
   // Any source-bearing record is a managed discovery projection; source-less
   // records are the authored contract authority. An internal linked adoption
   // used to be labeled `workspace`, so allow it to migrate to adopted-local
@@ -535,7 +553,10 @@ function mergeProjectContract(
       publishes: existing?.contracts?.publishes || [],
       consumes: existing?.contracts?.consumes || [],
       dependsOn: existing?.contracts?.dependsOn || [],
-      env: existing?.contracts?.env || [],
+      env: uniqueSortedStrings([
+        ...(existing?.contracts?.env ?? []),
+        ...(discovered.contracts.env ?? []),
+      ]),
     },
   };
 
@@ -639,7 +660,7 @@ export async function buildWorkspaceContract(input: {
         publishes: [],
         consumes: [],
         dependsOn: [],
-        env: [],
+        env: projectJsonContractsEnv(payload),
       },
     });
   }
@@ -965,9 +986,9 @@ function resolveContractProjectRoot(
   workspacePath: string,
   project: WorkspaceContractProject
 ): string {
-  return project.externalPath
-    ? path.resolve(project.externalPath)
-    : path.resolve(workspacePath, project.relativePath);
+  return resolveWorkspaceProjectFilesystemPath(workspacePath, project.relativePath, {
+    ...(project.externalPath ? { absolutePath: project.externalPath } : {}),
+  });
 }
 
 async function discoverContractGraphFiles(

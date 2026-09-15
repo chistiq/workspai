@@ -5,7 +5,45 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.75.1 (September 8, 2026)
+## Latest Release: v0.75.2 (September 14, 2026)
+
+### Reviewed Framework Pins Without Automatic Promotion
+
+Workspai 0.75.2 moves Microsoft Agent Framework tested baselines to Python
+1.18 and .NET 1.21, and keeps weekly discovery from rewriting Create
+contracts on its own.
+
+**What's New:**
+
+- Pin Python `1.18.0` / Foundry `1.13.0` and .NET `1.21.0` / Foundry preview
+  `1.21.0-preview.260911.1`.
+- Keep version discovery report-only: no automatic commit, pull request, or
+  contract regeneration.
+- Allow an explicit `primary` or `full` official-generator matrix choice for
+  release qualification.
+- Re-observe Model and Graph after a governed agent Create so nested
+  `agents/<instance>` lifecycle units are present when Create finishes.
+- Keep agent kits off the synthetic HTTP port map and copy authored Foundry
+  environment names onto the workspace contract.
+
+**Compatibility:** Existing commands, schema versions, and fail-closed
+framework admission remain supported. Independent Graph work is not this CLI
+release.
+
+**Publication status:** Released September 14, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.75.2
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.75.2/packages/cli/releases/RELEASE_NOTES_v0.75.2.md)
+
+---
+
+## v0.75.1 (September 8, 2026)
 
 ### Safer Adoption and Reliable Agent Evidence
 

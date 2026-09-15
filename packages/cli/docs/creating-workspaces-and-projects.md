@@ -16,8 +16,9 @@ For a compact list of command syntax, see
 A **workspace** is the shared home for related projects, rules, and saved
 Workspai reports.
 
-A **project** is an application or service, such as a FastAPI API, Go service,
-Spring Boot service, .NET API, or frontend application.
+A **project** is an application, service, or governed agent, such as a FastAPI
+API, Go service, Spring Boot service, .NET API, frontend application, or
+Microsoft Agent Framework entrypoint.
 
 The canonical commands are:
 
@@ -40,6 +41,7 @@ does not have exactly the same behavior.
 | Create a project and use the current/default workspace behavior | `npx workspai create project gofiber.standard api`                          |
 | Turn the current folder into a workspace before creating        | `npx workspai create project gofiber.standard api --create-workspace --yes` |
 | Create a project without workspace management                   | `npx workspai create project gofiber.standard api --no-workspace --yes`     |
+| Create a governed Microsoft Agent Framework project             | `npx workspai create project agent.microsoft.python support-agent`          |
 | Preview a supported create plan                                 | `npx workspai create project frontend.nextjs web --dry-run`                 |
 
 # Creating a workspace
@@ -388,15 +390,31 @@ project metadata and performs the selected workspace registration.
 
 ## Agent Framework kits
 
-| Kit                      | Runtime | Framework baseline | Behavior                                   |
-| ------------------------ | ------- | ------------------ | ------------------------------------------ |
-| `agent.microsoft.python` | Python  | Release-admitted   | Goal + PCC + owned isolated agent scaffold |
-| `agent.microsoft.dotnet` | .NET    | Release-admitted   | Goal + PCC + owned isolated agent scaffold |
+| Kit                      | Runtime | Tested baseline | Layout |
+| ------------------------ | ------- | --------------- | ------ |
+| `agent.microsoft.python` | Python  | `agent-framework-core` `1.18.0`, Foundry `1.13.0`, `azure-identity` `1.25.3` | Isolated `agents/<instance>/` with `pyproject.toml`, credentialless `unittest`, and `.env.example` |
+| `agent.microsoft.dotnet` | .NET    | `Microsoft.Agents.AI` `1.21.0`, Foundry `1.21.0-preview.260911.1` | Isolated `agents/<instance>/` with the executable project plus a dedicated test project |
 
-Agent kits require Workspace governance and therefore do not accept
-`--no-workspace`. They do not install dependencies, call a model, or store
-credentials. Their exact framework versions are promoted only after the full
-Linux, macOS, and Windows conformance matrix passes.
+Interactive `workspai create` shows these kits under **AI Agent** only after
+release admission. Agent kits require Workspace governance and therefore do not
+accept `--no-workspace`. Optional `--agent-name` names the instance directory
+(default `primary`). They do not install dependencies, call a model, or store
+credentials. Exact versions are promoted only after the full Linux, macOS, and
+Windows conformance matrix passes. Weekly registry discovery is report-only; it
+cannot rewrite these pins.
+
+Create does not emit an empty root `pyproject.toml` or `.csproj`. The nested
+instance is the only Workspace Run unit. After Create, Model and Graph already
+include that nested runtime. The generated Change still needs:
+
+```bash
+npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai change verify --change <change-id> --json
+```
+
+`--strict` clears workspace-wide readiness blockers. `change verify` is the
+independent proof for this scaffold. See
+[Agent Framework Adapter Contract](./agent-framework-adapters.md).
 
 ## Desktop, extension, and additional backend generators
 

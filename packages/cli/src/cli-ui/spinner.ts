@@ -40,7 +40,7 @@ export function createUiSpinner(initialText: string, meta: ProgressMeta): CliSpi
   let currentText = initialText;
   emitProgress(meta, 'started', initialText);
 
-  if (isCliJsonLogFormat()) {
+  if (isCliJsonLogFormat() || process.argv.includes('--json')) {
     return {
       start(message?: string) {
         if (message) currentText = message;
