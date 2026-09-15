@@ -20,6 +20,10 @@ import {
   decodeComparableLocatorState,
   inferLegacyProjectId,
   isGeneratedWorkspaceControlLocator,
+  isGraphShadowCliCompatibleIdentity,
+  isGraphShadowComparableDiagnostic,
+  isGraphShadowComparableSourceProofLocator,
+  isGraphShadowTestSurfaceLocator,
   isUnsafeComparableLocator,
   mapShadowKind,
   mapShadowRelation,
@@ -169,6 +173,41 @@ describe('Graph shadow comparison projection', () => {
     expect(inferLegacyProjectId([{ kind: 'project', identity: { key: 'project:app' } }])).toBe(
       'app'
     );
+  });
+
+  it('collapses CLI test-suite aggregates and package test files onto one project test identity', () => {
+    expect(comparableLegacyIdentity('tests:app', 'test-suite', 'app')).toBe('test:app');
+    expect(comparableLegacyIdentity('tests:app:typescript', 'test-suite', 'app')).toBe('test:app');
+    expect(comparableLegacyIdentity('test:app:typescript', 'test', 'app')).toBe('test:app');
+    expect(comparableLegacyIdentity('test:renamed', 'test', 'app')).toBe('test:renamed');
+    expect(
+      comparablePackageIdentity(
+        'entity:repository-test:test:tests%2Fcatalog.test.ts',
+        'test',
+        'app'
+      )
+    ).toBe('test:app');
+    expect(isGraphShadowTestSurfaceLocator('tests/catalog.test.ts')).toBe(true);
+    expect(isGraphShadowTestSurfaceLocator('src/catalog.ts')).toBe(false);
+    expect(isGraphShadowCliCompatibleIdentity('file:package.json', 'file')).toBe(false);
+    expect(isGraphShadowCliCompatibleIdentity('file:src/catalog.ts', 'file')).toBe(true);
+    expect(isGraphShadowCliCompatibleIdentity('file:tests/catalog.test.ts', 'file')).toBe(false);
+    expect(isGraphShadowCliCompatibleIdentity('module:node:assert/strict', 'module')).toBe(false);
+    expect(isGraphShadowCliCompatibleIdentity('module:deeper', 'module')).toBe(true);
+    expect(isGraphShadowCliCompatibleIdentity('command:.#app:test', 'command')).toBe(false);
+    expect(isGraphShadowComparableSourceProofLocator('src/catalog.ts')).toBe(true);
+    expect(isGraphShadowComparableSourceProofLocator('tests/catalog.test.ts')).toBe(false);
+    expect(isGraphShadowComparableSourceProofLocator('tsconfig.json')).toBe(false);
+    expect(isGraphShadowComparableSourceProofLocator('package.json')).toBe(false);
+    expect(isGraphShadowComparableSourceProofLocator('README.md')).toBe(false);
+    expect(isGraphShadowComparableSourceProofLocator('workspai.workspace-identity')).toBe(false);
+    expect(isGraphShadowComparableSourceProofLocator('.workspai/workspace.contract.json')).toBe(
+      false
+    );
+    expect(
+      isGraphShadowComparableDiagnostic('graph.provider.source-symbol-binding.empty_result')
+    ).toBe(false);
+    expect(isGraphShadowComparableDiagnostic('graph.provider.local_import.unresolved')).toBe(true);
   });
 
   it('rejects URI-encoded traversal after decode and does not render it for equivalence', () => {

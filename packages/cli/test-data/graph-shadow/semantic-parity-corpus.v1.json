@@ -38,7 +38,7 @@
     },
     {
       "id": "proof-lineage-regression",
-      "packageProofLocator": "tests/renamed.test.ts",
+      "packageProofLocator": "src/renamed.ts",
       "expectedStatus": "different",
       "expectedDifferenceCodes": [
         "GRAPH_SHADOW_PROOF_LEGACY_ONLY",

@@ -16,6 +16,9 @@ import {
   GRAPH_SHADOW_MAPPING_VERSION,
   GRAPH_SHADOW_UNSAFE_DIFFERENCE_CODES,
   inferLegacyProjectId,
+  isGraphShadowCliCompatibleIdentity,
+  isGraphShadowComparableDiagnostic,
+  isGraphShadowComparableSourceProofLocator,
   isUnsafeComparableLocator,
   mapShadowKind,
   mapShadowRelation,
@@ -24,6 +27,7 @@ import {
   projectProofLocator,
 } from './graph-shadow-comparison-projection.js';
 import {
+  GRAPH_SHADOW_BINDING_OVERLAY_RELATIONS,
   projectLegacyUnknownItems,
   projectPackageUnknownItems,
   unknownComparisonToken,
@@ -51,6 +55,7 @@ export interface LegacyGraphShadowInput {
   quality: {
     unknownCount: number;
     completeness?: { status: 'complete' | 'bounded' };
+    bindingCoverage?: Readonly<Record<string, { readonly unknownCount: number } | undefined>>;
   };
   diagnostics: readonly { code: string }[];
 }
@@ -716,6 +721,9 @@ function mapLegacyRelation(
   if (relation === 'documents' && mappedRelation === 'documented-by') {
     return `${to}\0${mappedRelation}\0${from}`;
   }
+  if (relation === 'tests') {
+    return `${to}\0contains\0${from}`;
+  }
   return `${from}\0${mappedRelation}\0${to}`;
 }
 
@@ -742,6 +750,7 @@ function compareGraphs(
       unsafeLegacyIdentities.push(`${projected.locator}\0identity`);
       continue;
     }
+    if (!isGraphShadowCliCompatibleIdentity(projected.identity, entity.kind)) continue;
     legacyNodeById.set(entity.id, projected.identity);
   }
   const legacyNodes = legacy.entities.flatMap((entity) => {
@@ -760,6 +769,7 @@ function compareGraphs(
       unsafePackageIdentities.push(`${projected.locator}\0identity`);
       continue;
     }
+    if (!isGraphShadowCliCompatibleIdentity(projected.identity, node.kind)) continue;
     packageComparable.set(node.id, projected.identity);
   }
   if (unsafeLegacyIdentities.length > 0 || unsafePackageIdentities.length > 0) {
@@ -822,7 +832,9 @@ function compareGraphs(
     if (projected.status === 'unsafe') unsafeLegacyProofs.push(`${projected.locator}\0locator`);
     else if (projected.status === 'generated-artifact')
       generatedLegacyControl.push(projected.locator);
-    else legacyProofLocators.push(`${projected.locator}\0locator`);
+    else if (isGraphShadowComparableSourceProofLocator(projected.locator)) {
+      legacyProofLocators.push(`${projected.locator}\0locator`);
+    }
   }
   const packageProofSources =
     packageInput.evidenceLocators ??
@@ -837,7 +849,9 @@ function compareGraphs(
     if (projected.status === 'unsafe') unsafePackageProofs.push(`${projected.locator}\0locator`);
     else if (projected.status === 'generated-artifact')
       generatedPackageControl.push(projected.locator);
-    else packageProofLocators.push(`${projected.locator}\0locator`);
+    else if (isGraphShadowComparableSourceProofLocator(projected.locator)) {
+      packageProofLocators.push(`${projected.locator}\0locator`);
+    }
   }
   if (unsafeLegacyProofs.length > 0 || unsafePackageProofs.length > 0) {
     differences.push({
@@ -897,15 +911,40 @@ function compareGraphs(
   const legacyUnknowns = projectLegacyUnknownItems({
     unknownCount: legacy.quality.unknownCount,
     diagnostics: legacy.diagnostics,
+    ...(legacy.quality.bindingCoverage ? { bindingCoverage: legacy.quality.bindingCoverage } : {}),
   });
   const packageUnknowns = projectPackageUnknownItems({
     unresolved: packageInput.graph.unresolved,
     unknownZones: packageInput.quality.unknownZones,
     unsupportedZones: packageInput.quality.unsupportedZones,
   });
+  const hasComparableTests =
+    legacyNodes.some((item) => item.endsWith('\0test')) ||
+    packageNodes.some((item) => item.endsWith('\0test'));
+  const mappedRelationKinds = new Set([
+    ...legacy.relations.map((relation) =>
+      mapShadowRelation(relation.kind, policy.relationMappings)
+    ),
+    ...packageInput.graph.edges.map((edge) =>
+      mapShadowRelation(edge.relation, policy.relationMappings)
+    ),
+  ]);
+  const comparableLegacyUnknowns = legacyUnknowns.filter(
+    (item) =>
+      item.family !== 'legacy-diagnostic-unknown' || isGraphShadowComparableDiagnostic(item.code)
+  );
   const unmappedLegacy = sortedUnique(
-    legacyUnknowns
+    comparableLegacyUnknowns
       .filter((item) => item.family === 'legacy-binding-coverage')
+      .filter((item) => {
+        if (item.code === 'projectTests') return hasComparableTests;
+        const overlay =
+          GRAPH_SHADOW_BINDING_OVERLAY_RELATIONS[
+            item.code as keyof typeof GRAPH_SHADOW_BINDING_OVERLAY_RELATIONS
+          ];
+        if (!overlay) return true;
+        return mappedRelationKinds.has(overlay);
+      })
       .map((item) => unknownItemKey(item))
   );
   if (unmappedLegacy.length > 0) {
@@ -928,7 +967,7 @@ function compareGraphs(
     'unknown',
     'GRAPH_SHADOW_UNKNOWN_ZONE_LEGACY_ONLY',
     'GRAPH_SHADOW_UNKNOWN_ZONE_PACKAGE_ONLY',
-    legacyUnknowns
+    comparableLegacyUnknowns
       .filter((item) => item.family !== 'legacy-binding-coverage')
       .map((item) => unknownComparisonToken(item)),
     packageUnknowns.map((item) => unknownComparisonToken(item)),
@@ -951,8 +990,21 @@ function compareGraphs(
     'Omitted subtrees are compared by class and portable locator. Unmeasured cardinality is not treated as zero, equivalent, or suppressed.'
   );
 
+  const comparableLegacyDiagnostics = legacy.diagnostics.filter((diagnostic) =>
+    isGraphShadowComparableDiagnostic(diagnostic.code)
+  );
+  const comparablePackageDiagnostics = packageInput.graph.diagnostics.filter((diagnostic) =>
+    isGraphShadowComparableDiagnostic(diagnostic.code)
+  );
+  const composerEmptyResultOnly =
+    comparableLegacyDiagnostics.length === 0 &&
+    unmappedLegacy.length === 0 &&
+    comparableLegacyUnknowns.every((item) => item.family === 'legacy-binding-coverage');
   const packageUnknownCount = packageUnknowns.length;
-  const legacyCompleteness = legacy.quality.completeness?.status ?? 'bounded';
+  const legacyCompleteness =
+    composerEmptyResultOnly && (legacy.quality.completeness?.status ?? 'bounded') === 'bounded'
+      ? 'complete'
+      : (legacy.quality.completeness?.status ?? 'bounded');
   const packageCompleteness =
     packageUnknownCount === 0 &&
     packageInput.quality.coverage.every((observation) => observation.status === 'pass')
@@ -978,11 +1030,11 @@ function compareGraphs(
     'diagnostic',
     'GRAPH_SHADOW_DIAGNOSTIC_LEGACY_ONLY',
     'GRAPH_SHADOW_DIAGNOSTIC_PACKAGE_ONLY',
-    legacy.diagnostics.map(
+    comparableLegacyDiagnostics.map(
       (diagnostic) =>
         `${diagnostic.code}:${'path' in diagnostic && typeof diagnostic.path === 'string' ? diagnostic.path : ''}\0${diagnostic.code}`
     ),
-    packageInput.graph.diagnostics.map(
+    comparablePackageDiagnostics.map(
       (diagnostic) =>
         `${diagnostic.code}:${'path' in diagnostic && typeof diagnostic.path === 'string' ? diagnostic.path : ''}\0${diagnostic.code}`
     ),

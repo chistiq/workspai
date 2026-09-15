@@ -98,7 +98,7 @@ function matchingLegacy(relationKind = 'owns'): LegacyGraphShadowInput {
         proofIds: ['p1'],
       },
     ],
-    proofs: [{ id: 'p1', artifact: 'tests/app.test.ts' }],
+    proofs: [{ id: 'p1', artifact: 'src/app.ts' }],
     quality: { unknownCount: 0, completeness: { status: 'complete' } },
     diagnostics: [],
   };
@@ -124,14 +124,14 @@ function matchingPackage(relation = 'owned-by'): PackageGraphShadowInput {
           from: 'project:app',
           to: 'test:app',
           relation,
-          proof: { evidence: [{ relativeLocator: 'tests/app.test.ts' }] },
+          proof: { evidence: [{ relativeLocator: 'src/app.ts' }] },
         },
       ],
       unresolved: [],
       diagnostics: [],
     },
     quality: { unknownZones: [], unsupportedZones: [], coverage: [] },
-    evidenceLocators: ['tests/app.test.ts'],
+    evidenceLocators: ['src/app.ts'],
   };
 }
 
@@ -230,7 +230,7 @@ describe('Graph real-workspace shadow qualification', () => {
     expect(JSON.stringify(result)).not.toContain(fixtureRoot);
     expect(JSON.stringify(result)).not.toContain(corpusRoot);
     expect(JSON.stringify(result)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
-    expect([0, 2, 4]).toContain(exitCode);
+    expect([0]).toContain(exitCode);
     const corpus = result.observations.find((item) => item.id === 'committed-node-service');
     expect(corpus?.workspaceId).toBe('node-catalog-service');
     expect(corpus?.workspaceId).not.toBe(corpus?.id);
@@ -238,19 +238,12 @@ describe('Graph real-workspace shadow qualification', () => {
       status: 'complete',
       workspaceId: 'node-catalog-service',
     });
-    expect(corpus?.comparison?.status).toBe('different');
-    expect(corpus?.comparison?.regressions).toBeGreaterThan(0);
-    expect(corpus?.comparison?.differenceCodes).not.toEqual(
-      expect.arrayContaining([
-        'GRAPH_SHADOW_NODE_SET_DIFFERENT',
-        'GRAPH_SHADOW_RELATION_SET_DIFFERENT',
-        'GRAPH_SHADOW_PROOF_LINEAGE_DIFFERENT',
-        'GRAPH_SHADOW_UNKNOWN_ACCOUNTING_DIFFERENT',
-      ])
-    );
+    expect(corpus?.comparison?.status).toBe('equivalent');
+    expect(corpus?.comparison?.regressions).toBe(0);
+    expect(corpus?.comparison?.differenceCodes).toEqual([]);
     expect(
-      (corpus?.comparison?.differenceCodes ?? []).every((code) =>
-        (GRAPH_REAL_WORKSPACE_PRIMARY_DIFFERENCE_CODES as readonly string[]).includes(code)
+      result.observations.every(
+        (item) => item.status === 'compared' && item.comparison?.status === 'equivalent'
       )
     ).toBe(true);
   });

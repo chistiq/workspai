@@ -37,7 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Security Audit does not treat its manifest as a product package. Platform
   reports require semantic equivalence, measured read-only execution, and
   recomputed qualification digests. Temporary copies retry Windows
-  `ENOTEMPTY` cleanup after isolated children are killed. Remote Linux, macOS
+  `ENOTEMPTY` cleanup after isolated children are killed. Shadow comparison
+  now projects CLI test-suite aggregates onto the same project-level test
+  identity as package test files, inverts `tests` to `contains`, and compares
+  only released-CLI source claims. Manifest scripts, config/docs files, Node
+  builtins, test-file-local symbols, host identity inputs,
+  repository-configuration proofs and unbound deploy/ownership overlays stay
+  outside that comparable surface. Remote Linux, macOS
   and Windows admission remains pending, and the released CLI remains
   authoritative.
 - Retried transient Windows `EPERM`, `EBUSY` and `EACCES` failures when

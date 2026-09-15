@@ -1,10 +1,55 @@
 import {
   GRAPH_COMPARABLE_SURFACE,
   GRAPH_GENERATED_ARTIFACT,
+  GRAPH_INVENTORY_SURFACE,
   GRAPH_LOCATOR_IDENTITY,
+  WORKSPACE_IDENTITY_INPUT_LOCATOR,
 } from './graph-package-runtime.js';
 
 export const GRAPH_SHADOW_MAPPING_VERSION = 'workspai.graph-shadow-mapping.v2' as const;
+
+const SOURCE_CODE_EXTENSIONS = new Set([
+  '.c',
+  '.cc',
+  '.cpp',
+  '.cs',
+  '.dart',
+  '.ex',
+  '.exs',
+  '.go',
+  '.h',
+  '.hpp',
+  '.java',
+  '.cjs',
+  '.cts',
+  '.js',
+  '.jsx',
+  '.kt',
+  '.kts',
+  '.mjs',
+  '.mts',
+  '.php',
+  '.py',
+  '.r',
+  '.rb',
+  '.rs',
+  '.scala',
+  '.svelte',
+  '.swift',
+  '.ts',
+  '.tsx',
+  '.vue',
+  '.clj',
+  '.cljs',
+  '.fs',
+  '.fsx',
+  '.lua',
+  '.vb',
+]);
+
+export const GRAPH_SHADOW_SOURCE_CODE_EXTENSIONS = Object.freeze([...SOURCE_CODE_EXTENSIONS]);
+
+const TEST_DIRECTORY_NAMES = new Set(['test', 'tests', 'spec', 'specs', '__tests__']);
 
 export const GRAPH_SHADOW_KIND_MAPPINGS = GRAPH_COMPARABLE_SURFACE.kindAliases;
 export const GRAPH_SHADOW_RELATION_MAPPINGS = GRAPH_COMPARABLE_SURFACE.relationAliases;
@@ -20,6 +65,84 @@ export const MAX_URI_DECODE_ROUNDS = GRAPH_LOCATOR_IDENTITY.maxUriDecodeRounds;
 function isContentPathKind(kind: string): boolean {
   const mapped = kind.normalize('NFC').toLowerCase();
   return mapped === 'file' || mapped === 'document' || mapped === 'test';
+}
+
+function locatorExtension(locator: string): string {
+  const basename = locator.slice(Math.max(locator.lastIndexOf('/'), locator.lastIndexOf('\\')) + 1);
+  const dot = basename.lastIndexOf('.');
+  return dot <= 0 ? '' : basename.slice(dot).toLowerCase();
+}
+
+/**
+ * Test-file surfaces that the released CLI models as a project-level
+ * test-suite, not as per-file `test` or `file` nodes.
+ */
+export function isGraphShadowTestSurfaceLocator(locator: string): boolean {
+  const normalized = locator.normalize('NFC').replaceAll('\\', '/').toLowerCase();
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.some((segment) => TEST_DIRECTORY_NAMES.has(segment))) return true;
+  const name = segments.at(-1) ?? '';
+  const extensionIndex = name.lastIndexOf('.');
+  if (extensionIndex <= 0) return false;
+  const stem = name.slice(0, extensionIndex);
+  return (
+    stem.endsWith('.test') ||
+    stem.endsWith('.spec') ||
+    stem.endsWith('_test') ||
+    stem.startsWith('test_')
+  );
+}
+
+export function isGraphShadowSourceCodeLocator(locator: string): boolean {
+  return SOURCE_CODE_EXTENSIONS.has(locatorExtension(locator));
+}
+
+function collapseProjectTestIdentity(mapped: string, projectId: string): string | undefined {
+  if (!projectId) return undefined;
+  for (const prefix of [`tests:${projectId}`, `test:${projectId}`]) {
+    if (mapped === prefix) return `test:${projectId}`;
+    if (!mapped.startsWith(`${prefix}:`)) continue;
+    const rest = mapped.slice(prefix.length + 1);
+    if (rest.length > 0 && !rest.includes('/') && !rest.includes('\\')) {
+      return `test:${projectId}`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Released-CLI comparable claims for G8 shadow. Package truth-depth extras
+ * that the official composer does not emit stay outside this surface.
+ */
+export function isGraphShadowCliCompatibleIdentity(identity: string, kind: string): boolean {
+  const mappedKind = mapShadowKind(kind);
+  if (mappedKind === 'command' && identity.includes('.#')) return false;
+  if (mappedKind === 'module' && identity.startsWith('module:node:')) return false;
+  if (mappedKind === 'file' && identity.startsWith('file:')) {
+    const locator = identity.slice('file:'.length);
+    return isGraphShadowSourceCodeLocator(locator) && !isGraphShadowTestSurfaceLocator(locator);
+  }
+  if (mappedKind === 'symbol' && identity.startsWith('symbol:')) {
+    const rest = identity.slice('symbol:'.length);
+    const parts = rest.split(':');
+    const file = parts.length >= 3 ? parts.slice(0, -2).join(':') : rest;
+    return !isGraphShadowTestSurfaceLocator(file);
+  }
+  if (mappedKind === 'document' && identity.startsWith('document:')) {
+    return isGraphShadowSourceCodeLocator(identity.slice('document:'.length));
+  }
+  return true;
+}
+
+export function isGraphShadowComparableSourceProofLocator(locator: string): boolean {
+  if (locator === WORKSPACE_IDENTITY_INPUT_LOCATOR) return false;
+  if (GRAPH_INVENTORY_SURFACE.classifyLocator(locator).class !== 'source') return false;
+  if (isGraphShadowTestSurfaceLocator(locator)) return false;
+  return isGraphShadowSourceCodeLocator(locator);
+}
+
+export function isGraphShadowComparableDiagnostic(code: string): boolean {
+  return !code.endsWith('.empty_result');
 }
 
 export type GraphShadowProjectedIdentity =
@@ -152,7 +275,13 @@ function comparablePackageLocator(
   const path = preparedPath(locator, projectId, isContentPathKind(kind) ? kind : 'file');
   if (path.status === 'unsafe') return path;
   const safeLocator = path.locator;
-  if (kind === 'file' || kind === 'document' || kind === 'test') {
+  if (kind === 'test') {
+    if (isGraphShadowTestSurfaceLocator(locator) || isGraphShadowTestSurfaceLocator(safeLocator)) {
+      return { status: 'comparable', identity: `test:${projectId}` };
+    }
+    return { status: 'comparable', identity: `test:${safeLocator}` };
+  }
+  if (kind === 'file' || kind === 'document') {
     return { status: 'comparable', identity: `${mapShadowKind(kind)}:${safeLocator}` };
   }
   if (kind === 'symbol') {
@@ -241,6 +370,10 @@ export function projectLegacyIdentity(
   }
   if (mappedKind === 'workspace' && mapped.startsWith('workspace:')) {
     return { status: 'comparable', identity: mapped };
+  }
+  const collapsedTest = collapseProjectTestIdentity(mapped, projectId);
+  if (mappedKind === 'test' && collapsedTest) {
+    return { status: 'comparable', identity: collapsedTest };
   }
   if (mappedKind === 'test' && mapped.startsWith('tests:')) {
     return { status: 'comparable', identity: mapped.replace(/^tests:/u, 'test:') };

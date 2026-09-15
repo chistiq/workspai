@@ -30,6 +30,23 @@ describe('Graph shadow unknown compatibility contract', () => {
     expect(legacy.every((item) => item.family === 'legacy-binding-coverage')).toBe(true);
   });
 
+  it('names binding-coverage leftovers by dimension when the legacy overlay is present', () => {
+    expect(
+      projectLegacyUnknownItems({
+        unknownCount: 2,
+        diagnostics: [],
+        bindingCoverage: {
+          projectTests: { unknownCount: 0 },
+          projectDeployment: { unknownCount: 1 },
+          projectOwnership: { unknownCount: 1 },
+        },
+      })
+    ).toEqual([
+      { family: 'legacy-binding-coverage', code: 'projectDeployment' },
+      { family: 'legacy-binding-coverage', code: 'projectOwnership' },
+    ]);
+  });
+
   it('preserves unresolved identities and scoped unknown zones instead of collapsing counters', () => {
     const items = projectPackageUnknownItems({
       unresolved: [{ id: 'call:dynamic' }, { id: 'import:missing' }],

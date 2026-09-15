@@ -17,9 +17,19 @@ export interface GraphShadowUnknownItem {
 
 const LEGACY_DIAGNOSTIC_UNKNOWN = /(?:unknown|unresolved|limit_reached|empty_result)$/u;
 
+export const GRAPH_SHADOW_BINDING_OVERLAY_RELATIONS = Object.freeze({
+  projectDeployment: 'deployed-as',
+  projectOwnership: 'owned-by',
+} as const);
+
+export type GraphShadowBindingCoverage = Readonly<
+  Record<string, { readonly unknownCount: number } | undefined>
+>;
+
 export function projectLegacyUnknownItems(input: {
   readonly unknownCount: number;
   readonly diagnostics: readonly { readonly code: string }[];
+  readonly bindingCoverage?: GraphShadowBindingCoverage;
 }): readonly GraphShadowUnknownItem[] {
   const diagnosticItems = input.diagnostics
     .filter((diagnostic) => LEGACY_DIAGNOSTIC_UNKNOWN.test(diagnostic.code))
@@ -27,6 +37,15 @@ export function projectLegacyUnknownItems(input: {
       family: 'legacy-diagnostic-unknown' as const,
       code: diagnostic.code,
     }));
+  if (input.bindingCoverage) {
+    const dimensionItems = Object.entries(input.bindingCoverage).flatMap(([dimension, coverage]) =>
+      Array.from({ length: Math.max(0, coverage?.unknownCount ?? 0) }, () => ({
+        family: 'legacy-binding-coverage' as const,
+        code: dimension,
+      }))
+    );
+    return [...diagnosticItems, ...dimensionItems];
+  }
   const mappedDiagnosticCount = diagnosticItems.length;
   const unmapped = Math.max(0, input.unknownCount - mappedDiagnosticCount);
   const bindingItems = Array.from({ length: unmapped }, (_, index) => ({

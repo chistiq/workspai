@@ -45,7 +45,7 @@ function legacy(): LegacyGraphShadowInput {
         proofIds: ['p1'],
       },
     ],
-    proofs: [{ id: 'p1', artifact: 'tests/app.test.ts' }],
+    proofs: [{ id: 'p1', artifact: 'src/app.ts' }],
     quality: { unknownCount: 0, completeness: { status: 'complete' } },
     diagnostics: [],
   };
@@ -70,7 +70,7 @@ function packageGraph(): PackageGraphShadowInput {
           from: 'project:app',
           to: 'test:app',
           relation: 'owned-by',
-          proof: { evidence: [{ relativeLocator: 'tests/app.test.ts' }] },
+          proof: { evidence: [{ relativeLocator: 'src/app.ts' }] },
         },
       ],
       unresolved: [],
@@ -123,7 +123,7 @@ describe('Graph package shadow parity', () => {
       packageCandidate.graph.nodes[1]!.id = item.packageSecondIdentity ?? 'test:app';
       packageCandidate.graph.edges[0]!.to = packageCandidate.graph.nodes[1]!.id;
       packageCandidate.graph.edges[0]!.relation = item.packageRelation ?? 'depends-on';
-      packageCandidate.evidenceLocators = [item.packageProofLocator ?? 'tests/app.test.ts'];
+      packageCandidate.evidenceLocators = [item.packageProofLocator ?? 'src/app.ts'];
       packageCandidate.quality.unknownZones = (item.packageUnknownCodes ?? []).map((code) => ({
         code,
       }));
@@ -290,7 +290,7 @@ describe('Graph package shadow parity', () => {
       entities: Array.from({ length: 150 }, (_, index) => ({
         id: `legacy:${index}`,
         kind: 'file',
-        identity: { key: `file:${index}` },
+        identity: { key: `file:${index}:src/${index}.ts` },
         proofIds: [],
       })),
       relations: [],
