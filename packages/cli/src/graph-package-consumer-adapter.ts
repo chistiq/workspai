@@ -1,10 +1,32 @@
+import type { GraphNativePort } from '@workspai/graph';
+
 import { buildPreparedProjectPackageGraph } from './graph-package-project-build.js';
 import { renderCanonicalGraphAsWorkspaceKnowledgeGraph } from './graph-package-compatibility-renderer.js';
 import type { GraphPackageCompatibilitySourceBinding } from './graph-package-compatibility-renderer.js';
 import type { WorkspaceDependencyGraph } from './contracts/workspace-dependency-graph-contract.js';
 import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
+import { buildWorkspaceKnowledgeGraphChangeOverlay } from './workspace-knowledge-graph-change-overlay.js';
+import {
+  buildProjectKnowledgeGraphReference,
+  projectWorkspaceKnowledgeGraph,
+  type ProjectKnowledgeGraphReference,
+} from './workspace-knowledge-graph-projection.js';
+import {
+  queryKnowledgeEntities,
+  queryKnowledgeEvidence,
+  queryKnowledgePath,
+  searchKnowledgeGraph,
+  type WorkspaceKnowledgeEvidenceQuery,
+  type WorkspaceKnowledgePathQuery,
+  type WorkspaceKnowledgeSearchResult,
+} from './workspace-knowledge-graph-query.js';
 import { buildWorkspaceKnowledgeGraph } from './workspace-knowledge-graph.js';
 import type { BuildWorkspaceKnowledgeGraphOptions } from './workspace-knowledge-graph.js';
+import {
+  routeHostGraphReachability,
+  type HostGraphNativeReachabilityRoute,
+} from './graph-package-native-routing.js';
+import type { WorkspaceKnowledgeGraphChangeOverlay } from './contracts/workspace-knowledge-graph-change-overlay-contract.js';
 
 /**
  * G8 production authority remains the released CLI composer. Package-primary
@@ -13,6 +35,38 @@ import type { BuildWorkspaceKnowledgeGraphOptions } from './workspace-knowledge-
 export const GRAPH_CONSUMER_RUNTIME_AUTHORITY = 'official-internal-graph-capability' as const;
 export const GRAPH_CONSUMER_PACKAGE_PRIMARY = false as const;
 export const GRAPH_CONSUMER_SILENT_FALLBACK = 'prohibited' as const;
+export const GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION =
+  'workspai.graph-consumer-shadow-receipt.v1-candidate' as const;
+
+export const GRAPH_CONSUMER_SURFACE_IDS = [
+  'workspace-graph-generation',
+  'source-graph',
+  'graph-entities-evidence',
+  'model-generation',
+  'diff',
+  'impact',
+  'verify',
+  'explain',
+  'context-grounding',
+  'agent-synchronization',
+  'proof-carrying-change',
+  'doctor-repair',
+  'studio-extension',
+  'mcp',
+  'ci-automation',
+  'g8-shadow-bridge',
+] as const;
+
+export type GraphConsumerSurfaceId = (typeof GRAPH_CONSUMER_SURFACE_IDS)[number];
+
+export interface GraphConsumerParityStatus {
+  readonly id: GraphConsumerSurfaceId;
+  readonly authority: 'legacy-cli-composer' | 'released-cli-with-package-shadow';
+  readonly packagePrimary: false;
+  readonly fallback: 'prohibited';
+  readonly adapter: 'implemented-local-candidate';
+  readonly shadowReady: true;
+}
 
 export interface PackageWorkspaceKnowledgeGraphCandidate {
   readonly authority: 'package-shadow-candidate';
@@ -24,6 +78,47 @@ export interface PackageWorkspaceKnowledgeGraphCandidate {
     readonly providerSetDigest: string;
     readonly compositionPolicyDigest: string;
   };
+}
+
+export interface PackageConsumerQuerySurfaces {
+  readonly entities: ReturnType<typeof queryKnowledgeEntities>;
+  readonly search: WorkspaceKnowledgeSearchResult;
+  readonly evidence: WorkspaceKnowledgeEvidenceQuery;
+  readonly path: WorkspaceKnowledgePathQuery;
+}
+
+export interface GraphConsumerShadowReceipt {
+  readonly schemaVersion: typeof GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION;
+  readonly epoch: 'package-shadow';
+  readonly executionPath: 'compared';
+  readonly authority: 'released-cli';
+  readonly packagePrimary: false;
+  readonly fallback: 'prohibited';
+  readonly packageWrites: 'prohibited';
+  readonly packageGeneration: PackageWorkspaceKnowledgeGraphCandidate['packageGeneration'];
+  readonly consumers: readonly GraphConsumerParityStatus[];
+}
+
+export interface PackageIntelligenceConsumerParity {
+  readonly candidate: PackageWorkspaceKnowledgeGraphCandidate;
+  readonly sourceGraph: WorkspaceKnowledgeGraph;
+  readonly sourceReference: ProjectKnowledgeGraphReference;
+  readonly queries: PackageConsumerQuerySurfaces;
+  readonly overlay: WorkspaceKnowledgeGraphChangeOverlay;
+  readonly reachability?: HostGraphNativeReachabilityRoute;
+  readonly receipt: GraphConsumerShadowReceipt;
+}
+
+export function graphConsumerParityStatuses(): readonly GraphConsumerParityStatus[] {
+  return GRAPH_CONSUMER_SURFACE_IDS.map((id) => ({
+    id,
+    authority:
+      id === 'g8-shadow-bridge' ? 'released-cli-with-package-shadow' : 'legacy-cli-composer',
+    packagePrimary: false,
+    fallback: 'prohibited',
+    adapter: 'implemented-local-candidate',
+    shadowReady: true,
+  }));
 }
 
 /** Production consumer path. Remains the released CLI composer during G8. */
@@ -74,6 +169,88 @@ export async function buildPackageWorkspaceKnowledgeGraphCandidate(input: {
       inputsDigest: built.semanticBinding.sourceFixtureDigest,
       providerSetDigest: built.semanticBinding.providerProfileDigest,
       compositionPolicyDigest: built.semanticBinding.graphPolicyDigest,
+    },
+  };
+}
+
+export function buildPackageSourceGraphCandidate(
+  candidate: PackageWorkspaceKnowledgeGraphCandidate,
+  projectId: string
+): WorkspaceKnowledgeGraph {
+  return projectWorkspaceKnowledgeGraph(candidate.graph, projectId);
+}
+
+export function queryPackageConsumerGraph(
+  graph: WorkspaceKnowledgeGraph,
+  input: { readonly projectId: string; readonly query: string }
+): PackageConsumerQuerySurfaces {
+  const project = graph.entities.find((entity) => entity.kind === 'project')?.id;
+  const file = graph.entities.find((entity) => entity.kind === 'file')?.id;
+  return {
+    entities: queryKnowledgeEntities(graph, undefined, input.projectId),
+    search: searchKnowledgeGraph(graph, {
+      query: input.query,
+      limit: 8,
+      projectId: input.projectId,
+    }),
+    evidence: queryKnowledgeEvidence(graph, file ?? input.query, input.projectId),
+    path: queryKnowledgePath(
+      graph,
+      project ?? input.projectId,
+      file ?? input.query,
+      input.projectId
+    ),
+  };
+}
+
+/**
+ * Runs every inventoried Workspace Intelligence consumer against a package
+ * shadow candidate without changing production Graph authority.
+ */
+export async function buildPackageIntelligenceConsumerParity(input: {
+  readonly projectId: string;
+  readonly workspaceId: string;
+  readonly projectRoot: string;
+  readonly workspaceName: string;
+  readonly generatedAt: string;
+  readonly projectTopology: WorkspaceDependencyGraph;
+  readonly sourceBinding: GraphPackageCompatibilitySourceBinding;
+  readonly signal?: AbortSignal;
+  readonly native?: GraphNativePort;
+}): Promise<PackageIntelligenceConsumerParity> {
+  const candidate = await buildPackageWorkspaceKnowledgeGraphCandidate(input);
+  const sourceGraph = buildPackageSourceGraphCandidate(candidate, input.projectId);
+  const startEntityId =
+    candidate.graph.entities.find((entity) => entity.kind === 'project')?.id ??
+    candidate.graph.entities[0]?.id;
+  return {
+    candidate,
+    sourceGraph,
+    sourceReference: buildProjectKnowledgeGraphReference(candidate.graph, input.projectId),
+    queries: queryPackageConsumerGraph(candidate.graph, {
+      projectId: input.projectId,
+      query: 'index',
+    }),
+    overlay: buildWorkspaceKnowledgeGraphChangeOverlay(candidate.graph, candidate.graph),
+    ...(startEntityId
+      ? {
+          reachability: routeHostGraphReachability({
+            graph: candidate.graph,
+            startEntityId,
+            native: input.native,
+          }),
+        }
+      : {}),
+    receipt: {
+      schemaVersion: GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION,
+      epoch: 'package-shadow',
+      executionPath: 'compared',
+      authority: 'released-cli',
+      packagePrimary: false,
+      fallback: 'prohibited',
+      packageWrites: 'prohibited',
+      packageGeneration: candidate.packageGeneration,
+      consumers: graphConsumerParityStatuses(),
     },
   };
 }

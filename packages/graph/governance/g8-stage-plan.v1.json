@@ -102,11 +102,22 @@
     },
     {
       "id": "workspace-intelligence-consumer-parity",
-      "status": "planned"
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-consumer-adapter.ts",
+        "packages/cli/src/__tests__/graph-package-consumer-adapter.test.ts",
+        "packages/cli/test-data/graph-shadow/g8-consumer-inventory.v1.json"
+      ]
     },
     {
       "id": "rust-wasm-host-routing",
-      "status": "planned"
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-native-routing.ts",
+        "packages/cli/src/__tests__/graph-package-native-routing.test.ts",
+        "packages/graph/src/application/route-native-traversal.ts",
+        "packages/graph/src/adapters/node/index.ts"
+      ]
     },
     {
       "id": "package-primary-replacement-decision",

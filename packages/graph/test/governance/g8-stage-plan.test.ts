@@ -63,6 +63,14 @@ describe('Graph G8 stage authorization', () => {
     });
     expect(identity).toMatchObject({ status: 'implemented-local-candidate' });
     expect(semanticParity).toMatchObject({ status: 'implemented-local-candidate' });
+    const consumerParity = (plan.checkpoints as { id: string; status: string }[]).find(
+      (checkpoint) => checkpoint.id === 'workspace-intelligence-consumer-parity'
+    );
+    const nativeRouting = (plan.checkpoints as { id: string; status: string }[]).find(
+      (checkpoint) => checkpoint.id === 'rust-wasm-host-routing'
+    );
+    expect(consumerParity).toMatchObject({ status: 'implemented-local-candidate' });
+    expect(nativeRouting).toMatchObject({ status: 'implemented-local-candidate' });
     expect(replacement).toMatchObject({ status: 'planned' });
     expect(JSON.stringify({ admission, transition, plan })).not.toMatch(
       /(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u

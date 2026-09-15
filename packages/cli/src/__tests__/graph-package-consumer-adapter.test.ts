@@ -12,8 +12,11 @@ import {
 import {
   GRAPH_CONSUMER_PACKAGE_PRIMARY,
   GRAPH_CONSUMER_RUNTIME_AUTHORITY,
+  GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION,
   GRAPH_CONSUMER_SILENT_FALLBACK,
-  buildPackageWorkspaceKnowledgeGraphCandidate,
+  GRAPH_CONSUMER_SURFACE_IDS,
+  buildPackageIntelligenceConsumerParity,
+  graphConsumerParityStatuses,
   resolveWorkspaceKnowledgeGraphForConsumer,
 } from '../graph-package-consumer-adapter.js';
 import { WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION } from '../contracts/workspace-knowledge-graph-contract.js';
@@ -149,7 +152,7 @@ describe('package Graph consumer adapter', () => {
   });
 
   it('builds a typed package candidate and keeps production resolution on the legacy composer', async () => {
-    const candidate = await buildPackageWorkspaceKnowledgeGraphCandidate({
+    const parity = await buildPackageIntelligenceConsumerParity({
       projectId: 'real-workspace-fixture',
       workspaceId: 'real-workspace-fixture',
       projectRoot: fixtureRoot,
@@ -161,14 +164,41 @@ describe('package Graph consumer adapter', () => {
         modelHash: hashCanonicalJson({ fixture: 'real-workspace-fixture' }),
       },
     });
-    expect(candidate.authority).toBe('package-shadow-candidate');
-    expect(candidate.packagePrimary).toBe(false);
-    expect(candidate.fallback).toBe('prohibited');
-    expect(candidate.graph.schemaVersion).toBe(WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION);
-    expect(queryKnowledgeEntities(candidate.graph, 'file').length).toBeGreaterThan(0);
-    expect(searchKnowledgeGraph(candidate.graph, { query: 'index', limit: 5 }).schemaVersion).toBe(
-      'workspace-knowledge-search.v1'
-    );
+    expect(parity.candidate.authority).toBe('package-shadow-candidate');
+    expect(parity.candidate.packagePrimary).toBe(false);
+    expect(parity.candidate.fallback).toBe('prohibited');
+    expect(parity.candidate.graph.schemaVersion).toBe(WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION);
+    expect(queryKnowledgeEntities(parity.candidate.graph, 'file').length).toBeGreaterThan(0);
+    expect(
+      searchKnowledgeGraph(parity.candidate.graph, { query: 'index', limit: 5 }).schemaVersion
+    ).toBe('workspace-knowledge-search.v1');
+    expect(
+      parity.sourceGraph.entities.every((entity) => entity.projectId === 'real-workspace-fixture')
+    ).toBe(true);
+    expect(parity.sourceReference.project.name).toBe('real-workspace-fixture');
+    expect(parity.queries.search.schemaVersion).toBe('workspace-knowledge-search.v1');
+    expect(parity.overlay.summary.risk).toBe('none');
+    expect(parity.receipt).toMatchObject({
+      schemaVersion: GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION,
+      epoch: 'package-shadow',
+      authority: 'released-cli',
+      packagePrimary: false,
+      fallback: 'prohibited',
+      packageWrites: 'prohibited',
+    });
+    expect(parity.receipt.consumers.map((consumer) => consumer.id)).toEqual([
+      ...GRAPH_CONSUMER_SURFACE_IDS,
+    ]);
+    expect(
+      graphConsumerParityStatuses().every(
+        (consumer) => consumer.adapter === 'implemented-local-candidate'
+      )
+    ).toBe(true);
+    expect(parity.reachability).toMatchObject({
+      userSelectable: false,
+      semanticAuthority: 'typescript',
+      dynamicDownload: 'prohibited',
+    });
 
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'workspai-graph-consumer-'));
     roots.push(projectRoot);

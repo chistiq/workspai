@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added local G8 Workspace Intelligence consumer-parity and CLI host routing for
+  the bundled Rust/WASM traversal engine. Every inventoried consumer can run
+  against a package shadow candidate, TypeScript remains semantic authority, and
+  package-primary replacement stays unauthorized until the remote matrix and
+  replacement gate pass.
 - Inventory policyDigest now binds complete walk budgets, directory truncation
   is `partially-enumerated`, and omittedBytes travel through repo-build metrics
   into shadow execution receipts. Bounded walks stop at the file or byte budget

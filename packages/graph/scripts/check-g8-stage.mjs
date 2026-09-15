@@ -290,6 +290,51 @@ if (
 if (/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u.test(JSON.stringify({ plan, admission }))) {
   failures.push('G8 governance contains a machine-local path');
 }
+const consumerInventory = readJson(
+  'packages/cli/test-data/graph-shadow/g8-consumer-inventory.v1.json'
+);
+if (
+  consumerInventory.currentGraphAuthority !== 'official-internal-graph-capability' ||
+  consumerInventory.packagePrimary !== false ||
+  consumerInventory.silentFallback !== 'prohibited'
+) {
+  failures.push('G8 consumer inventory cannot authorize package-primary or silent fallback');
+}
+const consumerCheckpoint = checkpoints.find(
+  (checkpoint) => checkpoint.id === 'workspace-intelligence-consumer-parity'
+);
+if (consumerCheckpoint?.status === 'implemented-local-candidate') {
+  const consumers = Array.isArray(consumerInventory.consumers) ? consumerInventory.consumers : [];
+  if (consumers.some((consumer) => consumer.adapter === 'planned')) {
+    failures.push('implemented consumer-parity checkpoint still has planned adapters');
+  }
+  const adapterSource = fs.readFileSync(
+    repositoryFile('packages/cli/src/graph-package-consumer-adapter.ts'),
+    'utf8'
+  );
+  if (
+    !adapterSource.includes('GRAPH_CONSUMER_PACKAGE_PRIMARY = false') ||
+    !adapterSource.includes('buildPackageIntelligenceConsumerParity') ||
+    !adapterSource.includes("authority: 'released-cli'")
+  ) {
+    failures.push('consumer parity adapter is incomplete');
+  }
+}
+const nativeCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === 'rust-wasm-host-routing');
+if (nativeCheckpoint?.status === 'implemented-local-candidate') {
+  const routing = fs.readFileSync(
+    repositoryFile('packages/cli/src/graph-package-native-routing.ts'),
+    'utf8'
+  );
+  if (
+    !routing.includes("from '@workspai/graph/adapters/node'") ||
+    !routing.includes('createNodeRustWasmGraphNativePort') ||
+    !routing.includes('routeGraphNativeTraversal') ||
+    !routing.includes('userSelectable: GRAPH_NATIVE_HOST_USER_SELECTABLE')
+  ) {
+    failures.push('G8 native host routing is incomplete');
+  }
+}
 
 const report = {
   schemaVersion: 'workspai-graph-g8-stage-audit.v1',

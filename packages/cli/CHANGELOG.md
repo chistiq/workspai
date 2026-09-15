@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- G8 Workspace Intelligence consumers now have a package shadow adapter for
+  source projection, query, overlay, Doctor/MCP/runner surfaces and a typed
+  authority receipt. Production still uses the released CLI composer. Host
+  reachability can select the bundled Rust/WASM engine only when it matches
+  TypeScript; users never choose an engine and package-primary replacement
+  remains unauthorized.
 - G8 shadow comparison now emits directional leftover identities, relations,
   proofs and unknown families after mapping version `v2`. Package execution
   receipts now carry `omittedFiles` and `omittedBytes` from Graph inventory

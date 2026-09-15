@@ -39,6 +39,11 @@ export {
   reclaimBundledEngineBuffers,
   type GraphNativeAdapterLoadErrorCode,
 } from './rust-wasm-engine.js';
+export {
+  referenceGraphNativeTraversal,
+  routeGraphNativeTraversal,
+  type GraphNativeTraversalRoute,
+} from '../../application/route-native-traversal.js';
 
 export interface NodeRepoGraphBuildRequest {
   readonly root: string;
