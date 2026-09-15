@@ -34,6 +34,21 @@ export {
   createProtobufTopologyProvider,
 } from './protobuf-topology.js';
 export { BUILD_TOPOLOGY_PROVIDER_ID, createBuildTopologyProvider } from './build-topology.js';
+export {
+  SOURCE_DECLARATIONS_PROVIDER_ID,
+  createSourceDeclarationsProvider,
+} from './source-declarations.js';
+export { SOURCE_LANGUAGE_PROVIDER_ID, createSourceLanguageProvider } from './source-language.js';
+export {
+  DOCUMENTATION_SURFACES_PROVIDER_ID,
+  createDocumentationSurfacesProvider,
+} from './documentation-surfaces.js';
+export {
+  SCOPE_CONTAINMENT_PROVIDER_ID,
+  WORKSPACE_IDENTITY_INPUT_LOCATOR,
+  createScopeContainmentProvider,
+  isHostSuppliedGraphInputLocator,
+} from './scope-containment.js';
 
 import type { GraphProviderRuntime } from '../contracts/provider.js';
 
@@ -49,6 +64,9 @@ import { createCodeownersProvider } from './codeowners.js';
 import { createSourceEntrypointsProvider } from './source-entrypoints.js';
 import { createProtobufTopologyProvider } from './protobuf-topology.js';
 import { createBuildTopologyProvider } from './build-topology.js';
+import { createSourceDeclarationsProvider } from './source-declarations.js';
+import { createSourceLanguageProvider } from './source-language.js';
+import { createDocumentationSurfacesProvider } from './documentation-surfaces.js';
 
 /** The deterministic, offline provider set admitted for the standalone repository preview. */
 export function createStandardRepositoryProviders(): readonly GraphProviderRuntime[] {
@@ -65,5 +83,8 @@ export function createStandardRepositoryProviders(): readonly GraphProviderRunti
     createSourceEntrypointsProvider(),
     createProtobufTopologyProvider(),
     createBuildTopologyProvider(),
+    createSourceDeclarationsProvider(),
+    createSourceLanguageProvider(),
+    createDocumentationSurfacesProvider(),
   ]);
 }

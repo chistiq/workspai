@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/g8-real-workspace-matrix-admission/v1-candidate",
+  "title": "WorkspaiGraphG8RealWorkspaceMatrixAdmissionCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "package",
+    "stage",
+    "checkpoint",
+    "status",
+    "admitted",
+    "nextStage",
+    "nextStageAuthorized",
+    "crossPlatformAdmission",
+    "currentGraphAuthority",
+    "authorizedRuntimeMode",
+    "sourceCommit",
+    "testedCommit",
+    "runId",
+    "event",
+    "inventoryDigest",
+    "mappingVersion",
+    "requiredRunnerOperatingSystems",
+    "evidence",
+    "failures"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "workspai.graph-g8-real-workspace-matrix-admission.v1-candidate"
+    },
+    "package": { "const": "@workspai/graph" },
+    "stage": { "const": "G8" },
+    "checkpoint": { "const": "real-workspace-cross-platform-parity" },
+    "status": { "enum": ["pr-candidate", "admitted-candidate", "blocked"] },
+    "admitted": { "type": "boolean" },
+    "nextStage": { "const": "G9" },
+    "nextStageAuthorized": { "const": false },
+    "crossPlatformAdmission": { "const": "pending" },
+    "currentGraphAuthority": { "const": "official-internal-graph-capability" },
+    "authorizedRuntimeMode": { "const": "g8-shadow-comparison-only" },
+    "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "testedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "runId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "event": { "enum": ["pull_request", "push"] },
+    "inventoryDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "mappingVersion": {
+      "type": "string",
+      "pattern": "^workspai\\.graph-shadow-mapping\\.v[0-9]+$"
+    },
+    "requiredRunnerOperatingSystems": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "enum": ["Linux", "macOS", "Windows"] }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runnerOs",
+          "runnerArch",
+          "node",
+          "runId",
+          "digest",
+          "reportDigest",
+          "semanticOutputDigest",
+          "sourceTreeDigest",
+          "scopeDigest",
+          "providerProfileDigest",
+          "graphPolicyDigest",
+          "resourceBudgetDigest",
+          "redactionAuthorizationDigest",
+          "comparisonStatus",
+          "differenceCodes",
+          "packageExecutionStatus"
+        ],
+        "properties": {
+          "runnerOs": { "enum": ["Linux", "macOS", "Windows"] },
+          "runnerArch": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "node": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "runId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+          "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "reportDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "semanticOutputDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "sourceTreeDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "scopeDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "providerProfileDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "graphPolicyDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "resourceBudgetDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "redactionAuthorizationDigest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "comparisonStatus": {
+            "enum": ["equivalent", "different", "incomparable", "failed"]
+          },
+          "differenceCodes": {
+            "type": "array",
+            "maxItems": 32,
+            "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+          },
+          "packageExecutionStatus": {
+            "enum": ["complete", "partial", "failed", "cancelled", "not-executed"]
+          }
+        }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    }
+  }
+}

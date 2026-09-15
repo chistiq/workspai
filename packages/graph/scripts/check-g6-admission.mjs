@@ -83,11 +83,16 @@ if (!validateClosure(closure)) {
     `G6 closure violates the stage contract: ${JSON.stringify(validateClosure.errors)}`
   );
 }
-if (
-  graph?.currentStage !== 'G5' ||
-  graph?.stageStatus !== 'local-source-complete' ||
-  graph?.latestClosure !== 'packages/graph/governance/g5-stage-closure.v1.json'
-) {
+const sealedG5 =
+  graph?.currentStage === 'G5' &&
+  graph?.stageStatus === 'local-source-complete' &&
+  graph?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json';
+const admittedHistoricalG6 =
+  graph?.currentStage === 'G8' &&
+  graph?.stageStatus === 'in-progress' &&
+  graph?.standaloneStability === 'admitted' &&
+  graph?.latestClosure === 'packages/graph/governance/g7-stage-admission.v1.json';
+if (!sealedG5 && !admittedHistoricalG6) {
   failures.push('Graph registry must remain on sealed G5 until signed G6 remote admission');
 }
 if (

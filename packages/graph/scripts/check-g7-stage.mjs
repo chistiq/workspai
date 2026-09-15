@@ -9,6 +9,7 @@ const planPath = 'packages/graph/governance/g7-stage-plan.v1.json';
 const closurePath = 'packages/graph/governance/g7-stage-closure.v1.json';
 const g6PlanPath = 'packages/graph/governance/g6-stage-plan.v1.json';
 const registryPath = 'independent-packages.json';
+const retainedAdmissionPath = 'packages/graph/governance/g7-retained-admission.v1.json';
 const plannedCheckpoints = new Set();
 
 function repositoryFile(relative) {
@@ -53,6 +54,7 @@ const plan = readJson(planPath);
 const g6Plan = readJson(g6PlanPath);
 const registry = readJson(registryPath);
 const graphRegistry = (registry.packages ?? []).find((entry) => entry.name === '@workspai/graph');
+const retainedAdmission = readJson(retainedAdmissionPath);
 
 if (
   plan.stage !== 'G7' ||
@@ -67,14 +69,22 @@ if (
 if (manifest.private !== true || manifest.publishable === true) {
   failures.push('G7 candidate must remain private and non-publishable');
 }
-if (
-  !graphRegistry ||
-  graphRegistry.currentStage !== 'G5' ||
-  graphRegistry.latestClosure !== 'packages/graph/governance/g5-stage-closure.v1.json' ||
-  graphRegistry.standaloneStability !== 'not-admitted' ||
-  graphRegistry.cliRuntimeIntegration !== 'prohibited-before-standalone-stability'
-) {
-  failures.push('Independent package registry must remain on G5 while G7 is unauthorized');
+const preAdmissionRegistry =
+  graphRegistry?.currentStage === 'G5' &&
+  graphRegistry?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json' &&
+  graphRegistry?.standaloneStability === 'not-admitted' &&
+  graphRegistry?.cliRuntimeIntegration === 'prohibited-before-standalone-stability';
+const retainedAdmissionRegistry =
+  graphRegistry?.currentStage === 'G8' &&
+  graphRegistry?.latestClosure === 'packages/graph/governance/g7-stage-admission.v1.json' &&
+  graphRegistry?.standaloneStability === 'admitted' &&
+  graphRegistry?.cliRuntimeIntegration === 'g8-shadow-comparison-only' &&
+  retainedAdmission.status === 'admitted' &&
+  retainedAdmission.standaloneStable === true &&
+  retainedAdmission.nextStageAuthorized === true &&
+  retainedAdmission.authorizedRuntimeMode === 'g8-shadow-comparison-only';
+if (!graphRegistry || (!preAdmissionRegistry && !retainedAdmissionRegistry)) {
+  failures.push('Independent package registry does not preserve the G7 admission transition');
 }
 if (
   g6Plan.nextStageAuthorized !== false ||
@@ -85,7 +95,10 @@ if (
 ) {
   failures.push('G6 remote admission must stay planned and must not authorize G7');
 }
-if (fs.existsSync(path.join(packageRoot, 'governance/g8-stage-plan.v1.json'))) {
+if (
+  fs.existsSync(path.join(packageRoot, 'governance/g8-stage-plan.v1.json')) &&
+  !retainedAdmissionRegistry
+) {
   failures.push('G8 stage plan must not exist until G7 standalone-stable admission');
 }
 

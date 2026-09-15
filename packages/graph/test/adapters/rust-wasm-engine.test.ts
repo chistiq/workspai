@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,7 +9,9 @@ import { describe, expect, it } from 'vitest';
 import {
   GraphNativeAdapterLoadError,
   createNodeRustWasmGraphNativePort,
+  reclaimBundledEngineBuffers,
 } from '../../src/adapters/node/index.js';
+import { GRAPH_LOCATOR_IDENTITY } from '../../src/conformance/locator-identity-api.js';
 import type { GraphNativeTraversalRequest } from '../../src/ports/index.js';
 
 const engineUrl = new URL('../../dist/native/graph-engine.wasm', import.meta.url);
@@ -87,6 +90,44 @@ describe('bundled Rust WASM Graph native port', () => {
       maxEdges: 5_000_000,
       maxMemoryBytes: 268_435_456,
     });
+    expect(port.artifactDigest).toEqual({
+      algorithm: 'sha256',
+      value: createHash('sha256').update(bytes).digest('hex'),
+    });
+  });
+
+  it('does not export or own Graph locator identity', async () => {
+    const bytes = await readFile(engineUrl);
+    const wasm = (
+      globalThis as unknown as {
+        readonly WebAssembly: {
+          readonly Module: {
+            new (bytes: Uint8Array): unknown;
+            exports(module: unknown): readonly { readonly name: string; readonly kind: string }[];
+          };
+        };
+      }
+    ).WebAssembly;
+    const exported = wasm.Module.exports(new wasm.Module(bytes)).map((item) => item.name);
+    expect(exported.some((name) => /identity|locator|uri|decode/iu.test(name))).toBe(false);
+    expect(exported).toEqual(
+      expect.arrayContaining([
+        'memory',
+        'graph_engine_abi_version',
+        'graph_engine_reachable',
+        'graph_engine_alloc_u32',
+        'graph_engine_dealloc_u32',
+      ])
+    );
+
+    const before = GRAPH_LOCATOR_IDENTITY.classify('src/foo%ZZ.ts', 'file');
+    const port = await createNodeRustWasmGraphNativePort(engineUrl);
+    expect(port.descriptor.semanticAuthority).toBe('typescript');
+    expect(port.traverseReachable({ nodeCount: 1, edges: [], start: 0, maxDepth: 0 }).status).toBe(
+      'complete'
+    );
+    expect(GRAPH_LOCATOR_IDENTITY.classify('src/foo%ZZ.ts', 'file')).toEqual(before);
+    expect(GRAPH_LOCATOR_IDENTITY.classify('%2e%2e%2fsecret.ts', 'file').class).toBe('unsafe');
   });
 
   it('matches the TypeScript reference semantics across deterministic fixtures', async () => {
@@ -142,6 +183,7 @@ describe('bundled Rust WASM Graph native port', () => {
   });
 
   it('reports unavailable and corrupt artifacts as typed load failures', async () => {
+    const bytes = await readFile(engineUrl);
     const directory = await mkdtemp(path.join(os.tmpdir(), 'workspai-graph-wasm-'));
     try {
       await expect(
@@ -152,15 +194,75 @@ describe('bundled Rust WASM Graph native port', () => {
       } satisfies Partial<GraphNativeAdapterLoadError>);
 
       const invalidPath = path.join(directory, 'invalid.wasm');
-      await writeFile(invalidPath, new Uint8Array([0, 1, 2, 3]));
+      const invalidBytes = new Uint8Array([0, 1, 2, 3]);
+      await writeFile(invalidPath, invalidBytes);
+      await writeFile(
+        `${invalidPath}.sha256`,
+        `${createHash('sha256').update(invalidBytes).digest('hex')}\n`
+      );
       await expect(
         createNodeRustWasmGraphNativePort(pathToFileURL(invalidPath))
       ).rejects.toMatchObject({
         name: 'GraphNativeAdapterLoadError',
         code: 'GRAPH_NATIVE_ARTIFACT_INVALID',
       } satisfies Partial<GraphNativeAdapterLoadError>);
+
+      await writeFile(path.join(directory, 'plain.wasm'), bytes);
+      await expect(
+        createNodeRustWasmGraphNativePort(pathToFileURL(path.join(directory, 'plain.wasm')))
+      ).rejects.toMatchObject({
+        name: 'GraphNativeAdapterLoadError',
+        code: 'GRAPH_NATIVE_ARTIFACT_DIGEST_MISSING',
+      } satisfies Partial<GraphNativeAdapterLoadError>);
+
+      await writeFile(path.join(directory, 'mismatch.wasm'), bytes);
+      await writeFile(path.join(directory, 'mismatch.wasm.sha256'), `${'0'.repeat(64)}\n`);
+      await expect(
+        createNodeRustWasmGraphNativePort(pathToFileURL(path.join(directory, 'mismatch.wasm')))
+      ).rejects.toMatchObject({
+        name: 'GraphNativeAdapterLoadError',
+        code: 'GRAPH_NATIVE_ARTIFACT_DIGEST_MISMATCH',
+      } satisfies Partial<GraphNativeAdapterLoadError>);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it('never deallocates trapped engine pointers on a replacement instance', () => {
+    const events: string[] = [];
+    reclaimBundledEngineBuffers({
+      trapped: true,
+      dealloc: () => {
+        events.push('dealloc');
+      },
+      reinitialize: () => {
+        events.push('reinitialize');
+      },
+    });
+    expect(events).toEqual(['reinitialize']);
+
+    events.length = 0;
+    reclaimBundledEngineBuffers({
+      trapped: false,
+      dealloc: () => {
+        events.push('dealloc');
+      },
+      reinitialize: () => {
+        events.push('reinitialize');
+      },
+    });
+    expect(events).toEqual(['dealloc']);
+
+    events.length = 0;
+    reclaimBundledEngineBuffers({
+      trapped: false,
+      dealloc: () => {
+        throw new Error('stale pointer');
+      },
+      reinitialize: () => {
+        events.push('reinitialize');
+      },
+    });
+    expect(events).toEqual(['reinitialize']);
   });
 });

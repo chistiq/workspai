@@ -7,6 +7,7 @@ import type {
   GraphUnknownZone,
   GraphUnsupportedZone,
 } from '../contracts/index.js';
+import type { GraphOmittedSubtree } from '../contracts/inventory-surface.js';
 
 export interface GraphClockPort {
   now(): Date;
@@ -15,6 +16,16 @@ export interface GraphClockPort {
 export interface GraphDigestPort {
   readonly algorithm: 'sha256';
   digest(input: Uint8Array): Promise<string>;
+  /**
+   * Optional incremental hasher. Production hosts must implement this so
+   * canonical identity of large admitted fact sets does not materialize a
+   * single JSON buffer. Mock ports may omit it; the application then buffers
+   * only a small fallback window.
+   */
+  createStreamingDigest?(): {
+    update(chunk: Uint8Array): void;
+    digest(): Promise<string>;
+  };
 }
 
 export interface GraphCancellationPort {
@@ -107,6 +118,7 @@ export interface GraphNativeTraversalResult {
 
 export interface GraphNativePort {
   readonly descriptor: GraphNativeEngineDescriptor;
+  readonly artifactDigest: { readonly algorithm: 'sha256'; readonly value: string };
   traverseReachable(request: GraphNativeTraversalRequest): GraphNativeTraversalResult;
 }
 
@@ -142,6 +154,9 @@ export interface GraphFileInventoryResult {
   readonly diagnostics: readonly GraphDiagnostic[];
   readonly omittedFiles: number;
   readonly omittedBytes: number;
+  readonly omittedFileAccounting?: 'enumerated' | 'unknown-subtrees';
+  readonly omittedByteAccounting?: 'measured' | 'unknown-subtrees';
+  readonly omittedSubtrees?: readonly GraphOmittedSubtree[];
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly unsupportedZones: readonly GraphUnsupportedZone[];
 }

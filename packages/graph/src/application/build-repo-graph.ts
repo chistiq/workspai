@@ -11,6 +11,12 @@ import type {
   GraphProviderRunSummary,
   GraphValidationIssue,
 } from '../contracts/index.js';
+import {
+  inventoryOmissionAccounting,
+  inventorySurfaceExcludedDirectoryNames,
+} from '../domain/inventory-surface.js';
+import { structurizeUnknownZone } from '../domain/unknown-cause.js';
+import type { GraphFileInventoryResult } from '../ports/index.js';
 
 import { composeGraph } from './compose-graph.js';
 import { GRAPH_STANDARD_COMPOSITION_POLICY } from './composition-types.js';
@@ -33,19 +39,7 @@ export const GRAPH_STANDARD_REPO_BUILD_POLICY: Readonly<GraphRepoBuildPolicy> = 
     maxDepth: 64,
     maxDirectoryEntries: 100_000,
   }),
-  excludedDirectories: Object.freeze([
-    '.git',
-    '.workspai',
-    'node_modules',
-    'dist',
-    'build',
-    'coverage',
-    'target',
-    'bin',
-    'obj',
-    '.venv',
-    'venv',
-  ]),
+  excludedDirectories: inventorySurfaceExcludedDirectoryNames(),
   sensitiveFiles: 'omit-known',
   composition: GRAPH_STANDARD_COMPOSITION_POLICY,
 });
@@ -328,19 +322,27 @@ function emptyResult(
   status: 'failed' | 'cancelled',
   diagnostics: readonly GraphDiagnostic[],
   providerSummaries: readonly GraphProviderRunSummary[],
-  inputCount: number,
-  inputBytes: number,
-  omittedFiles: number,
+  metrics: {
+    readonly inputFiles: number;
+    readonly inputBytes: number;
+    readonly omittedFiles: number;
+    readonly omittedBytes: number;
+    readonly omittedFileAccounting?: GraphRepoBuildResult['metrics']['omittedFileAccounting'];
+    readonly omittedByteAccounting?: GraphRepoBuildResult['metrics']['omittedByteAccounting'];
+  },
   zones: {
     readonly unknownZones: GraphRepoBuildResult['quality']['unknownZones'];
     readonly unsupportedZones: GraphRepoBuildResult['quality']['unsupportedZones'];
+    readonly omittedSubtrees?: GraphRepoBuildResult['quality']['omittedSubtrees'];
   } = { unknownZones: [], unsupportedZones: [] }
 ): GraphRepoBuildResult {
+  const omittedSubtrees = Object.freeze([...(zones.omittedSubtrees ?? [])]);
   return {
     status,
     quality: {
       unknownZones: zones.unknownZones,
       unsupportedZones: zones.unsupportedZones,
+      omittedSubtrees,
       providerFailures: providerSummaries
         .filter(
           (summary) =>
@@ -355,11 +357,42 @@ function emptyResult(
     providers: providerSummaries,
     diagnostics,
     metrics: {
-      inputFiles: inputCount,
-      inputBytes,
+      inputFiles: metrics.inputFiles,
+      inputBytes: metrics.inputBytes,
       providerFacts: providerSummaries.reduce((sum, summary) => sum + summary.factCount, 0),
-      omittedFiles,
+      omittedFiles: metrics.omittedFiles,
+      omittedBytes: metrics.omittedBytes,
+      omittedFileAccounting: metrics.omittedFileAccounting,
+      omittedByteAccounting: metrics.omittedByteAccounting,
+      omittedSubtrees,
     },
+  };
+}
+
+const EMPTY_INVENTORY_METRICS = Object.freeze({
+  inputFiles: 0,
+  inputBytes: 0,
+  omittedFiles: 0,
+  omittedBytes: 0,
+  omittedFileAccounting: 'enumerated' as const,
+  omittedByteAccounting: 'measured' as const,
+});
+
+function metricsFromInventory(
+  inventory: {
+    readonly inputs: readonly { readonly byteLength: number }[];
+    readonly omittedFiles: number;
+    readonly omittedBytes: number;
+    readonly omittedSubtrees?: Parameters<typeof inventoryOmissionAccounting>[0];
+  },
+  inputBytes?: number
+) {
+  return {
+    inputFiles: inventory.inputs.length,
+    inputBytes: inputBytes ?? inventory.inputs.reduce((sum, input) => sum + input.byteLength, 0),
+    omittedFiles: inventory.omittedFiles,
+    omittedBytes: inventory.omittedBytes,
+    ...inventoryOmissionAccounting(inventory.omittedSubtrees ?? []),
   };
 }
 
@@ -374,21 +407,19 @@ export async function buildRepoGraph(
   const diagnostics: GraphDiagnostic[] = [];
   const summaries: GraphProviderRunSummary[] = [];
   const sources: GraphCompositionSource[] = [];
-  let inventory;
+  let inventory: GraphFileInventoryResult;
 
   if (!request.root.trim()) {
     return emptyResult(
       'failed',
       [diagnostic('GRAPH_REPO_ROOT_INVALID', 'error', '/root', 'Repository root is required.')],
       summaries,
-      0,
-      0,
-      0
+      EMPTY_INVENTORY_METRICS
     );
   }
   const policyDiagnostics = validateBuildPolicy(request.policy);
   if (policyDiagnostics.length > 0) {
-    return emptyResult('failed', policyDiagnostics, summaries, 0, 0, 0);
+    return emptyResult('failed', policyDiagnostics, summaries, EMPTY_INVENTORY_METRICS);
   }
   if (!validRepoScope(request.scope)) {
     return emptyResult(
@@ -402,9 +433,7 @@ export async function buildRepoGraph(
         ),
       ],
       summaries,
-      0,
-      0,
-      0
+      EMPTY_INVENTORY_METRICS
     );
   }
   const scope = deepFreeze(structuredClone(request.scope));
@@ -418,6 +447,9 @@ export async function buildRepoGraph(
         diagnostics: [],
         omittedFiles: 0,
         omittedBytes: 0,
+        omittedFileAccounting: 'enumerated',
+        omittedByteAccounting: 'measured',
+        omittedSubtrees: Object.freeze([]),
         unknownZones: [],
         unsupportedZones: [],
       };
@@ -449,16 +481,21 @@ export async function buildRepoGraph(
         ),
       ],
       summaries,
-      0,
-      0,
-      0
+      EMPTY_INVENTORY_METRICS
     );
   }
 
   diagnostics.push(...inventory.diagnostics);
+  const inventoryOmittedSubtrees = Object.freeze([...(inventory.omittedSubtrees ?? [])]);
+  const inventoryAccounting = inventoryOmissionAccounting(inventoryOmittedSubtrees);
   const inventoryZones = {
-    unknownZones: inventory.unknownZones,
-    unsupportedZones: inventory.unsupportedZones,
+    unknownZones: inventory.unknownZones.map((zone) =>
+      structurizeUnknownZone(zone, { provider: 'graph.repository-inventory', stage: 'inventory' })
+    ),
+    unsupportedZones: inventory.unsupportedZones.map((zone) =>
+      structurizeUnknownZone(zone, { provider: 'graph.repository-inventory', stage: 'inventory' })
+    ),
+    omittedSubtrees: inventoryOmittedSubtrees,
   };
   const inventoryValidation = validateInventory(inventory.inputs, request.policy);
   if (inventoryValidation.length > 0) {
@@ -467,9 +504,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      0,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, 0),
       inventoryZones
     );
   }
@@ -479,9 +514,7 @@ export async function buildRepoGraph(
       'cancelled',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -490,9 +523,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -527,9 +558,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      admittedInputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -540,9 +569,7 @@ export async function buildRepoGraph(
         'failed',
         diagnostics,
         summaries,
-        admittedInputs.length,
-        inputBytes,
-        inventory.omittedFiles,
+        metricsFromInventory(inventory, inputBytes),
         inventoryZones
       );
     }
@@ -571,9 +598,7 @@ export async function buildRepoGraph(
         'cancelled',
         diagnostics,
         summaries,
-        inventory.inputs.length,
-        inputBytes,
-        inventory.omittedFiles,
+        metricsFromInventory(inventory, inputBytes),
         inventoryZones
       );
     }
@@ -792,9 +817,7 @@ export async function buildRepoGraph(
           'cancelled',
           diagnostics,
           summaries,
-          inventory.inputs.length,
-          inputBytes,
-          inventory.omittedFiles,
+          metricsFromInventory(inventory, inputBytes),
           inventoryZones
         );
       }
@@ -874,9 +897,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -894,9 +915,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -915,9 +934,7 @@ export async function buildRepoGraph(
       composed.code === 'cancelled' ? 'cancelled' : 'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -939,11 +956,12 @@ export async function buildRepoGraph(
       unknownZones: [
         ...inventory.unknownZones,
         ...sources.flatMap((source) => source.batch.unknownZones),
-      ],
+      ].map((zone) => structurizeUnknownZone(zone, { stage: 'repository-build' })),
       unsupportedZones: [
         ...inventory.unsupportedZones,
         ...sources.flatMap((source) => source.batch.unsupportedZones),
-      ],
+      ].map((zone) => structurizeUnknownZone(zone, { stage: 'repository-build' })),
+      omittedSubtrees: inventoryOmittedSubtrees,
       providerFailures: summaries
         .filter(
           (summary) =>
@@ -962,6 +980,10 @@ export async function buildRepoGraph(
       inputBytes,
       providerFacts: summaries.reduce((sum, summary) => sum + summary.factCount, 0),
       omittedFiles: inventory.omittedFiles,
+      omittedBytes: inventory.omittedBytes,
+      omittedFileAccounting: inventoryAccounting.omittedFileAccounting,
+      omittedByteAccounting: inventoryAccounting.omittedByteAccounting,
+      omittedSubtrees: inventoryOmittedSubtrees,
     },
   };
 }

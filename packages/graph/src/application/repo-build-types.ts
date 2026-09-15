@@ -10,6 +10,7 @@ import type {
   GraphUnsupportedZone,
   GraphUnknownZone,
 } from '../contracts/index.js';
+import type { GraphOmittedSubtree } from '../contracts/inventory-surface.js';
 import type { GraphProductHostPorts } from '../ports/index.js';
 
 import type { GraphCompositionPolicy, GraphCompositionSource } from './composition-types.js';
@@ -52,12 +53,17 @@ export interface GraphRepoBuildMetrics {
   readonly inputBytes: number;
   readonly providerFacts: number;
   readonly omittedFiles: number;
+  readonly omittedBytes: number;
+  readonly omittedFileAccounting?: 'enumerated' | 'unknown-subtrees';
+  readonly omittedByteAccounting?: 'measured' | 'unknown-subtrees';
+  readonly omittedSubtrees?: readonly GraphOmittedSubtree[];
 }
 
 export interface GraphRepoBuildQuality {
   readonly graph?: GraphQualityReport;
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly unsupportedZones: readonly GraphUnsupportedZone[];
+  readonly omittedSubtrees?: readonly GraphOmittedSubtree[];
   readonly providerFailures: readonly { readonly providerId: string; readonly code: string }[];
 }
 

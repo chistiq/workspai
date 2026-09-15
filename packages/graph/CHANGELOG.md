@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+- Added local G8 Workspace Intelligence consumer-parity and CLI host routing for
+  the bundled Rust/WASM traversal engine. Every inventoried consumer can run
+  against a package shadow candidate, TypeScript remains semantic authority, and
+  package-primary replacement stays unauthorized until the remote matrix and
+  replacement gate pass.
+- Inventory policyDigest now binds complete walk budgets, directory truncation
+  is `partially-enumerated`, and omittedBytes travel through repo-build metrics
+  into shadow execution receipts. Bounded walks stop at the file or byte budget
+  instead of scanning remaining trees. Cross-platform
+  admission and package-primary replacement remain unauthorized.
+  Approved differences default to none; any exception must be a bound record
+  for one corpus, source-tree digest, difference code and reason. Cross-platform
+  admission requires semantic equivalence on the representative committed Node
+  corpus, not `incomparable` with blanket approvals. Local `grpc` and
+  `opentelemetry-demo` copies remain optional observations and are not trusted
+  baselines. Isolated child execution is terminated at the deadline. The
+  harness remains a repository and CI TypeScript tool, not a published CLI
+  runtime, and does not require `tsx` for installed users. Matrix verification
+  recomputes the qualification digest and binds package commits to the tested
+  SHA. Linux, macOS and Windows admission stays pending until the remote matrix
+  is retained. The G7 release inventory snapshot now includes the G8
+  real-workspace evidence schemas. Isolated qualification resolves `tsx` by
+  absolute URL so nested Graph composition workers still start after the child
+  chdirs to a write sentinel. Fail-closed platform reports still exit 4 until
+  semantic equivalence, but CI captures them without aborting the OS matrix.
+  Packed invalid fixtures use `/home/example` so Linux runners do not treat
+  them as leaked host paths. The released CLI remains the sole Graph authority.
+- Added the versioned G8 semantic shadow-parity corpus as CLI bridge evidence.
+  It rejects identity, relation, proof, unknown, completeness and diagnostic
+  regressions while reviewed improvements remain non-equivalent.
+- Kept the historical G7 release matrix verifiable after its retained admission
+  advances the registry to G8, while rejecting the intermediate G7 registry
+  state. Protected-main attestation and finalization now run only for the G5 to
+  G7 admission transition, preventing replay after G8 has opened.
+- Added a TypeScript-only bundle-input build target for clean internal CLI
+  composition. Full Graph builds continue to produce and verify the bundled
+  Rust/WASM artifact, while ordinary CLI bundling requires no Rust toolchain.
+- Kept historical G6 matrix verification valid after the separately governed
+  G7 admission advances the registry to G8, while continuing to reject every
+  unadmitted intermediate stage and any weakened G6 evidence.
+- Retained the exact protected-main G7 admission and opened only the authorized
+  G8 shadow-comparison mode. The released CLI remains authoritative while the
+  internal Graph package is bundled as a build-time dependency with no npm,
+  runtime-resolution or user-toolchain requirement.
+- Added a portable identity renderer at the Graph digest boundary plus complete
+  provider-fact evidence locators. Canonical hashed identities remain unchanged;
+  compatibility comparisons use only observed SHA-256 preimages and explicit,
+  versioned legacy mappings.
+- Added a live project qualification path that scopes legacy workspace truth,
+  executes the package read-only on the same prepared project and emits a
+  bounded authority receipt. Semantic generation digests must match the bound
+  inventory, provider set and composition policy before comparison is allowed.
 - Removed package-internal composition sources from every standalone CLI JSON
   envelope while retaining them for in-process incremental recomputation. This
   prevents duplicate provider facts from crossing the consumer boundary and

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/locator-identity/v1",
+  "title": "WorkspaiGraphLocatorIdentityCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "opaqueDeclaredPrefixes", "maxUriDecodeRounds", "classes"],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.locator-identity",
+        "version": "1"
+      }
+    },
+    "opaqueDeclaredPrefixes": {
+      "const": ["encoded", "targets"]
+    },
+    "maxUriDecodeRounds": {
+      "const": 8
+    },
+    "classes": {
+      "const": ["portable", "opaque", "unsafe"]
+    }
+  }
+}

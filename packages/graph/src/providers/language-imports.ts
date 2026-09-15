@@ -9,6 +9,7 @@ import {
   type GraphProviderRuntime,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
+import { admitDeclaredGraphLocator } from '../domain/locator-identity.js';
 
 export const LANGUAGE_IMPORTS_PROVIDER_ID = 'workspai.graph.provider.language-imports';
 
@@ -185,14 +186,7 @@ function unsupportedDynamicSyntax(source: string, language: Language): boolean {
 }
 
 function importedModuleLocator(imported: string): string {
-  const segments = imported.split('/');
-  const requiresEncoding =
-    imported.includes('\\') ||
-    imported.startsWith('/') ||
-    /^[A-Za-z]:/u.test(imported) ||
-    segments.some((segment) => segment === '' || segment === '.' || segment === '..');
-  if (!requiresEncoding) return imported;
-  return `encoded/${encodeURIComponent(imported).replaceAll('.', '%2E')}`;
+  return admitDeclaredGraphLocator(imported, 'encoded');
 }
 
 function warning(code: string, path: string, message: string): GraphDiagnostic {

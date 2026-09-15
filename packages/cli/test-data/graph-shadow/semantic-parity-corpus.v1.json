@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "workspai.graph-shadow-semantic-corpus.v1",
+  "profile": "g8-semantic-parity.v1",
+  "cases": [
+    {
+      "id": "exact-equivalence",
+      "expectedStatus": "equivalent",
+      "expectedDifferenceCodes": []
+    },
+    {
+      "id": "builtin-semantic-aliases",
+      "legacySecondKind": "test-suite",
+      "packageSecondKind": "test",
+      "legacyRelation": "owns",
+      "packageRelation": "owned-by",
+      "expectedStatus": "equivalent",
+      "expectedDifferenceCodes": []
+    },
+    {
+      "id": "identity-regression",
+      "packageSecondIdentity": "test:renamed",
+      "expectedStatus": "different",
+      "expectedDifferenceCodes": [
+        "GRAPH_SHADOW_NODE_LEGACY_ONLY",
+        "GRAPH_SHADOW_NODE_PACKAGE_ONLY",
+        "GRAPH_SHADOW_RELATION_LEGACY_ONLY",
+        "GRAPH_SHADOW_RELATION_PACKAGE_ONLY"
+      ]
+    },
+    {
+      "id": "relation-regression",
+      "packageRelation": "deployed-as",
+      "expectedStatus": "different",
+      "expectedDifferenceCodes": [
+        "GRAPH_SHADOW_RELATION_LEGACY_ONLY",
+        "GRAPH_SHADOW_RELATION_PACKAGE_ONLY"
+      ]
+    },
+    {
+      "id": "proof-lineage-regression",
+      "packageProofLocator": "src/renamed.ts",
+      "expectedStatus": "different",
+      "expectedDifferenceCodes": [
+        "GRAPH_SHADOW_PROOF_LEGACY_ONLY",
+        "GRAPH_SHADOW_PROOF_PACKAGE_ONLY"
+      ]
+    },
+    {
+      "id": "unknown-accounting-regression",
+      "packageUnknownCodes": ["GRAPH_DYNAMIC_IMPORT_UNKNOWN"],
+      "expectedStatus": "different",
+      "expectedDifferenceCodes": [
+        "GRAPH_SHADOW_UNKNOWN_ZONE_PACKAGE_ONLY",
+        "GRAPH_SHADOW_COMPLETENESS_DIFFERENT"
+      ]
+    },
+    {
+      "id": "completeness-regression",
+      "packageCoverageStatus": "bounded",
+      "expectedStatus": "different",
+      "expectedDifferenceCodes": ["GRAPH_SHADOW_COMPLETENESS_DIFFERENT"]
+    },
+    {
+      "id": "diagnostic-regression",
+      "packageDiagnosticCodes": ["GRAPH_PROVIDER_PARTIAL"],
+      "expectedStatus": "different",
+      "expectedDifferenceCodes": ["GRAPH_SHADOW_DIAGNOSTIC_PACKAGE_ONLY"]
+    },
+    {
+      "id": "reviewed-truth-depth-improvement",
+      "packageExtraNode": true,
+      "approvedDifferences": {
+        "GRAPH_SHADOW_NODE_PACKAGE_ONLY": "truth-depth-improvement"
+      },
+      "expectedStatus": "incomparable",
+      "expectedDifferenceCodes": ["GRAPH_SHADOW_NODE_PACKAGE_ONLY"]
+    }
+  ]
+}

@@ -226,7 +226,7 @@ describe('npm publish contract', () => {
   });
 
   it('builds dist once before Vitest instead of rebuilding in test workers', () => {
-    expect(packageJson.scripts?.['test:prebuild']).toBe('tsup');
+    expect(packageJson.scripts?.['test:prebuild']).toBe('corepack npm run build');
     expect(packageJson.scripts?.test).toBe('corepack npm run test:prebuild && vitest run');
 
     const distHelper = fs.readFileSync(

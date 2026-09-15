@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "workspai-graph-g7-retained-admission.v1",
+  "package": "@workspai/graph",
+  "version": "0.0.0-development",
+  "distribution": "internal-only",
+  "npmPublication": "prohibited",
+  "repository": "chistiq/workspai",
+  "ref": "refs/heads/main",
+  "sourceCommit": "12d489ca916fd9898d2e12bc9c3e529b5bf2a160",
+  "testedCommit": "12d489ca916fd9898d2e12bc9c3e529b5bf2a160",
+  "workflow": ".github/workflows/ci.yml",
+  "runId": "34715037038",
+  "jobId": "103612788624",
+  "status": "admitted",
+  "standaloneStable": true,
+  "nextStage": "G8",
+  "nextStageAuthorized": true,
+  "authorizedRuntimeMode": "g8-shadow-comparison-only",
+  "currentGraphAuthority": "official-internal-graph-capability",
+  "promotionEvidenceDigest": "sha256:e9128303eb8b491c7257e8ca7d05b8ff2d036d2c978ee4a7b59985dded0216c7",
+  "sourceLedgerDigest": "sha256:a649ab91cedf21ec1004db0332a5fa75fd1360ff37e30edfd293a860e0a8656c",
+  "retainedArtifacts": {
+    "promotionEvidence": {
+      "id": "10304920692",
+      "name": "graph-g7-promotion-evidence",
+      "digest": "sha256:7f3b4d01889450abd02370f890e5dbd288797fa5819d6fe68fa5c4aff16a5fae"
+    },
+    "admissionDecision": {
+      "id": "10304753425",
+      "name": "graph-g7-standalone-admission-decision",
+      "digest": "sha256:523e8cf9ab584b57db021fab9392a287735c6e9b694f3d2f63a9d487b153a5da"
+    }
+  },
+  "failures": []
+}

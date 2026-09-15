@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "workspai.graph-real-workspace-inventory.v1",
+  "profile": "g8-real-workspace.v1",
+  "mappingVersion": "workspai.graph-shadow-mapping.v2",
+  "required": [
+    {
+      "id": "committed-fixture",
+      "kind": "committed-fixture",
+      "projectId": "real-workspace-fixture",
+      "workspaceId": "real-workspace-fixture",
+      "relativeRoot": "packages/cli/test-data/graph-shadow/real-workspace-fixture.v1",
+      "trustedBaseline": true,
+      "requiredFor": ["regression"]
+    },
+    {
+      "id": "committed-node-service",
+      "kind": "committed-fixture",
+      "projectId": "node-catalog-service",
+      "workspaceId": "node-catalog-service",
+      "relativeRoot": "packages/cli/test-data/graph-shadow/real-workspace-corpus.v1",
+      "trustedBaseline": true,
+      "requiredFor": ["regression", "cross-platform"]
+    }
+  ],
+  "optionalLocalReferences": [
+    {
+      "id": "grpc",
+      "kind": "local-reference",
+      "projectId": "grpc",
+      "workspaceId": "grpc",
+      "directoryName": "grpc",
+      "trustedBaseline": false,
+      "requiredFor": ["local-observation"]
+    },
+    {
+      "id": "opentelemetry-demo",
+      "kind": "local-reference",
+      "projectId": "opentelemetry-demo",
+      "workspaceId": "opentelemetry-demo",
+      "directoryName": "opentelemetry-demo",
+      "trustedBaseline": false,
+      "requiredFor": ["local-observation"]
+    },
+    {
+      "id": "pnpm",
+      "kind": "local-reference",
+      "projectId": "pnpm",
+      "workspaceId": "pnpm",
+      "directoryName": "pnpm",
+      "trustedBaseline": false,
+      "requiredFor": ["local-observation"]
+    }
+  ]
+}

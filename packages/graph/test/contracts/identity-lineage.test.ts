@@ -59,20 +59,26 @@ describe('Graph identity and evidence lineage', () => {
     }
   });
 
-  it.each(['/private/source.ts', 'C:\\private\\source.ts', '../source.ts', 'src/../../secret'])(
-    'rejects machine-local or escaping identity %s',
-    (relativeLocator) => {
-      expect(
-        normalizeGraphEntityIdentity({
-          namespace: 'source',
-          kind: 'file',
-          relativeLocator,
-          caseSensitivity: 'sensitive',
-          scope,
-        })
-      ).toMatchObject({ accepted: false });
-    }
-  );
+  it.each([
+    '/private/source.ts',
+    'C:\\private\\source.ts',
+    '../source.ts',
+    'src/../../secret',
+    '%2e%2e%2fsecret.ts',
+    '\\\\server\\share\\file.ts',
+    '//server/share/file.ts',
+    'src/foo/../../../etc/passwd',
+  ])('rejects machine-local or escaping identity %s', (relativeLocator) => {
+    expect(
+      normalizeGraphEntityIdentity({
+        namespace: 'source',
+        kind: 'file',
+        relativeLocator,
+        caseSensitivity: 'sensitive',
+        scope,
+      })
+    ).toMatchObject({ accepted: false });
+  });
 
   it('does not count common-root generated claims as corroboration', () => {
     const assessment = assessGraphEvidenceIndependence([

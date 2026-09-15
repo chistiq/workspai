@@ -183,17 +183,48 @@ for (const entry of registeredPackages) {
       `${entry.name} must remain non-publishable while registered as contract-design`,
     );
   }
-  if (entry.standaloneStability !== "not-admitted") {
-    fail(
-      `${entry.name} cannot activate a CLI bridge before standalone stability admission`,
-    );
+  const admittedGraphShadow =
+    entry.name === "@workspai/graph" &&
+    entry.currentStage === "G8" &&
+    entry.stageStatus === "in-progress" &&
+    entry.standaloneStability === "admitted" &&
+    entry.cliRuntimeIntegration === "g8-shadow-comparison-only";
+  if (!admittedGraphShadow && entry.standaloneStability !== "not-admitted") {
+    fail(`${entry.name} has no admitted standalone transition`);
   }
   if (
+    !admittedGraphShadow &&
     entry.cliRuntimeIntegration !== "prohibited-before-standalone-stability"
   ) {
     fail(
       `${entry.name} must explicitly prohibit premature CLI runtime integration`,
     );
+  }
+  if (admittedGraphShadow) {
+    const admissionPath = `${entry.directory}/governance/g7-retained-admission.v1.json`;
+    const retainedAdmissionFile = path.resolve(root, admissionPath);
+    if (
+      !fs.existsSync(retainedAdmissionFile) ||
+      !fs.lstatSync(retainedAdmissionFile).isFile()
+    ) {
+      fail(`${entry.name} G8 shadow mode requires retained G7 admission`);
+    } else {
+      const admission = readJson(admissionPath);
+      if (
+        admission.status !== "admitted" ||
+        admission.standaloneStable !== true ||
+        admission.nextStage !== "G8" ||
+        admission.nextStageAuthorized !== true ||
+        admission.authorizedRuntimeMode !== "g8-shadow-comparison-only" ||
+        admission.currentGraphAuthority !==
+          "official-internal-graph-capability" ||
+        admission.npmPublication !== "prohibited"
+      ) {
+        fail(
+          `${entry.name} retained G7 admission is incomplete or over-authorized`,
+        );
+      }
+    }
   }
   for (const evidencePath of entry.requiredEvidence ?? []) {
     const resolvedEvidence = resolveOwnedEvidencePath(
@@ -399,8 +430,12 @@ for (const adopter of adoptionRecords) {
   if (
     adopter.directory !== registryEntry.directory ||
     !stageAtOrAfter(registryEntry.currentStage, adopter.packageStage) ||
-    adopter.maturityBefore !== registryEntry.maturity ||
-    adopter.maturityAfter !== registryEntry.maturity
+    adopter.maturityBefore !== adopter.maturityAfter ||
+    (registryEntry.name !== "@workspai/graph" &&
+      adopter.maturityAfter !== registryEntry.maturity) ||
+    (registryEntry.name === "@workspai/graph" &&
+      registryEntry.standaloneStability !== "admitted" &&
+      adopter.maturityAfter !== registryEntry.maturity)
   ) {
     fail(`SH6 stage regressed or maturity drifted for ${adopter.package}`);
   }
@@ -509,12 +544,24 @@ for (const packageName of ["@workspai/shared", "@workspai/graph"]) {
     fail(`central CLI must not depend on developing package ${packageName}`);
   }
 }
+if (
+  graphRegistryEntry?.cliRuntimeIntegration === "g8-shadow-comparison-only" &&
+  cli.devDependencies?.["@workspai/graph"] !== graph.version
+) {
+  fail("central CLI G8 bundle must pin the exact admitted Graph development version");
+}
 
 const sourcePolicies = [
   {
     directory: "packages/cli/src",
-    forbidden: /^@workspai\/(?:shared|graph)(?:\/|$)/,
-    reason: "CLI package consumption is forbidden before standalone stability",
+    forbidden:
+      graphRegistryEntry?.cliRuntimeIntegration === "g8-shadow-comparison-only"
+        ? /^@workspai\/shared(?:\/|$)/
+        : /^@workspai\/(?:shared|graph)(?:\/|$)/,
+    reason:
+      graphRegistryEntry?.cliRuntimeIntegration === "g8-shadow-comparison-only"
+        ? "CLI may consume Graph only; Shared remains an internal transitive bundle detail"
+        : "CLI package consumption is forbidden before standalone stability",
   },
   {
     directory: "packages/shared/src",
@@ -547,6 +594,6 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Independent package boundaries passed: ${registeredPackages.length} packages, acyclic Shared consumers, no CLI runtime bridge.`,
+    `Independent package boundaries passed: ${registeredPackages.length} packages, acyclic Shared consumers, governed CLI integration state.`,
   );
 }

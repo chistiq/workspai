@@ -485,7 +485,7 @@ describe('buildRepoGraph', () => {
     });
     if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
 
-    expect(result).toMatchObject({ status: 'complete', metrics: { providerFacts: 7 } });
+    expect(result).toMatchObject({ status: 'complete', metrics: { providerFacts: 9 } });
     const importEdges = result.graph.edges.filter((edge) => edge.relation === 'imports');
     expect(importEdges).toHaveLength(2);
     expect(result.graph.nodes).toContainEqual(expect.objectContaining({ kind: 'module' }));
@@ -861,6 +861,8 @@ describe('buildRepoGraph', () => {
 
       expect(result.status).toBe(status);
       expect(result.quality.unknownZones).toHaveLength(1);
+      expect(result.metrics.omittedFiles).toBe(1);
+      expect(result.metrics.omittedBytes).toBe(10);
       expect(detect).not.toHaveBeenCalled();
     }
   );

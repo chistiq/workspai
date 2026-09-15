@@ -125,7 +125,11 @@ function auditComposition(options) {
       graphRegistry?.latestClosure === 'packages/graph/governance/g3-stage-approval.v1.json') ||
     (graphRegistry?.currentStage === 'G5' &&
       graphRegistry?.stageStatus === 'local-source-complete' &&
-      graphRegistry?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json');
+      graphRegistry?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json') ||
+    (graphRegistry?.currentStage === 'G8' &&
+      graphRegistry?.stageStatus === 'in-progress' &&
+      graphRegistry?.standaloneStability === 'admitted' &&
+      graphRegistry?.latestClosure === 'packages/graph/governance/g7-stage-admission.v1.json');
   if (!inProgressG2 && !admittedHistoricalG2) {
     failures.push('Graph registry neither authorizes nor records admitted G2 work');
   }

@@ -193,6 +193,8 @@ function parseTrailingJsonArray(stdout) {
 
 const REQUIRED_PACKAGE_FILES = [
   'dist/index.js',
+  'dist/internal/graph-package-shadow-bridge.js',
+  'dist/internal/graph-reference-worker-entry.js',
   'contracts/runtime-command-surface.v1.json',
   'contracts/workspace-archive-capabilities.v1.json',
   'contracts/workspace-archive-manifest.v1.json',

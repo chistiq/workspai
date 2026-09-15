@@ -61,7 +61,7 @@ for (const name of fs
     report.admitted !== false ||
     report.nextStage !== 'G7' ||
     report.nextStageAuthorized !== false ||
-    report.registryStage !== 'G5' ||
+    !['G5', 'G8'].includes(report.registryStage) ||
     report.nativeAcceleration !== 'prohibited'
   ) {
     failures.push(`${String(runnerOs)}: G6 platform admission failed`);

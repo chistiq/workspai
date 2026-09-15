@@ -155,7 +155,7 @@ describe('Graph G7 standalone admission finalization', () => {
     });
   });
 
-  it('emits an internal shadow-only decision without rewriting the source ledger', () => {
+  it('refuses to replay admission after the registry has entered G8', () => {
     const resultRoot = path.join(packageRoot, 'test-results');
     fs.mkdirSync(resultRoot, { recursive: true });
     const directory = fs.mkdtempSync(path.join(resultRoot, 'g7-admission-finalization-'));
@@ -177,17 +177,40 @@ describe('Graph G7 standalone admission finalization', () => {
       ],
       { cwd: packageRoot, encoding: 'utf8' }
     );
-    expect(result.status, result.stderr + result.stdout).toBe(0);
+    expect(result.status, result.stderr + result.stdout).toBe(1);
     expect(JSON.parse(fs.readFileSync(outputPath, 'utf8'))).toMatchObject({
-      status: 'admitted',
-      admitted: true,
-      standaloneStable: true,
+      status: 'blocked',
+      admitted: false,
+      standaloneStable: false,
       nextStage: 'G8',
-      nextStageAuthorized: true,
-      authorizedRuntimeMode: 'g8-shadow-comparison-only',
+      nextStageAuthorized: false,
+      authorizedRuntimeMode: 'none',
       currentGraphAuthority: 'official-internal-graph-capability',
       npmPublication: 'prohibited',
-      failures: [],
+      failures: [
+        'G7 transition requires the existing registry and CLI bridge to remain fail-closed',
+      ],
     });
+  });
+
+  it('prevents the protected-main workflow from replaying G7 promotion after G8 opens', () => {
+    const workflow = fs.readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const steps = workflow.split('\n      - name: ');
+    const lifecycleGuard = "steps.graph-lifecycle.outputs.current_stage == 'G5'";
+    const guardedSteps = [
+      'Attest Graph internal package provenance',
+      'Attest Graph internal package SBOM',
+      'Verify Graph G7 promotion evidence',
+      'Finalize Graph G7 standalone admission',
+      'Retain Graph G7 attestation bundle',
+      'Retain verified Graph G7 promotion evidence',
+      'Retain Graph G7 standalone admission decision',
+    ];
+
+    for (const name of guardedSteps) {
+      const step = steps.find((candidate) => candidate.startsWith(`${name}\n`));
+      expect(step, `${name} is missing from the CI workflow`).toBeDefined();
+      expect(step).toContain(lifecycleGuard);
+    }
   });
 });
