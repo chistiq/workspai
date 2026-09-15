@@ -320,7 +320,9 @@ if (consumerCheckpoint?.status === 'implemented-local-candidate') {
     failures.push('consumer parity adapter is incomplete');
   }
 }
-const nativeCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === 'rust-wasm-host-routing');
+const nativeCheckpoint = checkpoints.find(
+  (checkpoint) => checkpoint.id === 'rust-wasm-host-routing'
+);
 if (nativeCheckpoint?.status === 'implemented-local-candidate') {
   const routing = fs.readFileSync(
     repositoryFile('packages/cli/src/graph-package-native-routing.ts'),
