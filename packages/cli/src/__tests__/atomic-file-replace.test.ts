@@ -1,3 +1,4 @@
+import { open } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -30,6 +31,32 @@ describe('atomic file replace', () => {
     await replaceFileAtomically(target, '{"new":true}\n');
     expect(await fsExtra.readFile(target, 'utf8')).toBe('{"new":true}\n');
     expect((await fsExtra.readdir(root)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('tolerates Windows EPERM fsync failures and still replaces the target', async () => {
+    const root = await temporaryDir();
+    const probePath = path.join(root, 'probe.txt');
+    await fsExtra.writeFile(probePath, 'probe\n');
+    const probeHandle = await open(probePath, 'r');
+    const fileHandlePrototype = Object.getPrototypeOf(probeHandle) as {
+      sync: () => Promise<void>;
+    };
+    await probeHandle.close();
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const syncSpy = vi
+      .spyOn(fileHandlePrototype, 'sync')
+      .mockRejectedValueOnce(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+
+    try {
+      const target = path.join(root, 'report.json');
+      await fsExtra.writeFile(target, '{"old":true}\n');
+      await replaceFileAtomically(target, '{"new":true}\n');
+      expect(await fsExtra.readFile(target, 'utf8')).toBe('{"new":true}\n');
+      expect((await fsExtra.readdir(root)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    } finally {
+      platformSpy.mockRestore();
+      syncSpy.mockRestore();
+    }
   });
 
   it('falls back to overwrite-move when rename reports EEXIST or EPERM', async () => {

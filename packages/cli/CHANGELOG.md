@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commit bindings. Comparisons cover semantic identities, relations, proof
   lineage, unknowns, completeness and diagnostics rather than counts alone.
 
+### Fixed
+
+- Tolerate Windows runner `fsync` `EPERM`/`ENOSYS` during atomic file replace so
+  durability sync cannot abort an otherwise successful overwrite.
+
 ## [0.75.2] - 2026-09-14
 
 ### Changed

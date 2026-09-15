@@ -6,7 +6,8 @@ import fsExtra from 'fs-extra';
 
 function isIgnorableFsyncError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return code === 'EINVAL' || code === 'ENOTSUP' || code === 'EOPNOTSUPP';
+  if (code === 'EINVAL' || code === 'ENOTSUP' || code === 'EOPNOTSUPP') return true;
+  return process.platform === 'win32' && (code === 'EPERM' || code === 'ENOSYS');
 }
 
 /**
