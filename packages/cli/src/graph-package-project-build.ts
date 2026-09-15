@@ -1,13 +1,14 @@
 import path from 'node:path';
 
-import { buildRepoGraph, GRAPH_STANDARD_REPO_BUILD_POLICY } from '@workspai/graph';
-import { createNodeGraphProductHostPorts } from '@workspai/graph/adapters/node';
-import { CORE_GRAPH_ONTOLOGY_PROFILE } from '@workspai/graph/contracts';
 import {
+  CORE_GRAPH_ONTOLOGY_PROFILE,
+  GRAPH_STANDARD_REPO_BUILD_POLICY,
   WORKSPACE_IDENTITY_INPUT_LOCATOR,
+  buildRepoGraph,
+  createNodeGraphProductHostPorts,
   createScopeContainmentProvider,
   createStandardRepositoryProviders,
-} from '@workspai/graph/providers';
+} from './graph-package-runtime.js';
 
 import type { PackageGraphShadowInput } from './graph-shadow-parity.js';
 

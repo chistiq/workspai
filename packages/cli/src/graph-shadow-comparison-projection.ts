@@ -2,7 +2,7 @@ import {
   GRAPH_COMPARABLE_SURFACE,
   GRAPH_GENERATED_ARTIFACT,
   GRAPH_LOCATOR_IDENTITY,
-} from '@workspai/graph/conformance';
+} from './graph-package-runtime.js';
 
 export const GRAPH_SHADOW_MAPPING_VERSION = 'workspai.graph-shadow-mapping.v2' as const;
 

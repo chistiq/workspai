@@ -1,4 +1,4 @@
-export { createNodeGraphProductHostPorts } from '@workspai/graph/adapters/node';
+export { createNodeGraphProductHostPorts } from './graph-package-runtime.js';
 
 import type {
   GraphShadowComparisonBinding,

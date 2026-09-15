@@ -2,7 +2,7 @@ import {
   GRAPH_COMPARABLE_SURFACE,
   GRAPH_UNKNOWN_CAUSE,
   type GraphUnknownCause,
-} from '@workspai/graph/conformance';
+} from './graph-package-runtime.js';
 
 import { unknownCauseFromComparisonKey } from './graph-shadow-unknown-contract.js';
 

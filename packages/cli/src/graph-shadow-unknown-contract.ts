@@ -1,4 +1,4 @@
-import { GRAPH_UNKNOWN_CAUSE, type GraphUnknownCause } from '@workspai/graph/conformance';
+import { GRAPH_UNKNOWN_CAUSE, type GraphUnknownCause } from './graph-package-runtime.js';
 
 export const GRAPH_SHADOW_UNKNOWN_CONTRACT_VERSION =
   'workspai.graph-shadow-unknown-contract.v1' as const;

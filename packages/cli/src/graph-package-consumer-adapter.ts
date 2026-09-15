@@ -1,5 +1,4 @@
-import type { GraphNativePort } from '@workspai/graph';
-
+import type { GraphNativePort } from './graph-package-runtime.js';
 import { buildPreparedProjectPackageGraph } from './graph-package-project-build.js';
 import { renderCanonicalGraphAsWorkspaceKnowledgeGraph } from './graph-package-compatibility-renderer.js';
 import type { GraphPackageCompatibilitySourceBinding } from './graph-package-compatibility-renderer.js';

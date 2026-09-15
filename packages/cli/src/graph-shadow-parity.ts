@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { GRAPH_INVENTORY_SURFACE } from '@workspai/graph/conformance';
+import { GRAPH_INVENTORY_SURFACE } from './graph-package-runtime.js';
 
 import {
   GRAPH_MODEL_AUTHORITY_RECEIPT_SCHEMA_VERSION,

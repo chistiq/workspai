@@ -162,9 +162,14 @@ const bridgeSource = fs.readFileSync(
   repositoryFile('packages/cli/src/graph-package-shadow-bridge.ts'),
   'utf8'
 );
+const runtimeSource = fs.readFileSync(
+  repositoryFile('packages/cli/src/graph-package-runtime.ts'),
+  'utf8'
+);
 const bundleConfig = fs.readFileSync(repositoryFile('packages/cli/tsup.config.ts'), 'utf8');
 if (
-  !bridgeSource.includes("from '@workspai/graph/adapters/node'") ||
+  !runtimeSource.includes("from '@workspai/graph/adapters/node'") ||
+  !bridgeSource.includes("from './graph-package-runtime.js'") ||
   (!bridgeSource.includes("authority: 'released-cli'") &&
     !bridgeSource.includes('runGraphShadowComparison')) ||
   !bundleConfig.includes("'internal/graph-package-shadow-bridge':") ||
@@ -329,7 +334,7 @@ if (nativeCheckpoint?.status === 'implemented-local-candidate') {
     'utf8'
   );
   if (
-    !routing.includes("from '@workspai/graph/adapters/node'") ||
+    !routing.includes("from './graph-package-runtime.js'") ||
     !routing.includes('createNodeRustWasmGraphNativePort') ||
     !routing.includes('routeGraphNativeTraversal') ||
     !routing.includes('userSelectable: GRAPH_NATIVE_HOST_USER_SELECTABLE')

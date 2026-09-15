@@ -1,10 +1,11 @@
-import type { GraphNativePort, GraphNativeTraversalRequest } from '@workspai/graph';
 import {
   GraphNativeAdapterLoadError,
   createNodeRustWasmGraphNativePort,
   routeGraphNativeTraversal,
+  type GraphNativePort,
+  type GraphNativeTraversalRequest,
   type GraphNativeTraversalRoute,
-} from '@workspai/graph/adapters/node';
+} from './graph-package-runtime.js';
 
 import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
 

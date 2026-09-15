@@ -13,6 +13,7 @@
       "status": "implemented-local-candidate",
       "evidence": [
         "packages/cli/src/graph-package-shadow-bridge.ts",
+        "packages/cli/src/graph-package-runtime.ts",
         "packages/cli/src/__tests__/graph-package-shadow-bridge.test.ts"
       ]
     },
@@ -114,6 +115,7 @@
       "status": "implemented-local-candidate",
       "evidence": [
         "packages/cli/src/graph-package-native-routing.ts",
+        "packages/cli/src/graph-package-runtime.ts",
         "packages/cli/src/__tests__/graph-package-native-routing.test.ts",
         "packages/graph/src/application/route-native-traversal.ts",
         "packages/graph/src/adapters/node/index.ts"
