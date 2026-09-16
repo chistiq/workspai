@@ -9,6 +9,7 @@ import type {
 } from '../../ports/index.js';
 import type { GraphProductHostPorts } from '../../ports/index.js';
 import {
+  GRAPH_REFERENCE_COMPOSITION_TASK,
   GRAPH_STANDARD_REPO_BUILD_POLICY,
   buildContentStateManifest,
   buildIncrementalRepoGraph,
@@ -16,10 +17,12 @@ import {
   buildShardDependenciesFromSources,
   collectGraphSemanticDependencies,
   contentStateLeavesFromProviderInputs,
+  executeGraphReferenceCompositionTask,
   type GraphIncrementalRepoBuildResult,
   type GraphRepoBuildPolicy,
   type GraphRepoBuildResult,
 } from '../../application/index.js';
+import type { GraphCompositionRequest } from '../../application/composition-types.js';
 import {
   CORE_GRAPH_ONTOLOGY_PROFILE,
   type GraphOntologyProfile,
@@ -131,12 +134,16 @@ function emptyResult<TOutput>(
 /**
  * Creates a bounded one-task-per-worker Node adapter for the portable Graph
  * reference task protocol. Worker isolation is an execution concern only and
- * cannot redefine composition semantics.
+ * cannot redefine composition semantics. Product inspect/build hosts run the
+ * same task in-process so large graphs are not serialized into a worker.
  */
 export function createNodeGraphReferenceWorkerPool(
-  workerUrl: URL = packagedReferenceWorkerUrl()
+  workerUrl: URL = packagedReferenceWorkerUrl(),
+  options: { readonly isolate?: boolean } = {}
 ): GraphWorkerPoolPort {
+  const isolate = options.isolate ?? true;
   return {
+    serializesTasks: isolate,
     execute<TInput, TOutput>(
       request: GraphWorkerTaskRequest<TInput>
     ): Promise<GraphWorkerTaskResult<TOutput>> {
@@ -160,6 +167,37 @@ export function createNodeGraphReferenceWorkerPool(
             0
           )
         );
+      }
+      if (
+        !isolate &&
+        request.task.id === GRAPH_REFERENCE_COMPOSITION_TASK.id &&
+        request.task.version === GRAPH_REFERENCE_COMPOSITION_TASK.version
+      ) {
+        try {
+          const output = executeGraphReferenceCompositionTask(
+            request.input as GraphCompositionRequest
+          ) as TOutput;
+          return Promise.resolve({
+            status: 'complete',
+            output,
+            diagnostics: [],
+            metrics: {
+              durationMs: performance.now() - startedAt,
+              // Sentinel: composeGraph skips worker JSON byte measurement.
+              inputBytes: 0,
+              outputBytes: 1,
+            },
+          });
+        } catch (error) {
+          return Promise.resolve(
+            emptyResult(
+              'failed',
+              'GRAPH_NODE_WORKER_EXECUTION_FAILED',
+              error instanceof Error ? error.message : 'Graph worker execution failed.',
+              performance.now() - startedAt
+            )
+          );
+        }
       }
 
       return new Promise((resolve) => {
@@ -254,7 +292,11 @@ export function createNodeGraphReferenceWorkerPool(
 }
 
 export function createNodeGraphProductHostPorts(
-  options: { readonly signal?: AbortSignal; readonly workerUrl?: URL } = {}
+  options: {
+    readonly signal?: AbortSignal;
+    readonly workerUrl?: URL;
+    readonly isolateComposition?: boolean;
+  } = {}
 ): GraphProductHostPorts {
   const signal = options.signal;
   return {
@@ -262,6 +304,7 @@ export function createNodeGraphProductHostPorts(
     digest: {
       algorithm: 'sha256',
       digest: async (input) => createHash('sha256').update(input).digest('hex'),
+      digestSync: (input) => createHash('sha256').update(input).digest('hex'),
       createStreamingDigest: () => {
         const hash = createHash('sha256');
         return {
@@ -279,7 +322,9 @@ export function createNodeGraphProductHostPorts(
       throwIfAborted: () => signal?.throwIfAborted(),
     },
     scheduler: { yield: () => waitForImmediate() },
-    workers: createNodeGraphReferenceWorkerPool(options.workerUrl),
+    workers: createNodeGraphReferenceWorkerPool(options.workerUrl, {
+      isolate: options.isolateComposition ?? false,
+    }),
     fileSource: createNodeGraphFileSource(),
     signal,
   };

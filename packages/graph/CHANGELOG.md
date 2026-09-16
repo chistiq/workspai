@@ -8,7 +8,21 @@
   decisions, and OpenAPI operation-to-handler binding. Inspect now inventories a
   directory symlink root by resolving it, prefers unique same-file call targets
   over colliding peers, and omits call extraction from generated sources while
-  keeping their declarations. Large inventories publish bundled-engine
+  keeping their declarations. Call binding now prefers unique functions over
+  same-name types, treats generated symbols as unique targets instead of name
+  collisions, and scans call tokens in one pass so coverage counts unresolved
+  call sites. Node and other keyword-declared languages no longer treat
+  object-property call sites as C-style typed function declarations, so
+  imported handlers stay bound to their defining file. Repository builds memoize entity identity and reused file bytes
+  across isolated providers. Node inspect/build hosts compose in-process so
+  large graphs are not cloned into a worker; isolated worker execution remains
+  the adapter default for event-loop proofs. Canonical digest walks are
+  synchronous and flush in blocks, Node hosts hash compact composition values
+  through digestSync so inspect does not await SHA-256 once per edge, semantic
+  set digests reuse sorted canonical material, published composition output
+  is frozen in place instead of cloned, and in-process Node composition skips
+  serialized-worker shard byte measurement.
+  Large inventories publish bundled-engine
   declarations when the scan completes, with TypeScript remaining the fallback
   and dual-exec admission probe.
 - Extended the bundled Rust/WASM engine with a bounded matrix declaration

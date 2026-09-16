@@ -25,6 +25,7 @@ export const MATRIX_SOURCE_EXTENSIONS: ReadonlySet<string> = new Set(
 );
 
 const HASH_COMMENT_LANGUAGES = new Set<GraphStructuralLanguage>(['python', 'ruby', 'elixir']);
+const TYPED_FUNCTION_LANGUAGES = new Set<GraphStructuralLanguage>(['c-cpp', 'java', 'dotnet']);
 const CONTROL_START =
   /^(?:if|else|for|while|switch|return|throw|catch|sizeof|alignof|offsetof|delete|new|case|goto|using|typedef|static_assert|assert|elif|unless|until|when|rescue|ensure)\b/u;
 const TYPED_FUNCTION =
@@ -118,6 +119,7 @@ export function extractMatrixDeclarations(
       findings.push({ ...keyword, line: index + 1 });
       continue;
     }
+    if (language === null || !TYPED_FUNCTION_LANGUAGES.has(language)) continue;
     const typed = matchTypedFunction(line);
     if (typed) findings.push({ ...typed, line: index + 1 });
   }
@@ -197,26 +199,134 @@ export function matrixSameDirectoryPeers(
     .sort((left, right) => left.localeCompare(right));
 }
 
+export interface MatrixCallSite {
+  readonly name: string;
+  readonly index: number;
+  readonly line: number;
+}
+
+const CALL_CONTROL_NAMES = new Set([
+  'alignof',
+  'assert',
+  'case',
+  'catch',
+  'delete',
+  'elif',
+  'else',
+  'ensure',
+  'for',
+  'goto',
+  'if',
+  'new',
+  'offsetof',
+  'rescue',
+  'return',
+  'sizeof',
+  'static_assert',
+  'switch',
+  'throw',
+  'typedef',
+  'unless',
+  'until',
+  'using',
+  'when',
+  'while',
+]);
+
+function isIdentStart(char: string): boolean {
+  return /[A-Za-z_$]/u.test(char);
+}
+
+function isIdentContinue(char: string, dollar: boolean): boolean {
+  return /[A-Za-z0-9_]/u.test(char) || (dollar && char === '$');
+}
+
+function isHorizontalWs(char: string): boolean {
+  return char === ' ' || char === '\t' || char === '\u000b' || char === '\u000c';
+}
+
+/**
+ * One-pass call-token scan. Callers bind names against the declaration index;
+ * this function does not invent targets.
+ */
+export function scanMatrixCallSites(
+  source: string,
+  language: GraphStructuralLanguage | null
+): MatrixCallSite[] {
+  const sites: MatrixCallSite[] = [];
+  const objc = language === 'objective-c-matlab';
+  const bare = language === 'ruby' || language === 'elixir';
+  const dollar = language === 'node' || language === null;
+  let index = 0;
+  let line = 1;
+  while (index < source.length) {
+    const char = source[index] ?? '';
+    if (char === '\n') {
+      line += 1;
+      index += 1;
+      continue;
+    }
+    if (char === '\r') {
+      index += 1;
+      continue;
+    }
+    if (objc && char === '[') {
+      index += 1;
+      while (index < source.length && source[index] !== ']') {
+        const inner = source[index] ?? '';
+        if (inner === '\n') {
+          line += 1;
+          index += 1;
+          continue;
+        }
+        if (isIdentStart(inner)) {
+          const start = index;
+          const startLine = line;
+          index += 1;
+          while (index < source.length && isIdentContinue(source[index] ?? '', false)) index += 1;
+          const name = source.slice(start, index);
+          if (name.length >= 3 && !CALL_CONTROL_NAMES.has(name)) {
+            sites.push({ name, index: start, line: startLine });
+          }
+          continue;
+        }
+        index += 1;
+      }
+      if (source[index] === ']') index += 1;
+      continue;
+    }
+    if (isIdentStart(char)) {
+      const start = index;
+      const startLine = line;
+      index += 1;
+      while (index < source.length && isIdentContinue(source[index] ?? '', dollar)) index += 1;
+      if (bare && (source[index] === '!' || source[index] === '?')) index += 1;
+      const name = source.slice(start, index);
+      let cursor = index;
+      while (cursor < source.length && isHorizontalWs(source[cursor] ?? '')) cursor += 1;
+      const paren = source[cursor] === '(';
+      let end = index;
+      while (end < source.length && isHorizontalWs(source[end] ?? '')) end += 1;
+      const lineEnd = end === source.length || source[end] === '\n' || source[end] === '\r';
+      if (name.length >= 3 && !CALL_CONTROL_NAMES.has(name) && (paren || (bare && lineEnd))) {
+        sites.push({ name, index: start, line: startLine });
+      }
+      continue;
+    }
+    index += 1;
+  }
+  return sites;
+}
+
 export function matchMatrixCallSites(
   source: string,
   language: GraphStructuralLanguage | null,
   name: string
 ): number[] {
   if (name.length < 3) return [];
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  const patterns =
-    language === 'objective-c-matlab'
-      ? [new RegExp(`\\[[^\\]]*\\b${escaped}\\b`, 'gu')]
-      : language === 'ruby' || language === 'elixir'
-        ? [new RegExp(`\\b${escaped}\\s*\\(`, 'gu'), new RegExp(`\\b${escaped}\\s*$`, 'gmu')]
-        : [new RegExp(`\\b${escaped}\\s*\\(`, 'gu')];
-  const indexes = new Set<number>();
-  for (const pattern of patterns) {
-    for (const match of source.matchAll(pattern)) {
-      if (match.index !== undefined) indexes.add(match.index);
-    }
-  }
-  return [...indexes].sort((left, right) => left - right);
+  return scanMatrixCallSites(source, language)
+    .filter((site) => site.name === name)
+    .map((site) => site.index);
 }
 
 export function decodeMatrixSource(bytes: Uint8Array): {

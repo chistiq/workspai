@@ -14,6 +14,7 @@ function nodeDigestPort(): GraphDigestPort {
   return {
     algorithm: 'sha256',
     digest: async (input) => createHash('sha256').update(input).digest('hex'),
+    digestSync: (input) => createHash('sha256').update(input).digest('hex'),
     createStreamingDigest: () => {
       const hash = createHash('sha256');
       return {
@@ -184,5 +185,30 @@ describe('streaming canonical digest', () => {
     await expect(digestCanonicalGraphInput(large, port)).rejects.toThrow(
       /must implement streaming SHA-256/u
     );
+  });
+
+  it('flushes buffered canonical chunks without changing bytes or digest', async () => {
+    const input = Array.from({ length: 2_000 }, (_, index) => ({
+      id: `row-${index}`,
+      payload: 'canonical-flush'.repeat(8),
+    }));
+    const canonical = canonicalizeGraphValue(input);
+    expect(canonical.accepted).toBe(true);
+    if (!canonical.accepted) return;
+    expect(new TextEncoder().encode(canonical.value).byteLength).toBeGreaterThan(16_384);
+    const streamed = await streamedBytes(input);
+    expect(new TextDecoder().decode(streamed)).toBe(canonical.value);
+    const hashed = await digestCanonicalGraphInput(input, nodeDigestPort());
+    expect(hashed.value).toBe(createHash('sha256').update(canonical.value, 'utf8').digest('hex'));
+  });
+
+  it('matches digestSync against the streaming SHA-256 port', async () => {
+    const port = nodeDigestPort();
+    const input = { z: 1, a: [null, true, false, 'value', 1.5] };
+    const streamed = await digestCanonicalGraphInput(input, port);
+    const canonical = canonicalizeGraphValue(input);
+    expect(canonical.accepted).toBe(true);
+    if (!canonical.accepted) return;
+    expect(port.digestSync?.(new TextEncoder().encode(canonical.value))).toBe(streamed.value);
   });
 });

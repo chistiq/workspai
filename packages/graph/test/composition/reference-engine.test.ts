@@ -157,6 +157,7 @@ function ports(overrides: Partial<GraphExecutionPorts> = {}): GraphExecutionPort
     digest: {
       algorithm: 'sha256',
       digest: async (input) => createHash('sha256').update(input).digest('hex'),
+      digestSync: (input) => createHash('sha256').update(input).digest('hex'),
       createStreamingDigest: () => {
         const hash = createHash('sha256');
         return {
@@ -918,6 +919,40 @@ describe('Graph G2 reference composition engine', () => {
       workerRuns: 1,
       yields: 1,
     });
+  });
+
+  it('runs one in-process composition task when the worker pool does not serialize payloads', async () => {
+    const sources = sourcesForSharding([
+      source('provider:a', [fact('provider:a', 'fact:a', 'entity:target')]),
+      source('provider:b', [fact('provider:b', 'fact:b', 'entity:other')]),
+    ]);
+    const shardPolicy = shardedPolicy(sources, GRAPH_STANDARD_COMPOSITION_POLICY);
+    const plan = planGraphCompositionShards(sources, shardPolicy.maxWorkerOutputBytes);
+    expect(plan.status).toBe('ready');
+    if (plan.status === 'ready') expect(plan.shards.length).toBeGreaterThan(1);
+    let workerRuns = 0;
+    const result = await composeGraph(
+      { ontology, sources, policy: shardPolicy },
+      ports({
+        workers: {
+          serializesTasks: false,
+          async execute<TInput, TOutput>(request: GraphWorkerTaskRequest<TInput>) {
+            workerRuns += 1;
+            expect((request.input as GraphCompositionRequest).sources).toHaveLength(sources.length);
+            return {
+              status: 'complete' as const,
+              output: executeGraphReferenceCompositionTask(
+                request.input as GraphCompositionRequest
+              ) as TOutput,
+              diagnostics: [],
+              metrics: { durationMs: 1, inputBytes: 0, outputBytes: 1 },
+            };
+          },
+        },
+      })
+    );
+    expect(result).toMatchObject({ accepted: true });
+    expect(workerRuns).toBe(1);
   });
 
   it.each(['failed', 'unsupported'] as const)(

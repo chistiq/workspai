@@ -72,6 +72,7 @@ function ports(
     digest: {
       algorithm: 'sha256',
       digest: async (value) => createHash('sha256').update(value).digest('hex'),
+      digestSync: (value) => createHash('sha256').update(value).digest('hex'),
     },
     cancellation: { aborted: false, throwIfAborted: () => undefined },
     scheduler: { yield: async () => undefined },
@@ -462,7 +463,6 @@ describe('buildRepoGraph', () => {
     expect(read.mock.calls.map((call) => call[1]?.locator).sort()).toEqual([
       '.github/workflows/ci.yml',
       'Dockerfile',
-      'contracts/openapi.yaml',
       'contracts/openapi.yaml',
     ]);
     expect(

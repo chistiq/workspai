@@ -120,6 +120,10 @@ impl Language {
     fn uses_hash_comments(self) -> bool {
         HASH_COMMENT_LANGUAGES.contains(&self)
     }
+
+    fn uses_typed_functions(self) -> bool {
+        matches!(self, Self::CCpp | Self::Java | Self::Dotnet)
+    }
 }
 
 impl DeclarationKind {
@@ -164,12 +168,14 @@ pub fn extract_declarations(
             });
             continue;
         }
-        if let Some(name) = match_typed_function(line) {
-            findings.push(Declaration {
-                name,
-                kind: DeclarationKind::Function,
-                line: line_number,
-            });
+        if language.uses_typed_functions() {
+            if let Some(name) = match_typed_function(line) {
+                findings.push(Declaration {
+                    name,
+                    kind: DeclarationKind::Function,
+                    line: line_number,
+                });
+            }
         }
     }
     if findings.len() > MAX_DECLARATIONS {
@@ -785,6 +791,13 @@ mod tests {
             )
             .expect("valid source"),
             Vec::new()
+        );
+        assert_eq!(
+            names(
+                "export function startStorefront(): void {\n  return {\n    catalog: handleCatalogRequest('storefront'),\n  };\n}\n",
+                Language::Node
+            ),
+            vec!["startStorefront".to_owned()]
         );
     }
 

@@ -18,6 +18,11 @@ export interface GraphDigestPort {
   readonly algorithm: 'sha256';
   digest(input: Uint8Array): Promise<string>;
   /**
+   * Optional synchronous SHA-256. Product hosts implement this so composition
+   * can hash compact canonical values without a microtask per edge.
+   */
+  digestSync?(input: Uint8Array): string;
+  /**
    * Optional incremental hasher. Production hosts must implement this so
    * canonical identity of large admitted fact sets does not materialize a
    * single JSON buffer. Mock ports may omit it; the application then buffers
@@ -72,6 +77,11 @@ export interface GraphWorkerPoolPort {
   execute<TInput, TOutput>(
     request: GraphWorkerTaskRequest<TInput>
   ): Promise<GraphWorkerTaskResult<TOutput>>;
+  /**
+   * False when execute keeps the task input in-process. Composition then skips
+   * canonical payload measurement used only to size serialized worker shards.
+   */
+  readonly serializesTasks?: boolean;
 }
 
 /**

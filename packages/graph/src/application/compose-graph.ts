@@ -19,7 +19,6 @@ import {
 } from '../contracts/index.js';
 import {
   canonicalizeGraphValue,
-  cloneCanonicalGraphValue,
   measureCanonicalGraphValueBytes,
 } from '../conformance/canonical-value.js';
 import { admitGraphProviderOutput } from '../conformance/foundation.js';
@@ -75,10 +74,69 @@ function issue(code: string, path: string, message: string): GraphValidationIssu
   return { code, path, message };
 }
 
+const utf8 = new TextEncoder();
+const canonicalObjectCache = new WeakMap<object, string>();
+const COMPACT_GRAPH_VALUE_LIMIT = 64;
+const CANONICAL_DIGEST = 'workspai.graph.canonical-json.v1' as const;
+
 function canonical(input: unknown): string {
+  if (input !== null && typeof input === 'object') {
+    const cached = canonicalObjectCache.get(input);
+    if (cached !== undefined) return cached;
+    const result = canonicalizeGraphValue(input);
+    if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
+    canonicalObjectCache.set(input, result.value);
+    return result.value;
+  }
   const result = canonicalizeGraphValue(input);
   if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
   return result.value;
+}
+
+function isCompactGraphValue(input: unknown): boolean {
+  if (input === null || typeof input !== 'object') return true;
+  const pending: unknown[] = [input];
+  let seen = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== 'object') continue;
+    seen += 1;
+    if (seen > COMPACT_GRAPH_VALUE_LIMIT) return false;
+    if (Array.isArray(current)) {
+      if (current.length > COMPACT_GRAPH_VALUE_LIMIT) return false;
+      for (const item of current) pending.push(item);
+      continue;
+    }
+    const keys = Object.keys(current);
+    if (keys.length > COMPACT_GRAPH_VALUE_LIMIT) return false;
+    for (const key of keys) pending.push((current as Record<string, unknown>)[key]);
+  }
+  return true;
+}
+
+function digestReference(value: string): WisDigestReference {
+  if (!/^[a-f0-9]{32,256}$/u.test(value)) {
+    throw new Error('Graph digest port returned a non-canonical lowercase hexadecimal digest.');
+  }
+  return Object.freeze({
+    algorithm: 'sha256',
+    value,
+    canonicalization: CANONICAL_DIGEST,
+  });
+}
+
+function digestNow(
+  input: unknown,
+  ports: GraphExecutionPorts,
+  maxBytes?: number
+): WisDigestReference | undefined {
+  const sync = ports.digest.digestSync;
+  if (!sync || !isCompactGraphValue(input)) return undefined;
+  const bytes = utf8.encode(canonical(input));
+  if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
+    throw new Error('/: byte budget exceeded');
+  }
+  return digestReference(sync(bytes));
 }
 
 async function digest(
@@ -86,16 +144,44 @@ async function digest(
   ports: GraphExecutionPorts,
   maxBytes?: number
 ): Promise<WisDigestReference> {
+  ports.cancellation.throwIfAborted();
+  const immediate = digestNow(input, ports, maxBytes);
+  if (immediate) return immediate;
   return digestCanonicalGraphInput(input, ports.digest, {
     ...(maxBytes ? { maxBytes } : {}),
     maxValues: MAX_COMPOSITION_EDGES * 16,
     cancellation: ports.cancellation,
-    yield: () => ports.scheduler.yield(),
   });
 }
 
 function scopeKey(entity: GraphEntityReference): string {
-  return canonical(entity.scope);
+  return internedCanonical(entity.scope);
+}
+
+const internedCanonicalByJson = new Map<string, string>();
+
+function internedCanonical(input: unknown): string {
+  if (input !== null && typeof input === 'object') {
+    const cached = canonicalObjectCache.get(input);
+    if (cached !== undefined) return cached;
+    let raw: string;
+    try {
+      raw = JSON.stringify(input);
+    } catch {
+      return canonical(input);
+    }
+    if (raw.length <= 1024) {
+      const interned = internedCanonicalByJson.get(raw);
+      if (interned !== undefined) {
+        canonicalObjectCache.set(input, interned);
+        return interned;
+      }
+      const value = canonical(input);
+      internedCanonicalByJson.set(raw, value);
+      return value;
+    }
+  }
+  return canonical(input);
 }
 
 function entitySignature(entity: GraphEntityReference): string {
@@ -106,15 +192,37 @@ function sortUnique(values: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(values)].sort());
 }
 
-function sortCanonical<T>(values: readonly T[]): T[] {
+function rankCanonical<T>(values: readonly T[]): { value: T; index: number; key: string }[] {
   return values
     .map((value, index) => ({ value, index, key: canonical(value) }))
-    .sort((left, right) => left.key.localeCompare(right.key) || left.index - right.index)
-    .map((item) => item.value);
+    .sort((left, right) => left.key.localeCompare(right.key) || left.index - right.index);
 }
 
 function uniqueCanonical<T>(values: readonly T[]): T[] {
-  return [...new Map(sortCanonical(values).map((value) => [canonical(value), value])).values()];
+  return [...new Map(rankCanonical(values).map((item) => [item.key, item.value])).values()];
+}
+
+function digestRankedMaterial(
+  ranked: readonly { readonly key: string }[],
+  ports: GraphExecutionPorts
+): WisDigestReference | undefined {
+  const sync = ports.digest.digestSync;
+  if (!sync) return undefined;
+  return digestReference(sync(utf8.encode(`[${ranked.map((item) => item.key).join(',')}]`)));
+}
+
+async function digestSortedValues<T>(
+  values: readonly T[],
+  ports: GraphExecutionPorts
+): Promise<WisDigestReference> {
+  const ranked = rankCanonical(values);
+  return (
+    digestRankedMaterial(ranked, ports) ??
+    (await digest(
+      ranked.map((item) => item.value),
+      ports
+    ))
+  );
 }
 
 function deepFreeze<T>(input: T): Readonly<T> {
@@ -131,12 +239,6 @@ function deepFreeze<T>(input: T): Readonly<T> {
     Object.freeze(value);
   }
   return input;
-}
-
-function immutableCopy<T>(input: T): Readonly<T> {
-  const result = cloneCanonicalGraphValue(input, { maxValues: MAX_COMPOSITION_EDGES * 16 });
-  if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
-  return deepFreeze(result.value);
 }
 
 function aggregateCoverage(
@@ -1274,10 +1376,10 @@ export async function composeGraph(
     const normalizedRequest = { ...request, sources: normalizedSources };
     const lineageIssues = validateLineages(normalizedRequest);
     if (lineageIssues.length > 0) return failure('invalid-input', lineageIssues);
-    const shardPlan = planGraphCompositionShards(
-      normalizedSources,
-      request.policy.maxWorkerOutputBytes
-    );
+    const shardPlan =
+      ports.workers.serializesTasks === false
+        ? { status: 'ready' as const, shards: Object.freeze([normalizedSources]) }
+        : planGraphCompositionShards(normalizedSources, request.policy.maxWorkerOutputBytes);
     if (shardPlan.status === 'failed') {
       return failure('resource-limit', [issue(shardPlan.code, '/sources', shardPlan.message)]);
     }
@@ -1370,7 +1472,10 @@ export async function composeGraph(
     }
     const compactPrepared = workerOutputValidation.value;
     const sharded = shardPlan.shards.length > 1;
-    if (!sharded) {
+    // In-process Node composition reports inputBytes 0 / outputBytes 1 and never
+    // serialized the prepared graph, so the worker JSON byte budget does not apply.
+    const inProcessComposition = inputBytes === 0 && outputBytes === 1;
+    if (!sharded && !inProcessComposition) {
       const measuredOutput = measureCanonicalGraphValueBytes(
         compactPrepared,
         request.policy.maxWorkerOutputBytes
@@ -1450,16 +1555,16 @@ export async function composeGraph(
         request.ontology.relations.map((relation) => relation.proofPolicy),
         ports
       ),
-      inputs: await digest(
-        sortCanonical(normalizedSources.flatMap((source) => source.batch.inputs)),
+      inputs: await digestSortedValues(
+        normalizedSources.flatMap((source) => source.batch.inputs),
         ports
       ),
-      facts: await digest(
-        sortCanonical(normalizedSources.flatMap((source) => source.batch.facts).map(semanticFact)),
+      facts: await digestSortedValues(
+        normalizedSources.flatMap((source) => source.batch.facts).map(semanticFact),
         ports
       ),
-      providers: await digest(
-        sortCanonical(normalizedSources.map((source) => source.manifest)),
+      providers: await digestSortedValues(
+        normalizedSources.map((source) => source.manifest),
         ports
       ),
       compositionPolicy: await digest(request.policy, ports),
@@ -1494,15 +1599,13 @@ export async function composeGraph(
       const conflict = competitors.length > 1;
       const evidence = uniqueEvidence(candidate.facts);
       const factIds = sortUnique(candidate.facts.map(({ fact }) => fact.factId));
-      const edgeDigest = await digest(candidate.key, ports);
-      const proofInputDigest = await digest(
-        candidate.facts.map(({ fact }) => ({
-          factId: fact.factId,
-          inputDigest: fact.inputDigest,
-          evidence: fact.evidence,
-        })),
-        ports
-      );
+      const proofInput = candidate.facts.map(({ fact }) => ({
+        factId: fact.factId,
+        inputDigest: fact.inputDigest,
+        evidence: fact.evidence,
+      }));
+      const edgeDigest = digestNow(candidate.key, ports) ?? (await digest(candidate.key, ports));
+      const proofInputDigest = digestNow(proofInput, ports) ?? (await digest(proofInput, ports));
       const state = conflict
         ? 'disputed'
         : proof.state === 'insufficient'
@@ -1745,17 +1848,16 @@ export async function composeGraph(
     if (!graphValidation.accepted) return failure('composition-failed', graphValidation.issues);
     const qualityValidation = validateGraphQualityReport(qualityDraft);
     if (!qualityValidation.accepted) return failure('composition-failed', qualityValidation.issues);
-    const graph = immutableCopy(graphDraft);
-    const quality = immutableCopy(qualityDraft);
+    const published = deepFreeze({
+      graph: graphDraft,
+      quality: qualityDraft,
+      decisions,
+      semanticDigests,
+    } satisfies GraphCompositionOutput);
 
     return {
       accepted: true,
-      value: deepFreeze({
-        graph,
-        quality,
-        decisions: immutableCopy(decisions),
-        semanticDigests: immutableCopy(semanticDigests),
-      } satisfies GraphCompositionOutput),
+      value: published,
       issues: [],
     };
   } catch (error) {

@@ -77,6 +77,22 @@ export function normalizeGraphEntityIdentity(
  * paths in the identifier. This is the producer boundary for real repository
  * inputs; evidence retains the normalized locator separately.
  */
+export function createMemoizedIdentityResolver(
+  digestPort: GraphDigestPort
+): (
+  input: GraphEntityIdentityInput
+) => Promise<GraphValidationResult<GraphEntityIdentityNormalization>> {
+  const cache = new Map<string, Promise<GraphValidationResult<GraphEntityIdentityNormalization>>>();
+  return (input) => {
+    const key = `${input.namespace}\u0000${input.kind}\u0000${input.relativeLocator}\u0000${input.caseSensitivity}\u0000${JSON.stringify(input.scope)}`;
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const pending = resolveGraphEntityIdentity(input, digestPort);
+    cache.set(key, pending);
+    return pending;
+  };
+}
+
 export async function resolveGraphEntityIdentity(
   input: GraphEntityIdentityInput,
   digestPort: GraphDigestPort

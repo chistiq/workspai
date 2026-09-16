@@ -18,10 +18,10 @@ import {
   MATRIX_SOURCE_EXTENSIONS,
   decodeMatrixSource,
   extractMatrixLocalImportLocators,
-  matchMatrixCallSites,
   matrixLanguageFor,
   matrixSameDirectoryPeers,
   matrixSourceExtractionBudget,
+  scanMatrixCallSites,
   selectBalancedMatrixSources,
   stripMatrixSourceComments,
 } from './matrix-source-language.js';
@@ -42,11 +42,14 @@ export interface GraphSourceDeclarationProviderOptions {
 
 interface DeclaredSymbol {
   readonly name: string;
-  readonly detail: string;
+  readonly detail: 'function' | 'type' | 'value' | 'method';
   readonly line: number;
   readonly locator: string;
   readonly reference: GraphEntityReference;
+  readonly generated: boolean;
 }
+
+type CallBinding = DeclaredSymbol | 'ambiguous' | undefined;
 
 function sourceInputs(inputs: readonly GraphProviderInput[]): GraphProviderInput[] {
   return inputs
@@ -59,7 +62,11 @@ function extractSymbols(
   locator: string,
   native: GraphNativePort | undefined
 ): {
-  readonly findings: readonly { name: string; detail: string; line: number }[];
+  readonly findings: readonly {
+    name: string;
+    detail: DeclaredSymbol['detail'];
+    line: number;
+  }[];
   readonly discovered: number;
   readonly truncated: boolean;
 } {
@@ -76,29 +83,58 @@ function extractSymbols(
 }
 
 function uniqueSymbols(symbols: readonly DeclaredSymbol[]): DeclaredSymbol[] {
+  const seen = new Set<string>();
   const unique: DeclaredSymbol[] = [];
   for (const symbol of symbols) {
-    if (!unique.some((item) => item.reference.id === symbol.reference.id)) unique.push(symbol);
+    if (seen.has(symbol.reference.id)) continue;
+    seen.add(symbol.reference.id);
+    unique.push(symbol);
   }
   return unique;
 }
 
+function named(symbols: readonly DeclaredSymbol[], name: string): DeclaredSymbol[] {
+  return symbols.filter((symbol) => symbol.name === name);
+}
+
+function preferCallable(matches: readonly DeclaredSymbol[]): CallBinding {
+  const unique = uniqueSymbols(matches);
+  if (unique.length === 0) return undefined;
+  if (unique.length === 1) return unique[0];
+  const behavioral = unique.filter(
+    (symbol) => symbol.detail === 'function' || symbol.detail === 'method'
+  );
+  if (behavioral.length === 1) return behavioral[0];
+  if (behavioral.length > 1) return 'ambiguous';
+  const types = unique.filter((symbol) => symbol.detail === 'type');
+  if (types.length === 1) return types[0];
+  return 'ambiguous';
+}
+
+/**
+ * Local unique wins. Authored imports then authored same-package peers.
+ * Generated declarations stay valid unique targets and never create name
+ * collisions against authored symbols or against each other unless no
+ * authored candidate exists and several generated symbols share the name.
+ */
 function resolveCallTarget(
   name: string,
   local: readonly DeclaredSymbol[],
   imported: readonly DeclaredSymbol[],
   peers: readonly DeclaredSymbol[]
-): DeclaredSymbol | 'ambiguous' | undefined {
-  const localMatches = uniqueSymbols(local.filter((symbol) => symbol.name === name));
-  if (localMatches.length === 1) return localMatches[0];
-  if (localMatches.length > 1) return 'ambiguous';
-  const importedMatches = uniqueSymbols(imported.filter((symbol) => symbol.name === name));
-  if (importedMatches.length === 1) return importedMatches[0];
-  if (importedMatches.length > 1) return 'ambiguous';
-  const peerMatches = uniqueSymbols(peers.filter((symbol) => symbol.name === name));
-  if (peerMatches.length === 1) return peerMatches[0];
-  if (peerMatches.length > 1) return 'ambiguous';
-  return undefined;
+): CallBinding {
+  const localHit = preferCallable(named(local, name));
+  if (localHit !== undefined) return localHit;
+  const authoredImported = preferCallable(named(imported.filter((symbol) => !symbol.generated), name));
+  if (authoredImported !== undefined) return authoredImported;
+  const authoredPeers = preferCallable(named(peers.filter((symbol) => !symbol.generated), name));
+  if (authoredPeers !== undefined) return authoredPeers;
+  return preferCallable(
+    named(
+      [...imported, ...peers].filter((symbol) => symbol.generated),
+      name
+    )
+  );
 }
 
 function warning(code: string, scope: string, message: string): GraphDiagnostic {
@@ -241,6 +277,17 @@ export function createSourceDeclarationsProvider(
             });
           }
           const declared: DeclaredSymbol[] = [];
+          const identities = await Promise.all(
+            extracted.findings.map((symbol) =>
+              request.resolveIdentity({
+                namespace: 'workspai',
+                kind: 'symbol',
+                relativeLocator: `${input.locator}:${symbol.detail}:${symbol.name}`,
+                caseSensitivity: 'sensitive',
+                scope: request.scope,
+              })
+            )
+          );
           for (const [symbolIndex, symbol] of extracted.findings.entries()) {
             if (facts.length >= manifest.limits.maxFacts) {
               outcome = 'omitted';
@@ -252,20 +299,15 @@ export function createSourceDeclarationsProvider(
               });
               break;
             }
-            const identity = await request.resolveIdentity({
-              namespace: 'workspai',
-              kind: 'symbol',
-              relativeLocator: `${input.locator}:${symbol.detail}:${symbol.name}`,
-              caseSensitivity: 'sensitive',
-              scope: request.scope,
-            });
-            if (!identity.accepted) throw new Error('Symbol identity could not be resolved.');
+            const identity = identities[symbolIndex];
+            if (!identity?.accepted) throw new Error('Symbol identity could not be resolved.');
             declared.push({
               name: symbol.name,
               detail: symbol.detail,
               line: symbol.line,
               locator: input.locator,
               reference: identity.value.reference,
+              generated: generated.has(input.locator),
             });
             emittedSymbols += 1;
             facts.push(
@@ -324,81 +366,86 @@ export function createSourceDeclarationsProvider(
           available
         );
         const peerLocators = matrixSameDirectoryPeers(input.locator, available);
-        const localSymbols = (symbolsByFile.get(input.locator) ?? []).filter(
-          (symbol) => symbol.name.length >= 3
-        );
+        const localSymbols = symbolsByFile.get(input.locator) ?? [];
         const importedSymbols = importedLocators.flatMap(
           (locator) => symbolsByFile.get(locator) ?? []
         );
         const peerSymbols = peerLocators.flatMap((locator) => symbolsByFile.get(locator) ?? []);
-        const names = [
-          ...new Set(
-            [...localSymbols, ...importedSymbols, ...peerSymbols]
-              .map((symbol) => symbol.name)
-              .filter((name) => name.length >= 3)
-          ),
-        ].sort((left, right) => left.localeCompare(right));
+        const knownNames = new Set(
+          [...localSymbols, ...importedSymbols, ...peerSymbols]
+            .map((symbol) => symbol.name)
+            .filter((name) => name.length >= 3)
+        );
         let callIndex = 0;
+        const emittedForName = new Map<string, number>();
+        const ambiguousNames = new Set<string>();
+        const truncatedNames = new Set<string>();
         const searchable = stripMatrixSourceComments(source, language);
-        for (const name of names) {
-          const target = resolveCallTarget(name, localSymbols, importedSymbols, peerSymbols);
+        for (const site of scanMatrixCallSites(searchable, language)) {
+          if (!knownNames.has(site.name)) continue;
+          const target = resolveCallTarget(
+            site.name,
+            localSymbols,
+            importedSymbols,
+            peerSymbols
+          );
           if (target === 'ambiguous') {
-            unknownZones.push({
-              code: 'graph.source-call-ambiguous',
-              scope: input.locator,
-              reason: `Call sites for ${name} resolved to multiple local declarations and were left unknown.`,
-            });
+            discoveredCalls += 1;
+            if (!ambiguousNames.has(site.name)) {
+              ambiguousNames.add(site.name);
+              unknownZones.push({
+                code: 'graph.source-call-ambiguous',
+                scope: input.locator,
+                reason: `Call sites for ${site.name} resolved to multiple local declarations and were left unknown.`,
+              });
+            }
             continue;
           }
           if (!target) continue;
-          const matches = matchMatrixCallSites(searchable, language, name).map((index) => ({
-            index,
-          }));
-          if (matches.length === 0) continue;
-          const eligible = matches.filter((match) => {
-            const line = searchable.slice(0, match.index ?? 0).split(/\r?\n/u).length;
-            return !(target.locator === input.locator && target.line === line);
-          });
-          discoveredCalls += eligible.length;
-          if (eligible.length > MAX_CALLS_PER_SYMBOL) {
+          if (target.locator === input.locator && target.line === site.line) continue;
+          discoveredCalls += 1;
+          const emittedCount = emittedForName.get(site.name) ?? 0;
+          if (emittedCount >= MAX_CALLS_PER_SYMBOL) {
+            truncated = true;
+            if (!truncatedNames.has(site.name)) {
+              truncatedNames.add(site.name);
+              unknownZones.push({
+                code: 'graph.source-calls-truncated',
+                scope: input.locator,
+                reason: `Call extraction for ${site.name} stopped at ${String(MAX_CALLS_PER_SYMBOL)} sites; remaining calls are unknown.`,
+              });
+            }
+            continue;
+          }
+          if (facts.length >= manifest.limits.maxFacts) {
             truncated = true;
             unknownZones.push({
               code: 'graph.source-calls-truncated',
               scope: input.locator,
-              reason: `Call extraction for ${name} stopped at ${String(MAX_CALLS_PER_SYMBOL)} sites; remaining calls are unknown.`,
+              reason: 'Call facts exceeded the provider output budget.',
             });
+            break;
           }
-          const limited = eligible.slice(0, MAX_CALLS_PER_SYMBOL);
-          for (let emitted = 0; emitted < limited.length; emitted += 1) {
-            if (facts.length >= manifest.limits.maxFacts) {
-              truncated = true;
-              unknownZones.push({
-                code: 'graph.source-calls-truncated',
-                scope: input.locator,
-                reason: 'Call facts exceeded the provider output budget.',
-              });
-              break;
-            }
-            facts.push(
-              createObservedEdgeFact({
-                factId: `fact:source-call:${String(inputIndex).padStart(8, '0')}:${String(callIndex).padStart(8, '0')}:${input.digest.value}`,
-                factType: 'source.call',
-                subject: file,
-                predicate: 'calls',
-                object: target.reference,
-                request,
-                source: input,
-                provider: manifest,
-                evidenceId: `evidence:source-call:${String(inputIndex).padStart(8, '0')}`,
-                sourceKind: 'source-file',
-                derivation: 'extracted',
-                authority: 'observed',
-                confidence: 0.7,
-              })
-            );
-            callIndex += 1;
-            emittedCalls += 1;
-          }
+          facts.push(
+            createObservedEdgeFact({
+              factId: `fact:source-call:${String(inputIndex).padStart(8, '0')}:${String(callIndex).padStart(8, '0')}:${input.digest.value}`,
+              factType: 'source.call',
+              subject: file,
+              predicate: 'calls',
+              object: target.reference,
+              request,
+              source: input,
+              provider: manifest,
+              evidenceId: `evidence:source-call:${String(inputIndex).padStart(8, '0')}`,
+              sourceKind: 'source-file',
+              derivation: 'extracted',
+              authority: 'observed',
+              confidence: 0.7,
+            })
+          );
+          callIndex += 1;
+          emittedCalls += 1;
+          emittedForName.set(site.name, emittedCount + 1);
         }
       }
 

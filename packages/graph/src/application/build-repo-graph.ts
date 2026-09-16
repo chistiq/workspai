@@ -1,10 +1,10 @@
 import {
   admitGraphProviderOutput,
-  resolveGraphEntityIdentity,
   validateGraphProviderDetectionRequest,
   validateGraphProviderDetectionResult,
   validateGraphProviderManifest,
 } from '../conformance/index.js';
+import { createMemoizedIdentityResolver } from '../conformance/identity.js';
 import type {
   GraphDiagnostic,
   GraphProviderInput,
@@ -404,6 +404,7 @@ function metricsFromInventory(
 export async function buildRepoGraph(
   request: GraphRepoBuildRequest
 ): Promise<GraphRepoBuildResult> {
+  const startedAt = performance.now();
   const diagnostics: GraphDiagnostic[] = [];
   const summaries: GraphProviderRunSummary[] = [];
   const sources: GraphCompositionSource[] = [];
@@ -575,12 +576,15 @@ export async function buildRepoGraph(
     }
   }
   const observedAt = request.ports.clock.now().toISOString();
+  const resolveIdentity = createMemoizedIdentityResolver(request.ports.digest);
+  const fileBytes = new Map<string, Promise<Uint8Array>>();
   const providersToRecompute = compositionReuse
     ? new Set(compositionReuse.providersToRecompute)
     : null;
   const reusedByProvider = compositionReuse
     ? new Map(compositionReuse.reusedSources.map((source) => [source.manifest.id, source]))
     : null;
+  const providersStartedAt = performance.now();
 
   for (const provider of providers) {
     try {
@@ -776,7 +780,7 @@ export async function buildRepoGraph(
             inputs: admittedInputs,
             observedAt,
             signal: providerSignal,
-            resolveIdentity: (input) => resolveGraphEntityIdentity(input, request.ports.digest),
+            resolveIdentity,
             readInput: async (input: GraphProviderInput, options) => {
               const admitted = inputByLocator.get(input.locator);
               if (!admitted || admitted.digest.value !== input.digest.value) {
@@ -794,10 +798,15 @@ export async function buildRepoGraph(
               if (providerReadBytes > totalBudget) {
                 throw new Error('Provider cumulative reads exceed the admitted byte budget.');
               }
-              return request.ports.fileSource.read(request.root, admitted, {
+              const cacheKey = `${admitted.locator}\u0000${admitted.digest.value}`;
+              const cached = fileBytes.get(cacheKey);
+              if (cached) return cached;
+              const pending = request.ports.fileSource.read(request.root, admitted, {
                 maxBytes,
                 signal: options.signal ?? providerSignal,
               });
+              fileBytes.set(cacheKey, pending);
+              return pending;
             },
           })
       );
@@ -887,6 +896,7 @@ export async function buildRepoGraph(
       sources.push({ manifest: admission.manifest, batch: admission.batch });
     }
   }
+  const providerMs = Math.max(0, Math.round(performance.now() - providersStartedAt));
 
   if (
     diagnostics.some(
@@ -920,6 +930,7 @@ export async function buildRepoGraph(
     );
   }
 
+  const compositionStartedAt = performance.now();
   const composed = await composeGraph(
     {
       ontology: request.ontology,
@@ -928,6 +939,7 @@ export async function buildRepoGraph(
     },
     request.ports
   );
+  const compositionMs = Math.max(0, Math.round(performance.now() - compositionStartedAt));
   if (!composed.accepted) {
     diagnostics.push(...issueDiagnostics('composition', composed.issues));
     return emptyResult(
@@ -984,6 +996,9 @@ export async function buildRepoGraph(
       omittedFileAccounting: inventoryAccounting.omittedFileAccounting,
       omittedByteAccounting: inventoryAccounting.omittedByteAccounting,
       omittedSubtrees: inventoryOmittedSubtrees,
+      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      providerMs,
+      compositionMs,
     },
   };
 }

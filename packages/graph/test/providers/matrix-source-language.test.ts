@@ -9,6 +9,7 @@ import {
   matchMatrixCallSites,
   matrixLanguageFor,
   matrixSourceExtractionBudget,
+  scanMatrixCallSites,
   selectBalancedMatrixSources,
 } from '../../src/providers/matrix-source-language.js';
 
@@ -61,6 +62,23 @@ describe('matrix source language', () => {
       ).map((item) => item.name)
     ).toEqual(['ready']);
     expect(extractMatrixDeclarations("import 'package:billing/core.dart';\n", null)).toEqual([]);
+  });
+
+  it('does not treat Node object-property call sites as typed function declarations', () => {
+    const source = `import { handleCatalogRequest, handleOrderRequest } from './http.ts';
+
+export function startStorefront(): void {
+  return {
+    catalog: handleCatalogRequest('storefront'),
+    order: handleOrderRequest('storefront', 'order-1'),
+  };
+}
+`;
+    expect(
+      extractMatrixDeclarations(source, 'node')
+        .map((item) => item.name)
+        .sort()
+    ).toEqual(['startStorefront']);
   });
 
   it('resolves quoted C includes and PHP requires onto inventoried files', () => {
@@ -116,5 +134,9 @@ describe('matrix source language', () => {
       matchMatrixCallSites('NSString *value = [service health];\n', 'objective-c-matlab', 'health')
     ).not.toHaveLength(0);
     expect(matchMatrixCallSites('health\n', 'ruby', 'health')).not.toHaveLength(0);
+    expect(scanMatrixCallSites('run();\nshared();\n', 'node').map((site) => site.name)).toEqual([
+      'run',
+      'shared',
+    ]);
   });
 });
