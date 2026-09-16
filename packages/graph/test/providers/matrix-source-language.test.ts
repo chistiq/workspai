@@ -6,7 +6,10 @@ import {
   decodeMatrixSource,
   extractMatrixDeclarations,
   extractMatrixLocalImportLocators,
+  matchMatrixCallSites,
   matrixLanguageFor,
+  matrixSourceExtractionBudget,
+  selectBalancedMatrixSources,
 } from '../../src/providers/matrix-source-language.js';
 
 describe('matrix source language', () => {
@@ -85,5 +88,33 @@ describe('matrix source language', () => {
     const decoded = decodeMatrixSource(bytes);
     expect(decoded.encodingFallback).toBe(true);
     expect(decoded.text.includes('©') || decoded.text.includes('\u00a9')).toBe(true);
+  });
+
+  it('keeps adaptive extraction proportional and language-balanced', () => {
+    expect(matrixSourceExtractionBudget(100)).toBe(2000);
+    expect(matrixSourceExtractionBudget(9879)).toBe(5000);
+    const locators = [
+      ...Array.from({ length: 10 }, (_, index) => `src/a${String(index)}.py`),
+      ...Array.from({ length: 10 }, (_, index) => `src/b${String(index)}.cc`),
+    ];
+    const selected = selectBalancedMatrixSources(locators, 6);
+    expect(selected).toHaveLength(6);
+    expect(selected.filter((locator) => locator.endsWith('.py'))).toHaveLength(3);
+    expect(selected.filter((locator) => locator.endsWith('.cc'))).toHaveLength(3);
+  });
+
+  it('resolves unique Java type imports and Objective-C message sends', () => {
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/app/App.java',
+        'import com.example.Health;\n',
+        'java',
+        new Set(['src/app/App.java', 'src/health/Health.java'])
+      )
+    ).toEqual(['src/health/Health.java']);
+    expect(
+      matchMatrixCallSites('NSString *value = [service health];\n', 'objective-c-matlab', 'health')
+    ).not.toHaveLength(0);
+    expect(matchMatrixCallSites('health\n', 'ruby', 'health')).not.toHaveLength(0);
   });
 });

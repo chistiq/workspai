@@ -17,7 +17,11 @@ import {
   decodeMatrixSource,
   extractMatrixDeclarations,
   extractMatrixLocalImportLocators,
+  matchMatrixCallSites,
   matrixLanguageFor,
+  matrixSameDirectoryPeers,
+  matrixSourceExtractionBudget,
+  selectBalancedMatrixSources,
   stripMatrixSourceComments,
 } from './matrix-source-language.js';
 
@@ -105,8 +109,14 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
       };
     },
     collect: async (request) => {
-      const inputs = sourceInputs(request.inputs);
-      const available = new Set(request.inputs.map((input) => input.locator));
+      const eligible = sourceInputs(request.inputs);
+      const selectedLocators = selectBalancedMatrixSources(
+        eligible.map((input) => input.locator),
+        matrixSourceExtractionBudget(eligible.length)
+      );
+      const selected = new Set(selectedLocators);
+      const inputs = eligible.filter((input) => selected.has(input.locator));
+      const available = new Set(eligible.map((input) => input.locator));
       const facts: GraphWorkspaceFact[] = [];
       const diagnostics: GraphDiagnostic[] = [];
       const unknownZones: GraphUnknownZone[] = [];
@@ -119,6 +129,21 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
       let discoveredCalls = 0;
       let emittedCalls = 0;
       let truncated = false;
+      if (inputs.length < eligible.length) {
+        truncated = true;
+        diagnostics.push(
+          warning(
+            'graph.source-declarations-truncated',
+            '.',
+            `Declaration extraction sampled ${String(inputs.length)} file(s) from ${String(eligible.length)} matrix source file(s).`
+          )
+        );
+        unknownZones.push({
+          code: 'graph.source-declarations-truncated',
+          scope: '.',
+          reason: `Declaration extraction sampled ${String(inputs.length)} of ${String(eligible.length)} matrix source files; omitted files remain unknown.`,
+        });
+      }
 
       for (const [inputIndex, input] of inputs.entries()) {
         if (request.signal?.aborted)
@@ -245,9 +270,10 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
         const file = files.get(input.locator);
         if (!source || !file) continue;
         const language = matrixLanguageFor(input.locator);
-        const imported = new Set(
-          extractMatrixLocalImportLocators(input.locator, source, language, available)
-        );
+        const imported = new Set([
+          ...extractMatrixLocalImportLocators(input.locator, source, language, available),
+          ...matrixSameDirectoryPeers(input.locator, available),
+        ]);
         const candidates = [
           ...(symbolsByFile.get(input.locator) ?? []),
           ...[...imported].flatMap((locator) => symbolsByFile.get(locator) ?? []),
@@ -265,8 +291,9 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
         for (const [name, targets] of [...byName.entries()].sort(([left], [right]) =>
           left.localeCompare(right)
         )) {
-          const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-          const matches = [...searchable.matchAll(new RegExp(`\\b${escaped}\\s*\\(`, 'gu'))];
+          const matches = matchMatrixCallSites(searchable, language, name).map((index) => ({
+            index,
+          }));
           if (matches.length === 0) continue;
           if (targets.length !== 1) {
             unknownZones.push({
@@ -336,7 +363,7 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
           {
             dimension: 'source-declarations',
             observed: inputs.length,
-            expected: inputs.length,
+            expected: eligible.length,
           },
           {
             dimension: 'source-declaration-symbols',

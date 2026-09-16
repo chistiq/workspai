@@ -163,9 +163,30 @@ describe('source semantic providers', () => {
     });
     const ruby = await build({
       'src/health.rb': "def health\n  'ok'\nend\n",
-      'src/app.rb': "require_relative 'health'\nhealth()\n",
+      'src/app.rb': "require_relative 'health'\nhealth\n",
     });
     for (const result of [python, php, ruby]) {
+      if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
+      expect(result.graph.edges.some((edge) => edge.relation === 'calls')).toBe(true);
+    }
+  });
+
+  it('binds unambiguous same-package Go and Java calls without inventing extra edges', async () => {
+    const go = await build({
+      'src/health.go': 'package app\nfunc Serve() int { return 1 }\n',
+      'src/main.go': 'package app\nfunc Boot() int { return Serve() }\n',
+    });
+    const java = await build({
+      'src/Health.java': 'class Health {\n    String status() { return "ok"; }\n}\n',
+      'src/App.java':
+        'class App {\n    String run() { Health h = new Health(); return h.status();\n}\n}\n',
+    });
+    const objc = await build({
+      'src/Health.m': '@interface Health : NSObject\n- (NSString *)status;\n@end\n',
+      'src/main.m':
+        '#import "Health.m"\nNSString *run(Health *service) { return [service status]; }\n',
+    });
+    for (const result of [go, java, objc]) {
       if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
       expect(result.graph.edges.some((edge) => edge.relation === 'calls')).toBe(true);
     }

@@ -140,6 +140,85 @@ export function extractMatrixLocalImportLocators(
   return resolved;
 }
 
+export function matrixSourceExtractionBudget(eligibleFiles: number): number {
+  const eligible = Math.max(0, eligibleFiles);
+  const deep = Math.min(25_000, Math.max(5_000, Math.ceil(eligible * 0.2)));
+  return Math.min(20_000, Math.max(2_000, Math.min(eligible, deep)));
+}
+
+export function selectBalancedMatrixSources(locators: readonly string[], limit: number): string[] {
+  const unique = [...new Set(locators)].sort((left, right) => left.localeCompare(right));
+  if (unique.length <= limit) return unique;
+  const buckets = new Map<string, string[]>();
+  for (const locator of unique) {
+    const key = matrixLanguageFor(locator) ?? '_';
+    const values = buckets.get(key) ?? [];
+    values.push(locator);
+    buckets.set(key, values);
+  }
+  const ordered = [...buckets.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const selected = new Set<string>();
+  let offset = 0;
+  while (selected.size < limit) {
+    let added = false;
+    for (const [, values] of ordered) {
+      const file = values[offset];
+      if (!file) continue;
+      selected.add(file);
+      added = true;
+      if (selected.size >= limit) break;
+    }
+    if (!added) break;
+    offset += 1;
+  }
+  return [...selected].sort((left, right) => left.localeCompare(right));
+}
+
+const IMPLICIT_DIRECTORY_PACKAGE_LANGUAGES = new Set<GraphStructuralLanguage>([
+  'go',
+  'java',
+  'kotlin',
+]);
+
+export function matrixSameDirectoryPeers(
+  locator: string,
+  available: ReadonlySet<string>
+): string[] {
+  const language = matrixLanguageFor(locator);
+  if (!language || !IMPLICIT_DIRECTORY_PACKAGE_LANGUAGES.has(language)) return [];
+  const dir = directory(locator);
+  return [...available]
+    .filter(
+      (candidate) =>
+        candidate !== locator &&
+        directory(candidate) === dir &&
+        matrixLanguageFor(candidate) === language
+    )
+    .sort((left, right) => left.localeCompare(right));
+}
+
+export function matchMatrixCallSites(
+  source: string,
+  language: GraphStructuralLanguage | null,
+  name: string
+): number[] {
+  if (name.length < 3) return [];
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const patterns =
+    language === 'objective-c-matlab'
+      ? [new RegExp(`\\[[^\\]]*\\b${escaped}\\b`, 'gu')]
+      : language === 'ruby' || language === 'elixir'
+        ? [new RegExp(`\\b${escaped}\\s*\\(`, 'gu'), new RegExp(`\\b${escaped}\\s*$`, 'gmu')]
+        : [new RegExp(`\\b${escaped}\\s*\\(`, 'gu')];
+  const indexes = new Set<number>();
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      if (match.index !== undefined) indexes.add(match.index);
+    }
+  }
+  return [...indexes].sort((left, right) => left - right);
+}
+
 export function decodeMatrixSource(bytes: Uint8Array): {
   readonly text: string;
   readonly encodingFallback: boolean;
@@ -208,6 +287,12 @@ function localImportSpecifiers(source: string, language: GraphStructuralLanguage
     for (const match of source.matchAll(/["`](\.[^"`]+)["`]/gu))
       if (match[1]) specifiers.push(match[1]);
   }
+  if (language === 'java' || language === 'kotlin') {
+    for (const match of source.matchAll(/^\s*import\s+(?:static\s+)?([A-Za-z_$][\w$.]*)/gmu)) {
+      const simple = match[1]?.split('.').pop();
+      if (simple && /^[A-Z]/u.test(simple)) specifiers.push(match[1]!);
+    }
+  }
   return specifiers;
 }
 
@@ -227,6 +312,21 @@ function resolveLocalSpecifier(
       joinLocator(relativeBase, `${modulePath}/__init__.py`),
     ];
     return candidates.find((candidate) => available.has(candidate)) ?? null;
+  }
+  if (
+    (language === 'java' || language === 'kotlin') &&
+    !specifier.startsWith('.') &&
+    specifier.includes('.')
+  ) {
+    const simple = specifier.split('.').pop();
+    if (!simple || !/^[A-Z]/u.test(simple)) return null;
+    const matches = [...available].filter((locator) =>
+      matrixExtensionsFor(language).some(
+        (extension) =>
+          locator.endsWith(`/${simple}${extension}`) || locator === `${simple}${extension}`
+      )
+    );
+    return matches.length === 1 ? matches[0]! : null;
   }
   const sameDirectoryLiteral =
     language === 'php' ||
