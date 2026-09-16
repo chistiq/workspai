@@ -262,7 +262,13 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
       let totalBytes = 0;
       try {
         const rootStat = await fs.lstat(request.root);
-        if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+        if (rootStat.isSymbolicLink()) {
+          const realRoot = await fs.realpath(request.root);
+          const realStat = await fs.stat(realRoot);
+          if (!realStat.isDirectory()) {
+            throw new Error('Repository root must resolve to a directory.');
+          }
+        } else if (!rootStat.isDirectory()) {
           throw new Error('Repository root must be a real directory, not a symbolic link.');
         }
         const root = await fs.realpath(request.root);

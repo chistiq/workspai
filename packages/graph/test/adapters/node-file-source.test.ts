@@ -429,4 +429,24 @@ describe('Node repository file source', () => {
     expect(result.inputs.map((input) => input.locator)).not.toContain('src/alias.ts');
     expect(JSON.stringify(result)).not.toContain(root);
   });
+
+  it('inventories a symbolic-link directory root by resolving to the real tree', async () => {
+    const root = await fixture();
+    const linked = path.join(path.dirname(root), `${path.basename(root)}-link`);
+    temporary.push(linked);
+    await fs.symlink(root, linked);
+    const source = createNodeGraphFileSource();
+    const result = await source.inventory({
+      root: linked,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+    });
+    expect(result.status).toBe('complete');
+    expect(result.inputs.map((input) => input.locator)).toEqual(['package.json', 'src/index.ts']);
+  });
 });

@@ -114,6 +114,17 @@ describe('@workspai/graph development package', () => {
       'partial-cli-exit-code-integrity',
       'rust-wasm-traversal-conformance-candidate',
       'packed-zero-rust-toolchain-runtime',
+      'openapi-asyncapi-contract-topology',
+      'graphql-schema-contract-topology',
+      'kubernetes-resource-topology',
+      'ci-workflow-pipeline-topology',
+      'infrastructure-as-code-topology',
+      'python-project-manifest-scripts',
+      'vscode-extension-manifest-commands',
+      'architecture-decision-records',
+      'openapi-implementation-binding',
+      'native-admitted-declaration-scan',
+      'symlink-directory-root-inventory',
       'standalone-stable',
     ]);
     expect([...GRAPH_PACKAGE_METADATA.plannedCapabilities]).toEqual(['cli-shadow-parity']);
@@ -186,7 +197,7 @@ describe('@workspai/graph development package', () => {
       credentials: 'deny',
     });
     const providers = createStandardRepositoryProviders();
-    expect(providers).toHaveLength(15);
+    expect(providers).toHaveLength(24);
     expect(Object.isFrozen(providers)).toBe(true);
   });
 });

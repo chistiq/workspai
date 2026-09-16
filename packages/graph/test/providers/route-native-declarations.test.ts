@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { GraphNativePort } from '../../src/ports/index.js';
 import { extractMatrixDeclarations } from '../../src/providers/matrix-source-language.js';
-import { routeGraphNativeDeclarations } from '../../src/providers/route-native-declarations.js';
+import {
+  extractPublishedMatrixDeclarations,
+  routeGraphNativeDeclarations,
+} from '../../src/providers/route-native-declarations.js';
 
 function port(
   declarations: readonly {
@@ -85,5 +88,15 @@ describe('Graph native declaration routing', () => {
       reason: 'parity-qualified',
       declarations: reference,
     });
+  });
+
+  it('publishes complete native declarations without a TypeScript dual-exec gate', () => {
+    const nativeOnly = [{ name: 'fromNative', detail: 'function' as const, line: 1 }];
+    expect(extractPublishedMatrixDeclarations(source, 'node', port(nativeOnly))).toEqual({
+      engine: 'rust-wasm',
+      reason: 'native-admitted',
+      declarations: nativeOnly,
+    });
+    expect(extractPublishedMatrixDeclarations(source, 'node', undefined).engine).toBe('typescript');
   });
 });

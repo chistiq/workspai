@@ -25,6 +25,7 @@ import {
   createNodeGraphProductHostPorts,
   createNodeProjectArtifactStore,
   createNodeWorkspaceArtifactStore,
+  loadNodeBundledGraphNativePort,
 } from './adapters/node/index.js';
 import type {
   GraphCanonicalGraph,
@@ -333,7 +334,9 @@ function defaultDependencies(): GraphCliDependencies {
           root,
           scope: { kind: 'project', projectIds: ['project:implicit-single-repository'] },
           ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
-          providers: createStandardRepositoryProviders(),
+          providers: createStandardRepositoryProviders({
+            loadNative: loadNodeBundledGraphNativePort,
+          }),
           policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
           ports,
         },

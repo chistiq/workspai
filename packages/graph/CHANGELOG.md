@@ -2,12 +2,21 @@
 
 ## Unreleased
 
+- Raised the standalone repository provider set past the released CLI composer
+  surface: OpenAPI/Swagger/AsyncAPI, GraphQL, Kubernetes, CI pipelines, Dockerfile/
+  Terraform/Helm, Python console scripts, VS Code commands, architecture
+  decisions, and OpenAPI operation-to-handler binding. Inspect now inventories a
+  directory symlink root by resolving it, prefers unique same-file call targets
+  over colliding peers, and omits call extraction from generated sources while
+  keeping their declarations. Large inventories publish bundled-engine
+  declarations when the scan completes, with TypeScript remaining the fallback
+  and dual-exec admission probe.
 - Extended the bundled Rust/WASM engine with a bounded matrix declaration
-  scan on ABI v1. TypeScript remains semantic authority: native findings are
-  used only when they match the TypeScript extractor, and inspect/composition
-  still publishes TypeScript-extracted facts. Users still cannot select an
-  engine. The WASM packager now follows `CARGO_TARGET_DIR` when cargo writes
-  the artifact outside the repository `target/` tree.
+  scan on ABI v1. Dual-exec routing remains the admission probe. Inspect
+  publishes complete native declarations on large inventories and falls back
+  to TypeScript; users still cannot select an engine. The WASM packager now
+  follows `CARGO_TARGET_DIR` when cargo writes the artifact outside the
+  repository `target/` tree.
 - Extended source-declaration extraction to every official-offline structural
   language at equal observed depth, including local include/require call
   resolution, same-package Go/Java/Kotlin peers, Objective-C message sends,

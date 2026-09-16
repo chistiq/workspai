@@ -459,7 +459,15 @@ describe('buildRepoGraph', () => {
       })
     );
     expect(result.graph.nodes.filter((node) => node.kind === 'test')).toHaveLength(3);
-    expect(read).not.toHaveBeenCalled();
+    expect(read.mock.calls.map((call) => call[1]?.locator).sort()).toEqual([
+      '.github/workflows/ci.yml',
+      'Dockerfile',
+      'contracts/openapi.yaml',
+      'contracts/openapi.yaml',
+    ]);
+    expect(
+      read.mock.calls.every((call) => !String(call[1]?.locator ?? '').includes('fixture'))
+    ).toBe(true);
   });
 
   it('links static source imports to local files and external module specifiers', async () => {

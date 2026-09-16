@@ -36,11 +36,14 @@ export {
 export { BUILD_TOPOLOGY_PROVIDER_ID, createBuildTopologyProvider } from './build-topology.js';
 export {
   SOURCE_DECLARATIONS_PROVIDER_ID,
+  NATIVE_DECLARATION_MIN_FILES,
   createSourceDeclarationsProvider,
 } from './source-declarations.js';
 export {
+  extractPublishedMatrixDeclarations,
   routeGraphNativeDeclarations,
   type GraphNativeDeclarationRoute,
+  type GraphPublishedDeclarationRoute,
 } from './route-native-declarations.js';
 export { SOURCE_LANGUAGE_PROVIDER_ID, createSourceLanguageProvider } from './source-language.js';
 export {
@@ -53,7 +56,41 @@ export {
   createScopeContainmentProvider,
   isHostSuppliedGraphInputLocator,
 } from './scope-containment.js';
+export {
+  OPENAPI_CONTRACTS_PROVIDER_ID,
+  createOpenApiContractsProvider,
+} from './openapi-contracts.js';
+export {
+  GRAPHQL_CONTRACTS_PROVIDER_ID,
+  createGraphqlContractsProvider,
+} from './graphql-contracts.js';
+export {
+  KUBERNETES_TOPOLOGY_PROVIDER_ID,
+  createKubernetesTopologyProvider,
+} from './kubernetes-topology.js';
+export { CI_WORKFLOW_PROVIDER_ID, createCiWorkflowProvider } from './ci-workflow.js';
+export {
+  INFRASTRUCTURE_AS_CODE_PROVIDER_ID,
+  createInfrastructureAsCodeProvider,
+} from './infrastructure-as-code.js';
+export {
+  PYTHON_PROJECT_MANIFEST_PROVIDER_ID,
+  createPythonProjectManifestProvider,
+} from './python-project-manifest.js';
+export {
+  VSCODE_EXTENSION_MANIFEST_PROVIDER_ID,
+  createVscodeExtensionManifestProvider,
+} from './vscode-extension-manifest.js';
+export {
+  ARCHITECTURE_DECISIONS_PROVIDER_ID,
+  createArchitectureDecisionsProvider,
+} from './architecture-decisions.js';
+export {
+  API_IMPLEMENTATION_BINDING_PROVIDER_ID,
+  createApiImplementationBindingProvider,
+} from './api-implementation-binding.js';
 
+import type { GraphNativePort } from '../ports/index.js';
 import type { GraphProviderRuntime } from '../contracts/provider.js';
 
 import { createPackageJsonProvider } from './package-json.js';
@@ -71,12 +108,32 @@ import { createBuildTopologyProvider } from './build-topology.js';
 import { createSourceDeclarationsProvider } from './source-declarations.js';
 import { createSourceLanguageProvider } from './source-language.js';
 import { createDocumentationSurfacesProvider } from './documentation-surfaces.js';
+import { createOpenApiContractsProvider } from './openapi-contracts.js';
+import { createGraphqlContractsProvider } from './graphql-contracts.js';
+import { createKubernetesTopologyProvider } from './kubernetes-topology.js';
+import { createCiWorkflowProvider } from './ci-workflow.js';
+import { createInfrastructureAsCodeProvider } from './infrastructure-as-code.js';
+import { createPythonProjectManifestProvider } from './python-project-manifest.js';
+import { createVscodeExtensionManifestProvider } from './vscode-extension-manifest.js';
+import { createArchitectureDecisionsProvider } from './architecture-decisions.js';
+import { createApiImplementationBindingProvider } from './api-implementation-binding.js';
+
+export interface GraphStandardRepositoryProviderOptions {
+  readonly native?: GraphNativePort;
+  readonly loadNative?: () => Promise<GraphNativePort | undefined>;
+}
+
+export const STANDARD_REPOSITORY_PROVIDER_COUNT = 24;
 
 /** The deterministic, offline provider set admitted for the standalone repository preview. */
-export function createStandardRepositoryProviders(): readonly GraphProviderRuntime[] {
+export function createStandardRepositoryProviders(
+  options: GraphStandardRepositoryProviderOptions = {}
+): readonly GraphProviderRuntime[] {
   return Object.freeze([
     createRepositoryFilesProvider(),
     createPackageJsonProvider(),
+    createVscodeExtensionManifestProvider(),
+    createPythonProjectManifestProvider(),
     createEcmaScriptImportsProvider(),
     createLanguageImportsProvider(),
     createRepositorySurfacesProvider(),
@@ -86,8 +143,15 @@ export function createStandardRepositoryProviders(): readonly GraphProviderRunti
     createCodeownersProvider(),
     createSourceEntrypointsProvider(),
     createProtobufTopologyProvider(),
+    createGraphqlContractsProvider(),
+    createOpenApiContractsProvider(),
+    createApiImplementationBindingProvider(),
+    createKubernetesTopologyProvider(),
+    createInfrastructureAsCodeProvider(),
+    createCiWorkflowProvider(),
+    createArchitectureDecisionsProvider(),
     createBuildTopologyProvider(),
-    createSourceDeclarationsProvider(),
+    createSourceDeclarationsProvider(options),
     createSourceLanguageProvider(),
     createDocumentationSurfacesProvider(),
   ]);

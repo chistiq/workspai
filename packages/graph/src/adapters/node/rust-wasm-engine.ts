@@ -151,7 +151,6 @@ function languageCode(language: GraphStructuralLanguage | null): number | undefi
 
 function declarationResult(
   status: GraphNativeDeclarationResult['status'],
-  request: GraphNativeDeclarationRequest,
   startedAt: number,
   inputBytes: number,
   declarations: readonly GraphNativeDeclaration[] = [],
@@ -443,7 +442,6 @@ export async function createNodeRustWasmGraphNativePort(
       if (invalid) {
         return declarationResult(
           'rejected',
-          request,
           startedAt,
           sourceBytes.byteLength,
           [],
@@ -454,7 +452,6 @@ export async function createNodeRustWasmGraphNativePort(
       if (sourceBytes.byteLength > MAX_DECLARATION_SOURCE_BYTES) {
         return declarationResult(
           'rejected',
-          request,
           startedAt,
           sourceBytes.byteLength,
           [],
@@ -467,7 +464,6 @@ export async function createNodeRustWasmGraphNativePort(
       if (language === undefined) {
         return declarationResult(
           'rejected',
-          request,
           startedAt,
           sourceBytes.byteLength,
           [],
@@ -488,7 +484,6 @@ export async function createNodeRustWasmGraphNativePort(
           if (sourcePointer === 0) {
             return declarationResult(
               'failed',
-              request,
               startedAt,
               sourceBytes.byteLength,
               [],
@@ -505,7 +500,6 @@ export async function createNodeRustWasmGraphNativePort(
         if (recordsPointer === 0 || namesPointer === 0) {
           return declarationResult(
             'failed',
-            request,
             startedAt,
             sourceBytes.byteLength,
             [],
@@ -526,7 +520,6 @@ export async function createNodeRustWasmGraphNativePort(
           const code = ERROR_CODES[count] ?? 'GRAPH_NATIVE_ENGINE_REJECTED';
           return declarationResult(
             'rejected',
-            request,
             startedAt,
             sourceBytes.byteLength,
             [],
@@ -537,7 +530,6 @@ export async function createNodeRustWasmGraphNativePort(
         if (count > MAX_DECLARATIONS) {
           return declarationResult(
             'failed',
-            request,
             startedAt,
             sourceBytes.byteLength,
             [],
@@ -561,7 +553,6 @@ export async function createNodeRustWasmGraphNativePort(
           ) {
             return declarationResult(
               'failed',
-              request,
               startedAt,
               sourceBytes.byteLength,
               [],
@@ -575,18 +566,11 @@ export async function createNodeRustWasmGraphNativePort(
             line: records[base] ?? 0,
           });
         }
-        return declarationResult(
-          'complete',
-          request,
-          startedAt,
-          sourceBytes.byteLength,
-          declarations
-        );
+        return declarationResult('complete', startedAt, sourceBytes.byteLength, declarations);
       } catch (error) {
         trapped = true;
         return declarationResult(
           'failed',
-          request,
           startedAt,
           sourceBytes.byteLength,
           [],

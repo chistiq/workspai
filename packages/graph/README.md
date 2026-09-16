@@ -101,7 +101,16 @@ services, schemas and RPCs, declared Bazel
 and CMake target dependencies, cross-language source entry points, CODEOWNERS
 ownership, Docker Compose topology, repository contract/runtime/delivery
 surfaces, MATLAB artifact families and safe repository-local Git `HEAD`
-identity. Every admitted repository file remains in the inventory even when
+identity. The same offline set now also extracts OpenAPI/Swagger/AsyncAPI
+operations and schemas, GraphQL schema/operations, Kubernetes resources,
+CI pipelines and jobs, Dockerfile/Terraform/Helm runtime topology, Python
+console scripts, VS Code extension commands, architecture decision records,
+and quoted OpenAPI operation-identifier bindings to handler source. Inspect
+accepts a directory symlink as the repository root by resolving it first;
+interior symlinks remain unsupported. Call extraction prefers a unique
+same-file declaration over colliding peers and omits calls from generated
+sources. Large declaration scans publish the bundled engine when it
+completes, with TypeScript as fallback. Every admitted repository file remains in the inventory even when
 deeper semantics are unavailable. Computed routes and dependencies, dynamic
 imports, source languages outside the structural profile, symlinks and Git
 worktree indirection remain explicit unknown or unsupported zones rather than

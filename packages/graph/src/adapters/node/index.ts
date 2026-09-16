@@ -29,6 +29,11 @@ import {
 import { createStandardRepositoryProviders } from '../../providers/index.js';
 
 import { createNodeGraphFileSource } from './repository-file-source.js';
+import {
+  GraphNativeAdapterLoadError,
+  createNodeRustWasmGraphNativePort,
+} from './rust-wasm-engine.js';
+import type { GraphNativePort } from '../../ports/index.js';
 
 export { createNodeGraphFileSource } from './repository-file-source.js';
 export { createNodeProjectArtifactStore } from './project-artifact-store.js';
@@ -40,14 +45,31 @@ export {
   type GraphNativeAdapterLoadErrorCode,
 } from './rust-wasm-engine.js';
 export {
+  extractPublishedMatrixDeclarations,
+  routeGraphNativeDeclarations,
+  type GraphNativeDeclarationRoute,
+  type GraphPublishedDeclarationRoute,
+} from '../../providers/route-native-declarations.js';
+export {
   referenceGraphNativeTraversal,
   routeGraphNativeTraversal,
   type GraphNativeTraversalRoute,
 } from '../../application/route-native-traversal.js';
-export {
-  routeGraphNativeDeclarations,
-  type GraphNativeDeclarationRoute,
-} from '../../providers/route-native-declarations.js';
+
+let bundledNativePort: Promise<GraphNativePort | undefined> | undefined;
+
+/** Loads the product-bundled engine once per process. Missing artifacts stay TypeScript-only. */
+export function loadNodeBundledGraphNativePort(): Promise<GraphNativePort | undefined> {
+  bundledNativePort ??= (async () => {
+    try {
+      return await createNodeRustWasmGraphNativePort();
+    } catch (error) {
+      if (error instanceof GraphNativeAdapterLoadError) return undefined;
+      throw error;
+    }
+  })();
+  return bundledNativePort;
+}
 
 export interface NodeRepoGraphBuildRequest {
   readonly root: string;
@@ -277,7 +299,9 @@ export function buildNodeRepoGraph(
       projectIds: ['project:implicit-single-repository'],
     },
     ontology: request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE,
-    providers: request.providers ?? createStandardRepositoryProviders(),
+    providers:
+      request.providers ??
+      createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort }),
     policy: request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY,
     ports: createNodeGraphProductHostPorts({
       signal: request.signal,
@@ -314,7 +338,9 @@ export async function buildNodeIncrementalRepoGraph(
     projectIds: ['project:implicit-single-repository'],
   };
   const ontology = request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE;
-  const providers = request.providers ?? createStandardRepositoryProviders();
+  const providers =
+    request.providers ??
+    createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort });
   const policy = request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY;
   const ports = createNodeGraphProductHostPorts({
     signal: request.signal,

@@ -404,7 +404,7 @@ try {
         };
         if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
         const standardProviders = providers.createStandardRepositoryProviders();
-        if (standardProviders.length !== 15 || !Object.isFrozen(standardProviders)) process.exit(30);
+        if (standardProviders.length !== 24 || !Object.isFrozen(standardProviders)) process.exit(30);
         const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
         if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
         const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
@@ -598,7 +598,7 @@ try {
       }
     },
     'providers-list': (envelope) => {
-      if (!Array.isArray(envelope.data) || envelope.data.length !== 15) {
+      if (!Array.isArray(envelope.data) || envelope.data.length !== 24) {
         throw new Error('packed Graph CLI provider inventory is incomplete');
       }
     },

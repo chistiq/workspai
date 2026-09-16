@@ -14,6 +14,18 @@ export type GraphNativeDeclarationRoute =
       readonly declarations: readonly MatrixDeclaration[];
     };
 
+export type GraphPublishedDeclarationRoute =
+  | {
+      readonly engine: 'typescript';
+      readonly reason: 'native-unavailable' | 'native-failed';
+      readonly declarations: readonly MatrixDeclaration[];
+    }
+  | {
+      readonly engine: 'rust-wasm';
+      readonly reason: 'native-admitted';
+      readonly declarations: readonly MatrixDeclaration[];
+    };
+
 function sameDeclarations(
   left: readonly MatrixDeclaration[],
   right: readonly MatrixDeclaration[]
@@ -53,6 +65,39 @@ export function routeGraphNativeDeclarations(
   return {
     engine: 'rust-wasm',
     reason: 'parity-qualified',
+    declarations: candidate.declarations,
+  };
+}
+
+/**
+ * Publishes native declarations on the inspect/build path when the bundled
+ * engine completes. TypeScript remains the fallback and the dual-exec
+ * admission probe; production no longer pays TypeScript for every file after
+ * native admission.
+ */
+export function extractPublishedMatrixDeclarations(
+  source: string,
+  language: GraphStructuralLanguage | null,
+  native: GraphNativePort | undefined
+): GraphPublishedDeclarationRoute {
+  if (!native?.extractDeclarations) {
+    return {
+      engine: 'typescript',
+      reason: 'native-unavailable',
+      declarations: extractMatrixDeclarations(source, language),
+    };
+  }
+  const candidate = native.extractDeclarations({ source, language });
+  if (candidate.status !== 'complete') {
+    return {
+      engine: 'typescript',
+      reason: 'native-failed',
+      declarations: extractMatrixDeclarations(source, language),
+    };
+  }
+  return {
+    engine: 'rust-wasm',
+    reason: 'native-admitted',
     declarations: candidate.declarations,
   };
 }
