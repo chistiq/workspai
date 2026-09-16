@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+
+import { GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE } from '../../src/contracts/index.js';
+import {
+  MATRIX_SOURCE_EXTENSIONS,
+  decodeMatrixSource,
+  extractMatrixDeclarations,
+  extractMatrixLocalImportLocators,
+  matrixLanguageFor,
+} from '../../src/providers/matrix-source-language.js';
+
+describe('matrix source language', () => {
+  it('covers every official-offline structural extension exactly once', () => {
+    const listed = GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE.languages.flatMap(
+      (profile) => profile.extensions
+    );
+    expect([...MATRIX_SOURCE_EXTENSIONS].sort()).toEqual([...new Set(listed)].sort());
+    expect(listed).toHaveLength(new Set(listed).size);
+    for (const extension of listed) {
+      expect(matrixLanguageFor(`src/file${extension}`)).not.toBeNull();
+    }
+    expect(matrixLanguageFor('app.dart')).toBeNull();
+  });
+
+  it('extracts one observed declaration per official-offline language family', () => {
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      ['src/a.ts', 'export function listItems(): void {}\n', 'listItems'],
+      ['src/a.py', 'def list_items():\n    return 1\n', 'list_items'],
+      ['src/a.go', 'package a\nfunc ListItems() {}\n', 'ListItems'],
+      ['src/A.java', 'class ListItems {\n    String health() { return "ok"; }\n}\n', 'ListItems'],
+      [
+        'src/A.cs',
+        'class ListItems {\n    public static string Status() => "ok";\n}\n',
+        'ListItems',
+      ],
+      ['src/a.rs', 'fn list_items() {}\n', 'list_items'],
+      ['src/a.cc', 'int list_items() { return 0; }\n', 'list_items'],
+      ['src/a.m', '@interface ListItems : NSObject\n- (NSString *)health;\n@end\n', 'ListItems'],
+      ['src/a.php', '<?php\nfunction list_items(): string { return "ok"; }\n', 'list_items'],
+      ['src/a.rb', "def list_items\n  'ok'\nend\n", 'list_items'],
+      ['src/a.swift', 'func listItems() -> String { "ok" }\n', 'listItems'],
+      ['src/a.ex', 'defmodule ListItems do\n  def health(), do: :ok\nend\n', 'ListItems'],
+      ['src/A.kt', 'class ListItems {\n  fun health() = "ok"\n}\n', 'ListItems'],
+    ];
+    for (const [locator, source, name] of cases) {
+      const names = extractMatrixDeclarations(source, matrixLanguageFor(locator)).map(
+        (item) => item.name
+      );
+      expect(names, locator).toContain(name);
+    }
+  });
+
+  it('does not invent declarations from control-flow or unsupported languages', () => {
+    expect(
+      extractMatrixDeclarations(
+        'int ready() { return 1; }\nif (ready()) { return; }\n',
+        'c-cpp'
+      ).map((item) => item.name)
+    ).toEqual(['ready']);
+    expect(extractMatrixDeclarations("import 'package:billing/core.dart';\n", null)).toEqual([]);
+  });
+
+  it('resolves quoted C includes and PHP requires onto inventoried files', () => {
+    const available = new Set(['src/server.cc', 'src/health.h', 'src/bootstrap.php']);
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/server.cc',
+        '#include "health.h"\n#include <vector>\n',
+        'c-cpp',
+        available
+      )
+    ).toEqual(['src/health.h']);
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/index.php',
+        "<?php\nrequire_once 'bootstrap.php';\n",
+        'php',
+        available
+      )
+    ).toEqual(['src/bootstrap.php']);
+  });
+
+  it('admits non-UTF8 source through a latin1 fallback instead of dropping the file', () => {
+    const bytes = Uint8Array.from([0x66, 0x6e, 0x20, 0xa9, 0x28, 0x29, 0x7b, 0x7d, 0x0a]);
+    const decoded = decodeMatrixSource(bytes);
+    expect(decoded.encodingFallback).toBe(true);
+    expect(decoded.text.includes('©') || decoded.text.includes('\u00a9')).toBe(true);
+  });
+});

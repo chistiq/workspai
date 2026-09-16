@@ -1156,6 +1156,8 @@ try {
     ['php', 'imports', undefined],
     ['ruby', 'imports', undefined],
     ['swift', 'imports', undefined],
+    ['elixir', 'imports', 'exposes'],
+    ['kotlin', 'imports', 'exposes'],
   ];
   for (const [language, importRelation, routeRelation] of languageFixtures) {
     const fixtureRoot = path.join(installedRoot, 'fixtures/g4/repositories', language);
@@ -1165,6 +1167,9 @@ try {
     }
     if (!result.graph.edges.some((edge) => edge.relation === importRelation)) {
       throw new Error(`packed G4 ${language} fixture omitted ${importRelation} evidence`);
+    }
+    if (!result.graph.edges.some((edge) => edge.relation === 'defines')) {
+      throw new Error(`packed G4 ${language} fixture omitted declaration evidence`);
     }
     if (routeRelation && !result.graph.edges.some((edge) => edge.relation === routeRelation)) {
       throw new Error(`packed G4 ${language} fixture omitted ${routeRelation} evidence`);

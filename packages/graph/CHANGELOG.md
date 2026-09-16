@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Extended source-declaration extraction to every official-offline structural
+  language at equal observed depth, including local include/require call
+  resolution and a latin1 fallback when UTF-8 rejects a source file. Dart and
+  other languages outside the admitted matrix remain explicit unsupported
+  surfaces.
 - Raised per-file declaration and per-symbol call extraction bounds so typical
   library modules are not truncated at 100 declarations or 20 call sites.
 - Added local G8 Workspace Intelligence consumer-parity and CLI host routing for

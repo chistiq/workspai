@@ -11,7 +11,15 @@ import {
   type GraphUnknownZone,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
-import { createObservedEdgeFact, extensionOf, stripComments } from './observed-edge-fact.js';
+import { createObservedEdgeFact, extensionOf } from './observed-edge-fact.js';
+import {
+  MATRIX_SOURCE_EXTENSIONS,
+  decodeMatrixSource,
+  extractMatrixDeclarations,
+  extractMatrixLocalImportLocators,
+  matrixLanguageFor,
+  stripMatrixSourceComments,
+} from './matrix-source-language.js';
 
 export const SOURCE_DECLARATIONS_PROVIDER_ID = 'workspai.graph.provider.source-declarations';
 
@@ -19,39 +27,6 @@ const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
 export const MAX_SYMBOLS_PER_FILE = 500;
 export const MAX_CALLS_PER_SYMBOL = 80;
-const SOURCE_EXTENSIONS = new Set([
-  '.cjs',
-  '.cts',
-  '.go',
-  '.js',
-  '.jsx',
-  '.mjs',
-  '.mts',
-  '.py',
-  '.rs',
-  '.ts',
-  '.tsx',
-]);
-const SYMBOL_PATTERNS: readonly { readonly pattern: RegExp; readonly detail: string }[] = [
-  {
-    pattern: /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/u,
-    detail: 'function',
-  },
-  {
-    pattern:
-      /^\s*(?:export\s+)?(?:abstract\s+)?(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/u,
-    detail: 'type',
-  },
-  {
-    pattern: /^\s*(?:export\s+)?(?:declare\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/u,
-    detail: 'value',
-  },
-  { pattern: /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/u, detail: 'function' },
-  { pattern: /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)/u, detail: 'function' },
-  { pattern: /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)/u, detail: 'function' },
-];
-const STATIC_IMPORT =
-  /^\s*(?:import\s+(?:[^'";]+?\s+from\s+)?|export\s+[^'";]+?\s+from\s+)['"]([^'"\r\n]+)['"]/gmu;
 
 interface DeclaredSymbol {
   readonly name: string;
@@ -63,70 +38,23 @@ interface DeclaredSymbol {
 
 function sourceInputs(inputs: readonly GraphProviderInput[]): GraphProviderInput[] {
   return inputs
-    .filter((input) => SOURCE_EXTENSIONS.has(extensionOf(input.locator)))
+    .filter((input) => MATRIX_SOURCE_EXTENSIONS.has(extensionOf(input.locator)))
     .sort((left, right) => left.locator.localeCompare(right.locator));
 }
 
-function directory(locator: string): string {
-  const separator = locator.lastIndexOf('/');
-  return separator === -1 ? '' : locator.slice(0, separator);
-}
-
-function resolveRelative(base: string, relative: string): string | null {
-  const normalized: string[] = [];
-  for (const segment of [...(base ? base.split('/') : []), ...relative.split('/')]) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') {
-      if (normalized.length === 0) return null;
-      normalized.pop();
-    } else normalized.push(segment);
-  }
-  return normalized.join('/');
-}
-
-function resolveLocalImport(
+function extractSymbols(
   source: string,
-  specifier: string,
-  available: ReadonlySet<string>
-): string | null {
-  const candidate = resolveRelative(directory(source), specifier);
-  if (!candidate) return null;
-  const extensions = ['', ...SOURCE_EXTENSIONS];
-  for (const extension of extensions) {
-    const direct = `${candidate}${extension}`;
-    if (available.has(direct)) return direct;
-  }
-  for (const extension of SOURCE_EXTENSIONS) {
-    const indexed = `${candidate}/index${extension}`;
-    if (available.has(indexed)) return indexed;
-  }
-  return null;
-}
-
-function extractSymbols(source: string): {
+  locator: string
+): {
   readonly findings: readonly { name: string; detail: string; line: number }[];
   readonly discovered: number;
   readonly truncated: boolean;
 } {
-  const findings: { name: string; detail: string; line: number }[] = [];
-  let discovered = 0;
-  const lines = stripComments(source).split(/\r?\n/u);
-  for (let index = 0; index < lines.length; index += 1) {
-    for (const candidate of SYMBOL_PATTERNS) {
-      const match = lines[index]?.match(candidate.pattern);
-      const name = match?.[1]?.trim();
-      if (!name) continue;
-      discovered += 1;
-      if (findings.length < MAX_SYMBOLS_PER_FILE) {
-        findings.push({ name, detail: candidate.detail, line: index + 1 });
-      }
-      break;
-    }
-  }
+  const all = extractMatrixDeclarations(source, matrixLanguageFor(locator));
   return {
-    findings,
-    discovered,
-    truncated: discovered > MAX_SYMBOLS_PER_FILE,
+    findings: all.slice(0, MAX_SYMBOLS_PER_FILE),
+    discovered: all.length,
+    truncated: all.length > MAX_SYMBOLS_PER_FILE,
   };
 }
 
@@ -165,7 +93,7 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
     manifest,
     detect: (request) => {
       const applicable = request.availableInputs.some((locator) =>
-        SOURCE_EXTENSIONS.has(extensionOf(locator))
+        MATRIX_SOURCE_EXTENSIONS.has(extensionOf(locator))
       );
       return {
         contract: GRAPH_PROVIDER_DETECTION_CONTRACT,
@@ -202,8 +130,18 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
             maxBytes: MAX_SOURCE_BYTES,
             signal: request.signal,
           });
-          const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          const decoded = decodeMatrixSource(bytes);
+          const source = decoded.text;
           sources.set(input.locator, source);
+          if (decoded.encodingFallback) {
+            const encoding = warning(
+              'graph.source-declaration-encoding-fallback',
+              input.locator,
+              'Source was admitted with a latin1 fallback after UTF-8 rejected the bytes; declarations remain observed under that encoding.'
+            );
+            diagnostics.push(encoding);
+            inputDiagnostics.push(encoding);
+          }
           const file = await request.resolveIdentity({
             namespace: 'workspai',
             kind: 'file',
@@ -213,7 +151,7 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
           });
           if (!file.accepted) throw new Error('Source file identity could not be resolved.');
           files.set(input.locator, file.value.reference);
-          const extracted = extractSymbols(source);
+          const extracted = extractSymbols(source, input.locator);
           discoveredSymbols += extracted.discovered;
           if (extracted.truncated) {
             truncated = true;
@@ -306,13 +244,10 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
         const source = sources.get(input.locator);
         const file = files.get(input.locator);
         if (!source || !file) continue;
-        const imported = new Set<string>();
-        for (const match of stripComments(source).matchAll(STATIC_IMPORT)) {
-          const specifier = match[1];
-          if (!specifier?.startsWith('.')) continue;
-          const local = resolveLocalImport(input.locator, specifier, available);
-          if (local) imported.add(local);
-        }
+        const language = matrixLanguageFor(input.locator);
+        const imported = new Set(
+          extractMatrixLocalImportLocators(input.locator, source, language, available)
+        );
         const candidates = [
           ...(symbolsByFile.get(input.locator) ?? []),
           ...[...imported].flatMap((locator) => symbolsByFile.get(locator) ?? []),
@@ -326,11 +261,12 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
           byName.set(symbol.name, values);
         }
         let callIndex = 0;
+        const searchable = stripMatrixSourceComments(source, language);
         for (const [name, targets] of [...byName.entries()].sort(([left], [right]) =>
           left.localeCompare(right)
         )) {
           const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-          const matches = [...source.matchAll(new RegExp(`\\b${escaped}\\s*\\(`, 'gu'))];
+          const matches = [...searchable.matchAll(new RegExp(`\\b${escaped}\\s*\\(`, 'gu'))];
           if (matches.length === 0) continue;
           if (targets.length !== 1) {
             unknownZones.push({
@@ -342,7 +278,7 @@ export function createSourceDeclarationsProvider(): GraphProviderRuntime {
           }
           const target = targets[0]!;
           const eligible = matches.filter((match) => {
-            const line = source.slice(0, match.index ?? 0).split(/\r?\n/u).length;
+            const line = searchable.slice(0, match.index ?? 0).split(/\r?\n/u).length;
             return !(target.locator === input.locator && target.line === line);
           });
           discoveredCalls += eligible.length;

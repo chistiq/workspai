@@ -1,3 +1,7 @@
 using System.Text.Json;
 
-app.MapGet("/health", () => JsonSerializer.Serialize(new { status = "ok" }));
+class Health {
+    public static string Status() => "ok";
+}
+
+app.MapGet("/health", () => JsonSerializer.Serialize(new { status = Health.Status() }));

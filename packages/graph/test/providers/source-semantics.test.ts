@@ -142,6 +142,35 @@ describe('source semantic providers', () => {
     expect(JSON.stringify(result)).not.toMatch(/(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u);
   });
 
+  it('binds unambiguous local C++ calls across quoted includes', async () => {
+    const result = await build({
+      'src/health.h': 'int serve();\n',
+      'src/server.cc': '#include "health.h"\nint boot() { return serve();\n}\n',
+    });
+    if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
+    expect(result.graph.edges.some((edge) => edge.relation === 'defines')).toBe(true);
+    expect(result.graph.edges.some((edge) => edge.relation === 'calls')).toBe(true);
+  });
+
+  it('binds unambiguous Python, PHP and Ruby local calls through language imports', async () => {
+    const python = await build({
+      'src/util.py': 'def list_items():\n    return 1\n',
+      'src/app.py': 'from .util import list_items\ndef run():\n    return list_items()\n',
+    });
+    const php = await build({
+      'src/bootstrap.php': '<?php\nfunction boot(): void {}\n',
+      'src/index.php': "<?php\nrequire_once 'bootstrap.php';\nboot();\n",
+    });
+    const ruby = await build({
+      'src/health.rb': "def health\n  'ok'\nend\n",
+      'src/app.rb': "require_relative 'health'\nhealth()\n",
+    });
+    for (const result of [python, php, ruby]) {
+      if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
+      expect(result.graph.edges.some((edge) => edge.relation === 'calls')).toBe(true);
+    }
+  });
+
   it('leaves ambiguous calls and unsupported syntax unknown instead of inventing facts', async () => {
     const ambiguous = await build({
       'src/a.ts': 'export function shared(): void {}\n',
