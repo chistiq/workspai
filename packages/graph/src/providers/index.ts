@@ -38,6 +38,10 @@ export {
   SOURCE_DECLARATIONS_PROVIDER_ID,
   createSourceDeclarationsProvider,
 } from './source-declarations.js';
+export {
+  routeGraphNativeDeclarations,
+  type GraphNativeDeclarationRoute,
+} from './route-native-declarations.js';
 export { SOURCE_LANGUAGE_PROVIDER_ID, createSourceLanguageProvider } from './source-language.js';
 export {
   DOCUMENTATION_SURFACES_PROVIDER_ID,

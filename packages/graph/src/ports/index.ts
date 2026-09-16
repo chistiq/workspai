@@ -4,6 +4,7 @@ import type {
   GraphDiagnostic,
   GraphProviderInput,
   GraphQueryCacheEntry,
+  GraphStructuralLanguage,
   GraphUnknownZone,
   GraphUnsupportedZone,
 } from '../contracts/index.js';
@@ -116,10 +117,42 @@ export interface GraphNativeTraversalResult {
   };
 }
 
+export interface GraphNativeDeclarationRequest {
+  readonly source: string;
+  readonly language: GraphStructuralLanguage | null;
+}
+
+export interface GraphNativeDeclaration {
+  readonly name: string;
+  readonly detail: 'function' | 'type' | 'value' | 'method';
+  readonly line: number;
+}
+
+export interface GraphNativeDeclarationResult {
+  readonly status: 'complete' | 'rejected' | 'failed';
+  readonly declarations: readonly GraphNativeDeclaration[];
+  readonly diagnostics: readonly {
+    readonly code: string;
+    readonly severity: 'error';
+    readonly path: '/native/declarations';
+    readonly message: string;
+  }[];
+  readonly metrics: {
+    readonly durationMs: number;
+    readonly inputBytes: number;
+    readonly outputDeclarations: number;
+  };
+}
+
 export interface GraphNativePort {
   readonly descriptor: GraphNativeEngineDescriptor;
   readonly artifactDigest: { readonly algorithm: 'sha256'; readonly value: string };
   traverseReachable(request: GraphNativeTraversalRequest): GraphNativeTraversalResult;
+  /**
+   * Optional bounded declaration scan. Hosts without this operation stay on the
+   * TypeScript extractor; a missing method never changes Graph identity.
+   */
+  extractDeclarations?(request: GraphNativeDeclarationRequest): GraphNativeDeclarationResult;
 }
 
 export interface GraphExecutionPorts {

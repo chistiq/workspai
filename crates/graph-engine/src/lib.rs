@@ -1,6 +1,13 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+mod extract;
+
 use std::collections::VecDeque;
+
+pub use extract::{
+    extract_declarations, Declaration, DeclarationKind, ExtractError, Language,
+    LANGUAGE_UNSPECIFIED, MAX_DECLARATIONS, MAX_DECLARATION_SOURCE_BYTES,
+};
 
 pub const ABI_VERSION: u32 = 1;
 pub const MAX_NODES: u32 = 1_000_000;
@@ -185,6 +192,113 @@ pub unsafe extern "C" fn graph_engine_reachable(
     };
     output[..reachable.len()].copy_from_slice(&reachable);
     reachable.len() as i32
+}
+
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub extern "C" fn graph_engine_alloc_u8(length: u32) -> u32 {
+    if length == 0 {
+        return 0;
+    }
+    let Ok(capacity) = usize::try_from(length) else {
+        return 0;
+    };
+    let mut buffer = Vec::<u8>::with_capacity(capacity);
+    let pointer = buffer.as_mut_ptr();
+    std::mem::forget(buffer);
+    pointer as u32
+}
+
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub unsafe extern "C" fn graph_engine_dealloc_u8(pointer: u32, capacity: u32) {
+    if pointer == 0 || capacity == 0 {
+        return;
+    }
+    // SAFETY: callers return only pointers and capacities produced by
+    // graph_engine_alloc_u8, exactly once, after the engine call completes.
+    unsafe {
+        drop(Vec::from_raw_parts(
+            pointer as *mut u8,
+            0,
+            capacity as usize,
+        ));
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+const EXTRACT_INVALID_UTF8: i32 = -14;
+#[cfg(target_arch = "wasm32")]
+const EXTRACT_OUTPUT_TOO_SMALL: i32 = -15;
+#[cfg(target_arch = "wasm32")]
+const EXTRACT_NAMES_TOO_SMALL: i32 = -16;
+
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub unsafe extern "C" fn graph_engine_extract_declarations(
+    source_pointer: u32,
+    source_len: u32,
+    language: u32,
+    records_pointer: u32,
+    records_capacity: u32,
+    names_pointer: u32,
+    names_capacity: u32,
+) -> i32 {
+    if source_len > 0 && source_pointer == 0 {
+        return EXTRACT_INVALID_UTF8;
+    }
+    // SAFETY: the ABI caller allocates this exact UTF-8 range in linear memory.
+    let source_bytes =
+        unsafe { std::slice::from_raw_parts(source_pointer as *const u8, source_len as usize) };
+    let source = match std::str::from_utf8(source_bytes) {
+        Ok(value) => value,
+        Err(_) => return EXTRACT_INVALID_UTF8,
+    };
+    let language = match Language::from_abi(language) {
+        Ok(value) => value,
+        Err(error) => return error.abi_code(),
+    };
+    let findings = match extract_declarations(source, language) {
+        Ok(value) => value,
+        Err(error) => return error.abi_code(),
+    };
+    if findings.len() > records_capacity as usize {
+        return EXTRACT_OUTPUT_TOO_SMALL;
+    }
+    let names_len: usize = findings.iter().map(|item| item.name.len()).sum();
+    if names_len > names_capacity as usize {
+        return EXTRACT_NAMES_TOO_SMALL;
+    }
+    if findings.is_empty() {
+        return 0;
+    }
+    if records_pointer == 0 || names_pointer == 0 {
+        return EXTRACT_OUTPUT_TOO_SMALL;
+    }
+
+    // SAFETY: records_pointer references records_capacity declaration slots and
+    // names_pointer references names_capacity bytes allocated by the ABI caller.
+    let records = unsafe {
+        std::slice::from_raw_parts_mut(
+            records_pointer as *mut u32,
+            (records_capacity as usize).saturating_mul(4),
+        )
+    };
+    let names = unsafe {
+        std::slice::from_raw_parts_mut(names_pointer as *mut u8, names_capacity as usize)
+    };
+    let mut name_offset = 0usize;
+    for (index, finding) in findings.iter().enumerate() {
+        let base = index * 4;
+        let name_bytes = finding.name.as_bytes();
+        records[base] = finding.line;
+        records[base + 1] = finding.kind.abi_code();
+        records[base + 2] = name_offset as u32;
+        records[base + 3] = name_bytes.len() as u32;
+        names[name_offset..name_offset + name_bytes.len()].copy_from_slice(name_bytes);
+        name_offset += name_bytes.len();
+    }
+    findings.len() as i32
 }
 
 #[cfg(test)]

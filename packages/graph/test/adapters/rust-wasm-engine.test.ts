@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +13,11 @@ import {
 } from '../../src/adapters/node/index.js';
 import { GRAPH_LOCATOR_IDENTITY } from '../../src/conformance/locator-identity-api.js';
 import type { GraphNativeTraversalRequest } from '../../src/ports/index.js';
+import {
+  extractMatrixDeclarations,
+  matrixLanguageFor,
+} from '../../src/providers/matrix-source-language.js';
+import { routeGraphNativeDeclarations } from '../../src/providers/route-native-declarations.js';
 
 const engineUrl = new URL('../../dist/native/graph-engine.wasm', import.meta.url);
 
@@ -115,8 +120,11 @@ describe('bundled Rust WASM Graph native port', () => {
         'memory',
         'graph_engine_abi_version',
         'graph_engine_reachable',
+        'graph_engine_extract_declarations',
         'graph_engine_alloc_u32',
         'graph_engine_dealloc_u32',
+        'graph_engine_alloc_u8',
+        'graph_engine_dealloc_u8',
       ])
     );
 
@@ -164,6 +172,70 @@ describe('bundled Rust WASM Graph native port', () => {
       expect(execution.status).toBe('complete');
       expect(execution.nodes).toEqual(referenceTraversal(request));
       expect(execution.diagnostics).toEqual([]);
+    }
+  });
+
+  it('matches TypeScript matrix declarations without becoming Graph authority', async () => {
+    const port = await createNodeRustWasmGraphNativePort(engineUrl);
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ['src/a.ts', 'export function listItems(): void {}\n'],
+      ['src/a.py', 'def list_items():\n    return 1\n'],
+      ['src/a.go', 'package a\nfunc ListItems() {}\n'],
+      ['src/A.java', 'class ListItems {\n    String health() { return "ok"; }\n}\n'],
+      ['src/A.cs', 'class ListItems {\n    public static string Status() => "ok";\n}\n'],
+      ['src/a.rs', 'fn list_items() {}\n'],
+      ['src/a.cc', 'int list_items() { return 0; }\n'],
+      ['src/a.m', '@interface ListItems : NSObject\n- (NSString *)health;\n@end\n'],
+      ['src/a.php', '<?php\nfunction list_items(): string { return "ok"; }\n'],
+      ['src/a.rb', "def list_items\n  'ok'\nend\n"],
+      ['src/a.swift', 'func listItems() -> String { "ok" }\n'],
+      ['src/a.ex', 'defmodule ListItems do\n  def health(), do: :ok\nend\n'],
+      ['src/A.kt', 'class ListItems {\n  fun health() = "ok"\n}\n'],
+      ['src/control.cc', 'int ready() { return 1; }\nif (ready()) { return; }\n'],
+      [
+        'src/comments.cc',
+        'int ready() { return 1; }\n/*\ncomment\n*/\nint later() { return 2; }\n',
+      ],
+    ];
+    for (const [locator, source] of cases) {
+      const language = matrixLanguageFor(locator);
+      const execution = port.extractDeclarations?.({ source, language });
+      expect(execution?.status, locator).toBe('complete');
+      expect(execution?.declarations, locator).toEqual(extractMatrixDeclarations(source, language));
+      expect(routeGraphNativeDeclarations(source, language, port)).toEqual({
+        engine: 'rust-wasm',
+        reason: 'parity-qualified',
+        declarations: extractMatrixDeclarations(source, language),
+      });
+    }
+
+    const fixturesRoot = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../fixtures/g4/repositories'
+    );
+    const fixtureFiles = [
+      'c-cpp/main.cc',
+      'dotnet/Program.cs',
+      'elixir/application.ex',
+      'elixir/router.ex',
+      'go/main.go',
+      'java/HealthController.java',
+      'kotlin/Application.kt',
+      'node/src/health.ts',
+      'node/src/server.ts',
+      'objective-c-matlab/main.m',
+      'php/index.php',
+      'python/app.py',
+      'ruby/app.rb',
+      'rust/main.rs',
+      'swift/main.swift',
+    ];
+    for (const locator of fixtureFiles) {
+      const source = await readFile(path.join(fixturesRoot, locator), 'utf8');
+      const language = matrixLanguageFor(locator);
+      const execution = port.extractDeclarations?.({ source, language });
+      expect(execution?.status, locator).toBe('complete');
+      expect(execution?.declarations, locator).toEqual(extractMatrixDeclarations(source, language));
     }
   });
 

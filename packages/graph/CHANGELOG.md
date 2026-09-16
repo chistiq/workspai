@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Extended the bundled Rust/WASM engine with a bounded matrix declaration
+  scan on ABI v1. TypeScript remains semantic authority: native findings are
+  used only when they match the TypeScript extractor, and inspect/composition
+  still publishes TypeScript-extracted facts. Users still cannot select an
+  engine. The WASM packager now follows `CARGO_TARGET_DIR` when cargo writes
+  the artifact outside the repository `target/` tree.
 - Extended source-declaration extraction to every official-offline structural
   language at equal observed depth, including local include/require call
   resolution, same-package Go/Java/Kotlin peers, Objective-C message sends,

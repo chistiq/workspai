@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
+import type { GraphStructuralLanguage } from '../../contracts/index.js';
 import type {
+  GraphNativeDeclaration,
+  GraphNativeDeclarationRequest,
+  GraphNativeDeclarationResult,
   GraphNativePort,
   GraphNativeTraversalRequest,
   GraphNativeTraversalResult,
@@ -11,7 +15,26 @@ const ABI_VERSION = 1;
 const MAX_NODES = 1_000_000;
 const MAX_EDGES = 5_000_000;
 const MAX_MEMORY_BYTES = 256 * 1024 * 1024;
+const MAX_DECLARATION_SOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_DECLARATIONS = 16_384;
+const LANGUAGE_UNSPECIFIED = 255;
 const UINT32_MAX = 0xffff_ffff;
+const NATIVE_DECLARATION_LANGUAGES: readonly GraphStructuralLanguage[] = Object.freeze([
+  'node',
+  'python',
+  'go',
+  'java',
+  'dotnet',
+  'rust',
+  'c-cpp',
+  'objective-c-matlab',
+  'php',
+  'ruby',
+  'swift',
+  'elixir',
+  'kotlin',
+]);
+const DECLARATION_DETAILS = Object.freeze(['function', 'type', 'value', 'method'] as const);
 
 export type GraphNativeAdapterLoadErrorCode =
   | 'GRAPH_NATIVE_ARTIFACT_UNAVAILABLE'
@@ -54,6 +77,8 @@ interface GraphEngineExports {
   readonly graph_engine_max_edges: () => number;
   readonly graph_engine_alloc_u32: (length: number) => number;
   readonly graph_engine_dealloc_u32: (pointer: number, capacity: number) => void;
+  readonly graph_engine_alloc_u8: (length: number) => number;
+  readonly graph_engine_dealloc_u8: (pointer: number, capacity: number) => void;
   readonly graph_engine_reachable: (
     nodeCount: number,
     edgeWordsPointer: number,
@@ -63,6 +88,15 @@ interface GraphEngineExports {
     outputPointer: number,
     outputCapacity: number
   ) => number;
+  readonly graph_engine_extract_declarations: (
+    sourcePointer: number,
+    sourceLen: number,
+    language: number,
+    recordsPointer: number,
+    recordsCapacity: number,
+    namesPointer: number,
+    namesCapacity: number
+  ) => number;
 }
 
 const ERROR_CODES: Readonly<Record<number, string>> = Object.freeze({
@@ -71,6 +105,12 @@ const ERROR_CODES: Readonly<Record<number, string>> = Object.freeze({
   [-3]: 'GRAPH_NATIVE_EDGE_LIMIT_EXCEEDED',
   [-4]: 'GRAPH_NATIVE_EDGE_INVALID',
   [-5]: 'GRAPH_NATIVE_OUTPUT_LIMIT_EXCEEDED',
+  [-11]: 'GRAPH_NATIVE_LANGUAGE_INVALID',
+  [-12]: 'GRAPH_NATIVE_SOURCE_LIMIT_EXCEEDED',
+  [-13]: 'GRAPH_NATIVE_DECLARATION_LIMIT_EXCEEDED',
+  [-14]: 'GRAPH_NATIVE_SOURCE_INVALID',
+  [-15]: 'GRAPH_NATIVE_OUTPUT_LIMIT_EXCEEDED',
+  [-16]: 'GRAPH_NATIVE_OUTPUT_LIMIT_EXCEEDED',
 });
 
 function result(
@@ -101,6 +141,51 @@ function result(
       outputNodes: nodes.length,
     }),
   };
+}
+
+function languageCode(language: GraphStructuralLanguage | null): number | undefined {
+  if (language === null) return LANGUAGE_UNSPECIFIED;
+  const index = NATIVE_DECLARATION_LANGUAGES.indexOf(language);
+  return index >= 0 ? index : undefined;
+}
+
+function declarationResult(
+  status: GraphNativeDeclarationResult['status'],
+  request: GraphNativeDeclarationRequest,
+  startedAt: number,
+  inputBytes: number,
+  declarations: readonly GraphNativeDeclaration[] = [],
+  code?: string,
+  message?: string
+): GraphNativeDeclarationResult {
+  return {
+    status,
+    declarations: Object.freeze([...declarations]),
+    diagnostics:
+      code && message
+        ? Object.freeze([
+            Object.freeze({
+              code,
+              severity: 'error' as const,
+              path: '/native/declarations' as const,
+              message,
+            }),
+          ])
+        : Object.freeze([]),
+    metrics: Object.freeze({
+      durationMs: performance.now() - startedAt,
+      inputBytes,
+      outputDeclarations: declarations.length,
+    }),
+  };
+}
+
+function validateDeclarationRequest(request: GraphNativeDeclarationRequest): string | undefined {
+  if (typeof request.source !== 'string') return 'source must be a string.';
+  if (languageCode(request.language) === undefined) {
+    return 'language must be an official-offline matrix language or null.';
+  }
+  return undefined;
 }
 
 function isUint32(value: number): boolean {
@@ -141,7 +226,10 @@ function assertExports(exports: unknown): asserts exports is GraphEngineExports 
     typeof candidate.graph_engine_max_edges !== 'function' ||
     typeof candidate.graph_engine_alloc_u32 !== 'function' ||
     typeof candidate.graph_engine_dealloc_u32 !== 'function' ||
-    typeof candidate.graph_engine_reachable !== 'function'
+    typeof candidate.graph_engine_alloc_u8 !== 'function' ||
+    typeof candidate.graph_engine_dealloc_u8 !== 'function' ||
+    typeof candidate.graph_engine_reachable !== 'function' ||
+    typeof candidate.graph_engine_extract_declarations !== 'function'
   ) {
     throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_ABI_EXPORT_MISSING');
   }
@@ -337,6 +425,183 @@ export async function createNodeRustWasmGraphNativePort(
           dealloc: () => {
             if (edgePointer !== 0) engine.graph_engine_dealloc_u32(edgePointer, edgeWordCount);
             if (outputPointer !== 0) engine.graph_engine_dealloc_u32(outputPointer, outputCapacity);
+          },
+          reinitialize: () => {
+            try {
+              reinitialize();
+            } catch {
+              // Isolation already failed closed; the next call re-throws on use.
+            }
+          },
+        });
+      }
+    },
+    extractDeclarations(request: GraphNativeDeclarationRequest): GraphNativeDeclarationResult {
+      const startedAt = performance.now();
+      const invalid = validateDeclarationRequest(request);
+      const sourceBytes = new TextEncoder().encode(request.source);
+      if (invalid) {
+        return declarationResult(
+          'rejected',
+          request,
+          startedAt,
+          sourceBytes.byteLength,
+          [],
+          'GRAPH_NATIVE_INPUT_REJECTED',
+          invalid
+        );
+      }
+      if (sourceBytes.byteLength > MAX_DECLARATION_SOURCE_BYTES) {
+        return declarationResult(
+          'rejected',
+          request,
+          startedAt,
+          sourceBytes.byteLength,
+          [],
+          'GRAPH_NATIVE_SOURCE_LIMIT_EXCEEDED',
+          'Source exceeds the bundled declaration scan limit.'
+        );
+      }
+
+      const language = languageCode(request.language);
+      if (language === undefined) {
+        return declarationResult(
+          'rejected',
+          request,
+          startedAt,
+          sourceBytes.byteLength,
+          [],
+          'GRAPH_NATIVE_LANGUAGE_INVALID',
+          'language must be an official-offline matrix language or null.'
+        );
+      }
+
+      const recordWords = MAX_DECLARATIONS * 4;
+      const namesCapacity = Math.max(sourceBytes.byteLength, 1);
+      let sourcePointer = 0;
+      let recordsPointer = 0;
+      let namesPointer = 0;
+      let trapped = false;
+      try {
+        if (sourceBytes.byteLength > 0) {
+          sourcePointer = engine.graph_engine_alloc_u8(sourceBytes.byteLength);
+          if (sourcePointer === 0) {
+            return declarationResult(
+              'failed',
+              request,
+              startedAt,
+              sourceBytes.byteLength,
+              [],
+              'GRAPH_NATIVE_ALLOCATION_FAILED',
+              'The bundled engine could not allocate bounded declaration source memory.'
+            );
+          }
+          new Uint8Array(engine.memory.buffer, sourcePointer, sourceBytes.byteLength).set(
+            sourceBytes
+          );
+        }
+        recordsPointer = engine.graph_engine_alloc_u32(recordWords);
+        namesPointer = engine.graph_engine_alloc_u8(namesCapacity);
+        if (recordsPointer === 0 || namesPointer === 0) {
+          return declarationResult(
+            'failed',
+            request,
+            startedAt,
+            sourceBytes.byteLength,
+            [],
+            'GRAPH_NATIVE_ALLOCATION_FAILED',
+            'The bundled engine could not allocate bounded declaration output memory.'
+          );
+        }
+        const count = engine.graph_engine_extract_declarations(
+          sourcePointer,
+          sourceBytes.byteLength,
+          language,
+          recordsPointer,
+          MAX_DECLARATIONS,
+          namesPointer,
+          namesCapacity
+        );
+        if (count < 0) {
+          const code = ERROR_CODES[count] ?? 'GRAPH_NATIVE_ENGINE_REJECTED';
+          return declarationResult(
+            'rejected',
+            request,
+            startedAt,
+            sourceBytes.byteLength,
+            [],
+            code,
+            `Bundled engine rejected declaration input (${String(count)}).`
+          );
+        }
+        if (count > MAX_DECLARATIONS) {
+          return declarationResult(
+            'failed',
+            request,
+            startedAt,
+            sourceBytes.byteLength,
+            [],
+            'GRAPH_NATIVE_OUTPUT_INVALID',
+            'Bundled engine returned more declarations than its declared capacity.'
+          );
+        }
+        const records = new Uint32Array(engine.memory.buffer, recordsPointer, count * 4);
+        const names = new Uint8Array(engine.memory.buffer, namesPointer, namesCapacity);
+        const decoder = new TextDecoder('utf-8', { fatal: true });
+        const declarations: GraphNativeDeclaration[] = [];
+        for (let index = 0; index < count; index += 1) {
+          const base = index * 4;
+          const detail = DECLARATION_DETAILS[records[base + 1] ?? -1];
+          const offset = records[base + 2] ?? 0;
+          const length = records[base + 3] ?? 0;
+          if (
+            detail === undefined ||
+            !isUint32(records[base] ?? -1) ||
+            offset + length > namesCapacity
+          ) {
+            return declarationResult(
+              'failed',
+              request,
+              startedAt,
+              sourceBytes.byteLength,
+              [],
+              'GRAPH_NATIVE_OUTPUT_INVALID',
+              'Bundled engine returned a malformed declaration record.'
+            );
+          }
+          declarations.push({
+            name: decoder.decode(names.subarray(offset, offset + length)),
+            detail,
+            line: records[base] ?? 0,
+          });
+        }
+        return declarationResult(
+          'complete',
+          request,
+          startedAt,
+          sourceBytes.byteLength,
+          declarations
+        );
+      } catch (error) {
+        trapped = true;
+        return declarationResult(
+          'failed',
+          request,
+          startedAt,
+          sourceBytes.byteLength,
+          [],
+          'GRAPH_NATIVE_ENGINE_TRAPPED',
+          error instanceof Error ? error.message : 'Bundled engine execution failed.'
+        );
+      } finally {
+        reclaimBundledEngineBuffers({
+          trapped,
+          dealloc: () => {
+            if (sourcePointer !== 0) {
+              engine.graph_engine_dealloc_u8(sourcePointer, sourceBytes.byteLength);
+            }
+            if (recordsPointer !== 0) engine.graph_engine_dealloc_u32(recordsPointer, recordWords);
+            if (namesPointer !== 0) engine.graph_engine_dealloc_u8(namesPointer, namesCapacity);
           },
           reinitialize: () => {
             try {

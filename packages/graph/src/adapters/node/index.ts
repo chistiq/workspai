@@ -44,6 +44,10 @@ export {
   routeGraphNativeTraversal,
   type GraphNativeTraversalRoute,
 } from '../../application/route-native-traversal.js';
+export {
+  routeGraphNativeDeclarations,
+  type GraphNativeDeclarationRoute,
+} from '../../providers/route-native-declarations.js';
 
 export interface NodeRepoGraphBuildRequest {
   readonly root: string;

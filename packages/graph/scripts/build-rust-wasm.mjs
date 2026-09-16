@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
+const cargoTarget = process.env.CARGO_TARGET_DIR
+  ? path.resolve(process.env.CARGO_TARGET_DIR)
+  : path.join(repositoryRoot, 'target');
 const source = path.join(
-  repositoryRoot,
-  'target',
+  cargoTarget,
   'wasm32-unknown-unknown',
   'release',
   'workspai_graph_engine.wasm'
@@ -61,7 +63,10 @@ for (const required of [
   'graph_engine_max_edges',
   'graph_engine_alloc_u32',
   'graph_engine_dealloc_u32',
+  'graph_engine_alloc_u8',
+  'graph_engine_dealloc_u8',
   'graph_engine_reachable',
+  'graph_engine_extract_declarations',
 ]) {
   if (!exports.has(required)) throw new Error(`Rust Graph WASM omits required export ${required}`);
 }
