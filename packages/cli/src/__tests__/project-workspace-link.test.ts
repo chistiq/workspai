@@ -6,6 +6,8 @@ import path from 'node:path';
 import { execa } from 'execa';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { buildCleanGitEnv } from '../utils/git-worktree.js';
+
 import {
   assertProjectWorkspaceResolutionContract,
   type ProjectWorkspaceResolutionContract,
@@ -975,13 +977,25 @@ describe('project workspace binding', () => {
     const { workspacePath, projectPath } = await fixture({
       workspaceName: 'tracked-deletion-workspace',
     });
-    await execa('git', ['init', '--quiet'], { cwd: projectPath });
-    await execa('git', ['config', 'user.email', 'test@workspai.local'], { cwd: projectPath });
-    await execa('git', ['config', 'user.name', 'Workspai Test'], { cwd: projectPath });
-    await execa('git', ['config', 'commit.gpgsign', 'false'], { cwd: projectPath });
+    await execa('git', ['init', '--quiet'], { cwd: projectPath, env: buildCleanGitEnv() });
     await fsp.writeFile(path.join(projectPath, 'AGENTS.md'), '# Repository agent guide\n');
-    await execa('git', ['add', 'AGENTS.md'], { cwd: projectPath });
-    await execa('git', ['commit', '--quiet', '-m', 'fixture'], { cwd: projectPath });
+    await execa('git', ['add', 'AGENTS.md'], { cwd: projectPath, env: buildCleanGitEnv() });
+    await execa(
+      'git',
+      [
+        '-c',
+        'user.email=test@workspai.local',
+        '-c',
+        'user.name=Workspai Test',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '--quiet',
+        '-m',
+        'fixture',
+      ],
+      { cwd: projectPath, env: buildCleanGitEnv() }
+    );
     await fsp.rm(path.join(projectPath, 'AGENTS.md'));
 
     const result = await syncProjectIntelligenceLens({

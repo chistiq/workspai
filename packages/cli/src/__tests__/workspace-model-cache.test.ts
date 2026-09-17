@@ -12,6 +12,7 @@ import {
   computeProjectSignatures,
   readWorkspaceModelCache,
 } from '../workspace-model-cache.js';
+import { buildCleanGitEnv } from '../utils/git-worktree.js';
 
 const execFileAsync = promisify(execFile);
 const gitExecutable = process.env.GIT_EXECUTABLE || 'git';
@@ -165,15 +166,29 @@ describe('workspace model cache (1.15)', () => {
 
   it('uses Git content identity while detecting dirty and untracked polyglot source', async () => {
     await fsExtra.outputFile(path.join(workspacePath, 'api', 'app.rb'), 'class App; end\n');
-    await execFileAsync(gitExecutable, ['init'], { cwd: workspacePath });
-    await execFileAsync(gitExecutable, ['config', 'user.email', 'tests@workspai.dev'], {
+    await execFileAsync(gitExecutable, ['init'], {
       cwd: workspacePath,
+      env: buildCleanGitEnv(),
     });
-    await execFileAsync(gitExecutable, ['config', 'user.name', 'Workspai Tests'], {
+    await execFileAsync(gitExecutable, ['add', '.'], {
       cwd: workspacePath,
+      env: buildCleanGitEnv(),
     });
-    await execFileAsync(gitExecutable, ['add', '.'], { cwd: workspacePath });
-    await execFileAsync(gitExecutable, ['commit', '-m', 'fixture'], { cwd: workspacePath });
+    await execFileAsync(
+      gitExecutable,
+      [
+        '-c',
+        'user.email=tests@workspai.dev',
+        '-c',
+        'user.name=Workspai Tests',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-m',
+        'fixture',
+      ],
+      { cwd: workspacePath, env: buildCleanGitEnv() }
+    );
 
     const initial = await computeProjectSignatures(workspacePath, [
       path.join(workspacePath, 'api'),

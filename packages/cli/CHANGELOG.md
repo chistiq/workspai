@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay blocked until reviewed release admission; `--runtime python` without
   `--framework` continues to select Microsoft while only Microsoft is admitted.
 
+### Fixed
+
+- Isolated Vitest from an outer Git worktree (`GIT_DIR` / `GIT_WORK_TREE`) so
+  fixture repositories cannot commit into the host worktree during husky
+  `pre-push`.
+
 ## [0.75.2] - 2026-09-14
 
 ### Changed
