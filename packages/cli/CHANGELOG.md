@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pre-push`.
 - Isolated the workspace-intelligence adversarial script the same way; it runs
   during `quality:push` and was still inheriting husky Git env.
+- Kept published `agent framework list` preview OpenAI adapters from failing
+  the enterprise package smoke, which still requires exactly the two Microsoft
+  release-admitted adapters.
+- Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
+  so Windows does not `spawn EINVAL` on `npm.cmd`.
 
 ## [0.75.2] - 2026-09-14
 

@@ -63,4 +63,26 @@ describe('agent framework release admission', () => {
       )
     ).not.toHaveProperty('releaseAdapter');
   });
+
+  it('lists preview OpenAI adapters without treating them as release-admitted', () => {
+    const registry = createBuiltinAgentFrameworkRegistry(
+      {},
+      { trustReviewedReleaseAdmissions: true }
+    );
+    const adapters = registry.list().map((entry) => ({
+      id: entry.manifest.adapter.id,
+      status: registry.resolveAdapter(entry.manifest.adapter.id).status,
+    }));
+    expect(
+      adapters
+        .filter((adapter) => adapter.status === 'admitted')
+        .map((adapter) => adapter.id)
+        .sort()
+    ).toEqual(['microsoft-agent-framework-dotnet', 'microsoft-agent-framework-python']);
+    expect(
+      adapters
+        .filter((adapter) => adapter.id.startsWith('openai-agents-'))
+        .map((adapter) => adapter.status)
+    ).toEqual(['blocked', 'blocked']);
+  });
 });

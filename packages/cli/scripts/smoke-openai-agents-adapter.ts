@@ -15,6 +15,10 @@ import {
   type AgentFrameworkManagedFile,
 } from '../src/agent-frameworks/index.js';
 import {
+  resolvePackageRunnerInvocation,
+  shouldUseShellExecution,
+} from '../src/utils/platform-capabilities.js';
+import {
   AGENT_FRAMEWORK_ADAPTER_MANIFEST_CONTRACT_PATH,
   AGENT_FRAMEWORK_ADAPTER_PROTOCOL_VERSION,
   AGENT_FRAMEWORK_CHANGE_PLAN_CONTRACT_PATH,
@@ -301,8 +305,13 @@ function credentiallessEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function npmBinary(): string {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function npmInvocation(): { command: string; prefixArgs: string[]; shell: boolean } {
+  const invocation = resolvePackageRunnerInvocation('npm');
+  return {
+    command: invocation.command,
+    prefixArgs: invocation.prefixArgs,
+    shell: shouldUseShellExecution() && /\.(cmd|bat)$/i.test(invocation.command),
+  };
 }
 
 function run(
@@ -311,33 +320,40 @@ function run(
   cwd: string,
   options: { allowFailure?: boolean } = {}
 ): Promise<CommandResult> {
+  const invocation =
+    command === 'npm' ? npmInvocation() : { command, prefixArgs: [] as string[], shell: false };
+  const argv = [...invocation.prefixArgs, ...args];
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(invocation.command, argv, {
       cwd,
-      shell: false,
+      shell: invocation.shell,
       env: credentiallessEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
       stdout += chunk;
       process.stdout.write(chunk);
     });
-    child.stderr.on('data', (chunk: string) => {
+    child.stderr?.on('data', (chunk: string) => {
       stderr += chunk;
       process.stderr.write(chunk);
     });
-    child.once('error', reject);
+    child.once('error', (error) => {
+      reject(
+        new Error(`${invocation.command} ${argv.join(' ')} failed to spawn: ${error.message}`)
+      );
+    });
     child.once('exit', (code, signal) => {
       const result = { stdout, stderr, code: code ?? 1 };
       if (code === 0 || options.allowFailure) resolve(result);
       else {
         reject(
           new Error(
-            `${command} failed with ${signal ? `signal ${signal}` : `exit ${String(code)}`}\n${stderr || stdout}`
+            `${invocation.command} failed with ${signal ? `signal ${signal}` : `exit ${String(code)}`}\n${stderr || stdout}`
           )
         );
       }
@@ -864,7 +880,7 @@ async function main(): Promise<void> {
       } else {
         runtimeVersion = process.versions.node;
         await run(
-          npmBinary(),
+          'npm',
           [
             'install',
             '--no-fund',
@@ -897,7 +913,7 @@ async function main(): Promise<void> {
           zod: String(zodPackage.version),
         };
         await run(
-          npmBinary(),
+          'npm',
           ['test', '--prefix', path.dirname(context.dependencyManifest)],
           generatedRoot
         );

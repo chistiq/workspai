@@ -348,12 +348,33 @@ function assertCliContracts() {
   }
 
   const frameworks = parseTrailingJson(runCli(['agent', 'framework', 'list', '--json']));
+  if (frameworks.schemaVersion !== 'workspai.agent-framework-list.v1') {
+    fail(`unexpected agent framework list schema: ${frameworks.schemaVersion}`);
+  }
+  const adapters = Array.isArray(frameworks.adapters) ? frameworks.adapters : [];
+  const admittedIds = adapters
+    .filter((adapter) => adapter.status === 'admitted')
+    .map((adapter) => adapter.id)
+    .sort();
   if (
-    frameworks.schemaVersion !== 'workspai.agent-framework-list.v1' ||
-    frameworks.adapters?.length !== 2 ||
-    frameworks.adapters.some((adapter) => adapter.status !== 'admitted')
+    admittedIds.length !== 2 ||
+    admittedIds[0] !== 'microsoft-agent-framework-dotnet' ||
+    admittedIds[1] !== 'microsoft-agent-framework-python'
   ) {
-    fail('published CLI does not expose the two exact release-admitted framework adapters');
+    fail(
+      `published CLI does not expose the two exact release-admitted framework adapters (admitted: ${
+        admittedIds.join(', ') || 'none'
+      })`
+    );
+  }
+  for (const previewId of ['openai-agents-python', 'openai-agents-typescript']) {
+    const preview = adapters.find((adapter) => adapter.id === previewId);
+    if (!preview) {
+      fail(`published CLI is missing implemented preview adapter ${previewId}`);
+    }
+    if (preview.status === 'admitted') {
+      fail(`${previewId} must stay blocked until reviewed release admission`);
+    }
   }
 
   log(`verified CLI contract surfaces for v${version.version}`);

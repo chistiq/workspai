@@ -84,6 +84,8 @@ describe('agent framework version automation', () => {
     expect(openaiSmoke).toContain('ScriptedModel');
     expect(openaiSmoke).toContain('OPENAI_AGENTS_DISABLE_TRACING');
     expect(openaiSmoke).toContain('livePaidApiCall: false');
+    expect(openaiSmoke).toContain('resolvePackageRunnerInvocation');
+    expect(openaiSmoke).not.toContain("process.platform === 'win32' ? 'npm.cmd' : 'npm'");
     expect(openaiSmoke).not.toContain('OPENAI_API_KEY=sk-');
 
     const promotion = read('packages/cli/scripts/promote-agent-framework-release-admission.ts');
