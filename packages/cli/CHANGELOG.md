@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated Vitest from an outer Git worktree (`GIT_DIR` / `GIT_WORK_TREE`) so
   fixture repositories cannot commit into the host worktree during husky
   `pre-push`.
+- Isolated the workspace-intelligence adversarial script the same way; it runs
+  during `quality:push` and was still inheriting husky Git env.
 
 ## [0.75.2] - 2026-09-14
 

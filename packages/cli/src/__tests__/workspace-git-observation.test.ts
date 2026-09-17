@@ -37,6 +37,32 @@ describe('workspace git observation', () => {
     expect(process.env.GIT_INDEX_FILE).toBeUndefined();
   });
 
+  it('strips host Git worktree variables from fixture process environments', async () => {
+    const { buildCleanGitEnv: buildScriptGitEnv } = await import('../../scripts/clean-git-env.mjs');
+    const cleaned = buildScriptGitEnv({
+      GIT_DIR: '/tmp/host.git',
+      GIT_WORK_TREE: '/tmp/host',
+      GIT_INDEX_FILE: '/tmp/host.index',
+      PATH: '/usr/bin',
+    });
+    expect(cleaned.GIT_DIR).toBeUndefined();
+    expect(cleaned.GIT_WORK_TREE).toBeUndefined();
+    expect(cleaned.GIT_INDEX_FILE).toBeUndefined();
+    expect(cleaned.PATH).toBe('/usr/bin');
+  });
+
+  it('keeps the adversarial workspace-intelligence fixture off the host worktree', async () => {
+    const source = await fsExtra.readFile(
+      path.resolve(__dirname, '../../scripts/check-workspace-intelligence-adversarial.mjs'),
+      'utf8'
+    );
+    expect(source).toContain("from './clean-git-env.mjs'");
+    expect(source).toContain('env: isolatedEnvironment');
+    expect(source).not.toContain(
+      "spawnSync('git', args, { cwd: workspacePath, encoding: 'utf8' })"
+    );
+  });
+
   it('excludes generated reports, caches, and grounding from freshness observation', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-git-generated-'));
     tempDirs.push(workspacePath);
