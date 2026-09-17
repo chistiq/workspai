@@ -13,7 +13,11 @@ import type {
 import type { GraphOmittedSubtree } from '../contracts/inventory-surface.js';
 import type { GraphProductHostPorts } from '../ports/index.js';
 
-import type { GraphCompositionPolicy, GraphCompositionSource } from './composition-types.js';
+import type {
+  GraphCompositionPolicy,
+  GraphCompositionSource,
+  GraphCompositionTimings,
+} from './composition-types.js';
 
 export interface GraphRepoBuildCompositionReuse {
   readonly reusedSources: readonly GraphCompositionSource[];
@@ -60,6 +64,13 @@ export interface GraphRepoBuildMetrics {
   readonly durationMs?: number;
   readonly providerMs?: number;
   readonly compositionMs?: number;
+  readonly compositionTimings?: GraphCompositionTimings;
+  readonly providerTimings?: readonly {
+    readonly providerId: string;
+    readonly detectionMs: number;
+    readonly collectionMs: number;
+    readonly factCount: number;
+  }[];
 }
 
 export interface GraphRepoBuildQuality {

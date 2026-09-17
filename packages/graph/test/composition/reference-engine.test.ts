@@ -375,7 +375,10 @@ describe('Graph G2 reference composition engine', () => {
         },
         ports()
       );
-      expect(candidate).toEqual(baseline);
+      expect(candidate.accepted).toBe(true);
+      if (!candidate.accepted) return;
+      expect(candidate.value).toEqual(baseline.value);
+      expect(candidate.issues).toEqual(baseline.issues);
     }
   });
 

@@ -4,6 +4,8 @@
 //! TypeScript extractor remains the product authority; this implementation
 //! exists only as a parity-gated acceleration candidate.
 
+use std::borrow::Cow;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Language {
     Unspecified,
@@ -156,9 +158,19 @@ pub fn extract_declarations(
     if source.len() > MAX_DECLARATION_SOURCE_BYTES {
         return Err(ExtractError::SourceTooLarge);
     }
-    let stripped = strip_comments(source, language);
+    let stripped = if language.uses_hash_comments() {
+        Cow::Borrowed(source)
+    } else {
+        strip_c_block_comments(source)
+    };
     let mut findings = Vec::new();
-    for (index, line) in split_js_lines(&stripped).into_iter().enumerate() {
+    for (index, line) in stripped.split('\n').enumerate() {
+        let trimmed = ltrim_js(line);
+        if (language.uses_hash_comments() && trimmed.starts_with('#'))
+            || (!language.uses_hash_comments() && trimmed.starts_with("//"))
+        {
+            continue;
+        }
         let line_number = u32::try_from(index + 1).unwrap_or(u32::MAX);
         if let Some((name, kind)) = match_keyword_declaration(line) {
             findings.push(Declaration {
@@ -166,9 +178,7 @@ pub fn extract_declarations(
                 kind,
                 line: line_number,
             });
-            continue;
-        }
-        if language.uses_typed_functions() {
+        } else if language.uses_typed_functions() {
             if let Some(name) = match_typed_function(line) {
                 findings.push(Declaration {
                     name,
@@ -177,87 +187,42 @@ pub fn extract_declarations(
                 });
             }
         }
-    }
-    if findings.len() > MAX_DECLARATIONS {
-        return Err(ExtractError::TooManyDeclarations);
+        if findings.len() > MAX_DECLARATIONS {
+            return Err(ExtractError::TooManyDeclarations);
+        }
     }
     Ok(findings)
 }
 
-fn strip_comments(source: &str, language: Language) -> String {
-    let without_blocks = if language.uses_hash_comments() {
-        source.to_owned()
-    } else {
-        strip_c_block_comments(source)
+fn strip_c_block_comments(source: &str) -> Cow<'_, str> {
+    // Most files need no transformed buffer. Copy spans only when a complete
+    // block comment is found, preserving source lines and token boundaries.
+    let Some(first) = source.find("/*") else {
+        return Cow::Borrowed(source);
     };
-    split_js_lines(&without_blocks)
-        .into_iter()
-        .map(|line| {
-            let trimmed = ltrim_js(line);
-            if language.uses_hash_comments() && trimmed.starts_with('#') {
-                ""
-            } else if !language.uses_hash_comments() && trimmed.starts_with("//") {
-                ""
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn strip_c_block_comments(source: &str) -> String {
-    let bytes = source.as_bytes();
+    if !source[first + 2..].contains("*/") {
+        return Cow::Borrowed(source);
+    }
     let mut output = String::with_capacity(source.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if index + 1 < bytes.len() && bytes[index] == b'/' && bytes[index + 1] == b'*' {
-            if let Some(close) = find_block_comment_end(bytes, index + 2) {
-                index = close + 2;
-                continue;
-            }
-            output.push_str(&source[index..]);
-            break;
-        }
-        let next = source[index..].chars().next().expect("valid utf-8");
-        output.push(next);
-        index += next.len_utf8();
-    }
-    output
-}
-
-fn find_block_comment_end(bytes: &[u8], start: usize) -> Option<usize> {
-    let mut index = start;
-    while index + 1 < bytes.len() {
-        if bytes[index] == b'*' && bytes[index + 1] == b'/' {
-            return Some(index);
-        }
-        index += 1;
-    }
-    None
-}
-
-fn split_js_lines(source: &str) -> Vec<&str> {
-    let bytes = source.as_bytes();
-    let mut lines = Vec::new();
     let mut start = 0;
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'\n' {
-            let end = if index > start && bytes[index - 1] == b'\r' {
-                index - 1
+    while let Some(relative) = source[start..].find("/*") {
+        let open = start + relative;
+        let Some(close) = source[open + 2..].find("*/") else {
+            break;
+        };
+        let end = open + 2 + close + 2;
+        output.push_str(&source[start..open]);
+        for character in source[open..end].chars() {
+            output.push(if matches!(character, '\r' | '\n') {
+                character
             } else {
-                index
-            };
-            lines.push(&source[start..end]);
-            index += 1;
-            start = index;
-        } else {
-            index += 1;
+                ' '
+            });
         }
+        start = end;
     }
-    lines.push(&source[start..]);
-    lines
+    output.push_str(&source[start..]);
+    Cow::Owned(output)
 }
 
 fn match_keyword_declaration(line: &str) -> Option<(String, DeclarationKind)> {
@@ -798,6 +763,41 @@ mod tests {
                 Language::Node
             ),
             vec!["startStorefront".to_owned()]
+        );
+    }
+
+    #[test]
+    fn preserves_physical_lines_and_comment_token_boundaries() {
+        let source = "/* header\r\n * comment 🦀\r\n */\r\nexport/* note */function actual() {}\r\n// function hidden() {}\r\nfunction next() {}";
+        let declarations = extract_declarations(source, Language::Node).unwrap();
+        assert_eq!(declarations.len(), 2);
+        assert_eq!(declarations[0].name, "actual");
+        assert_eq!(declarations[0].line, 4);
+        assert_eq!(declarations[1].line, 6);
+        assert!(names("funct/* split */ion fake() {}", Language::Node).is_empty());
+        assert_eq!(
+            names("function kept() {} /* unfinished", Language::Node),
+            vec!["kept"]
+        );
+    }
+
+    #[test]
+    fn borrows_unmodified_source_and_bounds_dense_input() {
+        assert!(matches!(
+            strip_c_block_comments("function f() {}"),
+            Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            strip_c_block_comments("/* unfinished"),
+            Cow::Borrowed(_)
+        ));
+        assert_eq!(extract_declarations("", Language::Node).unwrap(), vec![]);
+        assert_eq!(
+            extract_declarations(
+                &"function f() {}\n".repeat(MAX_DECLARATIONS + 1),
+                Language::Node
+            ),
+            Err(ExtractError::TooManyDeclarations)
         );
     }
 

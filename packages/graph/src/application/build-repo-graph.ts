@@ -716,6 +716,7 @@ export async function buildRepoGraph(
     }
 
     let detected: unknown;
+    const detectionStartedAt = performance.now();
     try {
       detected = await runProviderPhase(
         manifest.value.limits.maxDurationMs,
@@ -741,9 +742,11 @@ export async function buildRepoGraph(
         collection: 'not-run',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs: Math.max(0, Math.round(performance.now() - detectionStartedAt)),
       });
       continue;
     }
+    const detectionMs = Math.max(0, Math.round(performance.now() - detectionStartedAt));
     const detection = validateGraphProviderDetectionResult(detected, manifest.value);
     if (!detection.accepted) {
       const providerDiagnostics = issueDiagnostics(identity.id, detection.issues);
@@ -754,6 +757,7 @@ export async function buildRepoGraph(
         collection: 'not-run',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
       });
       continue;
     }
@@ -764,11 +768,13 @@ export async function buildRepoGraph(
         collection: 'not-run',
         factCount: 0,
         diagnostics: [],
+        detectionMs,
       });
       continue;
     }
 
     let collected: unknown;
+    const collectionStartedAt = performance.now();
     try {
       let providerReadBytes = 0;
       collected = await runProviderPhase(
@@ -848,9 +854,12 @@ export async function buildRepoGraph(
         collection: 'invalid',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
+        collectionMs: Math.max(0, Math.round(performance.now() - collectionStartedAt)),
       });
       continue;
     }
+    const collectionMs = Math.max(0, Math.round(performance.now() - collectionStartedAt));
 
     const admission = admitGraphProviderOutput(manifest.value, collected);
     if (!admission.accepted) {
@@ -862,6 +871,8 @@ export async function buildRepoGraph(
         collection: 'invalid',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
+        collectionMs,
       });
       continue;
     }
@@ -881,6 +892,8 @@ export async function buildRepoGraph(
         collection: 'invalid',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
+        collectionMs,
       });
       continue;
     }
@@ -891,6 +904,8 @@ export async function buildRepoGraph(
       collection: admission.batch.status,
       factCount: admission.batch.facts.length,
       diagnostics: admission.batch.diagnostics,
+      detectionMs,
+      collectionMs,
     });
     if (['complete', 'partial'].includes(admission.batch.status)) {
       sources.push({ manifest: admission.manifest, batch: admission.batch });
@@ -999,6 +1014,17 @@ export async function buildRepoGraph(
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
       providerMs,
       compositionMs,
+      ...(composed.timings ? { compositionTimings: composed.timings } : {}),
+      providerTimings: Object.freeze(
+        summaries
+          .filter((summary) => summary.detectionMs !== undefined)
+          .map((summary) => ({
+            providerId: summary.provider.id,
+            detectionMs: summary.detectionMs ?? 0,
+            collectionMs: summary.collectionMs ?? 0,
+            factCount: summary.factCount,
+          }))
+      ),
     },
   };
 }

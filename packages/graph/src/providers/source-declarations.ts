@@ -6,6 +6,7 @@ import {
   type GraphDiagnostic,
   type GraphEntityReference,
   type GraphFactBatch,
+  type GraphProviderCollectionRequest,
   type GraphProviderInput,
   type GraphProviderRuntime,
   type GraphUnknownZone,
@@ -45,8 +46,8 @@ interface DeclaredSymbol {
   readonly detail: 'function' | 'type' | 'value' | 'method';
   readonly line: number;
   readonly locator: string;
-  readonly reference: GraphEntityReference;
   readonly generated: boolean;
+  reference: GraphEntityReference | undefined;
 }
 
 type CallBinding = DeclaredSymbol | 'ambiguous' | undefined;
@@ -86,8 +87,9 @@ function uniqueSymbols(symbols: readonly DeclaredSymbol[]): DeclaredSymbol[] {
   const seen = new Set<string>();
   const unique: DeclaredSymbol[] = [];
   for (const symbol of symbols) {
-    if (seen.has(symbol.reference.id)) continue;
-    seen.add(symbol.reference.id);
+    const key = symbol.reference?.id ?? `${symbol.locator}:${symbol.detail}:${symbol.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     unique.push(symbol);
   }
   return unique;
@@ -95,6 +97,23 @@ function uniqueSymbols(symbols: readonly DeclaredSymbol[]): DeclaredSymbol[] {
 
 function named(symbols: readonly DeclaredSymbol[], name: string): DeclaredSymbol[] {
   return symbols.filter((symbol) => symbol.name === name);
+}
+
+async function materializeDeclaredSymbol(
+  symbol: DeclaredSymbol,
+  request: GraphProviderCollectionRequest
+): Promise<GraphEntityReference> {
+  if (symbol.reference) return symbol.reference;
+  const identity = await request.resolveIdentity({
+    namespace: 'workspai',
+    kind: 'symbol',
+    relativeLocator: `${symbol.locator}:${symbol.detail}:${symbol.name}`,
+    caseSensitivity: 'sensitive',
+    scope: request.scope,
+  });
+  if (!identity.accepted) throw new Error('Symbol identity could not be resolved.');
+  symbol.reference = identity.value.reference;
+  return identity.value.reference;
 }
 
 function preferCallable(matches: readonly DeclaredSymbol[]): CallBinding {
@@ -113,9 +132,10 @@ function preferCallable(matches: readonly DeclaredSymbol[]): CallBinding {
 
 /**
  * Local unique wins. Authored imports then authored same-package peers.
- * Generated declarations stay valid unique targets and never create name
- * collisions against authored symbols or against each other unless no
- * authored candidate exists and several generated symbols share the name.
+ * Generated names stay in the call-target index as unique targets and never
+ * create name collisions against authored symbols or against each other unless
+ * no authored candidate exists and several generated symbols share the name.
+ * Unreferenced generated internals are not materialized as define facts.
  */
 function resolveCallTarget(
   name: string,
@@ -212,8 +232,11 @@ export function createSourceDeclarationsProvider(
       const sources = new Map<string, string>();
       const files = new Map<string, GraphEntityReference>();
       const generated = new Set<string>();
-      let discoveredSymbols = 0;
-      let emittedSymbols = 0;
+      let discoveredAuthoredSymbols = 0;
+      let discoveredGeneratedSymbols = 0;
+      let indexedGeneratedSymbols = 0;
+      let emittedAuthoredSymbols = 0;
+      let emittedGeneratedSymbols = 0;
       let discoveredCalls = 0;
       let emittedCalls = 0;
       let truncated = false;
@@ -270,7 +293,11 @@ export function createSourceDeclarationsProvider(
           if (!file.accepted) throw new Error('Source file identity could not be resolved.');
           files.set(input.locator, file.value.reference);
           const extracted = extractSymbols(source, input.locator, native);
-          discoveredSymbols += extracted.discovered;
+          const generatedFile = generated.has(input.locator);
+          if (generatedFile) {
+            discoveredGeneratedSymbols += extracted.discovered;
+            indexedGeneratedSymbols += extracted.findings.length;
+          } else discoveredAuthoredSymbols += extracted.discovered;
           if (extracted.truncated) {
             truncated = true;
             const truncation = warning(
@@ -287,56 +314,69 @@ export function createSourceDeclarationsProvider(
             });
           }
           const declared: DeclaredSymbol[] = [];
-          const identities = await Promise.all(
-            extracted.findings.map((symbol) =>
-              request.resolveIdentity({
-                namespace: 'workspai',
-                kind: 'symbol',
-                relativeLocator: `${input.locator}:${symbol.detail}:${symbol.name}`,
-                caseSensitivity: 'sensitive',
-                scope: request.scope,
-              })
-            )
-          );
-          for (const [symbolIndex, symbol] of extracted.findings.entries()) {
-            if (facts.length >= manifest.limits.maxFacts) {
-              outcome = 'omitted';
-              truncated = true;
-              unknownZones.push({
-                code: 'graph.source-declarations-truncated',
-                scope: input.locator,
-                reason: 'Declaration facts exceeded the provider output budget.',
-              });
-              break;
-            }
-            const identity = identities[symbolIndex];
-            if (!identity?.accepted) throw new Error('Symbol identity could not be resolved.');
-            declared.push({
-              name: symbol.name,
-              detail: symbol.detail,
-              line: symbol.line,
-              locator: input.locator,
-              reference: identity.value.reference,
-              generated: generated.has(input.locator),
-            });
-            emittedSymbols += 1;
-            facts.push(
-              createObservedEdgeFact({
-                factId: `fact:source-declaration:${String(inputIndex).padStart(8, '0')}:${String(symbolIndex).padStart(8, '0')}:${input.digest.value}`,
-                factType: 'source.declaration',
-                subject: file.value.reference,
-                predicate: 'defines',
-                object: identity.value.reference,
-                request,
-                source: input,
-                provider: manifest,
-                evidenceId: `evidence:source-declaration:${String(inputIndex).padStart(8, '0')}`,
-                sourceKind: 'source-file',
-                derivation: 'extracted',
-                authority: 'observed',
-                confidence: 0.7,
-              })
+          if (!generatedFile) {
+            const identities = await Promise.all(
+              extracted.findings.map((symbol) =>
+                request.resolveIdentity({
+                  namespace: 'workspai',
+                  kind: 'symbol',
+                  relativeLocator: `${input.locator}:${symbol.detail}:${symbol.name}`,
+                  caseSensitivity: 'sensitive',
+                  scope: request.scope,
+                })
+              )
             );
+            for (const [symbolIndex, symbol] of extracted.findings.entries()) {
+              if (facts.length >= manifest.limits.maxFacts) {
+                outcome = 'omitted';
+                truncated = true;
+                unknownZones.push({
+                  code: 'graph.source-declarations-truncated',
+                  scope: input.locator,
+                  reason: 'Declaration facts exceeded the provider output budget.',
+                });
+                break;
+              }
+              const identity = identities[symbolIndex];
+              if (!identity?.accepted) throw new Error('Symbol identity could not be resolved.');
+              declared.push({
+                name: symbol.name,
+                detail: symbol.detail,
+                line: symbol.line,
+                locator: input.locator,
+                reference: identity.value.reference,
+                generated: false,
+              });
+              emittedAuthoredSymbols += 1;
+              facts.push(
+                createObservedEdgeFact({
+                  factId: `fact:source-declaration:${String(inputIndex).padStart(8, '0')}:${String(symbolIndex).padStart(8, '0')}:${input.digest.value}`,
+                  factType: 'source.declaration',
+                  subject: file.value.reference,
+                  predicate: 'defines',
+                  object: identity.value.reference,
+                  request,
+                  source: input,
+                  provider: manifest,
+                  evidenceId: `evidence:source-declaration:${String(inputIndex).padStart(8, '0')}`,
+                  sourceKind: 'source-file',
+                  derivation: 'extracted',
+                  authority: 'observed',
+                  confidence: 0.7,
+                })
+              );
+            }
+          } else {
+            for (const symbol of extracted.findings) {
+              declared.push({
+                name: symbol.name,
+                detail: symbol.detail,
+                line: symbol.line,
+                locator: input.locator,
+                reference: undefined,
+                generated: true,
+              });
+            }
           }
           symbolsByFile.set(input.locator, declared);
         } catch {
@@ -431,13 +471,14 @@ export function createSourceDeclarationsProvider(
             });
             break;
           }
+          const targetReference = await materializeDeclaredSymbol(target, request);
           facts.push(
             createObservedEdgeFact({
               factId: `fact:source-call:${String(inputIndex).padStart(8, '0')}:${String(callIndex).padStart(8, '0')}:${input.digest.value}`,
               factType: 'source.call',
               subject: file,
               predicate: 'calls',
-              object: target.reference,
+              object: targetReference,
               request,
               source: input,
               provider: manifest,
@@ -451,6 +492,43 @@ export function createSourceDeclarationsProvider(
           callIndex += 1;
           emittedCalls += 1;
           emittedForName.set(site.name, emittedCount + 1);
+        }
+      }
+
+      for (const [inputIndex, input] of inputs.entries()) {
+        if (!generated.has(input.locator)) continue;
+        const file = files.get(input.locator);
+        if (!file) continue;
+        const declared = symbolsByFile.get(input.locator) ?? [];
+        for (const [symbolIndex, symbol] of declared.entries()) {
+          if (!symbol.reference) continue;
+          if (facts.length >= manifest.limits.maxFacts) {
+            truncated = true;
+            unknownZones.push({
+              code: 'graph.source-declarations-truncated',
+              scope: input.locator,
+              reason: 'Declaration facts exceeded the provider output budget.',
+            });
+            break;
+          }
+          emittedGeneratedSymbols += 1;
+          facts.push(
+            createObservedEdgeFact({
+              factId: `fact:source-declaration:${String(inputIndex).padStart(8, '0')}:${String(symbolIndex).padStart(8, '0')}:${input.digest.value}`,
+              factType: 'source.declaration',
+              subject: file,
+              predicate: 'defines',
+              object: symbol.reference,
+              request,
+              source: input,
+              provider: manifest,
+              evidenceId: `evidence:source-declaration:${String(inputIndex).padStart(8, '0')}`,
+              sourceKind: 'source-file',
+              derivation: 'extracted',
+              authority: 'observed',
+              confidence: 0.7,
+            })
+          );
         }
       }
 
@@ -470,8 +548,18 @@ export function createSourceDeclarationsProvider(
           },
           {
             dimension: 'source-declaration-symbols',
-            observed: emittedSymbols,
-            expected: discoveredSymbols,
+            observed: emittedAuthoredSymbols + emittedGeneratedSymbols,
+            expected: discoveredAuthoredSymbols + emittedGeneratedSymbols,
+          },
+          {
+            dimension: 'source-generated-symbols-indexed',
+            observed: indexedGeneratedSymbols,
+            expected: discoveredGeneratedSymbols,
+          },
+          {
+            dimension: 'source-generated-symbols-materialized',
+            observed: emittedGeneratedSymbols,
+            expected: indexedGeneratedSymbols,
           },
           {
             dimension: 'source-declaration-calls',

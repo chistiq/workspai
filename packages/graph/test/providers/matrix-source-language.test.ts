@@ -16,6 +16,41 @@ import {
 } from '../../src/providers/matrix-source-language.js';
 
 describe('matrix source language', () => {
+  it('resolves multiline imports and re-exports without scanning declaration bodies as exports', () => {
+    const available = new Set(['src/dep.ts', 'src/side.ts']);
+    for (const source of [
+      "import {\n first,\n second\n} from './dep';",
+      "import Default, { first } from './dep';",
+      "export {\n first as renamed\n} from './dep';",
+      "export type { Thing } from './dep';",
+      "export * from './dep';",
+      "export * as things from './dep';",
+      "export * as data from './dep';",
+      "export type * from './dep';",
+    ]) {
+      expect(extractMatrixLocalImportLocators('src/main.ts', source, 'node', available)).toEqual([
+        'src/dep.ts',
+      ]);
+    }
+    expect(
+      extractMatrixLocalImportLocators('src/main.ts', "import './side';", 'node', available)
+    ).toEqual(['src/side.ts']);
+    const declarations = 'export function f() { return 1 }\n'.repeat(10_000);
+    expect(
+      extractMatrixLocalImportLocators('src/main.ts', declarations, 'node', available)
+    ).toEqual([]);
+  });
+
+  it('preserves evidence lines and token boundaries through block comments', () => {
+    const source =
+      '/* header\r\n * comment 🦀\r\n */\r\nexport/* note */function actual() {}\r\n// function hidden() {}\r\nfunction next() {}';
+    expect(extractMatrixDeclarations(source, 'node')).toEqual([
+      { name: 'actual', detail: 'function', line: 4 },
+      { name: 'next', detail: 'function', line: 6 },
+    ]);
+    expect(extractMatrixDeclarations('funct/* split */ion fake() {}', 'node')).toEqual([]);
+  });
+
   it('covers every official-offline structural extension exactly once', () => {
     const listed = GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE.languages.flatMap(
       (profile) => profile.extensions

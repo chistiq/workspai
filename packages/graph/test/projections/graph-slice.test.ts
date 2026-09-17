@@ -118,15 +118,21 @@ describe('createGraphSlice', () => {
     expect(admittedRedactionPolicy('portable-default')).toBe(true);
     expect(admittedRedactionPolicy('unsafe')).toBe(false);
     expect(
-      redactGraphEvidence({ id: '/home/private', sourceKind: 'source-file', digest })
+      redactGraphEvidence(
+        { id: '/home/private', sourceKind: 'source-file', digest },
+        'portable-default'
+      )
     ).toBeUndefined();
     expect(
-      redactGraphEvidence({
-        id: 'evidence:ok',
-        sourceKind: 'source-file',
-        relativeLocator: '../secret.ts',
-        digest,
-      })
+      redactGraphEvidence(
+        {
+          id: 'evidence:ok',
+          sourceKind: 'source-file',
+          relativeLocator: '../secret.ts',
+          digest,
+        },
+        'portable-default'
+      )
     ).toBeUndefined();
     expect(
       redactGraphEvidence(
@@ -143,11 +149,11 @@ describe('createGraphSlice', () => {
       ...node('workspace:one'),
       scope: { kind: 'workspace' as const, workspaceId: 'ws:one' },
     };
-    const member = {
+    const member: GraphEntityReference = {
       ...node('project:member'),
       scope: { kind: 'project' as const, projectIds: ['project:member'], workspaceId: 'ws:one' },
     };
-    const unrelated = {
+    const unrelated: GraphEntityReference = {
       ...node('project:unrelated'),
       scope: { kind: 'project' as const, projectIds: ['project:unrelated'] },
     };

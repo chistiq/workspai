@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { digestCanonicalGraphInput } from '../../src/application/digest-canonical-graph-input.js';
 import {
   canonicalizeGraphValue,
+  cloneCanonicalGraphValue,
   digestCanonicalGraphValue,
   streamCanonicalGraphValue,
 } from '../../src/conformance/canonical-json.js';
@@ -210,5 +211,55 @@ describe('streaming canonical digest', () => {
     expect(canonical.accepted).toBe(true);
     if (!canonical.accepted) return;
     expect(port.digestSync?.(new TextEncoder().encode(canonical.value))).toBe(streamed.value);
+  });
+
+  it('re-walks a mutated object instead of returning a stale snapshot', async () => {
+    const live: { value: number; cycle?: object } = { value: 1 };
+    expect(canonicalizeGraphValue(live)).toEqual({
+      accepted: true,
+      value: '{"value":1}',
+      issues: [],
+    });
+    live.value = 2;
+    expect(canonicalizeGraphValue(live)).toEqual({
+      accepted: true,
+      value: '{"value":2}',
+      issues: [],
+    });
+    expect(new TextDecoder().decode(await streamedBytes(live))).toBe('{"value":2}');
+    live.cycle = live;
+    expect(canonicalizeGraphValue(live).accepted).toBe(false);
+    const streamed = await streamCanonicalGraphValue(live, { write: () => undefined });
+    expect(streamed.accepted).toBe(false);
+  });
+
+  it('applies nesting budgets at the use site, including previously walked subtrees', async () => {
+    const nest = (depth: number, leaf: unknown = { value: 1 }): unknown => {
+      let current = leaf;
+      for (let index = 0; index < depth; index += 1) current = { child: current };
+      return current;
+    };
+    const inner = nest(200);
+    expect(canonicalizeGraphValue(inner).accepted).toBe(true);
+    const wrapped = nest(100, inner);
+    expect(canonicalizeGraphValue(wrapped).accepted).toBe(false);
+    expect((await streamCanonicalGraphValue(wrapped, { write: () => undefined })).accepted).toBe(
+      false
+    );
+    expect(canonicalizeGraphValue(nest(300)).accepted).toBe(false);
+  });
+
+  it('keeps a detached clone from mutating the source snapshot', () => {
+    const nested = { y: 2, x: 3 };
+    const fixture = { a: nested, b: nested, z: 1 };
+    const first = canonicalizeGraphValue(fixture);
+    expect(first.accepted).toBe(true);
+    const cloned = cloneCanonicalGraphValue(fixture);
+    expect(cloned.accepted).toBe(true);
+    if (cloned.accepted) {
+      const record = cloned.value as { a: { x: number } };
+      record.a.x = 99;
+    }
+    expect(canonicalizeGraphValue(fixture)).toEqual(first);
   });
 });

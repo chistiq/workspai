@@ -3,6 +3,7 @@ import {
   type GraphStructuralLanguage,
 } from '../contracts/structural-extractor-profile.js';
 import { extensionOf } from './observed-edge-fact.js';
+import { ECMASCRIPT_STATIC_IMPORT_PATTERN } from './ecmascript-import-pattern.js';
 
 export interface MatrixDeclaration {
   readonly name: string;
@@ -94,7 +95,10 @@ export function stripMatrixSourceComments(
   language: GraphStructuralLanguage | null
 ): string {
   const hashComments = language !== null && HASH_COMMENT_LANGUAGES.has(language);
-  const withoutBlocks = hashComments ? source : source.replace(/\/\*[\s\S]*?\*\//gu, '');
+  // Preserve physical lines for evidence and whitespace between adjacent tokens.
+  const withoutBlocks = hashComments
+    ? source
+    : source.replace(/\/\*[\s\S]*?\*\//gu, (comment) => comment.replace(/[^\r\n]/gu, ' '));
   return withoutBlocks
     .split(/\r?\n/u)
     .map((line) => {
@@ -368,9 +372,7 @@ function lastIdentifier(name: string): string {
 function localImportSpecifiers(source: string, language: GraphStructuralLanguage | null): string[] {
   const specifiers: string[] = [];
   if (language === 'node' || language === null) {
-    for (const match of source.matchAll(
-      /^\s*(?:import\s+(?:[^'";]+?\s+from\s+)?|export\s+[^'";]+?\s+from\s+)['"]([^'"\r\n]+)['"]/gmu
-    ))
+    for (const match of source.matchAll(ECMASCRIPT_STATIC_IMPORT_PATTERN))
       if (match[1]?.startsWith('.')) specifiers.push(match[1]);
   }
   if (language === 'c-cpp' || language === 'objective-c-matlab') {

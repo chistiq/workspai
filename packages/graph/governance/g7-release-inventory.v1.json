@@ -422,7 +422,7 @@
     "maxNodes": 1000000,
     "maxEdges": 5000000,
     "maxMemoryBytes": 268435456,
-    "sourceDigest": "72104867420aa2cc6d6da8cc25d9ae645a313362219f65b2e6ea3a36a7717fe8",
+    "sourceDigest": "f4125f3d3b036bf864634e3be4b1030104444813b4fab1ed0811ab4e9abc8a92",
     "sourceDigestScope": "canonical-source-and-build-policy",
     "artifactDigestPolicy": "bound-in-build-evidence"
   }

@@ -75,19 +75,10 @@ function issue(code: string, path: string, message: string): GraphValidationIssu
 }
 
 const utf8 = new TextEncoder();
-const canonicalObjectCache = new WeakMap<object, string>();
 const COMPACT_GRAPH_VALUE_LIMIT = 64;
 const CANONICAL_DIGEST = 'workspai.graph.canonical-json.v1' as const;
 
 function canonical(input: unknown): string {
-  if (input !== null && typeof input === 'object') {
-    const cached = canonicalObjectCache.get(input);
-    if (cached !== undefined) return cached;
-    const result = canonicalizeGraphValue(input);
-    if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
-    canonicalObjectCache.set(input, result.value);
-    return result.value;
-  }
   const result = canonicalizeGraphValue(input);
   if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
   return result.value;
@@ -155,33 +146,7 @@ async function digest(
 }
 
 function scopeKey(entity: GraphEntityReference): string {
-  return internedCanonical(entity.scope);
-}
-
-const internedCanonicalByJson = new Map<string, string>();
-
-function internedCanonical(input: unknown): string {
-  if (input !== null && typeof input === 'object') {
-    const cached = canonicalObjectCache.get(input);
-    if (cached !== undefined) return cached;
-    let raw: string;
-    try {
-      raw = JSON.stringify(input);
-    } catch {
-      return canonical(input);
-    }
-    if (raw.length <= 1024) {
-      const interned = internedCanonicalByJson.get(raw);
-      if (interned !== undefined) {
-        canonicalObjectCache.set(input, interned);
-        return interned;
-      }
-      const value = canonical(input);
-      internedCanonicalByJson.set(raw, value);
-      return value;
-    }
-  }
-  return canonical(input);
+  return canonical(entity.scope);
 }
 
 function entitySignature(entity: GraphEntityReference): string {
@@ -216,6 +181,16 @@ async function digestSortedValues<T>(
   ports: GraphExecutionPorts
 ): Promise<WisDigestReference> {
   const ranked = rankCanonical(values);
+  const streamer = ports.digest.createStreamingDigest?.();
+  if (streamer) {
+    streamer.update(utf8.encode('['));
+    for (const [index, item] of ranked.entries()) {
+      if (index > 0) streamer.update(utf8.encode(','));
+      streamer.update(utf8.encode(item.key));
+    }
+    streamer.update(utf8.encode(']'));
+    return digestReference(await streamer.digest());
+  }
   return (
     digestRankedMaterial(ranked, ports) ??
     (await digest(
@@ -1330,6 +1305,7 @@ export async function composeGraph(
     }
     const admittedSources: GraphCompositionSource[] = [];
     const admissionIssues: GraphValidationIssue[] = [];
+    const admitStartedAt = performance.now();
     for (const [index, source] of request.sources.entries()) {
       const admission = admitGraphProviderOutput(source.manifest, source.batch);
       if (admission.accepted) admittedSources.push(source);
@@ -1338,6 +1314,7 @@ export async function composeGraph(
           ...admission.issues.map((item) => ({ ...item, path: `/sources/${index}${item.path}` }))
         );
     }
+    const admitMs = Math.max(0, Math.round(performance.now() - admitStartedAt));
     if (admissionIssues.length > 0) return failure('invalid-input', admissionIssues);
     // Provider batches can be much larger than the standalone canonical-value
     // budget. Their admitted identity is the deterministic ordering key; the
@@ -1393,6 +1370,7 @@ export async function composeGraph(
         ...(ports.signal ? { signal: ports.signal } : {}),
       });
 
+    const workerStartedAt = performance.now();
     let compactOutput: PreparedComposition;
     let durationMs = 0;
     let inputBytes = 0;
@@ -1462,6 +1440,7 @@ export async function composeGraph(
         compositionFactOrder(normalizedRequest)
       );
     }
+    const workerMs = Math.max(0, Math.round(performance.now() - workerStartedAt));
 
     const workerOutputValidation = validateWorkerCompositionOutput(
       compactOutput,
@@ -1549,6 +1528,7 @@ export async function composeGraph(
       }
     }
 
+    const semanticStartedAt = performance.now();
     const semanticDigests = {
       ontology: await digest(request.ontology, ports),
       proofPolicies: await digest(
@@ -1569,7 +1549,9 @@ export async function composeGraph(
       ),
       compositionPolicy: await digest(request.policy, ports),
     };
+    const semanticDigestMs = Math.max(0, Math.round(performance.now() - semanticStartedAt));
 
+    const proofStartedAt = performance.now();
     const evaluatedProofs = new Map(
       eligibleCandidates.map((candidate) => [
         candidate.key,
@@ -1690,6 +1672,7 @@ export async function composeGraph(
       }
     }
 
+    const edgeProofMs = Math.max(0, Math.round(performance.now() - proofStartedAt));
     edges.sort((left, right) => left.id.localeCompare(right.id));
     decisions.sort((left, right) => left.edgeKey.localeCompare(right.edgeKey));
     const uniqueDisputes = [
@@ -1717,6 +1700,7 @@ export async function composeGraph(
       unresolved: prepared.unresolved,
       diagnostics: prepared.diagnostics,
     };
+    const contentStartedAt = performance.now();
     const contentDigest = await digest(
       {
         ...graphPayload,
@@ -1743,6 +1727,7 @@ export async function composeGraph(
       },
       ports
     );
+    const contentDigestMs = Math.max(0, Math.round(performance.now() - contentStartedAt));
     const generation: GraphGeneration = {
       reference: {
         id: `generation:${contentDigest.value.slice(0, 32)}`,
@@ -1859,6 +1844,13 @@ export async function composeGraph(
       accepted: true,
       value: published,
       issues: [],
+      timings: Object.freeze({
+        admitMs,
+        workerMs,
+        semanticDigestMs,
+        edgeProofMs,
+        contentDigestMs,
+      }),
     };
   } catch (error) {
     if (ports.cancellation.aborted) {

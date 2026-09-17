@@ -169,14 +169,12 @@ export function cloneCanonicalGraphValue<T>(
   input: T,
   options: { readonly maxValues?: number } = {}
 ): GraphValidationResult<T> {
+  const canonical = canonicalizeGraphValue(input, options);
+  if (!canonical.accepted) return canonical as GraphValidationResult<T>;
   try {
-    const maxValues = options.maxValues ?? MAX_CANONICAL_VALUES;
-    if (!Number.isSafeInteger(maxValues) || maxValues <= 0) {
-      throw new Error('/maxValues: value budget must be a positive safe integer');
-    }
     return {
       accepted: true,
-      value: normalize(input, '', new Set(), { count: 0 }, 0, maxValues) as T,
+      value: JSON.parse(canonical.value) as T,
       issues: [],
     };
   } catch (error) {

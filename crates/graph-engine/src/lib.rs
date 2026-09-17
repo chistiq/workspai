@@ -248,8 +248,12 @@ pub unsafe extern "C" fn graph_engine_extract_declarations(
         return EXTRACT_INVALID_UTF8;
     }
     // SAFETY: the ABI caller allocates this exact UTF-8 range in linear memory.
-    let source_bytes =
-        unsafe { std::slice::from_raw_parts(source_pointer as *const u8, source_len as usize) };
+    let source_bytes = if source_len == 0 {
+        &[]
+    } else {
+        // SAFETY: nonempty input was checked for a null pointer above.
+        unsafe { std::slice::from_raw_parts(source_pointer as *const u8, source_len as usize) }
+    };
     let source = match std::str::from_utf8(source_bytes) {
         Ok(value) => value,
         Err(_) => return EXTRACT_INVALID_UTF8,

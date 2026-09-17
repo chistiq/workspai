@@ -17,6 +17,7 @@ export {
   type GraphCompositionRequest,
   type GraphCompositionResult,
   type GraphCompositionSource,
+  type GraphCompositionTimings,
   type GraphReferenceCompositionTaskOutput,
 } from './composition-types.js';
 export {

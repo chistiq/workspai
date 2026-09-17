@@ -2,13 +2,41 @@
 
 ## Unreleased
 
+- Entity identity uses digestSync when the host provides it. Semantic set
+  digests stream ranked canonical keys instead of joining a monolithic string.
+  Inspect metrics expose composition phase timers and per-provider
+  detect/collect timings. Those timers are execution metrics, not generation
+  identity, and inspect wall time is the clock compared with CLI emit.
+- Canonical JSON does not intern object identity: a mutated or cyclic value is
+  re-walked, nesting budgets apply at the use site, and streaming flushes in
+  16KB blocks instead of retaining ancestor-frame copies. Composition does not
+  cache canonical text from live or shallow-frozen objects. Provider admission
+  always re-validates manifest and batch; id/version matching is not a
+  substitute for schema admission.
+- Generated sources stay in inventory and in the call-target index, but
+  unreferenced generated internals are not materialized as symbols. Unique
+  authored-call targets still receive define and call edges. Coverage reports
+  indexed generated findings separately from discovered declarations so a 500
+  cap is not counted as a complete index.
+
+- Reduced Rust declaration-scan allocations by borrowing unchanged source and
+  iterating lines directly. Node encodes source into WASM memory without an
+  intermediate UTF-8 buffer and sizes declaration records to bounded input.
+  Both extractors preserve source lines and token boundaries through block
+  comments. Empty WASM source no longer forms a Rust slice from a null pointer.
+- Restricted Node re-export scanning to export-list/star syntax to avoid
+  backtracking across ordinary exported declaration bodies. Added a repeatable
+  declaration/CLI profiler with output determinism checks, p50/p95 timings and
+  child-process peak RSS. Native authority and rollout gates are unchanged.
+
 - Raised the standalone repository provider set past the released CLI composer
   surface: OpenAPI/Swagger/AsyncAPI, GraphQL, Kubernetes, CI pipelines, Dockerfile/
   Terraform/Helm, Python console scripts, VS Code commands, architecture
   decisions, and OpenAPI operation-to-handler binding. Inspect now inventories a
   directory symlink root by resolving it, prefers unique same-file call targets
-  over colliding peers, and omits call extraction from generated sources while
-  keeping their declarations. Call binding now prefers unique functions over
+  over colliding peers, and omits call extraction from generated sources.
+  Unreferenced generated internals are indexed for unique call targets and
+  not materialized as symbols. Call binding now prefers unique functions over
   same-name types, treats generated symbols as unique targets instead of name
   collisions, and scans call tokens in one pass so coverage counts unresolved
   call sites. Node and other keyword-declared languages no longer treat

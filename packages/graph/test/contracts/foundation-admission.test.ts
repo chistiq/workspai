@@ -166,6 +166,19 @@ describe('Graph G1 foundation admission', () => {
     ).toMatchObject({ accepted: false });
   });
 
+  it('re-validates manifest and batch on every admission instead of caching by id', () => {
+    const batch = validBatch();
+    expect(admitGraphProviderOutput(manifest, batch)).toMatchObject({ accepted: true });
+    expect(
+      admitGraphProviderOutput({ id: manifest.id, version: manifest.version }, batch)
+    ).toMatchObject({ accepted: false });
+    (batch.facts as GraphFactBatch['facts'][number][]).push({
+      factId: 'fact:invalid',
+    } as GraphFactBatch['facts'][number]);
+    expect(validateGraphFactBatch(batch, manifest)).toMatchObject({ accepted: false });
+    expect(admitGraphProviderOutput(manifest, batch)).toMatchObject({ accepted: false });
+  });
+
   it.each([
     [
       'absolute POSIX evidence path',

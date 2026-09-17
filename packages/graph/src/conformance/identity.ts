@@ -93,6 +93,10 @@ export function createMemoizedIdentityResolver(
   };
 }
 
+async function sha256Hex(digestPort: GraphDigestPort, bytes: Uint8Array): Promise<string> {
+  return digestPort.digestSync ? digestPort.digestSync(bytes) : digestPort.digest(bytes);
+}
+
 export async function resolveGraphEntityIdentity(
   input: GraphEntityIdentityInput,
   digestPort: GraphDigestPort
@@ -101,7 +105,8 @@ export async function resolveGraphEntityIdentity(
   if (!normalized.accepted) return normalized;
   const namespace = input.namespace.normalize('NFC').toLowerCase();
   const kind = input.kind.normalize('NFC').toLowerCase();
-  const digest = await digestPort.digest(
+  const digest = await sha256Hex(
+    digestPort,
     new TextEncoder().encode(`${namespace}\0${kind}\0${normalized.value.normalizedLocator}`)
   );
   if (!/^[a-f0-9]{64}$/u.test(digest)) {

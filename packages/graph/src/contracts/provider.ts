@@ -107,6 +107,8 @@ export interface GraphProviderRunSummary {
   readonly collection: GraphFactBatch['status'] | 'not-run' | 'invalid';
   readonly factCount: number;
   readonly diagnostics: readonly GraphDiagnostic[];
+  readonly detectionMs?: number;
+  readonly collectionMs?: number;
 }
 
 export function defineGraphProviderManifest<const TManifest extends GraphProviderManifest>(

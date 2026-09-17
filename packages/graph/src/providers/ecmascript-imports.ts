@@ -9,6 +9,8 @@ import {
   type GraphProviderRuntime,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
+import { ECMASCRIPT_STATIC_IMPORT_PATTERN } from './ecmascript-import-pattern.js';
+import { stripMatrixSourceComments } from './matrix-source-language.js';
 
 export const ECMASCRIPT_IMPORTS_PROVIDER_ID = 'workspai.graph.provider.ecmascript-imports';
 
@@ -22,8 +24,6 @@ const TYPESCRIPT_RUNTIME_REWRITES: Readonly<Record<string, readonly string[]>> =
 });
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
-const STATIC_IMPORT =
-  /^\s*(?:import\s+(?:[^'";]+?\s+from\s+)?|export\s+[^'";]+?\s+from\s+)['"]([^'"\r\n]+)['"]/gmu;
 const LITERAL_COMMONJS_REQUIRE = /\brequire\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/gmu;
 const LITERAL_DYNAMIC_IMPORT = /\bimport\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/gmu;
 
@@ -147,9 +147,9 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
             signal: request.signal,
           });
           const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-          const syntaxView = source.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '');
+          const syntaxView = stripMatrixSourceComments(source, 'node');
           const specifiers = [
-            ...[...syntaxView.matchAll(STATIC_IMPORT)].map((match) => match[1]),
+            ...[...syntaxView.matchAll(ECMASCRIPT_STATIC_IMPORT_PATTERN)].map((match) => match[1]),
             ...[...syntaxView.matchAll(LITERAL_COMMONJS_REQUIRE)].map((match) => match[2]),
             ...[...syntaxView.matchAll(LITERAL_DYNAMIC_IMPORT)].map((match) => match[2]),
           ].filter((specifier): specifier is string => Boolean(specifier));

@@ -68,6 +68,35 @@ function seededRequests(): readonly GraphNativeTraversalRequest[] {
 }
 
 describe('bundled Rust WASM Graph native port', () => {
+  it('keeps UTF-8, empty input, changing buffer sizes and physical evidence lines in parity', async () => {
+    const port = await createNodeRustWasmGraphNativePort(engineUrl);
+    const sources = [
+      '',
+      '/* header\r\n * comment 🦀\r\n */\r\nexport/* note */function actual() {}\r\n// function hidden() {}\r\nfunction next() {}',
+      'funct/* split */ion fake() {}',
+      'function a() {} /* unfinished',
+      '// unicode 🦀 and lone surrogate \ud800\nfunction real() {}',
+      'function repeated() {}\n'.repeat(16_384),
+      'function small() {}',
+      '',
+    ];
+    for (const source of sources) {
+      const result = port.extractDeclarations!({ source, language: 'node' });
+      expect(result.status).toBe('complete');
+      expect(result.metrics.inputBytes).toBe(Buffer.byteLength(source));
+      expect(result.declarations).toEqual(extractMatrixDeclarations(source, 'node'));
+    }
+    expect(
+      port.extractDeclarations!({
+        source: 'function f() {}\n'.repeat(16_385),
+        language: 'node',
+      }).status
+    ).toBe('rejected');
+    expect(
+      port.extractDeclarations!({ source: 'function recovered() {}', language: 'node' }).status
+    ).toBe('complete');
+  });
+
   it('loads a self-contained product artifact without a user toolchain', async () => {
     const bytes = await readFile(engineUrl);
     const wasm = (

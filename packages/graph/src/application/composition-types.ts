@@ -83,6 +83,14 @@ export interface GraphReferenceCompositionTaskOutput {
   readonly unresolved: readonly { readonly id: string; readonly candidates: readonly string[] }[];
 }
 
+export interface GraphCompositionTimings {
+  readonly admitMs: number;
+  readonly workerMs: number;
+  readonly semanticDigestMs: number;
+  readonly edgeProofMs: number;
+  readonly contentDigestMs: number;
+}
+
 export interface GraphCompositionOutput {
   readonly graph: GraphCanonicalGraph;
   readonly quality: GraphQualityReport;
@@ -102,6 +110,7 @@ export type GraphCompositionResult =
       readonly accepted: true;
       readonly value: GraphCompositionOutput;
       readonly issues: readonly [];
+      readonly timings: GraphCompositionTimings;
     }
   | {
       readonly accepted: false;

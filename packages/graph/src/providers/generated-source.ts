@@ -7,9 +7,10 @@ const GENERATED_PATH =
 const GENERATED_NAME = /(?:_pb2|_grpc_pb|_generated|\.g|\.designer)\.[A-Za-z0-9]+$/u;
 
 /**
- * Conservative generated-source detector. Inventory and declarations stay.
- * Call binding treats generated symbols as unique targets only — they never
- * collide with authored names in the candidate index.
+ * Conservative generated-source detector. Inventory stays. Generated files are
+ * indexed for unique authored-call targets; unreferenced internals are not
+ * materialized as symbols. Call binding treats generated symbols as unique
+ * targets only — they never collide with authored names in the candidate index.
  */
 export function isGeneratedSource(locator: string, source: string): boolean {
   const name = basenameOf(locator);

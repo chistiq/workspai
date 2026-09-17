@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
@@ -325,6 +326,8 @@ export async function createNodeRustWasmGraphNativePort(
     return instance.exports;
   };
   let engine = instantiate();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
 
   const reinitialize = (): void => {
     engine = instantiate();
@@ -438,22 +441,23 @@ export async function createNodeRustWasmGraphNativePort(
     extractDeclarations(request: GraphNativeDeclarationRequest): GraphNativeDeclarationResult {
       const startedAt = performance.now();
       const invalid = validateDeclarationRequest(request);
-      const sourceBytes = new TextEncoder().encode(request.source);
+      const sourceByteLength =
+        typeof request.source === 'string' ? Buffer.byteLength(request.source, 'utf8') : 0;
       if (invalid) {
         return declarationResult(
           'rejected',
           startedAt,
-          sourceBytes.byteLength,
+          sourceByteLength,
           [],
           'GRAPH_NATIVE_INPUT_REJECTED',
           invalid
         );
       }
-      if (sourceBytes.byteLength > MAX_DECLARATION_SOURCE_BYTES) {
+      if (sourceByteLength > MAX_DECLARATION_SOURCE_BYTES) {
         return declarationResult(
           'rejected',
           startedAt,
-          sourceBytes.byteLength,
+          sourceByteLength,
           [],
           'GRAPH_NATIVE_SOURCE_LIMIT_EXCEEDED',
           'Source exceeds the bundled declaration scan limit.'
@@ -465,34 +469,39 @@ export async function createNodeRustWasmGraphNativePort(
         return declarationResult(
           'rejected',
           startedAt,
-          sourceBytes.byteLength,
+          sourceByteLength,
           [],
           'GRAPH_NATIVE_LANGUAGE_INVALID',
           'language must be an official-offline matrix language or null.'
         );
       }
 
-      const recordWords = MAX_DECLARATIONS * 4;
-      const namesCapacity = Math.max(sourceBytes.byteLength, 1);
+      // Each declaration consumes at least one source byte. Small files should
+      // not reserve the full 256 KiB record ceiling on every call.
+      const recordCapacity = Math.min(MAX_DECLARATIONS, Math.max(sourceByteLength, 1));
+      const recordWords = recordCapacity * 4;
+      const namesCapacity = Math.max(sourceByteLength, 1);
       let sourcePointer = 0;
       let recordsPointer = 0;
       let namesPointer = 0;
       let trapped = false;
       try {
-        if (sourceBytes.byteLength > 0) {
-          sourcePointer = engine.graph_engine_alloc_u8(sourceBytes.byteLength);
+        if (sourceByteLength > 0) {
+          sourcePointer = engine.graph_engine_alloc_u8(sourceByteLength);
           if (sourcePointer === 0) {
             return declarationResult(
               'failed',
               startedAt,
-              sourceBytes.byteLength,
+              sourceByteLength,
               [],
               'GRAPH_NATIVE_ALLOCATION_FAILED',
               'The bundled engine could not allocate bounded declaration source memory.'
             );
           }
-          new Uint8Array(engine.memory.buffer, sourcePointer, sourceBytes.byteLength).set(
-            sourceBytes
+          // Encode directly into linear memory, avoiding a temporary UTF-8 copy.
+          encoder.encodeInto(
+            request.source,
+            new Uint8Array(engine.memory.buffer, sourcePointer, sourceByteLength)
           );
         }
         recordsPointer = engine.graph_engine_alloc_u32(recordWords);
@@ -501,7 +510,7 @@ export async function createNodeRustWasmGraphNativePort(
           return declarationResult(
             'failed',
             startedAt,
-            sourceBytes.byteLength,
+            sourceByteLength,
             [],
             'GRAPH_NATIVE_ALLOCATION_FAILED',
             'The bundled engine could not allocate bounded declaration output memory.'
@@ -509,10 +518,10 @@ export async function createNodeRustWasmGraphNativePort(
         }
         const count = engine.graph_engine_extract_declarations(
           sourcePointer,
-          sourceBytes.byteLength,
+          sourceByteLength,
           language,
           recordsPointer,
-          MAX_DECLARATIONS,
+          recordCapacity,
           namesPointer,
           namesCapacity
         );
@@ -521,17 +530,17 @@ export async function createNodeRustWasmGraphNativePort(
           return declarationResult(
             'rejected',
             startedAt,
-            sourceBytes.byteLength,
+            sourceByteLength,
             [],
             code,
             `Bundled engine rejected declaration input (${String(count)}).`
           );
         }
-        if (count > MAX_DECLARATIONS) {
+        if (count > recordCapacity) {
           return declarationResult(
             'failed',
             startedAt,
-            sourceBytes.byteLength,
+            sourceByteLength,
             [],
             'GRAPH_NATIVE_OUTPUT_INVALID',
             'Bundled engine returned more declarations than its declared capacity.'
@@ -539,7 +548,6 @@ export async function createNodeRustWasmGraphNativePort(
         }
         const records = new Uint32Array(engine.memory.buffer, recordsPointer, count * 4);
         const names = new Uint8Array(engine.memory.buffer, namesPointer, namesCapacity);
-        const decoder = new TextDecoder('utf-8', { fatal: true });
         const declarations: GraphNativeDeclaration[] = [];
         for (let index = 0; index < count; index += 1) {
           const base = index * 4;
@@ -554,7 +562,7 @@ export async function createNodeRustWasmGraphNativePort(
             return declarationResult(
               'failed',
               startedAt,
-              sourceBytes.byteLength,
+              sourceByteLength,
               [],
               'GRAPH_NATIVE_OUTPUT_INVALID',
               'Bundled engine returned a malformed declaration record.'
@@ -566,13 +574,13 @@ export async function createNodeRustWasmGraphNativePort(
             line: records[base] ?? 0,
           });
         }
-        return declarationResult('complete', startedAt, sourceBytes.byteLength, declarations);
+        return declarationResult('complete', startedAt, sourceByteLength, declarations);
       } catch (error) {
         trapped = true;
         return declarationResult(
           'failed',
           startedAt,
-          sourceBytes.byteLength,
+          sourceByteLength,
           [],
           'GRAPH_NATIVE_ENGINE_TRAPPED',
           error instanceof Error ? error.message : 'Bundled engine execution failed.'
@@ -582,7 +590,7 @@ export async function createNodeRustWasmGraphNativePort(
           trapped,
           dealloc: () => {
             if (sourcePointer !== 0) {
-              engine.graph_engine_dealloc_u8(sourcePointer, sourceBytes.byteLength);
+              engine.graph_engine_dealloc_u8(sourcePointer, sourceByteLength);
             }
             if (recordsPointer !== 0) engine.graph_engine_dealloc_u32(recordsPointer, recordWords);
             if (namesPointer !== 0) engine.graph_engine_dealloc_u8(namesPointer, namesCapacity);

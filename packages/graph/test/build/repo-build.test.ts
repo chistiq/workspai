@@ -343,6 +343,16 @@ describe('buildRepoGraph', () => {
     if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
 
     expect(result.status).toBe('complete');
+    expect(result.metrics.compositionTimings).toEqual(
+      expect.objectContaining({
+        admitMs: expect.any(Number),
+        workerMs: expect.any(Number),
+        semanticDigestMs: expect.any(Number),
+        edgeProofMs: expect.any(Number),
+        contentDigestMs: expect.any(Number),
+      })
+    );
+    expect(result.metrics.providerTimings?.length).toBeGreaterThan(0);
     expect(result.graph.nodes).toContainEqual(expect.objectContaining({ kind: 'branch' }));
     expect(result.graph.edges).toContainEqual(
       expect.objectContaining({ relation: 'contains', state: 'accepted' })
