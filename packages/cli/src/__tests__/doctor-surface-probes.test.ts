@@ -1035,6 +1035,11 @@ describe('doctor enterprise surface probes', () => {
         '[project]\nname = "primary"\ndependencies = ["agent-framework-core==1.17.0"]\n',
       'agents/primary/.env.example': 'FOUNDRY_PROJECT_ENDPOINT=\n',
     });
+    const nodeProject = await makeProject({
+      'agents/primary/package.json':
+        '{"name":"primary","dependencies":{"@openai/agents":"0.18.0"}}\n',
+      'agents/primary/.env.example': 'OPENAI_API_KEY=\nOPENAI_MODEL=\n',
+    });
     const dotnetProject = await makeProject({
       'agents/primary/Primary.csproj': '<Project Sdk="Microsoft.NET.Sdk"></Project>\n',
       'agents/primary/tests/Primary.Tests.csproj': '<Project Sdk="Microsoft.NET.Sdk"></Project>\n',
@@ -1043,6 +1048,12 @@ describe('doctor enterprise surface probes', () => {
     const python = await buildEnterpriseSurfaceProbes({
       projectPath: pythonProject,
       runtimeFamily: 'python',
+      projectKind: 'agent',
+      hasTests: true,
+    });
+    const node = await buildEnterpriseSurfaceProbes({
+      projectPath: nodeProject,
+      runtimeFamily: 'node',
       projectKind: 'agent',
       hasTests: true,
     });
@@ -1060,6 +1071,14 @@ describe('doctor enterprise surface probes', () => {
     expect(python.find((probe) => probe.id === 'surface-dependency-contract')).toMatchObject({
       status: 'warn',
       repairCapability: { command: expect.stringContaining('uv lock --project agents/primary') },
+    });
+    expect(node.find((probe) => probe.id === 'surface-env-contract')).toMatchObject({
+      status: 'pass',
+      applicability: 'applicable',
+    });
+    expect(node.find((probe) => probe.id === 'surface-dependency-contract')).toMatchObject({
+      status: 'warn',
+      repairCapability: { command: expect.stringContaining('npm install --prefix agents/primary') },
     });
     expect(dotnet.find((probe) => probe.id === 'surface-dependency-contract')).toMatchObject({
       status: 'warn',

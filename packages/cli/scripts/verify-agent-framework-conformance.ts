@@ -10,7 +10,8 @@ import {
 import { buildAgentFrameworkAdmissionCandidate } from '../src/agent-frameworks/admission-candidate.js';
 import type { AgentFrameworkConformanceReport } from '../src/contracts/agent-framework-contract.js';
 
-const REPORT_NAME = /^microsoft-agent-framework-(python|dotnet)-(linux|darwin|win32)\.json$/;
+const REPORT_NAME =
+  /^(microsoft-agent-framework-(python|dotnet)|openai-agents-(python|typescript))-(linux|darwin|win32)\.json$/;
 const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
 const CANDIDATE_NAME = 'agent-framework-admission-candidate.json';
 

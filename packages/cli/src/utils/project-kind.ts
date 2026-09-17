@@ -341,7 +341,8 @@ export async function inferWorkspaceProjectKind(
     if (
       metadataKind === 'worker' &&
       typeof authoredMetadata?.framework === 'string' &&
-      authoredMetadata.framework.trim().toLowerCase() === 'microsoft-agent-framework'
+      (authoredMetadata.framework.trim().toLowerCase() === 'microsoft-agent-framework' ||
+        authoredMetadata.framework.trim().toLowerCase() === 'openai-agents')
     ) {
       return 'agent';
     }

@@ -87,6 +87,24 @@ describe('backend-framework-contract', () => {
       confidence: 'medium',
       source: 'runtime',
     });
+
+    expect(detectBackendFrameworkFromHints({ kitName: 'agent.openai.python' })).toMatchObject({
+      key: 'openai-agents',
+      runtime: 'python',
+      confidence: 'high',
+      source: 'kit',
+    });
+    expect(
+      detectBackendFrameworkFromHints({
+        kitName: 'agent.openai.typescript',
+        runtime: 'node',
+      })
+    ).toMatchObject({
+      key: 'openai-agents',
+      runtime: 'node',
+      confidence: 'high',
+      source: 'kit',
+    });
   });
 
   it('detects backend frameworks from project manifests and markers', async () => {

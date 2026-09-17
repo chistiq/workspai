@@ -461,6 +461,7 @@ async function inferDependencyBaselineRepair(input: {
       typeof input.packageJsonData?.packageManager === 'string'
         ? input.packageJsonData.packageManager.split('@')[0]
         : null;
+    const agentPrefix = input.projectKind === 'agent' ? ' --prefix agents/primary' : '';
     const command =
       packageManager === 'pnpm'
         ? 'pnpm install'
@@ -468,11 +469,17 @@ async function inferDependencyBaselineRepair(input: {
           ? 'yarn install'
           : packageManager === 'bun'
             ? 'bun install'
-            : 'npm install';
+            : `npm install${agentPrefix}`;
     return {
       command,
-      title: 'Generate Node dependency lockfile',
-      files: ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock'],
+      title:
+        input.projectKind === 'agent'
+          ? 'Generate nested Node agent dependency lockfile'
+          : 'Generate Node dependency lockfile',
+      files:
+        input.projectKind === 'agent'
+          ? ['agents/primary/package.json', 'agents/primary/package-lock.json']
+          : ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock'],
       limitations: ['Review dependency and lockfile changes before committing.'],
     };
   }
@@ -1198,7 +1205,9 @@ async function buildDependencyContractProbe(input: {
       ? [`${agentRuntimeRoot}/pyproject.toml`]
       : agentRuntimeRoot && input.runtime === 'dotnet'
         ? [`${agentRuntimeRoot}/Primary.csproj`, `${agentRuntimeRoot}/tests/Primary.Tests.csproj`]
-        : []),
+        : agentRuntimeRoot && input.runtime === 'node'
+          ? [`${agentRuntimeRoot}/package.json`]
+          : []),
   ];
   const lockfiles = [
     ...(DEPENDENCY_LOCKFILES[input.runtime] ?? []),
@@ -1210,7 +1219,9 @@ async function buildDependencyContractProbe(input: {
             `${agentRuntimeRoot}/tests/packages.lock.json`,
             `${agentRuntimeRoot}/Directory.Packages.props`,
           ]
-        : []),
+        : agentRuntimeRoot && input.runtime === 'node'
+          ? [`${agentRuntimeRoot}/package-lock.json`]
+          : []),
   ];
   if (manifests.length === 0 && lockfiles.length === 0) {
     return null;

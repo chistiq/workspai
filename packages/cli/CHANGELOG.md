@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Implemented preview OpenAI Agents SDK adapters for Python `0.22.2` and
+  TypeScript `@openai/agents` `0.18.0` with independent framework/runtime
+  selection, credentialless conformance lanes, and Create kit ids
+  `agent.openai.python` / `agent.openai.typescript`. Public Create and Attach
+  stay blocked until reviewed release admission; `--runtime python` without
+  `--framework` continues to select Microsoft while only Microsoft is admitted.
+
 ## [0.75.2] - 2026-09-14
 
 ### Changed

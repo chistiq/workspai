@@ -112,6 +112,8 @@ describe('agent framework user flow', () => {
       status: 'planned',
       project: 'api',
       runtime: 'python',
+      frameworkId: 'microsoft-agent-framework',
+      adapterId: 'microsoft-agent-framework-python',
       instanceName: 'release-reviewer',
     });
     expect(prepared.files).toHaveLength(6);
@@ -244,5 +246,18 @@ describe('agent framework user flow', () => {
           operation.targetKind === 'artifact' && operation.targetId.startsWith('worker/')
       )
     ).toBe(false);
+  });
+
+  it('fails closed when attaching a built-in adapter that is not release-admitted', async () => {
+    const { workspacePath } = await fixture();
+    await expect(
+      prepareAgentFrameworkAttachment({
+        workspacePath,
+        project: 'api',
+        runtime: 'python',
+        framework: 'openai-agents',
+        instanceName: 'primary',
+      })
+    ).rejects.toThrow(/not release-admitted/);
   });
 });

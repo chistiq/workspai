@@ -178,6 +178,31 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     );
   }, 90_000);
 
+  it('fails closed for implemented OpenAI agent kits until release admission', async () => {
+    const resolveSpy = vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
+    const runSpy = vi.spyOn(coreExec, 'runCoreRapidkit').mockResolvedValue(0 as any);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    for (const kit of ['agent.openai.python', 'agent.openai.typescript'] as const) {
+      const projectName = `blocked-${kit.replaceAll('.', '-')}`;
+      const code = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        kit,
+        projectName,
+        '--yes',
+      ]);
+      expect(code).toBe(1);
+      expect(await fsExtra.pathExists(path.join(tmpDir, projectName))).toBe(false);
+    }
+
+    expect(resolveSpy).not.toHaveBeenCalled();
+    expect(runSpy).not.toHaveBeenCalled();
+    const output = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+    expect(output).toContain('agent.openai.python is not release-admitted');
+    expect(output).toContain('agent.openai.typescript is not release-admitted');
+  });
+
   it('rolls back project registration when the governed scaffold cannot be planned', async () => {
     await create.createProject('agent-workspace', {
       parentDirectory: tmpDir,

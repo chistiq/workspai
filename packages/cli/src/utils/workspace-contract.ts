@@ -289,7 +289,11 @@ function projectJsonContractsEnv(payload: Record<string, unknown>): string[] {
 
 function isNonServiceKit(kit?: string): boolean {
   const value = (kit || '').toLowerCase();
-  return value.includes('vscode-extension') || value.includes('agent.microsoft');
+  return (
+    value.includes('vscode-extension') ||
+    value.includes('agent.microsoft') ||
+    value.includes('agent.openai')
+  );
 }
 
 function normalizeProjectPorts(payload: Record<string, unknown>): WorkspaceContractPort[] {

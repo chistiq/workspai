@@ -4,6 +4,8 @@ import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  describeAgentFrameworkProjectKits,
+  isAgentFrameworkProjectKit,
   listAgentFrameworkProjectKits,
   initializeAgentFrameworkProjectRoot,
   resolveAgentFrameworkProjectKit,
@@ -18,9 +20,19 @@ afterEach(async () => {
 
 describe('agent framework project kits', () => {
   it('publishes only exact release-admitted Python and .NET kits', () => {
+    expect(describeAgentFrameworkProjectKits().map((kit) => kit.id)).toEqual([
+      'agent.microsoft.python',
+      'agent.microsoft.dotnet',
+      'agent.openai.python',
+      'agent.openai.typescript',
+    ]);
     const kits = listAgentFrameworkProjectKits();
     expect(kits.map((kit) => kit.id)).toEqual(['agent.microsoft.python', 'agent.microsoft.dotnet']);
     expect(kits.every((kit) => kit.adapterId.startsWith('microsoft-agent-framework-'))).toBe(true);
+    expect(isAgentFrameworkProjectKit('agent.openai.python')).toBe(true);
+    expect(isAgentFrameworkProjectKit('agent.openai.typescript')).toBe(true);
+    expect(resolveAgentFrameworkProjectKit('agent.openai.python')).toBeNull();
+    expect(resolveAgentFrameworkProjectKit('agent.openai.typescript')).toBeNull();
   });
 
   it('resolves stable aliases without exposing mutable registry state', () => {

@@ -239,6 +239,8 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(registry.list().map((entry) => entry.manifest.adapter.id)).toEqual([
       'microsoft-agent-framework-dotnet',
       'microsoft-agent-framework-python',
+      'openai-agents-python',
+      'openai-agents-typescript',
     ]);
     const resolution = await registry.resolveProject({ projectRoot: root, runtime: 'python' });
     expect(resolution.status).toBe('blocked');

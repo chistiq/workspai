@@ -394,9 +394,12 @@ project metadata and performs the selected workspace registration.
 | ------------------------ | ------- | --------------- | ------ |
 | `agent.microsoft.python` | Python  | `agent-framework-core` `1.18.0`, Foundry `1.13.0`, `azure-identity` `1.25.3` | Isolated `agents/<instance>/` with `pyproject.toml`, credentialless `unittest`, and `.env.example` |
 | `agent.microsoft.dotnet` | .NET    | `Microsoft.Agents.AI` `1.21.0`, Foundry `1.21.0-preview.260911.1` | Isolated `agents/<instance>/` with the executable project plus a dedicated test project |
+| `agent.openai.python` | Python | `openai-agents` `0.22.2` | Implemented; Create/Attach stay blocked until release admission |
+| `agent.openai.typescript` | Node.js | `@openai/agents` `0.18.0`, `zod` `4.6.5` | Implemented; Create/Attach stay blocked until release admission |
 
 Interactive `workspai create` shows these kits under **AI Agent** only after
-release admission. Agent kits require Workspace governance and therefore do not
+release admission. OpenAI kit ids are present in the inventory but hidden until
+that review. Agent kits require Workspace governance and therefore do not
 accept `--no-workspace`. Optional `--agent-name` names the instance directory
 (default `primary`). They do not install dependencies, call a model, or store
 credentials. Exact versions are promoted only after the full Linux, macOS, and

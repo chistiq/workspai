@@ -2,7 +2,7 @@ import fsExtra from 'fs-extra';
 import path from 'node:path';
 
 import { createBuiltinAgentFrameworkRegistry } from './builtins.js';
-import type { AgentFrameworkUserRuntime } from './user-flow.js';
+import type { AgentFrameworkUserRuntime } from './selection.js';
 import { getVersion } from '../update-checker.js';
 
 export type AgentFrameworkProjectKit = {
@@ -11,6 +11,9 @@ export type AgentFrameworkProjectKit = {
   label: string;
   runtime: AgentFrameworkUserRuntime;
   adapterId: string;
+  frameworkId: string;
+  frameworkName: string;
+  requiredEnvironment: string[];
 };
 
 const PROJECT_KITS: AgentFrameworkProjectKit[] = [
@@ -20,6 +23,9 @@ const PROJECT_KITS: AgentFrameworkProjectKit[] = [
     label: 'Microsoft Agent Framework · Python',
     runtime: 'python',
     adapterId: 'microsoft-agent-framework-python',
+    frameworkId: 'microsoft-agent-framework',
+    frameworkName: 'Microsoft Agent Framework',
+    requiredEnvironment: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
   },
   {
     id: 'agent.microsoft.dotnet',
@@ -27,6 +33,34 @@ const PROJECT_KITS: AgentFrameworkProjectKit[] = [
     label: 'Microsoft Agent Framework · .NET',
     runtime: 'dotnet',
     adapterId: 'microsoft-agent-framework-dotnet',
+    frameworkId: 'microsoft-agent-framework',
+    frameworkName: 'Microsoft Agent Framework',
+    requiredEnvironment: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
+  },
+  {
+    id: 'agent.openai.python',
+    aliases: ['agent.openai.python', 'openai-agents-python', 'openai-agent-python'],
+    label: 'OpenAI Agents SDK · Python',
+    runtime: 'python',
+    adapterId: 'openai-agents-python',
+    frameworkId: 'openai-agents',
+    frameworkName: 'OpenAI Agents SDK',
+    requiredEnvironment: ['OPENAI_API_KEY', 'OPENAI_MODEL'],
+  },
+  {
+    id: 'agent.openai.typescript',
+    aliases: [
+      'agent.openai.typescript',
+      'agent.openai.node',
+      'openai-agents-typescript',
+      'openai-agent-typescript',
+    ],
+    label: 'OpenAI Agents SDK · TypeScript',
+    runtime: 'node',
+    adapterId: 'openai-agents-typescript',
+    frameworkId: 'openai-agents',
+    frameworkName: 'OpenAI Agents SDK',
+    requiredEnvironment: ['OPENAI_API_KEY', 'OPENAI_MODEL'],
   },
 ];
 
@@ -39,11 +73,15 @@ function admitted(kit: AgentFrameworkProjectKit): boolean {
   );
 }
 
+export function describeAgentFrameworkProjectKits(): AgentFrameworkProjectKit[] {
+  return PROJECT_KITS.map((kit) => structuredClone(kit));
+}
+
 export function listAgentFrameworkProjectKits(): AgentFrameworkProjectKit[] {
   return PROJECT_KITS.filter(admitted).map((kit) => structuredClone(kit));
 }
 
-export function resolveAgentFrameworkProjectKit(
+export function lookupAgentFrameworkProjectKit(
   value: string | undefined
 ): AgentFrameworkProjectKit | null {
   if (!value) return null;
@@ -51,11 +89,18 @@ export function resolveAgentFrameworkProjectKit(
   const kit = PROJECT_KITS.find((candidate) =>
     candidate.aliases.some((alias) => alias.toLowerCase() === normalized)
   );
-  return kit && admitted(kit) ? structuredClone(kit) : null;
+  return kit ? structuredClone(kit) : null;
+}
+
+export function resolveAgentFrameworkProjectKit(
+  value: string | undefined
+): AgentFrameworkProjectKit | null {
+  const kit = lookupAgentFrameworkProjectKit(value);
+  return kit && admitted(kit) ? kit : null;
 }
 
 export function isAgentFrameworkProjectKit(value: string | undefined): boolean {
-  return resolveAgentFrameworkProjectKit(value) !== null;
+  return lookupAgentFrameworkProjectKit(value) !== null;
 }
 
 export async function initializeAgentFrameworkProjectRoot(input: {
@@ -73,7 +118,7 @@ export async function initializeAgentFrameworkProjectRoot(input: {
   );
   await fsExtra.writeFile(
     path.join(input.projectPath, '.gitignore'),
-    '.env\n.venv/\n__pycache__/\nbin/\nobj/\n',
+    '.env\n.venv/\n__pycache__/\nnode_modules/\ndist/\nbin/\nobj/\n',
     { encoding: 'utf8', flag: 'wx' }
   );
   // The admitted adapter writes the single authoritative runtime manifest
@@ -86,7 +131,7 @@ export async function initializeAgentFrameworkProjectRoot(input: {
     {
       engine: 'npm',
       runtime: input.kit.runtime,
-      framework: 'microsoft-agent-framework',
+      framework: input.kit.frameworkId,
       kind: 'agent',
       category: 'agent',
       kit: input.kit.id,
@@ -103,8 +148,8 @@ export async function initializeAgentFrameworkProjectRoot(input: {
       project_type: 'agent',
       category: 'agent',
       runtime: input.kit.runtime,
-      framework: 'microsoft-agent-framework',
-      framework_display_name: 'Microsoft Agent Framework',
+      framework: input.kit.frameworkId,
+      framework_display_name: input.kit.frameworkName,
       kit_name: input.kit.id,
       kit: input.kit.id,
       engine: 'npm',
@@ -121,7 +166,7 @@ export async function initializeAgentFrameworkProjectRoot(input: {
         publishes: [],
         consumes: [],
         dependsOn: [],
-        env: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
+        env: [...input.kit.requiredEnvironment],
       },
     },
     { spaces: 2 }

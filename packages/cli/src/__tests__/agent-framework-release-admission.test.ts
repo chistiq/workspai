@@ -10,12 +10,20 @@ import {
 describe('agent framework release admission', () => {
   it('admits only the exact reviewed built-in manifests and complete platform matrices', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
-    expect(admissions).toHaveLength(BUILTIN_AGENT_FRAMEWORK_ADAPTERS.length);
+    const admittedIds = new Set(admissions.map((admission) => admission.id));
+    expect(admissions).toHaveLength(2);
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
-      expect(resolution).toMatchObject({ status: 'admitted', blockers: [] });
-      expect(resolution.admission?.platforms).toEqual(['linux', 'darwin', 'win32']);
+      if (admittedIds.has(adapter.manifest.adapter.id)) {
+        expect(resolution).toMatchObject({ status: 'admitted', blockers: [] });
+        expect(resolution.admission?.platforms).toEqual(['linux', 'darwin', 'win32']);
+      } else {
+        expect(resolution.status).toBe('blocked');
+        expect(resolution.blockers).toEqual(
+          expect.arrayContaining([expect.stringContaining('No reviewed release admission exists')])
+        );
+      }
     }
   });
 
