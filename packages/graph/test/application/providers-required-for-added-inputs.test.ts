@@ -11,6 +11,8 @@ import {
   createLanguageImportsProvider,
   createPackageJsonProvider,
   createRepositoryFilesProvider,
+  createSourceDeclarationsProvider,
+  createSourceLanguageProvider,
 } from '../../src/providers/index.js';
 
 const scan = { algorithm: 'sha256' as const, value: 'a'.repeat(64) };
@@ -105,6 +107,23 @@ describe('providersRequiredForAddedInputs', () => {
       networkAllowed: false,
     });
     expect(required).toEqual(['workspai.graph.provider.throws', 'workspai.graph.provider.unknown']);
+  });
+
+  it('recomputes source-declarations and source-language for an added TypeScript file', async () => {
+    const required = await providersRequiredForAddedInputs({
+      providers: [
+        createPackageJsonProvider(),
+        createSourceDeclarationsProvider(),
+        createSourceLanguageProvider(),
+      ],
+      addedLocators: ['src/extra.ts'],
+      scopeKind: 'project',
+      networkAllowed: false,
+    });
+    expect(required).toEqual([
+      'workspai.graph.provider.source-declarations',
+      'workspai.graph.provider.source-language',
+    ]);
   });
 
   it('returns no providers when the tree has no added locators', async () => {

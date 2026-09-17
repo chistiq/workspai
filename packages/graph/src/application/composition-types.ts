@@ -12,7 +12,6 @@ import type {
   GraphQualityReport,
   GraphResolutionState,
   GraphValidationIssue,
-  GraphWorkspaceFact,
 } from '../contracts/index.js';
 
 export interface GraphCompositionPolicy {
@@ -40,6 +39,18 @@ export interface GraphCompositionRequest {
   readonly policy: GraphCompositionPolicy;
   readonly lineages?: readonly GraphDerivationLineage[];
   readonly previousGeneration?: { readonly id: string; readonly contentDigest: WisDigestReference };
+  /**
+   * Host-computed identity freeze for sharded composition. Workers must not
+   * re-derive identity from a fact subset. Absent for single-shot composition.
+   */
+  readonly identityFreeze?: GraphCompositionIdentityFreeze;
+}
+
+export interface GraphCompositionIdentityFreeze {
+  readonly nodes: readonly GraphEntityReference[];
+  readonly resolvedIds: readonly (readonly [string, string])[];
+  readonly invalidIds: readonly string[];
+  readonly unresolved: readonly { readonly id: string; readonly candidates: readonly string[] }[];
 }
 
 export interface GraphCompositionDecision {
@@ -65,11 +76,19 @@ export interface GraphReferenceCompositionTaskOutput {
     readonly relation: GraphOntologyRelationDefinition;
     readonly from: GraphEntityReference;
     readonly to: GraphEntityReference;
-    readonly facts: readonly { readonly fact: GraphWorkspaceFact }[];
+    readonly facts: readonly { readonly factId: string }[];
   }[];
   readonly decisions: readonly GraphCompositionDecision[];
   readonly diagnostics: readonly GraphDiagnostic[];
   readonly unresolved: readonly { readonly id: string; readonly candidates: readonly string[] }[];
+}
+
+export interface GraphCompositionTimings {
+  readonly admitMs: number;
+  readonly workerMs: number;
+  readonly semanticDigestMs: number;
+  readonly edgeProofMs: number;
+  readonly contentDigestMs: number;
 }
 
 export interface GraphCompositionOutput {
@@ -91,6 +110,7 @@ export type GraphCompositionResult =
       readonly accepted: true;
       readonly value: GraphCompositionOutput;
       readonly issues: readonly [];
+      readonly timings: GraphCompositionTimings;
     }
   | {
       readonly accepted: false;

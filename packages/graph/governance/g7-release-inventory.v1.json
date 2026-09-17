@@ -76,6 +76,45 @@
       "providersRequiredForAddedInputs",
       "runStandaloneGraph",
       "summarizeCanonicalGraphDelta"
+    ],
+    "contractsValueExports": [
+      "GRAPH_COMPARABLE_SURFACE_CONTRACT",
+      "GRAPH_COMPARABLE_SURFACE_LAW",
+      "GRAPH_ENTITY_IDENTITY_CONTRACT",
+      "GRAPH_GENERATED_ARTIFACT_CONTRACT",
+      "GRAPH_GENERATED_ARTIFACT_LAW",
+      "GRAPH_IDENTITY_SCHEME",
+      "GRAPH_INVENTORY_SURFACE_CONTRACT",
+      "GRAPH_INVENTORY_SURFACE_LAW",
+      "GRAPH_LOCATOR_IDENTITY_CONTRACT",
+      "GRAPH_LOCATOR_IDENTITY_LAW",
+      "GRAPH_OPAQUE_DECLARED_LOCATOR_PREFIXES",
+      "GRAPH_UNKNOWN_CAUSE_CONTRACT",
+      "GRAPH_UNKNOWN_CAUSE_LAW",
+      "MAX_GRAPH_URI_DECODE_ROUNDS"
+    ],
+    "conformanceValueExports": [
+      "GRAPH_COMPARABLE_SURFACE",
+      "GRAPH_COMPARABLE_SURFACE_CONTRACT",
+      "GRAPH_COMPARABLE_SURFACE_LAW",
+      "GRAPH_GENERATED_ARTIFACT",
+      "GRAPH_GENERATED_ARTIFACT_CONTRACT",
+      "GRAPH_GENERATED_ARTIFACT_LAW",
+      "GRAPH_INVENTORY_SURFACE",
+      "GRAPH_INVENTORY_SURFACE_CONTRACT",
+      "GRAPH_INVENTORY_SURFACE_LAW",
+      "GRAPH_LOCATOR_IDENTITY",
+      "GRAPH_LOCATOR_IDENTITY_CONTRACT",
+      "GRAPH_LOCATOR_IDENTITY_LAW",
+      "GRAPH_UNKNOWN_CAUSE",
+      "GRAPH_UNKNOWN_CAUSE_CONTRACT",
+      "GRAPH_UNKNOWN_CAUSE_LAW",
+      "admitDeclaredGraphLocator",
+      "classifyGraphRelativeLocator",
+      "decodeGraphLocatorState",
+      "normalizeGraphEntityIdentity",
+      "opaqueGraphDeclaredLocator",
+      "resolveGraphEntityIdentity"
     ]
   },
   "packedJobs": [
@@ -168,6 +207,11 @@
       "sha256": "c52ac87c25aca437e007e913030f933887844a3eacdb1ef8fe58ad7309c83ae8"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/comparable-surface/v1",
+      "file": "schemas/comparable-surface.v1.schema.json",
+      "sha256": "676523e9aa67367c70ed8d8e3dc037e1527b6b49fe215eea30bb1b8ebc46b77f"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/content-state-manifest/v0.1.0-candidate",
       "file": "schemas/content-state-manifest.v0.1.0-candidate.schema.json",
       "sha256": "07faf8452599fbd5b7f1f48955df0a41c654eb2a285beabb7c6da87a96a36766"
@@ -196,6 +240,21 @@
       "id": "https://schemas.workspai.dev/graph/fact-batch/v0.1.0-candidate",
       "file": "schemas/fact-batch.v0.1.0-candidate.schema.json",
       "sha256": "2c4418357d00e0b8547f9f9e9f8e788e7854cc092301ba5a85264b70c0123a85"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/g8-real-workspace-matrix-admission/v1-candidate",
+      "file": "schemas/g8-real-workspace-matrix-admission.v1-candidate.schema.json",
+      "sha256": "c3d822c871609eae55aca72154d8f8e2e2137bdc9f20916e4456e0f0c1d26dfc"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/g8-real-workspace-platform-report/v1-candidate",
+      "file": "schemas/g8-real-workspace-platform-report.v1-candidate.schema.json",
+      "sha256": "9b1321386cda1b2bce014d8fc957fd558dd07d946354fba88ef934d49cf09334"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/generated-artifact/v1",
+      "file": "schemas/generated-artifact.v1.schema.json",
+      "sha256": "a118cc826d1bbc3e985ab13604e096ac117492287ce94e80339145e23f4df1ea"
     },
     {
       "id": "https://schemas.workspai.dev/graph/generation-publication/v0.1.0-candidate",
@@ -231,6 +290,16 @@
       "id": "https://schemas.workspai.dev/graph/graph-slice-result/v0.1.0-candidate",
       "file": "schemas/graph-slice-result.v0.1.0-candidate.schema.json",
       "sha256": "ef085427cc1b01856ca3d1e36ea4109033078a942cca89a36b10abcdbd331d84"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/inventory-surface/v1",
+      "file": "schemas/inventory-surface.v1.schema.json",
+      "sha256": "c728edb8019348d2685df7b8346c3c8789d5225d09f245f9b90219e6acaa986d"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/locator-identity/v1",
+      "file": "schemas/locator-identity.v1.schema.json",
+      "sha256": "624bdf2eae5a9ca197b12f75f6de251df20b853df6a0314622ed49e6f02feb54"
     },
     {
       "id": "https://schemas.workspai.dev/graph/model-generation-binding/v0.1.0-candidate",
@@ -318,9 +387,19 @@
       "sha256": "17633e2aedb2cbc4cc62336c05003516fe1f58e7618f3c49f96c71d5f1bb897a"
     },
     {
+      "id": "https://schemas.workspai.dev/graph/standalone-support-matrix/v0.2.0-candidate",
+      "file": "schemas/standalone-support-matrix.v0.2.0-candidate.schema.json",
+      "sha256": "31f9c4aa4ae0ee61b37e3d1e9765b14881f3559eb74802d64995b0cdd4a9523d"
+    },
+    {
       "id": "https://schemas.workspai.dev/graph/structural-extractor-profile/v0.1.0-candidate",
       "file": "schemas/structural-extractor-profile.v0.1.0-candidate.schema.json",
       "sha256": "fb178690cac4bbac8c99dee50e2ce6c0b5f1a18ee2108008fc8ab6d389b0bd81"
+    },
+    {
+      "id": "https://schemas.workspai.dev/graph/unknown-cause/v1",
+      "file": "schemas/unknown-cause.v1.schema.json",
+      "sha256": "8f5969b0ef442e6d29b725961ff5582619dd1a9faace17c9890ce76a8d020f3e"
     }
   ],
   "packedArtifactSecurity": {
@@ -343,7 +422,7 @@
     "maxNodes": 1000000,
     "maxEdges": 5000000,
     "maxMemoryBytes": 268435456,
-    "sourceDigest": "7ac124b8f3fe9eae1d6ef0f8ce2e7406d9360b7db5ed9819410c9b5635d3e172",
+    "sourceDigest": "71effc1138b1b2e5870e32290987c6d201df60827f4d6914d9ef3d0199b907d4",
     "sourceDigestScope": "canonical-source-and-build-policy",
     "artifactDigestPolicy": "bound-in-build-evidence"
   }

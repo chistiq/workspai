@@ -5,6 +5,7 @@ import { copyFile, link, open } from 'node:fs/promises';
 import fsExtra from 'fs-extra';
 import { assertWorkspaceArtifactContract } from '../contracts/artifact-contract-registry.js';
 import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
+import { replaceExistingPathWithTemporary } from './atomic-file-replace.js';
 import { toLegacyRapidkitArtifactPath, toWorkspaiArtifactPath } from './workspace-paths.js';
 
 function assertWorkspaceContainedPath(workspacePath: string, relativePath: string): string {
@@ -388,15 +389,7 @@ async function replaceArtifactAtomically(
     if (Number.isFinite(testDelayMs) && testDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, Math.min(testDelayMs, 30_000)));
     }
-    try {
-      await fsExtra.rename(temporaryPath, primaryPath);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST' && code !== 'EPERM') {
-        throw error;
-      }
-      await fsExtra.move(temporaryPath, primaryPath, { overwrite: true });
-    }
+    await replaceExistingPathWithTemporary(temporaryPath, primaryPath);
   } finally {
     await fsExtra.remove(temporaryPath).catch(() => undefined);
   }

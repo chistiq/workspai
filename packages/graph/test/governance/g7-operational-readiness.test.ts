@@ -43,13 +43,18 @@ describe('Graph G7 operational readiness', () => {
     expect(JSON.parse(result.stdout)).toEqual({
       schemaVersion: 'workspai-graph-g7-operational-readiness-audit.v1',
       package: '@workspai/graph',
-      status: 'ready-for-current-commit-matrix',
+      status: 'admitted-shadow-only',
       contractEpoch: 'graph-internal-v1',
       rollbackTarget: 'official-internal-graph-capability',
-      centralCliRuntimeImports: 0,
+      centralCliRuntimeImports: 1,
       baselineRunId: '34703877434',
       baselineAdmitted: false,
-      currentCommitEvidenceRequired: true,
+      admissionRunId: '34715037038',
+      admissionCommit: '12d489ca916fd9898d2e12bc9c3e529b5bf2a160',
+      standaloneStable: true,
+      authorizedRuntimeMode: 'g8-shadow-comparison-only',
+      currentGraphAuthority: 'official-internal-graph-capability',
+      currentCommitEvidenceRequired: false,
       failures: [],
     });
   });
@@ -124,6 +129,21 @@ describe('Graph G7 operational readiness', () => {
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout).failures).toContain(
       'retained G7 baseline metadata is incomplete or overclaims admission'
+    );
+  });
+
+  it('rejects a retained admission that changes the authorized runtime mode', () => {
+    const target = fixture('retained-admission.json', 'governance/g7-retained-admission.v1.json');
+    const admission = JSON.parse(fs.readFileSync(target, 'utf8')) as {
+      authorizedRuntimeMode: string;
+    };
+    admission.authorizedRuntimeMode = 'package-primary';
+    fs.writeFileSync(target, JSON.stringify(admission));
+
+    const result = run(['--retained-admission', portable(target)]);
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout).failures).toContain(
+      'retained G7 standalone admission is incomplete or over-authorized'
     );
   });
 });

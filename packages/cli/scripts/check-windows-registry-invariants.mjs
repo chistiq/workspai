@@ -349,6 +349,28 @@ assertIncludes(
   'await fs.rm(lockPath, { force: true }).catch(() => undefined)',
   'Registry lock must be removed after mutations.'
 );
+assertIncludes(
+  source.workspace,
+  "new Set(['EPERM', 'EBUSY', 'EACCES'])",
+  'Registry replace must retry Windows EPERM, EBUSY and EACCES failures.'
+);
+assertIncludes(
+  source.workspace,
+  'async function replaceWorkspaceRegistryFile',
+  'Registry publication must isolate replace/retry from the durable write.'
+);
+assertIncludes(
+  source.workspace,
+  'if (!isTransientWorkspaceRegistryReplaceError(moveError)) {\n          throw moveError;\n        }',
+  'Registry overwrite retry must decide from the move error alone.'
+);
+if (
+  source.workspace.includes(
+    '!isTransientWorkspaceRegistryReplaceError(error) &&\n          !isTransientWorkspaceRegistryReplaceError(moveError)'
+  )
+) {
+  fail('Registry overwrite retry must not inherit the earlier rename error.');
+}
 
 const rawSyncOccurrences = [...source.workspace.matchAll(/await\s+[\w.]+\.sync\(\)/g)].map(
   (match) => match[0]

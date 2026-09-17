@@ -64,6 +64,45 @@ describe('Graph G1 schema catalog', () => {
     expect(validateEntity(fixture('minimal-entity.json'))).toBe(true);
     expect(validateProvider(fixture('minimal-provider-manifest.json'))).toBe(true);
     expect(validateEntity(fixture('invalid-absolute-entity.json'))).toBe(false);
+    const locatorSchema = JSON.parse(
+      fs.readFileSync(path.join(root, 'schemas/locator-identity.v1.schema.json'), 'utf8')
+    );
+    const validateLocator =
+      ajv.getSchema(locatorSchema.$id) ?? new Ajv2020({ strict: true }).compile(locatorSchema);
+    expect(validateLocator(fixture('locator-identity-law.json'))).toBe(true);
+    expect(validateLocator({})).toBe(false);
+    const unknownCauseSchema = JSON.parse(
+      fs.readFileSync(path.join(root, 'schemas/unknown-cause.v1.schema.json'), 'utf8')
+    );
+    const generatedArtifactSchema = JSON.parse(
+      fs.readFileSync(path.join(root, 'schemas/generated-artifact.v1.schema.json'), 'utf8')
+    );
+    const comparableSurfaceSchema = JSON.parse(
+      fs.readFileSync(path.join(root, 'schemas/comparable-surface.v1.schema.json'), 'utf8')
+    );
+    const inventorySurfaceSchema = JSON.parse(
+      fs.readFileSync(path.join(root, 'schemas/inventory-surface.v1.schema.json'), 'utf8')
+    );
+    const validateUnknownCause =
+      ajv.getSchema(unknownCauseSchema.$id) ??
+      new Ajv2020({ strict: true }).compile(unknownCauseSchema);
+    const validateGeneratedArtifact =
+      ajv.getSchema(generatedArtifactSchema.$id) ??
+      new Ajv2020({ strict: true }).compile(generatedArtifactSchema);
+    const validateComparableSurface =
+      ajv.getSchema(comparableSurfaceSchema.$id) ??
+      new Ajv2020({ strict: true }).compile(comparableSurfaceSchema);
+    const validateInventorySurface =
+      ajv.getSchema(inventorySurfaceSchema.$id) ??
+      new Ajv2020({ strict: true }).compile(inventorySurfaceSchema);
+    expect(validateUnknownCause(fixture('unknown-cause-law.json'))).toBe(true);
+    expect(validateGeneratedArtifact(fixture('generated-artifact-law.json'))).toBe(true);
+    expect(validateComparableSurface(fixture('comparable-surface-law.json'))).toBe(true);
+    expect(validateInventorySurface(fixture('inventory-surface-law.json'))).toBe(true);
+    expect(validateUnknownCause({})).toBe(false);
+    expect(validateGeneratedArtifact({})).toBe(false);
+    expect(validateComparableSurface({})).toBe(false);
+    expect(validateInventorySurface({})).toBe(false);
   });
 
   it('schema-validates both minimal and maximal provider output fixtures', () => {

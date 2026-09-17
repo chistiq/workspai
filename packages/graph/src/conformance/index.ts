@@ -45,10 +45,48 @@ export {
 } from './foundation.js';
 export {
   canonicalizeGraphValue,
+  cloneCanonicalGraphValue,
   digestCanonicalGraphValue,
   measureCanonicalGraphValueBytes,
+  streamCanonicalGraphValue,
 } from './canonical-json.js';
 export { normalizeGraphEntityIdentity, resolveGraphEntityIdentity } from './identity.js';
+export { GRAPH_LOCATOR_IDENTITY } from './locator-identity-api.js';
+export {
+  GRAPH_COMPARABLE_SURFACE,
+  GRAPH_GENERATED_ARTIFACT,
+  GRAPH_UNKNOWN_CAUSE,
+} from './semantic-parity-api.js';
+export { GRAPH_INVENTORY_SURFACE } from './inventory-surface-api.js';
+export {
+  GRAPH_COMPARABLE_SURFACE_CONTRACT,
+  GRAPH_COMPARABLE_SURFACE_LAW,
+  GRAPH_GENERATED_ARTIFACT_CONTRACT,
+  GRAPH_GENERATED_ARTIFACT_LAW,
+  GRAPH_INVENTORY_SURFACE_CONTRACT,
+  GRAPH_INVENTORY_SURFACE_LAW,
+  GRAPH_LOCATOR_IDENTITY_CONTRACT,
+  GRAPH_LOCATOR_IDENTITY_LAW,
+  GRAPH_UNKNOWN_CAUSE_CONTRACT,
+  GRAPH_UNKNOWN_CAUSE_LAW,
+  type GraphUnknownCause,
+  type GraphGeneratedArtifactTreatment,
+  type GraphComparableMembership,
+  type GraphInventorySurfaceClass,
+  type GraphOmittedSubtree,
+  type GraphUnknownClassificationOrigin,
+} from '../contracts/index.js';
+export {
+  GRAPH_OPAQUE_DECLARED_LOCATOR_PREFIXES,
+  MAX_GRAPH_URI_DECODE_ROUNDS,
+  admitDeclaredGraphLocator,
+  classifyGraphRelativeLocator,
+  decodeGraphLocatorState,
+  opaqueGraphDeclaredLocator,
+  type GraphOpaqueDeclaredLocatorPrefix,
+  type GraphRelativeLocatorClass,
+  type GraphRelativeLocatorClassification,
+} from '../domain/locator-identity.js';
 export { assessGraphEvidenceIndependence } from './lineage.js';
 export {
   validateCanonicalGraph,

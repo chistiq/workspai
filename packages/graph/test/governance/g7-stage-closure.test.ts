@@ -10,7 +10,7 @@ const readJson = (file: string): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
 
 describe('Graph G7 stage closure', () => {
-  it('keeps the independent package registry on G5', () => {
+  it('retains the immutable G7 closure after registry admission to G8', () => {
     const repositoryRoot = path.resolve(packageRoot, '../..');
     const registry = JSON.parse(
       fs.readFileSync(path.join(repositoryRoot, 'independent-packages.json'), 'utf8')
@@ -23,9 +23,9 @@ describe('Graph G7 stage closure', () => {
       }[];
     };
     expect(registry.packages.find((entry) => entry.name === '@workspai/graph')).toMatchObject({
-      currentStage: 'G5',
-      latestClosure: 'packages/graph/governance/g5-stage-closure.v1.json',
-      standaloneStability: 'not-admitted',
+      currentStage: 'G8',
+      latestClosure: 'packages/graph/governance/g7-stage-admission.v1.json',
+      standaloneStability: 'admitted',
     });
   });
 
@@ -82,7 +82,7 @@ describe('Graph G7 stage closure', () => {
       standaloneStable: false,
       nextStage: 'G8',
       nextStageAuthorized: false,
-      registryStage: 'G5',
+      registryStage: 'G8',
       failures: [],
     });
   });

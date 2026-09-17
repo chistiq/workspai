@@ -10,6 +10,35 @@ export const GRAPH_ENTITY_IDENTITY_CONTRACT = defineWisContract({
   version: '0.1.0-candidate',
 });
 
+export const GRAPH_LOCATOR_IDENTITY_CONTRACT = defineWisContract({
+  id: 'workspai.graph.locator-identity',
+  version: '1',
+});
+
+export const GRAPH_OPAQUE_DECLARED_LOCATOR_PREFIXES = Object.freeze([
+  'encoded',
+  'targets',
+] as const);
+
+export const MAX_GRAPH_URI_DECODE_ROUNDS = 8;
+
+export const GRAPH_RELATIVE_LOCATOR_CLASSES = Object.freeze([
+  'portable',
+  'opaque',
+  'unsafe',
+] as const);
+
+export const GRAPH_LOCATOR_IDENTITY_LAW = Object.freeze({
+  contract: GRAPH_LOCATOR_IDENTITY_CONTRACT,
+  opaqueDeclaredPrefixes: GRAPH_OPAQUE_DECLARED_LOCATOR_PREFIXES,
+  maxUriDecodeRounds: MAX_GRAPH_URI_DECODE_ROUNDS,
+  classes: GRAPH_RELATIVE_LOCATOR_CLASSES,
+});
+
+export type GraphOpaqueDeclaredLocatorPrefix =
+  (typeof GRAPH_OPAQUE_DECLARED_LOCATOR_PREFIXES)[number];
+export type GraphRelativeLocatorClass = (typeof GRAPH_RELATIVE_LOCATOR_CLASSES)[number];
+
 export const GRAPH_FACT_BATCH_CONTRACT = defineWisContract({
   id: 'workspai.graph.fact-batch',
   version: '0.1.0-candidate',
@@ -87,7 +116,28 @@ export interface GraphTruthLifecycle {
   readonly invalidatedBy: readonly ('input-change' | 'deletion' | 'expiry' | 'provider-change')[];
 }
 
-export interface GraphUnknownZone {
+export type GraphUnknownCompleteness =
+  'complete' | 'bounded' | 'partial' | 'unsupported' | 'failed';
+
+export type GraphUnknownBound =
+  'policy-bounded' | 'unsupported' | 'partial' | 'failed' | 'resource-limited';
+
+export type GraphUnknownAdmissionImpact = 'blocking';
+
+export interface GraphUnknownObservationFields {
+  readonly cause?: string;
+  readonly stage?: string;
+  readonly provider?: string;
+  readonly language?: string;
+  readonly completeness?: GraphUnknownCompleteness;
+  readonly bound?: GraphUnknownBound;
+  readonly severity?: 'info' | 'warning' | 'error';
+  readonly admissionImpact?: GraphUnknownAdmissionImpact;
+  readonly evidence?: readonly string[];
+  readonly classificationOrigin?: 'structured-producer' | 'legacy-fallback';
+}
+
+export interface GraphUnknownZone extends GraphUnknownObservationFields {
   readonly code: string;
   readonly scope: string;
   readonly reason: string;
@@ -148,7 +198,7 @@ export interface GraphCoverageObservation {
   readonly expected?: number;
 }
 
-export interface GraphUnsupportedZone {
+export interface GraphUnsupportedZone extends GraphUnknownObservationFields {
   readonly code: string;
   readonly scope: string;
   readonly reason: string;

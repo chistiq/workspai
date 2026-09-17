@@ -25,6 +25,7 @@ import {
   createNodeGraphProductHostPorts,
   createNodeProjectArtifactStore,
   createNodeWorkspaceArtifactStore,
+  loadNodeBundledGraphNativePort,
 } from './adapters/node/index.js';
 import type {
   GraphCanonicalGraph,
@@ -103,7 +104,7 @@ Exit codes: ${GRAPH_CLI_EXIT_CODES.success} success, ${GRAPH_CLI_EXIT_CODES.part
 Query presets: ${Object.keys(GRAPH_QUERY_PRESETS).join(', ')}.
 
 The executable is local, offline and read-only unless --write is explicitly supplied.
-It does not import the central Workspai CLI. Standalone-stable admission is not claimed.
+It does not import the central Workspai CLI. CLI authority remains prohibited during G8 shadow comparison.
 `;
 
 class GraphCliInputError extends Error {}
@@ -333,7 +334,9 @@ function defaultDependencies(): GraphCliDependencies {
           root,
           scope: { kind: 'project', projectIds: ['project:implicit-single-repository'] },
           ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
-          providers: createStandardRepositoryProviders(),
+          providers: createStandardRepositoryProviders({
+            loadNative: loadNodeBundledGraphNativePort,
+          }),
           policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
           ports,
         },

@@ -157,31 +157,104 @@ describe('workspace registry', () => {
   });
 
   it('preserves concurrent CLI registrations in both registry files', async () => {
-    const homePath = await makeTempDir('rapidkit-registry-concurrent-home-');
+    for (let round = 0; round < 5; round += 1) {
+      const homePath = await makeTempDir(`rapidkit-registry-concurrent-home-${round}-`);
+      process.env.HOME = homePath;
+      process.env.USERPROFILE = homePath;
+      if (process.platform === 'win32') process.env.APPDATA = homePath;
+
+      const workspacePaths = Array.from({ length: 8 }, (_, index) => {
+        return path.join(homePath, 'workspaces', `workspace-${index}`);
+      });
+      await Promise.all(
+        workspacePaths.map((workspacePath, index) => {
+          return registerWorkspaceStrict(workspacePath, `workspace-${index}`);
+        })
+      );
+
+      const canonical = await fsExtra.readJson(
+        path.join(getWorkspaceRegistryDirectory(), 'workspaces.json')
+      );
+      const legacy = await fsExtra.readJson(
+        path.join(getLegacyWorkspaceRegistryDirectory(), 'workspaces.json')
+      );
+      expect(canonical).toEqual(legacy);
+      expect(canonical.workspaces).toHaveLength(workspacePaths.length);
+      expect(canonical.workspaces.map((workspace: { path: string }) => workspace.path)).toEqual(
+        expect.arrayContaining(workspacePaths.map(normalizeRegistryPath))
+      );
+    }
+  });
+
+  it('retries transient Windows replace errors during registry publication', async () => {
+    const homePath = await makeTempDir('rapidkit-registry-transient-home-');
     process.env.HOME = homePath;
     process.env.USERPROFILE = homePath;
     if (process.platform === 'win32') process.env.APPDATA = homePath;
 
-    const workspacePaths = Array.from({ length: 8 }, (_, index) => {
-      return path.join(homePath, 'workspaces', `workspace-${index}`);
+    const canonicalFile = path.join(getWorkspaceRegistryDirectory(), 'workspaces.json');
+    const rename = fs.rename.bind(fs);
+    const move = fsExtra.move.bind(fsExtra);
+    let injectedRenameFailures = 0;
+    let injectedMoveFailures = 0;
+    vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+      if (injectedRenameFailures < 2 && destination.toString() === canonicalFile) {
+        injectedRenameFailures += 1;
+        throw Object.assign(new Error('injected transient replace failure'), {
+          code: injectedRenameFailures === 1 ? 'EPERM' : 'EACCES',
+        });
+      }
+      return rename(source, destination);
     });
-    await Promise.all(
-      workspacePaths.map((workspacePath, index) => {
-        return registerWorkspace(workspacePath, `workspace-${index}`);
-      })
-    );
+    vi.spyOn(fsExtra, 'move').mockImplementation(async (source, destination, options) => {
+      if (injectedMoveFailures < 1 && destination.toString() === canonicalFile) {
+        injectedMoveFailures += 1;
+        throw Object.assign(new Error('injected busy replace failure'), { code: 'EBUSY' });
+      }
+      return move(source, destination, options);
+    });
 
-    const canonical = await fsExtra.readJson(
-      path.join(getWorkspaceRegistryDirectory(), 'workspaces.json')
-    );
-    const legacy = await fsExtra.readJson(
-      path.join(getLegacyWorkspaceRegistryDirectory(), 'workspaces.json')
-    );
-    expect(canonical).toEqual(legacy);
-    expect(canonical.workspaces).toHaveLength(workspacePaths.length);
-    expect(canonical.workspaces.map((workspace: { path: string }) => workspace.path)).toEqual(
-      expect.arrayContaining(workspacePaths.map(normalizeRegistryPath))
-    );
+    await registerWorkspaceStrict(path.join(homePath, 'workspaces', 'recovered'), 'recovered');
+
+    expect(injectedRenameFailures).toBeGreaterThanOrEqual(1);
+    expect(injectedMoveFailures).toBe(1);
+    const canonical = await fsExtra.readJson(canonicalFile);
+    expect(canonical.workspaces).toEqual([
+      expect.objectContaining({
+        name: 'recovered',
+        path: normalizeRegistryPath(path.join(homePath, 'workspaces', 'recovered')),
+      }),
+    ]);
+  });
+
+  it('fails closed when overwrite hits a durable error after a transient rename', async () => {
+    const homePath = await makeTempDir('rapidkit-registry-durable-replace-home-');
+    process.env.HOME = homePath;
+    process.env.USERPROFILE = homePath;
+    if (process.platform === 'win32') process.env.APPDATA = homePath;
+
+    const canonicalFile = path.join(getWorkspaceRegistryDirectory(), 'workspaces.json');
+    const rename = fs.rename.bind(fs);
+    const move = fsExtra.move.bind(fsExtra);
+    let moveAttempts = 0;
+    vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+      if (destination.toString() === canonicalFile) {
+        throw Object.assign(new Error('injected transient rename'), { code: 'EPERM' });
+      }
+      return rename(source, destination);
+    });
+    vi.spyOn(fsExtra, 'move').mockImplementation(async (source, destination, options) => {
+      if (destination.toString() === canonicalFile) {
+        moveAttempts += 1;
+        throw Object.assign(new Error('injected durable replace failure'), { code: 'ENOSPC' });
+      }
+      return move(source, destination, options);
+    });
+
+    await expect(
+      registerWorkspaceStrict(path.join(homePath, 'workspaces', 'full'), 'full')
+    ).rejects.toMatchObject({ code: 'ENOSPC' });
+    expect(moveAttempts).toBe(1);
   });
 
   it('pins registry paths before waiting even if process environment changes', async () => {

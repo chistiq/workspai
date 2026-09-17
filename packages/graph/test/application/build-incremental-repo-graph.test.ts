@@ -247,10 +247,12 @@ describe('buildIncrementalRepoGraph', () => {
     });
 
     expect(incremental.equivalence).toBe('pass');
-    expect(incremental.providers.some((entry) => entry.collection === 'not-run')).toBe(true);
-    expect(incremental.plan.providersToRecompute).toEqual([]);
-    expect(incremental.processing.length).toBeGreaterThan(0);
-    expect(collectCalls).toEqual([]);
+    expect(incremental.inventoryReread.trust).toBe('absent');
+    expect(incremental.providers.every((entry) => entry.collection !== 'not-run')).toBe(true);
+    expect(incremental.plan.providersToRecompute.length).toBeGreaterThan(0);
+    expect(collectCalls.sort()).toEqual(
+      ['workspai.graph.provider.fixture-a', 'workspai.graph.provider.fixture-b'].sort()
+    );
     expect(incremental.plan.delta.graph).toEqual({
       addedNodes: [],
       removedNodes: [],
@@ -953,7 +955,7 @@ describe('buildIncrementalRepoGraph', () => {
       ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
       providers: [first[0]!, fixtureProvider(providerB, 'src/index.ts', collectCalls)],
       policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
-      ports: ports(files),
+      ports: ports(files, { porcelain: '' }),
       baseManifest,
       baseGeneration: 'generation:base',
       targetGeneration: 'generation:target',

@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G7",
+  "asOf": "2026-09-12",
+  "status": "approved",
+  "advancesAdmissionGate": true,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "passed",
+      "summary": "The retained decision admits the exact G7 internal artifact without changing Graph authority.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "passed",
+      "summary": "The admitted artifact retained its bounded package and cross-platform evidence.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "passed",
+      "summary": "The retained artifact passed its declared performance gates before admission.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "The retained decision binds the protected-main security and attestation result.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "Shadow execution remains read-only, offline and explicitly authorized.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "passed",
+      "summary": "One protected-main run retained Linux, macOS and Windows evidence for the exact source commit.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "The package remains private and npm publication remains prohibited.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "passed",
+      "summary": "The exact tested commit and source commit are identical in retained admission evidence.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "G7 source ledgers remain immutable and G8 changes require versioned contracts.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "passed",
+      "summary": "The existing CLI remains the rollback target and sole Graph authority.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "Admission is represented by a separate closure instead of mutating historical candidate evidence.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "Retained artifact identifiers and digests preserve the protected-main admission chain.",
+      "evidence": [
+        "packages/graph/governance/g7-stage-closure.v1.json",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "retained-protected-main-admission",
+      "status": "passed",
+      "evidence": "Protected-main run 34715037038 admitted the exact G7 internal artifact."
+    },
+    {
+      "id": "g8-shadow-only-authorization",
+      "status": "passed",
+      "evidence": "Only read-only G8 shadow comparison is authorized; primary execution remains prohibited."
+    }
+  ],
+  "measurements": {
+    "standaloneStable": true,
+    "distribution": "internal-only",
+    "npmPublication": "prohibited",
+    "authorizedRuntimeMode": "g8-shadow-comparison-only",
+    "currentGraphAuthority": "official-internal-graph-capability"
+  },
+  "environment": { "local": ["node-20-or-newer"], "remoteMatrix": "passed" },
+  "remainingRisks": [
+    "G8 semantic parity and cross-platform real-workspace evidence remain required before primary execution.",
+    "The released CLI remains Graph authority until an explicit replacement decision passes."
+  ],
+  "nextStage": "G8",
+  "nextStageAuthorized": true,
+  "approval": {
+    "status": "approved",
+    "requiredForNextStage": true,
+    "approvedAt": "2026-09-12",
+    "rule": "The retained protected-main admission authorizes G8 shadow comparison only."
+  }
+}

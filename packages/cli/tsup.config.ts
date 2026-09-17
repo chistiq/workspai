@@ -1,7 +1,11 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: {
+    index: 'src/index.ts',
+    'internal/graph-package-shadow-bridge': 'src/graph-package-shadow-bridge.ts',
+    'internal/graph-reference-worker-entry': '../graph/src/adapters/node/reference-worker-entry.ts',
+  },
   format: ['esm'],
   target: 'node20',
 
@@ -42,10 +46,19 @@ export default defineConfig({
   ],
 
   // TypeScript declaration files
-  dts: true,
+  dts: {
+    entry: {
+      index: 'src/index.ts',
+      'internal/graph-package-shadow-bridge': 'src/graph-package-shadow-bridge.ts',
+    },
+  },
 
   // Skip node_modules
   skipNodeModulesBundle: true,
+
+  // Internal domain packages ship inside the public CLI artifact. End users
+  // never resolve unpublished workspace dependencies.
+  noExternal: ['@workspai/graph', '@workspai/shared'],
 
   // dist/package.json is redundant: npm packages already include root package.json.
   // Skipping the copy keeps the dist footprint under CI metrics threshold.

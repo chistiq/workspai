@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Adaptive source-structure extraction now uses the deep-scan file window
+  instead of 25% of it, so large polyglot inventories are not stuck at the
+  2,000-file floor after deep scan already admitted more candidates.
+- G8 Workspace Intelligence consumers now have a package shadow adapter for
+  source projection, query, overlay, Doctor/MCP/runner surfaces and a typed
+  authority receipt. Production still uses the released CLI composer. Host
+  reachability can select the bundled Rust/WASM engine only when it matches
+  TypeScript; users never choose an engine and package-primary replacement
+  remains unauthorized.
+- G8 shadow comparison now emits directional leftover identities, relations,
+  proofs and unknown families after mapping version `v2`. Package execution
+  receipts now carry `omittedFiles` and `omittedBytes` from Graph inventory
+  metrics. Duplicated project
+  prefixes and generated `.workspai` locators are normalized only in the
+  comparison projection. Encoded unsafe locators fail closed after decode.
+  Difference approvals must bind mapping version, key and set digest; code-only
+  fallbacks are rejected. The approvals ledger is `v2`. The released CLI remains
+  authoritative. The
+  representative committed Node corpus is the only matrix admission input.
+  Difference approvals default to zero and must be bound to a corpus,
+  source-tree digest and code. Optional local reference repositories are
+  observed when explicitly provided, are not trusted baselines, and are never
+  treated as cross-platform evidence. Isolated child execution is terminated at
+  the deadline. The harness is repository and CI TypeScript only: it forks a
+  `.ts` worker with an absolute `tsx` loader, is not a published CLI runtime
+  capability, and does not add `tsx` as a user install dependency. Nested Graph
+  composition workers still start after the child chdirs to a write sentinel.
+  The representative corpus has no third-party runtime dependencies, so
+  Security Audit does not treat its manifest as a product package. Platform
+  reports require semantic equivalence, measured read-only execution, and
+  recomputed qualification digests. Temporary copies retry Windows
+  `ENOTEMPTY` cleanup after isolated children are killed. Shadow comparison
+  now projects CLI test-suite aggregates onto the same project-level test
+  identity as package test files, inverts `tests` to `contains`, and compares
+  only released-CLI source claims. Manifest scripts, config/docs files, Node
+  builtins, test-file-local symbols, host identity inputs,
+  repository-configuration proofs and unbound deploy/ownership overlays stay
+  outside that comparable surface. Remote Linux, macOS
+  and Windows admission remains pending, and the released CLI remains
+  authoritative.
+- Retried transient Windows `EPERM`, `EBUSY` and `EACCES` failures when
+  replacing the shared workspace registry so concurrent registrations cannot
+  disappear behind a swallowed optional-registry warning.
+- Added a versioned G8 semantic shadow-parity corpus covering identity,
+  relation, proof lineage, unknown accounting, completeness, diagnostics and
+  explicitly reviewed improvements while the released CLI remains authoritative.
+- Made clean CLI builds prepare the private Shared and Graph bundle inputs in
+  dependency order, without invoking the Rust toolchain. Fresh CI runners no
+  longer depend on ignored workspace `dist` directories, while the public CLI
+  still embeds its internal Graph code instead of exposing runtime packages.
+- Routed one-shot test and generator-smoke builds through the same dependency-
+  ordered lifecycle so clean workflow jobs cannot bypass internal bundle-input
+  preparation.
+- Added the first read-only G8 Graph package shadow bridge. It executes the
+  private package from an explicitly prepared project context, preserves the
+  released CLI as the sole authority, bundles all internal code and worker
+  assets into the public CLI artifact, and never falls back silently.
+- Added fail-closed artifact and live-project qualification runners with exact
+  scope, authorization, inventory, provider, policy, resource, version and
+  commit bindings. Comparisons cover semantic identities, relations, proof
+  lineage, unknowns, completeness and diagnostics rather than counts alone.
+
+### Fixed
+
+- Tolerate Windows runner `fsync` `EPERM`/`ENOSYS` during atomic file replace so
+  durability sync cannot abort an otherwise successful overwrite.
+
 ## [0.75.2] - 2026-09-14
 
 ### Changed

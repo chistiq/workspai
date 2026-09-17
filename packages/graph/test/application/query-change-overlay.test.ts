@@ -102,4 +102,50 @@ describe('queryChangeOverlay', () => {
       true
     );
   });
+
+  it('matches overlay query subjects through rename locators and downstream invalidations', () => {
+    const overlay = JSON.parse(
+      fs.readFileSync(
+        path.join(packageRoot, 'fixtures/g6/minimal-graph-change-overlay.json'),
+        'utf8'
+      )
+    ) as GraphChangeOverlay;
+    const renamed = {
+      ...overlay,
+      predictedDelta: {
+        ...overlay.predictedDelta,
+        changedInputs: [
+          {
+            kind: 'rename-candidate' as const,
+            locator: 'src/renamed.ts',
+            inputKind: 'source-file',
+            scanProfileDigest: {
+              algorithm: 'sha256' as const,
+              value: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            },
+            renameCandidate: {
+              priorLocator: 'src/index.ts',
+              nextLocator: 'src/renamed.ts',
+              confidence: 1,
+            },
+          },
+        ],
+        downstreamInvalidations: ['shard:source-declarations:src/index.ts'],
+      },
+    };
+    expect(
+      queryChangeOverlay({ overlay: renamed, query: { kind: 'impact', subject: 'src/index.ts' } })
+        .predicted.changedInputs
+    ).toHaveLength(1);
+    expect(
+      queryChangeOverlay({ overlay: renamed, query: { kind: 'impact', subject: 'src/renamed.ts' } })
+        .predicted.changedInputs
+    ).toHaveLength(1);
+    expect(
+      queryChangeOverlay({
+        overlay: renamed,
+        query: { kind: 'impact', subject: 'source-declarations' },
+      }).predicted.downstreamInvalidations
+    ).toEqual(['shard:source-declarations:src/index.ts']);
+  });
 });

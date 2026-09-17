@@ -1,16 +1,22 @@
 import {
   admitGraphProviderOutput,
-  resolveGraphEntityIdentity,
   validateGraphProviderDetectionRequest,
   validateGraphProviderDetectionResult,
   validateGraphProviderManifest,
 } from '../conformance/index.js';
+import { createMemoizedIdentityResolver } from '../conformance/identity.js';
 import type {
   GraphDiagnostic,
   GraphProviderInput,
   GraphProviderRunSummary,
   GraphValidationIssue,
 } from '../contracts/index.js';
+import {
+  inventoryOmissionAccounting,
+  inventorySurfaceExcludedDirectoryNames,
+} from '../domain/inventory-surface.js';
+import { structurizeUnknownZone } from '../domain/unknown-cause.js';
+import type { GraphFileInventoryResult } from '../ports/index.js';
 
 import { composeGraph } from './compose-graph.js';
 import { GRAPH_STANDARD_COMPOSITION_POLICY } from './composition-types.js';
@@ -33,19 +39,7 @@ export const GRAPH_STANDARD_REPO_BUILD_POLICY: Readonly<GraphRepoBuildPolicy> = 
     maxDepth: 64,
     maxDirectoryEntries: 100_000,
   }),
-  excludedDirectories: Object.freeze([
-    '.git',
-    '.workspai',
-    'node_modules',
-    'dist',
-    'build',
-    'coverage',
-    'target',
-    'bin',
-    'obj',
-    '.venv',
-    'venv',
-  ]),
+  excludedDirectories: inventorySurfaceExcludedDirectoryNames(),
   sensitiveFiles: 'omit-known',
   composition: GRAPH_STANDARD_COMPOSITION_POLICY,
 });
@@ -328,19 +322,27 @@ function emptyResult(
   status: 'failed' | 'cancelled',
   diagnostics: readonly GraphDiagnostic[],
   providerSummaries: readonly GraphProviderRunSummary[],
-  inputCount: number,
-  inputBytes: number,
-  omittedFiles: number,
+  metrics: {
+    readonly inputFiles: number;
+    readonly inputBytes: number;
+    readonly omittedFiles: number;
+    readonly omittedBytes: number;
+    readonly omittedFileAccounting?: GraphRepoBuildResult['metrics']['omittedFileAccounting'];
+    readonly omittedByteAccounting?: GraphRepoBuildResult['metrics']['omittedByteAccounting'];
+  },
   zones: {
     readonly unknownZones: GraphRepoBuildResult['quality']['unknownZones'];
     readonly unsupportedZones: GraphRepoBuildResult['quality']['unsupportedZones'];
+    readonly omittedSubtrees?: GraphRepoBuildResult['quality']['omittedSubtrees'];
   } = { unknownZones: [], unsupportedZones: [] }
 ): GraphRepoBuildResult {
+  const omittedSubtrees = Object.freeze([...(zones.omittedSubtrees ?? [])]);
   return {
     status,
     quality: {
       unknownZones: zones.unknownZones,
       unsupportedZones: zones.unsupportedZones,
+      omittedSubtrees,
       providerFailures: providerSummaries
         .filter(
           (summary) =>
@@ -355,11 +357,42 @@ function emptyResult(
     providers: providerSummaries,
     diagnostics,
     metrics: {
-      inputFiles: inputCount,
-      inputBytes,
+      inputFiles: metrics.inputFiles,
+      inputBytes: metrics.inputBytes,
       providerFacts: providerSummaries.reduce((sum, summary) => sum + summary.factCount, 0),
-      omittedFiles,
+      omittedFiles: metrics.omittedFiles,
+      omittedBytes: metrics.omittedBytes,
+      omittedFileAccounting: metrics.omittedFileAccounting,
+      omittedByteAccounting: metrics.omittedByteAccounting,
+      omittedSubtrees,
     },
+  };
+}
+
+const EMPTY_INVENTORY_METRICS = Object.freeze({
+  inputFiles: 0,
+  inputBytes: 0,
+  omittedFiles: 0,
+  omittedBytes: 0,
+  omittedFileAccounting: 'enumerated' as const,
+  omittedByteAccounting: 'measured' as const,
+});
+
+function metricsFromInventory(
+  inventory: {
+    readonly inputs: readonly { readonly byteLength: number }[];
+    readonly omittedFiles: number;
+    readonly omittedBytes: number;
+    readonly omittedSubtrees?: Parameters<typeof inventoryOmissionAccounting>[0];
+  },
+  inputBytes?: number
+) {
+  return {
+    inputFiles: inventory.inputs.length,
+    inputBytes: inputBytes ?? inventory.inputs.reduce((sum, input) => sum + input.byteLength, 0),
+    omittedFiles: inventory.omittedFiles,
+    omittedBytes: inventory.omittedBytes,
+    ...inventoryOmissionAccounting(inventory.omittedSubtrees ?? []),
   };
 }
 
@@ -371,24 +404,23 @@ function emptyResult(
 export async function buildRepoGraph(
   request: GraphRepoBuildRequest
 ): Promise<GraphRepoBuildResult> {
+  const startedAt = performance.now();
   const diagnostics: GraphDiagnostic[] = [];
   const summaries: GraphProviderRunSummary[] = [];
   const sources: GraphCompositionSource[] = [];
-  let inventory;
+  let inventory: GraphFileInventoryResult;
 
   if (!request.root.trim()) {
     return emptyResult(
       'failed',
       [diagnostic('GRAPH_REPO_ROOT_INVALID', 'error', '/root', 'Repository root is required.')],
       summaries,
-      0,
-      0,
-      0
+      EMPTY_INVENTORY_METRICS
     );
   }
   const policyDiagnostics = validateBuildPolicy(request.policy);
   if (policyDiagnostics.length > 0) {
-    return emptyResult('failed', policyDiagnostics, summaries, 0, 0, 0);
+    return emptyResult('failed', policyDiagnostics, summaries, EMPTY_INVENTORY_METRICS);
   }
   if (!validRepoScope(request.scope)) {
     return emptyResult(
@@ -402,9 +434,7 @@ export async function buildRepoGraph(
         ),
       ],
       summaries,
-      0,
-      0,
-      0
+      EMPTY_INVENTORY_METRICS
     );
   }
   const scope = deepFreeze(structuredClone(request.scope));
@@ -418,6 +448,9 @@ export async function buildRepoGraph(
         diagnostics: [],
         omittedFiles: 0,
         omittedBytes: 0,
+        omittedFileAccounting: 'enumerated',
+        omittedByteAccounting: 'measured',
+        omittedSubtrees: Object.freeze([]),
         unknownZones: [],
         unsupportedZones: [],
       };
@@ -449,16 +482,21 @@ export async function buildRepoGraph(
         ),
       ],
       summaries,
-      0,
-      0,
-      0
+      EMPTY_INVENTORY_METRICS
     );
   }
 
   diagnostics.push(...inventory.diagnostics);
+  const inventoryOmittedSubtrees = Object.freeze([...(inventory.omittedSubtrees ?? [])]);
+  const inventoryAccounting = inventoryOmissionAccounting(inventoryOmittedSubtrees);
   const inventoryZones = {
-    unknownZones: inventory.unknownZones,
-    unsupportedZones: inventory.unsupportedZones,
+    unknownZones: inventory.unknownZones.map((zone) =>
+      structurizeUnknownZone(zone, { provider: 'graph.repository-inventory', stage: 'inventory' })
+    ),
+    unsupportedZones: inventory.unsupportedZones.map((zone) =>
+      structurizeUnknownZone(zone, { provider: 'graph.repository-inventory', stage: 'inventory' })
+    ),
+    omittedSubtrees: inventoryOmittedSubtrees,
   };
   const inventoryValidation = validateInventory(inventory.inputs, request.policy);
   if (inventoryValidation.length > 0) {
@@ -467,9 +505,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      0,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, 0),
       inventoryZones
     );
   }
@@ -479,9 +515,7 @@ export async function buildRepoGraph(
       'cancelled',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -490,9 +524,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -527,9 +559,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      admittedInputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -540,20 +570,22 @@ export async function buildRepoGraph(
         'failed',
         diagnostics,
         summaries,
-        admittedInputs.length,
-        inputBytes,
-        inventory.omittedFiles,
+        metricsFromInventory(inventory, inputBytes),
         inventoryZones
       );
     }
   }
   const observedAt = request.ports.clock.now().toISOString();
+  const resolveIdentity = createMemoizedIdentityResolver(request.ports.digest);
+  const fileBytes = new Map<string, Promise<Uint8Array>>();
   const providersToRecompute = compositionReuse
     ? new Set(compositionReuse.providersToRecompute)
     : null;
   const reusedByProvider = compositionReuse
     ? new Map(compositionReuse.reusedSources.map((source) => [source.manifest.id, source]))
     : null;
+  const availableInputLocators = Object.freeze(admittedInputs.map((input) => input.locator));
+  const providersStartedAt = performance.now();
 
   for (const provider of providers) {
     try {
@@ -571,9 +603,7 @@ export async function buildRepoGraph(
         'cancelled',
         diagnostics,
         summaries,
-        inventory.inputs.length,
-        inputBytes,
-        inventory.omittedFiles,
+        metricsFromInventory(inventory, inputBytes),
         inventoryZones
       );
     }
@@ -668,7 +698,7 @@ export async function buildRepoGraph(
     }
 
     const detectionRequest = {
-      availableInputs: admittedInputs.map((input) => input.locator),
+      availableInputs: availableInputLocators,
       scopeKind: 'project',
       networkAllowed: request.policy.network === 'allow',
     } as const;
@@ -687,6 +717,7 @@ export async function buildRepoGraph(
     }
 
     let detected: unknown;
+    const detectionStartedAt = performance.now();
     try {
       detected = await runProviderPhase(
         manifest.value.limits.maxDurationMs,
@@ -712,9 +743,11 @@ export async function buildRepoGraph(
         collection: 'not-run',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs: Math.max(0, Math.round(performance.now() - detectionStartedAt)),
       });
       continue;
     }
+    const detectionMs = Math.max(0, Math.round(performance.now() - detectionStartedAt));
     const detection = validateGraphProviderDetectionResult(detected, manifest.value);
     if (!detection.accepted) {
       const providerDiagnostics = issueDiagnostics(identity.id, detection.issues);
@@ -725,6 +758,7 @@ export async function buildRepoGraph(
         collection: 'not-run',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
       });
       continue;
     }
@@ -735,11 +769,13 @@ export async function buildRepoGraph(
         collection: 'not-run',
         factCount: 0,
         diagnostics: [],
+        detectionMs,
       });
       continue;
     }
 
     let collected: unknown;
+    const collectionStartedAt = performance.now();
     try {
       let providerReadBytes = 0;
       collected = await runProviderPhase(
@@ -751,7 +787,7 @@ export async function buildRepoGraph(
             inputs: admittedInputs,
             observedAt,
             signal: providerSignal,
-            resolveIdentity: (input) => resolveGraphEntityIdentity(input, request.ports.digest),
+            resolveIdentity,
             readInput: async (input: GraphProviderInput, options) => {
               const admitted = inputByLocator.get(input.locator);
               if (!admitted || admitted.digest.value !== input.digest.value) {
@@ -769,10 +805,15 @@ export async function buildRepoGraph(
               if (providerReadBytes > totalBudget) {
                 throw new Error('Provider cumulative reads exceed the admitted byte budget.');
               }
-              return request.ports.fileSource.read(request.root, admitted, {
+              const cacheKey = `${admitted.locator}\u0000${admitted.digest.value}`;
+              const cached = fileBytes.get(cacheKey);
+              if (cached) return cached;
+              const pending = request.ports.fileSource.read(request.root, admitted, {
                 maxBytes,
                 signal: options.signal ?? providerSignal,
               });
+              fileBytes.set(cacheKey, pending);
+              return pending;
             },
           })
       );
@@ -792,9 +833,7 @@ export async function buildRepoGraph(
           'cancelled',
           diagnostics,
           summaries,
-          inventory.inputs.length,
-          inputBytes,
-          inventory.omittedFiles,
+          metricsFromInventory(inventory, inputBytes),
           inventoryZones
         );
       }
@@ -816,9 +855,12 @@ export async function buildRepoGraph(
         collection: 'invalid',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
+        collectionMs: Math.max(0, Math.round(performance.now() - collectionStartedAt)),
       });
       continue;
     }
+    const collectionMs = Math.max(0, Math.round(performance.now() - collectionStartedAt));
 
     const admission = admitGraphProviderOutput(manifest.value, collected);
     if (!admission.accepted) {
@@ -830,6 +872,8 @@ export async function buildRepoGraph(
         collection: 'invalid',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
+        collectionMs,
       });
       continue;
     }
@@ -849,6 +893,8 @@ export async function buildRepoGraph(
         collection: 'invalid',
         factCount: 0,
         diagnostics: providerDiagnostics,
+        detectionMs,
+        collectionMs,
       });
       continue;
     }
@@ -859,11 +905,14 @@ export async function buildRepoGraph(
       collection: admission.batch.status,
       factCount: admission.batch.facts.length,
       diagnostics: admission.batch.diagnostics,
+      detectionMs,
+      collectionMs,
     });
     if (['complete', 'partial'].includes(admission.batch.status)) {
       sources.push({ manifest: admission.manifest, batch: admission.batch });
     }
   }
+  const providerMs = Math.max(0, Math.round(performance.now() - providersStartedAt));
 
   if (
     diagnostics.some(
@@ -874,9 +923,7 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -894,13 +941,12 @@ export async function buildRepoGraph(
       'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
 
+  const compositionStartedAt = performance.now();
   const composed = await composeGraph(
     {
       ontology: request.ontology,
@@ -909,15 +955,14 @@ export async function buildRepoGraph(
     },
     request.ports
   );
+  const compositionMs = Math.max(0, Math.round(performance.now() - compositionStartedAt));
   if (!composed.accepted) {
     diagnostics.push(...issueDiagnostics('composition', composed.issues));
     return emptyResult(
       composed.code === 'cancelled' ? 'cancelled' : 'failed',
       diagnostics,
       summaries,
-      inventory.inputs.length,
-      inputBytes,
-      inventory.omittedFiles,
+      metricsFromInventory(inventory, inputBytes),
       inventoryZones
     );
   }
@@ -939,11 +984,12 @@ export async function buildRepoGraph(
       unknownZones: [
         ...inventory.unknownZones,
         ...sources.flatMap((source) => source.batch.unknownZones),
-      ],
+      ].map((zone) => structurizeUnknownZone(zone, { stage: 'repository-build' })),
       unsupportedZones: [
         ...inventory.unsupportedZones,
         ...sources.flatMap((source) => source.batch.unsupportedZones),
-      ],
+      ].map((zone) => structurizeUnknownZone(zone, { stage: 'repository-build' })),
+      omittedSubtrees: inventoryOmittedSubtrees,
       providerFailures: summaries
         .filter(
           (summary) =>
@@ -962,6 +1008,24 @@ export async function buildRepoGraph(
       inputBytes,
       providerFacts: summaries.reduce((sum, summary) => sum + summary.factCount, 0),
       omittedFiles: inventory.omittedFiles,
+      omittedBytes: inventory.omittedBytes,
+      omittedFileAccounting: inventoryAccounting.omittedFileAccounting,
+      omittedByteAccounting: inventoryAccounting.omittedByteAccounting,
+      omittedSubtrees: inventoryOmittedSubtrees,
+      durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      providerMs,
+      compositionMs,
+      ...(composed.timings ? { compositionTimings: composed.timings } : {}),
+      providerTimings: Object.freeze(
+        summaries
+          .filter((summary) => summary.detectionMs !== undefined)
+          .map((summary) => ({
+            providerId: summary.provider.id,
+            detectionMs: summary.detectionMs ?? 0,
+            collectionMs: summary.collectionMs ?? 0,
+            factCount: summary.factCount,
+          }))
+      ),
     },
   };
 }

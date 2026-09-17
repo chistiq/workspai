@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "workspai.graph-consumer-inventory.v1",
+  "profile": "g8-consumer-parity.v1",
+  "currentGraphAuthority": "official-internal-graph-capability",
+  "packagePrimary": false,
+  "silentFallback": "prohibited",
+  "consumers": [
+    {
+      "id": "workspace-graph-generation",
+      "surface": "workspace graph emit/renewal",
+      "implementation": "packages/cli/src/workspace-knowledge-graph.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "source-graph",
+      "surface": "workspace graph source projection",
+      "implementation": "packages/cli/src/workspace-knowledge-graph-projection.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "graph-entities-evidence",
+      "surface": "workspace graph entities/evidence/path/search",
+      "implementation": "packages/cli/src/workspace-knowledge-graph-query.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "model-generation",
+      "surface": "workspace model",
+      "implementation": "packages/cli/src/workspace-model.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "diff",
+      "surface": "workspace intelligence diff",
+      "implementation": "packages/cli/src/workspace-intelligence.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "impact",
+      "surface": "workspace intelligence impact",
+      "implementation": "packages/cli/src/workspace-intelligence.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "verify",
+      "surface": "workspace verify",
+      "implementation": "packages/cli/src/workspace-verify.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "explain",
+      "surface": "workspace explain / graph explain",
+      "implementation": "packages/cli/src/workspace-explain.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "context-grounding",
+      "surface": "workspace context",
+      "implementation": "packages/cli/src/workspace-context.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "agent-synchronization",
+      "surface": "workspace agent-sync",
+      "implementation": "packages/cli/src/workspace-agent-sync.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "proof-carrying-change",
+      "surface": "proof-carrying change overlay",
+      "implementation": "packages/cli/src/proof-carrying-change.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "doctor-repair",
+      "surface": "Doctor graph diagnosis and repair",
+      "implementation": "packages/cli/src/utils/doctor-graph-diagnosis.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "studio-extension",
+      "surface": "Studio/Extension structured consumers",
+      "implementation": "packages/cli/src/workspace-intelligence-runner.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "mcp",
+      "surface": "MCP graph tools",
+      "implementation": "packages/cli/src/workspace-mcp-serve.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "ci-automation",
+      "surface": "Workspace Intelligence runner / CI",
+      "implementation": "packages/cli/src/workspace-intelligence-runner.ts",
+      "authority": "legacy-cli-composer",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    },
+    {
+      "id": "g8-shadow-bridge",
+      "surface": "G8 prepared-project shadow comparison",
+      "implementation": "packages/cli/src/graph-package-shadow-bridge.ts",
+      "authority": "released-cli-with-package-shadow",
+      "adapter": "implemented-local-candidate",
+      "adapterImplementation": "packages/cli/src/graph-package-consumer-adapter.ts"
+    }
+  ]
+}

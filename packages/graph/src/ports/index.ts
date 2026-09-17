@@ -4,9 +4,11 @@ import type {
   GraphDiagnostic,
   GraphProviderInput,
   GraphQueryCacheEntry,
+  GraphStructuralLanguage,
   GraphUnknownZone,
   GraphUnsupportedZone,
 } from '../contracts/index.js';
+import type { GraphOmittedSubtree } from '../contracts/inventory-surface.js';
 
 export interface GraphClockPort {
   now(): Date;
@@ -15,6 +17,21 @@ export interface GraphClockPort {
 export interface GraphDigestPort {
   readonly algorithm: 'sha256';
   digest(input: Uint8Array): Promise<string>;
+  /**
+   * Optional synchronous SHA-256. Product hosts implement this so composition
+   * can hash compact canonical values without a microtask per edge.
+   */
+  digestSync?(input: Uint8Array): string;
+  /**
+   * Optional incremental hasher. Production hosts must implement this so
+   * canonical identity of large admitted fact sets does not materialize a
+   * single JSON buffer. Mock ports may omit it; the application then buffers
+   * only a small fallback window.
+   */
+  createStreamingDigest?(): {
+    update(chunk: Uint8Array): void;
+    digest(): Promise<string>;
+  };
 }
 
 export interface GraphCancellationPort {
@@ -60,6 +77,11 @@ export interface GraphWorkerPoolPort {
   execute<TInput, TOutput>(
     request: GraphWorkerTaskRequest<TInput>
   ): Promise<GraphWorkerTaskResult<TOutput>>;
+  /**
+   * False when execute keeps the task input in-process. Composition then skips
+   * canonical payload measurement used only to size serialized worker shards.
+   */
+  readonly serializesTasks?: boolean;
 }
 
 /**
@@ -105,9 +127,42 @@ export interface GraphNativeTraversalResult {
   };
 }
 
+export interface GraphNativeDeclarationRequest {
+  readonly source: string;
+  readonly language: GraphStructuralLanguage | null;
+}
+
+export interface GraphNativeDeclaration {
+  readonly name: string;
+  readonly detail: 'function' | 'type' | 'value' | 'method';
+  readonly line: number;
+}
+
+export interface GraphNativeDeclarationResult {
+  readonly status: 'complete' | 'rejected' | 'failed';
+  readonly declarations: readonly GraphNativeDeclaration[];
+  readonly diagnostics: readonly {
+    readonly code: string;
+    readonly severity: 'error';
+    readonly path: '/native/declarations';
+    readonly message: string;
+  }[];
+  readonly metrics: {
+    readonly durationMs: number;
+    readonly inputBytes: number;
+    readonly outputDeclarations: number;
+  };
+}
+
 export interface GraphNativePort {
   readonly descriptor: GraphNativeEngineDescriptor;
+  readonly artifactDigest: { readonly algorithm: 'sha256'; readonly value: string };
   traverseReachable(request: GraphNativeTraversalRequest): GraphNativeTraversalResult;
+  /**
+   * Optional bounded declaration scan. Hosts without this operation stay on the
+   * TypeScript extractor; a missing method never changes Graph identity.
+   */
+  extractDeclarations?(request: GraphNativeDeclarationRequest): GraphNativeDeclarationResult;
 }
 
 export interface GraphExecutionPorts {
@@ -142,6 +197,9 @@ export interface GraphFileInventoryResult {
   readonly diagnostics: readonly GraphDiagnostic[];
   readonly omittedFiles: number;
   readonly omittedBytes: number;
+  readonly omittedFileAccounting?: 'enumerated' | 'unknown-subtrees';
+  readonly omittedByteAccounting?: 'measured' | 'unknown-subtrees';
+  readonly omittedSubtrees?: readonly GraphOmittedSubtree[];
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly unsupportedZones: readonly GraphUnsupportedZone[];
 }

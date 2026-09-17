@@ -8,6 +8,12 @@ import {
   type GraphProviderRuntime,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
+import {
+  isCiWorkflowLocator,
+  isComposeLocator,
+  isInfrastructureLocator,
+  isOpenApiLocator,
+} from './delivery-locators.js';
 
 export const REPOSITORY_SURFACES_PROVIDER_ID = 'workspai.graph.provider.repository-surfaces';
 
@@ -47,7 +53,8 @@ function classify(input: GraphProviderInput): readonly SurfaceClassification[] {
   if (
     /(?:^|\/)(?:openapi|swagger|asyncapi)(?:\.[^/]+)?\.(?:json|ya?ml)$/u.test(locator) ||
     /(?:^|\/)contracts?\/[^/]+\.(?:json|ya?ml|proto|graphql|gql)$/u.test(locator) ||
-    /\.(?:proto|graphql|gql)$/u.test(locator)
+    /\.(?:proto|graphql|gql)$/u.test(locator) ||
+    isOpenApiLocator(locator)
   ) {
     result.push({
       kind: 'contract',
@@ -70,7 +77,8 @@ function classify(input: GraphProviderInput): readonly SurfaceClassification[] {
   if (
     name === 'dockerfile' ||
     name.startsWith('dockerfile.') ||
-    /(?:^|\/)(?:docker-)?compose(?:\.[^/]+)?\.ya?ml$/u.test(locator) ||
+    isComposeLocator(locator) ||
+    isInfrastructureLocator(locator) ||
     /(?:^|\/)k8s\/[^/]+\.ya?ml$/u.test(locator) ||
     /(?:^|\/)kubernetes\/[^/]+\.ya?ml$/u.test(locator)
   ) {
@@ -81,13 +89,7 @@ function classify(input: GraphProviderInput): readonly SurfaceClassification[] {
       sourceKind: 'runtime-declaration',
     });
   }
-  if (
-    /(?:^|\/)\.github\/workflows\/[^/]+\.ya?ml$/u.test(locator) ||
-    name === 'jenkinsfile' ||
-    name === '.gitlab-ci.yml' ||
-    name === 'azure-pipelines.yml' ||
-    name === 'circle.yml'
-  ) {
+  if (isCiWorkflowLocator(locator)) {
     result.push({
       kind: 'workflow',
       family: 'delivery.workflow',

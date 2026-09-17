@@ -11,6 +11,7 @@ const SOURCE_INPUTS = Object.freeze([
   ['workspace-lock', path.join(repositoryRoot, 'Cargo.lock')],
   ['engine-manifest', path.join(repositoryRoot, 'crates/graph-engine/Cargo.toml')],
   ['engine-source', path.join(repositoryRoot, 'crates/graph-engine/src/lib.rs')],
+  ['engine-extract', path.join(repositoryRoot, 'crates/graph-engine/src/extract.rs')],
   ['wasm-build-policy', path.join(packageRoot, 'scripts/build-rust-wasm.mjs')],
 ]);
 

@@ -10,9 +10,14 @@ import type {
   GraphUnsupportedZone,
   GraphUnknownZone,
 } from '../contracts/index.js';
+import type { GraphOmittedSubtree } from '../contracts/inventory-surface.js';
 import type { GraphProductHostPorts } from '../ports/index.js';
 
-import type { GraphCompositionPolicy, GraphCompositionSource } from './composition-types.js';
+import type {
+  GraphCompositionPolicy,
+  GraphCompositionSource,
+  GraphCompositionTimings,
+} from './composition-types.js';
 
 export interface GraphRepoBuildCompositionReuse {
   readonly reusedSources: readonly GraphCompositionSource[];
@@ -52,12 +57,27 @@ export interface GraphRepoBuildMetrics {
   readonly inputBytes: number;
   readonly providerFacts: number;
   readonly omittedFiles: number;
+  readonly omittedBytes: number;
+  readonly omittedFileAccounting?: 'enumerated' | 'unknown-subtrees';
+  readonly omittedByteAccounting?: 'measured' | 'unknown-subtrees';
+  readonly omittedSubtrees?: readonly GraphOmittedSubtree[];
+  readonly durationMs?: number;
+  readonly providerMs?: number;
+  readonly compositionMs?: number;
+  readonly compositionTimings?: GraphCompositionTimings;
+  readonly providerTimings?: readonly {
+    readonly providerId: string;
+    readonly detectionMs: number;
+    readonly collectionMs: number;
+    readonly factCount: number;
+  }[];
 }
 
 export interface GraphRepoBuildQuality {
   readonly graph?: GraphQualityReport;
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly unsupportedZones: readonly GraphUnsupportedZone[];
+  readonly omittedSubtrees?: readonly GraphOmittedSubtree[];
   readonly providerFailures: readonly { readonly providerId: string; readonly code: string }[];
 }
 

@@ -221,8 +221,8 @@ try {
   if (
     !isSafeUnactivatedRollback(packedProduct.GRAPH_ROLLBACK_PROCEDURE) ||
     packedProduct.GRAPH_SBOM_SPEC.provenance !== 'unattested' ||
-    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false ||
-    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited' ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== true ||
+    packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'shadow-comparison-only' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.distribution !== 'internal-only' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication !== 'prohibited' ||
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.baselineArtifact !==
@@ -231,7 +231,7 @@ try {
     packedProduct.GRAPH_STANDALONE_SUPPORT_MATRIX.rustEngineTarget.dynamicDownload !== 'prohibited'
   ) {
     throw new Error(
-      'installed Graph product claimed stability or attestation, or drifted from the safe rollback boundary'
+      'installed Graph product drifted from its admitted shadow-only or safe rollback boundary'
     );
   }
   if (
@@ -250,8 +250,8 @@ try {
     path.join(consumerRoot, 'consumer.ts'),
     `
       import type { GraphProviderManifest, WorkspaiGraphProviderManifestCandidate } from '@workspai/graph/contracts';
-      import { GRAPH_PROVIDER_MANIFEST_CONTRACT, GRAPH_IDENTITY_SCHEME } from '@workspai/graph/contracts';
-      import { validateGraphProviderManifest } from '@workspai/graph/conformance';
+      import { GRAPH_PROVIDER_MANIFEST_CONTRACT, GRAPH_IDENTITY_SCHEME, GRAPH_LOCATOR_IDENTITY_CONTRACT, GRAPH_LOCATOR_IDENTITY_LAW, GRAPH_UNKNOWN_CAUSE_CONTRACT, GRAPH_UNKNOWN_CAUSE_LAW, GRAPH_GENERATED_ARTIFACT_CONTRACT, GRAPH_GENERATED_ARTIFACT_LAW, GRAPH_COMPARABLE_SURFACE_CONTRACT, GRAPH_COMPARABLE_SURFACE_LAW, GRAPH_INVENTORY_SURFACE_CONTRACT, GRAPH_INVENTORY_SURFACE_LAW } from '@workspai/graph/contracts';
+      import { GRAPH_LOCATOR_IDENTITY, GRAPH_UNKNOWN_CAUSE, GRAPH_GENERATED_ARTIFACT, GRAPH_COMPARABLE_SURFACE, GRAPH_INVENTORY_SURFACE, validateGraphProviderManifest } from '@workspai/graph/conformance';
       import { buildReviewContextSlice, composeGraph, GRAPH_STANDARD_COMPOSITION_POLICY, GRAPH_STANDALONE_SUPPORT_MATRIX, GRAPH_CLI_EXIT_CODES, projectRepositoryPreview, queryGraph } from '@workspai/graph';
       import { GRAPH_FORBIDDEN_RUNTIME_DEPENDENCIES, scoreGraphRetrievalBenchmark } from '@workspai/graph/testing';
       import type { GraphExecutionPorts } from '@workspai/graph';
@@ -277,6 +277,21 @@ try {
       void buildReviewContextSlice;
       void GRAPH_FORBIDDEN_RUNTIME_DEPENDENCIES;
       void scoreGraphRetrievalBenchmark;
+      void GRAPH_LOCATOR_IDENTITY_CONTRACT;
+      void GRAPH_LOCATOR_IDENTITY_LAW;
+      void GRAPH_LOCATOR_IDENTITY;
+      void GRAPH_UNKNOWN_CAUSE_CONTRACT;
+      void GRAPH_UNKNOWN_CAUSE_LAW;
+      void GRAPH_UNKNOWN_CAUSE;
+      void GRAPH_GENERATED_ARTIFACT_CONTRACT;
+      void GRAPH_GENERATED_ARTIFACT_LAW;
+      void GRAPH_GENERATED_ARTIFACT;
+      void GRAPH_COMPARABLE_SURFACE_CONTRACT;
+      void GRAPH_COMPARABLE_SURFACE_LAW;
+      void GRAPH_COMPARABLE_SURFACE;
+      void GRAPH_INVENTORY_SURFACE_CONTRACT;
+      void GRAPH_INVENTORY_SURFACE_LAW;
+      void GRAPH_INVENTORY_SURFACE;
     `,
     'utf8'
   );
@@ -323,9 +338,35 @@ try {
         if (typeof graph.queryGraph !== 'function') process.exit(27);
         if (!contracts.GRAPH_QUERY_CONTRACT) process.exit(28);
         if (typeof conformance.validateGraphQuery !== 'function') process.exit(29);
+        if (!contracts.GRAPH_LOCATOR_IDENTITY_CONTRACT) process.exit(46);
+        if (contracts.GRAPH_LOCATOR_IDENTITY_CONTRACT.id !== 'workspai.graph.locator-identity') process.exit(47);
+        if (contracts.GRAPH_LOCATOR_IDENTITY_CONTRACT.version !== '1') process.exit(48);
+        if (!conformance.GRAPH_LOCATOR_IDENTITY || typeof conformance.GRAPH_LOCATOR_IDENTITY.classify !== 'function') process.exit(49);
+        if (JSON.stringify(conformance.GRAPH_LOCATOR_IDENTITY.contract) !== JSON.stringify(contracts.GRAPH_LOCATOR_IDENTITY_CONTRACT)) process.exit(50);
+        if (JSON.stringify(conformance.GRAPH_LOCATOR_IDENTITY_LAW) !== JSON.stringify(contracts.GRAPH_LOCATOR_IDENTITY_LAW)) process.exit(51);
+        if (conformance.GRAPH_LOCATOR_IDENTITY.classify('%2e%2e%2fsecret.ts', 'file').class !== 'unsafe') process.exit(52);
+        if (conformance.GRAPH_LOCATOR_IDENTITY.classify('src/foo%ZZ.ts', 'file').class !== 'portable') process.exit(53);
+        if (!conformance.GRAPH_UNKNOWN_CAUSE || typeof conformance.GRAPH_UNKNOWN_CAUSE.classify !== 'function') process.exit(54);
+        if (conformance.GRAPH_UNKNOWN_CAUSE.classify('graph.source-call-ambiguous@src/a.ts') !== 'parser-limitation') process.exit(55);
+        if (conformance.GRAPH_UNKNOWN_CAUSE.disposition !== 'bounded-unknown') process.exit(56);
+        if (conformance.GRAPH_UNKNOWN_CAUSE.admissionImpact !== 'blocking') process.exit(63);
+        if (!conformance.GRAPH_GENERATED_ARTIFACT || typeof conformance.GRAPH_GENERATED_ARTIFACT.classifyLocator !== 'function') process.exit(57);
+        if (conformance.GRAPH_GENERATED_ARTIFACT.classifyLocator('node_modules/left-pad/index.js').class !== 'generated-artifact') process.exit(58);
+        if (conformance.GRAPH_GENERATED_ARTIFACT.defaultTreatment !== 'bounded-unknown') process.exit(59);
+        if (conformance.GRAPH_GENERATED_ARTIFACT.classifyLocator('dist/out.js').class !== 'source') process.exit(64);
+        if (conformance.GRAPH_GENERATED_ARTIFACT.classifyLocator('.github/workflows/ci.yml').class !== 'source') process.exit(69);
+        if (!conformance.GRAPH_COMPARABLE_SURFACE || typeof conformance.GRAPH_COMPARABLE_SURFACE.mapKind !== 'function') process.exit(60);
+        if (conformance.GRAPH_COMPARABLE_SURFACE.mapKind('test-suite') !== 'test') process.exit(61);
+        if (conformance.GRAPH_COMPARABLE_SURFACE.classifyKind('widget').membership !== 'outside-corpus') process.exit(62);
+        if (!conformance.GRAPH_INVENTORY_SURFACE || typeof conformance.GRAPH_INVENTORY_SURFACE.classifyLocator !== 'function') process.exit(65);
+        if (conformance.GRAPH_INVENTORY_SURFACE.classifyLocator('.github/workflows/ci.yml').class !== 'repository-configuration') process.exit(66);
+        if (conformance.GRAPH_INVENTORY_SURFACE.classifyLocator('dist/out.js').class !== 'source') process.exit(67);
+        if (conformance.GRAPH_INVENTORY_SURFACE.classifyLocator('src/bin/main.rs').class !== 'source') process.exit(68);
+        if (conformance.GRAPH_INVENTORY_SURFACE.excludedDirectoryNames().includes('dist')) process.exit(70);
+        if (conformance.GRAPH_INVENTORY_SURFACE.excludedDirectoryNames().includes('bin')) process.exit(71);
         if (graph.GRAPH_STANDARD_COMPOSITION_POLICY.version !== '0.1.0-candidate') process.exit(26);
-        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== false) process.exit(31);
-        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'prohibited') process.exit(32);
+        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.standaloneStable !== true) process.exit(31);
+        if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.centralCliRuntime !== 'shadow-comparison-only') process.exit(32);
         if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.distribution !== 'internal-only') process.exit(42);
         if (graph.GRAPH_STANDALONE_SUPPORT_MATRIX.npmPublication !== 'prohibited') process.exit(43);
         if (graph.GRAPH_PACKAGE_METADATA.plannedCapabilities.includes('incremental')) process.exit(33);
@@ -363,7 +404,7 @@ try {
         };
         if (!conformance.validateGraphProviderDetectionResult(detection, manifest).accepted) process.exit(23);
         const standardProviders = providers.createStandardRepositoryProviders();
-        if (standardProviders.length !== 12 || !Object.isFrozen(standardProviders)) process.exit(30);
+        if (standardProviders.length !== 24 || !Object.isFrozen(standardProviders)) process.exit(30);
         const canonical = conformance.canonicalizeGraphValue({ z: 1, a: 2 });
         if (!canonical.accepted || canonical.value !== '{"a":2,"z":1}') process.exit(21);
         const digest = conformance.digestCanonicalGraphValue({ z: 1, a: 2 });
@@ -511,7 +552,7 @@ try {
         !text.includes('architectureConformance') ||
         !text.includes('entryPoints') ||
         !text.includes(GRAPH_CLI_RESULT_SCHEMA_VERSION) ||
-        !text.includes('Standalone-stable admission is not claimed')
+        !text.includes('CLI authority remains prohibited during G8 shadow comparison')
       ) {
         throw new Error(
           'packed Graph CLI help omitted published presets or the fail-closed banner'
@@ -557,7 +598,7 @@ try {
       }
     },
     'providers-list': (envelope) => {
-      if (!Array.isArray(envelope.data) || envelope.data.length !== 12) {
+      if (!Array.isArray(envelope.data) || envelope.data.length !== 24) {
         throw new Error('packed Graph CLI provider inventory is incomplete');
       }
     },
@@ -737,8 +778,14 @@ try {
     'dist/adapters/node/index.d.ts',
     'dist/adapters/node/reference-worker-entry.js',
     'dist/native/graph-engine.wasm',
+    'dist/native/graph-engine.wasm.sha256',
     'conformance/contract-catalog.v1.json',
     'schemas/entity-identity.v0.1.0-candidate.schema.json',
+    'schemas/locator-identity.v1.schema.json',
+    'schemas/unknown-cause.v1.schema.json',
+    'schemas/generated-artifact.v1.schema.json',
+    'schemas/comparable-surface.v1.schema.json',
+    'schemas/inventory-surface.v1.schema.json',
     'schemas/fact-batch.v0.1.0-candidate.schema.json',
     'schemas/provider-detection.v0.1.0-candidate.schema.json',
     'schemas/provider-manifest.v0.1.0-candidate.schema.json',
@@ -760,10 +807,16 @@ try {
     'schemas/structural-extractor-profile.v0.1.0-candidate.schema.json',
     'schemas/cli-result.v0.1.0-candidate.schema.json',
     'schemas/standalone-support-matrix.v0.1.0-candidate.schema.json',
+    'schemas/standalone-support-matrix.v0.2.0-candidate.schema.json',
     'conformance/profile.json',
     'fixtures/g1/minimal-provider-manifest.json',
     'fixtures/g1/minimal-fact-batch.json',
     'fixtures/g1/minimal-entity.json',
+    'fixtures/g1/locator-identity-law.json',
+    'fixtures/g1/unknown-cause-law.json',
+    'fixtures/g1/generated-artifact-law.json',
+    'fixtures/g1/comparable-surface-law.json',
+    'fixtures/g1/inventory-surface-law.json',
     'fixtures/g1/semantic-invalid-mutations.json',
     'fixtures/g1/invalid-absolute-entity.json',
     'fixtures/g1/maximal-provider-manifest.json',
@@ -876,6 +929,80 @@ try {
   }
   if (validateEntity(packedJson(installedRoot, 'fixtures/g1/invalid-absolute-entity.json'))) {
     throw new Error('packed invalid-absolute entity was admitted');
+  }
+  const locatorIdentitySchema = packedJson(
+    installedRoot,
+    'schemas/locator-identity.v1.schema.json'
+  );
+  const validateLocatorIdentity = new Ajv2020({
+    strict: true,
+    strictRequired: false,
+    validateFormats: false,
+  }).compile(locatorIdentitySchema);
+  if (
+    !validateLocatorIdentity(packedJson(installedRoot, 'fixtures/g1/locator-identity-law.json'))
+  ) {
+    throw new Error('packed locator-identity law fixture was not schema-valid');
+  }
+  if (validateLocatorIdentity({})) {
+    throw new Error('packed empty locator-identity law was admitted');
+  }
+  const unknownCauseSchema = packedJson(installedRoot, 'schemas/unknown-cause.v1.schema.json');
+  const validateUnknownCause = new Ajv2020({
+    strict: true,
+    strictRequired: false,
+    validateFormats: false,
+  }).compile(unknownCauseSchema);
+  if (!validateUnknownCause(packedJson(installedRoot, 'fixtures/g1/unknown-cause-law.json'))) {
+    throw new Error('packed unknown-cause law fixture was not schema-valid');
+  }
+  if (validateUnknownCause({})) {
+    throw new Error('packed empty unknown-cause law was admitted');
+  }
+  const generatedArtifactSchema = packedJson(
+    installedRoot,
+    'schemas/generated-artifact.v1.schema.json'
+  );
+  const validateGeneratedArtifact = new Ajv2020({
+    strict: true,
+    strictRequired: false,
+    validateFormats: false,
+  }).compile(generatedArtifactSchema);
+  if (
+    !validateGeneratedArtifact(packedJson(installedRoot, 'fixtures/g1/generated-artifact-law.json'))
+  ) {
+    throw new Error('packed generated-artifact law fixture was not schema-valid');
+  }
+  const comparableSurfaceSchema = packedJson(
+    installedRoot,
+    'schemas/comparable-surface.v1.schema.json'
+  );
+  const validateComparableSurface = new Ajv2020({
+    strict: true,
+    strictRequired: false,
+    validateFormats: false,
+  }).compile(comparableSurfaceSchema);
+  if (
+    !validateComparableSurface(packedJson(installedRoot, 'fixtures/g1/comparable-surface-law.json'))
+  ) {
+    throw new Error('packed comparable-surface law fixture was not schema-valid');
+  }
+  const inventorySurfaceSchema = packedJson(
+    installedRoot,
+    'schemas/inventory-surface.v1.schema.json'
+  );
+  const validateInventorySurface = new Ajv2020({
+    strict: true,
+    strictRequired: false,
+    validateFormats: false,
+  }).compile(inventorySurfaceSchema);
+  if (
+    !validateInventorySurface(packedJson(installedRoot, 'fixtures/g1/inventory-surface-law.json'))
+  ) {
+    throw new Error('packed inventory-surface law fixture was not schema-valid');
+  }
+  if (validateInventorySurface({})) {
+    throw new Error('packed empty inventory-surface law was admitted');
   }
   for (const fixture of packedJson(installedRoot, 'fixtures/g1/semantic-invalid-mutations.json')) {
     const batch = structuredClone(packedBatch);
@@ -1029,6 +1156,8 @@ try {
     ['php', 'imports', undefined],
     ['ruby', 'imports', undefined],
     ['swift', 'imports', undefined],
+    ['elixir', 'imports', 'exposes'],
+    ['kotlin', 'imports', 'exposes'],
   ];
   for (const [language, importRelation, routeRelation] of languageFixtures) {
     const fixtureRoot = path.join(installedRoot, 'fixtures/g4/repositories', language);
@@ -1038,6 +1167,9 @@ try {
     }
     if (!result.graph.edges.some((edge) => edge.relation === importRelation)) {
       throw new Error(`packed G4 ${language} fixture omitted ${importRelation} evidence`);
+    }
+    if (!result.graph.edges.some((edge) => edge.relation === 'defines')) {
+      throw new Error(`packed G4 ${language} fixture omitted declaration evidence`);
     }
     if (routeRelation && !result.graph.edges.some((edge) => edge.relation === routeRelation)) {
       throw new Error(`packed G4 ${language} fixture omitted ${routeRelation} evidence`);

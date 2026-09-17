@@ -59,20 +59,48 @@ describe('Graph identity and evidence lineage', () => {
     }
   });
 
-  it.each(['/private/source.ts', 'C:\\private\\source.ts', '../source.ts', 'src/../../secret'])(
-    'rejects machine-local or escaping identity %s',
-    (relativeLocator) => {
-      expect(
-        normalizeGraphEntityIdentity({
-          namespace: 'source',
-          kind: 'file',
-          relativeLocator,
-          caseSensitivity: 'sensitive',
-          scope,
-        })
-      ).toMatchObject({ accepted: false });
-    }
-  );
+  it('resolves the same identity through digestSync and async digest', async () => {
+    const input = {
+      namespace: 'source',
+      kind: 'file',
+      relativeLocator: 'src/app.ts',
+      caseSensitivity: 'sensitive' as const,
+      scope,
+    };
+    const hex = (value: Uint8Array) => createHash('sha256').update(value).digest('hex');
+    const asyncId = await resolveGraphEntityIdentity(input, {
+      algorithm: 'sha256',
+      digest: async (value) => hex(value),
+    });
+    const syncId = await resolveGraphEntityIdentity(input, {
+      algorithm: 'sha256',
+      digest: async (value) => hex(value),
+      digestSync: hex,
+    });
+    expect(asyncId).toEqual(syncId);
+    expect(syncId.accepted).toBe(true);
+  });
+
+  it.each([
+    '/private/source.ts',
+    'C:\\private\\source.ts',
+    '../source.ts',
+    'src/../../secret',
+    '%2e%2e%2fsecret.ts',
+    '\\\\server\\share\\file.ts',
+    '//server/share/file.ts',
+    'src/foo/../../../etc/passwd',
+  ])('rejects machine-local or escaping identity %s', (relativeLocator) => {
+    expect(
+      normalizeGraphEntityIdentity({
+        namespace: 'source',
+        kind: 'file',
+        relativeLocator,
+        caseSensitivity: 'sensitive',
+        scope,
+      })
+    ).toMatchObject({ accepted: false });
+  });
 
   it('does not count common-root generated claims as corroboration', () => {
     const assessment = assessGraphEvidenceIndependence([
