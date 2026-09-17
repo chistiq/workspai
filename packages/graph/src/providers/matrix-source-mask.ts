@@ -1,9 +1,12 @@
 import type { GraphStructuralLanguage } from '../contracts/structural-extractor-profile.js';
 
+export const MATRIX_SOURCE_MASK_VERSION = 'workspai.graph.matrix-source-mask.v1';
+
 /**
- * Blanks comments and string literals while preserving physical lines. Template
- * and f-string interpolations stay in the code channel so real calls remain
- * visible. This is a shared lexical pass, not a syntax tree.
+ * Blanks comments and string literals while preserving physical lines and
+ * UTF-16 indices. Template and f-string interpolations stay in the code
+ * channel so real calls remain visible. This is a shared lexical pass, not a
+ * syntax tree. Regex literals are recognized only for JavaScript/TypeScript.
  */
 export function maskMatrixSourceLiterals(
   source: string,
@@ -16,30 +19,65 @@ export function maskMatrixSourceLiterals(
   return maskQuoted(source, 'clike');
 }
 
+export function isMatrixCodeChannelIndex(
+  source: string,
+  language: GraphStructuralLanguage | null,
+  index: number
+): boolean {
+  if (index < 0 || index >= source.length) return false;
+  const masked = maskMatrixSourceLiterals(source, language);
+  return source[index] === masked[index];
+}
+
+export function matchAllInMatrixCodeChannel(
+  source: string,
+  language: GraphStructuralLanguage | null,
+  pattern: RegExp
+): RegExpMatchArray[] {
+  return matchAllInMatrixCodeView(source, maskMatrixSourceLiterals(source, language), pattern);
+}
+
+export function matchAllInMatrixCodeView(
+  source: string,
+  masked: string,
+  pattern: RegExp
+): RegExpMatchArray[] {
+  if (masked.length !== source.length) {
+    throw new Error('Matrix code view must preserve source UTF-16 length.');
+  }
+  const matches: RegExpMatchArray[] = [];
+  for (const match of source.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    const offset = match[0].search(/\S/u);
+    const index = start + (offset >= 0 ? offset : 0);
+    if (index < source.length && source[index] === masked[index]) matches.push(match);
+  }
+  return matches;
+}
+
 type QuoteMode = 'js' | 'go' | 'clike' | 'hash';
 
 function maskQuoted(source: string, mode: QuoteMode): string {
-  const chars = [...source];
-  const out = chars.slice();
-  const n = chars.length;
+  const n = source.length;
+  const out = source.split('');
   let i = 0;
   const blank = (from: number, to: number): void => {
     for (let index = from; index < to; index += 1) {
-      const current = chars[index];
+      const current = source[index];
       if (current !== '\n' && current !== '\r') out[index] = ' ';
     }
   };
 
   const maskLineComment = (): void => {
     const start = i;
-    while (i < n && chars[i] !== '\n' && chars[i] !== '\r') i += 1;
+    while (i < n && source[i] !== '\n' && source[i] !== '\r') i += 1;
     blank(start, i);
   };
 
   const maskBlockComment = (): void => {
     const start = i;
     i += 2;
-    while (i < n && !(chars[i] === '*' && chars[i + 1] === '/')) i += 1;
+    while (i < n && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
     if (i < n) i += 2;
     blank(start, i);
   };
@@ -48,9 +86,9 @@ function maskQuoted(source: string, mode: QuoteMode): string {
     const start = i;
     i += 1;
     while (i < n) {
-      const current = chars[i];
+      const current = source[i];
       if (!raw && current === '\\') {
-        i += current !== undefined ? 2 : 1;
+        i += 2;
         continue;
       }
       if (current === quote) {
@@ -63,15 +101,46 @@ function maskQuoted(source: string, mode: QuoteMode): string {
     blank(start, i);
   };
 
+  const maskRegex = (): void => {
+    const start = i;
+    i += 1;
+    let inClass = false;
+    while (i < n) {
+      const current = source[i];
+      if (current === '\\') {
+        i += 2;
+        continue;
+      }
+      if (current === '[' && !inClass) {
+        inClass = true;
+        i += 1;
+        continue;
+      }
+      if (current === ']' && inClass) {
+        inClass = false;
+        i += 1;
+        continue;
+      }
+      if ((current === '\n' || current === '\r') && !inClass) break;
+      if (current === '/' && !inClass) {
+        i += 1;
+        while (i < n && /[A-Za-z]/u.test(source[i] ?? '')) i += 1;
+        break;
+      }
+      i += 1;
+    }
+    blank(start, i);
+  };
+
   const maskTemplate = (): void => {
     out[i] = ' ';
     i += 1;
     while (i < n) {
-      const current = chars[i];
+      const current = source[i];
       if (current === '\\') {
         out[i] = ' ';
         i += 1;
-        if (i < n && chars[i] !== '\n' && chars[i] !== '\r') out[i] = ' ';
+        if (i < n && source[i] !== '\n' && source[i] !== '\r') out[i] = ' ';
         i += 1;
         continue;
       }
@@ -80,7 +149,7 @@ function maskQuoted(source: string, mode: QuoteMode): string {
         i += 1;
         return;
       }
-      if (current === '$' && chars[i + 1] === '{') {
+      if (current === '$' && source[i + 1] === '{') {
         out[i] = ' ';
         out[i + 1] = ' ';
         i += 2;
@@ -95,7 +164,7 @@ function maskQuoted(source: string, mode: QuoteMode): string {
   const scanCode = (until?: '}'): void => {
     let depth = 0;
     while (i < n) {
-      const current = chars[i] ?? '';
+      const current = source[i] ?? '';
       if (until && current === '}' && depth === 0) {
         out[i] = ' ';
         i += 1;
@@ -103,7 +172,7 @@ function maskQuoted(source: string, mode: QuoteMode): string {
       }
       if (until && current === '{') depth += 1;
       else if (until && current === '}' && depth > 0) depth -= 1;
-      if (current === '/' && chars[i + 1] === '/' && mode !== 'hash') {
+      if (current === '/' && source[i + 1] === '/' && mode !== 'hash') {
         maskLineComment();
         continue;
       }
@@ -111,8 +180,18 @@ function maskQuoted(source: string, mode: QuoteMode): string {
         maskLineComment();
         continue;
       }
-      if (current === '/' && chars[i + 1] === '*' && mode !== 'hash') {
+      if (current === '/' && source[i + 1] === '*' && mode !== 'hash') {
         maskBlockComment();
+        continue;
+      }
+      if (
+        current === '/' &&
+        mode === 'js' &&
+        source[i + 1] !== '/' &&
+        source[i + 1] !== '*' &&
+        canBeginJsRegex(source, i)
+      ) {
+        maskRegex();
         continue;
       }
       if (current === "'" || current === '"') {
@@ -135,8 +214,41 @@ function maskQuoted(source: string, mode: QuoteMode): string {
   return out.join('');
 }
 
+const JS_REGEX_PREFIX_KEYWORDS = new Set([
+  'return',
+  'throw',
+  'case',
+  'else',
+  'do',
+  'in',
+  'typeof',
+  'void',
+  'delete',
+  'new',
+  'await',
+  'yield',
+  'instanceof',
+]);
+
+function canBeginJsRegex(source: string, index: number): boolean {
+  let cursor = index - 1;
+  while (cursor >= 0 && /[ \t\u000b\u000c]/u.test(source[cursor] ?? '')) cursor -= 1;
+  if (cursor < 0) return true;
+  const previous = source[cursor] ?? '';
+  if ((previous === '+' || previous === '-') && cursor > 0 && source[cursor - 1] === previous) {
+    return false;
+  }
+  if (/[)'"\]`]/u.test(previous)) return false;
+  if (/[\w$]/u.test(previous)) {
+    let start = cursor;
+    while (start > 0 && /[\w$]/u.test(source[start - 1] ?? '')) start -= 1;
+    return JS_REGEX_PREFIX_KEYWORDS.has(source.slice(start, cursor + 1));
+  }
+  return true;
+}
+
 function maskPython(source: string): string {
-  const chars = [...source];
+  const chars = source.split('');
   const out = chars.slice();
   const n = chars.length;
   let i = 0;

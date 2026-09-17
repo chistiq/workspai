@@ -201,6 +201,8 @@ describe('source semantic providers', () => {
     expect(ambiguous.quality.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.source-call-ambiguous' })
     );
+    expect(ambiguous.status).toBe('partial');
+    expect(ambiguous.quality.graph?.integrity).toBe('attention');
 
     const unsupported = await build({ 'app.dart': source['app.dart']! });
     expect(unsupported.quality.unsupportedZones).toContainEqual(

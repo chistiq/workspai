@@ -4,7 +4,11 @@ import {
 } from '../contracts/structural-extractor-profile.js';
 import { extensionOf } from './observed-edge-fact.js';
 import { ECMASCRIPT_STATIC_IMPORT_PATTERN } from './ecmascript-import-pattern.js';
-import { maskMatrixSourceLiterals } from './matrix-source-mask.js';
+import {
+  maskMatrixSourceLiterals,
+  matchAllInMatrixCodeChannel,
+  matchAllInMatrixCodeView,
+} from './matrix-source-mask.js';
 
 export interface MatrixDeclaration {
   readonly name: string;
@@ -113,10 +117,11 @@ export function stripMatrixSourceComments(
 
 export function extractMatrixDeclarations(
   source: string,
-  language: GraphStructuralLanguage | null
+  language: GraphStructuralLanguage | null,
+  codeView = maskMatrixSourceLiterals(source, language)
 ): MatrixDeclaration[] {
   const findings: MatrixDeclaration[] = [];
-  const lines = maskMatrixSourceLiterals(source, language).split(/\r?\n/u);
+  const lines = codeView.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     const keyword = matchKeywordDeclaration(line);
@@ -135,13 +140,15 @@ export function extractMatrixLocalImportLocators(
   locator: string,
   source: string,
   language: GraphStructuralLanguage | null,
-  available: ReadonlySet<string>
+  available: ReadonlySet<string>,
+  codeView = maskMatrixSourceLiterals(source, language)
 ): string[] {
-  const syntax =
-    language === 'python'
-      ? maskMatrixSourceLiterals(source, language)
-      : stripMatrixSourceComments(source, language);
-  const specifiers = localImportSpecifiers(syntax, language);
+  const specifiers =
+    language === 'node' || language === null
+      ? matchAllInMatrixCodeView(source, codeView, ECMASCRIPT_STATIC_IMPORT_PATTERN)
+          .map((match) => match[1])
+          .filter((item): item is string => Boolean(item))
+      : localImportSpecifiers(source, language);
   const resolved: string[] = [];
   for (const specifier of specifiers) {
     const match = resolveLocalSpecifier(locator, specifier, language, available);
@@ -171,15 +178,12 @@ export function extractMatrixImportBindings(
   locator: string,
   source: string,
   language: GraphStructuralLanguage | null,
-  available: ReadonlySet<string>
+  available: ReadonlySet<string>,
+  codeView = maskMatrixSourceLiterals(source, language)
 ): MatrixImportBinding[] {
-  const syntax =
-    language === 'python'
-      ? maskMatrixSourceLiterals(source, language)
-      : stripMatrixSourceComments(source, language);
   const bindings: MatrixImportBinding[] = [];
   if (language === 'node' || language === null) {
-    for (const clause of parseEcmascriptImportClauses(syntax)) {
+    for (const clause of parseEcmascriptImportClauses(source, codeView)) {
       const resolved = resolveLocalSpecifier(locator, clause.specifier, language, available);
       if (!resolved) continue;
       for (const name of clause.names) {
@@ -192,7 +196,7 @@ export function extractMatrixImportBindings(
     }
   }
   if (language === 'python') {
-    for (const clause of parsePythonImportClauses(syntax)) {
+    for (const clause of parsePythonImportClauses(codeView)) {
       const resolved = resolveLocalSpecifier(locator, clause.specifier, language, available);
       if (!resolved) continue;
       if (clause.star) {
@@ -320,10 +324,10 @@ function isHorizontalWs(char: string): boolean {
  */
 export function scanMatrixCallSites(
   source: string,
-  language: GraphStructuralLanguage | null
+  language: GraphStructuralLanguage | null,
+  code = maskMatrixSourceLiterals(source, language)
 ): MatrixCallSite[] {
   const sites: MatrixCallSite[] = [];
-  const code = maskMatrixSourceLiterals(source, language);
   const objc = language === 'objective-c-matlab';
   const bare = language === 'ruby' || language === 'elixir';
   const dollar = language === 'node' || language === null;
@@ -342,6 +346,7 @@ export function scanMatrixCallSites(
     }
     if (objc && char === '[') {
       index += 1;
+      let identifierOrdinal = 0;
       while (index < code.length && code[index] !== ']') {
         const inner = code[index] ?? '';
         if (inner === '\n') {
@@ -355,9 +360,13 @@ export function scanMatrixCallSites(
           index += 1;
           while (index < code.length && isIdentContinue(code[index] ?? '', false)) index += 1;
           const name = code.slice(start, index);
-          if (name.length > 0 && !CALL_CONTROL_NAMES.has(name)) {
+          let next = index;
+          while (next < code.length && isHorizontalWs(code[next] ?? '')) next += 1;
+          const selector = identifierOrdinal === 1 || (identifierOrdinal > 1 && code[next] === ':');
+          if (selector && name.length > 0 && !CALL_CONTROL_NAMES.has(name)) {
             sites.push({ name, index: start, line: startLine });
           }
+          identifierOrdinal += 1;
           continue;
         }
         index += 1;
@@ -451,7 +460,10 @@ function parseNamedImportList(inner: string): { localName: string; exportedName:
   return names;
 }
 
-function parseEcmascriptImportClauses(source: string): {
+function parseEcmascriptImportClauses(
+  source: string,
+  codeView: string
+): {
   specifier: string;
   names: { localName: string; exportedName: string }[];
 }[] {
@@ -460,16 +472,18 @@ function parseEcmascriptImportClauses(source: string): {
     names: { localName: string; exportedName: string }[];
   }[] = [];
   const pattern = /^[^\S\r\n]*import\s+(?!type\b)([\s\S]*?)\s+from\s+['"]([^'"\r\n]+)['"]/gmu;
-  for (const match of source.matchAll(pattern)) {
+  for (const match of matchAllInMatrixCodeView(source, codeView, pattern)) {
     const clause = match[1]?.trim() ?? '';
     const specifier = match[2];
     if (!specifier?.startsWith('.')) continue;
-    if (!clause || clause.startsWith('*')) continue;
     const names: { localName: string; exportedName: string }[] = [];
+    const namespace = /^\*\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(clause);
     const defaultAndNamed = /^([A-Za-z_$][\w$]*)\s*,\s*\{([^}]*)\}$/u.exec(clause);
     const namedOnly = /^\{([^}]*)\}$/u.exec(clause);
     const defaultOnly = /^([A-Za-z_$][\w$]*)$/u.exec(clause);
-    if (defaultAndNamed?.[1]) {
+    if (namespace?.[1]) {
+      names.push({ localName: namespace[1], exportedName: '*' });
+    } else if (defaultAndNamed?.[1]) {
       names.push({ localName: defaultAndNamed[1], exportedName: 'default' });
       names.push(...parseNamedImportList(defaultAndNamed[2] ?? ''));
     } else if (namedOnly?.[1] !== undefined) {
@@ -520,41 +534,97 @@ function parsePythonImportClauses(source: string): {
   return clauses;
 }
 
+function collectCodeChannelSpecifiers(
+  source: string,
+  language: GraphStructuralLanguage | null,
+  pattern: RegExp,
+  pick: (match: RegExpMatchArray) => string | undefined
+): string[] {
+  const specifiers: string[] = [];
+  for (const match of matchAllInMatrixCodeChannel(source, language, pattern)) {
+    const specifier = pick(match);
+    if (specifier) specifiers.push(specifier);
+  }
+  return specifiers;
+}
+
 function localImportSpecifiers(source: string, language: GraphStructuralLanguage | null): string[] {
   const specifiers: string[] = [];
   if (language === 'node' || language === null) {
-    for (const match of source.matchAll(ECMASCRIPT_STATIC_IMPORT_PATTERN))
-      if (match[1]?.startsWith('.')) specifiers.push(match[1]);
+    specifiers.push(
+      ...collectCodeChannelSpecifiers(
+        source,
+        language,
+        ECMASCRIPT_STATIC_IMPORT_PATTERN,
+        (match) => (match[1]?.startsWith('.') ? match[1] : undefined)
+      )
+    );
   }
   if (language === 'c-cpp' || language === 'objective-c-matlab') {
-    for (const match of source.matchAll(/^\s*#\s*(?:include|import)\s*"([^"\r\n]+)"/gmu))
-      if (match[1]) specifiers.push(match[1].trim());
+    specifiers.push(
+      ...collectCodeChannelSpecifiers(
+        source,
+        language,
+        /^\s*#\s*(?:include|import)\s*"([^"\r\n]+)"/gmu,
+        (match) => match[1]?.trim()
+      )
+    );
   }
   if (language === 'php') {
-    for (const match of source.matchAll(
-      /\b(?:require|require_once|include|include_once)\s*(?:\(\s*)?['"]([^"']+)['"]/gmu
-    ))
-      if (match[1]) specifiers.push(match[1]);
+    specifiers.push(
+      ...collectCodeChannelSpecifiers(
+        source,
+        language,
+        /\b(?:require|require_once|include|include_once)\s*(?:\(\s*)?['"]([^"']+)['"]/gmu,
+        (match) => match[1]
+      )
+    );
   }
   if (language === 'ruby') {
-    for (const match of source.matchAll(/^\s*require_relative\s*(?:\(\s*)?['"]([^"']+)['"]/gmu))
-      if (match[1]) specifiers.push(match[1]);
+    specifiers.push(
+      ...collectCodeChannelSpecifiers(
+        source,
+        language,
+        /^\s*require_relative\s*(?:\(\s*)?['"]([^"']+)['"]/gmu,
+        (match) => match[1]
+      )
+    );
   }
   if (language === 'python') {
-    for (const match of source.matchAll(/^\s*from\s+\.([A-Za-z_]\w*)\s+import\s+/gmu))
-      if (match[1]) specifiers.push(`.${match[1]}`);
-    for (const match of source.matchAll(/^\s*from\s+([A-Za-z_][\w.]*)\s+import\s+/gmu))
-      if (match[1]) specifiers.push(match[1]);
+    specifiers.push(
+      ...collectCodeChannelSpecifiers(
+        source,
+        language,
+        /^\s*from\s+\.([A-Za-z_]\w*)\s+import\s+/gmu,
+        (match) => (match[1] ? `.${match[1]}` : undefined)
+      ),
+      ...collectCodeChannelSpecifiers(
+        source,
+        language,
+        /^\s*from\s+([A-Za-z_][\w.]*)\s+import\s+/gmu,
+        (match) => match[1]
+      )
+    );
   }
   if (language === 'go') {
-    for (const match of source.matchAll(/["`](\.[^"`]+)["`]/gu))
+    // Go specifiers live inside quotes, so quote-channel matching would drop
+    // every import. Comments are stripped; string literals remain a known limit.
+    const scanned = stripMatrixSourceComments(source, language);
+    for (const match of scanned.matchAll(/["`](\.[^"`]+)["`]/gu))
       if (match[1]) specifiers.push(match[1]);
   }
   if (language === 'java' || language === 'kotlin') {
-    for (const match of source.matchAll(/^\s*import\s+(?:static\s+)?([A-Za-z_$][\w$.]*)/gmu)) {
-      const simple = match[1]?.split('.').pop();
-      if (simple && /^[A-Z]/u.test(simple)) specifiers.push(match[1]!);
-    }
+    specifiers.push(
+      ...collectCodeChannelSpecifiers(
+        source,
+        language,
+        /^\s*import\s+(?:static\s+)?([A-Za-z_$][\w$.]*)/gmu,
+        (match) => {
+          const simple = match[1]?.split('.').pop();
+          return simple && /^[A-Z]/u.test(simple) ? match[1] : undefined;
+        }
+      )
+    );
   }
   return specifiers;
 }

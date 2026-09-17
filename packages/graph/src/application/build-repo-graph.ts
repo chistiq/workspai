@@ -584,6 +584,7 @@ export async function buildRepoGraph(
   const reusedByProvider = compositionReuse
     ? new Map(compositionReuse.reusedSources.map((source) => [source.manifest.id, source]))
     : null;
+  const availableInputLocators = Object.freeze(admittedInputs.map((input) => input.locator));
   const providersStartedAt = performance.now();
 
   for (const provider of providers) {
@@ -697,7 +698,7 @@ export async function buildRepoGraph(
     }
 
     const detectionRequest = {
-      availableInputs: admittedInputs.map((input) => input.locator),
+      availableInputs: availableInputLocators,
       scopeKind: 'project',
       networkAllowed: request.policy.network === 'allow',
     } as const;

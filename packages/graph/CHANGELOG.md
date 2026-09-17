@@ -11,8 +11,29 @@
   docstring text; `export default function` is observed; call names shorter
   than three characters are kept; import aliases bind to the exported symbol;
   non-exported members are not called across files. OpenAPI `implements` requires
-  a matching handler declaration, not a quoted operation id. Generated-file
-  markers are read from the leading comment header only.
+  a routed handler, not a quoted operation id or a coincidental function name.
+  Generated-file markers are read from the leading comment header only, not from
+  same-line code after a closed comment. JavaScript regex literals are masked
+  only in JS/TS; import clauses inside templates are not treated as code.
+  Export `{ local as exported }` aliases, namespace imports, indirect
+  `export default ident`, and explicit Python underscore imports (including
+  `__all__` for star imports) bind through those clauses. OpenAPI `implements`
+  also requires HTTP method/path registration evidence and keeps the same
+  operationId in separate contracts unmerged. Call coverage reports examined,
+  resolved, ambiguous, and unresolved sites without treating unresolved
+  externals as success. HTTP `implements` requires a member registration on an
+  imported or factory-created HTTP registrar, not a similarly named arbitrary
+  object, `Map.get`, or another collection. Multiple routed handlers remain
+  ambiguous instead of being selected by file score, and binding coverage is
+  keyed by contract, operation, method, and path. JavaScript regex literals
+  after `return` and other regex-prefix keywords stay in the regex channel
+  instead of becoming call facts. Objective-C message receivers are no longer
+  emitted as called selectors.
+- Matrix consumers reuse one length-preserving lexical code view per file during
+  declaration/import/call and API-binding collection. The profiler now reports
+  TypeScript and Rust/WASM declaration timings separately, including native
+  load cost. Rust regex-prefix recognition avoids allocating a string per slash.
+  Build detection reuses one immutable locator list across providers.
 - Generated sources stay in inventory and in the call-target index, but
   unreferenced generated internals are not materialized as symbols. Unique
   authored-call targets still receive define and call edges. Coverage reports

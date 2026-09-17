@@ -6,33 +6,66 @@ const GENERATED_PATH =
   /(?:^|\/)(?:__generated__|\.generated|generated\/|\.pb\/)|\.(?:pb\.go|pb\.cc|pb\.h|pb\.ts|pb\.js|pb2\.py)$/iu;
 const GENERATED_NAME = /(?:_pb2|_grpc_pb|_generated|\.g|\.designer)\.[A-Za-z0-9]+$/u;
 
+function isLineComment(trimmed: string): boolean {
+  return (
+    trimmed.startsWith('//') ||
+    trimmed.startsWith('#') ||
+    trimmed.startsWith('--') ||
+    trimmed.startsWith('*')
+  );
+}
+
 function leadingCommentHeader(source: string): string {
   const lines = source.slice(0, 4096).split(/\r?\n/u);
   const header: string[] = [];
-  let inBlock = false;
+  let blockCloser: '*/' | '-->' | undefined;
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (inBlock) {
+    if (blockCloser) {
+      const close = line.indexOf(blockCloser);
+      if (close >= 0) {
+        header.push(line.slice(0, close + blockCloser.length));
+        const rest = line.slice(close + blockCloser.length).trim();
+        blockCloser = undefined;
+        if (
+          rest !== '' &&
+          !isLineComment(rest) &&
+          !rest.startsWith('/*') &&
+          !rest.startsWith('<!--')
+        ) {
+          break;
+        }
+        continue;
+      }
       header.push(line);
-      if (trimmed.includes('*/') || trimmed.includes('-->')) inBlock = false;
       continue;
     }
+    const trimmed = line.trim();
     if (trimmed === '') {
       header.push(line);
       continue;
     }
-    if (
-      trimmed.startsWith('//') ||
-      trimmed.startsWith('#') ||
-      trimmed.startsWith('--') ||
-      trimmed.startsWith('*')
-    ) {
+    if (isLineComment(trimmed)) {
       header.push(line);
       continue;
     }
     if (trimmed.startsWith('/*') || trimmed.startsWith('<!--')) {
-      header.push(line);
-      inBlock = !trimmed.includes('*/') && !trimmed.includes('-->');
+      const closer = trimmed.startsWith('<!--') ? '-->' : '*/';
+      const close = trimmed.indexOf(closer);
+      if (close < 0) {
+        header.push(line);
+        blockCloser = closer;
+        continue;
+      }
+      header.push(trimmed.slice(0, close + closer.length));
+      const rest = trimmed.slice(close + closer.length).trim();
+      if (
+        rest !== '' &&
+        !isLineComment(rest) &&
+        !rest.startsWith('/*') &&
+        !rest.startsWith('<!--')
+      ) {
+        break;
+      }
       continue;
     }
     break;
@@ -46,7 +79,7 @@ function leadingCommentHeader(source: string): string {
  * materialized as symbols. Call binding treats generated symbols as unique
  * targets only — they never collide with authored names in the candidate index.
  * Header markers must appear in the leading comment block, not in later string
- * literals of authored source.
+ * literals or same-line code after a closed comment.
  */
 export function isGeneratedSource(locator: string, source: string): boolean {
   const name = basenameOf(locator);

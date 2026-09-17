@@ -127,6 +127,15 @@ function objectId(batch: GraphFactBatch, predicate: string): string[] {
     .map((fact) => ('id' in fact.object ? fact.object.id : ''));
 }
 
+function callsFrom(batch: GraphFactBatch, locator: string): string[] {
+  return batch.facts
+    .filter(
+      (fact) =>
+        fact.predicate === 'calls' && 'id' in fact.subject && fact.subject.id.includes(locator)
+    )
+    .map((fact) => ('id' in fact.object ? fact.object.id : ''));
+}
+
 describe('source binding precision', () => {
   it('does not declare or call names that only appear in strings and docstrings', async () => {
     const batch = await collectDeclarations({
@@ -159,6 +168,18 @@ describe('source binding precision', () => {
     expect(
       isGeneratedSource(
         'src/app.ts',
+        '/* license */ const note = "do not edit";\nexport function actual() {}\n'
+      )
+    ).toBe(false);
+    expect(
+      isGeneratedSource(
+        'src/app.ts',
+        '<!-- license\n-->\nexport function actual(): string { return "do not edit"; }\n'
+      )
+    ).toBe(false);
+    expect(
+      isGeneratedSource(
+        'src/app.ts',
         'export function actual(): string { return "do not edit"; }\n'
       )
     ).toBe(false);
@@ -186,11 +207,193 @@ describe('source binding precision', () => {
       {
         'openapi.yaml':
           'openapi: 3.0.3\ninfo:\n  title: Catalog\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses:\n        "200":\n          description: ok\n',
-        'src/handlers/items.ts':
-          'export function handle(): string[] { return listItems("listItems"); }\nexport function listItems(_id: string): string[] { return []; }\n',
+        'src/app.ts':
+          'import express from "express";\nconst app = express();\nexport function listItems(_id: string): string[] { return []; }\napp.get("/items", listItems);\n',
       },
       [createOpenApiContractsProvider(), createApiImplementationBindingProvider()]
     );
     expect(handled.graph?.edges.some((edge) => edge.relation === 'implements')).toBe(true);
+
+    const nameOnly = await build(
+      {
+        'openapi.yaml':
+          'openapi: 3.0.3\ninfo:\n  title: Catalog\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses:\n        "200":\n          description: ok\n',
+        'src/handlers/items.ts': 'export function listItems(): string[] { return []; }\n',
+      },
+      [createOpenApiContractsProvider(), createApiImplementationBindingProvider()]
+    );
+    expect(nameOnly.graph?.edges.some((edge) => edge.relation === 'implements')).toBe(false);
+
+    const splitContracts = await build(
+      {
+        'catalog/openapi.yaml':
+          'openapi: 3.0.3\ninfo:\n  title: Catalog\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses:\n        "200":\n          description: ok\n',
+        'billing/openapi.yaml':
+          'openapi: 3.0.3\ninfo:\n  title: Billing\npaths:\n  /bills:\n    get:\n      operationId: listItems\n      responses:\n        "200":\n          description: ok\n',
+        'src/handlers/items.ts':
+          'import express from "express";\nconst app = express();\nexport function listItems(): string[] { return []; }\napp.get("/items", listItems);\n',
+      },
+      [createOpenApiContractsProvider(), createApiImplementationBindingProvider()]
+    );
+    const implemented = (splitContracts.graph?.edges ?? []).filter(
+      (edge) => edge.relation === 'implements'
+    );
+    expect(implemented).toHaveLength(1);
+    expect(splitContracts.quality.unknownZones).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.api-binding-unbound',
+        scope: 'billing/openapi.yaml',
+      })
+    );
+    expect(splitContracts.quality.unknownZones).not.toContainEqual(
+      expect.objectContaining({
+        code: 'graph.api-binding-unbound',
+        scope: 'catalog/openapi.yaml',
+      })
+    );
+
+    const mapGet = await build(
+      {
+        'openapi.yaml':
+          'openapi: 3.0.3\ninfo:\n  title: Catalog\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses:\n        "200":\n          description: ok\n',
+        'src/handlers/items.ts':
+          'export function listItems(): void {}\nconst cache = new Map();\ncache.get("/items", listItems);\n',
+      },
+      [createOpenApiContractsProvider(), createApiImplementationBindingProvider()]
+    );
+    expect(mapGet.graph?.edges.some((edge) => edge.relation === 'implements')).toBe(false);
+    expect(mapGet.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.api-binding-unbound', scope: 'openapi.yaml' })
+    );
+
+    const arbitraryApp = await build(
+      {
+        'openapi.yaml':
+          'openapi: 3.0.3\ninfo:\n  title: Catalog\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses:\n        "200":\n          description: ok\n',
+        'src/handlers/items.ts':
+          'export function listItems(): void {}\nconst app = { get(_path: string, _handler: unknown): void {} };\napp.get("/items", listItems);\n',
+      },
+      [createOpenApiContractsProvider(), createApiImplementationBindingProvider()]
+    );
+    expect(arbitraryApp.graph?.edges.some((edge) => edge.relation === 'implements')).toBe(false);
+    expect(arbitraryApp.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.api-binding-unbound', scope: 'openapi.yaml' })
+    );
+
+    const ambiguousHandlers = await build(
+      {
+        'openapi.yaml':
+          'openapi: 3.0.3\ninfo:\n  title: Catalog\npaths:\n  /items:\n    get:\n      operationId: listItems\n      responses:\n        "200":\n          description: ok\n',
+        'src/handlers/first.ts':
+          'import express from "express";\nconst app = express();\nexport function listItems(): void {}\napp.get("/items", listItems);\n',
+        'src/controllers/second.ts':
+          'import express from "express";\nconst app = express();\nexport function listItems(): void {}\napp.get("/items", listItems);\n',
+      },
+      [createOpenApiContractsProvider(), createApiImplementationBindingProvider()]
+    );
+    expect(ambiguousHandlers.graph?.edges.some((edge) => edge.relation === 'implements')).toBe(
+      false
+    );
+    expect(ambiguousHandlers.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.api-binding-ambiguous', scope: 'openapi.yaml' })
+    );
+
+    const partiallyRoutedOperationId = await build(
+      {
+        'openapi.yaml':
+          'openapi: 3.0.3\ninfo:\n  title: Catalog\npaths:\n  /items:\n    get:\n      operationId: mutateItems\n      responses:\n        "200":\n          description: ok\n    post:\n      operationId: mutateItems\n      responses:\n        "200":\n          description: ok\n',
+        'src/app.ts':
+          'import express from "express";\nconst app = express();\nexport function mutateItems(): void {}\napp.get("/items", mutateItems);\n',
+      },
+      [createOpenApiContractsProvider(), createApiImplementationBindingProvider()]
+    );
+    expect(
+      partiallyRoutedOperationId.graph?.edges.filter((edge) => edge.relation === 'implements')
+    ).toHaveLength(1);
+    expect(partiallyRoutedOperationId.quality.unknownZones).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.api-binding-unbound',
+        scope: 'openapi.yaml',
+        reason: expect.stringContaining('POST /items'),
+      })
+    );
+  });
+
+  it('ignores template imports, regex call shapes, export aliases and namespace members', async () => {
+    const batch = await collectDeclarations({
+      'src/lib.ts': 'function fetchItems(): void {}\nexport { fetchItems as load };\n',
+      'src/ns.ts': 'export function fetchItems(): void {}\n',
+      'src/app.ts': [
+        'const src = `',
+        "import { phantom } from './lib.ts';",
+        '`;',
+        "import { load } from './lib.ts';",
+        "import * as api from './ns.ts';",
+        'export function target(): void {}',
+        'const r = /target()/;',
+        'export function run(): void {',
+        '  load();',
+        '  api.fetchItems();',
+        '  go();',
+        '}',
+        'export function go(): void { go(); }',
+      ].join('\n'),
+    });
+    const called = objectId(batch, 'calls');
+    expect(called.some((id) => id.includes('fetchItems'))).toBe(true);
+    expect(called.some((id) => id.includes(':function:go'))).toBe(true);
+    expect(called.filter((id) => id.includes(':function:target'))).toEqual([]);
+    expect(objectId(batch, 'defines').some((id) => id.includes('phantom'))).toBe(false);
+  });
+
+  it('does not treat a regex after return as a call, and still binds a real return call', async () => {
+    const regex = await collectDeclarations({
+      'src/app.ts':
+        'export function target(): void {}\nexport function example(): RegExp { return /target()/; }\n',
+    });
+    expect(objectId(regex, 'calls').filter((id) => id.includes(':function:target'))).toEqual([]);
+    expect(regex.unknownZones).toEqual([]);
+
+    const real = await collectDeclarations({
+      'src/app.ts':
+        'export function target(): void {}\nexport function example(): void { return target(); }\n',
+    });
+    expect(objectId(real, 'calls').some((id) => id.includes(':function:target'))).toBe(true);
+  });
+
+  it('treats an Objective-C message receiver as a receiver, not a called selector', async () => {
+    const batch = await collectDeclarations({
+      'src/Health.m':
+        '@implementation Health\n- (void)service {}\n- (void)health {}\n- (void)run { [service health]; }\n@end\n',
+    });
+    const called = objectId(batch, 'calls');
+    expect(called.some((id) => id.includes(':method:health'))).toBe(true);
+    expect(called.some((id) => id.includes(':method:service'))).toBe(false);
+  });
+
+  it('binds indirect default exports and explicit Python underscore imports', async () => {
+    const batch = await collectDeclarations({
+      'src/lib.ts': 'function actual(): void {}\nexport default actual;\n',
+      'src/app.ts': "import catalog from './lib.ts';\nexport function run(): void { catalog(); }\n",
+      'src/util.py':
+        'def _helper():\n    return 1\ndef public():\n    return 2\n__all__ = ["public"]\n',
+      'src/explicit.py': 'from .util import _helper\ndef run():\n    _helper()\n',
+      'src/star.py': 'from .util import *\ndef run():\n    public()\n    _helper()\n',
+    });
+    const called = objectId(batch, 'calls');
+    expect(called.some((id) => id.includes(':function:actual'))).toBe(true);
+    expect(callsFrom(batch, 'src/explicit.py').some((id) => id.includes(':function:_helper'))).toBe(
+      true
+    );
+    expect(callsFrom(batch, 'src/star.py').some((id) => id.includes(':function:public'))).toBe(
+      true
+    );
+    expect(callsFrom(batch, 'src/star.py').some((id) => id.includes('_helper'))).toBe(false);
+    expect(batch.coverage).toContainEqual(
+      expect.objectContaining({ dimension: 'source-calls-examined' })
+    );
+    expect(batch.coverage).toContainEqual(
+      expect.objectContaining({ dimension: 'source-calls-unresolved' })
+    );
   });
 });

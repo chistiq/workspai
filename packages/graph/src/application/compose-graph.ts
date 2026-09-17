@@ -1764,6 +1764,7 @@ export async function composeGraph(
       integrity:
         prepared.unresolved.length > 0 ||
         uniqueDisputes.length > 0 ||
+        normalizedSources.some((source) => source.batch.unknownZones.length > 0) ||
         decisions.some((decision) => decision.state !== 'accepted')
           ? 'attention'
           : 'pass',

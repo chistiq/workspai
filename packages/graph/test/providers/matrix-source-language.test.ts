@@ -226,13 +226,30 @@ export function startStorefront(): void {
     expect(scanMatrixCallSites('go();\n', 'node').map((site) => site.name)).toEqual(['go']);
     expect(matchMatrixCallSites('run\r\n', 'ruby', 'run')).toEqual([0]);
     expect(scanMatrixCallSites('[service\n health]\n', 'objective-c-matlab')).toEqual([
-      expect.objectContaining({ name: 'service', line: 1 }),
       expect.objectContaining({ name: 'health', line: 2 }),
     ]);
+    expect(
+      scanMatrixCallSites('[service setValue:value forKey:key]\n', 'objective-c-matlab').map(
+        (site) => site.name
+      )
+    ).toEqual(['setValue', 'forKey']);
     expect(
       scanMatrixCallSites('while (ready()) {}\nready()\n', 'node').map((site) => site.name)
     ).toEqual(['ready', 'ready']);
     expect(scanMatrixCallSites('"target()"\n', 'node').map((site) => site.name)).toEqual([]);
+    expect(scanMatrixCallSites('const r = /target()/;\n', 'node').map((site) => site.name)).toEqual(
+      []
+    );
+    expect(
+      scanMatrixCallSites('export function example() { return /target()/; }\n', 'node').map(
+        (site) => site.name
+      )
+    ).not.toContain('target');
+    expect(
+      scanMatrixCallSites('export function example() { return target(); }\n', 'node').map(
+        (site) => site.name
+      )
+    ).toContain('target');
   });
 
   it('maps named import aliases to the exported module member', () => {
@@ -244,6 +261,22 @@ export function startStorefront(): void {
         new Set(['src/app.ts', 'src/lib.ts'])
       )
     ).toEqual([{ locator: 'src/lib.ts', localName: 'load', exportedName: 'fetchItems' }]);
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/app.ts',
+        'const src = `\nimport { phantom } from "./lib.ts";\n`;\nimport { load } from "./other.ts";\n',
+        'node',
+        new Set(['src/app.ts', 'src/lib.ts', 'src/other.ts'])
+      )
+    ).toEqual(['src/other.ts']);
+    expect(
+      extractMatrixImportBindings(
+        'src/app.ts',
+        "import * as api from './lib.ts';\n",
+        'node',
+        new Set(['src/app.ts', 'src/lib.ts'])
+      )
+    ).toEqual([{ locator: 'src/lib.ts', localName: 'api', exportedName: '*' }]);
   });
 
   it('resolves unique Java type imports and Objective-C message sends', () => {

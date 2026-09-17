@@ -49,9 +49,10 @@ function sameDeclarations(
 export function routeGraphNativeDeclarations(
   source: string,
   language: GraphStructuralLanguage | null,
-  native: GraphNativePort | undefined
+  native: GraphNativePort | undefined,
+  codeView?: string
 ): GraphNativeDeclarationRoute {
-  const reference = extractMatrixDeclarations(source, language);
+  const reference = extractMatrixDeclarations(source, language, codeView);
   if (!native?.extractDeclarations) {
     return { engine: 'typescript', reason: 'native-unavailable', declarations: reference };
   }
@@ -78,13 +79,14 @@ export function routeGraphNativeDeclarations(
 export function extractPublishedMatrixDeclarations(
   source: string,
   language: GraphStructuralLanguage | null,
-  native: GraphNativePort | undefined
+  native: GraphNativePort | undefined,
+  codeView?: string
 ): GraphPublishedDeclarationRoute {
   if (!native?.extractDeclarations) {
     return {
       engine: 'typescript',
       reason: 'native-unavailable',
-      declarations: extractMatrixDeclarations(source, language),
+      declarations: extractMatrixDeclarations(source, language, codeView),
     };
   }
   const candidate = native.extractDeclarations({ source, language });
@@ -92,7 +94,7 @@ export function extractPublishedMatrixDeclarations(
     return {
       engine: 'typescript',
       reason: 'native-failed',
-      declarations: extractMatrixDeclarations(source, language),
+      declarations: extractMatrixDeclarations(source, language, codeView),
     };
   }
   return {

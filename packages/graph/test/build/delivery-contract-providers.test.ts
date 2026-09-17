@@ -92,7 +92,7 @@ async function fixture(): Promise<string> {
   await writeFile(path.join(root, 'adr', '0001-catalog.md'), '# Use a catalog service\n');
   await writeFile(
     path.join(root, 'src', 'handlers', 'items.ts'),
-    'export function handle(): string[] { return listItems("listItems"); }\nexport function listItems(_id: string): string[] { return []; }\n'
+    'import express from "express";\nconst app = express();\nexport function listItems(_id: string): string[] { return []; }\napp.get("/items", listItems);\n'
   );
   return root;
 }

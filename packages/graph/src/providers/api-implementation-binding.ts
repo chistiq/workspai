@@ -15,6 +15,7 @@ import {
   extractMatrixDeclarations,
   matrixLanguageFor,
 } from './matrix-source-language.js';
+import { maskMatrixSourceLiterals, matchAllInMatrixCodeView } from './matrix-source-mask.js';
 import { createObservedEdgeFact, extensionOf } from './observed-edge-fact.js';
 import { openApiEndpointIdentityLocator, openApiOperationIds } from './openapi-contracts.js';
 import { parseStructuredDocuments } from './structured-documents.js';
@@ -26,24 +27,143 @@ export const API_IMPLEMENTATION_BINDING_PROVIDER_ID =
 const MAX_BYTES = 2 * 1024 * 1024;
 const HTTP_METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
 
-function handlerScore(locator: string): number {
-  const artifact = locator.toLowerCase();
-  let score = 0;
-  if (/(^|\/)(routes?|handlers?|controllers?|server|httpapi)(\/|$)/u.test(artifact)) score += 100;
-  if (/(?:^|\/)(?:api|routes?|handlers?|controllers?|server)(?:\.[a-z0-9]+)$/u.test(artifact)) {
-    score += 80;
-  }
-  if (/(^|\/)(src|app|lib)(\/|$)/u.test(artifact)) score += 20;
-  if (/(^|\/)(protocol|sdk|client)(\/|$)/u.test(artifact)) score -= 30;
-  return score;
-}
-
-function handlerDeclaration(source: string, locator: string, operationId: string): boolean {
-  return extractMatrixDeclarations(source, matrixLanguageFor(locator)).some(
+function handlerDeclaration(
+  declarations: readonly { name: string; detail: string }[],
+  operationId: string
+): boolean {
+  return declarations.some(
     (item) =>
       item.name === operationId &&
       (item.detail === 'function' || item.detail === 'method' || item.detail === 'value')
   );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+const HTTP_FRAMEWORK_SPECIFIER =
+  /^(?:express|fastify|koa|hono|@hono\/hono|koa-router|@koa\/router|restify|polka|@tinyhttp\/app|oak|@oak\/oak)(?:\/|$)/iu;
+
+function addNamedImportLocals(inner: string, names: Set<string>): void {
+  for (const part of inner.split(',')) {
+    const item = part.trim();
+    if (!item || item.startsWith('type ')) continue;
+    const aliased = /^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(item);
+    if (aliased?.[2]) {
+      names.add(aliased[2]);
+      continue;
+    }
+    const name = /^([A-Za-z_$][\w$]*)$/u.exec(item)?.[1];
+    if (name) names.add(name);
+  }
+}
+
+function collectionReceiverNames(source: string, codeView: string): Set<string> {
+  const names = new Set<string>();
+  const pattern =
+    /^[^\S\r\n]*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?=\s*new\s+(?:globalThis\.)?(?:Map|Set|WeakMap|WeakSet|Headers|URLSearchParams)\b/gmu;
+  for (const match of matchAllInMatrixCodeView(source, codeView, pattern)) {
+    if (match[1]) names.add(match[1]);
+  }
+  return names;
+}
+
+function httpFrameworkImportNames(source: string, codeView: string): Set<string> {
+  const names = new Set<string>();
+  const pattern = /^[^\S\r\n]*import\s+(?!type\b)([\s\S]*?)\s+from\s+['"]([^'"\r\n]+)['"]/gmu;
+  for (const match of matchAllInMatrixCodeView(source, codeView, pattern)) {
+    const specifier = match[2] ?? '';
+    if (!HTTP_FRAMEWORK_SPECIFIER.test(specifier)) continue;
+    const clause = (match[1] ?? '').trim();
+    const namespace = /^\*\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(clause);
+    const defaultAndNamed = /^([A-Za-z_$][\w$]*)\s*,\s*\{([^}]*)\}$/u.exec(clause);
+    const namedOnly = /^\{([^}]*)\}$/u.exec(clause);
+    const defaultOnly = /^([A-Za-z_$][\w$]*)$/u.exec(clause);
+    if (namespace?.[1]) names.add(namespace[1]);
+    else if (defaultAndNamed?.[1]) {
+      names.add(defaultAndNamed[1]);
+      addNamedImportLocals(defaultAndNamed[2] ?? '', names);
+    } else if (namedOnly?.[1] !== undefined) addNamedImportLocals(namedOnly[1], names);
+    else if (defaultOnly?.[1]) names.add(defaultOnly[1]);
+  }
+  return names;
+}
+
+function httpFactoryReceiverNames(
+  source: string,
+  codeView: string,
+  frameworkImports: ReadonlySet<string>
+): Set<string> {
+  const names = new Set<string>();
+  const pattern =
+    /^[^\S\r\n]*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:new\s+)?(express|fastify|Router|Koa|Hono|polka)\s*(?:<[^>]*>)?\s*\(/gmu;
+  for (const match of matchAllInMatrixCodeView(source, codeView, pattern)) {
+    if (match[1] && match[2] && frameworkImports.has(match[2])) names.add(match[1]);
+  }
+  return names;
+}
+
+function isHttpRouteReceiver(
+  receiver: string,
+  collections: ReadonlySet<string>,
+  frameworkImports: ReadonlySet<string>,
+  factories: ReadonlySet<string>
+): boolean {
+  if (!receiver || collections.has(receiver)) return false;
+  return frameworkImports.has(receiver) || factories.has(receiver);
+}
+
+interface HttpRegistrationContext {
+  readonly codeView: string;
+  readonly collections: ReadonlySet<string>;
+  readonly frameworkImports: ReadonlySet<string>;
+  readonly factories: ReadonlySet<string>;
+}
+
+function createHttpRegistrationContext(source: string, locator: string): HttpRegistrationContext {
+  const codeView = maskMatrixSourceLiterals(source, matrixLanguageFor(locator));
+  const collections = collectionReceiverNames(source, codeView);
+  const frameworkImports = httpFrameworkImportNames(source, codeView);
+  return {
+    codeView,
+    collections,
+    frameworkImports,
+    factories: httpFactoryReceiverNames(source, codeView, frameworkImports),
+  };
+}
+
+function isRoutedHandler(
+  source: string,
+  operationId: string,
+  declarations: readonly { name: string; detail: string }[],
+  method: string,
+  route: string,
+  context: HttpRegistrationContext
+): boolean {
+  if (!handlerDeclaration(declarations, operationId)) return false;
+  const ident = escapeRegExp(operationId);
+  const path = escapeRegExp(route);
+  const methodToken = escapeRegExp(method.toLowerCase());
+  const quote = `['"\u0060]`;
+  const exact = new RegExp(
+    String.raw`\b([A-Za-z_$][\w$]*)\s*\.\s*${methodToken}\s*\(\s*${quote}${path}${quote}\s*,\s*(?:[A-Za-z_$][\w$]*\.)*${ident}\b`,
+    'gi'
+  );
+  const wildcard = new RegExp(
+    String.raw`\b([A-Za-z_$][\w$]*)\s*\.\s*(?:use|all)\s*\(\s*${quote}${path}${quote}\s*,\s*(?:[A-Za-z_$][\w$]*\.)*${ident}\b`,
+    'gi'
+  );
+  const routed = (pattern: RegExp): boolean =>
+    matchAllInMatrixCodeView(source, context.codeView, pattern).some((match) =>
+      isHttpRouteReceiver(
+        match[1] ?? '',
+        context.collections,
+        context.frameworkImports,
+        context.factories
+      )
+    );
+  return routed(exact) || routed(wildcard);
 }
 
 function endpointsForOperation(
@@ -124,7 +244,18 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
       const processing: GraphFactBatch['processing'][number][] = [];
       const operationFiles = new Map<
         string,
-        { file: GraphProviderInput; source: string; score: number }
+        {
+          file: GraphProviderInput;
+          operationId: string;
+          contractLocator: string;
+          method: string;
+          route: string;
+          title: string;
+        }
+      >();
+      const ambiguousRegistrations = new Map<
+        string,
+        { contractLocator: string; operationId: string; locators: Set<string> }
       >();
       const contractSources = new Map<string, { input: GraphProviderInput; source: string }>();
 
@@ -170,8 +301,6 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
       for (const input of sources) {
         if (request.signal?.aborted)
           throw new Error('API implementation collection was cancelled.');
-        const score = handlerScore(input.locator);
-        if (score < 50) continue;
         try {
           const bytes = await request.readInput(input, {
             maxBytes: MAX_BYTES,
@@ -187,22 +316,59 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
             diagnostics: [],
           });
           if (isGeneratedSource(input.locator, source)) continue;
-          for (const [, contract] of contractSources) {
+          const registration = createHttpRegistrationContext(source, input.locator);
+          const declarations = extractMatrixDeclarations(
+            source,
+            matrixLanguageFor(input.locator),
+            registration.codeView
+          );
+          for (const [contractLocator, contract] of contractSources) {
             for (const operationId of openApiOperationIds(
               contract.source,
               contract.input.locator
             )) {
-              if (!handlerDeclaration(source, input.locator, operationId)) continue;
-              const current = operationFiles.get(operationId);
-              if (
-                current &&
-                (current.score > score ||
-                  (current.score === score &&
-                    current.file.locator.localeCompare(input.locator) <= 0))
-              ) {
-                continue;
+              for (const endpointSpec of endpointsForOperation(
+                contract.source,
+                contract.input.locator,
+                operationId
+              )) {
+                if (
+                  !isRoutedHandler(
+                    source,
+                    operationId,
+                    declarations,
+                    endpointSpec.method,
+                    endpointSpec.route,
+                    registration
+                  )
+                ) {
+                  continue;
+                }
+                const key = `${contractLocator}\u0000${operationId}\u0000${endpointSpec.method}\u0000${endpointSpec.route}`;
+                const current = operationFiles.get(key);
+                const ambiguous = ambiguousRegistrations.get(key);
+                if (ambiguous) {
+                  ambiguous.locators.add(input.locator);
+                  continue;
+                }
+                if (current && current.file.locator !== input.locator) {
+                  operationFiles.delete(key);
+                  ambiguousRegistrations.set(key, {
+                    contractLocator,
+                    operationId,
+                    locators: new Set([current.file.locator, input.locator]),
+                  });
+                  continue;
+                }
+                operationFiles.set(key, {
+                  file: input,
+                  operationId,
+                  contractLocator,
+                  method: endpointSpec.method,
+                  route: endpointSpec.route,
+                  title: endpointSpec.title,
+                });
               }
-              operationFiles.set(operationId, { file: input, source, score });
             }
           }
         } catch {
@@ -227,21 +393,42 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
         }
       }
 
+      const ambiguousEndpoints = new Set<string>();
+      for (const [endpointKey, ambiguity] of ambiguousRegistrations) {
+        ambiguousEndpoints.add(endpointKey);
+        unknownZones.push({
+          code: 'graph.api-binding-ambiguous',
+          scope: ambiguity.contractLocator,
+          reason: `Multiple routed handlers named ${ambiguity.operationId} were observed in ${[
+            ...ambiguity.locators,
+          ]
+            .sort((left, right) => left.localeCompare(right))
+            .join(', ')}; no implementation edge was selected.`,
+        });
+      }
+
       for (const [locator, contract] of [...contractSources.entries()].sort(([left], [right]) =>
         left.localeCompare(right)
       )) {
         for (const operationId of openApiOperationIds(contract.source, contract.input.locator)) {
-          if (operationFiles.has(operationId)) continue;
-          unknownZones.push({
-            code: 'graph.api-binding-unbound',
-            scope: locator,
-            reason: `No function, method, or value declaration named ${operationId} was observed in handler sources.`,
-          });
+          for (const endpoint of endpointsForOperation(
+            contract.source,
+            contract.input.locator,
+            operationId
+          )) {
+            const endpointKey = `${locator}\u0000${operationId}\u0000${endpoint.method}\u0000${endpoint.route}`;
+            if (operationFiles.has(endpointKey) || ambiguousEndpoints.has(endpointKey)) continue;
+            unknownZones.push({
+              code: 'graph.api-binding-unbound',
+              scope: locator,
+              reason: `No ${endpoint.method} ${endpoint.route} registration for handler ${operationId} was observed for this contract.`,
+            });
+          }
         }
       }
 
       let factIndex = 0;
-      for (const [operationId, match] of [...operationFiles.entries()].sort(([left], [right]) =>
+      for (const [, match] of [...operationFiles.entries()].sort(([left], [right]) =>
         left.localeCompare(right)
       )) {
         const file = await request.resolveIdentity({
@@ -252,44 +439,32 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
           scope: request.scope,
         });
         if (!file.accepted) continue;
-        for (const [, contract] of contractSources) {
-          for (const endpointSpec of endpointsForOperation(
-            contract.source,
-            contract.input.locator,
-            operationId
-          )) {
-            const endpoint = await request.resolveIdentity({
-              namespace: 'openapi',
-              kind: 'endpoint',
-              relativeLocator: openApiEndpointIdentityLocator(
-                endpointSpec.title,
-                endpointSpec.method,
-                endpointSpec.route
-              ),
-              caseSensitivity: 'sensitive',
-              scope: request.scope,
-            });
-            if (!endpoint.accepted) continue;
-            facts.push(
-              createObservedEdgeFact({
-                factId: `fact:api-binding:${String(factIndex).padStart(8, '0')}:${match.file.digest.value}`,
-                factType: 'contract.api-implementation',
-                subject: file.value.reference,
-                predicate: 'implements',
-                object: endpoint.value.reference,
-                request,
-                source: match.file,
-                provider: manifest,
-                evidenceId: `evidence:api-binding:${String(factIndex).padStart(8, '0')}`,
-                sourceKind: 'source-file',
-                derivation: 'extracted',
-                authority: 'observed',
-                confidence: 0.8,
-              })
-            );
-            factIndex += 1;
-          }
-        }
+        const endpoint = await request.resolveIdentity({
+          namespace: 'openapi',
+          kind: 'endpoint',
+          relativeLocator: openApiEndpointIdentityLocator(match.title, match.method, match.route),
+          caseSensitivity: 'sensitive',
+          scope: request.scope,
+        });
+        if (!endpoint.accepted) continue;
+        facts.push(
+          createObservedEdgeFact({
+            factId: `fact:api-binding:${String(factIndex).padStart(8, '0')}:${match.file.digest.value}`,
+            factType: 'contract.api-implementation',
+            subject: file.value.reference,
+            predicate: 'implements',
+            object: endpoint.value.reference,
+            request,
+            source: match.file,
+            provider: manifest,
+            evidenceId: `evidence:api-binding:${String(factIndex).padStart(8, '0')}`,
+            sourceKind: 'source-file',
+            derivation: 'extracted',
+            authority: 'observed',
+            confidence: 0.8,
+          })
+        );
+        factIndex += 1;
       }
 
       return {
@@ -306,7 +481,14 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
             observed: facts.length,
             expected: [...contractSources.values()].reduce(
               (count, contract) =>
-                count + openApiOperationIds(contract.source, contract.input.locator).length,
+                count +
+                openApiOperationIds(contract.source, contract.input.locator).reduce(
+                  (operations, operationId) =>
+                    operations +
+                    endpointsForOperation(contract.source, contract.input.locator, operationId)
+                      .length,
+                  0
+                ),
               0
             ),
           },

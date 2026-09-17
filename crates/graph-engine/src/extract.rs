@@ -287,6 +287,86 @@ fn mask_quoted(source: &str, mode: QuoteMode) -> String {
         }
         blank_span(out, start, *i);
     }
+    fn can_begin_js_regex(chars: &[char], index: usize) -> bool {
+        let mut cursor = index;
+        while cursor > 0 {
+            let previous = chars[cursor - 1];
+            if matches!(previous, ' ' | '\t' | '\u{000b}' | '\u{000c}') {
+                cursor -= 1;
+                continue;
+            }
+            if (previous == '+' || previous == '-') && cursor > 1 && chars[cursor - 2] == previous {
+                return false;
+            }
+            if matches!(previous, ')' | '\'' | '"' | '`' | ']') {
+                return false;
+            }
+            if previous.is_ascii_alphanumeric() || previous == '_' || previous == '$' {
+                let mut start = cursor - 1;
+                while start > 0 {
+                    let before = chars[start - 1];
+                    if before.is_ascii_alphanumeric() || before == '_' || before == '$' {
+                        start -= 1;
+                        continue;
+                    }
+                    break;
+                }
+                return [
+                    "return",
+                    "throw",
+                    "case",
+                    "else",
+                    "do",
+                    "in",
+                    "typeof",
+                    "void",
+                    "delete",
+                    "new",
+                    "await",
+                    "yield",
+                    "instanceof",
+                ]
+                .iter()
+                .any(|keyword| chars[start..cursor].iter().copied().eq(keyword.chars()));
+            }
+            return true;
+        }
+        true
+    }
+    fn mask_regex(chars: &[char], out: &mut [char], i: &mut usize, n: usize) {
+        let start = *i;
+        *i += 1;
+        let mut in_class = false;
+        while *i < n {
+            let current = chars[*i];
+            if current == '\\' {
+                *i += 2;
+                continue;
+            }
+            if current == '[' && !in_class {
+                in_class = true;
+                *i += 1;
+                continue;
+            }
+            if current == ']' && in_class {
+                in_class = false;
+                *i += 1;
+                continue;
+            }
+            if !in_class && (current == '\n' || current == '\r') {
+                break;
+            }
+            if current == '/' && !in_class {
+                *i += 1;
+                while *i < n && chars[*i].is_ascii_alphabetic() {
+                    *i += 1;
+                }
+                break;
+            }
+            *i += 1;
+        }
+        blank_span(out, start, *i);
+    }
     fn scan_code(
         chars: &[char],
         out: &mut [char],
@@ -328,6 +408,14 @@ fn mask_quoted(source: &str, mode: QuoteMode) -> String {
                 && !matches!(mode, QuoteMode::Hash)
             {
                 mask_block_comment(chars, out, i, n);
+                continue;
+            }
+            if current == '/'
+                && matches!(mode, QuoteMode::Js)
+                && (*i + 1 >= n || (chars[*i + 1] != '/' && chars[*i + 1] != '*'))
+                && can_begin_js_regex(chars, *i)
+            {
+                mask_regex(chars, out, i, n);
                 continue;
             }
             if current == '\'' || current == '"' {
@@ -1051,6 +1139,20 @@ mod tests {
                 Language::Node
             ),
             vec!["actual".to_owned()]
+        );
+        assert_eq!(
+            names(
+                "const r = /function phantom() {}/;\nexport function actual() {}\n",
+                Language::Node
+            ),
+            vec!["r".to_owned(), "actual".to_owned()]
+        );
+        assert_eq!(
+            names(
+                "export function example() { return /function phantom() {}/; }\n",
+                Language::Node
+            ),
+            vec!["example".to_owned()]
         );
         assert_eq!(
             names(

@@ -10,7 +10,7 @@ import {
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
 import { ECMASCRIPT_STATIC_IMPORT_PATTERN } from './ecmascript-import-pattern.js';
-import { stripMatrixSourceComments } from './matrix-source-language.js';
+import { maskMatrixSourceLiterals, matchAllInMatrixCodeView } from './matrix-source-mask.js';
 
 export const ECMASCRIPT_IMPORTS_PROVIDER_ID = 'workspai.graph.provider.ecmascript-imports';
 
@@ -54,6 +54,19 @@ function sourceInputs(inputs: readonly GraphProviderInput[]): GraphProviderInput
   return inputs
     .filter((input) => SOURCE_EXTENSIONS.has(extension(input.locator)))
     .sort((left, right) => left.locator.localeCompare(right.locator));
+}
+
+function hasComputedModuleCall(source: string, masked: string): boolean {
+  const calls = [/\brequire\s*\(/gmu, /\bimport\s*\(/gmu] as const;
+  const literal = /^(?:require|import)\s*\(\s*(['"])[^'"\r\n]+\1\s*\)/u;
+  for (const pattern of calls) {
+    for (const match of source.matchAll(pattern)) {
+      const index = match.index ?? 0;
+      if (source[index] !== masked[index]) continue;
+      if (!literal.test(source.slice(index))) return true;
+    }
+  }
+  return false;
 }
 
 function resolveLocalImport(
@@ -147,11 +160,17 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
             signal: request.signal,
           });
           const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-          const syntaxView = stripMatrixSourceComments(source, 'node');
+          const codeView = maskMatrixSourceLiterals(source, 'node');
           const specifiers = [
-            ...[...syntaxView.matchAll(ECMASCRIPT_STATIC_IMPORT_PATTERN)].map((match) => match[1]),
-            ...[...syntaxView.matchAll(LITERAL_COMMONJS_REQUIRE)].map((match) => match[2]),
-            ...[...syntaxView.matchAll(LITERAL_DYNAMIC_IMPORT)].map((match) => match[2]),
+            ...matchAllInMatrixCodeView(source, codeView, ECMASCRIPT_STATIC_IMPORT_PATTERN).map(
+              (match) => match[1]
+            ),
+            ...matchAllInMatrixCodeView(source, codeView, LITERAL_COMMONJS_REQUIRE).map(
+              (match) => match[2]
+            ),
+            ...matchAllInMatrixCodeView(source, codeView, LITERAL_DYNAMIC_IMPORT).map(
+              (match) => match[2]
+            ),
           ].filter((specifier): specifier is string => Boolean(specifier));
           const uniqueSpecifiers = [...new Set(specifiers)].sort((left, right) =>
             left.localeCompare(right)
@@ -221,10 +240,7 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
               unknownZones: [],
             });
           }
-          const withoutLiteralModuleCalls = syntaxView
-            .replace(LITERAL_COMMONJS_REQUIRE, '')
-            .replace(LITERAL_DYNAMIC_IMPORT, '');
-          if (/\brequire\s*\(|\bimport\s*\(/u.test(withoutLiteralModuleCalls)) {
+          if (hasComputedModuleCall(source, codeView)) {
             unknownZones.push({
               code: 'graph.ecmascript-dynamic-import-unsupported',
               scope: input.locator,

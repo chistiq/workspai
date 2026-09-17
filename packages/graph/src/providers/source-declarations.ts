@@ -26,10 +26,10 @@ import {
   matrixUsesNamedImports,
   scanMatrixCallSites,
   selectBalancedMatrixSources,
-  stripMatrixSourceComments,
   type MatrixImportBinding,
 } from './matrix-source-language.js';
 import { extractPublishedMatrixDeclarations } from './route-native-declarations.js';
+import { maskMatrixSourceLiterals, matchAllInMatrixCodeView } from './matrix-source-mask.js';
 
 export const SOURCE_DECLARATIONS_PROVIDER_ID = 'workspai.graph.provider.source-declarations';
 
@@ -64,7 +64,8 @@ function sourceInputs(inputs: readonly GraphProviderInput[]): GraphProviderInput
 function extractSymbols(
   source: string,
   locator: string,
-  native: GraphNativePort | undefined
+  native: GraphNativePort | undefined,
+  codeView: string
 ): {
   readonly findings: readonly {
     name: string;
@@ -77,7 +78,8 @@ function extractSymbols(
   const all = extractPublishedMatrixDeclarations(
     source,
     matrixLanguageFor(locator),
-    native
+    native,
+    codeView
   ).declarations;
   return {
     findings: all.slice(0, MAX_SYMBOLS_PER_FILE),
@@ -102,17 +104,38 @@ function named(symbols: readonly DeclaredSymbol[], name: string): DeclaredSymbol
   return symbols.filter((symbol) => symbol.name === name);
 }
 
-function exportedNamesFromLists(source: string): Set<string> {
-  const names = new Set<string>();
-  const syntax = stripMatrixSourceComments(source, 'node');
-  for (const match of syntax.matchAll(/export\s+\{([^}]+)\}/gu)) {
+function parseExportNameMap(source: string, codeView: string): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const match of matchAllInMatrixCodeView(
+    source,
+    codeView,
+    /^[^\S\r\n]*export\s+\{([^}]+)\}/gmu
+  )) {
     for (const part of (match[1] ?? '').split(',')) {
       const item = part.trim();
       if (!item || item.startsWith('type ')) continue;
-      const aliased = /^([A-Za-z_$][\w$]*)\s+as\s+[A-Za-z_$][\w$]*$/u.exec(item);
-      const name = aliased?.[1] ?? /^([A-Za-z_$][\w$]*)$/u.exec(item)?.[1];
-      if (name) names.add(name);
+      const aliased = /^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(item);
+      if (aliased?.[1] && aliased[2]) {
+        names.set(aliased[2], aliased[1]);
+        continue;
+      }
+      const name = /^([A-Za-z_$][\w$]*)$/u.exec(item)?.[1];
+      if (name) names.set(name, name);
     }
+  }
+  return names;
+}
+
+function parsePythonAll(source: string, codeView: string): ReadonlySet<string> | undefined {
+  const assigned = matchAllInMatrixCodeView(
+    source,
+    codeView,
+    /^[^\S\r\n]*__all__\s*=\s*(\[[^\]]*\]|\([^)]*\))/gmu
+  )[0];
+  if (!assigned?.[1]) return undefined;
+  const names = new Set<string>();
+  for (const item of assigned[1].matchAll(/['"]([A-Za-z_][\w]*)['"]/gu)) {
+    if (item[1]) names.add(item[1]);
   }
   return names;
 }
@@ -120,21 +143,27 @@ function exportedNamesFromLists(source: string): Set<string> {
 function isVisibleOutsideFile(
   symbol: DeclaredSymbol,
   language: ReturnType<typeof matrixLanguageFor>,
-  source: string | undefined
+  _source: string | undefined,
+  lines: readonly string[] | undefined,
+  exportMap: ReadonlyMap<string, string> | undefined,
+  pythonAll: ReadonlySet<string> | undefined
 ): boolean {
   if (language === 'go') return /^[A-Z]/u.test(symbol.name);
-  if (language === 'python') return !symbol.name.startsWith('_');
+  if (language === 'python') {
+    if (pythonAll) return pythonAll.has(symbol.name);
+    return !symbol.name.startsWith('_');
+  }
   if (language === 'node' || language === null) {
-    const line = source?.split(/\r?\n/u)[symbol.line - 1] ?? '';
+    const line = lines?.[symbol.line - 1] ?? '';
     if (/^\s*export\b/u.test(line)) return true;
-    return source ? exportedNamesFromLists(source).has(symbol.name) : false;
+    return exportMap ? [...exportMap.values()].includes(symbol.name) : false;
   }
   if (language === 'rust') {
-    const line = source?.split(/\r?\n/u)[symbol.line - 1] ?? '';
+    const line = lines?.[symbol.line - 1] ?? '';
     return /^\s*pub(?:\s|\()/u.test(line);
   }
   if (language === 'java' || language === 'kotlin' || language === 'dotnet') {
-    const line = source?.split(/\r?\n/u)[symbol.line - 1] ?? '';
+    const line = lines?.[symbol.line - 1] ?? '';
     return !/\bprivate\b/u.test(line);
   }
   return true;
@@ -142,43 +171,91 @@ function isVisibleOutsideFile(
 
 function defaultExportSymbols(
   symbols: readonly DeclaredSymbol[],
-  source: string | undefined
+  source: string | undefined,
+  lines: readonly string[] | undefined,
+  codeView: string | undefined
 ): DeclaredSymbol[] {
-  if (!source) return [];
-  const lines = source.split(/\r?\n/u);
-  return symbols.filter((symbol) => /^\s*export\s+default\b/u.test(lines[symbol.line - 1] ?? ''));
+  if (!source || !lines || !codeView) return [];
+  const direct = symbols.filter((symbol) =>
+    /^\s*export\s+default\b/u.test(lines[symbol.line - 1] ?? '')
+  );
+  if (direct.length > 0) return direct;
+  for (const match of matchAllInMatrixCodeView(
+    source,
+    codeView,
+    /^[^\S\r\n]*export\s+default\s+([A-Za-z_$][\w$]*)\s*;?/gmu
+  )) {
+    const name = match[1];
+    if (!name) continue;
+    return symbols.filter((symbol) => symbol.name === name);
+  }
+  return [];
 }
 
 function importedCallCandidates(
   name: string,
   bindings: readonly MatrixImportBinding[],
   symbolsByFile: ReadonlyMap<string, readonly DeclaredSymbol[]>,
-  sources: ReadonlyMap<string, string>
+  sources: ReadonlyMap<string, string>,
+  codeViews: ReadonlyMap<string, string>,
+  linesByFile: ReadonlyMap<string, readonly string[]>,
+  exportMaps: ReadonlyMap<string, ReadonlyMap<string, string>>,
+  pythonAllByFile: ReadonlyMap<string, ReadonlySet<string> | undefined>
 ): DeclaredSymbol[] {
   const matches: DeclaredSymbol[] = [];
   for (const binding of bindings) {
     const symbols = symbolsByFile.get(binding.locator) ?? [];
     const source = sources.get(binding.locator);
+    const codeView = codeViews.get(binding.locator);
+    const lines = linesByFile.get(binding.locator);
+    const exportMap = exportMaps.get(binding.locator);
+    const pythonAll = pythonAllByFile.get(binding.locator);
     const language = matrixLanguageFor(binding.locator);
     if (binding.exportedName === '*') {
-      if (binding.localName !== '*' && binding.localName !== name) continue;
       for (const symbol of symbols) {
         if (symbol.name !== name) continue;
-        if (isVisibleOutsideFile(symbol, language, source)) matches.push(symbol);
+        if (isVisibleOutsideFile(symbol, language, source, lines, exportMap, pythonAll)) {
+          matches.push(symbol);
+        }
       }
       continue;
     }
     if (binding.localName !== name) continue;
     if (binding.exportedName === 'default') {
-      matches.push(...defaultExportSymbols(symbols, source));
+      matches.push(...defaultExportSymbols(symbols, source, lines, codeView));
       continue;
     }
+    const localName = exportMap?.get(binding.exportedName) ?? binding.exportedName;
     for (const symbol of symbols) {
-      if (symbol.name !== binding.exportedName) continue;
-      if (isVisibleOutsideFile(symbol, language, source)) matches.push(symbol);
+      if (symbol.name !== localName) continue;
+      if (
+        language === 'python' ||
+        isVisibleOutsideFile(symbol, language, source, lines, exportMap, pythonAll)
+      ) {
+        matches.push(symbol);
+      }
     }
   }
   return matches;
+}
+
+function isKeywordDeclarationName(source: string, index: number): boolean {
+  const before = source.slice(0, index);
+  return /(?:^|[^A-Za-z0-9_$])(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function|def|func|fn|fun)\s+$/u.test(
+    before
+  );
+}
+
+function memberReceiver(source: string, index: number): string | undefined {
+  let cursor = index - 1;
+  while (cursor >= 0 && /[ \t]/u.test(source[cursor] ?? '')) cursor -= 1;
+  if (source[cursor] !== '.') return undefined;
+  cursor -= 1;
+  while (cursor >= 0 && /[ \t]/u.test(source[cursor] ?? '')) cursor -= 1;
+  const end = cursor + 1;
+  while (cursor >= 0 && /[A-Za-z0-9_$]/u.test(source[cursor] ?? '')) cursor -= 1;
+  const name = source.slice(cursor + 1, end);
+  return name || undefined;
 }
 
 async function materializeDeclaredSymbol(
@@ -302,6 +379,7 @@ export function createSourceDeclarationsProvider(
       const processing: GraphFactBatch['processing'][number][] = [];
       const symbolsByFile = new Map<string, DeclaredSymbol[]>();
       const sources = new Map<string, string>();
+      const codeViews = new Map<string, string>();
       const files = new Map<string, GraphEntityReference>();
       const generated = new Set<string>();
       let discoveredAuthoredSymbols = 0;
@@ -311,6 +389,10 @@ export function createSourceDeclarationsProvider(
       let emittedGeneratedSymbols = 0;
       let discoveredCalls = 0;
       let emittedCalls = 0;
+      let examinedCalls = 0;
+      let resolvedCalls = 0;
+      let ambiguousCalls = 0;
+      let unresolvedCalls = 0;
       let truncated = false;
       if (inputs.length < eligible.length) {
         truncated = true;
@@ -344,7 +426,10 @@ export function createSourceDeclarationsProvider(
           });
           const decoded = decodeMatrixSource(bytes);
           const source = decoded.text;
+          const language = matrixLanguageFor(input.locator);
+          const codeView = maskMatrixSourceLiterals(source, language);
           sources.set(input.locator, source);
+          codeViews.set(input.locator, codeView);
           if (isGeneratedSource(input.locator, source)) generated.add(input.locator);
           if (decoded.encodingFallback) {
             const encoding = warning(
@@ -364,7 +449,7 @@ export function createSourceDeclarationsProvider(
           });
           if (!file.accepted) throw new Error('Source file identity could not be resolved.');
           files.set(input.locator, file.value.reference);
-          const extracted = extractSymbols(source, input.locator, native);
+          const extracted = extractSymbols(source, input.locator, native, codeView);
           const generatedFile = generated.has(input.locator);
           if (generatedFile) {
             discoveredGeneratedSymbols += extracted.discovered;
@@ -476,22 +561,39 @@ export function createSourceDeclarationsProvider(
         });
       }
 
+      const linesByFile = new Map<string, string[]>();
+      const exportMaps = new Map<string, Map<string, string>>();
+      const pythonAllByFile = new Map<string, ReadonlySet<string> | undefined>();
+      for (const [locator, sourceText] of sources) {
+        const codeView = codeViews.get(locator);
+        if (!codeView) continue;
+        linesByFile.set(locator, sourceText.split(/\r?\n/u));
+        exportMaps.set(locator, parseExportNameMap(sourceText, codeView));
+        pythonAllByFile.set(
+          locator,
+          matrixLanguageFor(locator) === 'python' ? parsePythonAll(sourceText, codeView) : undefined
+        );
+      }
+
       for (const [inputIndex, input] of inputs.entries()) {
         const source = sources.get(input.locator);
+        const codeView = codeViews.get(input.locator);
         const file = files.get(input.locator);
-        if (!source || !file || generated.has(input.locator)) continue;
+        if (!source || !codeView || !file || generated.has(input.locator)) continue;
         const language = matrixLanguageFor(input.locator);
         const importedLocators = extractMatrixLocalImportLocators(
           input.locator,
           source,
           language,
-          available
+          available,
+          codeView
         );
         const importBindings = extractMatrixImportBindings(
           input.locator,
           source,
           language,
-          available
+          available,
+          codeView
         );
         const peerLocators = matrixSameDirectoryPeers(input.locator, available);
         const localSymbols = symbolsByFile.get(input.locator) ?? [];
@@ -499,12 +601,26 @@ export function createSourceDeclarationsProvider(
           ? []
           : importedLocators.flatMap((locator) =>
               (symbolsByFile.get(locator) ?? []).filter((symbol) =>
-                isVisibleOutsideFile(symbol, matrixLanguageFor(locator), sources.get(locator))
+                isVisibleOutsideFile(
+                  symbol,
+                  matrixLanguageFor(locator),
+                  sources.get(locator),
+                  linesByFile.get(locator),
+                  exportMaps.get(locator),
+                  pythonAllByFile.get(locator)
+                )
               )
             );
         const peerSymbols = peerLocators.flatMap((locator) =>
           (symbolsByFile.get(locator) ?? []).filter((symbol) =>
-            isVisibleOutsideFile(symbol, language, sources.get(locator))
+            isVisibleOutsideFile(
+              symbol,
+              language,
+              sources.get(locator),
+              linesByFile.get(locator),
+              exportMaps.get(locator),
+              pythonAllByFile.get(locator)
+            )
           )
         );
         const knownNames = new Set([
@@ -512,13 +628,16 @@ export function createSourceDeclarationsProvider(
           ...importedSymbols.map((symbol) => symbol.name),
           ...peerSymbols.map((symbol) => symbol.name),
           ...importBindings.flatMap((binding) =>
-            binding.localName === '*'
+            binding.exportedName === '*'
               ? (symbolsByFile.get(binding.locator) ?? [])
                   .filter((symbol) =>
                     isVisibleOutsideFile(
                       symbol,
                       matrixLanguageFor(binding.locator),
-                      sources.get(binding.locator)
+                      sources.get(binding.locator),
+                      linesByFile.get(binding.locator),
+                      exportMaps.get(binding.locator),
+                      pythonAllByFile.get(binding.locator)
                     )
                   )
                   .map((symbol) => symbol.name)
@@ -529,22 +648,46 @@ export function createSourceDeclarationsProvider(
         const emittedForName = new Map<string, number>();
         const ambiguousNames = new Set<string>();
         const truncatedNames = new Set<string>();
-        for (const site of scanMatrixCallSites(source, language)) {
-          if (!knownNames.has(site.name)) continue;
+        for (const site of scanMatrixCallSites(source, language, codeView)) {
+          if (isKeywordDeclarationName(source, site.index)) continue;
+          examinedCalls += 1;
+          if (!knownNames.has(site.name)) {
+            unresolvedCalls += 1;
+            continue;
+          }
+          const receiver = memberReceiver(source, site.index);
+          const namedImportLanguage = matrixUsesNamedImports(language);
+          const memberNamespace =
+            namedImportLanguage && receiver
+              ? importBindings.filter(
+                  (binding) => binding.localName === receiver && binding.exportedName === '*'
+                )
+              : [];
+          const freeBindings = importBindings.filter(
+            (binding) => binding.exportedName !== '*' || binding.localName === '*'
+          );
           const importedHits = importedCallCandidates(
             site.name,
-            importBindings,
+            namedImportLanguage && receiver ? memberNamespace : freeBindings,
             symbolsByFile,
-            sources
+            sources,
+            codeViews,
+            linesByFile,
+            exportMaps,
+            pythonAllByFile
           );
           const target = resolveCallTarget(
             site.name,
-            localSymbols,
-            [...importedHits, ...named(importedSymbols, site.name)],
-            peerSymbols
+            namedImportLanguage && receiver ? [] : localSymbols,
+            [
+              ...importedHits,
+              ...(namedImportLanguage && receiver ? [] : named(importedSymbols, site.name)),
+            ],
+            namedImportLanguage && receiver ? [] : peerSymbols
           );
           if (target === 'ambiguous') {
             discoveredCalls += 1;
+            ambiguousCalls += 1;
             if (!ambiguousNames.has(site.name)) {
               ambiguousNames.add(site.name);
               unknownZones.push({
@@ -555,9 +698,12 @@ export function createSourceDeclarationsProvider(
             }
             continue;
           }
-          if (!target) continue;
-          if (target.locator === input.locator && target.line === site.line) continue;
+          if (!target) {
+            unresolvedCalls += 1;
+            continue;
+          }
           discoveredCalls += 1;
+          resolvedCalls += 1;
           const emittedCount = emittedForName.get(site.name) ?? 0;
           if (emittedCount >= MAX_CALLS_PER_SYMBOL) {
             truncated = true;
@@ -675,12 +821,33 @@ export function createSourceDeclarationsProvider(
             observed: emittedCalls,
             expected: discoveredCalls,
           },
+          {
+            dimension: 'source-calls-examined',
+            observed: examinedCalls,
+          },
+          {
+            dimension: 'source-calls-resolved',
+            observed: resolvedCalls,
+            expected: examinedCalls,
+          },
+          {
+            dimension: 'source-calls-ambiguous',
+            observed: ambiguousCalls,
+            expected: examinedCalls,
+          },
+          {
+            dimension: 'source-calls-unresolved',
+            observed: unresolvedCalls,
+            expected: examinedCalls,
+          },
         ],
         unknownZones,
         unsupportedZones: [],
         redaction: { policy: 'portable-default', redacted: 0, omitted: 0 },
         status:
-          truncated || processing.some((entry) => entry.outcome !== 'processed')
+          truncated ||
+          unknownZones.length > 0 ||
+          processing.some((entry) => entry.outcome !== 'processed')
             ? 'partial'
             : 'complete',
         processing,

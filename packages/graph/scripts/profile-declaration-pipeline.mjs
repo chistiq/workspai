@@ -6,6 +6,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import { createNodeRustWasmGraphNativePort } from '../dist/adapters/node/index.js';
+import { routeGraphNativeDeclarations } from '../dist/providers/index.js';
 
 // Usage: node scripts/profile-declaration-pipeline.mjs report.json [repository ...]
 // Each repository measurement starts a fresh CLI process. The OS file cache is
@@ -20,7 +21,9 @@ function percentiles(values) {
     p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1],
   };
 }
+const nativeLoadStartedAt = performance.now();
 const native = await createNodeRustWasmGraphNativePort();
+const nativeLoadMs = performance.now() - nativeLoadStartedAt;
 const declarations = [];
 for (const [id, lines, calls] of [
   ['small-files', 10, 1_000],
@@ -32,30 +35,48 @@ for (const [id, lines, calls] of [
       ? `/* comment ${i} */ export function symbol${i}() {}\n`
       : `export function symbol${i}() {}\n`
   ).join('');
-  const samples = [];
-  for (let iteration = 0; iteration <= iterations; iteration++) {
-    const start = performance.now();
-    let result;
+  const samples = { typescript: [], rustWasm: [] };
+  let lastDeclarations;
+  const measureDeclarations = (engine) => {
+    const startedAt = performance.now();
     for (let call = 0; call < calls; call++) {
-      result = native.extractDeclarations({ source, language: 'node' });
+      if (engine === 'rust-wasm') {
+        const result = native.extractDeclarations({ source, language: 'node' });
+        assert.equal(result.status, 'complete');
+        lastDeclarations = result.declarations;
+      } else {
+        lastDeclarations = routeGraphNativeDeclarations(source, 'node', undefined).declarations;
+      }
     }
-    const elapsed = performance.now() - start;
-    assert.equal(result.status, 'complete');
-    assert.equal(result.declarations.length, lines);
-    for (let i = 0; i < lines; i++) {
-      assert.deepEqual(result.declarations[i], {
-        name: `symbol${i}`,
-        detail: 'function',
-        line: i + 1,
-      });
+    return performance.now() - startedAt;
+  };
+  for (let iteration = 0; iteration <= iterations; iteration++) {
+    const order = iteration % 2 === 0 ? ['typescript', 'rust-wasm'] : ['rust-wasm', 'typescript'];
+    for (const engine of order) {
+      const elapsed = measureDeclarations(engine);
+      assert.equal(lastDeclarations.length, lines);
+      if (iteration > 0) {
+        if (engine === 'rust-wasm') samples.rustWasm.push(elapsed);
+        else samples.typescript.push(elapsed);
+      }
     }
-    if (iteration > 0) samples.push(elapsed);
   }
+  for (let i = 0; i < lines; i++) {
+    assert.deepEqual(lastDeclarations[i], {
+      name: `symbol${i}`,
+      detail: 'function',
+      line: i + 1,
+    });
+  }
+  const typescript = percentiles(samples.typescript);
+  const rustWasm = percentiles(samples.rustWasm);
   declarations.push({
     id,
     calls,
     bytesPerCall: Buffer.byteLength(source),
-    ...percentiles(samples),
+    typescript,
+    rustWasm,
+    p50Ratio: typescript.p50Ms === 0 ? null : rustWasm.p50Ms / typescript.p50Ms,
   });
 }
 const repositories = [];
@@ -111,7 +132,7 @@ for (const root of roots) {
   });
 }
 const report = {
-  schemaVersion: 'workspai.graph.declaration-pipeline-profile.v1',
+  schemaVersion: 'workspai.graph.declaration-pipeline-profile.v2',
   node: process.version,
   platform: process.platform,
   arch: process.arch,
@@ -120,6 +141,7 @@ const report = {
   artifactSha256: createHash('sha256')
     .update(readFileSync(new URL('../dist/native/graph-engine.wasm', import.meta.url)))
     .digest('hex'),
+  nativeLoadMs,
   declarations,
   repositories,
 };
