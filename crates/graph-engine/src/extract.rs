@@ -4,6 +4,7 @@
 //! TypeScript extractor remains the product authority; this implementation
 //! exists only as a parity-gated acceleration candidate.
 
+#[cfg(test)]
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,7 +51,6 @@ pub const MAX_DECLARATION_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DECLARATIONS: usize = 16_384;
 pub const LANGUAGE_UNSPECIFIED: u32 = 255;
 
-const HASH_COMMENT_LANGUAGES: &[Language] = &[Language::Python, Language::Ruby, Language::Elixir];
 const CONTROL_START: &[&str] = &[
     "alignof",
     "assert",
@@ -119,10 +119,6 @@ impl Language {
         }
     }
 
-    fn uses_hash_comments(self) -> bool {
-        HASH_COMMENT_LANGUAGES.contains(&self)
-    }
-
     fn uses_typed_functions(self) -> bool {
         matches!(self, Self::CCpp | Self::Java | Self::Dotnet)
     }
@@ -158,19 +154,9 @@ pub fn extract_declarations(
     if source.len() > MAX_DECLARATION_SOURCE_BYTES {
         return Err(ExtractError::SourceTooLarge);
     }
-    let stripped = if language.uses_hash_comments() {
-        Cow::Borrowed(source)
-    } else {
-        strip_c_block_comments(source)
-    };
+    let masked = mask_non_code(source, language);
     let mut findings = Vec::new();
-    for (index, line) in stripped.split('\n').enumerate() {
-        let trimmed = ltrim_js(line);
-        if (language.uses_hash_comments() && trimmed.starts_with('#'))
-            || (!language.uses_hash_comments() && trimmed.starts_with("//"))
-        {
-            continue;
-        }
+    for (index, line) in masked.split('\n').enumerate() {
         let line_number = u32::try_from(index + 1).unwrap_or(u32::MAX);
         if let Some((name, kind)) = match_keyword_declaration(line) {
             findings.push(Declaration {
@@ -194,6 +180,7 @@ pub fn extract_declarations(
     Ok(findings)
 }
 
+#[cfg(test)]
 fn strip_c_block_comments(source: &str) -> Cow<'_, str> {
     // Most files need no transformed buffer. Copy spans only when a complete
     // block comment is found, preserving source lines and token boundaries.
@@ -223,6 +210,283 @@ fn strip_c_block_comments(source: &str) -> Cow<'_, str> {
     }
     output.push_str(&source[start..]);
     Cow::Owned(output)
+}
+
+#[derive(Clone, Copy)]
+enum QuoteMode {
+    Js,
+    Go,
+    CLike,
+    Hash,
+}
+
+fn mask_non_code(source: &str, language: Language) -> String {
+    match language {
+        Language::Python => mask_python(source),
+        Language::Ruby | Language::Elixir => mask_quoted(source, QuoteMode::Hash),
+        Language::Go => mask_quoted(source, QuoteMode::Go),
+        Language::Node | Language::Unspecified => mask_quoted(source, QuoteMode::Js),
+        _ => mask_quoted(source, QuoteMode::CLike),
+    }
+}
+
+fn blank_span(out: &mut [char], from: usize, to: usize) {
+    for slot in out.iter_mut().take(to).skip(from) {
+        if *slot != '\n' && *slot != '\r' {
+            *slot = ' ';
+        }
+    }
+}
+
+fn mask_quoted(source: &str, mode: QuoteMode) -> String {
+    let mut chars: Vec<char> = source.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
+    fn mask_line_comment(chars: &[char], out: &mut [char], i: &mut usize, n: usize) {
+        let start = *i;
+        while *i < n && chars[*i] != '\n' && chars[*i] != '\r' {
+            *i += 1;
+        }
+        blank_span(out, start, *i);
+    }
+    fn mask_block_comment(chars: &[char], out: &mut [char], i: &mut usize, n: usize) {
+        let start = *i;
+        *i += 2;
+        while *i < n && !(chars[*i] == '*' && *i + 1 < n && chars[*i + 1] == '/') {
+            *i += 1;
+        }
+        if *i < n {
+            *i += 2;
+        }
+        blank_span(out, start, *i);
+    }
+    fn mask_simple_string(
+        chars: &[char],
+        out: &mut [char],
+        i: &mut usize,
+        n: usize,
+        quote: char,
+        raw: bool,
+    ) {
+        let start = *i;
+        *i += 1;
+        while *i < n {
+            let current = chars[*i];
+            if !raw && current == '\\' {
+                *i += 2;
+                continue;
+            }
+            if current == quote {
+                *i += 1;
+                break;
+            }
+            if quote != '`' && (current == '\n' || current == '\r') {
+                break;
+            }
+            *i += 1;
+        }
+        blank_span(out, start, *i);
+    }
+    fn scan_code(
+        chars: &[char],
+        out: &mut [char],
+        i: &mut usize,
+        n: usize,
+        mode: QuoteMode,
+        until: Option<char>,
+    ) {
+        let mut depth = 0usize;
+        while *i < n {
+            let current = chars[*i];
+            if until == Some('}') && current == '}' && depth == 0 {
+                if current != '\n' && current != '\r' {
+                    out[*i] = ' ';
+                }
+                *i += 1;
+                return;
+            }
+            if until == Some('}') && current == '{' {
+                depth += 1;
+            } else if until == Some('}') && current == '}' && depth > 0 {
+                depth -= 1;
+            }
+            if current == '/'
+                && *i + 1 < n
+                && chars[*i + 1] == '/'
+                && !matches!(mode, QuoteMode::Hash)
+            {
+                mask_line_comment(chars, out, i, n);
+                continue;
+            }
+            if current == '#' && matches!(mode, QuoteMode::Hash) {
+                mask_line_comment(chars, out, i, n);
+                continue;
+            }
+            if current == '/'
+                && *i + 1 < n
+                && chars[*i + 1] == '*'
+                && !matches!(mode, QuoteMode::Hash)
+            {
+                mask_block_comment(chars, out, i, n);
+                continue;
+            }
+            if current == '\'' || current == '"' {
+                mask_simple_string(chars, out, i, n, current, false);
+                continue;
+            }
+            if current == '`' && matches!(mode, QuoteMode::Js) {
+                mask_template(chars, out, i, n, mode);
+                continue;
+            }
+            if current == '`' && matches!(mode, QuoteMode::Go) {
+                mask_simple_string(chars, out, i, n, '`', true);
+                continue;
+            }
+            *i += 1;
+        }
+    }
+    fn mask_template(chars: &[char], out: &mut [char], i: &mut usize, n: usize, mode: QuoteMode) {
+        if chars[*i] != '\n' && chars[*i] != '\r' {
+            out[*i] = ' ';
+        }
+        *i += 1;
+        while *i < n {
+            let current = chars[*i];
+            if current == '\\' {
+                if current != '\n' && current != '\r' {
+                    out[*i] = ' ';
+                }
+                *i += 1;
+                if *i < n && chars[*i] != '\n' && chars[*i] != '\r' {
+                    out[*i] = ' ';
+                }
+                *i += 1;
+                continue;
+            }
+            if current == '`' {
+                out[*i] = ' ';
+                *i += 1;
+                return;
+            }
+            if current == '$' && *i + 1 < n && chars[*i + 1] == '{' {
+                out[*i] = ' ';
+                out[*i + 1] = ' ';
+                *i += 2;
+                scan_code(chars, out, i, n, mode, Some('}'));
+                continue;
+            }
+            if current != '\n' && current != '\r' {
+                out[*i] = ' ';
+            }
+            *i += 1;
+        }
+    }
+    scan_code(&chars.clone(), &mut chars, &mut i, n, mode, None);
+    chars.into_iter().collect()
+}
+
+fn mask_python(source: &str) -> String {
+    let mut chars: Vec<char> = source.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
+    fn prefix_at(chars: &[char], quote_index: usize) -> String {
+        let mut cursor = quote_index;
+        let mut prefix = String::new();
+        while cursor > 0 {
+            let previous = chars[cursor - 1];
+            if !"rRuUfFbB".contains(previous) {
+                break;
+            }
+            prefix.insert(0, previous);
+            cursor -= 1;
+        }
+        prefix
+    }
+    fn mask_string(
+        chars: &[char],
+        out: &mut [char],
+        i: &mut usize,
+        n: usize,
+        triple: bool,
+        quote: char,
+        interpolating: bool,
+    ) {
+        let mut start = *i;
+        *i += if triple { 3 } else { 1 };
+        while *i < n {
+            let current = chars[*i];
+            if current == '\\' {
+                *i += 2;
+                continue;
+            }
+            if triple
+                && current == quote
+                && *i + 2 < n
+                && chars[*i + 1] == quote
+                && chars[*i + 2] == quote
+            {
+                *i += 3;
+                break;
+            }
+            if !triple && current == quote {
+                *i += 1;
+                break;
+            }
+            if !triple && (current == '\n' || current == '\r') {
+                break;
+            }
+            if interpolating && current == '{' && *i + 1 < n && chars[*i + 1] == '{' {
+                *i += 2;
+                continue;
+            }
+            if interpolating && current == '{' {
+                blank_span(out, start, *i);
+                out[*i] = ' ';
+                *i += 1;
+                scan_python(chars, out, i, n, Some('}'));
+                start = *i;
+                continue;
+            }
+            *i += 1;
+        }
+        blank_span(out, start, *i);
+    }
+    fn scan_python(chars: &[char], out: &mut [char], i: &mut usize, n: usize, until: Option<char>) {
+        let mut depth = 0usize;
+        while *i < n {
+            let current = chars[*i];
+            if until == Some('}') && current == '}' && depth == 0 {
+                out[*i] = ' ';
+                *i += 1;
+                return;
+            }
+            if until == Some('}') && current == '{' {
+                depth += 1;
+            } else if until == Some('}') && current == '}' && depth > 0 {
+                depth -= 1;
+            }
+            if current == '#' {
+                let start = *i;
+                while *i < n && chars[*i] != '\n' && chars[*i] != '\r' {
+                    *i += 1;
+                }
+                blank_span(out, start, *i);
+                continue;
+            }
+            if current == '\'' || current == '"' {
+                let triple = *i + 2 < n && chars[*i + 1] == current && chars[*i + 2] == current;
+                let interpolating = prefix_at(chars, *i)
+                    .chars()
+                    .any(|item| item == 'f' || item == 'F');
+                mask_string(chars, out, i, n, triple, current, interpolating);
+                continue;
+            }
+            *i += 1;
+        }
+    }
+    let snapshot = chars.clone();
+    scan_python(&snapshot, &mut chars, &mut i, n, None);
+    chars.into_iter().collect()
 }
 
 fn match_keyword_declaration(line: &str) -> Option<(String, DeclarationKind)> {
@@ -274,6 +538,7 @@ fn match_keyword_declaration(line: &str) -> Option<(String, DeclarationKind)> {
 
 fn match_export_async_function(rest: &str) -> Option<String> {
     let rest = optional_keyword_ws(rest, "export")?;
+    let rest = optional_keyword_ws(rest, "default")?;
     let rest = optional_keyword_ws(rest, "async")?;
     let rest = require_keyword_ws(rest, "function")?;
     take_ident_dollar(rest).map(|(name, _)| name.to_owned())
@@ -281,6 +546,7 @@ fn match_export_async_function(rest: &str) -> Option<String> {
 
 fn match_export_abstract_type(rest: &str) -> Option<String> {
     let rest = optional_keyword_ws(rest, "export")?;
+    let rest = optional_keyword_ws(rest, "default")?;
     let rest = optional_keyword_ws(rest, "abstract")?;
     let rest = require_one_keyword_ws(rest, &["class", "interface", "enum", "type"])?;
     take_ident_dollar(rest).map(|(name, _)| name.to_owned())
@@ -778,6 +1044,20 @@ mod tests {
         assert_eq!(
             names("function kept() {} /* unfinished", Language::Node),
             vec!["kept"]
+        );
+        assert_eq!(
+            names(
+                "`function phantom() {}`\nexport default function actual() {}\n",
+                Language::Node
+            ),
+            vec!["actual".to_owned()]
+        );
+        assert_eq!(
+            names(
+                "def actual():\n    \"\"\"\ndef phantom():\n        pass\n    \"\"\"\n    return 1\n",
+                Language::Python
+            ),
+            vec!["actual".to_owned()]
         );
     }
 

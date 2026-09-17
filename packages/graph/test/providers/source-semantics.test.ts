@@ -196,7 +196,7 @@ describe('source semantic providers', () => {
     const ambiguous = await build({
       'src/a.ts': 'export function shared(): void {}\n',
       'src/b.ts': 'export function shared(): void {}\n',
-      'src/c.ts': "import './a.ts';\nimport './b.ts';\nshared();\n",
+      'src/c.ts': "import { shared } from './a.ts';\nimport { shared } from './b.ts';\nshared();\n",
     });
     expect(ambiguous.quality.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.source-call-ambiguous' })
@@ -467,7 +467,7 @@ describe('source semantic providers', () => {
     const result = await build({
       'src/a.ts': 'export type Shared = string;\n',
       'src/b.ts': 'export interface Shared { value: string }\n',
-      'src/c.ts': "import './a.ts';\nimport './b.ts';\nShared();\n",
+      'src/c.ts': "import { Shared } from './a.ts';\nimport { Shared } from './b.ts';\nShared();\n",
     });
     expect(result.quality.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.source-call-ambiguous', scope: 'src/c.ts' })

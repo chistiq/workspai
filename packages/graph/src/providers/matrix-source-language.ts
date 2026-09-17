@@ -4,6 +4,7 @@ import {
 } from '../contracts/structural-extractor-profile.js';
 import { extensionOf } from './observed-edge-fact.js';
 import { ECMASCRIPT_STATIC_IMPORT_PATTERN } from './ecmascript-import-pattern.js';
+import { maskMatrixSourceLiterals } from './matrix-source-mask.js';
 
 export interface MatrixDeclaration {
   readonly name: string;
@@ -36,12 +37,12 @@ const KEYWORD_DECLARATIONS: readonly {
   readonly detail: MatrixDeclaration['detail'];
 }[] = [
   {
-    pattern: /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/u,
+    pattern: /^\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/u,
     detail: 'function',
   },
   {
     pattern:
-      /^\s*(?:export\s+)?(?:abstract\s+)?(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/u,
+      /^\s*(?:export\s+(?:default\s+)?)?(?:abstract\s+)?(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/u,
     detail: 'type',
   },
   {
@@ -115,7 +116,7 @@ export function extractMatrixDeclarations(
   language: GraphStructuralLanguage | null
 ): MatrixDeclaration[] {
   const findings: MatrixDeclaration[] = [];
-  const lines = stripMatrixSourceComments(source, language).split(/\r?\n/u);
+  const lines = maskMatrixSourceLiterals(source, language).split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     const keyword = matchKeywordDeclaration(line);
@@ -136,7 +137,10 @@ export function extractMatrixLocalImportLocators(
   language: GraphStructuralLanguage | null,
   available: ReadonlySet<string>
 ): string[] {
-  const syntax = stripMatrixSourceComments(source, language);
+  const syntax =
+    language === 'python'
+      ? maskMatrixSourceLiterals(source, language)
+      : stripMatrixSourceComments(source, language);
   const specifiers = localImportSpecifiers(syntax, language);
   const resolved: string[] = [];
   for (const specifier of specifiers) {
@@ -144,6 +148,67 @@ export function extractMatrixLocalImportLocators(
     if (match && !resolved.includes(match)) resolved.push(match);
   }
   return resolved;
+}
+
+export interface MatrixImportBinding {
+  readonly locator: string;
+  readonly localName: string;
+  readonly exportedName: string;
+}
+
+const NAMED_IMPORT_LANGUAGES = new Set<GraphStructuralLanguage>(['node', 'python']);
+
+export function matrixUsesNamedImports(language: GraphStructuralLanguage | null): boolean {
+  return language === null || NAMED_IMPORT_LANGUAGES.has(language);
+}
+
+/**
+ * Maps local call names to exported names in resolved modules. Star imports use
+ * exportedName "*". Languages without named import clauses return an empty list
+ * so callers can fall back to package-visible symbols.
+ */
+export function extractMatrixImportBindings(
+  locator: string,
+  source: string,
+  language: GraphStructuralLanguage | null,
+  available: ReadonlySet<string>
+): MatrixImportBinding[] {
+  const syntax =
+    language === 'python'
+      ? maskMatrixSourceLiterals(source, language)
+      : stripMatrixSourceComments(source, language);
+  const bindings: MatrixImportBinding[] = [];
+  if (language === 'node' || language === null) {
+    for (const clause of parseEcmascriptImportClauses(syntax)) {
+      const resolved = resolveLocalSpecifier(locator, clause.specifier, language, available);
+      if (!resolved) continue;
+      for (const name of clause.names) {
+        bindings.push({
+          locator: resolved,
+          localName: name.localName,
+          exportedName: name.exportedName,
+        });
+      }
+    }
+  }
+  if (language === 'python') {
+    for (const clause of parsePythonImportClauses(syntax)) {
+      const resolved = resolveLocalSpecifier(locator, clause.specifier, language, available);
+      if (!resolved) continue;
+      if (clause.star) {
+        bindings.push({ locator: resolved, localName: '*', exportedName: '*' });
+        continue;
+      }
+      for (const name of clause.names) {
+        bindings.push({
+          locator: resolved,
+          localName: name.localName,
+          exportedName: name.exportedName,
+        });
+      }
+    }
+  }
+  return bindings;
 }
 
 export function matrixSourceExtractionBudget(eligibleFiles: number): number {
@@ -258,13 +323,14 @@ export function scanMatrixCallSites(
   language: GraphStructuralLanguage | null
 ): MatrixCallSite[] {
   const sites: MatrixCallSite[] = [];
+  const code = maskMatrixSourceLiterals(source, language);
   const objc = language === 'objective-c-matlab';
   const bare = language === 'ruby' || language === 'elixir';
   const dollar = language === 'node' || language === null;
   let index = 0;
   let line = 1;
-  while (index < source.length) {
-    const char = source[index] ?? '';
+  while (index < code.length) {
+    const char = code[index] ?? '';
     if (char === '\n') {
       line += 1;
       index += 1;
@@ -276,8 +342,8 @@ export function scanMatrixCallSites(
     }
     if (objc && char === '[') {
       index += 1;
-      while (index < source.length && source[index] !== ']') {
-        const inner = source[index] ?? '';
+      while (index < code.length && code[index] !== ']') {
+        const inner = code[index] ?? '';
         if (inner === '\n') {
           line += 1;
           index += 1;
@@ -287,32 +353,32 @@ export function scanMatrixCallSites(
           const start = index;
           const startLine = line;
           index += 1;
-          while (index < source.length && isIdentContinue(source[index] ?? '', false)) index += 1;
-          const name = source.slice(start, index);
-          if (name.length >= 3 && !CALL_CONTROL_NAMES.has(name)) {
+          while (index < code.length && isIdentContinue(code[index] ?? '', false)) index += 1;
+          const name = code.slice(start, index);
+          if (name.length > 0 && !CALL_CONTROL_NAMES.has(name)) {
             sites.push({ name, index: start, line: startLine });
           }
           continue;
         }
         index += 1;
       }
-      if (source[index] === ']') index += 1;
+      if (code[index] === ']') index += 1;
       continue;
     }
     if (isIdentStart(char)) {
       const start = index;
       const startLine = line;
       index += 1;
-      while (index < source.length && isIdentContinue(source[index] ?? '', dollar)) index += 1;
-      if (bare && (source[index] === '!' || source[index] === '?')) index += 1;
-      const name = source.slice(start, index);
+      while (index < code.length && isIdentContinue(code[index] ?? '', dollar)) index += 1;
+      if (bare && (code[index] === '!' || code[index] === '?')) index += 1;
+      const name = code.slice(start, index);
       let cursor = index;
-      while (cursor < source.length && isHorizontalWs(source[cursor] ?? '')) cursor += 1;
-      const paren = source[cursor] === '(';
+      while (cursor < code.length && isHorizontalWs(code[cursor] ?? '')) cursor += 1;
+      const paren = code[cursor] === '(';
       let end = index;
-      while (end < source.length && isHorizontalWs(source[end] ?? '')) end += 1;
-      const lineEnd = end === source.length || source[end] === '\n' || source[end] === '\r';
-      if (name.length >= 3 && !CALL_CONTROL_NAMES.has(name) && (paren || (bare && lineEnd))) {
+      while (end < code.length && isHorizontalWs(code[end] ?? '')) end += 1;
+      const lineEnd = end === code.length || code[end] === '\n' || code[end] === '\r';
+      if (name.length > 0 && !CALL_CONTROL_NAMES.has(name) && (paren || (bare && lineEnd))) {
         sites.push({ name, index: start, line: startLine });
       }
       continue;
@@ -327,7 +393,7 @@ export function matchMatrixCallSites(
   language: GraphStructuralLanguage | null,
   name: string
 ): number[] {
-  if (name.length < 3) return [];
+  if (!name) return [];
   return scanMatrixCallSites(source, language)
     .filter((site) => site.name === name)
     .map((site) => site.index);
@@ -367,6 +433,91 @@ function lastIdentifier(name: string): string {
   if (!name) return '';
   const parts = name.split('::');
   return parts[parts.length - 1] ?? '';
+}
+
+function parseNamedImportList(inner: string): { localName: string; exportedName: string }[] {
+  const names: { localName: string; exportedName: string }[] = [];
+  for (const part of inner.split(',')) {
+    const item = part.trim();
+    if (!item || item.startsWith('type ')) continue;
+    const aliased = /^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(item);
+    if (aliased?.[1] && aliased[2]) {
+      names.push({ exportedName: aliased[1], localName: aliased[2] });
+      continue;
+    }
+    const name = /^([A-Za-z_$][\w$]*)$/u.exec(item);
+    if (name?.[1]) names.push({ exportedName: name[1], localName: name[1] });
+  }
+  return names;
+}
+
+function parseEcmascriptImportClauses(source: string): {
+  specifier: string;
+  names: { localName: string; exportedName: string }[];
+}[] {
+  const clauses: {
+    specifier: string;
+    names: { localName: string; exportedName: string }[];
+  }[] = [];
+  const pattern = /^[^\S\r\n]*import\s+(?!type\b)([\s\S]*?)\s+from\s+['"]([^'"\r\n]+)['"]/gmu;
+  for (const match of source.matchAll(pattern)) {
+    const clause = match[1]?.trim() ?? '';
+    const specifier = match[2];
+    if (!specifier?.startsWith('.')) continue;
+    if (!clause || clause.startsWith('*')) continue;
+    const names: { localName: string; exportedName: string }[] = [];
+    const defaultAndNamed = /^([A-Za-z_$][\w$]*)\s*,\s*\{([^}]*)\}$/u.exec(clause);
+    const namedOnly = /^\{([^}]*)\}$/u.exec(clause);
+    const defaultOnly = /^([A-Za-z_$][\w$]*)$/u.exec(clause);
+    if (defaultAndNamed?.[1]) {
+      names.push({ localName: defaultAndNamed[1], exportedName: 'default' });
+      names.push(...parseNamedImportList(defaultAndNamed[2] ?? ''));
+    } else if (namedOnly?.[1] !== undefined) {
+      names.push(...parseNamedImportList(namedOnly[1]));
+    } else if (defaultOnly?.[1]) {
+      names.push({ localName: defaultOnly[1], exportedName: 'default' });
+    }
+    if (names.length > 0) clauses.push({ specifier, names });
+  }
+  return clauses;
+}
+
+function parsePythonImportClauses(source: string): {
+  specifier: string;
+  star: boolean;
+  names: { localName: string; exportedName: string }[];
+}[] {
+  const clauses: {
+    specifier: string;
+    star: boolean;
+    names: { localName: string; exportedName: string }[];
+  }[] = [];
+  const pattern =
+    /^\s*from\s+(\.[A-Za-z_]\w*|[A-Za-z_][\w.]*)\s+import\s+(\*|\([^)]*\)|[^\n#]+)/gmu;
+  for (const match of source.matchAll(pattern)) {
+    const specifier = match[1]?.startsWith('.') ? match[1] : match[1];
+    if (!specifier) continue;
+    const raw = (match[2] ?? '').trim();
+    if (raw === '*') {
+      clauses.push({ specifier, star: true, names: [] });
+      continue;
+    }
+    const inner = raw.replace(/^\(/u, '').replace(/\)\s*$/u, '');
+    const names: { localName: string; exportedName: string }[] = [];
+    for (const part of inner.split(',')) {
+      const item = part.trim();
+      if (!item) continue;
+      const aliased = /^([A-Za-z_]\w*)\s+as\s+([A-Za-z_]\w*)$/u.exec(item);
+      if (aliased?.[1] && aliased[2]) {
+        names.push({ exportedName: aliased[1], localName: aliased[2] });
+        continue;
+      }
+      const name = /^([A-Za-z_]\w*)$/u.exec(item);
+      if (name?.[1]) names.push({ exportedName: name[1], localName: name[1] });
+    }
+    if (names.length > 0) clauses.push({ specifier, star: false, names });
+  }
+  return clauses;
 }
 
 function localImportSpecifiers(source: string, language: GraphStructuralLanguage | null): string[] {

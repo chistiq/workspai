@@ -6,14 +6,50 @@ const GENERATED_PATH =
   /(?:^|\/)(?:__generated__|\.generated|generated\/|\.pb\/)|\.(?:pb\.go|pb\.cc|pb\.h|pb\.ts|pb\.js|pb2\.py)$/iu;
 const GENERATED_NAME = /(?:_pb2|_grpc_pb|_generated|\.g|\.designer)\.[A-Za-z0-9]+$/u;
 
+function leadingCommentHeader(source: string): string {
+  const lines = source.slice(0, 4096).split(/\r?\n/u);
+  const header: string[] = [];
+  let inBlock = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (inBlock) {
+      header.push(line);
+      if (trimmed.includes('*/') || trimmed.includes('-->')) inBlock = false;
+      continue;
+    }
+    if (trimmed === '') {
+      header.push(line);
+      continue;
+    }
+    if (
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('#') ||
+      trimmed.startsWith('--') ||
+      trimmed.startsWith('*')
+    ) {
+      header.push(line);
+      continue;
+    }
+    if (trimmed.startsWith('/*') || trimmed.startsWith('<!--')) {
+      header.push(line);
+      inBlock = !trimmed.includes('*/') && !trimmed.includes('-->');
+      continue;
+    }
+    break;
+  }
+  return header.join('\n');
+}
+
 /**
  * Conservative generated-source detector. Inventory stays. Generated files are
  * indexed for unique authored-call targets; unreferenced internals are not
  * materialized as symbols. Call binding treats generated symbols as unique
  * targets only — they never collide with authored names in the candidate index.
+ * Header markers must appear in the leading comment block, not in later string
+ * literals of authored source.
  */
 export function isGeneratedSource(locator: string, source: string): boolean {
   const name = basenameOf(locator);
   if (GENERATED_PATH.test(locator) || GENERATED_NAME.test(name)) return true;
-  return GENERATED_HEADER.test(source.slice(0, 4096));
+  return GENERATED_HEADER.test(leadingCommentHeader(source));
 }

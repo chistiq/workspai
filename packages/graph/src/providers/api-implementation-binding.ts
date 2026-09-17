@@ -10,7 +10,11 @@ import {
 } from '../contracts/index.js';
 import { isOpenApiLocator } from './delivery-locators.js';
 import { isGeneratedSource } from './generated-source.js';
-import { MATRIX_SOURCE_EXTENSIONS } from './matrix-source-language.js';
+import {
+  MATRIX_SOURCE_EXTENSIONS,
+  extractMatrixDeclarations,
+  matrixLanguageFor,
+} from './matrix-source-language.js';
 import { createObservedEdgeFact, extensionOf } from './observed-edge-fact.js';
 import { openApiEndpointIdentityLocator, openApiOperationIds } from './openapi-contracts.js';
 import { parseStructuredDocuments } from './structured-documents.js';
@@ -34,12 +38,12 @@ function handlerScore(locator: string): number {
   return score;
 }
 
-function quotedOffset(source: string, operationId: string): number {
-  for (const quote of ['"', "'", '`']) {
-    const offset = source.indexOf(`${quote}${operationId}${quote}`);
-    if (offset >= 0) return offset;
-  }
-  return -1;
+function handlerDeclaration(source: string, locator: string, operationId: string): boolean {
+  return extractMatrixDeclarations(source, matrixLanguageFor(locator)).some(
+    (item) =>
+      item.name === operationId &&
+      (item.detail === 'function' || item.detail === 'method' || item.detail === 'value')
+  );
 }
 
 function endpointsForOperation(
@@ -188,7 +192,7 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
               contract.source,
               contract.input.locator
             )) {
-              if (quotedOffset(source, operationId) < 0) continue;
+              if (!handlerDeclaration(source, input.locator, operationId)) continue;
               const current = operationFiles.get(operationId);
               if (
                 current &&
@@ -219,6 +223,19 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
             stage: { id: 'api-implementation-binding', version: manifest.version },
             outcome: 'failed',
             diagnostics: [failure],
+          });
+        }
+      }
+
+      for (const [locator, contract] of [...contractSources.entries()].sort(([left], [right]) =>
+        left.localeCompare(right)
+      )) {
+        for (const operationId of openApiOperationIds(contract.source, contract.input.locator)) {
+          if (operationFiles.has(operationId)) continue;
+          unknownZones.push({
+            code: 'graph.api-binding-unbound',
+            scope: locator,
+            reason: `No function, method, or value declaration named ${operationId} was observed in handler sources.`,
           });
         }
       }

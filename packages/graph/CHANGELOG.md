@@ -7,12 +7,12 @@
   Inspect metrics expose composition phase timers and per-provider
   detect/collect timings. Those timers are execution metrics, not generation
   identity, and inspect wall time is the clock compared with CLI emit.
-- Canonical JSON does not intern object identity: a mutated or cyclic value is
-  re-walked, nesting budgets apply at the use site, and streaming flushes in
-  16KB blocks instead of retaining ancestor-frame copies. Composition does not
-  cache canonical text from live or shallow-frozen objects. Provider admission
-  always re-validates manifest and batch; id/version matching is not a
-  substitute for schema admission.
+- Binding precision: declarations and calls ignore string, template, and
+  docstring text; `export default function` is observed; call names shorter
+  than three characters are kept; import aliases bind to the exported symbol;
+  non-exported members are not called across files. OpenAPI `implements` requires
+  a matching handler declaration, not a quoted operation id. Generated-file
+  markers are read from the leading comment header only.
 - Generated sources stay in inventory and in the call-target index, but
   unreferenced generated internals are not materialized as symbols. Unique
   authored-call targets still receive define and call edges. Coverage reports

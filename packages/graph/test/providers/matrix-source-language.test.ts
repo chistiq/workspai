@@ -5,6 +5,7 @@ import {
   MATRIX_SOURCE_EXTENSIONS,
   decodeMatrixSource,
   extractMatrixDeclarations,
+  extractMatrixImportBindings,
   extractMatrixLocalImportLocators,
   matchMatrixCallSites,
   matrixExtensionsFor,
@@ -99,6 +100,18 @@ describe('matrix source language', () => {
       ).map((item) => item.name)
     ).toEqual(['ready']);
     expect(extractMatrixDeclarations("import 'package:billing/core.dart';\n", null)).toEqual([]);
+    expect(
+      extractMatrixDeclarations(
+        '`function phantom() {}`;\nexport default function actual() {}\n',
+        'node'
+      ).map((item) => item.name)
+    ).toEqual(['actual']);
+    expect(
+      extractMatrixDeclarations(
+        'def actual():\n    """\ndef phantom():\n        pass\n    """\n    return 1\n',
+        'python'
+      ).map((item) => item.name)
+    ).toEqual(['actual']);
   });
 
   it('does not treat Node object-property call sites as typed function declarations', () => {
@@ -210,6 +223,7 @@ export function startStorefront(): void {
 
   it('scans line endings, Objective-C messages, and bare callable names without inventing controls', () => {
     expect(matchMatrixCallSites('go\r\n', 'node', 'go')).toEqual([]);
+    expect(scanMatrixCallSites('go();\n', 'node').map((site) => site.name)).toEqual(['go']);
     expect(matchMatrixCallSites('run\r\n', 'ruby', 'run')).toEqual([0]);
     expect(scanMatrixCallSites('[service\n health]\n', 'objective-c-matlab')).toEqual([
       expect.objectContaining({ name: 'service', line: 1 }),
@@ -218,6 +232,18 @@ export function startStorefront(): void {
     expect(
       scanMatrixCallSites('while (ready()) {}\nready()\n', 'node').map((site) => site.name)
     ).toEqual(['ready', 'ready']);
+    expect(scanMatrixCallSites('"target()"\n', 'node').map((site) => site.name)).toEqual([]);
+  });
+
+  it('maps named import aliases to the exported module member', () => {
+    expect(
+      extractMatrixImportBindings(
+        'src/app.ts',
+        "import { fetchItems as load } from './lib.ts';\nexport function go(): void { load(); }\n",
+        'node',
+        new Set(['src/app.ts', 'src/lib.ts'])
+      )
+    ).toEqual([{ locator: 'src/lib.ts', localName: 'load', exportedName: 'fetchItems' }]);
   });
 
   it('resolves unique Java type imports and Objective-C message sends', () => {
