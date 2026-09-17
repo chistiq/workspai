@@ -125,9 +125,19 @@ function resolveCallTarget(
 ): CallBinding {
   const localHit = preferCallable(named(local, name));
   if (localHit !== undefined) return localHit;
-  const authoredImported = preferCallable(named(imported.filter((symbol) => !symbol.generated), name));
+  const authoredImported = preferCallable(
+    named(
+      imported.filter((symbol) => !symbol.generated),
+      name
+    )
+  );
   if (authoredImported !== undefined) return authoredImported;
-  const authoredPeers = preferCallable(named(peers.filter((symbol) => !symbol.generated), name));
+  const authoredPeers = preferCallable(
+    named(
+      peers.filter((symbol) => !symbol.generated),
+      name
+    )
+  );
   if (authoredPeers !== undefined) return authoredPeers;
   return preferCallable(
     named(
@@ -383,12 +393,7 @@ export function createSourceDeclarationsProvider(
         const searchable = stripMatrixSourceComments(source, language);
         for (const site of scanMatrixCallSites(searchable, language)) {
           if (!knownNames.has(site.name)) continue;
-          const target = resolveCallTarget(
-            site.name,
-            localSymbols,
-            importedSymbols,
-            peerSymbols
-          );
+          const target = resolveCallTarget(site.name, localSymbols, importedSymbols, peerSymbols);
           if (target === 'ambiguous') {
             discoveredCalls += 1;
             if (!ambiguousNames.has(site.name)) {
