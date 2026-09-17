@@ -9,6 +9,13 @@ import {
   type GraphEntityReference,
 } from '../../src/contracts/index.js';
 import { createGraphSlice } from '../../src/projections/index.js';
+import {
+  admittedRedactionPolicy,
+  createGraphScopePredicate,
+  graphEntityMatchesScope,
+  redactGraphEdge,
+  redactGraphEvidence,
+} from '../../src/projections/projection-policy.js';
 
 const digest = { algorithm: 'sha256' as const, value: 'b'.repeat(64) };
 const scope = { kind: 'project' as const, projectIds: ['project:slice'] as [string] };
@@ -85,6 +92,78 @@ const graph: GraphCanonicalGraph = {
 };
 
 describe('createGraphSlice', () => {
+  it('fails closed across scope forms and redacts unsafe proof material', () => {
+    const project = node('project:slice');
+    const organization = {
+      ...node('organization:one'),
+      scope: { kind: 'organization' as const, organizationId: 'org:one', workspaceId: 'ws:one' },
+    };
+    expect(graphEntityMatchesScope(project, undefined)).toBe(true);
+    expect(
+      graphEntityMatchesScope(project, { kind: 'project', projectIds: ['project:slice'] })
+    ).toBe(true);
+    expect(
+      graphEntityMatchesScope(project, { kind: 'project', projectIds: ['project:other'] })
+    ).toBe(false);
+    expect(
+      graphEntityMatchesScope(organization, {
+        kind: 'organization',
+        organizationId: 'org:one',
+        workspaceId: 'ws:one',
+      })
+    ).toBe(true);
+    expect(graphEntityMatchesScope(project, { kind: 'workspace', workspaceId: 'ws:one' })).toBe(
+      false
+    );
+    expect(admittedRedactionPolicy('portable-default')).toBe(true);
+    expect(admittedRedactionPolicy('unsafe')).toBe(false);
+    expect(
+      redactGraphEvidence({ id: '/home/private', sourceKind: 'source-file', digest })
+    ).toBeUndefined();
+    expect(
+      redactGraphEvidence({
+        id: 'evidence:ok',
+        sourceKind: 'source-file',
+        relativeLocator: '../secret.ts',
+        digest,
+      })
+    ).toBeUndefined();
+    expect(
+      redactGraphEvidence(
+        { id: 'evidence:ok', sourceKind: 'source-file', relativeLocator: 'src/ok.ts', digest },
+        'portable-default'
+      )
+    ).toMatchObject({ id: 'evidence:ok' });
+    const redacted = redactGraphEdge(graph.edges[0]!, 'portable-default', true, new Set());
+    expect(redacted.proof.evidence).toEqual([]);
+  });
+
+  it('admits workspace project members only through explicit graph edges', () => {
+    const workspace = {
+      ...node('workspace:one'),
+      scope: { kind: 'workspace' as const, workspaceId: 'ws:one' },
+    };
+    const member = {
+      ...node('project:member'),
+      scope: { kind: 'project' as const, projectIds: ['project:member'], workspaceId: 'ws:one' },
+    };
+    const unrelated = {
+      ...node('project:unrelated'),
+      scope: { kind: 'project' as const, projectIds: ['project:unrelated'] },
+    };
+    const predicate = createGraphScopePredicate(
+      {
+        ...graph,
+        nodes: [workspace, member, unrelated],
+        edges: [connect('workspace:one', 'project:member', 'structural')],
+      },
+      { kind: 'workspace', workspaceId: 'ws:one' }
+    );
+    expect(predicate(workspace)).toBe(true);
+    expect(predicate(member)).toBe(true);
+    expect(predicate(unrelated)).toBe(false);
+  });
+
   it('builds a bounded impact slice with provenance and explicit exclusions', () => {
     const slice = createGraphSlice(graph, {
       contract: GRAPH_SLICE_REQUEST_CONTRACT,

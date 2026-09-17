@@ -407,6 +407,33 @@ describe('source semantic providers', () => {
     expect(result.graph.edges.some((edge) => edge.relation === 'calls')).toBe(true);
   });
 
+  it('leaves colliding type-only call candidates unknown rather than guessing a target', async () => {
+    const result = await build({
+      'src/a.ts': 'export type Shared = string;\n',
+      'src/b.ts': 'export interface Shared { value: string }\n',
+      'src/c.ts': "import './a.ts';\nimport './b.ts';\nShared();\n",
+    });
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.source-call-ambiguous', scope: 'src/c.ts' })
+    );
+  });
+
+  it('reports unreadable and rejected source inputs as failed, bounded evidence', async () => {
+    const provider = createSourceDeclarationsProvider();
+    const batch = await provider.collect({
+      scope,
+      inputs: [input('src/bad.ts', 'export function bad(): void {}')],
+      observedAt: '2026-09-13T12:00:00.000Z',
+      resolveIdentity: async () => ({ accepted: false as const, issues: [] as const }),
+      readInput: async () => new TextEncoder().encode('export function bad(): void {}'),
+    });
+    expect(batch.status).toBe('partial');
+    expect(batch.processing[0]?.outcome).toBe('failed');
+    expect(batch.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.source-declaration-unreadable', scope: 'src/bad.ts' })
+    );
+  });
+
   it('binds Node object-property calls to imported functions instead of inventing local symbols', async () => {
     const result = await build({
       'src/http.ts':

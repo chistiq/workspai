@@ -7,7 +7,9 @@ import {
   extractMatrixDeclarations,
   extractMatrixLocalImportLocators,
   matchMatrixCallSites,
+  matrixExtensionsFor,
   matrixLanguageFor,
+  matrixSameDirectoryPeers,
   matrixSourceExtractionBudget,
   scanMatrixCallSites,
   selectBalancedMatrixSources,
@@ -109,8 +111,10 @@ export function startStorefront(): void {
   });
 
   it('keeps adaptive extraction proportional and language-balanced', () => {
+    expect(matrixSourceExtractionBudget(0)).toBe(2000);
     expect(matrixSourceExtractionBudget(100)).toBe(2000);
     expect(matrixSourceExtractionBudget(9879)).toBe(5000);
+    expect(matrixSourceExtractionBudget(200_000)).toBe(20_000);
     const locators = [
       ...Array.from({ length: 10 }, (_, index) => `src/a${String(index)}.py`),
       ...Array.from({ length: 10 }, (_, index) => `src/b${String(index)}.cc`),
@@ -119,6 +123,66 @@ export function startStorefront(): void {
     expect(selected).toHaveLength(6);
     expect(selected.filter((locator) => locator.endsWith('.py'))).toHaveLength(3);
     expect(selected.filter((locator) => locator.endsWith('.cc'))).toHaveLength(3);
+    expect(selectBalancedMatrixSources(['src/a.ts', 'src/b.ts'], 10)).toEqual([
+      'src/a.ts',
+      'src/b.ts',
+    ]);
+  });
+
+  it('covers language fallbacks, package peers, and unresolved local imports safely', () => {
+    expect(matrixExtensionsFor(null)).toContain('.ts');
+    expect(matrixExtensionsFor('node')).toContain('.tsx');
+    expect(matrixExtensionsFor('node' as never)).not.toHaveLength(0);
+    expect(matrixSameDirectoryPeers('src/app.go', new Set(['src/app.go', 'src/util.go']))).toEqual([
+      'src/util.go',
+    ]);
+    expect(matrixSameDirectoryPeers('src/app.ts', new Set(['src/app.ts', 'src/util.ts']))).toEqual(
+      []
+    );
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/app.ts',
+        "export { value } from './util';",
+        'node',
+        new Set(['src/app.ts', 'src/util.ts'])
+      )
+    ).toEqual(['src/util.ts']);
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/app.py',
+        'from .util import value\nfrom package.shared import value\n',
+        'python',
+        new Set(['src/util.py', 'package/shared.py'])
+      )
+    ).toEqual(['src/util.py', 'package/shared.py']);
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/app.go',
+        'import "./util"',
+        'go',
+        new Set(['src/util.go'])
+      )
+    ).toEqual(['src/util.go']);
+    expect(
+      extractMatrixLocalImportLocators(
+        'src/app.ts',
+        "import value from '../../escape';",
+        'node',
+        new Set()
+      )
+    ).toEqual([]);
+  });
+
+  it('scans line endings, Objective-C messages, and bare callable names without inventing controls', () => {
+    expect(matchMatrixCallSites('go\r\n', 'node', 'go')).toEqual([]);
+    expect(matchMatrixCallSites('run\r\n', 'ruby', 'run')).toEqual([0]);
+    expect(scanMatrixCallSites('[service\n health]\n', 'objective-c-matlab')).toEqual([
+      expect.objectContaining({ name: 'service', line: 1 }),
+      expect.objectContaining({ name: 'health', line: 2 }),
+    ]);
+    expect(
+      scanMatrixCallSites('while (ready()) {}\nready()\n', 'node').map((site) => site.name)
+    ).toEqual(['ready', 'ready']);
   });
 
   it('resolves unique Java type imports and Objective-C message sends', () => {
