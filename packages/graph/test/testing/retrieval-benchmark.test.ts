@@ -133,4 +133,121 @@ describe('synthetic retrieval benchmark scoring', () => {
       expect.arrayContaining(['Retrieval corpus ground truth must stay synthetic'])
     );
   });
+
+  it('reports every observation mismatch and rejects non-portable corpus claims', () => {
+    const mismatchCorpus = {
+      ...corpus,
+      cases: [
+        {
+          id: 'mismatch',
+          family: 'guardrails',
+          query: { kind: 'dependencies' },
+          expect: {
+            accepted: true,
+            truncated: false,
+            selectedStrategy: 'graph',
+            resultIds: ['module:expected'],
+            pathNodeIds: ['module:expected'],
+            issueCodes: ['EXPECTED_ISSUE'],
+            unknownCodes: ['EXPECTED_UNKNOWN'],
+          },
+        },
+        {
+          id: 'missing',
+          family: 'guardrails',
+          query: { kind: 'dependencies' },
+          expect: { accepted: false },
+        },
+      ],
+    };
+    const report = scoreGraphRetrievalBenchmark(mismatchCorpus, [
+      {
+        id: 'mismatch',
+        accepted: false,
+        resultIds: ['module:actual'],
+        pathNodeIds: ['module:actual'],
+        truncated: true,
+        selectedStrategy: 'direct',
+        issueCodes: [],
+        unknownCodes: [],
+        elapsedMs: 1,
+      },
+      {
+        id: 'extra',
+        accepted: true,
+        resultIds: [],
+        pathNodeIds: [],
+        truncated: false,
+        issueCodes: [],
+        unknownCodes: [],
+        elapsedMs: 1,
+      },
+    ]);
+    expect(report.cases.find((item) => item.id === 'mismatch')?.diagnostics).toEqual([
+      'accepted-mismatch',
+      'truncated-mismatch',
+      'strategy-mismatch',
+      'result-mismatch',
+      'path-mismatch',
+      'issue-mismatch',
+      'unknown-mismatch',
+    ]);
+    expect(report.failures).toEqual(
+      expect.arrayContaining([
+        'mismatch: accepted-mismatch,truncated-mismatch,strategy-mismatch,result-mismatch,path-mismatch,issue-mismatch,unknown-mismatch',
+        'missing: missing observation',
+        'extra: unexpected observation',
+      ])
+    );
+
+    const invalid = scoreGraphRetrievalBenchmark(
+      {
+        ...corpus,
+        graph: { source: '/home/example/private.ts' },
+        groundTruthClass: 'independent' as unknown as 'synthetic',
+        accuracyClaim: 'production' as unknown as 'none',
+      },
+      []
+    );
+    expect(invalid.failures).toEqual(
+      expect.arrayContaining([
+        'Retrieval corpus ground truth must stay synthetic',
+        'Retrieval corpus cannot claim production accuracy',
+        'Retrieval corpus contains a machine-local path',
+      ])
+    );
+  });
+
+  it('defines zero precision, recall and F1 for an empty eligible result set', () => {
+    const emptyCorpus = {
+      ...corpus,
+      cases: [
+        {
+          id: 'empty',
+          family: 'empty-result',
+          query: { kind: 'dependencies' },
+          expect: { accepted: true, resultIds: [] },
+        },
+      ],
+    };
+    const report = scoreGraphRetrievalBenchmark(emptyCorpus, [
+      {
+        id: 'empty',
+        accepted: true,
+        resultIds: [],
+        pathNodeIds: [],
+        truncated: false,
+        issueCodes: [],
+        unknownCodes: [],
+        elapsedMs: 1,
+      },
+    ]);
+    expect(report).toMatchObject({
+      scoredCases: 1,
+      meanPrecision: 0,
+      meanRecall: 0,
+      meanF1: 0,
+      failures: [],
+    });
+  });
 });

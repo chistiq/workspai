@@ -234,4 +234,97 @@ describe('buildGraphChangeOverlay', () => {
       expect.arrayContaining(['No textual, semantic or runtime merge-conflict claim is made.'])
     );
   });
+
+  it('classifies overlay overlap by generation, providers, rename locators and empty overlap', () => {
+    const base = readManifest('minimal-content-state-manifest.json');
+    const leftProposed = replaceFile(base, 'src/index.ts', {
+      contentDigest: digest('1111111111111111111111111111111111111111111111111111111111111111'),
+    });
+    const rightProposed = replaceFile(base, 'src/index.ts', {
+      contentDigest: digest('2222222222222222222222222222222222222222222222222222222222222222'),
+    });
+    const left = buildGraphChangeOverlay(overlayRequest(base, leftProposed, 'overlay:left'));
+    const right = buildGraphChangeOverlay(overlayRequest(base, rightProposed, 'overlay:right'));
+    const sharedProviders = ['workspai.graph.provider.repository-files'] as const;
+
+    expect(
+      compareChangeOverlays({
+        left,
+        right: { ...right, baseGeneration: { ...right.baseGeneration, id: 'generation:other' } },
+      }).diagnostics[0]?.code
+    ).toBe('GRAPH_OVERLAY_OVERLAP_BASE_MISMATCH');
+    expect(
+      compareChangeOverlays({
+        left,
+        right: {
+          ...right,
+          baseGeneration: {
+            ...right.baseGeneration,
+            contentDigest: digest(
+              'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+            ),
+          },
+        },
+      }).diagnostics[0]?.code
+    ).toBe('GRAPH_OVERLAY_OVERLAP_BASE_DIGEST_MISMATCH');
+
+    const renamedRight: typeof right = {
+      ...right,
+      predictedDelta: {
+        ...right.predictedDelta,
+        changedInputs: [
+          {
+            kind: 'rename-candidate',
+            locator: 'src/renamed.ts',
+            inputKind: 'source-file',
+            scanProfileDigest: digest(
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+            ),
+            renameCandidate: {
+              priorLocator: 'src/index.ts',
+              nextLocator: 'src/renamed.ts',
+              confidence: 1,
+            },
+          },
+        ],
+        affectedProviders: [...sharedProviders],
+      },
+    };
+    expect(compareChangeOverlays({ left, right: renamedRight }).advisoryMergeOrderRisk).toBe(
+      'shared-inputs'
+    );
+
+    const providerOnlyLeft: typeof left = {
+      ...left,
+      predictedDelta: {
+        ...left.predictedDelta,
+        changedInputs: [],
+        affectedProviders: [...sharedProviders],
+      },
+    };
+    const providerOnlyRight: typeof right = {
+      ...right,
+      predictedDelta: {
+        ...right.predictedDelta,
+        changedInputs: [],
+        affectedProviders: [...sharedProviders],
+      },
+    };
+    expect(
+      compareChangeOverlays({ left: providerOnlyLeft, right: providerOnlyRight })
+        .advisoryMergeOrderRisk
+    ).toBe('shared-providers');
+
+    const disjointRight: typeof right = {
+      ...right,
+      predictedDelta: {
+        ...right.predictedDelta,
+        changedInputs: [],
+        affectedProviders: ['workspai.graph.provider.unrelated'],
+      },
+    };
+    expect(
+      compareChangeOverlays({ left: providerOnlyLeft, right: disjointRight }).advisoryMergeOrderRisk
+    ).toBe('none');
+  });
 });
