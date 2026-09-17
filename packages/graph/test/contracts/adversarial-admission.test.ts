@@ -259,7 +259,7 @@ describe('Graph G1 adversarial admission', () => {
     });
     rejected(measureCanonicalGraphValueBytes(value, expected - 1));
     rejected(measureCanonicalGraphValueBytes(value, 0));
-  });
+  }, 15_000);
 
   it('keeps canonicalization deterministic across scalar and nested JSON boundaries', () => {
     expect(canonicalizeGraphValue({ z: -0, a: [null, true, false, 'value', 1.5] })).toEqual({

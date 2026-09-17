@@ -193,18 +193,22 @@ export async function buildIncrementalRepoGraph(
     scopeKind: request.scope.kind === 'workspace' ? 'workspace' : 'project',
     networkAllowed: request.policy.network === 'allow',
   });
-  const toRecompute = forceFullRebuild
-    ? Object.freeze([...registered].sort((left, right) => left.localeCompare(right)))
-    : providersToExecute(
-        registered,
-        [
-          ...planned.providersToRecompute,
-          ...addedRequired,
-          ...(planned.status === 'partial' ? registered : []),
-        ],
-        request.providersToRecompute,
-        reusable
-      );
+  const inventoryMembershipChanged = planned.comparison.changedInputs.some((change) =>
+    ['added', 'deleted', 'rename-candidate'].includes(change.kind)
+  );
+  const toRecompute =
+    forceFullRebuild || inventoryMembershipChanged
+      ? Object.freeze([...registered].sort((left, right) => left.localeCompare(right)))
+      : providersToExecute(
+          registered,
+          [
+            ...planned.providersToRecompute,
+            ...addedRequired,
+            ...(planned.status === 'partial' ? registered : []),
+          ],
+          request.providersToRecompute,
+          reusable
+        );
   const reusedSources = forceFullRebuild
     ? Object.freeze([])
     : Object.freeze(

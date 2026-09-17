@@ -193,4 +193,45 @@ describe('delivery and contract repository providers', () => {
       ])
     );
   });
+
+  it('does not classify unrelated invalid YAML as unreadable Kubernetes input', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'workspai-graph-kubernetes-precision-'));
+    roots.push(root);
+    await mkdir(path.join(root, 'lib', 'tests', 'cassettes'), { recursive: true });
+    await mkdir(path.join(root, 'charts', 'service', 'templates'), { recursive: true });
+    await writeFile(
+      path.join(root, 'lib', 'tests', 'cassettes', 'recording.yaml'),
+      'responses:\n  - body: { flow_name }: [\n'
+    );
+    await writeFile(
+      path.join(root, 'charts', 'service', 'templates', 'deployment.yaml'),
+      'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {{ .Values.name }\n'
+    );
+
+    const result = await buildRepoGraph({
+      root,
+      scope: { kind: 'project', projectIds: ['project:kubernetes-precision'] },
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers: createStandardRepositoryProviders(),
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(),
+    });
+
+    expect(result.quality.unknownZones).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'graph.kubernetes-unreadable',
+          scope: 'charts/service/templates/deployment.yaml',
+        }),
+      ])
+    );
+    expect(result.quality.unknownZones).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'graph.kubernetes-unreadable',
+          scope: 'lib/tests/cassettes/recording.yaml',
+        }),
+      ])
+    );
+  });
 });

@@ -16,10 +16,23 @@ import { parseStructuredDocuments } from './structured-documents.js';
 export const KUBERNETES_TOPOLOGY_PROVIDER_ID = 'workspai.graph.provider.kubernetes-topology';
 
 const MAX_BYTES = 4 * 1024 * 1024;
+const KUBERNETES_PATH =
+  /(?:^|\/)(?:k8s|kubernetes|manifests)(?:\/|$)|(?:^|\/)charts\/[^/]+\/templates(?:\/|$)/iu;
+const RECORDED_INTERACTION_PATH = /(?:^|\/)(?:cassettes?|recordings?|snapshots?)(?:\/|$)/iu;
+
+function isProbableKubernetesInput(source: string, locator: string): boolean {
+  if (KUBERNETES_PATH.test(locator)) return true;
+  return (
+    /^apiVersion\s*:/mu.test(source) && /^kind\s*:/mu.test(source) && /^metadata\s*:/mu.test(source)
+  );
+}
 
 function kubernetesInputs(inputs: readonly GraphProviderInput[]): GraphProviderInput[] {
   return inputs
-    .filter((input) => isKubernetesLocator(input.locator))
+    .filter(
+      (input) =>
+        isKubernetesLocator(input.locator) && !RECORDED_INTERACTION_PATH.test(input.locator)
+    )
     .sort((left, right) => left.locator.localeCompare(right.locator));
 }
 
@@ -94,73 +107,75 @@ export function createKubernetesTopologyProvider(): GraphProviderRuntime {
           const source = decodeUtf8(
             await request.readInput(input, { maxBytes: MAX_BYTES, signal: request.signal })
           );
-          const documents = parseStructuredDocuments(source, input.locator);
           let admitted = 0;
           let factIndex = 0;
-          for (const document of documents) {
-            if (!isRecord(document)) continue;
-            const kind = scalarString(document.kind);
-            const metadata = isRecord(document.metadata) ? document.metadata : {};
-            const name = scalarString(metadata.name);
-            const apiVersion = scalarString(document.apiVersion);
-            if (!kind || !name || !apiVersion) continue;
-            admitted += 1;
-            const entityKind = resourceKind(kind);
-            const namespace = scalarString(metadata.namespace) ?? 'default';
-            const entity = await request.resolveIdentity({
-              namespace: 'kubernetes',
-              kind: entityKind,
-              relativeLocator: `${kind}/${namespace}/${name}`,
-              caseSensitivity: 'sensitive',
-              scope: request.scope,
-            });
-            const environment = await request.resolveIdentity({
-              namespace: 'kubernetes',
-              kind: 'environment',
-              relativeLocator: `namespaces/${namespace}`,
-              caseSensitivity: 'sensitive',
-              scope: request.scope,
-            });
-            if (!entity.accepted || !environment.accepted) {
-              throw new Error('Kubernetes identity could not be resolved.');
+          if (isProbableKubernetesInput(source, input.locator)) {
+            const documents = parseStructuredDocuments(source, input.locator);
+            for (const document of documents) {
+              if (!isRecord(document)) continue;
+              const kind = scalarString(document.kind);
+              const metadata = isRecord(document.metadata) ? document.metadata : {};
+              const name = scalarString(metadata.name);
+              const apiVersion = scalarString(document.apiVersion);
+              if (!kind || !name || !apiVersion) continue;
+              admitted += 1;
+              const entityKind = resourceKind(kind);
+              const namespace = scalarString(metadata.namespace) ?? 'default';
+              const entity = await request.resolveIdentity({
+                namespace: 'kubernetes',
+                kind: entityKind,
+                relativeLocator: `${kind}/${namespace}/${name}`,
+                caseSensitivity: 'sensitive',
+                scope: request.scope,
+              });
+              const environment = await request.resolveIdentity({
+                namespace: 'kubernetes',
+                kind: 'environment',
+                relativeLocator: `namespaces/${namespace}`,
+                caseSensitivity: 'sensitive',
+                scope: request.scope,
+              });
+              if (!entity.accepted || !environment.accepted) {
+                throw new Error('Kubernetes identity could not be resolved.');
+              }
+              const predicate = entityKind === 'deployment' ? 'deployed-as' : 'contains';
+              facts.push(
+                createObservedEdgeFact({
+                  factId: `fact:k8s:${String(inputIndex).padStart(8, '0')}:${String(factIndex).padStart(8, '0')}:${input.digest.value}`,
+                  factType: 'runtime.kubernetes-resource',
+                  subject: repository.value.reference,
+                  predicate,
+                  object: entity.value.reference,
+                  request,
+                  source: input,
+                  provider: manifest,
+                  evidenceId: `evidence:k8s:${String(inputIndex).padStart(8, '0')}`,
+                  sourceKind: 'runtime-declaration',
+                  derivation: 'declared',
+                  authority: 'declared',
+                  confidence: 1,
+                })
+              );
+              factIndex += 1;
+              facts.push(
+                createObservedEdgeFact({
+                  factId: `fact:k8s-ns:${String(inputIndex).padStart(8, '0')}:${String(factIndex).padStart(8, '0')}:${input.digest.value}`,
+                  factType: 'runtime.kubernetes-namespace',
+                  subject: entity.value.reference,
+                  predicate: 'runs-on',
+                  object: environment.value.reference,
+                  request,
+                  source: input,
+                  provider: manifest,
+                  evidenceId: `evidence:k8s:${String(inputIndex).padStart(8, '0')}`,
+                  sourceKind: 'runtime-declaration',
+                  derivation: 'declared',
+                  authority: 'declared',
+                  confidence: 1,
+                })
+              );
+              factIndex += 1;
             }
-            const predicate = entityKind === 'deployment' ? 'deployed-as' : 'contains';
-            facts.push(
-              createObservedEdgeFact({
-                factId: `fact:k8s:${String(inputIndex).padStart(8, '0')}:${String(factIndex).padStart(8, '0')}:${input.digest.value}`,
-                factType: 'runtime.kubernetes-resource',
-                subject: repository.value.reference,
-                predicate,
-                object: entity.value.reference,
-                request,
-                source: input,
-                provider: manifest,
-                evidenceId: `evidence:k8s:${String(inputIndex).padStart(8, '0')}`,
-                sourceKind: 'runtime-declaration',
-                derivation: 'declared',
-                authority: 'declared',
-                confidence: 1,
-              })
-            );
-            factIndex += 1;
-            facts.push(
-              createObservedEdgeFact({
-                factId: `fact:k8s-ns:${String(inputIndex).padStart(8, '0')}:${String(factIndex).padStart(8, '0')}:${input.digest.value}`,
-                factType: 'runtime.kubernetes-namespace',
-                subject: entity.value.reference,
-                predicate: 'runs-on',
-                object: environment.value.reference,
-                request,
-                source: input,
-                provider: manifest,
-                evidenceId: `evidence:k8s:${String(inputIndex).padStart(8, '0')}`,
-                sourceKind: 'runtime-declaration',
-                derivation: 'declared',
-                authority: 'declared',
-                confidence: 1,
-              })
-            );
-            factIndex += 1;
           }
           if (admitted === 0) {
             outcome = 'processed';

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Kubernetes topology now rejects recorded-interaction YAML paths before they
+  consume the provider read budget and parses only source/path-qualified
+  manifest candidates. Invalid Helm templates remain explicit unknown zones;
+  unrelated VCR cassettes no longer become Kubernetes failures.
+- Incremental inventory membership changes (add, delete, and rename) recompute
+  every registered provider until provider contracts can express inventory-wide
+  fan-out dependencies such as CODEOWNERS. This trades selective speed for
+  full-build digest equivalence instead of reusing stale cross-file facts.
+- Added a repeatable real-repository incremental qualification harness covering
+  edit, add, delete, rename, and configuration changes with trusted journals,
+  byte accounting, full-build comparison, and native extraction enabled.
 - Entity identity uses digestSync when the host provides it. Semantic set
   digests stream ranked canonical keys instead of joining a monolithic string.
   Inspect metrics expose composition phase timers and per-provider
