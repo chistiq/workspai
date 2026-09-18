@@ -1,11 +1,11 @@
 {
   "schemaVersion": "workspai.agent-framework-release-admissions.v1",
-  "reviewedAt": "2026-09-14T21:56:00.000Z",
+  "reviewedAt": "2026-09-18T14:46:18.000Z",
   "source": {
     "repository": "chistiq/workspai",
-    "commit": "e69b7d4fa83042c87a035219af1f7468383b3cb8",
-    "workflowRunId": 34032050630,
-    "workflowUrl": "https://github.com/chistiq/workspai/actions/runs/34032050630",
+    "commit": "8eb13087b64db13762c046d413972f6034e312fd",
+    "workflowRunId": 35357989405,
+    "workflowUrl": "https://github.com/chistiq/workspai/actions/runs/35357989405",
     "conclusion": "success"
   },
   "adapters": [
@@ -15,7 +15,11 @@
       "manifestSha256": "e4dfa55256ec2ed7f43927d109b09b541a13217f8a4df964f678fd036bcef060",
       "frameworkVersion": "1.18.0",
       "runtime": "python",
-      "platforms": ["linux", "darwin", "win32"]
+      "platforms": [
+        "linux",
+        "darwin",
+        "win32"
+      ]
     },
     {
       "id": "microsoft-agent-framework-dotnet",
@@ -23,7 +27,35 @@
       "manifestSha256": "1efa079735d51cc3cbbd2d2fe55815850d8aa39f87de4bac4589d9fbfaf2e8e9",
       "frameworkVersion": "1.21.0",
       "runtime": "dotnet",
-      "platforms": ["linux", "darwin", "win32"]
+      "platforms": [
+        "linux",
+        "darwin",
+        "win32"
+      ]
+    },
+    {
+      "id": "openai-agents-python",
+      "version": "0.1.0",
+      "manifestSha256": "17eecb2854bd5459cde78c2f00ce4f32d707819028faec926163e8b32a7e4993",
+      "frameworkVersion": "0.22.2",
+      "runtime": "python",
+      "platforms": [
+        "linux",
+        "darwin",
+        "win32"
+      ]
+    },
+    {
+      "id": "openai-agents-typescript",
+      "version": "0.1.0",
+      "manifestSha256": "f6a745a659ec662c89565f73bfff240ffd065816e54d8f8a87fb91bad6c01adb",
+      "frameworkVersion": "0.18.0",
+      "runtime": "node",
+      "platforms": [
+        "linux",
+        "darwin",
+        "win32"
+      ]
     }
   ]
 }

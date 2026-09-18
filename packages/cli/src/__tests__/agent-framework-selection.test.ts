@@ -7,12 +7,21 @@ import {
 } from '../agent-frameworks/index.js';
 
 describe('agent framework selection', () => {
-  it('keeps current Python attach on Microsoft while only Microsoft is admitted', () => {
+  it('refuses to guess Python when Microsoft and OpenAI are both admitted', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
     );
-    expect(resolveAgentFrameworkSelection({ registry, runtime: 'python' })).toMatchObject({
+    expect(() => resolveAgentFrameworkSelection({ registry, runtime: 'python' })).toThrow(
+      /Pass --framework explicitly/
+    );
+    expect(
+      resolveAgentFrameworkSelection({
+        registry,
+        runtime: 'python',
+        framework: 'microsoft-agent-framework',
+      })
+    ).toMatchObject({
       adapterId: 'microsoft-agent-framework-python',
       frameworkId: 'microsoft-agent-framework',
       admitted: true,
@@ -50,7 +59,7 @@ describe('agent framework selection', () => {
     );
   });
 
-  it('selects OpenAI when requested and reports that it is not release-admitted', () => {
+  it('selects OpenAI when requested after reviewed release admission', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -64,7 +73,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-python',
       frameworkId: 'openai-agents',
-      admitted: false,
+      admitted: true,
     });
     expect(
       resolveAgentFrameworkSelection({
@@ -75,7 +84,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-typescript',
       frameworkId: 'openai-agents',
-      admitted: false,
+      admitted: true,
     });
   });
 });

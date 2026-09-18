@@ -11,7 +11,7 @@ describe('agent framework release admission', () => {
   it('admits only the exact reviewed built-in manifests and complete platform matrices', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
     const admittedIds = new Set(admissions.map((admission) => admission.id));
-    expect(admissions).toHaveLength(2);
+    expect(admissions).toHaveLength(4);
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
@@ -64,7 +64,7 @@ describe('agent framework release admission', () => {
     ).not.toHaveProperty('releaseAdapter');
   });
 
-  it('lists preview OpenAI adapters without treating them as release-admitted', () => {
+  it('admits reviewed OpenAI adapters while keeping default registries blocked', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -72,17 +72,26 @@ describe('agent framework release admission', () => {
     const adapters = registry.list().map((entry) => ({
       id: entry.manifest.adapter.id,
       status: registry.resolveAdapter(entry.manifest.adapter.id).status,
+      stability: entry.manifest.adapter.stability,
     }));
     expect(
       adapters
         .filter((adapter) => adapter.status === 'admitted')
         .map((adapter) => adapter.id)
         .sort()
-    ).toEqual(['microsoft-agent-framework-dotnet', 'microsoft-agent-framework-python']);
+    ).toEqual([
+      'microsoft-agent-framework-dotnet',
+      'microsoft-agent-framework-python',
+      'openai-agents-python',
+      'openai-agents-typescript',
+    ]);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
-        .map((adapter) => adapter.status)
-    ).toEqual(['blocked', 'blocked']);
+        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'preview')
+    ).toBe(true);
+    expect(
+      createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status
+    ).toBe('blocked');
   });
 });

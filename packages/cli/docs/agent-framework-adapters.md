@@ -183,10 +183,12 @@ timeout. TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
 service. Workspai still owns mutation admission and verification; a successful
 model run is not verified evidence.
 
-Create kit ids `agent.openai.python` and `agent.openai.typescript` exist in the
-inventory but remain hidden from interactive Create and blocked from attach
-until release admission binds their exact manifests. Selecting
-`--framework openai-agents` before that review fails closed.
+Create kit ids `agent.openai.python` and `agent.openai.typescript` are
+release-admitted for this CLI version. Interactive Create shows them under
+**AI Agent**. Attach requires `--framework openai-agents` when the runtime is
+shared. Adapters remain `preview`; handoffs, MCP, sessions, voice, sandbox, and
+approval loops stay unsupported. Changing `preview` to `stable` would change the
+manifest digest and require a new matrix.
 
 A path-filtered twelve-lane adapter matrix compiles the generated Microsoft
 Python/.NET and OpenAI Python/TypeScript projects on Linux, macOS, and Windows. Every lane records all 18 mandatory
@@ -232,9 +234,9 @@ npx workspai agent framework plan \
 ```
 
 When more than one admitted framework shares a runtime, pass `--framework`
-explicitly. Workspai does not guess or fall back. Today `--runtime python`
-without `--framework` still selects Microsoft Agent Framework because it is the
-only admitted Python adapter.
+explicitly. Workspai does not guess or fall back. `--runtime python` without
+`--framework` now requires an explicit choice because Microsoft Agent Framework
+and OpenAI Agents SDK are both admitted.
 
 The interactive attach command displays the same plan and asks before granting
 its filesystem effect. Automation must opt in with `--yes` and records the

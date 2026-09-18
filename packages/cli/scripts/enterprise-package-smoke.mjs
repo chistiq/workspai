@@ -356,13 +356,15 @@ function assertCliContracts() {
     .filter((adapter) => adapter.status === 'admitted')
     .map((adapter) => adapter.id)
     .sort();
-  if (
-    admittedIds.length !== 2 ||
-    admittedIds[0] !== 'microsoft-agent-framework-dotnet' ||
-    admittedIds[1] !== 'microsoft-agent-framework-python'
-  ) {
+  const expectedAdmittedIds = [
+    'microsoft-agent-framework-dotnet',
+    'microsoft-agent-framework-python',
+    'openai-agents-python',
+    'openai-agents-typescript',
+  ];
+  if (JSON.stringify(admittedIds) !== JSON.stringify(expectedAdmittedIds)) {
     fail(
-      `published CLI does not expose the two exact release-admitted framework adapters (admitted: ${
+      `published CLI does not expose the exact release-admitted framework adapters (admitted: ${
         admittedIds.join(', ') || 'none'
       })`
     );
@@ -372,8 +374,11 @@ function assertCliContracts() {
     if (!preview) {
       fail(`published CLI is missing implemented preview adapter ${previewId}`);
     }
-    if (preview.status === 'admitted') {
-      fail(`${previewId} must stay blocked until reviewed release admission`);
+    if (preview.status !== 'admitted') {
+      fail(`${previewId} must be release-admitted after the reviewed matrix`);
+    }
+    if (preview.stability && preview.stability !== 'preview') {
+      fail(`${previewId} must remain preview until a later digest-changing promotion`);
     }
   }
 
@@ -434,6 +439,39 @@ function smokeCreateAgentFrameworkKits() {
         'agents/primary/Primary.csproj',
         'agents/primary/tests/Primary.Tests.csproj',
         'agents/primary/tests/WorkspaiContextTests.cs',
+        'agents/primary/.env.example',
+        'agents/primary/README.md',
+      ],
+    },
+    {
+      kit: 'agent.openai.python',
+      name: 'openai-python-agent',
+      expectedFiles: [
+        'README.md',
+        '.workspai/project.json',
+        '.workspai/agent-frameworks/openai-agents-python/primary.json',
+        'agents/primary/main.py',
+        'agents/primary/workspai_context.py',
+        'agents/primary/agent.py',
+        'agents/primary/pyproject.toml',
+        'agents/primary/tests/test_context.py',
+        'agents/primary/.env.example',
+        'agents/primary/README.md',
+      ],
+    },
+    {
+      kit: 'agent.openai.typescript',
+      name: 'openai-typescript-agent',
+      expectedFiles: [
+        'README.md',
+        '.workspai/project.json',
+        '.workspai/agent-frameworks/openai-agents-typescript/primary.json',
+        'agents/primary/src/main.ts',
+        'agents/primary/src/workspai-context.ts',
+        'agents/primary/src/agent.ts',
+        'agents/primary/package.json',
+        'agents/primary/tsconfig.json',
+        'agents/primary/tests/context.test.ts',
         'agents/primary/.env.example',
         'agents/primary/README.md',
       ],

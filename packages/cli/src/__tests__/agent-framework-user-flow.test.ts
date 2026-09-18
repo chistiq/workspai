@@ -103,6 +103,7 @@ describe('agent framework user flow', () => {
       workspacePath,
       project: 'api',
       runtime: 'python',
+      framework: 'microsoft-agent-framework',
       instanceName: 'Release Reviewer',
     });
 
@@ -155,6 +156,7 @@ describe('agent framework user flow', () => {
       workspacePath,
       project: 'api',
       runtime: 'python',
+      framework: 'microsoft-agent-framework',
       instanceName: 'primary',
     });
     await applyPreparedAgentFrameworkAttachment({ prepared: first, grantedBy: 'test-maintainer' });
@@ -164,6 +166,7 @@ describe('agent framework user flow', () => {
       workspacePath,
       project: 'api',
       runtime: 'python',
+      framework: 'microsoft-agent-framework',
       instanceName: 'primary',
     });
     expect(noOp.status).toBe('no-op');
@@ -183,6 +186,7 @@ describe('agent framework user flow', () => {
         workspacePath,
         project: 'api',
         runtime: 'python',
+        framework: 'microsoft-agent-framework',
         instanceName: '../escape',
       })
     ).rejects.toThrow(/not a path/i);
@@ -197,6 +201,7 @@ describe('agent framework user flow', () => {
       workspacePath,
       project: 'api',
       runtime: 'python',
+      framework: 'microsoft-agent-framework',
       instanceName: 'primary',
     });
     await applyPreparedAgentFrameworkAttachment({ prepared: first, grantedBy: 'maintainer' });
@@ -206,6 +211,7 @@ describe('agent framework user flow', () => {
       workspacePath,
       project: 'worker',
       runtime: 'python',
+      framework: 'microsoft-agent-framework',
       instanceName: 'secondary',
     });
     await applyPreparedAgentFrameworkAttachment({ prepared: concurrent, grantedBy: 'maintainer' });
@@ -248,16 +254,34 @@ describe('agent framework user flow', () => {
     ).toBe(false);
   });
 
-  it('fails closed when attaching a built-in adapter that is not release-admitted', async () => {
+  it('fails closed when Python attach does not name one of the admitted frameworks', async () => {
     const { workspacePath } = await fixture();
     await expect(
       prepareAgentFrameworkAttachment({
         workspacePath,
         project: 'api',
         runtime: 'python',
-        framework: 'openai-agents',
         instanceName: 'primary',
       })
-    ).rejects.toThrow(/not release-admitted/);
+    ).rejects.toThrow(/Pass --framework explicitly/);
+  });
+
+  it('plans an OpenAI attach after reviewed release admission', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const prepared = await prepareAgentFrameworkAttachment({
+      workspacePath,
+      project: 'api',
+      runtime: 'python',
+      framework: 'openai-agents',
+      instanceName: 'primary',
+    });
+    expect(prepared).toMatchObject({
+      operation: 'plan',
+      status: 'planned',
+      adapterId: 'openai-agents-python',
+      frameworkId: 'openai-agents',
+      instanceName: 'primary',
+    });
+    expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'primary'))).toBe(false);
   });
 });

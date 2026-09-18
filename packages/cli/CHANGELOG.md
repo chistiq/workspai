@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented preview OpenAI Agents SDK adapters for Python `0.22.2` and
   TypeScript `@openai/agents` `0.18.0` with independent framework/runtime
   selection, credentialless conformance lanes, and Create kit ids
-  `agent.openai.python` / `agent.openai.typescript`. Public Create and Attach
-  stay blocked until reviewed release admission; `--runtime python` without
-  `--framework` continues to select Microsoft while only Microsoft is admitted.
+  `agent.openai.python` / `agent.openai.typescript`. Reviewed release admission
+  from matrix run 35357989405 on `8eb1308` now opens Create and Attach for those
+  explicit kit ids and `--framework openai-agents`. Adapters remain `preview`.
+  `--runtime python` without `--framework` requires an explicit framework because
+  Microsoft and OpenAI are both admitted.
 
 ### Fixed
 
@@ -23,9 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pre-push`.
 - Isolated the workspace-intelligence adversarial script the same way; it runs
   during `quality:push` and was still inheriting husky Git env.
-- Kept published `agent framework list` preview OpenAI adapters from failing
-  the enterprise package smoke, which still requires exactly the two Microsoft
-  release-admitted adapters.
+- Kept published `agent framework list` preview OpenAI adapters visible before
+  release admission; the enterprise package smoke now requires the four
+  reviewed Microsoft and OpenAI adapters.
 - Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
   so Windows does not `spawn EINVAL` on `npm.cmd`.
 - Ran the OpenAI TypeScript conformance install/test inside the generated
@@ -38,8 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   require `project-context-agent.v1` JSON, and reject escaped symlinks
   without echoing file contents. Credentialless SDK checks now call the
   generated `buildAgent` / `build_agent` seam with official ScriptedModel
-  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters stay
-  preview and are not copied into release admission. Context-path containment
+  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters remain
+  preview after the reviewed admission; changing that label would change the
+  manifest digest and require a new matrix. Context-path containment
   is a bounded fd read after `O_NOFOLLOW` when available, not a TOCTOU-free
   walk. Generator coverage remains in the Vitest gate alongside the OpenAI
   adapter sources.
