@@ -85,6 +85,9 @@ describe('agent framework version automation', () => {
     expect(openaiSmoke).toContain('OPENAI_AGENTS_DISABLE_TRACING');
     expect(openaiSmoke).toContain('livePaidApiCall: false');
     expect(openaiSmoke).toContain('resolvePackageRunnerInvocation');
+    expect(openaiSmoke).toContain("['install', '--no-fund', '--no-audit']");
+    expect(openaiSmoke).toContain("await run('npm', ['test'], agentRoot)");
+    expect(openaiSmoke).not.toContain("'--prefix', path.dirname(context.dependencyManifest)");
     expect(openaiSmoke).not.toContain("process.platform === 'win32' ? 'npm.cmd' : 'npm'");
     expect(openaiSmoke).not.toContain('OPENAI_API_KEY=sk-');
 

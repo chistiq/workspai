@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release-admitted adapters.
 - Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
   so Windows does not `spawn EINVAL` on `npm.cmd`.
+- Ran the OpenAI TypeScript conformance install/test inside the generated
+  agent package. Windows npm ignores `install --prefix <relative>` and then
+  looks for `package.json` in the parent cwd.
 
 ## [0.75.2] - 2026-09-14
 

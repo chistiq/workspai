@@ -305,6 +305,15 @@ function credentiallessEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+function npmEnv(): NodeJS.ProcessEnv {
+  const env = credentiallessEnv();
+  // setup-node and Windows npm treat PREFIX as the project root. That would
+  // make `npm install --prefix agents/...` look for package.json in cwd.
+  delete env.npm_config_prefix;
+  delete env.PREFIX;
+  return env;
+}
+
 function npmInvocation(): { command: string; prefixArgs: string[]; shell: boolean } {
   const invocation = resolvePackageRunnerInvocation('npm');
   return {
@@ -327,7 +336,7 @@ function run(
     const child = spawn(invocation.command, argv, {
       cwd,
       shell: invocation.shell,
-      env: credentiallessEnv(),
+      env: command === 'npm' ? npmEnv() : credentiallessEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -879,17 +888,13 @@ async function main(): Promise<void> {
         );
       } else {
         runtimeVersion = process.versions.node;
-        await run(
-          'npm',
-          [
-            'install',
-            '--no-fund',
-            '--no-audit',
-            '--prefix',
-            path.dirname(context.dependencyManifest),
-          ],
-          generatedRoot
+        // Windows npm ignores `install --prefix <relative>` and reads
+        // package.json from cwd. Run inside the generated agent package.
+        assertCondition(
+          rendered.files.some((file) => file.path === context.dependencyManifest),
+          `Rendered TypeScript files do not include ${context.dependencyManifest}.`
         );
+        await run('npm', ['install', '--no-fund', '--no-audit'], agentRoot);
         const installed = JSON.parse(
           await fs.readFile(
             path.join(agentRoot, 'node_modules', '@openai', 'agents', 'package.json'),
@@ -912,11 +917,7 @@ async function main(): Promise<void> {
           '@openai/agents': String(installed.version),
           zod: String(zodPackage.version),
         };
-        await run(
-          'npm',
-          ['test', '--prefix', path.dirname(context.dependencyManifest)],
-          generatedRoot
-        );
+        await run('npm', ['test'], agentRoot);
         const missingCredentials = await run(
           process.execPath,
           [path.join(agentRoot, 'dist', 'src', 'main.js')],

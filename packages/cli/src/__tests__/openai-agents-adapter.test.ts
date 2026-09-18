@@ -201,6 +201,12 @@ describe('OpenAI Agents SDK adapters', () => {
         instanceName: 'Release Reviewer',
       }).verificationCommands
     ).toContain('npm --prefix agents/release-reviewer test');
+    expect(rendered.files.find((file) => file.path.endsWith('/README.md'))?.content).toContain(
+      'npm --prefix agents/release-reviewer install'
+    );
+    expect(rendered.files.find((file) => file.path.endsWith('/README.md'))?.content).not.toContain(
+      'npm install --prefix'
+    );
   });
 
   it('preserves user-authored files and exposes the conflict as a plan blocker', async () => {
