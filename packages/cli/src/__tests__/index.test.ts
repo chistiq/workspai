@@ -270,14 +270,18 @@ describe('CLI Entry Point', () => {
       `);
     });
 
-    it('should render identical output for no-arg, --help, and help at root', async () => {
-      const noArg = await execa('node', [CLI_PATH]);
-      const withHelp = await execa('node', [CLI_PATH, '--help']);
-      const withHelpCommand = await execa('node', [CLI_PATH, 'help']);
+    it(
+      'should render identical output for no-arg, --help, and help at root',
+      async () => {
+        const noArg = await execa('node', [CLI_PATH]);
+        const withHelp = await execa('node', [CLI_PATH, '--help']);
+        const withHelpCommand = await execa('node', [CLI_PATH, 'help']);
 
-      expect(noArg.stdout.replace(/\r/g, '')).toBe(withHelp.stdout.replace(/\r/g, ''));
-      expect(noArg.stdout.replace(/\r/g, '')).toBe(withHelpCommand.stdout.replace(/\r/g, ''));
-    }, CLI_SPAWN_TIMEOUT_MS);
+        expect(noArg.stdout.replace(/\r/g, '')).toBe(withHelp.stdout.replace(/\r/g, ''));
+        expect(noArg.stdout.replace(/\r/g, '')).toBe(withHelpCommand.stdout.replace(/\r/g, ''));
+      },
+      CLI_SPAWN_TIMEOUT_MS
+    );
   });
 
   describe('Autopilot Command (CLI Entrypoint)', () => {
@@ -607,78 +611,82 @@ describe('CLI Entry Point', () => {
       }
     });
 
-    it('should import a local project through the CLI wrapper and emit registry JSON', async () => {
-      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-import-'));
-      const sourceDir = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-'));
+    it(
+      'should import a local project through the CLI wrapper and emit registry JSON',
+      async () => {
+        const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-import-'));
+        const sourceDir = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-'));
 
-      await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
-      await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
-        workspace_name: 'demo-workspace',
-      });
-      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
-      await fs.writeJson(path.join(sourceDir, 'package.json'), {
-        name: 'orders-api',
-        dependencies: {
-          express: '^4.19.2',
-        },
-      });
-
-      try {
-        const { stdout, exitCode } = await execa('node', [
-          CLI_PATH,
-          'import',
-          sourceDir,
-          '--workspace',
-          workspaceRoot,
-          '--name',
-          'orders-api',
-          '--json',
-        ]);
-
-        expect(exitCode).toBe(0);
-
-        const payload = JSON.parse(stdout) as {
-          workspacePath: string;
-          plan: {
-            action: string;
-            mode: string;
-            ownership: string;
-            registration: string;
-          };
-          importedProject: { name: string; stack: string; source: string; path: string };
-        };
-
-        expect(payload.workspacePath).toBe(workspaceRoot);
-        expect(payload.plan).toMatchObject({
-          action: 'import-project',
-          mode: 'copy',
-          ownership: 'workspace-owned',
-          registration: 'project',
+        await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
+        await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
+          workspace_name: 'demo-workspace',
         });
-        expect(payload.importedProject).toMatchObject({
+        await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
+        await fs.writeJson(path.join(sourceDir, 'package.json'), {
           name: 'orders-api',
-          stack: 'express',
-          source: 'local-folder',
+          dependencies: {
+            express: '^4.19.2',
+          },
         });
-        expect(await fs.pathExists(path.join(payload.importedProject.path, 'package.json'))).toBe(
-          true
-        );
 
-        const registry = await fs.readJson(
-          path.join(workspaceRoot, '.workspai', 'imported-projects.json')
-        );
-        expect(registry.projects).toEqual([
-          expect.objectContaining({
+        try {
+          const { stdout, exitCode } = await execa('node', [
+            CLI_PATH,
+            'import',
+            sourceDir,
+            '--workspace',
+            workspaceRoot,
+            '--name',
+            'orders-api',
+            '--json',
+          ]);
+
+          expect(exitCode).toBe(0);
+
+          const payload = JSON.parse(stdout) as {
+            workspacePath: string;
+            plan: {
+              action: string;
+              mode: string;
+              ownership: string;
+              registration: string;
+            };
+            importedProject: { name: string; stack: string; source: string; path: string };
+          };
+
+          expect(payload.workspacePath).toBe(workspaceRoot);
+          expect(payload.plan).toMatchObject({
+            action: 'import-project',
+            mode: 'copy',
+            ownership: 'workspace-owned',
+            registration: 'project',
+          });
+          expect(payload.importedProject).toMatchObject({
             name: 'orders-api',
             stack: 'express',
             source: 'local-folder',
-          }),
-        ]);
-      } finally {
-        await fs.remove(workspaceRoot);
-        await fs.remove(sourceDir);
-      }
-    }, CLI_SPAWN_TIMEOUT_MS);
+          });
+          expect(await fs.pathExists(path.join(payload.importedProject.path, 'package.json'))).toBe(
+            true
+          );
+
+          const registry = await fs.readJson(
+            path.join(workspaceRoot, '.workspai', 'imported-projects.json')
+          );
+          expect(registry.projects).toEqual([
+            expect.objectContaining({
+              name: 'orders-api',
+              stack: 'express',
+              source: 'local-folder',
+            }),
+          ]);
+        } finally {
+          await fs.remove(workspaceRoot);
+          await fs.remove(sourceDir);
+        }
+      },
+      CLI_SPAWN_TIMEOUT_MS
+    );
 
     it('should adopt a local frontend project through the CLI wrapper and keep it linked in place', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-adopt-'));
@@ -857,94 +865,102 @@ describe('CLI Entry Point', () => {
       }
     });
 
-    it('should import a git repository through the CLI wrapper with --git', async () => {
-      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-import-git-'));
-      const gitSource = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-git-'));
+    it(
+      'should import a git repository through the CLI wrapper with --git',
+      async () => {
+        const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-import-git-'));
+        const gitSource = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-git-'));
 
-      await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
-      await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
-        workspace_name: 'demo-workspace',
-      });
-      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
-      await fs.writeJson(path.join(gitSource, 'package.json'), {
-        name: 'git-orders-api',
-        dependencies: {
-          express: '^4.19.2',
-        },
-      });
-      await fs.writeFile(path.join(gitSource, 'README.md'), '# git import\n');
-      await execa('git', ['init'], { cwd: gitSource });
-      await execa('git', ['config', 'user.email', 'rapidkit@example.com'], { cwd: gitSource });
-      await execa('git', ['config', 'user.name', 'RapidKit Test'], { cwd: gitSource });
-      await execa('git', ['add', '.'], { cwd: gitSource });
-      await execa('git', ['-c', 'commit.gpgsign=false', 'commit', '-m', 'init'], {
-        cwd: gitSource,
-      });
+        await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
+        await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
+          workspace_name: 'demo-workspace',
+        });
+        await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
+        await fs.writeJson(path.join(gitSource, 'package.json'), {
+          name: 'git-orders-api',
+          dependencies: {
+            express: '^4.19.2',
+          },
+        });
+        await fs.writeFile(path.join(gitSource, 'README.md'), '# git import\n');
+        await execa('git', ['init'], { cwd: gitSource });
+        await execa('git', ['config', 'user.email', 'rapidkit@example.com'], { cwd: gitSource });
+        await execa('git', ['config', 'user.name', 'RapidKit Test'], { cwd: gitSource });
+        await execa('git', ['add', '.'], { cwd: gitSource });
+        await execa('git', ['-c', 'commit.gpgsign=false', 'commit', '-m', 'init'], {
+          cwd: gitSource,
+        });
 
-      try {
+        try {
+          const { stdout, exitCode } = await execa(
+            'node',
+            [
+              CLI_PATH,
+              'import',
+              gitSource,
+              '--git',
+              '--workspace',
+              workspaceRoot,
+              '--name',
+              'git-orders-api',
+              '--json',
+            ],
+            {
+              env: {
+                ...process.env,
+                WORKSPAI_DEBUG_ARGS: '1',
+              },
+            }
+          );
+
+          expect(exitCode).toBe(0);
+
+          const payload = JSON.parse(stdout) as {
+            workspacePath: string;
+            importedProject: { name: string; stack: string; source: string; path: string };
+          };
+
+          expect(payload.workspacePath).toBe(workspaceRoot);
+          expect(payload.importedProject).toMatchObject({
+            name: 'git-orders-api',
+            stack: 'express',
+            source: 'git-url',
+          });
+          expect(await fs.pathExists(path.join(payload.importedProject.path, '.git'))).toBe(true);
+        } finally {
+          await fs.remove(workspaceRoot);
+          await fs.remove(gitSource);
+        }
+      },
+      CLI_SPAWN_TIMEOUT_MS
+    );
+
+    it(
+      'should honor --output for workspace export archives',
+      async () => {
+        const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-export-'));
+        const archivePath = path.join(TEST_DIR, 'custom-workspace-export.zip');
+
+        await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
+        await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
+          workspace_name: 'export-workspace',
+        });
+        await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
+        await fs.writeFile(path.join(workspaceRoot, 'README.md'), '# export workspace\n');
+
         const { stdout, exitCode } = await execa(
           'node',
-          [
-            CLI_PATH,
-            'import',
-            gitSource,
-            '--git',
-            '--workspace',
-            workspaceRoot,
-            '--name',
-            'git-orders-api',
-            '--json',
-          ],
-          {
-            env: {
-              ...process.env,
-              WORKSPAI_DEBUG_ARGS: '1',
-            },
-          }
+          [CLI_PATH, 'workspace', 'export', '--output', archivePath, '--json'],
+          { cwd: workspaceRoot }
         );
 
         expect(exitCode).toBe(0);
-
-        const payload = JSON.parse(stdout) as {
-          workspacePath: string;
-          importedProject: { name: string; stack: string; source: string; path: string };
-        };
-
-        expect(payload.workspacePath).toBe(workspaceRoot);
-        expect(payload.importedProject).toMatchObject({
-          name: 'git-orders-api',
-          stack: 'express',
-          source: 'git-url',
-        });
-        expect(await fs.pathExists(path.join(payload.importedProject.path, '.git'))).toBe(true);
-      } finally {
-        await fs.remove(workspaceRoot);
-        await fs.remove(gitSource);
-      }
-    }, CLI_SPAWN_TIMEOUT_MS);
-
-    it('should honor --output for workspace export archives', async () => {
-      const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-export-'));
-      const archivePath = path.join(TEST_DIR, 'custom-workspace-export.zip');
-
-      await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
-      await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
-        workspace_name: 'export-workspace',
-      });
-      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
-      await fs.writeFile(path.join(workspaceRoot, 'README.md'), '# export workspace\n');
-
-      const { stdout, exitCode } = await execa(
-        'node',
-        [CLI_PATH, 'workspace', 'export', '--output', archivePath, '--json'],
-        { cwd: workspaceRoot }
-      );
-
-      expect(exitCode).toBe(0);
-      const payload = JSON.parse(stdout) as { archivePath: string };
-      expect(payload.archivePath).toBe(archivePath);
-      expect(await fs.pathExists(archivePath)).toBe(true);
-    }, CLI_SPAWN_TIMEOUT_MS);
+        const payload = JSON.parse(stdout) as { archivePath: string };
+        expect(payload.archivePath).toBe(archivePath);
+        expect(await fs.pathExists(archivePath)).toBe(true);
+      },
+      CLI_SPAWN_TIMEOUT_MS
+    );
 
     it('should auto-create or reuse the default workspace when import runs outside any workspace', async () => {
       const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'rapidkit-home-import-default-'));
@@ -1014,109 +1030,117 @@ describe('CLI Entry Point', () => {
       }
     }, 60_000);
 
-    it('should not silently fall back when an explicit workspace path is invalid', async () => {
-      const fakeHome = await fs.mkdtemp(path.join(TEST_DIR, 'home-import-explicit-'));
-      const cwdOutsideWorkspace = await fs.mkdtemp(path.join(TEST_DIR, 'cwd-import-explicit-'));
-      const sourceDir = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-explicit-'));
-      const invalidWorkspace = path.join(cwdOutsideWorkspace, 'not-a-workspace');
+    it(
+      'should not silently fall back when an explicit workspace path is invalid',
+      async () => {
+        const fakeHome = await fs.mkdtemp(path.join(TEST_DIR, 'home-import-explicit-'));
+        const cwdOutsideWorkspace = await fs.mkdtemp(path.join(TEST_DIR, 'cwd-import-explicit-'));
+        const sourceDir = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-explicit-'));
+        const invalidWorkspace = path.join(cwdOutsideWorkspace, 'not-a-workspace');
 
-      await fs.ensureDir(invalidWorkspace);
-      await fs.writeJson(path.join(sourceDir, 'package.json'), {
-        name: 'explicit-orders-api',
-        dependencies: {
-          express: '^4.19.2',
-        },
-      });
-
-      try {
-        await execa(
-          'node',
-          [CLI_PATH, 'import', sourceDir, '--workspace', invalidWorkspace, '--json'],
-          {
-            cwd: cwdOutsideWorkspace,
-            env: {
-              ...process.env,
-              HOME: fakeHome,
-            },
-            reject: false,
-          }
-        ).then(({ stdout, exitCode }) => {
-          expect(exitCode).toBe(1);
-          const payload = JSON.parse(stdout) as { error: string };
-          expect(payload.error).toContain('Workspace path is not a valid Workspai workspace');
+        await fs.ensureDir(invalidWorkspace);
+        await fs.writeJson(path.join(sourceDir, 'package.json'), {
+          name: 'explicit-orders-api',
+          dependencies: {
+            express: '^4.19.2',
+          },
         });
 
-        expect(
-          await fs.pathExists(path.join(fakeHome, '.workspai', 'workspaces', 'workspai'))
-        ).toBe(false);
-      } finally {
-        await fs.remove(fakeHome);
-        await fs.remove(cwdOutsideWorkspace);
-        await fs.remove(sourceDir);
-      }
-    }, CLI_SPAWN_TIMEOUT_MS);
+        try {
+          await execa(
+            'node',
+            [CLI_PATH, 'import', sourceDir, '--workspace', invalidWorkspace, '--json'],
+            {
+              cwd: cwdOutsideWorkspace,
+              env: {
+                ...process.env,
+                HOME: fakeHome,
+              },
+              reject: false,
+            }
+          ).then(({ stdout, exitCode }) => {
+            expect(exitCode).toBe(1);
+            const payload = JSON.parse(stdout) as { error: string };
+            expect(payload.error).toContain('Workspace path is not a valid Workspai workspace');
+          });
 
-    it('should roll back imported local project via dist CLI when sync fails by injected test hook', async () => {
-      const workspaceRoot = await fs.mkdtemp(
-        path.join(TEST_DIR, 'workspace-import-injected-fail-')
-      );
-      const sourceDir = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-injected-fail-'));
+          expect(
+            await fs.pathExists(path.join(fakeHome, '.workspai', 'workspaces', 'workspai'))
+          ).toBe(false);
+        } finally {
+          await fs.remove(fakeHome);
+          await fs.remove(cwdOutsideWorkspace);
+          await fs.remove(sourceDir);
+        }
+      },
+      CLI_SPAWN_TIMEOUT_MS
+    );
 
-      await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
-      await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
-        workspace_name: 'demo-workspace',
-      });
-      await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
-      await fs.writeJson(path.join(sourceDir, 'package.json'), {
-        name: 'orders-api-injected-fail',
-        dependencies: {
-          express: '^4.19.2',
-        },
-      });
-
-      try {
-        const { stdout, exitCode } = await execa(
-          'node',
-          [
-            CLI_PATH,
-            'import',
-            sourceDir,
-            '--workspace',
-            workspaceRoot,
-            '--name',
-            'orders-api-injected-fail',
-            '--json',
-          ],
-          {
-            reject: false,
-            env: {
-              ...process.env,
-              RAPIDKIT_TEST_IMPORT_SYNC_FAIL: '1',
-            },
-          }
+    it(
+      'should roll back imported local project via dist CLI when sync fails by injected test hook',
+      async () => {
+        const workspaceRoot = await fs.mkdtemp(
+          path.join(TEST_DIR, 'workspace-import-injected-fail-')
         );
+        const sourceDir = await fs.mkdtemp(path.join(TEST_DIR, 'source-import-injected-fail-'));
 
-        expect(exitCode).toBe(1);
-        const payload = JSON.parse(stdout) as { error: string };
-        expect(payload.error).toContain(
-          'Workspace sync failed after import and the imported project was rolled back'
-        );
-        expect(payload.error).toContain(
-          'forced sync failure for command-level import rollback test'
-        );
+        await fs.ensureDir(path.join(workspaceRoot, '.workspai'));
+        await fs.writeJson(path.join(workspaceRoot, '.workspai', 'workspace.json'), {
+          workspace_name: 'demo-workspace',
+        });
+        await fs.writeFile(path.join(workspaceRoot, '.workspai-workspace'), '{}');
+        await fs.writeJson(path.join(sourceDir, 'package.json'), {
+          name: 'orders-api-injected-fail',
+          dependencies: {
+            express: '^4.19.2',
+          },
+        });
 
-        expect(await fs.pathExists(path.join(workspaceRoot, 'orders-api-injected-fail'))).toBe(
-          false
-        );
+        try {
+          const { stdout, exitCode } = await execa(
+            'node',
+            [
+              CLI_PATH,
+              'import',
+              sourceDir,
+              '--workspace',
+              workspaceRoot,
+              '--name',
+              'orders-api-injected-fail',
+              '--json',
+            ],
+            {
+              reject: false,
+              env: {
+                ...process.env,
+                RAPIDKIT_TEST_IMPORT_SYNC_FAIL: '1',
+              },
+            }
+          );
 
-        expect(
-          await fs.pathExists(path.join(workspaceRoot, '.workspai', 'imported-projects.json'))
-        ).toBe(false);
-      } finally {
-        await fs.remove(workspaceRoot);
-        await fs.remove(sourceDir);
-      }
-    }, CLI_SPAWN_TIMEOUT_MS);
+          expect(exitCode).toBe(1);
+          const payload = JSON.parse(stdout) as { error: string };
+          expect(payload.error).toContain(
+            'Workspace sync failed after import and the imported project was rolled back'
+          );
+          expect(payload.error).toContain(
+            'forced sync failure for command-level import rollback test'
+          );
+
+          expect(await fs.pathExists(path.join(workspaceRoot, 'orders-api-injected-fail'))).toBe(
+            false
+          );
+
+          expect(
+            await fs.pathExists(path.join(workspaceRoot, '.workspai', 'imported-projects.json'))
+          ).toBe(false);
+        } finally {
+          await fs.remove(workspaceRoot);
+          await fs.remove(sourceDir);
+        }
+      },
+      CLI_SPAWN_TIMEOUT_MS
+    );
 
     it('should route workspace-root init through the same full-init flow without misreading flags', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-root-'));
