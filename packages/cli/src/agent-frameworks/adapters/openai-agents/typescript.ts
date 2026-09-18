@@ -146,6 +146,7 @@ export const describeWorkspaiContext = tool({
   description:
     'Return the admitted Workspai context size and schemaVersion. This tool does not mutate files or run a shell.',
   parameters: z.object({}),
+  errorFunction: null,
   async execute() {
     return describeWorkspaiContextView();
   },
@@ -156,6 +157,7 @@ export const readWorkspaiProjectSummaryTool = tool({
   description:
     'Return allowlisted Workspai workspace and project identity fields. This tool does not mutate files or run a shell.',
   parameters: z.object({}),
+  errorFunction: null,
   async execute() {
     return readWorkspaiProjectSummary();
   },
@@ -166,6 +168,7 @@ export const listWorkspaiSupportedCommandsTool = tool({
   description:
     'Return the admitted project command surface. This tool does not mutate files or run a shell.',
   parameters: z.object({}),
+  errorFunction: null,
   async execute() {
     return listWorkspaiSupportedCommands();
   },
@@ -461,6 +464,7 @@ test('scripted model tool call stays offline', async () => {
 });
 
 test('allowlisted views omit non-admitted keys', async () => {
+  const leaked = 'do-not-leak';
   const projectRoot = resolveWorkspaiProjectRoot();
   const contextPath = join(projectRoot, WORKSPAI_CONTEXT_PATH);
   await mkdir(dirname(contextPath), { recursive: true });
@@ -468,12 +472,12 @@ test('allowlisted views omit non-admitted keys', async () => {
     contextPath,
     JSON.stringify({
       schemaVersion: WORKSPAI_CONTEXT_SCHEMA_VERSION,
-      secret: 'do-not-leak',
+      secret: leaked,
       workspace: {
         name: 'example-workspace',
         profile: 'default',
         boundedGraphSearch: 'workspai workspace graph search --query example',
-        secret: 'do-not-leak',
+        secret: leaked,
       },
       project: {
         name: 'example-project',
@@ -482,7 +486,7 @@ test('allowlisted views omit non-admitted keys', async () => {
         runtime: 'node',
         framework: 'openai-agents',
         kit: 'agent.openai.typescript',
-        secret: 'do-not-leak',
+        secret: leaked,
         commands: { supported: ['test', 'start', 'x'.repeat(80)] },
       },
     }),

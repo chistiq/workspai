@@ -170,6 +170,7 @@ describe('OpenAI Agents SDK adapters', () => {
     expect(generatedTests).toContain('test_scripted_model_tool_call_stays_offline');
     expect(generatedTests).toContain('ScriptedModel');
     expect(generatedTests).toContain('test_allowlisted_views_omit_non_admitted_keys');
+    expect(agent).toContain('@function_tool(failure_error_function=None)');
     expect(agent).toContain('describe_workspai_context');
     expect(agent).toContain('read_workspai_project_summary');
     expect(agent).toContain('list_workspai_supported_commands');
@@ -239,6 +240,15 @@ describe('OpenAI Agents SDK adapters', () => {
     expect(generatedTests).toContain('scripted model tool call stays offline');
     expect(generatedTests).toContain('ScriptedModel');
     expect(generatedTests).toContain('allowlisted views omit non-admitted keys');
+    expect(generatedTests).toContain("const leaked = 'do-not-leak'");
+    expect(generatedTests).not.toMatch(/(?:api[_-]?key|token|secret)\s*[:=]\s*["'][^"'$][^"']+/i);
+    expect(agent).toContain('errorFunction: null');
+    expect(
+      openaiAgentsTypeScriptAdapter.validate({
+        projectRoot: root,
+        instanceName: 'Release Reviewer',
+      }).status
+    ).toBe('passed');
     expect(manifest).toContain(
       `"@openai/agents": "${packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')}"`
     );

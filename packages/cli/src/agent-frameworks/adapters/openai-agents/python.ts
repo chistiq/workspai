@@ -118,19 +118,19 @@ def tracing_disabled() -> bool:
     return os.environ.get("WORKSPAI_AGENT_TRACING") != "1"
 
 
-@function_tool
+@function_tool(failure_error_function=None)
 def describe_workspai_context() -> str:
     """Return the admitted Workspai context size and schemaVersion. This tool does not mutate files or run a shell."""
     return describe_workspai_context_view()
 
 
-@function_tool
+@function_tool(failure_error_function=None)
 def read_workspai_project_summary() -> str:
     """Return allowlisted Workspai workspace and project identity fields. This tool does not mutate files or run a shell."""
     return read_project_summary_view()
 
 
-@function_tool
+@function_tool(failure_error_function=None)
 def list_workspai_supported_commands() -> str:
     """Return the admitted project command surface. This tool does not mutate files or run a shell."""
     return list_supported_commands_view()

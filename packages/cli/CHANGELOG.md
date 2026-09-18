@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Microsoft .NET context loader assigns `FileAttributes` before `GetAttributes`
+  so CS0165 does not fail the restore/build lane.
+- OpenAI Python tools pass `failure_error_function=None`, and OpenAI
+  TypeScript tools pass `errorFunction: null`, so missing context fails the
+  run instead of being swallowed into a second ScriptedModel turn.
+- OpenAI TypeScript generated tests no longer embed `secret: '...'` object
+  literals that the secret-non-persistence scan treats as credentials.
 - Listed every published agent kit in interactive Create. Admission digest
   match and workspace profile must not hide OpenAI Python or any other
   catalog kit from that picker. Create and Attach still refuse a blocked

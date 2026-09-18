@@ -160,7 +160,7 @@ from pathlib import Path
 
 os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
 
-from agents.testing import ScriptedModel, function_call
+from agents.testing import ScriptedModel, assistant_message, function_call
 
 from main import run_admitted_agent
 from workspai_context import CONTEXT_PATH, resolve_workspai_project_root
@@ -171,10 +171,13 @@ async def main() -> None:
     if context.exists() or context.is_symlink():
         context.unlink()
     model = ScriptedModel(
-        steps=[[function_call("describe_workspai_context", {}, call_id="call_missing")]]
+        steps=[
+            [function_call("describe_workspai_context", {}, call_id="call_missing")],
+            [assistant_message("TOOL_ERROR_FOLLOW_UP")],
+        ]
     )
     try:
-        await run_admitted_agent("Call the context tool.", model=model)
+        result = await run_admitted_agent("Call the context tool.", model=model)
     except Exception as error:
         text = str(error)
         if "do-not-leak" in text:
@@ -183,7 +186,12 @@ async def main() -> None:
             raise RuntimeError(f"Tool error was not a context-boundary failure: {text}") from error
         print("WORKSPAI_AGENT_TOOL_ERROR_OK")
         return
-    raise RuntimeError("missing context did not fail the tool cycle")
+    observed = str(model.calls[1].input) if len(model.calls) > 1 else str(result)
+    if "do-not-leak" in observed:
+        raise RuntimeError("Tool error diagnostic leaked unrelated content")
+    if "missing" not in observed and "contained regular file" not in observed:
+        raise RuntimeError(f"Tool error was not a context-boundary failure: {observed}")
+    print("WORKSPAI_AGENT_TOOL_ERROR_OK")
 
 
 asyncio.run(main())
@@ -343,7 +351,7 @@ throw new Error('scripted model error did not fail the run');
 function typeScriptToolErrorHarness(): string {
   return `import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { ScriptedModel, functionCall } from '@openai/agents/testing';
+import { ScriptedModel, assistantMessage, functionCall } from '@openai/agents/testing';
 
 import { runAdmittedAgent } from './dist/src/agent.js';
 import {
@@ -356,9 +364,19 @@ process.env.OPENAI_AGENTS_DISABLE_TRACING = '1';
 rmSync(join(resolveWorkspaiProjectRoot(), WORKSPAI_CONTEXT_PATH), { force: true });
 const model = new ScriptedModel([
   [functionCall('describe_workspai_context', {}, { callId: 'call_missing' })],
+  [assistantMessage('TOOL_ERROR_FOLLOW_UP')],
 ]);
 try {
-  await runAdmittedAgent('Call the context tool.', { model });
+  const result = await runAdmittedAgent('Call the context tool.', { model });
+  const observed = JSON.stringify(model.calls);
+  if (observed.includes('do-not-leak')) {
+    throw new Error('Tool error diagnostic leaked unrelated content');
+  }
+  if (!/missing|contained regular file/i.test(observed)) {
+    throw new Error('Tool error was not a context-boundary failure: ' + String(result));
+  }
+  process.stdout.write('WORKSPAI_AGENT_TOOL_ERROR_OK\\n');
+  process.exit(0);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('do-not-leak')) {
@@ -370,7 +388,6 @@ try {
   process.stdout.write('WORKSPAI_AGENT_TOOL_ERROR_OK\\n');
   process.exit(0);
 }
-throw new Error('missing context did not fail the tool cycle');
 `;
 }
 

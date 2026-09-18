@@ -223,7 +223,7 @@ public static class WorkspaiContext
             }
             var next = Path.Combine(current, segment);
             var last = index == segments.Length - 1;
-            FileAttributes attributes;
+            FileAttributes attributes = default;
             try
             {
                 attributes = File.GetAttributes(next);
@@ -257,7 +257,7 @@ public static class WorkspaiContext
                 {
                     ThrowUnsafe();
                 }
-                FileAttributes targetAttributes;
+                FileAttributes targetAttributes = default;
                 try
                 {
                     targetAttributes = File.GetAttributes(targetFull);

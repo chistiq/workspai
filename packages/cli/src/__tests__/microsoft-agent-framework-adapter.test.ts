@@ -177,6 +177,8 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(entrypoint).not.toContain('<workspai-context>');
     expect(entrypoint).not.toContain('GetCurrentDirectory');
     expect(entrypoint).not.toContain('gpt-4o');
+    expect(contextLoader).toContain('FileAttributes attributes = default');
+    expect(contextLoader).toContain('FileAttributes targetAttributes = default');
     expect(contextLoader).toContain('project-context-agent.json');
     expect(contextLoader).toContain('const long ContextLimit = 131_072');
     expect(contextLoader).toContain('ResolveProjectRoot');
