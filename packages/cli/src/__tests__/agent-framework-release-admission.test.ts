@@ -10,12 +10,20 @@ import {
 describe('agent framework release admission', () => {
   it('admits only the exact reviewed built-in manifests and complete platform matrices', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
-    expect(admissions).toHaveLength(BUILTIN_AGENT_FRAMEWORK_ADAPTERS.length);
+    const admittedIds = new Set(admissions.map((admission) => admission.id));
+    expect(admissions).toHaveLength(4);
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
-      expect(resolution).toMatchObject({ status: 'admitted', blockers: [] });
-      expect(resolution.admission?.platforms).toEqual(['linux', 'darwin', 'win32']);
+      if (admittedIds.has(adapter.manifest.adapter.id)) {
+        expect(resolution).toMatchObject({ status: 'admitted', blockers: [] });
+        expect(resolution.admission?.platforms).toEqual(['linux', 'darwin', 'win32']);
+      } else {
+        expect(resolution.status).toBe('blocked');
+        expect(resolution.blockers).toEqual(
+          expect.arrayContaining([expect.stringContaining('No reviewed release admission exists')])
+        );
+      }
     }
   });
 
@@ -54,5 +62,36 @@ describe('agent framework release admission', () => {
         adapterId
       )
     ).not.toHaveProperty('releaseAdapter');
+  });
+
+  it('admits reviewed OpenAI adapters while keeping default registries blocked', () => {
+    const registry = createBuiltinAgentFrameworkRegistry(
+      {},
+      { trustReviewedReleaseAdmissions: true }
+    );
+    const adapters = registry.list().map((entry) => ({
+      id: entry.manifest.adapter.id,
+      status: registry.resolveAdapter(entry.manifest.adapter.id).status,
+      stability: entry.manifest.adapter.stability,
+    }));
+    expect(
+      adapters
+        .filter((adapter) => adapter.status === 'admitted')
+        .map((adapter) => adapter.id)
+        .sort()
+    ).toEqual([
+      'microsoft-agent-framework-dotnet',
+      'microsoft-agent-framework-python',
+      'openai-agents-python',
+      'openai-agents-typescript',
+    ]);
+    expect(
+      adapters
+        .filter((adapter) => adapter.id.startsWith('openai-agents-'))
+        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'preview')
+    ).toBe(true);
+    expect(
+      createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status
+    ).toBe('blocked');
   });
 });

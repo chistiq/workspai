@@ -12,12 +12,18 @@ existing project ---/            |
                                   -> Workspai Context, Goal, PCC, and Verify
 ```
 
-Microsoft Agent Framework is the first concrete implementation of this
+Microsoft Agent Framework is the first release-admitted implementation of this
 foundation. Its Python and .NET adapters are intentionally separate because
 their package graphs, runtime requirements, entrypoints, and verification
 commands differ. Both are available for governed attachment after their exact
 manifest digests pass the required Linux, macOS, and Windows conformance lanes
 and are bound into the reviewed release-admission inventory.
+
+OpenAI Agents SDK adapters for Python and TypeScript are implemented in the
+same registry and lifecycle. They are not listed as Create/Attach kits until
+their complete cross-platform matrix is reviewed into that inventory. Public
+commands fail closed rather than silently substituting Microsoft, OpenAI, or
+another runtime.
 
 ## Published contracts
 
@@ -109,16 +115,38 @@ Generated starter files use an isolated `agents/<instance>` root and keep
 adapter state under `.workspai/agent-frameworks/<adapter>/<instance>.json`.
 That instance contains the only runtime dependency manifest; the project root
 does not receive an empty Python or .NET manifest that could be mistaken for a
-second executable unit. Workspace Model reports these projects as `agent`,
+second executable unit. Python and .NET starters resolve bounded context from
+the directory that owns `agents/<instance>/`. They do not use process cwd.
+`workspace run start` executes from the agent package directory and still
+finds `.workspai/reports/project-context-agent.json` at the project root.
+Loaders share the OpenAI containment contract: canonical path walk, regular-file
+open, 128 KiB cap, UTF-8 JSON, and `schemaVersion: project-context-agent.v1`.
+The Python starter is pip-editable (`[build-system]` + setuptools modules) and
+uses the official Foundry hello-world `Agent(client=FoundryChatClient(...))`
+pattern with three read-only documented tools: `describe_workspai_context`,
+`read_workspai_project_summary`, and `list_workspai_supported_commands`. The
+.NET starter uses `AIProjectClient.AsAIAgent` plus `AIFunctionFactory.Create`,
+enables `RestorePackagesWithLockFile`, and does not emit invented NuGet lock
+hashes. Neither starter pastes admitted JSON into instructions; live
+entrypoints stream stdout and accept a prompt from argv or stdin. Neither
+starter hardcodes a Foundry model name; `FOUNDRY_MODEL` is
+required. `DefaultAzureCredential` remains the local development convenience
+Microsoft documents; generated READMEs tell production hosts to prefer
+`ManagedIdentityCredential`. Adapters remain `preview`. Unsupported Microsoft
+primitives (durable workflows, MCP, HITL loops, hosted tools) stay out of the
+generated first-version scaffold.
+Workspace Model reports these projects as `agent`,
 retains `microsoft-agent-framework` as their framework identity, and reports
 only lifecycle stages backed by concrete manifests, entrypoints, tests, or an
 owned project runner.
 Each starter also includes credentialless tests for the bounded context
-boundary and an environment-name example with no secret values. Python uses
-the host platform's normal Python 3 launcher and remains dependency-free for
-these tests; .NET uses a separately pinned test project. The conformance matrix
-executes these tests in addition to compiling and exercising the deterministic
-framework lifecycle.
+boundary, allowlisted views, and Azure-shaped redaction, plus an
+environment-name example with no secret values. Python context
+tests isolate the operational context file and restore it afterward; they stay
+dependency-free unless `agent-framework` is installed for the optional
+LocalChatClient loop. .NET uses a separately pinned test project. The conformance
+matrix executes these tests in addition to compiling and exercising the
+deterministic framework lifecycle.
 Existing user-authored files are blockers, never overwrite targets. A managed
 comment alone does not prove ownership: refresh also requires the previous
 Workspai ownership receipt, which is bound to the exact adapter-manifest digest;
@@ -127,12 +155,88 @@ Provider credentials remain environment references. The first provider profile u
 Microsoft Foundry, but provider identity is not part of framework identity and
 additional profiles must preserve the same security boundary.
 
-A path-filtered six-lane adapter matrix compiles the generated Python and .NET
-projects on Linux, macOS, and Windows. Every lane records all 18 mandatory
+## OpenAI Agents SDK baseline
+
+The built-in OpenAI adapters pin independently verified SDK baselines. They do
+not reuse Microsoft detection, kits, or model-provider defaults.
+
+| Adapter                    | Tested framework | Runtime         | Authored detection                 |
+| -------------------------- | ---------------- | --------------- | ---------------------------------- |
+| `openai-agents-python`     | `0.22.2`         | Python `>=3.10` | exact PyPI package `openai-agents` |
+| `openai-agents-typescript` | `0.18.0`         | Node.js `>=22`  | exact npm package `@openai/agents` |
+
+The TypeScript starter also pins peer `zod` `4.6.5`, TypeScript `5.9.3`, and
+`@types/node` `22.20.3`. The `openai` PyPI or npm package alone is not this
+framework. Generated markers under `.workspai/agent-frameworks/` cannot select
+it.
+
+Generated loaders resolve the Workspai project as the directory that owns
+`agents/<instance>/`. They do not use process cwd, unbounded ancestor search,
+or a copied context file inside the agent package. Canonical containment,
+a regular-file open (`O_NOFOLLOW` when the platform provides it), the 128 KiB
+cap, UTF-8 JSON, and `schemaVersion: project-context-agent.v1` are enforced in
+the starter. Generation, freshness, and integrity remain host-owned agent-sync
+work. Internal symlinks, including Windows reparse points treated as links, are
+allowed only when every resolved hop stays inside the project root. Diagnostics
+do not include file contents.
+
+The loader walk is not an atomic open. Between `lstat` of one hop and `open` of
+the next, a local actor who can replace a path component may still race the
+walk. The bound we claim, and only that bound, is: after a successful open with
+`O_NOFOLLOW` when the kernel provides it, that file descriptor is `fstat`'d and
+at most 128 KiB is read from that descriptor. This is not a proof of complete
+TOCTOU immunity, of Windows junction behavior on every host, or of
+enterprise-grade isolation.
+
+Claimed capabilities are conservative and independently evidenced:
+
+- native: `single-agent`, `typed-tools`, `local-execution`
+- conditional: `telemetry` (defaults off; `WORKSPAI_AGENT_TRACING=1` opts in;
+  `OPENAI_AGENTS_DISABLE_TRACING=1|true` keeps tracing off even if the opt-in
+  is set), `provider-neutral-models` (starter only reads `OPENAI_MODEL` /
+  `OPENAI_DEFAULT_MODEL`)
+- unsupported in this version: handoffs, MCP, sessions/resume, voice, sandbox,
+  hosted tools, and human-approval loops
+
+Python cancellation uses `Runner.max_turns` and `ModelSettings.timeout` from
+`openai-agents` `0.22.2`. `ModelSettings.timeout` is a per-model-request
+timeout applied only on the live model path. Injected `ScriptedModel` runs omit
+it because that setting hung the official test double on Python 3.13.
+TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
+`@openai/agents` `0.18.0`. Those SDK controls are not a Workspai-owned timeout
+service. Workspai still owns mutation admission and verification; a successful
+model run is not verified evidence.
+
+Generated starters do not paste `project-context-agent.json` into model
+instructions. They expose three read-only tools over allowlisted views:
+context size and `schemaVersion`, workspace/project identity (including
+`boundedGraphSearch` as a pointer, not a shell), and the admitted command
+surface. Live Python uses `Runner.run_streamed`; live TypeScript streams
+`Runner.run({ stream: true })`. Credentialless ScriptedModel tests stay on
+the non-stream `run` path. A prompt is taken from argv or stdin.
+
+Generated OpenAI context tests copy the operational
+`.workspai/reports/project-context-agent.json` aside for the suite and restore
+it afterward. A green test run is not allowed to delete or replace that host
+artifact.
+
+Create lists every published agent kit under **AI Agent**, including
+`agent.openai.python` and `agent.openai.typescript`. That picker is the
+published catalog: it is not filtered by release-admission digest match or
+workspace profile. A later adapter-manifest change must not hide a kit.
+Create and Attach still refuse a kit whose adapter is not release-admitted;
+visibility in the picker is not permission to write a blocked adapter.
+Attach still requires `--framework openai-agents` when the
+runtime is shared. Adapters remain `preview`; handoffs, MCP, sessions, voice,
+sandbox, and approval loops stay unsupported. Changing `preview` to `stable`
+would change the manifest digest and require a new matrix.
+
+A path-filtered twelve-lane adapter matrix compiles the generated Microsoft
+Python/.NET and OpenAI Python/TypeScript projects on Linux, macOS, and Windows. Every lane records all 18 mandatory
 checks, the exact runtime and framework baseline, a digest of the adapter
 manifest, and one bounded evidence file per check. Reports are retained as CI
 artifacts for review. A final job validates every evidence path and admits the
-matrix only when all three operating-system lanes pass for both adapters.
+matrix only when all three operating-system lanes pass for every built-in adapter.
 Python conformance is pinned to 3.10.11, the final Python 3.10 release with
 cross-platform binary installers; this provides one reproducible minimum-runtime
 baseline while the adapter continues to declare Python `>=3.10` support.
@@ -169,6 +273,11 @@ npx workspai agent framework plan \
   --runtime python \
   --name support-agent
 ```
+
+When more than one admitted framework shares a runtime, pass `--framework`
+explicitly. Workspai does not guess or fall back. `--runtime python` without
+`--framework` now requires an explicit choice because Microsoft Agent Framework
+and OpenAI Agents SDK are both admitted.
 
 The interactive attach command displays the same plan and asks before granting
 its filesystem effect. Automation must opt in with `--yes` and records the
@@ -207,8 +316,9 @@ npx workspai create project agent.microsoft.dotnet operations-agent
 Create writes a minimal runtime identity, registers the project, seals a
 Model/Graph baseline so the adapter can plan, applies the adapter-owned scaffold
 inside that Change, then re-observes Model, Graph, and project grounding against
-the nested runtime. The interactive wizard exposes these kits under the **AI
-Agent** category only because they are release-admitted. A failed scaffold
+the nested runtime. The interactive wizard lists every published kit under the
+**AI Agent** category. Scaffolding still requires the selected adapter to be
+release-admitted. A failed scaffold
 rolls back the new directory and workspace registration. Detection itself
 remains read-only and never authorizes writes.
 
@@ -274,10 +384,12 @@ and unadvertised runtimes fail closed.
 
 The generic boundary was hardened against two deliberately different
 integration shapes: a filesystem-first Node.js framework and the
-multi-language Microsoft Agent Framework. Only the Microsoft adapters are
-implemented. They are selectable for Create and Attach only while their exact
-manifest digest, framework baseline, runtime, and platform list remain in the
-reviewed release-admission inventory.
+multi-language Microsoft Agent Framework. OpenAI Agents SDK Python and
+TypeScript adapters now share that same create, attach, detection, ownership,
+and verification host. They are selectable for Create and Attach only after
+their exact manifest digest, framework baseline, runtime, and platform list
+enter the reviewed release-admission inventory. Microsoft adapters remain
+selectable while their current inventory entries stay valid.
 
 ## Implementation sequence
 
@@ -286,13 +398,13 @@ reviewed release-admission inventory.
 2. Use the framework-neutral registry, detector, and bounded manifest loader.
 3. Review the Microsoft Python and .NET digest-bound evidence produced by the
    full conformance matrix.
-4. Keep automated upstream discovery separate from release authority: report
+4. Review the OpenAI Python and TypeScript digest-bound evidence produced by
+   the same matrix; do not treat local Linux success as multi-OS admission.
+5. Keep automated upstream discovery separate from release authority: report
    newer registry versions, then update pins only through a reviewed change.
    Re-run the full matrix before treating a new pin as independently proven.
-5. Admit another framework only after its create and attach paths share these
-   ownership, rollback, and verification guarantees.
 
 AutoGen is not planned as a new-project target because Microsoft Agent
-Framework is its supported successor path. Eve, LangGraph, and OpenAI Agents
-SDK are not advertised; each requires its own adapter, tested baseline, and
-conformance evidence.
+Framework is its supported successor path. Eve and LangGraph are not
+advertised; each requires its own adapter, tested baseline, and conformance
+evidence.

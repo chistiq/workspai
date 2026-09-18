@@ -65,6 +65,13 @@ function registryVersions(payload: unknown, dependency: AgentFrameworkPackageBas
       })
       .map(([version]) => version);
   }
+  if (dependency.ecosystem === 'npm') {
+    const versions = (payload as { versions?: unknown }).versions;
+    if (!versions || typeof versions !== 'object' || Array.isArray(versions)) {
+      throw new Error(`npm versions are unavailable for ${dependency.name}.`);
+    }
+    return Object.keys(versions as Record<string, unknown>);
+  }
   const versions = (payload as { versions?: unknown }).versions;
   if (!Array.isArray(versions) || !versions.every((version) => typeof version === 'string')) {
     throw new Error(`NuGet versions are unavailable for ${dependency.name}.`);

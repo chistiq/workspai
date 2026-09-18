@@ -11,7 +11,7 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 | Windows bridge E2E       | `.github/workflows/windows-bridge-e2e.yml`           | Native Windows bridge and lifecycle checks                                |
 | E2E smoke                | `.github/workflows/e2e-smoke.yml`                    | Focused bridge regression smoke                                           |
 | Official generator smoke | `.github/workflows/frontend-generator-smoke.yml`     | Contract-driven official-generator drift gate                             |
-| Agent Framework matrix   | `.github/workflows/agent-framework-conformance.yml`  | Six-lane Python/.NET adapter compile, credentialless lifecycle, admission |
+| Agent Framework matrix   | `.github/workflows/agent-framework-conformance.yml`  | Twelve-lane Microsoft Python/.NET and OpenAI Python/TypeScript compile, credentialless lifecycle, admission |
 | Agent Framework discovery| `.github/workflows/agent-framework-version-discovery.yml` | Weekly PyPI/NuGet candidate report; no commit, PR, or contract rewrite |
 | Security                 | `.github/workflows/security.yml`                     | Path-aware scanning plus the always-resolved `Security Gate`              |
 | Manual npm release       | `.github/workflows/release-npm-manual.yml`           | Maintainer-only release gate and publish workflow                         |
@@ -22,13 +22,13 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 
 ## Agent Framework workflows
 
-Weekly `agent-framework-version-discovery` checks PyPI and NuGet, then stops at
+Weekly `agent-framework-version-discovery` checks PyPI, NuGet, and npm, then stops at
 a report and artifact. It does not commit, open a pull request, regenerate
 Create contracts, or write `release-admissions.v1.json`. A human pin update
 still has to pass `agent-framework-conformance` on Linux, macOS, and Windows
-for Python and .NET. That matrix compiles the nested `agents/primary` runtime,
+for every built-in adapter runtime. That matrix compiles the nested `agents/primary` runtime,
 runs credentialless context-boundary tests, and records digest-bound evidence.
-It never sets Foundry credentials. Only a reviewed admission on the protected
+It never sets Foundry or OpenAI credentials. Only a reviewed admission on the protected
 version-update branch can promote a green candidate.
 
 The PR template at `.github/agent-framework-version-update.md` is for that

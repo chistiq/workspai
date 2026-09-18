@@ -1,7 +1,8 @@
 import versionBaselineDocument from './version-baselines.v1.json';
 
 export type AgentFrameworkReleaseChannel = 'stable' | 'preview';
-export type AgentFrameworkPackageEcosystem = 'pypi' | 'nuget';
+export type AgentFrameworkPackageEcosystem = 'pypi' | 'nuget' | 'npm';
+export type AgentFrameworkBaselineRuntime = 'python' | 'dotnet' | 'node';
 
 export const AGENT_FRAMEWORK_VERSION_BASELINES_SCHEMA_VERSION =
   'workspai.agent-framework-version-baselines.v1' as const;
@@ -18,7 +19,7 @@ export type AgentFrameworkPackageBaseline = {
 export type AgentFrameworkVersionBaseline = {
   adapterId: string;
   frameworkId: string;
-  runtime: 'python' | 'dotnet';
+  runtime: AgentFrameworkBaselineRuntime;
   policy: 'latest-admitted';
   releaseChannel: AgentFrameworkReleaseChannel;
   frameworkVersion: string;
@@ -55,7 +56,9 @@ function assertBaselineDocument(
       !baseline ||
       typeof baseline.adapterId !== 'string' ||
       typeof baseline.frameworkId !== 'string' ||
-      (baseline.runtime !== 'python' && baseline.runtime !== 'dotnet') ||
+      (baseline.runtime !== 'python' &&
+        baseline.runtime !== 'dotnet' &&
+        baseline.runtime !== 'node') ||
       baseline.policy !== 'latest-admitted' ||
       (baseline.releaseChannel !== 'stable' && baseline.releaseChannel !== 'preview') ||
       !VERSION_PATTERN.test(baseline.frameworkVersion) ||
@@ -75,7 +78,9 @@ function assertBaselineDocument(
     for (const dependency of baseline.packages) {
       if (
         !dependency ||
-        (dependency.ecosystem !== 'pypi' && dependency.ecosystem !== 'nuget') ||
+        (dependency.ecosystem !== 'pypi' &&
+          dependency.ecosystem !== 'nuget' &&
+          dependency.ecosystem !== 'npm') ||
         typeof dependency.name !== 'string' ||
         !VERSION_PATTERN.test(dependency.version) ||
         (dependency.channel !== 'stable' && dependency.channel !== 'preview') ||
@@ -131,6 +136,10 @@ export const MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE = requiredBaseline(
 export const MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE = requiredBaseline(
   'microsoft-agent-framework-dotnet'
 );
+
+export const OPENAI_AGENTS_PYTHON_BASELINE = requiredBaseline('openai-agents-python');
+
+export const OPENAI_AGENTS_TYPESCRIPT_BASELINE = requiredBaseline('openai-agents-typescript');
 
 export function packageVersion(
   baseline: AgentFrameworkVersionBaseline,

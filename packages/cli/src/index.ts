@@ -50,8 +50,10 @@ import { registerChangeCommands } from './commands/change.js';
 import { registerAgentFrameworkCommands } from './commands/agent-framework.js';
 import {
   applyPreparedAgentFrameworkAttachment,
+  createBuiltinAgentFrameworkRegistry,
   initializeAgentFrameworkProjectRoot,
   isAgentFrameworkProjectKit,
+  lookupAgentFrameworkProjectKit,
   prepareAgentFrameworkAttachment,
   resolveAgentFrameworkProjectKit,
 } from './agent-frameworks/index.js';
@@ -398,6 +400,9 @@ async function enforceWorkspaceProfileForRequestedKit(kitName: string): Promise<
   const workspacePath = findWorkspaceUp(process.cwd());
   const normalizedKitName = kitName.trim().toLowerCase();
   if (!workspacePath || !normalizedKitName) {
+    return true;
+  }
+  if (isAgentFrameworkProjectKit(normalizedKitName)) {
     return true;
   }
 
@@ -1208,8 +1213,19 @@ async function finalizeCreatedProjectWorkspace(
 
 async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
   if (args[0] !== 'create' || args[1] !== 'project') return 1;
+  const requestedKit = lookupAgentFrameworkProjectKit(args[2]);
+  if (!requestedKit) return 1;
   const kit = resolveAgentFrameworkProjectKit(args[2]);
-  if (!kit) return 1;
+  if (!kit) {
+    const admission = createBuiltinAgentFrameworkRegistry(
+      {},
+      { trustReviewedReleaseAdmissions: true }
+    ).resolveAdapter(requestedKit.adapterId);
+    process.stderr.write(
+      `Agent framework kit ${requestedKit.id} is not release-admitted. ${admission.blockers.join(' ')}\n`
+    );
+    return 1;
+  }
   const projectName = args[3];
   if (!projectName) {
     process.stderr.write(
@@ -1258,6 +1274,7 @@ async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
           workspacePath,
           project: projectName,
           runtime: kit.runtime,
+          framework: kit.frameworkId,
           instanceName,
           mode: 'scaffold',
           intent: `Create ${projectName} as a governed ${kit.label} project`,

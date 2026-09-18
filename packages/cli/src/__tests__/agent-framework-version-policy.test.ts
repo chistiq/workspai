@@ -6,6 +6,8 @@ import {
   isStableRegistryVersion,
   MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
   MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
+  OPENAI_AGENTS_PYTHON_BASELINE,
+  OPENAI_AGENTS_TYPESCRIPT_BASELINE,
   packageVersion,
   selectLatestRegistryVersion,
   type AgentFrameworkVersionBaseline,
@@ -30,12 +32,12 @@ function pythonDiscoveryFixture(): AgentFrameworkVersionBaseline {
 
 describe('agent framework version policy', () => {
   it('keeps every built-in on an explicit latest-admitted, nonautomatic policy', () => {
-    expect(BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES).toHaveLength(2);
+    expect(BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES).toHaveLength(4);
     for (const baseline of BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES) {
       expect(baseline.policy).toBe('latest-admitted');
       expect(baseline.automaticUpgrade).toBe(false);
       expect(baseline.admissionRequired).toBe(true);
-      expect(baseline.packages.length).toBeGreaterThan(1);
+      expect(baseline.packages.length).toBeGreaterThan(0);
       expect(new Set(baseline.packages.map((dependency) => dependency.name)).size).toBe(
         baseline.packages.length
       );
@@ -52,6 +54,15 @@ describe('agent framework version policy', () => {
     expect(
       packageVersion(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, 'Microsoft.Agents.AI.Foundry')
     ).toContain('-preview.');
+    expect(formatAgentFrameworkVersionPolicy(OPENAI_AGENTS_PYTHON_BASELINE)).toBe(
+      `${OPENAI_AGENTS_PYTHON_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+    );
+    expect(formatAgentFrameworkVersionPolicy(OPENAI_AGENTS_TYPESCRIPT_BASELINE)).toBe(
+      `${OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+    );
+    expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe('0.22.2');
+    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')).toBe('0.18.0');
+    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, 'zod')).toBe('4.6.5');
   });
 
   it('never promotes prereleases into a stable discovery lane', () => {
@@ -117,6 +128,45 @@ describe('agent framework version policy', () => {
           name: 'agent-framework-core',
           admittedVersion: '1.17.0',
           latestRegistryVersion: '1.18.0',
+          status: 'update-available',
+        }),
+      ])
+    );
+  });
+
+  it('discovers npm registry versions without treating prereleases as stable', async () => {
+    const baseline = structuredClone(OPENAI_AGENTS_TYPESCRIPT_BASELINE);
+    const report = await discoverAgentFrameworkVersions({
+      baselines: [baseline],
+      generatedAt: '2026-09-17T00:00:00.000Z',
+      fetcher: async (url) => ({
+        ok: true,
+        status: 200,
+        async json() {
+          const admitted = baseline.packages.find((dependency) => dependency.registryUrl === url);
+          if (!admitted) throw new Error(`Unexpected registry URL: ${url}`);
+          return {
+            versions: {
+              [admitted.version]: {},
+              ...(admitted.name === '@openai/agents' ? { '0.19.0': {} } : {}),
+              '99.0.0-rc.1': {},
+            },
+          };
+        },
+      }),
+    });
+
+    expect(report.summary).toMatchObject({ candidateAvailable: 1, blocked: 0 });
+    expect(report.adapters[0]).toMatchObject({
+      adapterId: 'openai-agents-typescript',
+      status: 'candidate-available',
+    });
+    expect(report.adapters[0].packages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: '@openai/agents',
+          admittedVersion: '0.18.0',
+          latestRegistryVersion: '0.19.0',
           status: 'update-available',
         }),
       ])

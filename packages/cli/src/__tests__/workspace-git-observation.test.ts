@@ -5,7 +5,12 @@ import { execFileSync } from 'child_process';
 import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { buildCleanGitEnv } from '../utils/git-worktree.js';
 import { collectGitWorkingTreeObservation } from '../workspace-git-observation.js';
+
+function git(cwd: string, args: string[]): void {
+  execFileSync('git', args, { cwd, env: buildCleanGitEnv(), stdio: 'ignore' });
+}
 
 describe('workspace git observation', () => {
   const tempDirs: string[] = [];
@@ -26,10 +31,42 @@ describe('workspace git observation', () => {
     expect(observation.changedFiles).toEqual([]);
   });
 
+  it('does not inherit an outer Git worktree from the test runner', () => {
+    expect(process.env.GIT_DIR).toBeUndefined();
+    expect(process.env.GIT_WORK_TREE).toBeUndefined();
+    expect(process.env.GIT_INDEX_FILE).toBeUndefined();
+  });
+
+  it('strips host Git worktree variables from fixture process environments', async () => {
+    const { buildCleanGitEnv: buildScriptGitEnv } = await import('../../scripts/clean-git-env.mjs');
+    const cleaned = buildScriptGitEnv({
+      GIT_DIR: '/tmp/host.git',
+      GIT_WORK_TREE: '/tmp/host',
+      GIT_INDEX_FILE: '/tmp/host.index',
+      PATH: '/usr/bin',
+    });
+    expect(cleaned.GIT_DIR).toBeUndefined();
+    expect(cleaned.GIT_WORK_TREE).toBeUndefined();
+    expect(cleaned.GIT_INDEX_FILE).toBeUndefined();
+    expect(cleaned.PATH).toBe('/usr/bin');
+  });
+
+  it('keeps the adversarial workspace-intelligence fixture off the host worktree', async () => {
+    const source = await fsExtra.readFile(
+      path.resolve(__dirname, '../../scripts/check-workspace-intelligence-adversarial.mjs'),
+      'utf8'
+    );
+    expect(source).toContain("from './clean-git-env.mjs'");
+    expect(source).toContain('env: isolatedEnvironment');
+    expect(source).not.toContain(
+      "spawnSync('git', args, { cwd: workspacePath, encoding: 'utf8' })"
+    );
+  });
+
   it('excludes generated reports, caches, and grounding from freshness observation', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-git-generated-'));
     tempDirs.push(workspacePath);
-    execFileSync('git', ['init'], { cwd: workspacePath, stdio: 'ignore' });
+    git(workspacePath, ['init']);
     await fsExtra.outputFile(path.join(workspacePath, 'src', 'app.ts'), 'export {};\n');
     await fsExtra.outputJson(
       path.join(workspacePath, '.workspai', 'reports', 'workspace-impact-last-run.json'),
@@ -43,25 +80,18 @@ describe('workspace git observation', () => {
       path.join(workspacePath, '.workspai', 'AGENT-GROUNDING.md'),
       '# Generated workspace grounding\n'
     );
-    execFileSync('git', ['add', '.workspai/AGENT-GROUNDING.md'], {
-      cwd: workspacePath,
-      stdio: 'ignore',
-    });
-    execFileSync(
-      'git',
-      [
-        '-c',
-        'commit.gpgSign=false',
-        '-c',
-        'user.name=Workspai Test',
-        '-c',
-        'user.email=test@workspai.local',
-        'commit',
-        '-m',
-        'test baseline',
-      ],
-      { cwd: workspacePath, stdio: 'ignore' }
-    );
+    git(workspacePath, ['add', '.workspai/AGENT-GROUNDING.md']);
+    git(workspacePath, [
+      '-c',
+      'commit.gpgSign=false',
+      '-c',
+      'user.name=Workspai Test',
+      '-c',
+      'user.email=test@workspai.local',
+      'commit',
+      '-m',
+      'test baseline',
+    ]);
     await fsExtra.outputFile(
       path.join(workspacePath, '.workspai', 'AGENT-GROUNDING.md'),
       '# Refreshed generated workspace grounding\n'

@@ -6,11 +6,17 @@ import {
   microsoftAgentFrameworkDotnetAdapter,
   microsoftAgentFrameworkPythonAdapter,
 } from './adapters/microsoft-agent-framework/index.js';
+import {
+  openaiAgentsPythonAdapter,
+  openaiAgentsTypeScriptAdapter,
+} from './adapters/openai-agents/index.js';
 import { AgentFrameworkRegistry } from './registry.js';
 
 export const BUILTIN_AGENT_FRAMEWORK_ADAPTERS: readonly AgentFrameworkAdapter[] = Object.freeze([
   microsoftAgentFrameworkPythonAdapter,
   microsoftAgentFrameworkDotnetAdapter,
+  openaiAgentsPythonAdapter,
+  openaiAgentsTypeScriptAdapter,
 ]);
 
 export function digestBuiltinAgentFrameworkManifest(adapter: AgentFrameworkAdapter): string {

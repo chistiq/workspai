@@ -681,7 +681,9 @@
       "dotnet.webapi.clean",
       "rust.axum",
       "agent.microsoft.python",
-      "agent.microsoft.dotnet"
+      "agent.microsoft.dotnet",
+      "agent.openai.python",
+      "agent.openai.typescript"
     ],
     "officialCreate": [
       "frontend.nextjs",

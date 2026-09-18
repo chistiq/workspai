@@ -15,10 +15,24 @@ import type { WorkspaceModel } from '../workspace-model.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from '../workspace-knowledge-graph-snapshot.js';
 import { computeWorkspaceKnowledgeGraphInputFingerprint } from '../workspace-knowledge-graph.js';
+import { buildCleanGitEnv } from '../utils/git-worktree.js';
 
 describe('workspace knowledge graph snapshot', () => {
   const roots: string[] = [];
   const execFileAsync = promisify(execFile);
+
+  async function git(cwd: string, args: string[]): Promise<void> {
+    await execFileAsync('git', args, { cwd, env: buildCleanGitEnv() });
+  }
+
+  const gitIdentity = [
+    '-c',
+    'user.email=test@workspai.local',
+    '-c',
+    'user.name=Workspai Test',
+    '-c',
+    'commit.gpgsign=false',
+  ];
 
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
@@ -90,22 +104,14 @@ describe('workspace knowledge graph snapshot', () => {
     const sourceRoot = options.nestedGitProject ? path.join(root, 'app') : root;
     await fsExtra.outputFile(path.join(sourceRoot, 'src', 'main.rs'), 'fn main() {}\n');
     if (options.git) {
-      await execFileAsync('git', ['init', '--quiet'], { cwd: root });
-      await execFileAsync('git', ['config', 'user.email', 'test@workspai.local'], { cwd: root });
-      await execFileAsync('git', ['config', 'user.name', 'Workspai Test'], { cwd: root });
-      await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], { cwd: root });
-      await execFileAsync('git', ['add', 'src/main.rs'], { cwd: root });
-      await execFileAsync('git', ['commit', '--quiet', '-m', 'fixture'], { cwd: root });
+      await git(root, ['init', '--quiet']);
+      await git(root, ['add', 'src/main.rs']);
+      await git(root, [...gitIdentity, 'commit', '--quiet', '-m', 'fixture']);
     }
     if (options.nestedGitProject) {
-      await execFileAsync('git', ['init', '--quiet'], { cwd: sourceRoot });
-      await execFileAsync('git', ['config', 'user.email', 'test@workspai.local'], {
-        cwd: sourceRoot,
-      });
-      await execFileAsync('git', ['config', 'user.name', 'Workspai Test'], { cwd: sourceRoot });
-      await execFileAsync('git', ['config', 'commit.gpgsign', 'false'], { cwd: sourceRoot });
-      await execFileAsync('git', ['add', 'src/main.rs'], { cwd: sourceRoot });
-      await execFileAsync('git', ['commit', '--quiet', '-m', 'fixture'], { cwd: sourceRoot });
+      await git(sourceRoot, ['init', '--quiet']);
+      await git(sourceRoot, ['add', 'src/main.rs']);
+      await git(sourceRoot, [...gitIdentity, 'commit', '--quiet', '-m', 'fixture']);
     }
     graph.source.inputs = await computeWorkspaceKnowledgeGraphInputFingerprint({
       workspacePath: root,
@@ -183,8 +189,8 @@ describe('workspace knowledge graph snapshot', () => {
     const { root } = await fixture({ git: true });
     const managedReport = path.join(root, '.workspai', 'reports', 'generated.json');
     await fsExtra.outputJson(managedReport, { generatedAt: '2026-01-01T00:00:00.000Z' });
-    await execFileAsync('git', ['add', '.workspai/reports/generated.json'], { cwd: root });
-    await execFileAsync('git', ['commit', '--quiet', '-m', 'track managed output'], { cwd: root });
+    await git(root, ['add', '.workspai/reports/generated.json']);
+    await git(root, [...gitIdentity, 'commit', '--quiet', '-m', 'track managed output']);
     await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toMatchObject({
       status: 'hit',
     });

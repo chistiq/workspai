@@ -178,6 +178,51 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     );
   }, 90_000);
 
+  it('creates governed OpenAI agent projects after reviewed release admission', async () => {
+    await create.createProject('agent-workspace', {
+      parentDirectory: tmpDir,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+      yes: true,
+    });
+    const workspacePath = path.join(tmpDir, 'agent-workspace');
+    process.chdir(workspacePath);
+
+    const pythonCode = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'agent.openai.python',
+      'openai-python-agent',
+      '--skip-git',
+      '--yes',
+    ]);
+    const typescriptCode = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'agent.openai.typescript',
+      'openai-typescript-agent',
+      '--skip-git',
+      '--yes',
+    ]);
+
+    expect(pythonCode).toBe(0);
+    expect(typescriptCode).toBe(0);
+    expect(
+      await fsExtra.pathExists(
+        path.join(workspacePath, 'openai-python-agent', 'agents', 'primary', 'main.py')
+      )
+    ).toBe(true);
+    expect(
+      await fsExtra.pathExists(
+        path.join(workspacePath, 'openai-typescript-agent', 'agents', 'primary', 'src', 'main.ts')
+      )
+    ).toBe(true);
+    expect(
+      await fsExtra.pathExists(path.join(workspacePath, 'openai-python-agent', 'pyproject.toml'))
+    ).toBe(false);
+  }, 90_000);
+
   it('rolls back project registration when the governed scaffold cannot be planned', async () => {
     await create.createProject('agent-workspace', {
       parentDirectory: tmpDir,

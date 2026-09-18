@@ -169,6 +169,10 @@ describe('npm publish contract', () => {
     expect(smoke).toContain('REQUIRED_PACKAGE_FILES');
     expect(smoke).toContain('assertPackageFilesPolicy(missingRequired)');
     expect(smoke).toContain('ignored generated asset');
+    expect(smoke).toContain("adapter.status === 'admitted'");
+    expect(smoke).toContain('microsoft-agent-framework-python');
+    expect(smoke).toContain('openai-agents-typescript');
+    expect(smoke).not.toContain('adapters?.length !== 2');
   });
 
   it('keeps npm-only contributor enforcement out of consumer install lifecycles', () => {

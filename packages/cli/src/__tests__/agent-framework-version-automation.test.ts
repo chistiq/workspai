@@ -54,7 +54,11 @@ describe('agent framework version automation', () => {
     const conformance = workflows[1]!;
     expect(conformance).toContain('os: [ubuntu-latest, macos-latest, windows-latest]');
     expect(conformance).toContain('runtime: [python, dotnet]');
+    expect(conformance).toContain('runtime: [python, typescript]');
+    expect(conformance).toContain('smoke-openai-agents-adapter.ts');
+    expect(conformance).toContain('node-version: "22.20.0"');
     expect(conformance).not.toMatch(/FOUNDRY_PROJECT_ENDPOINT:\s*\$\{\{/);
+    expect(conformance).not.toMatch(/OPENAI_API_KEY:\s*\$\{\{/);
     expect(conformance).toContain("github.event_name == 'workflow_dispatch'");
     expect(conformance).toContain(
       "github.ref == 'refs/heads/automation/agent-framework-version-baselines'"
@@ -75,9 +79,30 @@ describe('agent framework version automation', () => {
     expect(smoke).toContain('contextObserved: true');
     expect(smoke).toContain('providerInvocationPerformed: false');
 
+    const openaiSmoke = read('packages/cli/scripts/smoke-openai-agents-adapter.ts');
+    expect(openaiSmoke).toContain('WORKSPAI_AGENT_LIFECYCLE_OK');
+    expect(openaiSmoke).toContain('ScriptedModel');
+    expect(openaiSmoke).toContain('OPENAI_AGENTS_DISABLE_TRACING');
+    expect(openaiSmoke).toContain('livePaidApiCall: false');
+    expect(openaiSmoke).toContain('resolvePackageRunnerInvocation');
+    expect(openaiSmoke).toContain("['install', '--no-fund', '--no-audit']");
+    expect(openaiSmoke).toContain("await run('npm', ['test'], agentRoot)");
+    expect(openaiSmoke).toContain('runAdmittedAgent');
+    expect(openaiSmoke).toContain('run_admitted_agent');
+    expect(openaiSmoke).toContain('loadWorkspaiContext');
+    expect(openaiSmoke).not.toContain("'--prefix', path.dirname(context.dependencyManifest)");
+    expect(openaiSmoke).not.toContain("process.platform === 'win32' ? 'npm.cmd' : 'npm'");
+    expect(openaiSmoke).not.toContain('OPENAI_API_KEY=sk-');
+
     const promotion = read('packages/cli/scripts/promote-agent-framework-release-admission.ts');
     expect(promotion).toContain('AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH');
     expect(promotion).toContain('digestBuiltinAgentFrameworkManifest');
     expect(promotion).toContain("repository !== 'chistiq/workspai'");
+  });
+
+  it('keeps generator coverage and OpenAI adapter coverage in the same Vitest gate', () => {
+    const config = read('packages/cli/vitest.config.ts');
+    expect(config).toContain("'src/generators/**/*.ts'");
+    expect(config).toContain("'src/agent-frameworks/adapters/openai-agents/**/*.ts'");
   });
 });

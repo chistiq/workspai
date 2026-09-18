@@ -6,6 +6,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { buildCleanGitEnv } from '../utils/git-worktree.js';
+
 import {
   assertWorkspaceKnowledgeGraphSourceBinding,
   buildWorkspaceKnowledgeGraph,
@@ -1102,9 +1104,14 @@ describe('workspace knowledge graph', () => {
     await fsExtra.outputJson(path.join(projectRoot, 'package.json'), { name: 'api' });
     await fsExtra.outputFile(trackedPath, 'export const safe = true;\n');
     await fsExtra.outputFile(outsidePath, 'export const must_not_escape_project = true;\n');
-    execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['init'], {
+      cwd: projectRoot,
+      env: buildCleanGitEnv(),
+      stdio: 'ignore',
+    });
     execFileSync('git', ['add', 'package.json', 'src/tracked.ts'], {
       cwd: projectRoot,
+      env: buildCleanGitEnv(),
       stdio: 'ignore',
     });
     await fsExtra.remove(trackedPath);

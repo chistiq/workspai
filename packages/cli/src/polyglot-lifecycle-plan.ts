@@ -627,10 +627,10 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
     stages = [
       stage('init', poetryManaged ? 'poetry install' : `${python} -m pip install -e .`),
       ...(testCommand ? [stage('test', testCommand)] : []),
-      ...(/\[build-system\]/.test(contents)
-        ? [stage('build', poetryManaged ? 'poetry build' : 'python -m build', 'medium')]
-        : hasMainModule
-          ? [stage('build', `${python} -m compileall .`)]
+      ...(hasMainModule
+        ? [stage('build', `${python} -m compileall .`)]
+        : /\[build-system\]/.test(contents)
+          ? [stage('build', poetryManaged ? 'poetry build' : `${python} -m build`, 'medium')]
           : []),
       ...(hasMainModule
         ? [stage('start', `${python} main.py`)]

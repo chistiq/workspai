@@ -775,10 +775,12 @@ These fields are designed for release gates and extension timeline cards that mu
 - Supports Workspai, legacy RapidKit, and non-Workspai projects when project metadata is missing.
 - Evidence: `.workspai/reports/doctor-project-last-run.json`.
 - `--fix`, `--plan`, and `--apply` apply only project-scoped fixes.
-- Governed Microsoft Agent Framework projects keep `kind`/`framework` as `agent` /
-  `microsoft-agent-framework`. Doctor discovers nested environment examples and
-  dependency manifests under `agents/primary` and aims Python/`uv` or .NET
-  repair commands at that runtime, not at a phantom project-root manifest.
+- Governed Microsoft Agent Framework and OpenAI Agents SDK projects keep
+  `kind` as `agent`. Microsoft retains `microsoft-agent-framework`; OpenAI
+  retains `openai-agents`. Doctor discovers nested environment examples and
+  dependency manifests under `agents/primary` and aims Python/`uv`, Node
+  `npm --prefix`, or .NET repair commands at that runtime, not at a phantom
+  project-root manifest.
 
 ## Project JSON fields (AI/automation)
 

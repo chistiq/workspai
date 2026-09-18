@@ -4,6 +4,9 @@ import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  describeAgentFrameworkProjectKits,
+  isAdmittedAgentFrameworkProjectKit,
+  isAgentFrameworkProjectKit,
   listAgentFrameworkProjectKits,
   initializeAgentFrameworkProjectRoot,
   resolveAgentFrameworkProjectKit,
@@ -17,10 +20,29 @@ afterEach(async () => {
 });
 
 describe('agent framework project kits', () => {
-  it('publishes only exact release-admitted Python and .NET kits', () => {
+  it('publishes the exact release-admitted Microsoft and OpenAI kits', () => {
+    expect(describeAgentFrameworkProjectKits().map((kit) => kit.id)).toEqual([
+      'agent.microsoft.python',
+      'agent.microsoft.dotnet',
+      'agent.openai.python',
+      'agent.openai.typescript',
+    ]);
     const kits = listAgentFrameworkProjectKits();
-    expect(kits.map((kit) => kit.id)).toEqual(['agent.microsoft.python', 'agent.microsoft.dotnet']);
-    expect(kits.every((kit) => kit.adapterId.startsWith('microsoft-agent-framework-'))).toBe(true);
+    expect(kits.map((kit) => kit.id)).toEqual([
+      'agent.microsoft.python',
+      'agent.microsoft.dotnet',
+      'agent.openai.python',
+      'agent.openai.typescript',
+    ]);
+    expect(isAgentFrameworkProjectKit('agent.openai.python')).toBe(true);
+    expect(isAgentFrameworkProjectKit('agent.openai.typescript')).toBe(true);
+    expect(resolveAgentFrameworkProjectKit('agent.openai.python')?.adapterId).toBe(
+      'openai-agents-python'
+    );
+    expect(resolveAgentFrameworkProjectKit('agent.openai.typescript')?.adapterId).toBe(
+      'openai-agents-typescript'
+    );
+    expect(kits.every((kit) => isAdmittedAgentFrameworkProjectKit(kit))).toBe(true);
   });
 
   it('resolves stable aliases without exposing mutable registry state', () => {
@@ -46,9 +68,9 @@ describe('agent framework project kits', () => {
       expect(await fsExtra.pathExists(path.join(root, 'pyproject.toml'))).toBe(false);
       expect((await fsExtra.readdir(root)).some((entry) => entry.endsWith('.csproj'))).toBe(false);
       expect(readProjectMetadata(root)?.detection).toMatchObject({
-        key: 'microsoft-agent-framework',
+        key: kit.frameworkId,
         runtime: kit.runtime,
-        displayName: 'Microsoft Agent Framework',
+        displayName: kit.frameworkName,
         source: 'kit',
       });
       expect(await fsExtra.readJson(path.join(root, '.workspai', 'project.json'))).toMatchObject({

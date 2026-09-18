@@ -85,8 +85,8 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
   const agentNative = listAgentFrameworkProjectKits().map((kit) => ({
     id: kit.id,
     runtime: kit.runtime,
-    framework: 'microsoft-agent-framework',
-    plannerFramework: 'microsoft-agent-framework',
+    framework: kit.frameworkId,
+    plannerFramework: kit.frameworkId,
     category: 'agent',
     owner: 'workspai',
     stability: 'stable',

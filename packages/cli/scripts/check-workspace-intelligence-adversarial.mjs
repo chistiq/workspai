@@ -6,13 +6,15 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
+import { buildCleanGitEnv } from './clean-git-env.mjs';
+
 const packageRoot = process.cwd();
 const cliPath = path.join(packageRoot, 'dist', 'index.js');
 const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-adversarial-'));
 const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-adversarial-home-'));
 const reportsPath = path.join(workspacePath, '.workspai', 'reports');
 
-const isolatedEnvironment = {
+const isolatedEnvironment = buildCleanGitEnv({
   ...process.env,
   CI: '1',
   NO_COLOR: '1',
@@ -22,7 +24,7 @@ const isolatedEnvironment = {
   USERPROFILE: isolatedHome,
   XDG_CONFIG_HOME: path.join(isolatedHome, '.config'),
   APPDATA: path.join(isolatedHome, 'AppData', 'Roaming'),
-};
+});
 
 function fail(message) {
   throw new Error(`[workspace-intelligence-adversarial] ${message}`);
@@ -124,13 +126,24 @@ try {
   fs.writeFileSync(path.join(workspacePath, 'app', 'source.js'), 'export const value = 1;\n');
   for (const args of [
     ['init'],
-    ['config', 'user.email', 'runtime-contract@workspai.dev'],
-    ['config', 'user.name', 'Workspai Runtime Contract'],
-    ['config', 'commit.gpgsign', 'false'],
     ['add', '.'],
-    ['commit', '-m', 'fixture baseline'],
+    [
+      '-c',
+      'user.email=runtime-contract@workspai.dev',
+      '-c',
+      'user.name=Workspai Runtime Contract',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-m',
+      'fixture baseline',
+    ],
   ]) {
-    const git = spawnSync('git', args, { cwd: workspacePath, encoding: 'utf8' });
+    const git = spawnSync('git', args, {
+      cwd: workspacePath,
+      env: isolatedEnvironment,
+      encoding: 'utf8',
+    });
     if (git.status !== 0) fail(`git ${args.join(' ')} failed: ${git.stderr}`);
   }
 

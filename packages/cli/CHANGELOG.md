@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Implemented preview OpenAI Agents SDK adapters for Python `0.22.2` and
+  TypeScript `@openai/agents` `0.18.0` with independent framework/runtime
+  selection, credentialless conformance lanes, and Create kit ids
+  `agent.openai.python` / `agent.openai.typescript`. Reviewed release admission
+  from matrix run 35357989405 on `8eb1308` now opens Create and Attach for those
+  explicit kit ids and `--framework openai-agents`. Adapters remain `preview`.
+  `--runtime python` without `--framework` requires an explicit framework because
+  Microsoft and OpenAI are both admitted.
+
+### Changed
+
+- Generated OpenAI and Microsoft starters inspect admitted Workspai context
+  through allowlisted read-only tools instead of pasting the JSON into
+  instructions. Live entrypoints stream stdout, accept a prompt from argv or
+  stdin, and redact Azure-shaped secrets in addition to `sk-` values.
+  Microsoft Python adds a credentialless LocalChatClient loop when the
+  framework is installed. Adapters remain `preview`.
+
+### Fixed
+
+- Microsoft .NET context loader assigns `FileAttributes` before `GetAttributes`
+  so CS0165 does not fail the restore/build lane.
+- OpenAI Python tools pass `failure_error_function=None`, and OpenAI
+  TypeScript tools pass `errorFunction: null`, so missing context fails the
+  run instead of being swallowed into a second ScriptedModel turn.
+- OpenAI TypeScript generated tests no longer embed `secret: '...'` object
+  literals that the secret-non-persistence scan treats as credentials.
+- Listed every published agent kit in interactive Create. Admission digest
+  match and workspace profile must not hide OpenAI Python or any other
+  catalog kit from that picker. Create and Attach still refuse a blocked
+  adapter; picker visibility is not permission to write.
+- Isolated generated OpenAI context tests so they backup and restore the
+  operational `.workspai/reports/project-context-agent.json` file instead of
+  deleting or overwriting it after a green run.
+- Microsoft Python and .NET starters now match the OpenAI containment loader,
+  require `FOUNDRY_MODEL` instead of hardcoding `gpt-4o`, and ship one official
+  read-only typed context tool. Python is pip-editable. .NET enables
+  `RestorePackagesWithLockFile` without inventing NuGet hashes, and restore
+  docs no longer demand a lock file that Create does not emit.
+- Generated OpenAI TypeScript tests include a credentialless ScriptedModel
+  tool-call, matching the Python starter.
+- Microsoft Python and .NET starters resolve the owning `agents/<instance>/`
+  project instead of process cwd, matching `workspace run start`.
+- Python lifecycle `build` prefers `${python} -m compileall .` when `main.py`
+  exists, even if `pyproject.toml` declares `[build-system]`.
+- OpenAI Python applies `ModelSettings.timeout` only on the live model path so
+  ScriptedModel tool-call conformance does not hang on Python 3.13.
+- Isolated Vitest from an outer Git worktree (`GIT_DIR` / `GIT_WORK_TREE`) so
+  fixture repositories cannot commit into the host worktree during husky
+  `pre-push`.
+- Isolated the workspace-intelligence adversarial script the same way; it runs
+  during `quality:push` and was still inheriting husky Git env.
+- Kept published `agent framework list` preview OpenAI adapters visible before
+  release admission; the enterprise package smoke now requires the four
+  reviewed Microsoft and OpenAI adapters.
+- Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
+  so Windows does not `spawn EINVAL` on `npm.cmd`.
+- Ran the OpenAI TypeScript conformance install/test inside the generated
+  agent package. Windows npm ignores `install --prefix <relative>` and then
+  looks for `package.json` in the parent cwd.
+- OpenAI Agents starters locate the Workspai project as the directory that
+  owns `agents/<instance>/`, so `npm --prefix agents/<instance> start` and
+  Python entrypoints read canonical context without cwd authority. Loaders
+  canonicalize containment, open the regular file, cap reads at 128 KiB,
+  require `project-context-agent.v1` JSON, and reject escaped symlinks
+  without echoing file contents. Credentialless SDK checks now call the
+  generated `buildAgent` / `build_agent` seam with official ScriptedModel
+  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters remain
+  preview after the reviewed admission; changing that label would change the
+  manifest digest and require a new matrix. Context-path containment
+  is a bounded fd read after `O_NOFOLLOW` when available, not a TOCTOU-free
+  walk. Generator coverage remains in the Vitest gate alongside the OpenAI
+  adapter sources.
+
 ## [0.75.2] - 2026-09-14
 
 ### Changed

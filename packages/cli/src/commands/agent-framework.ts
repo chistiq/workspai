@@ -10,6 +10,7 @@ import {
   applyAgentFrameworkAttachmentByChange,
   applyPreparedAgentFrameworkAttachment,
   createBuiltinAgentFrameworkRegistry,
+  listRegisteredAgentFrameworkCombinations,
   parseAgentFrameworkRuntime,
   prepareAgentFrameworkAttachment,
   type AgentFrameworkUserRuntime,
@@ -20,6 +21,7 @@ type CommonOptions = {
   workspace?: string;
   project?: string;
   runtime?: string;
+  framework?: string;
   json?: boolean;
 };
 
@@ -84,19 +86,69 @@ async function resolveRuntime(
   interactive: boolean
 ): Promise<AgentFrameworkUserRuntime> {
   if (requested) return parseAgentFrameworkRuntime(requested);
-  if (!interactive) throw new Error('--runtime is required. Choose python or dotnet.');
+  if (!interactive) throw new Error('--runtime is required. Choose python, dotnet, or node.');
+  const admittedRuntimes = [
+    ...new Set(
+      listRegisteredAgentFrameworkCombinations(
+        createBuiltinAgentFrameworkRegistry({}, { trustReviewedReleaseAdmissions: true })
+      )
+        .filter((combination) => combination.status === 'admitted')
+        .map((combination) => combination.runtime)
+    ),
+  ] as AgentFrameworkUserRuntime[];
+  const choices =
+    admittedRuntimes.length > 0
+      ? admittedRuntimes.map((runtime) => ({
+          value: runtime,
+          label: runtime,
+          hint: 'release-admitted runtime',
+        }))
+      : [
+          { value: 'python' as const, label: 'Python', hint: 'Python 3.10+' },
+          { value: 'dotnet' as const, label: '.NET', hint: '.NET 8+' },
+          { value: 'node' as const, label: 'Node.js', hint: 'Node.js 22+' },
+        ];
   const answer = await prompt<{ runtime: AgentFrameworkUserRuntime }>([
     {
       type: 'rawlist',
       name: 'runtime',
       message: 'Choose the agent runtime:',
-      choices: [
-        { value: 'python', label: 'Python', hint: 'Python 3.10+ · tested baseline' },
-        { value: 'dotnet', label: '.NET', hint: '.NET 8+ · tested baseline' },
-      ],
+      choices,
     },
   ]);
   return answer.runtime;
+}
+
+async function resolveFramework(
+  requested: string | undefined,
+  runtime: AgentFrameworkUserRuntime,
+  interactive: boolean
+): Promise<string | undefined> {
+  if (requested?.trim()) return requested.trim();
+  const combinations = listRegisteredAgentFrameworkCombinations(
+    createBuiltinAgentFrameworkRegistry({}, { trustReviewedReleaseAdmissions: true })
+  ).filter((combination) => combination.runtime === runtime && combination.status === 'admitted');
+  if (combinations.length <= 1) return combinations[0]?.frameworkId;
+  if (!interactive) {
+    throw new Error(
+      `--framework is required for runtime ${runtime}. Choose ${combinations
+        .map((combination) => combination.frameworkId)
+        .join(', ')}.`
+    );
+  }
+  const answer = await prompt<{ framework: string }>([
+    {
+      type: 'rawlist',
+      name: 'framework',
+      message: 'Choose the agent framework:',
+      choices: combinations.map((combination) => ({
+        value: combination.frameworkId,
+        label: combination.frameworkName,
+        hint: combination.adapterId,
+      })),
+    },
+  ]);
+  return answer.framework;
 }
 
 async function resolveInstanceName(
@@ -120,7 +172,7 @@ async function resolveInstanceName(
 function printPlan(plan: PreparedAgentFrameworkAttachment): void {
   const color =
     plan.status === 'planned' ? chalk.cyan : plan.status === 'no-op' ? chalk.green : chalk.red;
-  console.log(color(`◆ Microsoft Agent Framework · ${plan.status}`));
+  console.log(color(`◆ ${plan.frameworkId} · ${plan.status}`));
   console.log(chalk.bold(`   ${plan.instanceName} · ${plan.runtime} · ${plan.project}`));
   console.log(chalk.gray(`   Framework: ${plan.frameworkVersion}`));
   console.log(chalk.gray(`   Goal: ${plan.goalId}`));
@@ -216,7 +268,11 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
     command
       .option('--workspace <path>', 'Explicit canonical workspace path')
       .option('--project <name>', 'Canonical project name or path')
-      .option('--runtime <runtime>', 'python or dotnet')
+      .option('--runtime <runtime>', 'python, dotnet, or node')
+      .option(
+        '--framework <framework>',
+        'Independent framework id, for example microsoft-agent-framework or openai-agents'
+      )
       .option('--name <name>', 'Agent instance name')
       .option('--goal <goal-id>', 'Reuse an existing ready Goal Pack')
       .option('--intent <text>', 'Plain-language Goal intent when creating a dedicated Goal')
@@ -235,11 +291,13 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
         const workspacePath = workspaceFor(options);
         const project = await resolveProject(workspacePath, options.project, interactive);
         const runtime = await resolveRuntime(options.runtime, interactive);
+        const framework = await resolveFramework(options.framework, runtime, interactive);
         const instanceName = await resolveInstanceName(options.name, interactive);
         const result = await prepareAgentFrameworkAttachment({
           workspacePath,
           project,
           runtime,
+          framework,
           instanceName,
           goalId: options.goal,
           intent: options.intent,
@@ -274,11 +332,13 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
         const workspacePath = workspaceFor(options);
         const project = await resolveProject(workspacePath, options.project, interactive);
         const runtime = await resolveRuntime(options.runtime, interactive);
+        const framework = await resolveFramework(options.framework, runtime, interactive);
         const instanceName = await resolveInstanceName(options.name, interactive);
         const prepared = await prepareAgentFrameworkAttachment({
           workspacePath,
           project,
           runtime,
+          framework,
           instanceName,
           goalId: options.goal,
           intent: options.intent,
@@ -327,7 +387,8 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
     .description('Apply an already authorized hash-bound framework plan')
     .requiredOption('--change <change-id>', 'Proof-Carrying Change id')
     .requiredOption('--project <name>', 'Canonical project name or path')
-    .requiredOption('--runtime <runtime>', 'python or dotnet')
+    .requiredOption('--runtime <runtime>', 'python, dotnet, or node')
+    .option('--framework <framework>', 'Independent framework id')
     .option('--workspace <path>', 'Explicit canonical workspace path')
     .option('--json', 'Emit machine-readable JSON')
     .action(
@@ -336,6 +397,7 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
           change: string;
           project: string;
           runtime: string;
+          framework?: string;
           json?: boolean;
         }
       ) => {
@@ -344,6 +406,7 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
             workspacePath: workspaceFor(options),
             project: options.project,
             runtime: parseAgentFrameworkRuntime(options.runtime),
+            framework: options.framework,
             changeId: options.change,
           });
           if (options.json) console.log(JSON.stringify(result, null, 2));

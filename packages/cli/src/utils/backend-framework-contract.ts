@@ -27,6 +27,7 @@ export type BackendRuntimeFamily =
 
 export type BackendPlatformKey =
   | 'microsoft-agent-framework'
+  | 'openai-agents'
   | 'fastapi'
   | 'django'
   | 'flask'
@@ -131,6 +132,15 @@ const BACKEND_CONTRACTS: Record<BackendPlatformKey, BackendContractDescriptor> =
     importStack: 'unknown',
     aliases: ['microsoft-agent-framework', 'microsoft agent framework'],
     kitPrefixes: ['agent.microsoft'],
+  },
+  'openai-agents': {
+    key: 'openai-agents',
+    runtime: 'python',
+    displayName: 'OpenAI Agents SDK',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['openai-agents', 'openai agents', 'openai agents sdk'],
+    kitPrefixes: ['agent.openai'],
   },
   fastapi: {
     key: 'fastapi',
@@ -773,6 +783,10 @@ export function getBackendFrameworkContract(key: BackendPlatformKey): BackendFra
   };
 }
 
+export function isAgentFrameworkPlatformKey(key: BackendPlatformKey): boolean {
+  return key === 'microsoft-agent-framework' || key === 'openai-agents';
+}
+
 export function detectBackendFrameworkFromHints(input: {
   framework?: string;
   runtime?: string;
@@ -781,7 +795,7 @@ export function detectBackendFrameworkFromHints(input: {
   const byKit = findByKitName(input.kitName);
   if (byKit !== 'unknown') {
     const detected = buildDetection(byKit, 'high', 'kit');
-    return byKit === 'microsoft-agent-framework' && input.runtime
+    return isAgentFrameworkPlatformKey(byKit) && input.runtime
       ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
       : detected;
   }
@@ -789,7 +803,7 @@ export function detectBackendFrameworkFromHints(input: {
   const byFramework = normalizeBackendPlatformKey(input.framework);
   if (byFramework !== 'unknown') {
     const detected = buildDetection(byFramework, 'high', 'framework');
-    return byFramework === 'microsoft-agent-framework' && input.runtime
+    return isAgentFrameworkPlatformKey(byFramework) && input.runtime
       ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
       : detected;
   }

@@ -8,9 +8,15 @@ import { transitionGoalLifecycle } from '../goal-lifecycle.js';
 import { applyAgentFrameworkChange, prepareAgentFrameworkChange } from './lifecycle.js';
 import { createBuiltinAgentFrameworkRegistry } from './builtins.js';
 import { normalizedAgentInstanceName } from './adapter.js';
+import { resolveAgentFrameworkSelection, type AgentFrameworkUserRuntime } from './selection.js';
 
-export const AGENT_FRAMEWORK_USER_RUNTIMES = ['python', 'dotnet'] as const;
-export type AgentFrameworkUserRuntime = (typeof AGENT_FRAMEWORK_USER_RUNTIMES)[number];
+export {
+  AGENT_FRAMEWORK_USER_RUNTIMES,
+  listRegisteredAgentFrameworkCombinations,
+  parseAgentFrameworkRuntime,
+  resolveAgentFrameworkSelection,
+} from './selection.js';
+export type { AgentFrameworkUserRuntime, ResolvedAgentFrameworkSelection } from './selection.js';
 
 export type PreparedAgentFrameworkAttachment = {
   schemaVersion: 'workspai.agent-framework-attachment.v1';
@@ -20,6 +26,7 @@ export type PreparedAgentFrameworkAttachment = {
   workspacePath: string;
   project: string;
   runtime: AgentFrameworkUserRuntime;
+  frameworkId: string;
   adapterId: string;
   frameworkVersion: string;
   instanceName: string;
@@ -43,16 +50,35 @@ export type AppliedAgentFrameworkAttachment = Omit<
   nextActions: string[];
 };
 
-function adapterIdFor(runtime: AgentFrameworkUserRuntime): string {
-  return `microsoft-agent-framework-${runtime}`;
+function releaseRegistry() {
+  return createBuiltinAgentFrameworkRegistry({}, { trustReviewedReleaseAdmissions: true });
 }
 
-export function parseAgentFrameworkRuntime(value: string): AgentFrameworkUserRuntime {
-  const normalized = value.trim().toLowerCase();
-  if (!AGENT_FRAMEWORK_USER_RUNTIMES.includes(normalized as AgentFrameworkUserRuntime)) {
-    throw new Error(`Unsupported agent framework runtime: ${value}. Choose python or dotnet.`);
+function requireAdmittedSelection(input: {
+  runtime: AgentFrameworkUserRuntime;
+  framework?: string;
+}) {
+  const registry = releaseRegistry();
+  const selection = resolveAgentFrameworkSelection({
+    registry,
+    runtime: input.runtime,
+    framework: input.framework,
+  });
+  if (!selection.admitted) {
+    throw new Error(
+      `Agent framework adapter ${selection.adapterId} is not release-admitted. ${selection.blockers.join(' ')}`.trim()
+    );
   }
-  return normalized as AgentFrameworkUserRuntime;
+  return { registry, selection };
+}
+
+function applyCommand(input: {
+  project: string;
+  runtime: string;
+  frameworkId: string;
+  changeId: string;
+}): string {
+  return `workspai agent framework apply --project ${JSON.stringify(input.project)} --framework ${input.frameworkId} --runtime ${input.runtime} --change ${input.changeId}`;
 }
 
 export async function prepareAgentFrameworkAttachment(input: {
@@ -60,29 +86,20 @@ export async function prepareAgentFrameworkAttachment(input: {
   project: string;
   runtime: AgentFrameworkUserRuntime;
   instanceName: string;
+  framework?: string;
   goalId?: string;
   intent?: string;
   mode?: 'scaffold' | 'attach';
 }): Promise<PreparedAgentFrameworkAttachment> {
-  const registry = createBuiltinAgentFrameworkRegistry(
-    {},
-    { trustReviewedReleaseAdmissions: true }
-  );
-  const adapterId = adapterIdFor(input.runtime);
+  const { registry, selection } = requireAdmittedSelection(input);
   const instanceName = normalizedAgentInstanceName(input.instanceName);
-  const admission = registry.resolveAdapter(adapterId);
-  if (admission.status !== 'admitted' || !admission.entry) {
-    throw new Error(
-      `Agent framework adapter ${adapterId} is not release-admitted. ${admission.blockers.join(' ')}`
-    );
-  }
 
   let goalId = input.goalId;
   const ownsGoal = !goalId;
   if (!goalId) {
     const intent =
       input.intent?.trim() ||
-      `Attach a governed Microsoft Agent Framework ${input.runtime} agent named ${instanceName} to ${input.project}`;
+      `Attach a governed ${selection.frameworkName} ${input.runtime} agent named ${instanceName} to ${input.project}`;
     const goal = await planGoalPack({
       startPath: input.workspacePath,
       workspacePath: input.workspacePath,
@@ -110,7 +127,7 @@ export async function prepareAgentFrameworkAttachment(input: {
       project: input.project,
       changeId: change.changeId,
       registry,
-      adapterId,
+      adapterId: selection.adapterId,
       instanceName,
       mode: input.mode ?? 'attach',
     });
@@ -137,7 +154,8 @@ export async function prepareAgentFrameworkAttachment(input: {
       workspacePath: input.workspacePath,
       project: prepared.project,
       runtime: input.runtime,
-      adapterId,
+      frameworkId: selection.frameworkId,
+      adapterId: selection.adapterId,
       frameworkVersion: prepared.plan.frameworkVersion,
       instanceName: prepared.plan.instanceName,
       goalId,
@@ -150,7 +168,12 @@ export async function prepareAgentFrameworkAttachment(input: {
       nextActions:
         prepared.status === 'planned'
           ? [
-              `workspai agent framework apply --project ${JSON.stringify(prepared.project)} --runtime ${input.runtime} --change ${prepared.changeId}`,
+              applyCommand({
+                project: prepared.project,
+                runtime: input.runtime,
+                frameworkId: selection.frameworkId,
+                changeId: prepared.changeId,
+              }),
             ]
           : [],
     };
@@ -181,10 +204,7 @@ export async function applyPreparedAgentFrameworkAttachment(input: {
   }
   const grantedBy = input.grantedBy.trim();
   if (!grantedBy) throw new Error('The authorization identity cannot be empty.');
-  const registry = createBuiltinAgentFrameworkRegistry(
-    {},
-    { trustReviewedReleaseAdmissions: true }
-  );
+  const registry = releaseRegistry();
   await authorizeProofCarryingChange({
     workspacePath: input.prepared.workspacePath,
     changeId: input.prepared.changeId,
@@ -232,29 +252,27 @@ export async function applyAgentFrameworkAttachmentByChange(input: {
   project: string;
   runtime: AgentFrameworkUserRuntime;
   changeId: string;
+  framework?: string;
 }): Promise<{
   schemaVersion: 'workspai.agent-framework-attachment.v1';
   operation: 'apply';
   status: 'applied';
   project: string;
   runtime: AgentFrameworkUserRuntime;
+  frameworkId: string;
   adapterId: string;
   changeId: string;
   files: Array<{ path: string; artifact: string; sha256: string }>;
   ownershipReceipt: string;
   nextActions: string[];
 }> {
-  const registry = createBuiltinAgentFrameworkRegistry(
-    {},
-    { trustReviewedReleaseAdmissions: true }
-  );
-  const adapterId = adapterIdFor(input.runtime);
+  const { registry, selection } = requireAdmittedSelection(input);
   const applied = await applyAgentFrameworkChange({
     workspacePath: input.workspacePath,
     project: input.project,
     changeId: input.changeId,
     registry,
-    adapterId,
+    adapterId: selection.adapterId,
   });
   return {
     schemaVersion: 'workspai.agent-framework-attachment.v1',
@@ -262,7 +280,8 @@ export async function applyAgentFrameworkAttachmentByChange(input: {
     status: 'applied',
     project: applied.project,
     runtime: input.runtime,
-    adapterId,
+    frameworkId: selection.frameworkId,
+    adapterId: selection.adapterId,
     changeId: applied.changeId,
     files: applied.files,
     ownershipReceipt: applied.ownershipReceipt,

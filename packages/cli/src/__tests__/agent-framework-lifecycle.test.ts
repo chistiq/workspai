@@ -166,7 +166,7 @@ describe('agent framework proof-carrying lifecycle', () => {
 
       expect(prepared.status).toBe('planned');
       expect(prepared.plan.target).toEqual({ project: 'api', artifactPrefix });
-      expect(prepared.plan.files).toHaveLength(6);
+      expect(prepared.plan.files).toHaveLength(8);
       expect(prepared.planArtifact).toContain(
         `/plans/agent-framework-change-plan-${prepared.planDigest}.json`
       );
@@ -206,7 +206,7 @@ describe('agent framework proof-carrying lifecycle', () => {
       });
 
       expect(applied.status).toBe('applied');
-      expect(applied.files).toHaveLength(6);
+      expect(applied.files).toHaveLength(8);
       expect(
         await fsExtra.readFile(
           path.join(projectPath, 'agents', 'release-reviewer', 'main.py'),
@@ -219,7 +219,7 @@ describe('agent framework proof-carrying lifecycle', () => {
         changeId,
         target: { workspace: 'platform', project: 'api', instanceName: 'release-reviewer' },
       });
-      expect(ownership.files).toHaveLength(6);
+      expect(ownership.files).toHaveLength(8);
       const transaction = await readDecisionTransaction(workspacePath, changeId);
       expect(transaction.transaction.effects).toContainEqual(
         expect.objectContaining({
