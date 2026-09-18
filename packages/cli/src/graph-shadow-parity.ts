@@ -19,6 +19,7 @@ import {
   isGraphShadowCliCompatibleIdentity,
   isGraphShadowComparableDiagnostic,
   isGraphShadowComparableSourceProofLocator,
+  isGraphShadowTruncatingCoverage,
   isUnsafeComparableLocator,
   mapShadowKind,
   mapShadowRelation,
@@ -1007,7 +1008,9 @@ function compareGraphs(
       : (legacy.quality.completeness?.status ?? 'bounded');
   const packageCompleteness =
     packageUnknownCount === 0 &&
-    packageInput.quality.coverage.every((observation) => observation.status === 'pass')
+    !packageInput.quality.coverage.some((observation) =>
+      isGraphShadowTruncatingCoverage(observation)
+    )
       ? 'complete'
       : 'bounded';
   if (legacyCompleteness !== packageCompleteness) {

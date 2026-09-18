@@ -209,6 +209,28 @@ describe('Graph package shadow parity', () => {
     expect(result.differences.filter((item) => item.area === 'node')).toEqual([]);
   });
 
+  it('does not treat binding-precision call coverage as truncation completeness', async () => {
+    const candidate = packageGraph();
+    candidate.quality.coverage = [
+      { dimension: 'repository-files', status: 'pass' },
+      { dimension: 'source-calls-examined', status: 'pass' },
+      { dimension: 'source-calls-resolved', status: 'attention' },
+      { dimension: 'source-calls-ambiguous', status: 'attention' },
+      { dimension: 'source-calls-unresolved', status: 'attention' },
+    ];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-fixture',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+    expect(result.status).toBe('equivalent');
+    expect(result.differences.map((difference) => difference.code)).not.toContain(
+      'GRAPH_SHADOW_COMPLETENESS_DIFFERENT'
+    );
+  });
+
   it('compares explicit semantic aliases without changing released CLI authority', async () => {
     const result = await runGraphShadowComparison({
       profile: 'g8-fixture',

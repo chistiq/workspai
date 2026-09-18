@@ -111,6 +111,33 @@ function collapseProjectTestIdentity(mapped: string, projectId: string): string 
 }
 
 /**
+ * Binding-precision call KPIs. They report examined/resolved/ambiguous/unresolved
+ * sites and are not inventory truncation. The released CLI composer has no
+ * equivalent coverage surface, so G8 completeness must not treat their
+ * `attention` statuses as `GRAPH_SHADOW_COMPLETENESS_DIFFERENT`.
+ */
+export const GRAPH_SHADOW_BINDING_PRECISION_COVERAGE_DIMENSIONS = Object.freeze([
+  'source-calls-examined',
+  'source-calls-resolved',
+  'source-calls-ambiguous',
+  'source-calls-unresolved',
+] as const);
+
+export function isGraphShadowTruncatingCoverage(observation: {
+  readonly dimension: string;
+  readonly status: string;
+}): boolean {
+  if (
+    (GRAPH_SHADOW_BINDING_PRECISION_COVERAGE_DIMENSIONS as readonly string[]).includes(
+      observation.dimension
+    )
+  ) {
+    return false;
+  }
+  return observation.status !== 'pass';
+}
+
+/**
  * Released-CLI comparable claims for G8 shadow. Package truth-depth extras
  * that the official composer does not emit stay outside this surface.
  */

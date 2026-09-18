@@ -24,6 +24,7 @@ import {
   isGraphShadowComparableDiagnostic,
   isGraphShadowComparableSourceProofLocator,
   isGraphShadowTestSurfaceLocator,
+  isGraphShadowTruncatingCoverage,
   isUnsafeComparableLocator,
   mapShadowKind,
   mapShadowRelation,
@@ -195,6 +196,21 @@ describe('Graph shadow comparison projection', () => {
     expect(isGraphShadowCliCompatibleIdentity('module:node:assert/strict', 'module')).toBe(false);
     expect(isGraphShadowCliCompatibleIdentity('module:deeper', 'module')).toBe(true);
     expect(isGraphShadowCliCompatibleIdentity('command:.#app:test', 'command')).toBe(false);
+    expect(
+      isGraphShadowTruncatingCoverage({
+        dimension: 'source-calls-unresolved',
+        status: 'attention',
+      })
+    ).toBe(false);
+    expect(
+      isGraphShadowTruncatingCoverage({ dimension: 'source-calls-resolved', status: 'attention' })
+    ).toBe(false);
+    expect(
+      isGraphShadowTruncatingCoverage({ dimension: 'repository-files', status: 'attention' })
+    ).toBe(true);
+    expect(
+      isGraphShadowTruncatingCoverage({ dimension: 'semantic-depth', status: 'bounded' })
+    ).toBe(true);
     expect(isGraphShadowComparableSourceProofLocator('src/catalog.ts')).toBe(true);
     expect(isGraphShadowComparableSourceProofLocator('tests/catalog.test.ts')).toBe(false);
     expect(isGraphShadowComparableSourceProofLocator('tsconfig.json')).toBe(false);

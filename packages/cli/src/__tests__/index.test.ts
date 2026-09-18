@@ -72,6 +72,7 @@ async function execa(
 }
 
 const CLI_PATH = ensureDistBuilt('CLI entry point tests');
+const CLI_SPAWN_TIMEOUT_MS = process.platform === 'win32' ? 90_000 : 20_000;
 let TEST_DIR: string;
 
 async function removeTestDirectory(target: string): Promise<void> {
@@ -276,7 +277,7 @@ describe('CLI Entry Point', () => {
 
       expect(noArg.stdout.replace(/\r/g, '')).toBe(withHelp.stdout.replace(/\r/g, ''));
       expect(noArg.stdout.replace(/\r/g, '')).toBe(withHelpCommand.stdout.replace(/\r/g, ''));
-    }, 20000);
+    }, CLI_SPAWN_TIMEOUT_MS);
   });
 
   describe('Autopilot Command (CLI Entrypoint)', () => {
@@ -677,7 +678,7 @@ describe('CLI Entry Point', () => {
         await fs.remove(workspaceRoot);
         await fs.remove(sourceDir);
       }
-    }, 20000);
+    }, CLI_SPAWN_TIMEOUT_MS);
 
     it('should adopt a local frontend project through the CLI wrapper and keep it linked in place', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-adopt-'));
@@ -920,7 +921,7 @@ describe('CLI Entry Point', () => {
         await fs.remove(workspaceRoot);
         await fs.remove(gitSource);
       }
-    }, 20000);
+    }, CLI_SPAWN_TIMEOUT_MS);
 
     it('should honor --output for workspace export archives', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-export-'));
@@ -943,7 +944,7 @@ describe('CLI Entry Point', () => {
       const payload = JSON.parse(stdout) as { archivePath: string };
       expect(payload.archivePath).toBe(archivePath);
       expect(await fs.pathExists(archivePath)).toBe(true);
-    }, 20000);
+    }, CLI_SPAWN_TIMEOUT_MS);
 
     it('should auto-create or reuse the default workspace when import runs outside any workspace', async () => {
       const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'rapidkit-home-import-default-'));
@@ -1053,7 +1054,7 @@ describe('CLI Entry Point', () => {
         await fs.remove(cwdOutsideWorkspace);
         await fs.remove(sourceDir);
       }
-    }, 20000);
+    }, CLI_SPAWN_TIMEOUT_MS);
 
     it('should roll back imported local project via dist CLI when sync fails by injected test hook', async () => {
       const workspaceRoot = await fs.mkdtemp(
@@ -1115,7 +1116,7 @@ describe('CLI Entry Point', () => {
         await fs.remove(workspaceRoot);
         await fs.remove(sourceDir);
       }
-    }, 20000);
+    }, CLI_SPAWN_TIMEOUT_MS);
 
     it('should route workspace-root init through the same full-init flow without misreading flags', async () => {
       const workspaceRoot = await fs.mkdtemp(path.join(TEST_DIR, 'workspace-root-'));

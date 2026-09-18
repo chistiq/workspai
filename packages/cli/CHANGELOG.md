@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- G8 completeness comparison no longer treats package binding-precision call
+  coverage (`source-calls-resolved` / `ambiguous` / `unresolved`) as inventory
+  truncation. Those KPIs have no released-CLI counterpart, so `attention` on
+  them must not fail the committed real-workspace corpus with
+  `GRAPH_SHADOW_COMPLETENESS_DIFFERENT`.
+- Windows CLI wrapper tests that spawn `dist` now use the same 90s timeout as
+  the Vitest Windows coverage budget instead of a 20s per-test cap.
+
 ### Changed
 
 - Adaptive source-structure extraction now uses the deep-scan file window
