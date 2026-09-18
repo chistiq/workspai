@@ -148,20 +148,40 @@ The TypeScript starter also pins peer `zod` `4.6.5`, TypeScript `5.9.3`, and
 framework. Generated markers under `.workspai/agent-frameworks/` cannot select
 it.
 
+Generated loaders resolve the Workspai project as the directory that owns
+`agents/<instance>/`. They do not use process cwd, unbounded ancestor search,
+or a copied context file inside the agent package. Canonical containment,
+a regular-file open (`O_NOFOLLOW` when the platform provides it), the 128 KiB
+cap, UTF-8 JSON, and `schemaVersion: project-context-agent.v1` are enforced in
+the starter. Generation, freshness, and integrity remain host-owned agent-sync
+work. Internal symlinks, including Windows reparse points treated as links, are
+allowed only when every resolved hop stays inside the project root. Diagnostics
+do not include file contents.
+
+The loader walk is not an atomic open. Between `lstat` of one hop and `open` of
+the next, a local actor who can replace a path component may still race the
+walk. The bound we claim, and only that bound, is: after a successful open with
+`O_NOFOLLOW` when the kernel provides it, that file descriptor is `fstat`'d and
+at most 128 KiB is read from that descriptor. This is not a proof of complete
+TOCTOU immunity, of Windows junction behavior on every host, or of
+enterprise-grade isolation.
+
 Claimed capabilities are conservative and independently evidenced:
 
 - native: `single-agent`, `typed-tools`, `local-execution`
-- conditional: `telemetry` (opt-in `WORKSPAI_AGENT_TRACING=1`; offline smoke
-  keeps `OPENAI_AGENTS_DISABLE_TRACING=1`), `provider-neutral-models` (starter
-  only reads `OPENAI_MODEL` / `OPENAI_DEFAULT_MODEL`)
+- conditional: `telemetry` (defaults off; `WORKSPAI_AGENT_TRACING=1` opts in;
+  `OPENAI_AGENTS_DISABLE_TRACING=1|true` keeps tracing off even if the opt-in
+  is set), `provider-neutral-models` (starter only reads `OPENAI_MODEL` /
+  `OPENAI_DEFAULT_MODEL`)
 - unsupported in this version: handoffs, MCP, sessions/resume, voice, sandbox,
   hosted tools, and human-approval loops
 
 Python cancellation uses `Runner.max_turns` and `ModelSettings.timeout` from
-`openai-agents` `0.22.2`. TypeScript cancellation uses `maxTurns` plus
-`AbortSignal` from `@openai/agents` `0.18.0`. Those SDK controls are not a
-Workspai-owned timeout service. Workspai still owns mutation admission and
-verification; a successful model run is not verified evidence.
+`openai-agents` `0.22.2`. `ModelSettings.timeout` is a per-model-request
+timeout. TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
+`@openai/agents` `0.18.0`. Those SDK controls are not a Workspai-owned timeout
+service. Workspai still owns mutation admission and verification; a successful
+model run is not verified evidence.
 
 Create kit ids `agent.openai.python` and `agent.openai.typescript` exist in the
 inventory but remain hidden from interactive Create and blocked from attach

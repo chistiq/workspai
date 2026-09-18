@@ -87,6 +87,9 @@ describe('agent framework version automation', () => {
     expect(openaiSmoke).toContain('resolvePackageRunnerInvocation');
     expect(openaiSmoke).toContain("['install', '--no-fund', '--no-audit']");
     expect(openaiSmoke).toContain("await run('npm', ['test'], agentRoot)");
+    expect(openaiSmoke).toContain('runAdmittedAgent');
+    expect(openaiSmoke).toContain('run_admitted_agent');
+    expect(openaiSmoke).toContain('loadWorkspaiContext');
     expect(openaiSmoke).not.toContain("'--prefix', path.dirname(context.dependencyManifest)");
     expect(openaiSmoke).not.toContain("process.platform === 'win32' ? 'npm.cmd' : 'npm'");
     expect(openaiSmoke).not.toContain('OPENAI_API_KEY=sk-');
@@ -95,5 +98,11 @@ describe('agent framework version automation', () => {
     expect(promotion).toContain('AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH');
     expect(promotion).toContain('digestBuiltinAgentFrameworkManifest');
     expect(promotion).toContain("repository !== 'chistiq/workspai'");
+  });
+
+  it('keeps generator coverage and OpenAI adapter coverage in the same Vitest gate', () => {
+    const config = read('packages/cli/vitest.config.ts');
+    expect(config).toContain("'src/generators/**/*.ts'");
+    expect(config).toContain("'src/agent-frameworks/adapters/openai-agents/**/*.ts'");
   });
 });

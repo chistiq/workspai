@@ -22,13 +22,15 @@ const CONDITIONAL_CAPABILITIES = new Set<AgentFrameworkCapabilityId>([
 const LANGUAGE_LIMITATIONS: Record<'python' | 'typescript', string[]> = {
   python: [
     'Generated projects pin openai-agents 0.22.2 and require Python >=3.10.',
-    'Tracing is disabled unless WORKSPAI_AGENT_TRACING=1 is set; offline smoke must keep OPENAI_AGENTS_DISABLE_TRACING=1.',
-    'Cancellation uses Runner.max_turns and ModelSettings.timeout from this SDK version, not a host-owned timeout service.',
+    'Tracing defaults off. openai-agents 0.22.2 DefaultTraceProvider treats OPENAI_AGENTS_DISABLE_TRACING=1|true as disabled until set_tracing_disabled is called; the starter therefore never calls set_tracing_disabled(False) when that env is set.',
+    'Cancellation uses Runner.max_turns and ModelSettings.timeout from this SDK version. ModelSettings.timeout is per model request, not a host-owned deadline for the whole run.',
+    'Context containment uses lstat, realpath, O_NOFOLLOW open when available, and a capped fd read. That is not an atomic path walk and does not prove a TOCTOU-free open against a concurrent replacement of a hop.',
   ],
   typescript: [
     'Generated projects pin @openai/agents 0.18.0, require Node.js >=22, and declare zod 4.6.5 as the SDK peer.',
-    'Tracing is disabled unless WORKSPAI_AGENT_TRACING=1 is set; offline smoke must keep OPENAI_AGENTS_DISABLE_TRACING=1.',
-    'Cancellation uses run maxTurns plus AbortSignal from this SDK version, not a host-owned timeout service.',
+    'Tracing defaults off. The starter passes Runner({ tracingDisabled }) from WORKSPAI_AGENT_TRACING and OPENAI_AGENTS_DISABLE_TRACING; the disable env wins.',
+    'Cancellation uses run maxTurns plus AbortSignal from this SDK version. AbortSignal.timeout(30000) is the SDK run signal for that call, not a separate Workspai timeout service.',
+    'Context containment uses lstat, realpath, O_NOFOLLOW open when available, and a capped fd read. That is not an atomic path walk and does not prove a TOCTOU-free open against a concurrent replacement of a hop.',
   ],
 };
 
@@ -59,9 +61,13 @@ export function openaiAgentsCapabilities(
                   ],
           prerequisites:
             id === 'telemetry'
-              ? [
-                  'Set WORKSPAI_AGENT_TRACING=1. Do not enable tracing during offline conformance; use OPENAI_AGENTS_DISABLE_TRACING=1.',
-                ]
+              ? language === 'python'
+                ? [
+                    'Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. openai-agents 0.22.2 reads OPENAI_AGENTS_DISABLE_TRACING on first trace unless set_tracing_disabled was already called.',
+                  ]
+                : [
+                    'Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. Credentialless runs set the disable env and pass Runner({ tracingDisabled: true }).',
+                  ]
               : id === 'provider-neutral-models'
                 ? language === 'python'
                   ? [

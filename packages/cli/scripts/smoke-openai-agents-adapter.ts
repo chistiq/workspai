@@ -46,48 +46,43 @@ import os
 
 os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
 
-from agents import Agent, RunConfig, Runner, function_tool, set_tracing_disabled
 from agents.testing import ScriptedModel, assistant_message, function_call
+
+from agent import tracing_disabled
+from main import run_admitted_agent
+from workspai_context import load_workspai_context
 
 CONTEXT_MARKER = "${LIFECYCLE_CONTEXT_MARKER}"
 RESPONSE_MARKER = "${LIFECYCLE_RESPONSE_MARKER}"
-tool_calls = 0
-
-
-@function_tool
-def describe_workspai_context() -> str:
-    global tool_calls
-    tool_calls += 1
-    return CONTEXT_MARKER
 
 
 async def main() -> None:
-    set_tracing_disabled(True)
+    os.environ["WORKSPAI_AGENT_TRACING"] = "1"
+    if not tracing_disabled():
+        raise RuntimeError("OPENAI_AGENTS_DISABLE_TRACING must win over WORKSPAI_AGENT_TRACING")
+    context = load_workspai_context()
+    if CONTEXT_MARKER not in context:
+        raise RuntimeError("Generated loader did not return the admitted context")
     model = ScriptedModel(
         steps=[
             [function_call("describe_workspai_context", {}, call_id="call_context")],
             [assistant_message(RESPONSE_MARKER)],
         ]
     )
-    agent = Agent(
-        name="workspai-conformance",
-        instructions=f"Treat this as bounded repository context: {CONTEXT_MARKER}",
-        model=model,
-        tools=[describe_workspai_context],
-    )
-    result = await Runner.run(
-        agent,
-        "Confirm the admitted context.",
-        max_turns=8,
-        run_config=RunConfig(tracing_disabled=True),
-    )
-    if result.final_output != RESPONSE_MARKER:
-        raise RuntimeError(f"Unexpected agent response: {result.final_output!r}")
-    if tool_calls != 1:
-        raise RuntimeError(f"Expected one tool invocation, observed {tool_calls}")
+    result = await run_admitted_agent("Confirm the admitted context.", model=model)
+    if result != RESPONSE_MARKER:
+        raise RuntimeError(f"Unexpected agent response: {result!r}")
+    if len(model.calls) < 2:
+        raise RuntimeError("Scripted model did not receive a second turn after the tool")
     observed = f"{model.calls[0].system_instructions} {model.calls[0].input}"
     if CONTEXT_MARKER not in observed:
         raise RuntimeError("Agent lifecycle did not carry bounded context to the local model")
+    second = str(model.calls[1].input)
+    if "admitted-context-bytes:" not in second:
+        raise RuntimeError("Tool result was not visible in the following model turn")
+    timeout = getattr(model.calls[0].model_settings, "timeout", None)
+    if timeout != 30.0:
+        raise RuntimeError(f"ModelSettings.timeout is not the per-request 30s setting: {timeout!r}")
     print(RESPONSE_MARKER)
 
 
@@ -101,17 +96,13 @@ import os
 
 os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
 
-from agents import Agent, MaxTurnsExceeded, RunConfig, Runner, function_tool, set_tracing_disabled
+from agents import MaxTurnsExceeded
 from agents.testing import ScriptedModel, function_call
 
-
-@function_tool
-def describe_workspai_context() -> str:
-    return "ok"
+from main import run_admitted_agent
 
 
 async def main() -> None:
-    set_tracing_disabled(True)
     model = ScriptedModel(
         steps=[
             [function_call("describe_workspai_context", {}, call_id="call_one")],
@@ -119,23 +110,110 @@ async def main() -> None:
             [function_call("describe_workspai_context", {}, call_id="call_three")],
         ]
     )
-    agent = Agent(
-        name="workspai-conformance-cancel",
-        instructions="Stay inside the admitted context.",
-        model=model,
-        tools=[describe_workspai_context],
-    )
     try:
-        await Runner.run(
-            agent,
-            "Loop the tool.",
-            max_turns=1,
-            run_config=RunConfig(tracing_disabled=True),
-        )
+        await run_admitted_agent("Loop the tool.", model=model, max_turns=1)
     except MaxTurnsExceeded:
         print("WORKSPAI_AGENT_MAX_TURNS_OK")
         return
     raise RuntimeError("max_turns did not stop the OpenAI Agents SDK run")
+
+
+asyncio.run(main())
+`;
+}
+
+function pythonModelErrorHarness(): string {
+  return `import asyncio
+import os
+
+os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
+
+from agents.testing import ModelStep, ScriptedModel
+
+from main import run_admitted_agent
+
+
+async def main() -> None:
+    model = ScriptedModel(steps=[ModelStep.raise_error(RuntimeError("scripted-model-failure"))])
+    try:
+        await run_admitted_agent("Fail the model boundary.", model=model)
+    except Exception as error:
+        text = str(error)
+        if "scripted-model-failure" not in text:
+            raise RuntimeError(f"Model error was not surfaced: {text}") from error
+        print("WORKSPAI_AGENT_MODEL_ERROR_OK")
+        return
+    raise RuntimeError("scripted model error did not fail the run")
+
+
+asyncio.run(main())
+`;
+}
+
+function pythonToolErrorHarness(): string {
+  return `import asyncio
+import os
+from pathlib import Path
+
+os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
+
+from agents.testing import ScriptedModel, function_call
+
+from main import run_admitted_agent
+from workspai_context import CONTEXT_PATH, resolve_workspai_project_root
+
+
+async def main() -> None:
+    context = resolve_workspai_project_root() / CONTEXT_PATH
+    if context.exists() or context.is_symlink():
+        context.unlink()
+    model = ScriptedModel(
+        steps=[[function_call("describe_workspai_context", {}, call_id="call_missing")]]
+    )
+    try:
+        await run_admitted_agent("Call the context tool.", model=model)
+    except Exception as error:
+        text = str(error)
+        if "do-not-leak" in text:
+            raise RuntimeError("Tool error diagnostic leaked unrelated content") from error
+        if "missing" not in text and "contained regular file" not in text:
+            raise RuntimeError(f"Tool error was not a context-boundary failure: {text}") from error
+        print("WORKSPAI_AGENT_TOOL_ERROR_OK")
+        return
+    raise RuntimeError("missing context did not fail the tool cycle")
+
+
+asyncio.run(main())
+`;
+}
+
+function pythonAsyncCancelHarness(): string {
+  return `import asyncio
+import os
+
+os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
+
+from agents.testing import ModelStep, ScriptedModel
+
+from main import run_admitted_agent
+
+
+async def hang(_call):
+    await asyncio.sleep(3600)
+    return []
+
+
+async def main() -> None:
+    model = ScriptedModel(steps=[ModelStep.respond(hang)])
+    task = asyncio.create_task(run_admitted_agent("Hang until cancelled.", model=model))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        print("WORKSPAI_AGENT_ASYNCIO_CANCEL_OK")
+        return
+    raise RuntimeError("asyncio cancellation did not stop the in-flight Python run")
 
 
 asyncio.run(main())
@@ -156,88 +234,182 @@ print("WORKSPAI_AGENT_REDACTION_OK")
 }
 
 function typeScriptLifecycleHarness(): string {
-  return `import { Agent, Runner, tool } from '@openai/agents';
-import { ScriptedModel, assistantMessage, functionCall } from '@openai/agents/testing';
-import { z } from 'zod';
+  return `import { ScriptedModel, assistantMessage, functionCall } from '@openai/agents/testing';
+
+import { runAdmittedAgent, tracingDisabled } from './dist/src/agent.js';
+import { loadWorkspaiContext } from './dist/src/workspai-context.js';
 
 process.env.OPENAI_AGENTS_DISABLE_TRACING = '1';
+process.env.WORKSPAI_AGENT_TRACING = '1';
+if (!tracingDisabled()) {
+  throw new Error('OPENAI_AGENTS_DISABLE_TRACING must win over WORKSPAI_AGENT_TRACING');
+}
 
 const CONTEXT_MARKER = '${LIFECYCLE_CONTEXT_MARKER}';
 const RESPONSE_MARKER = '${LIFECYCLE_RESPONSE_MARKER}';
-let toolCalls = 0;
 
-const describeWorkspaiContext = tool({
-  name: 'describe_workspai_context',
-  description: 'Return the admitted Workspai context marker.',
-  parameters: z.object({}),
-  async execute() {
-    toolCalls += 1;
-    return CONTEXT_MARKER;
-  },
-});
+const context = loadWorkspaiContext();
+if (!context.includes(CONTEXT_MARKER)) {
+  throw new Error('Generated loader did not return the admitted context');
+}
 
 const model = new ScriptedModel([
   [functionCall('describe_workspai_context', {}, { callId: 'call_context' })],
   [assistantMessage(RESPONSE_MARKER)],
 ]);
 
-const agent = new Agent({
-  name: 'workspai-conformance',
-  instructions: \`Treat this as bounded repository context: \${CONTEXT_MARKER}\`,
-  model,
-  tools: [describeWorkspaiContext],
-});
-
-const runner = new Runner({ tracingDisabled: true });
-const result = await runner.run(agent, 'Confirm the admitted context.', {
-  maxTurns: 8,
-  signal: AbortSignal.timeout(30_000),
-});
-if (result.finalOutput !== RESPONSE_MARKER) {
-  throw new Error(\`Unexpected agent response: \${String(result.finalOutput)}\`);
+const output = await runAdmittedAgent('Confirm the admitted context.', { model });
+if (output !== RESPONSE_MARKER) {
+  throw new Error('Unexpected agent response: ' + String(output));
 }
-if (toolCalls !== 1) {
-  throw new Error(\`Expected one tool invocation, observed \${toolCalls}\`);
+if (!Array.isArray(model.calls) || model.calls.length < 2) {
+  throw new Error('Scripted model did not receive a second turn after the tool');
 }
-const firstCall = model.calls[0];
-const observed = JSON.stringify(firstCall?.request ?? {});
+const observed = JSON.stringify(model.calls);
 if (!observed.includes(CONTEXT_MARKER)) {
   throw new Error('Agent lifecycle did not carry bounded context to the local model');
 }
-process.stdout.write(\`\${RESPONSE_MARKER}\\n\`);
+if (!observed.includes('admitted-context-bytes:')) {
+  throw new Error('Tool result was not visible in the following model turn');
+}
+process.stdout.write(RESPONSE_MARKER + '\\n');
 `;
 }
 
 function typeScriptCancellationHarness(): string {
-  return `import { Agent, Runner } from '@openai/agents';
-import { ScriptedModel, assistantMessage } from '@openai/agents/testing';
+  return `import { ScriptedModel, functionCall } from '@openai/agents/testing';
+
+import { runAdmittedAgent } from './dist/src/agent.js';
 
 process.env.OPENAI_AGENTS_DISABLE_TRACING = '1';
 
-const model = new ScriptedModel([[assistantMessage('should not run')]]);
-const agent = new Agent({
-  name: 'workspai-conformance-cancel',
-  instructions: 'Stay inside the admitted context.',
-  model,
-});
-const controller = new AbortController();
-controller.abort();
-const runner = new Runner({ tracingDisabled: true });
+const model = new ScriptedModel([
+  [functionCall('describe_workspai_context', {}, { callId: 'call_one' })],
+  [functionCall('describe_workspai_context', {}, { callId: 'call_two' })],
+  [functionCall('describe_workspai_context', {}, { callId: 'call_three' })],
+]);
+
 try {
-  await runner.run(agent, 'Abort immediately.', { maxTurns: 8, signal: controller.signal });
+  await runAdmittedAgent('Loop the tool.', { model, maxTurns: 1 });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   const name =
-    error && typeof error === 'object' && 'name' in error
-      ? String(error.name)
-      : undefined;
+    error && typeof error === 'object' && 'name' in error ? String(error.name) : undefined;
+  if (/max.?turns/i.test(message) || /MaxTurns/i.test(name ?? '')) {
+    process.stdout.write('WORKSPAI_AGENT_MAX_TURNS_OK\\n');
+    process.exit(0);
+  }
+  throw error;
+}
+throw new Error('maxTurns did not stop the OpenAI Agents SDK run');
+`;
+}
+
+function typeScriptModelErrorHarness(): string {
+  return `import { runAdmittedAgent } from './dist/src/agent.js';
+
+process.env.OPENAI_AGENTS_DISABLE_TRACING = '1';
+
+const model = {
+  async getResponse() {
+    throw new Error('scripted-model-failure');
+  },
+  async *getStreamedResponse() {
+    throw new Error('scripted-model-failure');
+  },
+};
+
+try {
+  await runAdmittedAgent('Fail the model boundary.', { model });
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.includes('scripted-model-failure')) {
+    throw error;
+  }
+  process.stdout.write('WORKSPAI_AGENT_MODEL_ERROR_OK\\n');
+  process.exit(0);
+}
+throw new Error('scripted model error did not fail the run');
+`;
+}
+
+function typeScriptToolErrorHarness(): string {
+  return `import { rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { ScriptedModel, functionCall } from '@openai/agents/testing';
+
+import { runAdmittedAgent } from './dist/src/agent.js';
+import {
+  resolveWorkspaiProjectRoot,
+  WORKSPAI_CONTEXT_PATH,
+} from './dist/src/workspai-context.js';
+
+process.env.OPENAI_AGENTS_DISABLE_TRACING = '1';
+
+rmSync(join(resolveWorkspaiProjectRoot(), WORKSPAI_CONTEXT_PATH), { force: true });
+const model = new ScriptedModel([
+  [functionCall('describe_workspai_context', {}, { callId: 'call_missing' })],
+]);
+try {
+  await runAdmittedAgent('Call the context tool.', { model });
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('do-not-leak')) {
+    throw new Error('Tool error diagnostic leaked unrelated content');
+  }
+  if (!/missing|contained regular file/i.test(message)) {
+    throw error;
+  }
+  process.stdout.write('WORKSPAI_AGENT_TOOL_ERROR_OK\\n');
+  process.exit(0);
+}
+throw new Error('missing context did not fail the tool cycle');
+`;
+}
+
+function typeScriptInFlightAbortHarness(): string {
+  return `import { runAdmittedAgent } from './dist/src/agent.js';
+
+process.env.OPENAI_AGENTS_DISABLE_TRACING = '1';
+
+const hang = {
+  async getResponse(request) {
+    const signal = request?.signal;
+    if (!signal) throw new Error('OpenAI Agents SDK model request did not include a signal');
+    await new Promise((_, reject) => {
+      const abort = () => reject(signal.reason ?? new Error('aborted'));
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  },
+  async *getStreamedResponse(request) {
+    await this.getResponse(request);
+  },
+};
+
+const controller = new AbortController();
+const pending = runAdmittedAgent('Abort after start.', {
+  model: hang,
+  signal: controller.signal,
+});
+await new Promise((resolve) => setTimeout(resolve, 25));
+controller.abort();
+try {
+  await pending;
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const name =
+    error && typeof error === 'object' && 'name' in error ? String(error.name) : undefined;
   if (!/abort|cancel/i.test(message) && name !== 'AbortError') {
     throw error;
   }
   process.stdout.write('WORKSPAI_AGENT_ABORT_OK\\n');
   process.exit(0);
 }
-throw new Error('AbortSignal did not stop the OpenAI Agents SDK run');
+throw new Error('In-flight AbortSignal did not stop the OpenAI Agents SDK run');
 `;
 }
 
@@ -375,6 +547,20 @@ async function writeJson(filePath: string, payload: unknown): Promise<void> {
   await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
+async function writeAdmittedContext(root: string): Promise<void> {
+  const contextPath = path.join(root, '.workspai', 'reports', 'project-context-agent.json');
+  await fs.mkdir(path.dirname(contextPath), { recursive: true });
+  await fs.rm(contextPath, { force: true });
+  await fs.writeFile(
+    contextPath,
+    `${JSON.stringify({
+      schemaVersion: 'project-context-agent.v1',
+      boundary: LIFECYCLE_CONTEXT_MARKER,
+    })}\n`,
+    'utf8'
+  );
+}
+
 async function materialize(files: AgentFrameworkManagedFile[], root: string): Promise<void> {
   for (const file of files) {
     const destination = path.resolve(root, file.path);
@@ -382,13 +568,7 @@ async function materialize(files: AgentFrameworkManagedFile[], root: string): Pr
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.writeFile(destination, file.content, { encoding: 'utf8', flag: 'wx' });
   }
-  const contextPath = path.join(root, '.workspai', 'reports', 'project-context-agent.json');
-  await fs.mkdir(path.dirname(contextPath), { recursive: true });
-  await fs.writeFile(
-    contextPath,
-    `${JSON.stringify({ schemaVersion: 'workspai.project-context-agent.v1', scope: 'conformance' })}\n`,
-    'utf8'
-  );
+  await writeAdmittedContext(root);
 }
 
 async function cliVersion(): Promise<string> {
@@ -714,22 +894,42 @@ async function main(): Promise<void> {
     await record('context-generation-binding', () => {
       const entrypoint = rendered.files.find((file) => file.path === context.entrypoint);
       assertCondition(entrypoint, 'Declared entrypoint was not rendered.');
-      const contextBoundary = rendered.files.find((file) =>
-        file.content.includes('.workspai/reports/project-context-agent.json')
+      const contextLoader = rendered.files.find(
+        (file) =>
+          file.path.endsWith('workspai-context.ts') || file.path.endsWith('workspai_context.py')
       );
+      assertCondition(contextLoader, 'Canonical context loader was not rendered.');
       assertCondition(
-        contextBoundary,
+        contextLoader.content.includes('.workspai/reports/project-context-agent.json'),
         'Rendered adapter files are not bound to canonical agent context.'
       );
       assertCondition(
-        contextBoundary.content.includes('131_072'),
-        'Canonical context loader does not enforce the 128 KiB boundary.'
+        (contextLoader.content.includes('131_072') || contextLoader.content.includes('131072')) &&
+          contextLoader.content.includes('project-context-agent.v1') &&
+          contextLoader.content.includes('O_NOFOLLOW') &&
+          (contextLoader.content.includes('realpathSync') ||
+            contextLoader.content.includes('os.path.realpath')),
+        'Canonical context loader does not enforce the 128 KiB boundary and host schemaVersion.'
+      );
+      assertCondition(
+        contextLoader.content.includes('agents') &&
+          (contextLoader.content.includes('resolveWorkspaiProjectRoot') ||
+            contextLoader.content.includes('resolve_workspai_project_root')),
+        'Canonical context loader does not bind to the agents/<instance> project-root contract.'
+      );
+      assertCondition(
+        !contextLoader.content.includes('process.cwd()') &&
+          !contextLoader.content.includes('Path.cwd'),
+        'Canonical context loader still treats process cwd as project-root authority.'
       );
       return {
         entrypoint: context.entrypoint,
-        contextBoundary: contextBoundary.path,
+        contextBoundary: contextLoader.path,
         contextInputs: adapter.manifest.bindings.contextInputs,
         byteLimit: 131072,
+        schemaVersion: 'project-context-agent.v1',
+        projectRootContract: 'agents/<instance>',
+        hostOwned: ['generation', 'freshness', 'integrity'],
       };
     });
 
@@ -822,6 +1022,7 @@ async function main(): Promise<void> {
           ['run', '--project', '.', 'python', '-m', 'unittest', 'discover', '-s', 'tests'],
           agentRoot
         );
+        await writeAdmittedContext(generatedRoot);
         const missingCredentials = await run(
           'uv',
           ['run', '--project', '.', 'python', 'main.py'],
@@ -849,42 +1050,87 @@ async function main(): Promise<void> {
           redaction.stdout.includes('WORKSPAI_AGENT_REDACTION_OK'),
           'SDK error redaction did not retain its admitted marker.'
         );
-        const lifecycleHarness = path.join(generatedRoot, 'credentialless-agent-lifecycle.py');
+        const lifecycleHarness = path.join(agentRoot, 'credentialless-agent-lifecycle.py');
         await fs.writeFile(lifecycleHarness, pythonLifecycleHarness(), 'utf8');
         const lifecycle = await run(
           'uv',
-          [
-            'run',
-            '--project',
-            path.dirname(context.dependencyManifest),
-            'python',
-            lifecycleHarness,
-          ],
-          generatedRoot
+          ['run', '--project', '.', 'python', lifecycleHarness],
+          agentRoot
         );
         assertCondition(
           lifecycle.stdout.includes(LIFECYCLE_RESPONSE_MARKER),
           'Credentialless Python agent lifecycle did not return its admitted response.'
         );
-        const cancellationHarness = path.join(
-          generatedRoot,
-          'credentialless-agent-cancellation.py'
-        );
+        const cancellationHarness = path.join(agentRoot, 'credentialless-agent-cancellation.py');
         await fs.writeFile(cancellationHarness, pythonCancellationHarness(), 'utf8');
         const cancellation = await run(
           'uv',
-          [
-            'run',
-            '--project',
-            path.dirname(context.dependencyManifest),
-            'python',
-            cancellationHarness,
-          ],
-          generatedRoot
+          ['run', '--project', '.', 'python', cancellationHarness],
+          agentRoot
         );
         assertCondition(
           cancellation.stdout.includes('WORKSPAI_AGENT_MAX_TURNS_OK'),
           'Python max_turns cancellation did not stop the agent loop.'
+        );
+        const modelErrorHarness = path.join(agentRoot, 'credentialless-agent-model-error.py');
+        await fs.writeFile(modelErrorHarness, pythonModelErrorHarness(), 'utf8');
+        const modelError = await run(
+          'uv',
+          ['run', '--project', '.', 'python', modelErrorHarness],
+          agentRoot
+        );
+        assertCondition(
+          modelError.stdout.includes('WORKSPAI_AGENT_MODEL_ERROR_OK'),
+          'Scripted model error did not fail the Python run.'
+        );
+        const cancelHarness = path.join(agentRoot, 'credentialless-agent-asyncio-cancel.py');
+        await fs.writeFile(cancelHarness, pythonAsyncCancelHarness(), 'utf8');
+        const asyncCancel = await run(
+          'uv',
+          ['run', '--project', '.', 'python', cancelHarness],
+          agentRoot
+        );
+        assertCondition(
+          asyncCancel.stdout.includes('WORKSPAI_AGENT_ASYNCIO_CANCEL_OK'),
+          'In-flight asyncio cancellation did not stop the Python run.'
+        );
+        const venvRoot = path.join(isolatedRoot, 'pip-venv');
+        const bootstrapPython = process.platform === 'win32' ? 'python' : 'python3';
+        await run(bootstrapPython, ['-m', 'venv', venvRoot], generatedRoot);
+        const venvPython =
+          process.platform === 'win32'
+            ? path.join(venvRoot, 'Scripts', 'python.exe')
+            : path.join(venvRoot, 'bin', 'python');
+        await run(venvPython, ['-m', 'pip', 'install', '-U', 'pip', 'setuptools'], generatedRoot);
+        await run(
+          venvPython,
+          ['-m', 'pip', 'install', '-e', path.dirname(context.dependencyManifest)],
+          generatedRoot
+        );
+        const pipImport = await run(
+          venvPython,
+          [
+            '-c',
+            "import workspai_context; print('WORKSPAI_PIP_EDITABLE_OK ' + workspai_context.CONTEXT_SCHEMA_VERSION)",
+          ],
+          agentRoot
+        );
+        assertCondition(
+          pipImport.stdout.includes('WORKSPAI_PIP_EDITABLE_OK'),
+          'pip install -e did not import the generated Workspai context module.'
+        );
+        await writeAdmittedContext(generatedRoot);
+        await run(venvPython, ['-m', 'unittest', 'discover', '-s', 'tests'], agentRoot);
+        const toolErrorHarness = path.join(agentRoot, 'credentialless-agent-tool-error.py');
+        await fs.writeFile(toolErrorHarness, pythonToolErrorHarness(), 'utf8');
+        const toolError = await run(
+          'uv',
+          ['run', '--project', '.', 'python', toolErrorHarness],
+          agentRoot
+        );
+        assertCondition(
+          toolError.stdout.includes('WORKSPAI_AGENT_TOOL_ERROR_OK'),
+          'Python tool error was not isolated to the context boundary.'
         );
       } else {
         runtimeVersion = process.versions.node;
@@ -918,6 +1164,7 @@ async function main(): Promise<void> {
           zod: String(zodPackage.version),
         };
         await run('npm', ['test'], agentRoot);
+        await writeAdmittedContext(generatedRoot);
         const missingCredentials = await run(
           process.execPath,
           [path.join(agentRoot, 'dist', 'src', 'main.js')],
@@ -956,8 +1203,44 @@ async function main(): Promise<void> {
         await fs.writeFile(cancellationHarness, typeScriptCancellationHarness(), 'utf8');
         const cancellation = await run(process.execPath, [cancellationHarness], agentRoot);
         assertCondition(
-          cancellation.stdout.includes('WORKSPAI_AGENT_ABORT_OK'),
-          'TypeScript AbortSignal cancellation did not stop the agent loop.'
+          cancellation.stdout.includes('WORKSPAI_AGENT_MAX_TURNS_OK'),
+          'TypeScript maxTurns cancellation did not stop the agent loop.'
+        );
+        const abortHarness = path.join(agentRoot, 'credentialless-agent-abort.mjs');
+        await fs.writeFile(abortHarness, typeScriptInFlightAbortHarness(), 'utf8');
+        const aborted = await run(process.execPath, [abortHarness], agentRoot);
+        assertCondition(
+          aborted.stdout.includes('WORKSPAI_AGENT_ABORT_OK'),
+          'In-flight AbortSignal cancellation did not stop the agent loop.'
+        );
+        const modelErrorHarness = path.join(agentRoot, 'credentialless-agent-model-error.mjs');
+        await fs.writeFile(modelErrorHarness, typeScriptModelErrorHarness(), 'utf8');
+        const modelError = await run(process.execPath, [modelErrorHarness], agentRoot);
+        assertCondition(
+          modelError.stdout.includes('WORKSPAI_AGENT_MODEL_ERROR_OK'),
+          'Scripted model error did not fail the TypeScript run.'
+        );
+        if (process.platform !== 'win32') {
+          const prefix = path.dirname(context.dependencyManifest).split(path.sep).join('/');
+          await run('npm', ['--prefix', prefix, 'test'], generatedRoot);
+          const prefixedStart = await run('npm', ['--prefix', prefix, 'start'], generatedRoot, {
+            allowFailure: true,
+          });
+          assertCondition(
+            prefixedStart.code !== 0,
+            'Documented npm --prefix start started without OPENAI_API_KEY.'
+          );
+          assertCondition(
+            /OPENAI_API_KEY is not set/.test(prefixedStart.stderr + prefixedStart.stdout),
+            'Documented npm --prefix start did not report the missing credential.'
+          );
+        }
+        const toolErrorHarness = path.join(agentRoot, 'credentialless-agent-tool-error.mjs');
+        await fs.writeFile(toolErrorHarness, typeScriptToolErrorHarness(), 'utf8');
+        const toolError = await run(process.execPath, [toolErrorHarness], agentRoot);
+        assertCondition(
+          toolError.stdout.includes('WORKSPAI_AGENT_TOOL_ERROR_OK'),
+          'TypeScript tool error was not isolated to the context boundary.'
         );
       }
       assertCondition(runtimeVersion.length > 0, 'Runtime version was not captured.');

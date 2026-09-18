@@ -167,6 +167,16 @@ describe('OpenAI Agents SDK adapters', () => {
     expect(entrypoint).toContain('max_turns=MAX_TURNS');
     expect(entrypoint).toContain('set_tracing_disabled');
     expect(entrypoint).toContain('require_api_key');
+    expect(entrypoint).toContain('run_admitted_agent');
+    expect(agent).toContain('def build_agent');
+    expect(agent).toContain('OPENAI_AGENTS_DISABLE_TRACING');
+    expect(agent).toContain('WORKSPAI_AGENT_TRACING');
+    expect(dependencies).toContain('[build-system]');
+    expect(dependencies).toContain('setuptools');
+    const contextFile =
+      first.files.find((file) => file.path.endsWith('workspai_context.py'))?.content ?? '';
+    expect(contextFile).toContain('resolve_workspai_project_root');
+    expect(contextFile).not.toContain('Path.cwd');
     expect(dependencies).toContain(
       `openai-agents==${packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')}`
     );
@@ -186,8 +196,16 @@ describe('OpenAI Agents SDK adapters', () => {
     expect(agent).toContain("from '@openai/agents'");
     expect(agent).toContain('describe_workspai_context');
     expect(agent).toContain('redactSdkError');
-    expect(entrypoint).toContain('maxTurns: MAX_TURNS');
-    expect(entrypoint).toContain('AbortSignal.timeout');
+    expect(agent).toContain('runAdmittedAgent');
+    expect(agent).toContain('OPENAI_AGENTS_DISABLE_TRACING');
+    expect(agent).toContain('WORKSPAI_AGENT_TRACING');
+    expect(agent).toContain('maxTurns: options?.maxTurns ?? MAX_TURNS');
+    expect(agent).toContain('AbortSignal.timeout');
+    expect(entrypoint).toContain('runAdmittedAgent');
+    const contextFile =
+      rendered.files.find((file) => file.path.endsWith('workspai-context.ts'))?.content ?? '';
+    expect(contextFile).toContain('resolveWorkspaiProjectRoot');
+    expect(contextFile).not.toContain('process.cwd()');
     expect(manifest).toContain(
       `"@openai/agents": "${packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')}"`
     );

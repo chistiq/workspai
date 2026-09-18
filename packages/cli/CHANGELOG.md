@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ran the OpenAI TypeScript conformance install/test inside the generated
   agent package. Windows npm ignores `install --prefix <relative>` and then
   looks for `package.json` in the parent cwd.
+- OpenAI Agents starters locate the Workspai project as the directory that
+  owns `agents/<instance>/`, so `npm --prefix agents/<instance> start` and
+  Python entrypoints read canonical context without cwd authority. Loaders
+  canonicalize containment, open the regular file, cap reads at 128 KiB,
+  require `project-context-agent.v1` JSON, and reject escaped symlinks
+  without echoing file contents. Credentialless SDK checks now call the
+  generated `buildAgent` / `build_agent` seam with official ScriptedModel
+  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters stay
+  preview and are not copied into release admission. Context-path containment
+  is a bounded fd read after `O_NOFOLLOW` when available, not a TOCTOU-free
+  walk. Generator coverage remains in the Vitest gate alongside the OpenAI
+  adapter sources.
 
 ## [0.75.2] - 2026-09-14
 
