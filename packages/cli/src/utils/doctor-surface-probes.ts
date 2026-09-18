@@ -582,7 +582,7 @@ async function inferDependencyBaselineRepair(input: {
   if (input.runtime === 'dotnet') {
     if (input.projectKind === 'agent') {
       return {
-        command: 'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file',
+        command: 'dotnet restore agents/primary/tests/Primary.Tests.csproj',
         title: '.NET agent dependency restore',
         files: [
           'agents/primary/Primary.csproj',

@@ -115,16 +115,38 @@ Generated starter files use an isolated `agents/<instance>` root and keep
 adapter state under `.workspai/agent-frameworks/<adapter>/<instance>.json`.
 That instance contains the only runtime dependency manifest; the project root
 does not receive an empty Python or .NET manifest that could be mistaken for a
-second executable unit. Workspace Model reports these projects as `agent`,
+second executable unit. Python and .NET starters resolve bounded context from
+the directory that owns `agents/<instance>/`. They do not use process cwd.
+`workspace run start` executes from the agent package directory and still
+finds `.workspai/reports/project-context-agent.json` at the project root.
+Loaders share the OpenAI containment contract: canonical path walk, regular-file
+open, 128 KiB cap, UTF-8 JSON, and `schemaVersion: project-context-agent.v1`.
+The Python starter is pip-editable (`[build-system]` + setuptools modules) and
+uses the official Foundry hello-world `Agent(client=FoundryChatClient(...))`
+pattern with three read-only documented tools: `describe_workspai_context`,
+`read_workspai_project_summary`, and `list_workspai_supported_commands`. The
+.NET starter uses `AIProjectClient.AsAIAgent` plus `AIFunctionFactory.Create`,
+enables `RestorePackagesWithLockFile`, and does not emit invented NuGet lock
+hashes. Neither starter pastes admitted JSON into instructions; live
+entrypoints stream stdout and accept a prompt from argv or stdin. Neither
+starter hardcodes a Foundry model name; `FOUNDRY_MODEL` is
+required. `DefaultAzureCredential` remains the local development convenience
+Microsoft documents; generated READMEs tell production hosts to prefer
+`ManagedIdentityCredential`. Adapters remain `preview`. Unsupported Microsoft
+primitives (durable workflows, MCP, HITL loops, hosted tools) stay out of the
+generated first-version scaffold.
+Workspace Model reports these projects as `agent`,
 retains `microsoft-agent-framework` as their framework identity, and reports
 only lifecycle stages backed by concrete manifests, entrypoints, tests, or an
 owned project runner.
 Each starter also includes credentialless tests for the bounded context
-boundary and an environment-name example with no secret values. Python uses
-the host platform's normal Python 3 launcher and remains dependency-free for
-these tests; .NET uses a separately pinned test project. The conformance matrix
-executes these tests in addition to compiling and exercising the deterministic
-framework lifecycle.
+boundary, allowlisted views, and Azure-shaped redaction, plus an
+environment-name example with no secret values. Python context
+tests isolate the operational context file and restore it afterward; they stay
+dependency-free unless `agent-framework` is installed for the optional
+LocalChatClient loop. .NET uses a separately pinned test project. The conformance
+matrix executes these tests in addition to compiling and exercising the
+deterministic framework lifecycle.
 Existing user-authored files are blockers, never overwrite targets. A managed
 comment alone does not prove ownership: refresh also requires the previous
 Workspai ownership receipt, which is bound to the exact adapter-manifest digest;
@@ -138,10 +160,10 @@ additional profiles must preserve the same security boundary.
 The built-in OpenAI adapters pin independently verified SDK baselines. They do
 not reuse Microsoft detection, kits, or model-provider defaults.
 
-| Adapter                      | Tested framework | Runtime        | Authored detection                         |
-| ---------------------------- | ---------------- | -------------- | ------------------------------------------ |
-| `openai-agents-python`       | `0.22.2`         | Python `>=3.10` | exact PyPI package `openai-agents`        |
-| `openai-agents-typescript`   | `0.18.0`         | Node.js `>=22` | exact npm package `@openai/agents`        |
+| Adapter                    | Tested framework | Runtime         | Authored detection                 |
+| -------------------------- | ---------------- | --------------- | ---------------------------------- |
+| `openai-agents-python`     | `0.22.2`         | Python `>=3.10` | exact PyPI package `openai-agents` |
+| `openai-agents-typescript` | `0.18.0`         | Node.js `>=22`  | exact npm package `@openai/agents` |
 
 The TypeScript starter also pins peer `zod` `4.6.5`, TypeScript `5.9.3`, and
 `@types/node` `22.20.3`. The `openai` PyPI or npm package alone is not this
@@ -178,17 +200,36 @@ Claimed capabilities are conservative and independently evidenced:
 
 Python cancellation uses `Runner.max_turns` and `ModelSettings.timeout` from
 `openai-agents` `0.22.2`. `ModelSettings.timeout` is a per-model-request
-timeout. TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
+timeout applied only on the live model path. Injected `ScriptedModel` runs omit
+it because that setting hung the official test double on Python 3.13.
+TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
 `@openai/agents` `0.18.0`. Those SDK controls are not a Workspai-owned timeout
 service. Workspai still owns mutation admission and verification; a successful
 model run is not verified evidence.
 
-Create kit ids `agent.openai.python` and `agent.openai.typescript` are
-release-admitted for this CLI version. Interactive Create shows them under
-**AI Agent**. Attach requires `--framework openai-agents` when the runtime is
-shared. Adapters remain `preview`; handoffs, MCP, sessions, voice, sandbox, and
-approval loops stay unsupported. Changing `preview` to `stable` would change the
-manifest digest and require a new matrix.
+Generated starters do not paste `project-context-agent.json` into model
+instructions. They expose three read-only tools over allowlisted views:
+context size and `schemaVersion`, workspace/project identity (including
+`boundedGraphSearch` as a pointer, not a shell), and the admitted command
+surface. Live Python uses `Runner.run_streamed`; live TypeScript streams
+`Runner.run({ stream: true })`. Credentialless ScriptedModel tests stay on
+the non-stream `run` path. A prompt is taken from argv or stdin.
+
+Generated OpenAI context tests copy the operational
+`.workspai/reports/project-context-agent.json` aside for the suite and restore
+it afterward. A green test run is not allowed to delete or replace that host
+artifact.
+
+Create lists every published agent kit under **AI Agent**, including
+`agent.openai.python` and `agent.openai.typescript`. That picker is the
+published catalog: it is not filtered by release-admission digest match or
+workspace profile. A later adapter-manifest change must not hide a kit.
+Create and Attach still refuse a kit whose adapter is not release-admitted;
+visibility in the picker is not permission to write a blocked adapter.
+Attach still requires `--framework openai-agents` when the
+runtime is shared. Adapters remain `preview`; handoffs, MCP, sessions, voice,
+sandbox, and approval loops stay unsupported. Changing `preview` to `stable`
+would change the manifest digest and require a new matrix.
 
 A path-filtered twelve-lane adapter matrix compiles the generated Microsoft
 Python/.NET and OpenAI Python/TypeScript projects on Linux, macOS, and Windows. Every lane records all 18 mandatory
@@ -275,8 +316,9 @@ npx workspai create project agent.microsoft.dotnet operations-agent
 Create writes a minimal runtime identity, registers the project, seals a
 Model/Graph baseline so the adapter can plan, applies the adapter-owned scaffold
 inside that Change, then re-observes Model, Graph, and project grounding against
-the nested runtime. The interactive wizard exposes these kits under the **AI
-Agent** category only because they are release-admitted. A failed scaffold
+the nested runtime. The interactive wizard lists every published kit under the
+**AI Agent** category. Scaffolding still requires the selected adapter to be
+release-admitted. A failed scaffold
 rolls back the new directory and workspace registration. Detection itself
 remains read-only and never authorizes writes.
 

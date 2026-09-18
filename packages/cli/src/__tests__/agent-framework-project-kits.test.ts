@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   describeAgentFrameworkProjectKits,
+  isAdmittedAgentFrameworkProjectKit,
   isAgentFrameworkProjectKit,
   listAgentFrameworkProjectKits,
   initializeAgentFrameworkProjectRoot,
@@ -41,6 +42,7 @@ describe('agent framework project kits', () => {
     expect(resolveAgentFrameworkProjectKit('agent.openai.typescript')?.adapterId).toBe(
       'openai-agents-typescript'
     );
+    expect(kits.every((kit) => isAdmittedAgentFrameworkProjectKit(kit))).toBe(true);
   });
 
   it('resolves stable aliases without exposing mutable registry state', () => {

@@ -402,6 +402,9 @@ async function enforceWorkspaceProfileForRequestedKit(kitName: string): Promise<
   if (!workspacePath || !normalizedKitName) {
     return true;
   }
+  if (isAgentFrameworkProjectKit(normalizedKitName)) {
+    return true;
+  }
 
   try {
     const [profile, mode] = await Promise.all([

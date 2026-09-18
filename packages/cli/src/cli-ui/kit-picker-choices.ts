@@ -2,7 +2,10 @@ import { listFrontendGenerators } from '../frontend-project.js';
 import { listOfficialProjectGenerators } from '../official-project.js';
 import { listInteractiveKits, type KitDefinition } from '../utils/kit-registry.js';
 import type { PromptChoice } from './prompts.js';
-import { listAgentFrameworkProjectKits } from '../agent-frameworks/project-kits.js';
+import {
+  describeAgentFrameworkProjectKits,
+  isAdmittedAgentFrameworkProjectKit,
+} from '../agent-frameworks/project-kits.js';
 
 export const CREATE_KIT_CATEGORY_IDS = [
   'backend',
@@ -82,10 +85,12 @@ export function buildKitPickerChoices(category?: CreateKitCategoryId): Categoriz
     >,
   }));
 
-  const agentChoices = listAgentFrameworkProjectKits().map((kit) => ({
+  const agentChoices = describeAgentFrameworkProjectKits().map((kit) => ({
     value: kit.id,
     label: `AI Agent · ${kit.label}`,
-    hint: `${kit.runtime} · release-admitted baseline`,
+    hint: `${kit.runtime} · ${
+      isAdmittedAgentFrameworkProjectKit(kit) ? 'release-admitted baseline' : 'published baseline'
+    }`,
     name: kit.label,
     category: 'agent' as const,
   }));

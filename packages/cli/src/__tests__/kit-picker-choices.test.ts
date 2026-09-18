@@ -58,6 +58,14 @@ describe('kit picker choices', () => {
           value: 'agent.microsoft.dotnet',
           label: 'AI Agent · Microsoft Agent Framework · .NET',
         }),
+        expect.objectContaining({
+          value: 'agent.openai.python',
+          label: 'AI Agent · OpenAI Agents SDK · Python',
+        }),
+        expect.objectContaining({
+          value: 'agent.openai.typescript',
+          label: 'AI Agent · OpenAI Agents SDK · TypeScript',
+        }),
       ])
     );
   });
@@ -80,7 +88,15 @@ describe('kit picker choices', () => {
     expect(backend.every((choice) => choice.category === 'backend')).toBe(true);
     expect(frontend.length).toBeGreaterThan(5);
     expect(frontend.every((choice) => choice.category === 'frontend')).toBe(true);
-    expect(buildKitPickerChoices('agent')).toHaveLength(2);
+    expect(buildKitPickerChoices('agent')).toHaveLength(4);
+    expect(buildKitPickerChoices('agent').map((choice) => choice.value)).toEqual(
+      expect.arrayContaining([
+        'agent.microsoft.dotnet',
+        'agent.microsoft.python',
+        'agent.openai.python',
+        'agent.openai.typescript',
+      ])
+    );
     expect(buildKitPickerChoices('agent').every((choice) => choice.category === 'agent')).toBe(
       true
     );

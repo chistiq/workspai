@@ -1084,7 +1084,7 @@ describe('doctor enterprise surface probes', () => {
       status: 'warn',
       repairCapability: {
         command: expect.stringContaining(
-          'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file'
+          'dotnet restore agents/primary/tests/Primary.Tests.csproj'
         ),
       },
     });

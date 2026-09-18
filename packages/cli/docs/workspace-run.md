@@ -52,7 +52,9 @@ Microsoft Agent Framework projects keep their executable manifest under
 `agents/<instance>/`. Workspace Run treats that nested `pyproject.toml` or
 `.csproj` as its own unit (`python3 -m compileall .`,
 `python3 -m unittest discover -s tests`, `python3 main.py`, or the matching
-.NET commands). An empty legacy root manifest is ignored only when it still
+.NET commands). A Python unit with `main.py` uses `compileall` even when
+`pyproject.toml` declares `[build-system]`; `python -m build` remains only for
+packaging projects that have no agent entrypoint. An empty legacy root manifest is ignored only when it still
 matches the exact older Workspai shell and a real `agents/primary` runtime
 exists. Any user edit restores the root as an independent unit.
 

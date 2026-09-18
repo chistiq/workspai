@@ -18,8 +18,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--runtime python` without `--framework` requires an explicit framework because
   Microsoft and OpenAI are both admitted.
 
+### Changed
+
+- Generated OpenAI and Microsoft starters inspect admitted Workspai context
+  through allowlisted read-only tools instead of pasting the JSON into
+  instructions. Live entrypoints stream stdout, accept a prompt from argv or
+  stdin, and redact Azure-shaped secrets in addition to `sk-` values.
+  Microsoft Python adds a credentialless LocalChatClient loop when the
+  framework is installed. Adapters remain `preview`.
+
 ### Fixed
 
+- Listed every published agent kit in interactive Create. Admission digest
+  match and workspace profile must not hide OpenAI Python or any other
+  catalog kit from that picker. Create and Attach still refuse a blocked
+  adapter; picker visibility is not permission to write.
+- Isolated generated OpenAI context tests so they backup and restore the
+  operational `.workspai/reports/project-context-agent.json` file instead of
+  deleting or overwriting it after a green run.
+- Microsoft Python and .NET starters now match the OpenAI containment loader,
+  require `FOUNDRY_MODEL` instead of hardcoding `gpt-4o`, and ship one official
+  read-only typed context tool. Python is pip-editable. .NET enables
+  `RestorePackagesWithLockFile` without inventing NuGet hashes, and restore
+  docs no longer demand a lock file that Create does not emit.
+- Generated OpenAI TypeScript tests include a credentialless ScriptedModel
+  tool-call, matching the Python starter.
+- Microsoft Python and .NET starters resolve the owning `agents/<instance>/`
+  project instead of process cwd, matching `workspace run start`.
+- Python lifecycle `build` prefers `${python} -m compileall .` when `main.py`
+  exists, even if `pyproject.toml` declares `[build-system]`.
+- OpenAI Python applies `ModelSettings.timeout` only on the live model path so
+  ScriptedModel tool-call conformance does not hang on Python 3.13.
 - Isolated Vitest from an outer Git worktree (`GIT_DIR` / `GIT_WORK_TREE`) so
   fixture repositories cannot commit into the host worktree during husky
   `pre-push`.

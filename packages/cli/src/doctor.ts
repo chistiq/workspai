@@ -4925,7 +4925,7 @@ async function checkProjectUnnormalized(
         buildProjectFixCommand(
           projectPath,
           health.framework === 'Microsoft Agent Framework'
-            ? 'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file'
+            ? 'dotnet restore agents/primary/tests/Primary.Tests.csproj'
             : 'dotnet restore'
         )
       );
@@ -7021,6 +7021,11 @@ function parseDependencySyncFix(
         'dotnet\\s+restore\\s+agents/primary/tests/Primary\\.Tests\\.csproj\\s+--use-lock-file',
       command: 'dotnet',
       args: ['restore', 'agents/primary/tests/Primary.Tests.csproj', '--use-lock-file'],
+    },
+    {
+      pattern: 'dotnet\\s+restore\\s+agents/primary/tests/Primary\\.Tests\\.csproj',
+      command: 'dotnet',
+      args: ['restore', 'agents/primary/tests/Primary.Tests.csproj'],
     },
     { pattern: 'dotnet\\s+restore', command: 'dotnet', args: ['restore'] },
     { pattern: 'cargo\\s+fetch', command: 'cargo', args: ['fetch'] },

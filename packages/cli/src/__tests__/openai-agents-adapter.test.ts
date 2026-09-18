@@ -158,16 +158,29 @@ describe('OpenAI Agents SDK adapters', () => {
     expect(first.files.some((file) => /sk-[A-Za-z0-9]/.test(file.content))).toBe(false);
     const agent = first.files.find((file) => file.path.endsWith('/agent.py'))?.content ?? '';
     const entrypoint = first.files.find((file) => file.path.endsWith('/main.py'))?.content ?? '';
+    const generatedTests =
+      first.files.find((file) => file.path.endsWith('/tests/test_context.py'))?.content ?? '';
     const dependencies =
       first.files.find((file) => file.path.endsWith('/pyproject.toml'))?.content ?? '';
     expect(agent).toContain('from agents import Agent, ModelSettings, function_tool');
     expect(agent).toContain('ModelSettings(timeout=MODEL_TIMEOUT_SECONDS)');
+    expect(agent).toContain('if model is not None:');
+    expect(generatedTests).toContain('setUpClass');
+    expect(generatedTests).toContain('_restore_live_context');
+    expect(generatedTests).toContain('test_scripted_model_tool_call_stays_offline');
+    expect(generatedTests).toContain('ScriptedModel');
+    expect(generatedTests).toContain('test_allowlisted_views_omit_non_admitted_keys');
     expect(agent).toContain('describe_workspai_context');
+    expect(agent).toContain('read_workspai_project_summary');
+    expect(agent).toContain('list_workspai_supported_commands');
     expect(agent).toContain('OPENAI_API_KEY is not set');
+    expect(agent).not.toContain('<workspai-context>');
     expect(entrypoint).toContain('max_turns=MAX_TURNS');
     expect(entrypoint).toContain('set_tracing_disabled');
     expect(entrypoint).toContain('require_api_key');
     expect(entrypoint).toContain('run_admitted_agent');
+    expect(entrypoint).toContain('Runner.run_streamed');
+    expect(entrypoint).toContain('read_user_prompt');
     expect(agent).toContain('def build_agent');
     expect(agent).toContain('OPENAI_AGENTS_DISABLE_TRACING');
     expect(agent).toContain('WORKSPAI_AGENT_TRACING');
@@ -176,6 +189,10 @@ describe('OpenAI Agents SDK adapters', () => {
     const contextFile =
       first.files.find((file) => file.path.endsWith('workspai_context.py'))?.content ?? '';
     expect(contextFile).toContain('resolve_workspai_project_root');
+    expect(contextFile).toContain('describe_workspai_context_view');
+    expect(contextFile).toContain('read_workspai_project_summary');
+    expect(contextFile).toContain('list_workspai_supported_commands');
+    expect(contextFile).toContain('redact_secret_shaped_values');
     expect(contextFile).not.toContain('Path.cwd');
     expect(dependencies).toContain(
       `openai-agents==${packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')}`
@@ -195,17 +212,33 @@ describe('OpenAI Agents SDK adapters', () => {
       rendered.files.find((file) => file.path.endsWith('/package.json'))?.content ?? '';
     expect(agent).toContain("from '@openai/agents'");
     expect(agent).toContain('describe_workspai_context');
+    expect(agent).toContain('read_workspai_project_summary');
+    expect(agent).toContain('list_workspai_supported_commands');
     expect(agent).toContain('redactSdkError');
     expect(agent).toContain('runAdmittedAgent');
+    expect(agent).toContain('streamAdmittedAgent');
+    expect(agent).not.toContain('<workspai-context>');
     expect(agent).toContain('OPENAI_AGENTS_DISABLE_TRACING');
     expect(agent).toContain('WORKSPAI_AGENT_TRACING');
     expect(agent).toContain('maxTurns: options?.maxTurns ?? MAX_TURNS');
     expect(agent).toContain('AbortSignal.timeout');
-    expect(entrypoint).toContain('runAdmittedAgent');
+    expect(entrypoint).toContain('streamAdmittedAgent');
+    expect(entrypoint).toContain('readUserPrompt');
     const contextFile =
       rendered.files.find((file) => file.path.endsWith('workspai-context.ts'))?.content ?? '';
+    const generatedTests =
+      rendered.files.find((file) => file.path.endsWith('/tests/context.test.ts'))?.content ?? '';
     expect(contextFile).toContain('resolveWorkspaiProjectRoot');
+    expect(contextFile).toContain('describeWorkspaiContextView');
+    expect(contextFile).toContain('readWorkspaiProjectSummary');
+    expect(contextFile).toContain('listWorkspaiSupportedCommands');
+    expect(contextFile).toContain('redactSecretShapedValues');
     expect(contextFile).not.toContain('process.cwd()');
+    expect(generatedTests).toContain('restoreLiveContext');
+    expect(generatedTests).toContain('before(isolateLiveContext)');
+    expect(generatedTests).toContain('scripted model tool call stays offline');
+    expect(generatedTests).toContain('ScriptedModel');
+    expect(generatedTests).toContain('allowlisted views omit non-admitted keys');
     expect(manifest).toContain(
       `"@openai/agents": "${packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')}"`
     );

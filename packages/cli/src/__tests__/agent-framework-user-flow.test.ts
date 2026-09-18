@@ -117,7 +117,7 @@ describe('agent framework user flow', () => {
       adapterId: 'microsoft-agent-framework-python',
       instanceName: 'release-reviewer',
     });
-    expect(prepared.files).toHaveLength(6);
+    expect(prepared.files).toHaveLength(8);
     expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'release-reviewer'))).toBe(
       false
     );
@@ -254,7 +254,7 @@ describe('agent framework user flow', () => {
     ).toBe(false);
   });
 
-  it('fails closed when Python attach does not name one of the admitted frameworks', async () => {
+  it('fails closed when Python attach does not name one of the published frameworks', async () => {
     const { workspacePath } = await fixture();
     await expect(
       prepareAgentFrameworkAttachment({

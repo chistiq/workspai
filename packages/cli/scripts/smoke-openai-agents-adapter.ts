@@ -48,7 +48,7 @@ os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
 
 from agents.testing import ScriptedModel, assistant_message, function_call
 
-from agent import tracing_disabled
+from agent import MODEL_TIMEOUT_SECONDS, build_agent, tracing_disabled
 from main import run_admitted_agent
 from workspai_context import load_workspai_context
 
@@ -63,6 +63,13 @@ async def main() -> None:
     context = load_workspai_context()
     if CONTEXT_MARKER not in context:
         raise RuntimeError("Generated loader did not return the admitted context")
+    os.environ.setdefault("OPENAI_MODEL", "workspai-timeout-probe")
+    live_settings = getattr(build_agent(), "model_settings", None)
+    live_timeout = getattr(live_settings, "timeout", None) if live_settings is not None else None
+    if live_timeout != MODEL_TIMEOUT_SECONDS:
+        raise RuntimeError(
+            f"Live ModelSettings.timeout is not the per-request 30s setting: {live_timeout!r}"
+        )
     model = ScriptedModel(
         steps=[
             [function_call("describe_workspai_context", {}, call_id="call_context")],
@@ -74,15 +81,11 @@ async def main() -> None:
         raise RuntimeError(f"Unexpected agent response: {result!r}")
     if len(model.calls) < 2:
         raise RuntimeError("Scripted model did not receive a second turn after the tool")
-    observed = f"{model.calls[0].system_instructions} {model.calls[0].input}"
-    if CONTEXT_MARKER not in observed:
-        raise RuntimeError("Agent lifecycle did not carry bounded context to the local model")
+    if CONTEXT_MARKER in str(getattr(model.calls[0], "system_instructions", "")):
+        raise RuntimeError("Starter stuffed admitted context into instructions")
     second = str(model.calls[1].input)
     if "admitted-context-bytes:" not in second:
         raise RuntimeError("Tool result was not visible in the following model turn")
-    timeout = getattr(model.calls[0].model_settings, "timeout", None)
-    if timeout != 30.0:
-        raise RuntimeError(f"ModelSettings.timeout is not the per-request 30s setting: {timeout!r}")
     print(RESPONSE_MARKER)
 
 
@@ -229,6 +232,10 @@ if secret in redacted or "EXAMPLESECRETVALUE" in redacted:
     raise RuntimeError("SDK error redaction leaked a credential-shaped value")
 if "[redacted]" not in redacted:
     raise RuntimeError("SDK error redaction did not replace the credential-shaped value")
+azure = "AccountKey=SECRETKEYVALUE"
+azure_redacted = redact(f"provider failed {azure}")
+if "SECRETKEYVALUE" in azure_redacted:
+    raise RuntimeError("SDK error redaction leaked an Azure secret-shaped value")
 print("WORKSPAI_AGENT_REDACTION_OK")
 `;
 }
@@ -266,8 +273,8 @@ if (!Array.isArray(model.calls) || model.calls.length < 2) {
   throw new Error('Scripted model did not receive a second turn after the tool');
 }
 const observed = JSON.stringify(model.calls);
-if (!observed.includes(CONTEXT_MARKER)) {
-  throw new Error('Agent lifecycle did not carry bounded context to the local model');
+if (JSON.stringify(model.calls[0] ?? {}).includes(CONTEXT_MARKER)) {
+  throw new Error('Starter stuffed admitted context into the model prompt');
 }
 if (!observed.includes('admitted-context-bytes:')) {
   throw new Error('Tool result was not visible in the following model turn');
@@ -449,13 +456,13 @@ function portablePath(value: string): string {
 }
 
 function sanitized(value: string, isolatedRoot: string, reportRoot: string): string {
-  const replacements = [
+  const replacements: Array<[string, string]> = [
     [isolatedRoot, '<isolated-project>'],
     [reportRoot, '<conformance-artifact>'],
     [process.cwd(), '<cli-root>'],
     [os.homedir(), '<home>'],
     [os.tmpdir(), '<temporary-root>'],
-  ] as const;
+  ];
   return replacements
     .sort(([left], [right]) => right.length - left.length)
     .reduce((result, [source, replacement]) => result.split(source).join(replacement), value);
@@ -556,6 +563,7 @@ async function writeAdmittedContext(root: string): Promise<void> {
     `${JSON.stringify({
       schemaVersion: 'project-context-agent.v1',
       boundary: LIFECYCLE_CONTEXT_MARKER,
+      secret: 'do-not-leak',
     })}\n`,
     'utf8'
   );
@@ -922,6 +930,24 @@ async function main(): Promise<void> {
           !contextLoader.content.includes('Path.cwd'),
         'Canonical context loader still treats process cwd as project-root authority.'
       );
+      const generatedTests = rendered.files.find((file) => file.path.includes('/tests/'));
+      assertCondition(generatedTests, 'Credentialless context tests were not rendered.');
+      assertCondition(
+        generatedTests.content.includes('setUpClass') ||
+          generatedTests.content.includes('restoreLiveContext'),
+        'Generated context tests do not restore the operational context file.'
+      );
+      const agentSource = rendered.files.find(
+        (file) => file.path.endsWith('/agent.py') || file.path.endsWith('/agent.ts')
+      );
+      assertCondition(agentSource, 'Generated agent source was not rendered.');
+      assertCondition(
+        agentSource.content.includes('describe_workspai_context') &&
+          agentSource.content.includes('read_workspai_project_summary') &&
+          agentSource.content.includes('list_workspai_supported_commands') &&
+          !agentSource.content.includes('<workspai-context>'),
+        'Generated agent does not keep admitted context behind allowlisted read-only tools.'
+      );
       return {
         entrypoint: context.entrypoint,
         contextBoundary: contextLoader.path,
@@ -1184,7 +1210,7 @@ async function main(): Promise<void> {
           [
             '--input-type=module',
             '-e',
-            "import { redactSdkError } from './agents/conformance-agent/dist/src/agent.js'; const secret='sk-EXAMPLESECRETVALUE'; const redacted=redactSdkError('provider failed '+secret); if (redacted.includes(secret) || !redacted.includes('[redacted]')) { throw new Error('redaction failed'); } process.stdout.write('WORKSPAI_AGENT_REDACTION_OK\\n');",
+            "import { redactSdkError } from './agents/conformance-agent/dist/src/agent.js'; const secret='sk-EXAMPLESECRETVALUE'; const redacted=redactSdkError('provider failed '+secret+' AccountKey=SECRETKEYVALUE'); if (redacted.includes(secret) || redacted.includes('SECRETKEYVALUE') || !redacted.includes('[redacted]')) { throw new Error('redaction failed'); } process.stdout.write('WORKSPAI_AGENT_REDACTION_OK\\n');",
           ],
           generatedRoot
         );

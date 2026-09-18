@@ -1,5 +1,6 @@
 import type { AgentFrameworkAdapterManifest } from '../contracts/agent-framework-contract.js';
 import type { AgentFrameworkRegistry } from './registry.js';
+import { describeAgentFrameworkProjectKits } from './project-kits.js';
 
 export const AGENT_FRAMEWORK_USER_RUNTIMES = ['python', 'dotnet', 'node'] as const;
 export type AgentFrameworkUserRuntime = (typeof AGENT_FRAMEWORK_USER_RUNTIMES)[number];
@@ -92,27 +93,29 @@ export function resolveAgentFrameworkSelection(input: {
     );
   }
 
+  const publishedIds = new Set(describeAgentFrameworkProjectKits().map((kit) => kit.adapterId));
+  const published = registered.filter((entry) => publishedIds.has(entry.manifest.adapter.id));
   const admitted = registered.filter(
     (entry) => input.registry.resolveAdapter(entry.manifest.adapter.id).status === 'admitted'
   );
 
-  if (!requestedFramework && admitted.length > 1) {
+  if (!requestedFramework && published.length > 1) {
     throw new Error(
-      `Runtime ${input.runtime} matches multiple admitted frameworks (${admitted
+      `Runtime ${input.runtime} matches multiple published frameworks (${published
         .map((entry) => entry.manifest.framework.id)
         .join(', ')}). Pass --framework explicitly; Workspai does not guess.`
     );
   }
 
-  const selected = admitted[0] ?? registered[0];
+  const selected = published[0] ?? admitted[0] ?? registered[0];
   if (!selected) {
     throw new Error(
       `No agent framework adapter matches runtime ${input.runtime}. Available combinations: ${describeCombinations(input.registry) || 'none'}.`
     );
   }
-  if (!requestedFramework && admitted.length === 0 && registered.length > 1) {
+  if (!requestedFramework && published.length === 0 && registered.length > 1) {
     throw new Error(
-      `Runtime ${input.runtime} matches multiple registered frameworks and none are release-admitted. Pass --framework explicitly. Available combinations: ${describeCombinations(input.registry)}.`
+      `Runtime ${input.runtime} matches multiple registered frameworks and none are published create kits. Pass --framework explicitly. Available combinations: ${describeCombinations(input.registry)}.`
     );
   }
 

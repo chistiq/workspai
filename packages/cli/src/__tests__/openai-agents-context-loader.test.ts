@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { unlinkSync, writeFileSync } from 'node:fs';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -359,6 +359,25 @@ assert loaded['marker'] == 'nested'
     });
     unlinkSync(probePath);
     expect(result.status, diagnostic(result)).toBe(0);
+  });
+
+  it('Python generated context tests restore the operational context file', async () => {
+    const root = await temporaryProject('workspai-oai-py-restore-');
+    const rendered = openaiAgentsPythonAdapter.render({
+      projectRoot: root,
+      instanceName: 'Release Reviewer',
+    });
+    await materialize(root, rendered.files);
+    const marker = `live-marker-${process.pid}`;
+    const contextPath = await writeContext(root, admittedContext({ marker }));
+    const before = await readFile(contextPath, 'utf8');
+    const result = spawnSync('python3', ['-m', 'unittest', 'discover', '-s', 'tests'], {
+      cwd: path.join(root, 'agents', 'release-reviewer'),
+      encoding: 'utf8',
+      env: { ...process.env, OPENAI_AGENTS_DISABLE_TRACING: '1' },
+    });
+    expect(result.status, diagnostic(result)).toBe(0);
+    expect(await readFile(contextPath, 'utf8')).toBe(before);
   });
 
   it('rejects a non-regular FIFO context file when the platform can create one', async () => {

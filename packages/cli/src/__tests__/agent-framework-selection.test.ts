@@ -7,7 +7,7 @@ import {
 } from '../agent-frameworks/index.js';
 
 describe('agent framework selection', () => {
-  it('refuses to guess Python when Microsoft and OpenAI are both admitted', () => {
+  it('refuses to guess Python when Microsoft and OpenAI are both published', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -59,7 +59,7 @@ describe('agent framework selection', () => {
     );
   });
 
-  it('selects OpenAI when requested after reviewed release admission', () => {
+  it('selects OpenAI when requested by framework id', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
