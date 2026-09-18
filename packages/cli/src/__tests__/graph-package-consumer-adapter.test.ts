@@ -15,8 +15,10 @@ import {
   GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION,
   GRAPH_CONSUMER_SILENT_FALLBACK,
   GRAPH_CONSUMER_SURFACE_IDS,
+  GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED,
   buildPackageIntelligenceConsumerParity,
   graphConsumerParityStatuses,
+  refuseUnadmittedPackagePrimaryExecution,
   resolveWorkspaceKnowledgeGraphForConsumer,
 } from '../graph-package-consumer-adapter.js';
 import { WORKSPACE_KNOWLEDGE_GRAPH_SCHEMA_VERSION } from '../contracts/workspace-knowledge-graph-contract.js';
@@ -219,5 +221,12 @@ describe('package Graph consumer adapter', () => {
     expect(production.providers.some((provider) => provider.id === 'workspai.graph.package')).toBe(
       false
     );
+  });
+
+  it('refuses unadmitted package-primary execution without running shadow parity', async () => {
+    await expect(refuseUnadmittedPackagePrimaryExecution()).rejects.toMatchObject({
+      name: 'GraphPackagePrimaryNotAdmittedError',
+      code: GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED,
+    });
   });
 });

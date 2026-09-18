@@ -27,7 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authority receipt. Production still uses the released CLI composer. Host
   reachability can select the bundled Rust/WASM engine only when it matches
   TypeScript; users never choose an engine and package-primary replacement
-  remains unauthorized.
+  remains unauthorized. Unadmitted package-primary calls
+  (`refuseUnadmittedPackagePrimaryExecution`) always throw
+  `GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED`. There is no flag-gated
+  `executePackagePrimaryWithCompare` wrapper around shadow parity.
 - G8 shadow comparison now emits directional leftover identities, relations,
   proofs and unknown families after mapping version `v2`. Package execution
   receipts now carry `omittedFiles` and `omittedBytes` from Graph inventory

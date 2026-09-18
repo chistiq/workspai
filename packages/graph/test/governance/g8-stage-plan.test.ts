@@ -72,6 +72,13 @@ describe('Graph G8 stage authorization', () => {
     expect(consumerParity).toMatchObject({ status: 'implemented-local-candidate' });
     expect(nativeRouting).toMatchObject({ status: 'implemented-local-candidate' });
     expect(replacement).toMatchObject({ status: 'planned' });
+    expect(readJson('governance/g8-stage-closure.v1.json')).toMatchObject({
+      stage: 'G8',
+      status: 'blocked',
+      advancesAdmissionGate: false,
+      nextStageAuthorized: false,
+      measurements: { outcome: 'g8-shadow-candidate' },
+    });
     expect(JSON.stringify({ admission, transition, plan })).not.toMatch(
       /(?:[A-Za-z]:\\|\/home\/|\/Users\/)/u
     );

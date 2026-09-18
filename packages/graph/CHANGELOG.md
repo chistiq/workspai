@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Recorded a blocked G8 stage closure that can express package-primary
+  replacement later without mutating the shadow-only plan. The ledger keeps
+  production CLI composer authority, always-throw unadmitted package-primary
+  refusal, and G9 unauthorized until an explicit admission record exists.
+
 - Kubernetes topology now rejects recorded-interaction YAML paths before they
   consume the provider read budget and parses only source/path-qualified
   manifest candidates. Invalid Helm templates remain explicit unknown zones;

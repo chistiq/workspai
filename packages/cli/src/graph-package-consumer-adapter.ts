@@ -34,6 +34,7 @@ import type { WorkspaceKnowledgeGraphChangeOverlay } from './contracts/workspace
 export const GRAPH_CONSUMER_RUNTIME_AUTHORITY = 'official-internal-graph-capability' as const;
 export const GRAPH_CONSUMER_PACKAGE_PRIMARY = false as const;
 export const GRAPH_CONSUMER_SILENT_FALLBACK = 'prohibited' as const;
+export const GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED = 'GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED' as const;
 export const GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION =
   'workspai.graph-consumer-shadow-receipt.v1-candidate' as const;
 
@@ -125,6 +126,30 @@ export async function resolveWorkspaceKnowledgeGraphForConsumer(
   options: BuildWorkspaceKnowledgeGraphOptions
 ): Promise<WorkspaceKnowledgeGraph> {
   return buildWorkspaceKnowledgeGraph(options);
+}
+
+export class GraphPackagePrimaryNotAdmittedError extends Error {
+  readonly code = GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED;
+
+  constructor() {
+    super(
+      'Package-primary Graph execution is not admitted. G8 remains shadow-only and silent fallback is prohibited.'
+    );
+    this.name = 'GraphPackagePrimaryNotAdmittedError';
+  }
+}
+
+/**
+ * Unadmitted package-primary entry. Always throws.
+ *
+ * This is not package-primary-with-compare. Shadow consumer parity must not be
+ * invoked from here, and flipping GRAPH_CONSUMER_PACKAGE_PRIMARY must not
+ * publish package graph truth. A later admitted implementation has to build
+ * the released-CLI graph independently for comparison, must not overlay a
+ * candidate onto itself, and must not reuse a packagePrimary:false receipt.
+ */
+export async function refuseUnadmittedPackagePrimaryExecution(): Promise<never> {
+  throw new GraphPackagePrimaryNotAdmittedError();
 }
 
 /**
@@ -230,6 +255,7 @@ export async function buildPackageIntelligenceConsumerParity(input: {
       projectId: input.projectId,
       query: 'index',
     }),
+    // Shadow self-overlay only. This is not package-versus-legacy compare.
     overlay: buildWorkspaceKnowledgeGraphChangeOverlay(candidate.graph, candidate.graph),
     ...(startEntityId
       ? {

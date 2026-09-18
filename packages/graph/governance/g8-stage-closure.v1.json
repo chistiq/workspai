@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "workspai-independent-package-stage-closure.v1",
+  "policyVersion": "1.0.0-candidate",
+  "closureKind": "stage",
+  "package": "@workspai/graph",
+  "stage": "G8",
+  "asOf": "2026-09-18",
+  "status": "blocked",
+  "advancesAdmissionGate": false,
+  "dimensions": [
+    {
+      "id": "architecture-and-contract-alignment",
+      "status": "blocked",
+      "summary": "Shadow contracts and consumer adapters exist, but production CLI commands still call the released composer. Package-primary-with-compare is fail-closed until an explicit replacement decision.",
+      "evidence": [
+        "packages/cli/src/graph-package-consumer-adapter.ts",
+        "packages/cli/test-data/graph-shadow/g8-consumer-inventory.v1.json",
+        "packages/graph/governance/g8-stage-plan.v1.json"
+      ]
+    },
+    {
+      "id": "scalability-and-extensibility",
+      "status": "blocked",
+      "summary": "The trusted required corpus is one committed Node service plus a small fixture. Large, polyglot, generated-heavy and multi-project repositories remain optional local observations, not release evidence.",
+      "evidence": [
+        "packages/cli/test-data/graph-shadow/real-workspace-inventory.v1.json",
+        "packages/graph/scripts/check-g8-stage.mjs"
+      ]
+    },
+    {
+      "id": "performance-and-efficiency",
+      "status": "blocked",
+      "summary": "In-process incremental APIs are not a persistent installed-CLI speedup. Production CLI does not consume a trusted change journal for package-primary rebuilds.",
+      "evidence": [
+        "packages/graph/src/application/build-incremental-repo-graph.ts",
+        "packages/cli/src/workspace-knowledge-graph.ts"
+      ]
+    },
+    {
+      "id": "security-and-abuse-resistance",
+      "status": "passed",
+      "summary": "Shadow execution stays read-only. Package-primary invocation fails closed and cannot silently fall back to the released composer.",
+      "evidence": [
+        "packages/cli/src/graph-package-consumer-adapter.ts",
+        "packages/cli/src/__tests__/graph-package-consumer-adapter.test.ts"
+      ]
+    },
+    {
+      "id": "privacy-and-data-governance",
+      "status": "passed",
+      "summary": "G8 shadow comparison remains read-only, offline and prohibited from mutating canonical generations.",
+      "evidence": [
+        "packages/graph/governance/g8-stage-plan.v1.json",
+        "packages/cli/src/graph-package-shadow-bridge.ts"
+      ]
+    },
+    {
+      "id": "portability-and-multiplatform",
+      "status": "pending-remote",
+      "summary": "Linux/macOS/Windows G8 real-workspace matrix is a CI PR-candidate on commit 2cd4266. Candidate reports are not retained G8 admission or package-primary evidence.",
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "packages/graph/scripts/check-g8-real-workspace-matrix-admission.mjs",
+        "packages/graph/governance/g8-stage-plan.v1.json"
+      ]
+    },
+    {
+      "id": "package-independence",
+      "status": "passed",
+      "summary": "The package remains private. npm publication and a central-CLI runtime dependency stay prohibited.",
+      "evidence": ["packages/graph/package.json", "independent-packages.json"]
+    },
+    {
+      "id": "correctness-and-determinism",
+      "status": "blocked",
+      "summary": "Semantic shadow comparison exists for the committed Node corpus. Package-primary production results, installed-consumer gates and a classified difference ledger for the required broader corpus do not.",
+      "evidence": [
+        "packages/cli/src/graph-shadow-parity.ts",
+        "packages/cli/test-data/graph-shadow/real-workspace-approvals.v2.json"
+      ]
+    },
+    {
+      "id": "compatibility-and-evolution",
+      "status": "passed",
+      "summary": "Shadow mapping v2 and compatibility renderers do not fabricate proof. Historical G7 admission remains the authorizing prior closure.",
+      "evidence": [
+        "packages/cli/src/graph-package-compatibility-renderer.ts",
+        "packages/graph/governance/g7-stage-admission.v1.json"
+      ]
+    },
+    {
+      "id": "resilience-and-operability",
+      "status": "blocked",
+      "summary": "Rollback still means the released CLI composer. A package-primary last-valid generation and tested rollback window cannot exist until package-primary is admitted.",
+      "evidence": [
+        "packages/cli/src/workspace-knowledge-graph.ts",
+        "packages/graph/governance/g8-stage-plan.v1.json"
+      ]
+    },
+    {
+      "id": "maintainability-and-testability",
+      "status": "passed",
+      "summary": "This blocked closure is the versioned G8 transition ledger. Historical shadow-only audit remains immutable and does not admit G9.",
+      "evidence": [
+        "packages/graph/scripts/check-g8-closure.mjs",
+        "packages/graph/scripts/check-g8-stage.mjs"
+      ]
+    },
+    {
+      "id": "supply-chain-and-release-integrity",
+      "status": "passed",
+      "summary": "Internal distribution and publication refusal are unchanged. Green CI is not npm publication or G8 replacement.",
+      "evidence": [
+        "packages/graph/scripts/refuse-publish.mjs",
+        "packages/graph/governance/g7-retained-admission.v1.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "shadow-only-runtime-preserved",
+      "status": "passed",
+      "command": "corepack npm run admission:g8:audit",
+      "evidence": "G8 plan, registry and consumer inventory still authorize shadow comparison only."
+    },
+    {
+      "id": "package-primary-fail-closed",
+      "status": "passed",
+      "command": "corepack npm exec vitest -- run src/__tests__/graph-package-consumer-adapter.test.ts",
+      "evidence": "refuseUnadmittedPackagePrimaryExecution throws GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED and executePackagePrimaryWithCompare is absent."
+    },
+    {
+      "id": "shadow-matrix-pr-candidate",
+      "status": "passed",
+      "evidence": "GitHub Actions run 35350476249 on PR 65 verified Linux/macOS/Windows G8 real-workspace matrix for 2cd426679366917bf55c03cde2d610eddd897323 as a shadow PR-candidate with admitted=false."
+    },
+    {
+      "id": "package-primary-replacement-decision",
+      "status": "failed",
+      "evidence": "Checkpoint package-primary-replacement-decision remains planned. No versioned replacement decision exists."
+    },
+    {
+      "id": "production-package-primary-operation",
+      "status": "failed",
+      "evidence": "CLI index, workspace model and workspace contract still call buildWorkspaceKnowledgeGraph. The consumer adapter is not the production producer."
+    },
+    {
+      "id": "g9-legacy-removal",
+      "status": "failed",
+      "evidence": "nextStageAuthorized remains false. Legacy composers must not be removed."
+    }
+  ],
+  "measurements": {
+    "outcome": "g8-shadow-candidate",
+    "authorizedRuntimeMode": "g8-shadow-comparison-only",
+    "currentGraphAuthority": "official-internal-graph-capability",
+    "packagePrimary": false,
+    "silentFallback": "prohibited",
+    "npmPublication": "prohibited",
+    "shadowMatrixHeadSha": "2cd426679366917bf55c03cde2d610eddd897323",
+    "shadowMatrixRunId": "35350476249"
+  },
+  "environment": {
+    "local": ["node-20-or-newer"],
+    "remoteMatrix": "pending"
+  },
+  "remainingRisks": [
+    "Production CLI commands still call buildWorkspaceKnowledgeGraph; package-primary is not the graph producer.",
+    "GRAPH_CONSUMER_PACKAGE_PRIMARY remains false and refuseUnadmittedPackagePrimaryExecution always throws. executePackagePrimaryWithCompare is not implemented.",
+    "Checkpoint package-primary-replacement-decision remains planned.",
+    "Trusted required cross-platform corpus is only committed-node-service; large, polyglot, generated-heavy and multi-project repositories are optional local observations.",
+    "Production CLI does not persist a trusted change journal for incremental package rebuilds.",
+    "G8 real-workspace matrix admission remains admitted=false and nextStageAuthorized=false.",
+    "G9 nextStageAuthorized remains false; legacy composers must not be removed."
+  ],
+  "nextStage": "G9",
+  "nextStageAuthorized": false,
+  "approval": {
+    "status": "awaiting",
+    "requiredForNextStage": true,
+    "rule": "G8 replacement requires package-primary-with-compare evidence on a tested commit plus an explicit admission record. This blocked closure must not be relabelled approved to make CI green."
+  }
+}

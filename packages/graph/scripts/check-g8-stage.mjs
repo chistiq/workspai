@@ -149,6 +149,17 @@ if (
 ) {
   failures.push('independent package registry does not preserve G8 shadow-only execution');
 }
+const g8Closure = readJson('packages/graph/governance/g8-stage-closure.v1.json');
+if (
+  g8Closure.stage !== 'G8' ||
+  g8Closure.status !== 'blocked' ||
+  g8Closure.advancesAdmissionGate !== false ||
+  g8Closure.nextStageAuthorized !== false ||
+  g8Closure.approval?.status !== 'awaiting' ||
+  g8Closure.measurements?.outcome !== 'g8-shadow-candidate'
+) {
+  failures.push('G8 blocked closure cannot be relabelled as an admission record');
+}
 if (
   graphManifest.private !== true ||
   graphManifest.scripts?.prepublishOnly !== 'node scripts/refuse-publish.mjs' ||
