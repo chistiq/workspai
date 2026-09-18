@@ -72,6 +72,7 @@ function ports(
     digest: {
       algorithm: 'sha256',
       digest: async (value) => createHash('sha256').update(value).digest('hex'),
+      digestSync: (value) => createHash('sha256').update(value).digest('hex'),
     },
     cancellation: { aborted: false, throwIfAborted: () => undefined },
     scheduler: { yield: async () => undefined },
@@ -342,6 +343,16 @@ describe('buildRepoGraph', () => {
     if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
 
     expect(result.status).toBe('complete');
+    expect(result.metrics.compositionTimings).toEqual(
+      expect.objectContaining({
+        admitMs: expect.any(Number),
+        workerMs: expect.any(Number),
+        semanticDigestMs: expect.any(Number),
+        edgeProofMs: expect.any(Number),
+        contentDigestMs: expect.any(Number),
+      })
+    );
+    expect(result.metrics.providerTimings?.length).toBeGreaterThan(0);
     expect(result.graph.nodes).toContainEqual(expect.objectContaining({ kind: 'branch' }));
     expect(result.graph.edges).toContainEqual(
       expect.objectContaining({ relation: 'contains', state: 'accepted' })
@@ -459,7 +470,14 @@ describe('buildRepoGraph', () => {
       })
     );
     expect(result.graph.nodes.filter((node) => node.kind === 'test')).toHaveLength(3);
-    expect(read).not.toHaveBeenCalled();
+    expect(read.mock.calls.map((call) => call[1]?.locator).sort()).toEqual([
+      '.github/workflows/ci.yml',
+      'Dockerfile',
+      'contracts/openapi.yaml',
+    ]);
+    expect(
+      read.mock.calls.every((call) => !String(call[1]?.locator ?? '').includes('fixture'))
+    ).toBe(true);
   });
 
   it('links static source imports to local files and external module specifiers', async () => {
@@ -485,7 +503,7 @@ describe('buildRepoGraph', () => {
     });
     if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
 
-    expect(result).toMatchObject({ status: 'complete', metrics: { providerFacts: 7 } });
+    expect(result).toMatchObject({ status: 'complete', metrics: { providerFacts: 9 } });
     const importEdges = result.graph.edges.filter((edge) => edge.relation === 'imports');
     expect(importEdges).toHaveLength(2);
     expect(result.graph.nodes).toContainEqual(expect.objectContaining({ kind: 'module' }));
@@ -861,6 +879,8 @@ describe('buildRepoGraph', () => {
 
       expect(result.status).toBe(status);
       expect(result.quality.unknownZones).toHaveLength(1);
+      expect(result.metrics.omittedFiles).toBe(1);
+      expect(result.metrics.omittedBytes).toBe(10);
       expect(detect).not.toHaveBeenCalled();
     }
   );

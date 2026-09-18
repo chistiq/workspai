@@ -1,0 +1,9 @@
+{
+  "contract": {
+    "id": "workspai.graph.generated-artifact",
+    "version": "1"
+  },
+  "treatments": ["include", "exclude", "bounded-unknown"],
+  "defaultTreatment": "bounded-unknown",
+  "omissionClasses": ["generated", "vendored"]
+}

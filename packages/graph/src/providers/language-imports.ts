@@ -9,6 +9,12 @@ import {
   type GraphProviderRuntime,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
+import { admitDeclaredGraphLocator } from '../domain/locator-identity.js';
+import {
+  decodeMatrixSource,
+  matrixSourceExtractionBudget,
+  selectBalancedMatrixSources,
+} from './matrix-source-language.js';
 
 export const LANGUAGE_IMPORTS_PROVIDER_ID = 'workspai.graph.provider.language-imports';
 
@@ -185,14 +191,7 @@ function unsupportedDynamicSyntax(source: string, language: Language): boolean {
 }
 
 function importedModuleLocator(imported: string): string {
-  const segments = imported.split('/');
-  const requiresEncoding =
-    imported.includes('\\') ||
-    imported.startsWith('/') ||
-    /^[A-Za-z]:/u.test(imported) ||
-    segments.some((segment) => segment === '' || segment === '.' || segment === '..');
-  if (!requiresEncoding) return imported;
-  return `encoded/${encodeURIComponent(imported).replaceAll('.', '%2E')}`;
+  return admitDeclaredGraphLocator(imported, 'encoded');
 }
 
 function warning(code: string, path: string, message: string): GraphDiagnostic {
@@ -258,11 +257,26 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
       };
     },
     collect: async (request) => {
-      const inputs = supportedInputs(request.inputs);
+      const eligible = supportedInputs(request.inputs);
+      const selectedLocators = new Set(
+        selectBalancedMatrixSources(
+          eligible.map((input) => input.locator),
+          matrixSourceExtractionBudget(eligible.length)
+        )
+      );
+      const inputs = eligible.filter((input) => selectedLocators.has(input.locator));
       const facts: GraphWorkspaceFact[] = [];
       const diagnostics: GraphDiagnostic[] = [];
       const unknownZones: GraphFactBatch['unknownZones'][number][] = [];
       const processing: GraphFactBatch['processing'][number][] = [];
+      const sampled = inputs.length < eligible.length;
+      if (sampled) {
+        unknownZones.push({
+          code: 'graph.language-imports-truncated',
+          scope: '.',
+          reason: `Declared-import extraction sampled ${String(inputs.length)} of ${String(eligible.length)} matrix source files; omitted files remain unknown.`,
+        });
+      }
 
       for (const [inputIndex, input] of inputs.entries()) {
         const language = languageFor(input.locator);
@@ -274,7 +288,17 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
             maxBytes: MAX_SOURCE_BYTES,
             signal: request.signal,
           });
-          const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          const decoded = decodeMatrixSource(bytes);
+          const source = decoded.text;
+          if (decoded.encodingFallback) {
+            const encoding = warning(
+              'graph.language-source-encoding-fallback',
+              input.locator,
+              'Source was admitted with a latin1 fallback after UTF-8 rejected the bytes; declared imports remain observed under that encoding.'
+            );
+            diagnostics.push(encoding);
+            inputDiagnostics.push(encoding);
+          }
           const subject = await request.resolveIdentity({
             namespace: 'workspai',
             kind: 'file',
@@ -376,13 +400,16 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
           {
             dimension: 'supported-language-source',
             observed: inputs.length,
-            expected: inputs.length,
+            expected: eligible.length,
           },
         ],
         unknownZones,
         unsupportedZones: [],
         redaction: { policy: 'portable-default', redacted: 0, omitted: 0 },
-        status: processing.some((entry) => entry.outcome !== 'processed') ? 'partial' : 'complete',
+        status:
+          sampled || processing.some((entry) => entry.outcome !== 'processed')
+            ? 'partial'
+            : 'complete',
         processing,
       } satisfies GraphFactBatch;
     },

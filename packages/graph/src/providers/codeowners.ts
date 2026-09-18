@@ -8,6 +8,7 @@ import {
   type GraphProviderRuntime,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
+import { isHostSuppliedGraphInputLocator } from './scope-containment.js';
 
 export const CODEOWNERS_PROVIDER_ID = 'workspai.graph.provider.codeowners';
 
@@ -158,7 +159,9 @@ export function createCodeownersProvider(): GraphProviderRuntime {
     collect: async (request) => {
       const inputs = request.inputs.filter((input) => isCodeowners(input.locator));
       const candidateFiles = request.inputs
-        .filter((input) => !isCodeowners(input.locator))
+        .filter(
+          (input) => !isCodeowners(input.locator) && !isHostSuppliedGraphInputLocator(input.locator)
+        )
         .sort((left, right) => left.locator.localeCompare(right.locator));
       const facts: GraphWorkspaceFact[] = [];
       const diagnostics: GraphDiagnostic[] = [];

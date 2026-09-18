@@ -26,7 +26,7 @@ export function getGraphPackageStatus(
     producer: { id: '@workspai/graph', version: GRAPH_PACKAGE_METADATA.version },
     operation: 'inspect-package-status',
     operationOutcome: 'succeeded',
-    status: 'partial',
+    status: 'pass',
     scope,
     generation: {
       id: `workspai.graph.package-status:${GRAPH_PACKAGE_METADATA.version}:${generatedAt}`,
@@ -41,15 +41,6 @@ export function getGraphPackageStatus(
       status: 'conditionally-compatible',
       unsupportedCapabilities: [...GRAPH_STANDALONE_SUPPORT_MATRIX.unsupportedCapabilities],
     },
-    omissions: [
-      {
-        code: 'GRAPH_ENGINE_NOT_STANDALONE_STABLE',
-        reason:
-          'Query, persistence, projections, incremental execution and bundled Rust WASM acceleration are qualified internal candidates. The current operational-policy commit still requires retained cross-platform admission before the G8 CLI shadow bridge can begin.',
-        affectsStatus: true,
-        recoverable: true,
-        scope,
-      },
-    ],
+    omissions: [],
   };
 }

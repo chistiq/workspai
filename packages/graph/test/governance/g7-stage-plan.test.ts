@@ -10,7 +10,7 @@ const readJson = (file: string): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
 
 describe('Graph G7 stage authorization', () => {
-  it('seals G7 operational source while registry remains fail-closed on G5', () => {
+  it('keeps the admitted G7 source ledger immutable after G8 opens', () => {
     const plan = readJson(path.join(packageRoot, 'governance/g7-stage-plan.v1.json'));
     const closure = readJson(path.join(packageRoot, 'governance/g7-stage-closure.v1.json'));
     expect(plan).toMatchObject({
@@ -76,7 +76,7 @@ describe('Graph G7 stage authorization', () => {
       standaloneStable: false,
       nextStage: 'G8',
       nextStageAuthorized: false,
-      registryStage: 'G5',
+      registryStage: 'G8',
       failures: [],
     });
     expect(JSON.parse(result.stdout).closureDigest).toMatch(/^sha256:[a-f0-9]{64}$/u);

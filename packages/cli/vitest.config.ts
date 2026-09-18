@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const isWindows = process.platform === 'win32';
 
@@ -16,6 +16,9 @@ export default defineConfig({
     testTimeout: isWindows ? 90_000 : 30_000,
     hookTimeout: isWindows ? 120_000 : 60_000,
     teardownTimeout: isWindows ? 60_000 : 30_000,
+    // Representative corpora keep their own Node assert scripts. They are
+    // qualification inputs, not CLI Vitest suites.
+    exclude: [...configDefaults.exclude, 'test-data/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

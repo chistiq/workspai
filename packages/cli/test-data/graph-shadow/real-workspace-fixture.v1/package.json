@@ -1,0 +1,8 @@
+{
+  "name": "workspai-graph-real-workspace-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bounded G8 real-workspace shadow fixture.",
+  "main": "src/index.ts"
+}

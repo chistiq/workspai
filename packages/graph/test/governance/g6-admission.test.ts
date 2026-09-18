@@ -87,7 +87,7 @@ describe('Graph G6 platform admission', () => {
       admitted: false,
       nextStage: 'G7',
       nextStageAuthorized: false,
-      registryStage: 'G5',
+      registryStage: 'G8',
       nativeAcceleration: 'prohibited',
       failures: [],
     });
@@ -119,6 +119,66 @@ describe('Graph G6 platform admission', () => {
       nextStage: 'G7',
       nextStageAuthorized: false,
       requiredRunnerOperatingSystems: ['Linux', 'Windows', 'macOS'],
+    });
+  });
+
+  it('retains historical G6 matrix admission after the governed registry reaches G8', () => {
+    const resultRoot = path.join(packageRoot, 'test-results');
+    fs.mkdirSync(resultRoot, { recursive: true });
+    const directory = fs.mkdtempSync(path.join(resultRoot, 'g6-matrix-g8-'));
+    temporary.push(directory);
+    const sourceCommit = 'a'.repeat(40);
+    const testedCommit = 'b'.repeat(40);
+    for (const [runnerOs, platform] of [
+      ['Linux', 'linux'],
+      ['macOS', 'darwin'],
+      ['Windows', 'win32'],
+    ] as const) {
+      fs.writeFileSync(
+        path.join(directory, `${runnerOs}.json`),
+        JSON.stringify(
+          platformReport(runnerOs, platform, sourceCommit, testedCommit, {
+            registryStage: 'G8',
+          })
+        )
+      );
+    }
+    const result = combine(directory, sourceCommit, testedCommit);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      stage: 'G6',
+      status: 'admitted-platform-candidate',
+      admitted: true,
+      nextStageAuthorized: false,
+    });
+  });
+
+  it('rejects an unadmitted intermediate registry stage', () => {
+    const resultRoot = path.join(packageRoot, 'test-results');
+    fs.mkdirSync(resultRoot, { recursive: true });
+    const directory = fs.mkdtempSync(path.join(resultRoot, 'g6-matrix-unexpected-stage-'));
+    temporary.push(directory);
+    const sourceCommit = 'a'.repeat(40);
+    const testedCommit = 'b'.repeat(40);
+    for (const [runnerOs, platform] of [
+      ['Linux', 'linux'],
+      ['macOS', 'darwin'],
+      ['Windows', 'win32'],
+    ] as const) {
+      fs.writeFileSync(
+        path.join(directory, `${runnerOs}.json`),
+        JSON.stringify(
+          platformReport(runnerOs, platform, sourceCommit, testedCommit, {
+            registryStage: 'G7',
+          })
+        )
+      );
+    }
+    const result = combine(directory, sourceCommit, testedCommit);
+    expect(result.status).not.toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      admitted: false,
+      nextStageAuthorized: false,
     });
   });
 

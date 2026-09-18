@@ -981,4 +981,153 @@ describe('optional query cache store', () => {
     expect(store.entries.has(`${keep.keyDigest.algorithm}:${keep.keyDigest.value}`)).toBe(true);
     expect(store.entries.has(`${drop.keyDigest.algorithm}:${drop.keyDigest.value}`)).toBe(false);
   });
+
+  it('rejects malformed execution budgets, cursors, contracts and required identities', async () => {
+    const cases: readonly {
+      readonly value: GraphQuery;
+      readonly code: string;
+      readonly path: string;
+    }[] = [
+      {
+        value: query({ kind: 'dependencies' }),
+        code: 'GRAPH_QUERY_SUBJECT_REQUIRED',
+        path: '/subject',
+      },
+      {
+        value: query({ kind: 'path', subject: 'endpoint:login' }),
+        code: 'GRAPH_QUERY_TARGET_REQUIRED',
+        path: '/target',
+      },
+      {
+        value: query({
+          kind: 'dependencies',
+          subject: 'service:identity',
+          budget: { maxDepth: 0 },
+        }),
+        code: 'GRAPH_QUERY_BUDGET_INVALID',
+        path: '/budget/maxDepth',
+      },
+      {
+        value: query({
+          kind: 'dependencies',
+          subject: 'service:identity',
+          budget: { maxDepth: 1.5 },
+        }),
+        code: 'GRAPH_QUERY_BUDGET_INVALID',
+        path: '/budget/maxDepth',
+      },
+      {
+        value: query({
+          kind: 'dependencies',
+          subject: 'service:identity',
+          budget: { maxDepth: 65 },
+        }),
+        code: 'GRAPH_QUERY_BUDGET_INVALID',
+        path: '/budget/maxDepth',
+      },
+      {
+        value: query({
+          kind: 'dependencies',
+          subject: 'service:identity',
+          budget: { maxNodes: 100_001 },
+        }),
+        code: 'GRAPH_QUERY_BUDGET_INVALID',
+        path: '/budget/maxNodes',
+      },
+      {
+        value: query({
+          kind: 'dependencies',
+          subject: 'service:identity',
+          budget: { maxEdges: 500_001 },
+        }),
+        code: 'GRAPH_QUERY_BUDGET_INVALID',
+        path: '/budget/maxEdges',
+      },
+      {
+        value: query({
+          kind: 'dependencies',
+          subject: 'service:identity',
+          budget: { maxEvidence: 100_001 },
+        }),
+        code: 'GRAPH_QUERY_BUDGET_INVALID',
+        path: '/budget/maxEvidence',
+      },
+      {
+        value: query({ kind: 'dependencies', subject: 'service:identity', page: { size: 0 } }),
+        code: 'GRAPH_QUERY_PAGE_SIZE_INVALID',
+        path: '/page/size',
+      },
+      {
+        value: query({ kind: 'dependencies', subject: 'service:identity', page: { size: 1001 } }),
+        code: 'GRAPH_QUERY_PAGE_SIZE_INVALID',
+        path: '/page/size',
+      },
+      {
+        value: query({
+          kind: 'dependencies',
+          subject: 'service:identity',
+          page: { size: 10, cursor: 'page:2' },
+        }),
+        code: 'GRAPH_QUERY_CURSOR_INVALID',
+        path: '/page/cursor',
+      },
+      {
+        value: {
+          ...query({ kind: 'entry-points' }),
+          contract: {
+            id: 'unsupported.query',
+            version: '1',
+          } as unknown as typeof GRAPH_QUERY_CONTRACT,
+        },
+        code: 'GRAPH_QUERY_CONTRACT_UNSUPPORTED',
+        path: '/contract',
+      },
+    ];
+
+    for (const item of cases) {
+      const output = await queryGraph(graph, item.value, digestPort);
+      expect(output).toMatchObject({
+        accepted: false,
+        issues: [expect.objectContaining({ code: item.code, path: item.path })],
+      });
+    }
+  });
+
+  it('fails closed on duplicate graph identities and unresolved edge endpoints', async () => {
+    const duplicateNode = await queryGraph(
+      { ...graph, nodes: [...graph.nodes, graph.nodes[0] as GraphEntityReference] },
+      query({ kind: 'entry-points' }),
+      digestPort
+    );
+    expect(duplicateNode).toMatchObject({
+      accepted: false,
+      issues: [expect.objectContaining({ code: 'GRAPH_QUERY_GRAPH_NODE_DUPLICATE' })],
+    });
+
+    const duplicateEdge = await queryGraph(
+      { ...graph, edges: [...graph.edges, graph.edges[0] as GraphEdge] },
+      query({ kind: 'entry-points' }),
+      digestPort
+    );
+    expect(duplicateEdge).toMatchObject({
+      accepted: false,
+      issues: [expect.objectContaining({ code: 'GRAPH_QUERY_GRAPH_EDGE_DUPLICATE' })],
+    });
+
+    const unresolvedEdge = await queryGraph(
+      {
+        ...graph,
+        edges: [
+          ...graph.edges,
+          edge('missing-endpoint', 'service:identity', 'depends-on', 'module:missing'),
+        ],
+      },
+      query({ kind: 'entry-points' }),
+      digestPort
+    );
+    expect(unresolvedEdge).toMatchObject({
+      accepted: false,
+      issues: [expect.objectContaining({ code: 'GRAPH_QUERY_GRAPH_EDGE_UNRESOLVED' })],
+    });
+  });
 });

@@ -7,7 +7,7 @@ export const GRAPH_CLI_RESULT_CONTRACT = defineWisContract({
 
 export const GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT = defineWisContract({
   id: 'workspai.graph.standalone-support-matrix',
-  version: '0.1.0-candidate',
+  version: '0.2.0-candidate',
 });
 
 export const GRAPH_CLI_RESULT_SCHEMA_VERSION = 'workspai.graph.cli-result.v1' as const;
@@ -99,10 +99,53 @@ export const GRAPH_ROOT_FORBIDDEN_VALUE_EXPORTS = Object.freeze([
   'summarizeCanonicalGraphDelta',
 ] as const);
 
+export const GRAPH_PUBLIC_CONTRACTS_VALUE_EXPORTS = Object.freeze([
+  'GRAPH_COMPARABLE_SURFACE_CONTRACT',
+  'GRAPH_COMPARABLE_SURFACE_LAW',
+  'GRAPH_ENTITY_IDENTITY_CONTRACT',
+  'GRAPH_GENERATED_ARTIFACT_CONTRACT',
+  'GRAPH_GENERATED_ARTIFACT_LAW',
+  'GRAPH_IDENTITY_SCHEME',
+  'GRAPH_INVENTORY_SURFACE_CONTRACT',
+  'GRAPH_INVENTORY_SURFACE_LAW',
+  'GRAPH_LOCATOR_IDENTITY_CONTRACT',
+  'GRAPH_LOCATOR_IDENTITY_LAW',
+  'GRAPH_OPAQUE_DECLARED_LOCATOR_PREFIXES',
+  'GRAPH_UNKNOWN_CAUSE_CONTRACT',
+  'GRAPH_UNKNOWN_CAUSE_LAW',
+  'MAX_GRAPH_URI_DECODE_ROUNDS',
+] as const);
+
+export const GRAPH_PUBLIC_CONFORMANCE_VALUE_EXPORTS = Object.freeze([
+  'GRAPH_COMPARABLE_SURFACE',
+  'GRAPH_COMPARABLE_SURFACE_CONTRACT',
+  'GRAPH_COMPARABLE_SURFACE_LAW',
+  'GRAPH_GENERATED_ARTIFACT',
+  'GRAPH_GENERATED_ARTIFACT_CONTRACT',
+  'GRAPH_GENERATED_ARTIFACT_LAW',
+  'GRAPH_INVENTORY_SURFACE',
+  'GRAPH_INVENTORY_SURFACE_CONTRACT',
+  'GRAPH_INVENTORY_SURFACE_LAW',
+  'GRAPH_LOCATOR_IDENTITY',
+  'GRAPH_LOCATOR_IDENTITY_CONTRACT',
+  'GRAPH_LOCATOR_IDENTITY_LAW',
+  'GRAPH_UNKNOWN_CAUSE',
+  'GRAPH_UNKNOWN_CAUSE_CONTRACT',
+  'GRAPH_UNKNOWN_CAUSE_LAW',
+  'admitDeclaredGraphLocator',
+  'classifyGraphRelativeLocator',
+  'decodeGraphLocatorState',
+  'normalizeGraphEntityIdentity',
+  'opaqueGraphDeclaredLocator',
+  'resolveGraphEntityIdentity',
+] as const);
+
 export const GRAPH_PUBLIC_EXPORT_MAP = Object.freeze({
   subpaths: GRAPH_PUBLIC_EXPORT_SUBPATHS,
   rootValueExports: GRAPH_PUBLIC_ROOT_VALUE_EXPORTS,
   rootForbiddenValueExports: GRAPH_ROOT_FORBIDDEN_VALUE_EXPORTS,
+  contractsValueExports: GRAPH_PUBLIC_CONTRACTS_VALUE_EXPORTS,
+  conformanceValueExports: GRAPH_PUBLIC_CONFORMANCE_VALUE_EXPORTS,
 });
 
 export const GRAPH_QUERY_CACHE_OPERATING_BOUNDARY = Object.freeze({
@@ -291,13 +334,13 @@ export const GRAPH_STANDALONE_PACKED_JOBS = Object.freeze([
 
 export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   contract: GRAPH_STANDALONE_SUPPORT_MATRIX_CONTRACT,
-  maturity: 'repository-preview-candidate',
+  maturity: 'internal-stable',
   distribution: 'internal-only',
   npmPublication: 'prohibited',
   publishable: false,
-  standaloneStable: false,
+  standaloneStable: true,
   publicPreview: false,
-  centralCliRuntime: 'prohibited',
+  centralCliRuntime: 'shadow-comparison-only',
   nativeAcceleration: 'bundled-wasm-candidate',
   rustEngineTarget: Object.freeze({
     implementation: 'bundled-conformance-candidate',
@@ -314,9 +357,9 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   network: 'deny',
   runtime: { node: '>=20.19.0' },
   platforms: Object.freeze({
-    linux: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
-    darwin: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
-    win32: Object.freeze({ declared: true, remoteAdmission: 'baseline-verified-current-pending' }),
+    linux: Object.freeze({ declared: true, remoteAdmission: 'admitted' }),
+    darwin: Object.freeze({ declared: true, remoteAdmission: 'admitted' }),
+    win32: Object.freeze({ declared: true, remoteAdmission: 'admitted' }),
   }),
   languages: Object.freeze({
     node: 'official-offline',
@@ -337,13 +380,12 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
   queryCache: GRAPH_QUERY_CACHE_OPERATING_BOUNDARY,
   externalProviderSdk: Object.freeze({
     status: 'deferred',
-    until: 'standalone-stable',
+    until: 'cli-shadow-parity',
   }),
   publicPreviewMigrations: Object.freeze([] as const),
   packedJobs: Object.freeze(GRAPH_STANDALONE_PACKED_JOBS.map((job) => job.id)),
-  plannedCapabilities: Object.freeze(['standalone-stable', 'cli-shadow-parity'] as const),
+  plannedCapabilities: Object.freeze(['cli-shadow-parity'] as const),
   unsupportedCapabilities: Object.freeze([
-    'standalone-stable',
     'cli-runtime-bridge',
     'native-acceleration-as-primary',
   ] as const),
@@ -354,12 +396,9 @@ export const GRAPH_STANDALONE_SUPPORT_MATRIX = Object.freeze({
     'query-cache-is-optional-injected-store',
     'overlays-do-not-publish-canonical-generations',
     'external-provider-sdk-deferred',
-    'signed-provenance-unattested',
     'rollback-defined-but-not-proven-under-cli-shadow-load',
     'retrieval-benchmark-is-synthetic-fixture-labelled',
-    'current-commit-cross-platform-admission-pending',
-    'standalone-stable-not-admitted',
-    'central-cli-runtime-prohibited',
+    'central-cli-primary-prohibited',
     'rust-engine-conformance-candidate-not-activated',
   ] as const),
 });

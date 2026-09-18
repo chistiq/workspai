@@ -68,6 +68,7 @@ describe('G4 repository fixture matrix', () => {
 
       expect(['complete', 'partial']).toContain(result.status);
       expect(result.graph.edges.some((edge) => edge.relation === importRelation)).toBe(true);
+      expect(result.graph.edges.some((edge) => edge.relation === 'defines')).toBe(true);
       if (routeRelation) {
         expect(result.graph.edges.some((edge) => edge.relation === routeRelation)).toBe(true);
       }

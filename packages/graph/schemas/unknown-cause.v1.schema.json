@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.workspai.dev/graph/unknown-cause/v1",
+  "title": "WorkspaiGraphUnknownCauseCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "causes",
+    "disposition",
+    "admissionImpact",
+    "neverBenignCauses",
+    "classificationOrigins"
+  ],
+  "properties": {
+    "contract": {
+      "const": {
+        "id": "workspai.graph.unknown-cause",
+        "version": "1"
+      }
+    },
+    "causes": {
+      "const": [
+        "unsupported-syntax",
+        "inventory-policy",
+        "generated-or-vendor-policy",
+        "parser-limitation",
+        "resource-bound",
+        "unmapped-legacy-coverage",
+        "unclassified"
+      ]
+    },
+    "disposition": {
+      "const": "bounded-unknown"
+    },
+    "admissionImpact": {
+      "const": "blocking"
+    },
+    "neverBenignCauses": {
+      "const": ["unclassified", "unmapped-legacy-coverage"]
+    },
+    "classificationOrigins": {
+      "const": ["structured-producer", "legacy-fallback"]
+    }
+  }
+}

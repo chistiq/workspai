@@ -8,8 +8,21 @@ import type {
   GraphWorkerTaskResult,
 } from '../../ports/index.js';
 import type { GraphProductHostPorts } from '../../ports/index.js';
-import { buildRepoGraph, GRAPH_STANDARD_REPO_BUILD_POLICY } from '../../application/index.js';
-import type { GraphRepoBuildPolicy, GraphRepoBuildResult } from '../../application/index.js';
+import {
+  GRAPH_REFERENCE_COMPOSITION_TASK,
+  GRAPH_STANDARD_REPO_BUILD_POLICY,
+  buildContentStateManifest,
+  buildIncrementalRepoGraph,
+  buildRepoGraph,
+  buildShardDependenciesFromSources,
+  collectGraphSemanticDependencies,
+  contentStateLeavesFromProviderInputs,
+  executeGraphReferenceCompositionTask,
+  type GraphIncrementalRepoBuildResult,
+  type GraphRepoBuildPolicy,
+  type GraphRepoBuildResult,
+} from '../../application/index.js';
+import type { GraphCompositionRequest } from '../../application/composition-types.js';
 import {
   CORE_GRAPH_ONTOLOGY_PROFILE,
   type GraphOntologyProfile,
@@ -19,6 +32,11 @@ import {
 import { createStandardRepositoryProviders } from '../../providers/index.js';
 
 import { createNodeGraphFileSource } from './repository-file-source.js';
+import {
+  GraphNativeAdapterLoadError,
+  createNodeRustWasmGraphNativePort,
+} from './rust-wasm-engine.js';
+import type { GraphNativePort } from '../../ports/index.js';
 
 export { createNodeGraphFileSource } from './repository-file-source.js';
 export { createNodeProjectArtifactStore } from './project-artifact-store.js';
@@ -26,8 +44,35 @@ export { createNodeWorkspaceArtifactStore } from './workspace-artifact-store.js'
 export {
   GraphNativeAdapterLoadError,
   createNodeRustWasmGraphNativePort,
+  reclaimBundledEngineBuffers,
   type GraphNativeAdapterLoadErrorCode,
 } from './rust-wasm-engine.js';
+export {
+  extractPublishedMatrixDeclarations,
+  routeGraphNativeDeclarations,
+  type GraphNativeDeclarationRoute,
+  type GraphPublishedDeclarationRoute,
+} from '../../providers/route-native-declarations.js';
+export {
+  referenceGraphNativeTraversal,
+  routeGraphNativeTraversal,
+  type GraphNativeTraversalRoute,
+} from '../../application/route-native-traversal.js';
+
+let bundledNativePort: Promise<GraphNativePort | undefined> | undefined;
+
+/** Loads the product-bundled engine once per process. Missing artifacts stay TypeScript-only. */
+export function loadNodeBundledGraphNativePort(): Promise<GraphNativePort | undefined> {
+  bundledNativePort ??= (async () => {
+    try {
+      return await createNodeRustWasmGraphNativePort();
+    } catch (error) {
+      if (error instanceof GraphNativeAdapterLoadError) return undefined;
+      throw error;
+    }
+  })();
+  return bundledNativePort;
+}
 
 export interface NodeRepoGraphBuildRequest {
   readonly root: string;
@@ -38,6 +83,22 @@ export interface NodeRepoGraphBuildRequest {
   readonly signal?: AbortSignal;
   /** Overrides the packaged reference worker location for bundled executable hosts. */
   readonly workerUrl?: URL;
+}
+
+function inheritedWorkerExecArgv(workerUrl: URL): string[] {
+  const javascriptWorker = workerUrl.pathname.endsWith('.js');
+  const args: string[] = [];
+  const source = process.execArgv.filter((argument) => !argument.startsWith('--input-type'));
+  for (let index = 0; index < source.length; index += 1) {
+    const argument = source[index];
+    const next = source[index + 1];
+    if (javascriptWorker && argument === '--import' && next === 'tsx') {
+      index += 1;
+      continue;
+    }
+    args.push(argument);
+  }
+  return args;
 }
 
 function packagedReferenceWorkerUrl(): URL {
@@ -73,12 +134,16 @@ function emptyResult<TOutput>(
 /**
  * Creates a bounded one-task-per-worker Node adapter for the portable Graph
  * reference task protocol. Worker isolation is an execution concern only and
- * cannot redefine composition semantics.
+ * cannot redefine composition semantics. Product inspect/build hosts run the
+ * same task in-process so large graphs are not serialized into a worker.
  */
 export function createNodeGraphReferenceWorkerPool(
-  workerUrl: URL = packagedReferenceWorkerUrl()
+  workerUrl: URL = packagedReferenceWorkerUrl(),
+  options: { readonly isolate?: boolean } = {}
 ): GraphWorkerPoolPort {
+  const isolate = options.isolate ?? true;
   return {
+    serializesTasks: isolate,
     execute<TInput, TOutput>(
       request: GraphWorkerTaskRequest<TInput>
     ): Promise<GraphWorkerTaskResult<TOutput>> {
@@ -103,14 +168,46 @@ export function createNodeGraphReferenceWorkerPool(
           )
         );
       }
+      if (
+        !isolate &&
+        request.task.id === GRAPH_REFERENCE_COMPOSITION_TASK.id &&
+        request.task.version === GRAPH_REFERENCE_COMPOSITION_TASK.version
+      ) {
+        try {
+          const output = executeGraphReferenceCompositionTask(
+            request.input as GraphCompositionRequest
+          ) as TOutput;
+          return Promise.resolve({
+            status: 'complete',
+            output,
+            diagnostics: [],
+            metrics: {
+              durationMs: performance.now() - startedAt,
+              // Sentinel: composeGraph skips worker JSON byte measurement.
+              inputBytes: 0,
+              outputBytes: 1,
+            },
+          });
+        } catch (error) {
+          return Promise.resolve(
+            emptyResult(
+              'failed',
+              'GRAPH_NODE_WORKER_EXECUTION_FAILED',
+              error instanceof Error ? error.message : 'Graph worker execution failed.',
+              performance.now() - startedAt
+            )
+          );
+        }
+      }
 
       return new Promise((resolve) => {
         let worker: Worker;
         try {
           worker = new Worker(workerUrl, {
             // Eval/STDIN-only flags inherited from a host process make file-backed
-            // workers fail before startup. Preserve all other host execution flags.
-            execArgv: process.execArgv.filter((argument) => !argument.startsWith('--input-type')),
+            // workers fail before startup. Bare `--import tsx` also fails after the
+            // host chdirs away from the package, so JavaScript workers drop it.
+            execArgv: inheritedWorkerExecArgv(workerUrl),
           });
         } catch (error) {
           resolve(
@@ -195,7 +292,11 @@ export function createNodeGraphReferenceWorkerPool(
 }
 
 export function createNodeGraphProductHostPorts(
-  options: { readonly signal?: AbortSignal; readonly workerUrl?: URL } = {}
+  options: {
+    readonly signal?: AbortSignal;
+    readonly workerUrl?: URL;
+    readonly isolateComposition?: boolean;
+  } = {}
 ): GraphProductHostPorts {
   const signal = options.signal;
   return {
@@ -203,6 +304,16 @@ export function createNodeGraphProductHostPorts(
     digest: {
       algorithm: 'sha256',
       digest: async (input) => createHash('sha256').update(input).digest('hex'),
+      digestSync: (input) => createHash('sha256').update(input).digest('hex'),
+      createStreamingDigest: () => {
+        const hash = createHash('sha256');
+        return {
+          update: (chunk: Uint8Array) => {
+            hash.update(chunk);
+          },
+          digest: async () => hash.digest('hex'),
+        };
+      },
     },
     cancellation: {
       get aborted() {
@@ -211,7 +322,9 @@ export function createNodeGraphProductHostPorts(
       throwIfAborted: () => signal?.throwIfAborted(),
     },
     scheduler: { yield: () => waitForImmediate() },
-    workers: createNodeGraphReferenceWorkerPool(options.workerUrl),
+    workers: createNodeGraphReferenceWorkerPool(options.workerUrl, {
+      isolate: options.isolateComposition ?? false,
+    }),
     fileSource: createNodeGraphFileSource(),
     signal,
   };
@@ -231,11 +344,92 @@ export function buildNodeRepoGraph(
       projectIds: ['project:implicit-single-repository'],
     },
     ontology: request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE,
-    providers: request.providers ?? createStandardRepositoryProviders(),
+    providers:
+      request.providers ??
+      createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort }),
     policy: request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY,
     ports: createNodeGraphProductHostPorts({
       signal: request.signal,
       workerUrl: request.workerUrl,
     }),
+  });
+}
+
+const NODE_INCREMENTAL_SCAN_PROFILE = Object.freeze({
+  algorithm: 'sha256' as const,
+  value: createHash('sha256').update('workspai.graph.node-product-scan-profile.v1').digest('hex'),
+});
+
+export interface NodeIncrementalRepoGraphBuildRequest extends NodeRepoGraphBuildRequest {
+  readonly base: GraphRepoBuildResult;
+}
+
+/**
+ * Runs skip-reread incremental rebuild through the Node product host.
+ * This host has no change journal, so skip-reread is not trusted unless a
+ * journal port is later injected. Equivalence against the same tree is still
+ * assessed.
+ */
+export async function buildNodeIncrementalRepoGraph(
+  request: NodeIncrementalRepoGraphBuildRequest
+): Promise<GraphIncrementalRepoBuildResult> {
+  if (!request.base.graph || !request.base.compositionSources) {
+    throw new Error(
+      'Incremental Node Graph build requires a complete base generation with composition sources.'
+    );
+  }
+  const scope = request.scope ?? {
+    kind: 'project',
+    projectIds: ['project:implicit-single-repository'],
+  };
+  const ontology = request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE;
+  const providers =
+    request.providers ??
+    createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort });
+  const policy = request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY;
+  const ports = createNodeGraphProductHostPorts({
+    signal: request.signal,
+    workerUrl: request.workerUrl,
+  });
+  const inventory = await ports.fileSource.inventory({
+    root: request.root,
+    maxFiles: policy.limits.maxFiles,
+    maxTotalBytes: policy.limits.maxTotalBytes,
+    maxFileBytes: policy.limits.maxFileBytes,
+    maxDepth: policy.limits.maxDepth,
+    maxDirectoryEntries: policy.limits.maxDirectoryEntries,
+    excludedDirectories: policy.excludedDirectories,
+    sensitiveFiles: policy.sensitiveFiles,
+    signal: request.signal,
+  });
+  const stamps = await collectGraphSemanticDependencies({
+    ontology,
+    compositionPolicy: policy.composition,
+    redactionProfile: policy.redactionProfile,
+    providerManifests: providers.map((provider) => provider.manifest),
+    digest: ports.digest,
+  });
+  const baseManifest = buildContentStateManifest({
+    scope,
+    generatedAt: request.base.graph.generation.reference.generatedAt,
+    scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+    leaves: contentStateLeavesFromProviderInputs(inventory.inputs, NODE_INCREMENTAL_SCAN_PROFILE),
+    shardDependencies: buildShardDependenciesFromSources(request.base.compositionSources, stamps),
+  });
+  return buildIncrementalRepoGraph({
+    root: request.root,
+    scope,
+    ontology,
+    providers,
+    policy,
+    ports,
+    baseManifest,
+    baseGeneration: request.base.graph.generation.reference.id,
+    targetGeneration: `${request.base.graph.generation.reference.id}:incremental`,
+    baseSources: request.base.compositionSources,
+    providersToRecompute: [],
+    scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+    referenceGenerationDigest: request.base.graph.generation.reference.contentDigest,
+    baseGraph: request.base.graph,
   });
 }

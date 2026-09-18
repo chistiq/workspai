@@ -247,10 +247,12 @@ describe('buildIncrementalRepoGraph', () => {
     });
 
     expect(incremental.equivalence).toBe('pass');
-    expect(incremental.providers.some((entry) => entry.collection === 'not-run')).toBe(true);
-    expect(incremental.plan.providersToRecompute).toEqual([]);
-    expect(incremental.processing.length).toBeGreaterThan(0);
-    expect(collectCalls).toEqual([]);
+    expect(incremental.inventoryReread.trust).toBe('absent');
+    expect(incremental.providers.every((entry) => entry.collection !== 'not-run')).toBe(true);
+    expect(incremental.plan.providersToRecompute.length).toBeGreaterThan(0);
+    expect(collectCalls.sort()).toEqual(
+      ['workspai.graph.provider.fixture-a', 'workspai.graph.provider.fixture-b'].sort()
+    );
     expect(incremental.plan.delta.graph).toEqual({
       addedNodes: [],
       removedNodes: [],
@@ -538,10 +540,17 @@ describe('buildIncrementalRepoGraph', () => {
   });
 
   it('matches a clean full rebuild after an added file', async () => {
-    const files: Record<string, string> = { 'src/a.ts': 'export const a = 1;' };
+    const files: Record<string, string> = {
+      'src/a.ts': 'export const a = 1;',
+      'ownership.rules': 'src/** team-platform',
+    };
     const collectCalls: string[] = [];
     const providerA = 'workspai.graph.provider.fixture-a';
-    const providers = [fixtureProvider(providerA, 'src/a.ts', collectCalls)];
+    const providerB = 'workspai.graph.provider.fixture-b';
+    const providers = [
+      fixtureProvider(providerA, 'src/a.ts', collectCalls),
+      fixtureProvider(providerB, 'ownership.rules', collectCalls),
+    ];
     const full = await buildRepoGraph({
       root: '/fixture',
       scope,
@@ -555,7 +564,10 @@ describe('buildIncrementalRepoGraph', () => {
       generatedAt: '2026-09-09T12:00:00.000Z',
       scanProfileDigest,
       leaves: contentStateLeavesFromProviderInputs(
-        [inputFor('src/a.ts', files['src/a.ts']!)],
+        [
+          inputFor('src/a.ts', files['src/a.ts']!),
+          inputFor('ownership.rules', files['ownership.rules']!),
+        ],
         scanProfileDigest
       ),
       shardDependencies: buildShardDependenciesFromSources(
@@ -565,6 +577,7 @@ describe('buildIncrementalRepoGraph', () => {
     });
 
     files['src/b.ts'] = 'export const b = 1;';
+    collectCalls.length = 0;
     const incremental = await buildIncrementalRepoGraph({
       root: '/fixture',
       scope,
@@ -579,6 +592,8 @@ describe('buildIncrementalRepoGraph', () => {
       providersToRecompute: [],
       scanProfileDigest,
     });
+    expect(incremental.plan.delta.affectedProviders).toEqual([providerA, providerB]);
+    expect(collectCalls.sort()).toEqual([providerA, providerB].sort());
     const rebuilt = await buildRepoGraph({
       root: '/fixture',
       scope,
@@ -953,7 +968,7 @@ describe('buildIncrementalRepoGraph', () => {
       ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
       providers: [first[0]!, fixtureProvider(providerB, 'src/index.ts', collectCalls)],
       policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
-      ports: ports(files),
+      ports: ports(files, { porcelain: '' }),
       baseManifest,
       baseGeneration: 'generation:base',
       targetGeneration: 'generation:target',

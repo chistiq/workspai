@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "workspai.graph-g8-real-workspace-platform-report.v1-candidate",
+  "package": "@workspai/graph",
+  "stage": "G8",
+  "checkpoint": "real-workspace-cross-platform-parity",
+  "status": "passed-platform",
+  "admitted": false,
+  "nextStage": "G9",
+  "nextStageAuthorized": false,
+  "crossPlatformAdmission": "pending",
+  "currentGraphAuthority": "official-internal-graph-capability",
+  "authorizedRuntimeMode": "g8-shadow-comparison-only",
+  "mappingVersion": "workspai.graph-shadow-mapping.v1",
+  "inventoryDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sourceFixtureDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "sourceTreeDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "scopeDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "providerProfileDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "graphPolicyDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "redactionAuthorizationDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "resourceBudgetDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "reportDigest": "sha256:c6f453e44c71a7eec0051091c80bd73bcf8c7982351f193bc9c6508b54a33e54",
+  "semanticOutputDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+  "comparisonStatus": "equivalent",
+  "differenceCodes": [],
+  "packageExecutionStatus": "complete",
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "node": "v20.19.0"
+  },
+  "platformEvidence": {
+    "status": "passed",
+    "runnerOs": "Linux",
+    "runnerArch": "X64"
+  },
+  "ci": {
+    "provider": "github-actions",
+    "runId": "1234567890",
+    "event": "pull_request",
+    "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "testedCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "versions": {
+    "cli": {
+      "version": "0.75.1",
+      "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "graphPackage": {
+      "version": "0.0.0-development",
+      "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "qualification": {
+    "schemaVersion": "workspai.graph-real-workspace-qualification.v1-candidate",
+    "profile": "g8-real-workspace.v1",
+    "inventoryDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mappingVersion": "workspai.graph-shadow-mapping.v1",
+    "observations": [
+      {
+        "id": "committed-node-service",
+        "kind": "committed-fixture",
+        "projectId": "node-catalog-service",
+        "status": "compared",
+        "packageExecution": {
+          "status": "complete",
+          "inputFiles": 11,
+          "providerFacts": 11
+        },
+        "comparison": {
+          "status": "equivalent",
+          "mappingVersion": "workspai.graph-shadow-mapping.v1",
+          "reportDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "semanticOutputDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "sourceTreeDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "regressions": 0,
+          "approvedDifferences": 0,
+          "differenceCodes": [],
+          "sourceFixtureDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "scopeDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "providerProfileDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "graphPolicyDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "redactionAuthorizationDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "resourceBudgetDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    ],
+    "mutatedCanonicalArtifacts": false,
+    "usedProcessCwdAsAuthority": false,
+    "receipt": {
+      "schemaVersion": "workspai.graph-model-authority-receipt.v1-candidate",
+      "epoch": "package-shadow",
+      "executionPath": "compared",
+      "comparison": {
+        "status": "equivalent",
+        "profile": "g8-real-workspace.v1",
+        "reportDigest": "sha256:c6f453e44c71a7eec0051091c80bd73bcf8c7982351f193bc9c6508b54a33e54"
+      },
+      "authority": "released-cli",
+      "packageWrites": "prohibited",
+      "fallback": "prohibited"
+    }
+  },
+  "receipt": {
+    "schemaVersion": "workspai.graph-model-authority-receipt.v1-candidate",
+    "epoch": "package-shadow",
+    "executionPath": "compared",
+    "comparison": {
+      "status": "equivalent",
+      "profile": "g8-real-workspace.v1",
+      "reportDigest": "sha256:c6f453e44c71a7eec0051091c80bd73bcf8c7982351f193bc9c6508b54a33e54"
+    },
+    "authority": "released-cli",
+    "packageWrites": "prohibited",
+    "fallback": "prohibited"
+  },
+  "failures": []
+}

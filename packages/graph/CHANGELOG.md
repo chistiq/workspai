@@ -2,6 +2,162 @@
 
 ## Unreleased
 
+- Recorded a blocked G8 stage closure that can express package-primary
+  replacement later without mutating the shadow-only plan. The ledger keeps
+  production CLI composer authority, always-throw unadmitted package-primary
+  refusal, and G9 unauthorized until an explicit admission record exists.
+
+- Kubernetes topology now rejects recorded-interaction YAML paths before they
+  consume the provider read budget and parses only source/path-qualified
+  manifest candidates. Invalid Helm templates remain explicit unknown zones;
+  unrelated VCR cassettes no longer become Kubernetes failures.
+- Incremental inventory membership changes (add, delete, and rename) recompute
+  every registered provider until provider contracts can express inventory-wide
+  fan-out dependencies such as CODEOWNERS. This trades selective speed for
+  full-build digest equivalence instead of reusing stale cross-file facts.
+- Added a repeatable real-repository incremental qualification harness covering
+  edit, add, delete, rename, and configuration changes with trusted journals,
+  byte accounting, full-build comparison, and native extraction enabled.
+- Entity identity uses digestSync when the host provides it. Semantic set
+  digests stream ranked canonical keys instead of joining a monolithic string.
+  Inspect metrics expose composition phase timers and per-provider
+  detect/collect timings. Those timers are execution metrics, not generation
+  identity, and inspect wall time is the clock compared with CLI emit.
+- Binding precision: declarations and calls ignore string, template, and
+  docstring text; `export default function` is observed; call names shorter
+  than three characters are kept; import aliases bind to the exported symbol;
+  non-exported members are not called across files. OpenAPI `implements` requires
+  a routed handler, not a quoted operation id or a coincidental function name.
+  Generated-file markers are read from the leading comment header only, not from
+  same-line code after a closed comment. JavaScript regex literals are masked
+  only in JS/TS; import clauses inside templates are not treated as code.
+  Export `{ local as exported }` aliases, namespace imports, indirect
+  `export default ident`, and explicit Python underscore imports (including
+  `__all__` for star imports) bind through those clauses. OpenAPI `implements`
+  also requires HTTP method/path registration evidence and keeps the same
+  operationId in separate contracts unmerged. Call coverage reports examined,
+  resolved, ambiguous, and unresolved sites without treating unresolved
+  externals as success. HTTP `implements` requires a member registration on an
+  imported or factory-created HTTP registrar, not a similarly named arbitrary
+  object, `Map.get`, or another collection. Multiple routed handlers remain
+  ambiguous instead of being selected by file score, and binding coverage is
+  keyed by contract, operation, method, and path. JavaScript regex literals
+  after `return` and other regex-prefix keywords stay in the regex channel
+  instead of becoming call facts. Objective-C message receivers are no longer
+  emitted as called selectors.
+- Matrix consumers reuse one length-preserving lexical code view per file during
+  declaration/import/call and API-binding collection. The profiler now reports
+  TypeScript and Rust/WASM declaration timings separately, including native
+  load cost. Rust regex-prefix recognition avoids allocating a string per slash.
+  Build detection reuses one immutable locator list across providers.
+- Generated sources stay in inventory and in the call-target index, but
+  unreferenced generated internals are not materialized as symbols. Unique
+  authored-call targets still receive define and call edges. Coverage reports
+  indexed generated findings separately from discovered declarations so a 500
+  cap is not counted as a complete index.
+
+- Reduced Rust declaration-scan allocations by borrowing unchanged source and
+  iterating lines directly. Node encodes source into WASM memory without an
+  intermediate UTF-8 buffer and sizes declaration records to bounded input.
+  Both extractors preserve source lines and token boundaries through block
+  comments. Empty WASM source no longer forms a Rust slice from a null pointer.
+- Restricted Node re-export scanning to export-list/star syntax to avoid
+  backtracking across ordinary exported declaration bodies. Added a repeatable
+  declaration/CLI profiler with output determinism checks, p50/p95 timings and
+  child-process peak RSS. Native authority and rollout gates are unchanged.
+
+- Raised the standalone repository provider set past the released CLI composer
+  surface: OpenAPI/Swagger/AsyncAPI, GraphQL, Kubernetes, CI pipelines, Dockerfile/
+  Terraform/Helm, Python console scripts, VS Code commands, architecture
+  decisions, and OpenAPI operation-to-handler binding. Inspect now inventories a
+  directory symlink root by resolving it, prefers unique same-file call targets
+  over colliding peers, and omits call extraction from generated sources.
+  Unreferenced generated internals are indexed for unique call targets and
+  not materialized as symbols. Call binding now prefers unique functions over
+  same-name types, treats generated symbols as unique targets instead of name
+  collisions, and scans call tokens in one pass so coverage counts unresolved
+  call sites. Node and other keyword-declared languages no longer treat
+  object-property call sites as C-style typed function declarations, so
+  imported handlers stay bound to their defining file. Repository builds memoize entity identity and reused file bytes
+  across isolated providers. Node inspect/build hosts compose in-process so
+  large graphs are not cloned into a worker; isolated worker execution remains
+  the adapter default for event-loop proofs. Canonical digest walks are
+  synchronous and flush in blocks, Node hosts hash compact composition values
+  through digestSync so inspect does not await SHA-256 once per edge, semantic
+  set digests reuse sorted canonical material, published composition output
+  is frozen in place instead of cloned, and in-process Node composition skips
+  serialized-worker shard byte measurement.
+  Large inventories publish bundled-engine
+  declarations when the scan completes, with TypeScript remaining the fallback
+  and dual-exec admission probe.
+- Extended the bundled Rust/WASM engine with a bounded matrix declaration
+  scan on ABI v1. Dual-exec routing remains the admission probe. Inspect
+  publishes complete native declarations on large inventories and falls back
+  to TypeScript; users still cannot select an engine. The WASM packager now
+  follows `CARGO_TARGET_DIR` when cargo writes the artifact outside the
+  repository `target/` tree.
+- Extended source-declaration extraction to every official-offline structural
+  language at equal observed depth, including local include/require call
+  resolution, same-package Go/Java/Kotlin peers, Objective-C message sends,
+  parenthesis-free Ruby/Elixir calls, and a latin1 fallback when UTF-8 rejects
+  a source file. Declaration and declared-import extraction now use the same
+  language-balanced adaptive file window as CLI deep scan so large polyglot
+  inventories stay bounded. Dart and other languages outside the admitted
+  matrix remain explicit unsupported surfaces.
+- Raised per-file declaration and per-symbol call extraction bounds so typical
+  library modules are not truncated at 100 declarations or 20 call sites.
+- Added local G8 Workspace Intelligence consumer-parity and CLI host routing for
+  the bundled Rust/WASM traversal engine. Every inventoried consumer can run
+  against a package shadow candidate, TypeScript remains semantic authority, and
+  package-primary replacement stays unauthorized until the remote matrix and
+  replacement gate pass.
+- Inventory policyDigest now binds complete walk budgets, directory truncation
+  is `partially-enumerated`, and omittedBytes travel through repo-build metrics
+  into shadow execution receipts. Bounded walks stop at the file or byte budget
+  instead of scanning remaining trees. Cross-platform
+  admission and package-primary replacement remain unauthorized.
+  Approved differences default to none; any exception must be a bound record
+  for one corpus, source-tree digest, difference code and reason. Cross-platform
+  admission requires semantic equivalence on the representative committed Node
+  corpus, not `incomparable` with blanket approvals. Local `grpc` and
+  `opentelemetry-demo` copies remain optional observations and are not trusted
+  baselines. Isolated child execution is terminated at the deadline. The
+  harness remains a repository and CI TypeScript tool, not a published CLI
+  runtime, and does not require `tsx` for installed users. Matrix verification
+  recomputes the qualification digest and binds package commits to the tested
+  SHA. Linux, macOS and Windows admission stays pending until the remote matrix
+  is retained. The G7 release inventory snapshot now includes the G8
+  real-workspace evidence schemas. Isolated qualification resolves `tsx` by
+  absolute URL so nested Graph composition workers still start after the child
+  chdirs to a write sentinel. Fail-closed platform reports still exit 4 until
+  semantic equivalence, but CI captures them without aborting the OS matrix.
+  Packed invalid fixtures use `/home/example` so Linux runners do not treat
+  them as leaked host paths. The released CLI remains the sole Graph authority.
+- Added the versioned G8 semantic shadow-parity corpus as CLI bridge evidence.
+  It rejects identity, relation, proof, unknown, completeness and diagnostic
+  regressions while reviewed improvements remain non-equivalent.
+- Kept the historical G7 release matrix verifiable after its retained admission
+  advances the registry to G8, while rejecting the intermediate G7 registry
+  state. Protected-main attestation and finalization now run only for the G5 to
+  G7 admission transition, preventing replay after G8 has opened.
+- Added a TypeScript-only bundle-input build target for clean internal CLI
+  composition. Full Graph builds continue to produce and verify the bundled
+  Rust/WASM artifact, while ordinary CLI bundling requires no Rust toolchain.
+- Kept historical G6 matrix verification valid after the separately governed
+  G7 admission advances the registry to G8, while continuing to reject every
+  unadmitted intermediate stage and any weakened G6 evidence.
+- Retained the exact protected-main G7 admission and opened only the authorized
+  G8 shadow-comparison mode. The released CLI remains authoritative while the
+  internal Graph package is bundled as a build-time dependency with no npm,
+  runtime-resolution or user-toolchain requirement.
+- Added a portable identity renderer at the Graph digest boundary plus complete
+  provider-fact evidence locators. Canonical hashed identities remain unchanged;
+  compatibility comparisons use only observed SHA-256 preimages and explicit,
+  versioned legacy mappings.
+- Added a live project qualification path that scopes legacy workspace truth,
+  executes the package read-only on the same prepared project and emits a
+  bounded authority receipt. Semantic generation digests must match the bound
+  inventory, provider set and composition policy before comparison is allowed.
 - Removed package-internal composition sources from every standalone CLI JSON
   envelope while retaining them for in-process incremental recomputation. This
   prevents duplicate provider facts from crossing the consumer boundary and

@@ -76,11 +76,26 @@ const rootForbiddenValueExports = frozenStringArray(
   productSource,
   'GRAPH_ROOT_FORBIDDEN_VALUE_EXPORTS'
 );
+const contractsValueExports = frozenStringArray(
+  productSource,
+  'GRAPH_PUBLIC_CONTRACTS_VALUE_EXPORTS'
+);
+const conformanceValueExports = frozenStringArray(
+  productSource,
+  'GRAPH_PUBLIC_CONFORMANCE_VALUE_EXPORTS'
+);
 const packedJobs = packedJobIds(productSource);
 const maxCompressedBytes = packedCompressedBudget(productSource);
 const incidents = frozenStringArray(productSource, 'GRAPH_INCIDENT_CLASSES');
 const profile = readJson(path.join(packageRoot, 'conformance/profile.json'));
+const contractsSource = fs.readFileSync(path.join(packageRoot, 'src/contracts/index.ts'), 'utf8');
+const conformanceSource = fs.readFileSync(
+  path.join(packageRoot, 'src/conformance/index.ts'),
+  'utf8'
+);
 const exported = namedValueExports(rootSource);
+const exportedContracts = namedValueExports(contractsSource);
+const exportedConformance = namedValueExports(conformanceSource);
 const rustArtifact = fs.existsSync(rustArtifactPath)
   ? fs.readFileSync(rustArtifactPath)
   : undefined;
@@ -99,6 +114,16 @@ if (JSON.stringify(Object.keys(manifest.exports).sort()) !== JSON.stringify([...
 }
 if (JSON.stringify(exported) !== JSON.stringify([...rootValueExports].sort())) {
   failures.push('src/index.ts value exports drifted from GRAPH_PUBLIC_EXPORT_MAP');
+}
+for (const name of contractsValueExports) {
+  if (!exportedContracts.includes(name)) {
+    failures.push(`Required contracts subpath export missing: ${name}`);
+  }
+}
+for (const name of conformanceValueExports) {
+  if (!exportedConformance.includes(name)) {
+    failures.push(`Required conformance subpath export missing: ${name}`);
+  }
 }
 for (const forbidden of rootForbiddenValueExports) {
   if (exported.includes(forbidden)) failures.push(`Forbidden root export present: ${forbidden}`);
@@ -134,6 +159,8 @@ const inventory = {
     subpaths,
     rootValueExports,
     rootForbiddenValueExports,
+    contractsValueExports,
+    conformanceValueExports,
   },
   packedJobs,
   incidents,

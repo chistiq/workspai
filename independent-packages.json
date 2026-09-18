@@ -42,11 +42,11 @@
       "name": "@workspai/graph",
       "directory": "packages/graph",
       "deliveryOrder": 1,
-      "maturity": "contract-design",
+      "maturity": "internal-stable",
       "publishable": false,
-      "standaloneStability": "not-admitted",
+      "standaloneStability": "admitted",
       "cliEquivalent": "official-internal-graph-capability",
-      "cliRuntimeIntegration": "prohibited-before-standalone-stability",
+      "cliRuntimeIntegration": "g8-shadow-comparison-only",
       "documentationAuthority": "workspai-docs:Packages/graph",
       "qualityPlanRef": "workspai-docs:Packages/graph/QUALITY_AND_STAGE_GATES.md",
       "approvedExternalRuntimeDependencies": [
@@ -56,9 +56,9 @@
           "purpose": "Bounded safe-core parsing of Docker Compose declarations"
         }
       ],
-      "latestClosure": "packages/graph/governance/g5-stage-closure.v1.json",
-      "currentStage": "G5",
-      "stageStatus": "local-source-complete"
+      "latestClosure": "packages/graph/governance/g7-stage-admission.v1.json",
+      "currentStage": "G8",
+      "stageStatus": "in-progress"
     }
   ]
 }

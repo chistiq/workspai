@@ -28,16 +28,22 @@ import {
   validateGraphQualityReport,
 } from '../conformance/graph.js';
 import { assessGraphEvidenceIndependence } from '../conformance/lineage.js';
-import type { GraphExecutionPorts } from '../ports/index.js';
+import { structurizeUnknownZone } from '../domain/unknown-cause.js';
+import type { GraphExecutionPorts, GraphWorkerTaskResult } from '../ports/index.js';
 import { digestCanonicalGraphInput } from './digest-canonical-graph-input.js';
 import type {
   GraphCompositionDecision,
+  GraphCompositionIdentityFreeze,
   GraphCompositionOutput,
   GraphCompositionRequest,
   GraphCompositionResult,
   GraphCompositionSource,
   GraphReferenceCompositionTaskOutput,
 } from './composition-types.js';
+import {
+  mergeShardedCompositionOutputs,
+  planGraphCompositionShards,
+} from './plan-composition-shards.js';
 
 interface FactRecord {
   readonly fact: GraphWorkspaceFact;
@@ -68,10 +74,60 @@ function issue(code: string, path: string, message: string): GraphValidationIssu
   return { code, path, message };
 }
 
+const utf8 = new TextEncoder();
+const COMPACT_GRAPH_VALUE_LIMIT = 64;
+const CANONICAL_DIGEST = 'workspai.graph.canonical-json.v1' as const;
+
 function canonical(input: unknown): string {
   const result = canonicalizeGraphValue(input);
   if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
   return result.value;
+}
+
+function isCompactGraphValue(input: unknown): boolean {
+  if (input === null || typeof input !== 'object') return true;
+  const pending: unknown[] = [input];
+  let seen = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== 'object') continue;
+    seen += 1;
+    if (seen > COMPACT_GRAPH_VALUE_LIMIT) return false;
+    if (Array.isArray(current)) {
+      if (current.length > COMPACT_GRAPH_VALUE_LIMIT) return false;
+      for (const item of current) pending.push(item);
+      continue;
+    }
+    const keys = Object.keys(current);
+    if (keys.length > COMPACT_GRAPH_VALUE_LIMIT) return false;
+    for (const key of keys) pending.push((current as Record<string, unknown>)[key]);
+  }
+  return true;
+}
+
+function digestReference(value: string): WisDigestReference {
+  if (!/^[a-f0-9]{32,256}$/u.test(value)) {
+    throw new Error('Graph digest port returned a non-canonical lowercase hexadecimal digest.');
+  }
+  return Object.freeze({
+    algorithm: 'sha256',
+    value,
+    canonicalization: CANONICAL_DIGEST,
+  });
+}
+
+function digestNow(
+  input: unknown,
+  ports: GraphExecutionPorts,
+  maxBytes?: number
+): WisDigestReference | undefined {
+  const sync = ports.digest.digestSync;
+  if (!sync || !isCompactGraphValue(input)) return undefined;
+  const bytes = utf8.encode(canonical(input));
+  if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
+    throw new Error('/: byte budget exceeded');
+  }
+  return digestReference(sync(bytes));
 }
 
 async function digest(
@@ -79,7 +135,14 @@ async function digest(
   ports: GraphExecutionPorts,
   maxBytes?: number
 ): Promise<WisDigestReference> {
-  return digestCanonicalGraphInput(input, ports.digest, { ...(maxBytes ? { maxBytes } : {}) });
+  ports.cancellation.throwIfAborted();
+  const immediate = digestNow(input, ports, maxBytes);
+  if (immediate) return immediate;
+  return digestCanonicalGraphInput(input, ports.digest, {
+    ...(maxBytes ? { maxBytes } : {}),
+    maxValues: MAX_COMPOSITION_EDGES * 16,
+    cancellation: ports.cancellation,
+  });
 }
 
 function scopeKey(entity: GraphEntityReference): string {
@@ -94,12 +157,47 @@ function sortUnique(values: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(values)].sort());
 }
 
-function sortCanonical<T>(values: readonly T[]): T[] {
-  return [...values].sort((left, right) => canonical(left).localeCompare(canonical(right)));
+function rankCanonical<T>(values: readonly T[]): { value: T; index: number; key: string }[] {
+  return values
+    .map((value, index) => ({ value, index, key: canonical(value) }))
+    .sort((left, right) => left.key.localeCompare(right.key) || left.index - right.index);
 }
 
 function uniqueCanonical<T>(values: readonly T[]): T[] {
-  return [...new Map(sortCanonical(values).map((value) => [canonical(value), value])).values()];
+  return [...new Map(rankCanonical(values).map((item) => [item.key, item.value])).values()];
+}
+
+function digestRankedMaterial(
+  ranked: readonly { readonly key: string }[],
+  ports: GraphExecutionPorts
+): WisDigestReference | undefined {
+  const sync = ports.digest.digestSync;
+  if (!sync) return undefined;
+  return digestReference(sync(utf8.encode(`[${ranked.map((item) => item.key).join(',')}]`)));
+}
+
+async function digestSortedValues<T>(
+  values: readonly T[],
+  ports: GraphExecutionPorts
+): Promise<WisDigestReference> {
+  const ranked = rankCanonical(values);
+  const streamer = ports.digest.createStreamingDigest?.();
+  if (streamer) {
+    streamer.update(utf8.encode('['));
+    for (const [index, item] of ranked.entries()) {
+      if (index > 0) streamer.update(utf8.encode(','));
+      streamer.update(utf8.encode(item.key));
+    }
+    streamer.update(utf8.encode(']'));
+    return digestReference(await streamer.digest());
+  }
+  return (
+    digestRankedMaterial(ranked, ports) ??
+    (await digest(
+      ranked.map((item) => item.value),
+      ports
+    ))
+  );
 }
 
 function deepFreeze<T>(input: T): Readonly<T> {
@@ -116,16 +214,6 @@ function deepFreeze<T>(input: T): Readonly<T> {
     Object.freeze(value);
   }
   return input;
-}
-
-function immutableCopy<T>(input: T, maxBytes?: number): Readonly<T> {
-  const result = canonicalizeGraphValue(input, {
-    ...(maxBytes === undefined ? {} : { maxValues: maxBytes }),
-  });
-  if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
-  if (maxBytes !== undefined && new TextEncoder().encode(result.value).byteLength > maxBytes)
-    throw new Error('/: canonical value exceeds the configured byte budget');
-  return deepFreeze(JSON.parse(result.value) as T);
 }
 
 function aggregateCoverage(
@@ -353,15 +441,7 @@ function mergeEntityAliases(entities: readonly GraphEntityReference[]): {
   };
 }
 
-export function executeGraphReferenceCompositionTask(
-  request: GraphCompositionRequest
-): PreparedComposition {
-  const relations = new Map(
-    request.ontology.relations.map((relation) => [relation.kind, relation])
-  );
-  const entityFamilies = new Map(
-    request.ontology.entities.map((entity) => [entity.kind, entity.family])
-  );
+function collectCompositionRecords(request: GraphCompositionRequest): FactRecord[] {
   const records: FactRecord[] = [];
   for (const source of [...request.sources].sort((left, right) => {
     const leftKey = `${left.manifest.id}\u0000${left.manifest.version}\u0000${left.batch.batchId}`;
@@ -374,13 +454,74 @@ export function executeGraphReferenceCompositionTask(
       records.push({ fact });
     }
   }
+  return records;
+}
 
+function identityFromFreeze(
+  freeze: GraphCompositionIdentityFreeze
+): ReturnType<typeof mergeEntityAliases> {
+  return {
+    nodes: freeze.nodes,
+    invalidIds: new Set(freeze.invalidIds),
+    resolvedIds: new Map(freeze.resolvedIds),
+    unresolved: freeze.unresolved,
+  };
+}
+
+export function freezeGraphCompositionIdentity(
+  request: GraphCompositionRequest
+): GraphCompositionIdentityFreeze {
+  const records = collectCompositionRecords(request);
   const entityResult = mergeEntityAliases(
     records.flatMap(({ fact }) => [
       fact.subject,
       ...('identityScheme' in fact.object ? [fact.object] : []),
     ])
   );
+  return {
+    nodes: entityResult.nodes,
+    resolvedIds: Object.freeze(
+      [...entityResult.resolvedIds.entries()].sort(([left], [right]) => left.localeCompare(right))
+    ),
+    invalidIds: Object.freeze(
+      [...entityResult.invalidIds].sort((left, right) => left.localeCompare(right))
+    ),
+    unresolved: entityResult.unresolved,
+  };
+}
+
+export function compositionFactOrder(
+  request: GraphCompositionRequest
+): ReadonlyMap<string, number> {
+  const order = new Map<string, number>();
+  let index = 0;
+  for (const record of collectCompositionRecords(request)) {
+    if (!order.has(record.fact.factId)) {
+      order.set(record.fact.factId, index);
+      index += 1;
+    }
+  }
+  return order;
+}
+
+export function executeGraphReferenceCompositionTask(
+  request: GraphCompositionRequest
+): PreparedComposition {
+  const relations = new Map(
+    request.ontology.relations.map((relation) => [relation.kind, relation])
+  );
+  const entityFamilies = new Map(
+    request.ontology.entities.map((entity) => [entity.kind, entity.family])
+  );
+  const records = collectCompositionRecords(request);
+  const entityResult = request.identityFreeze
+    ? identityFromFreeze(request.identityFreeze)
+    : mergeEntityAliases(
+        records.flatMap(({ fact }) => [
+          fact.subject,
+          ...('identityScheme' in fact.object ? [fact.object] : []),
+        ])
+      );
   const candidates = new Map<
     string,
     {
@@ -502,7 +643,13 @@ export function executeGraphReferenceCompositionTask(
     candidates: Object.freeze(
       [...candidates.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, value]) => ({ key, ...value, facts: Object.freeze(value.facts) }))
+        .map(([key, value]) => ({
+          key,
+          relation: value.relation,
+          from: value.from,
+          to: value.to,
+          facts: Object.freeze(value.facts.map((record) => ({ factId: record.fact.factId }))),
+        }))
     ),
     decisions: Object.freeze(decisions),
     diagnostics: Object.freeze(diagnostics),
@@ -903,7 +1050,7 @@ function validateWorkerCompositionOutput(
     }
     for (const [factIndex, record] of candidate.facts.entries()) {
       const factPath = `${path}/facts/${factIndex}`;
-      if (!isRecord(record) || !isRecord(record.fact) || typeof record.fact.factId !== 'string') {
+      if (!isRecord(record) || typeof record.factId !== 'string') {
         issues.push(
           issue(
             'GRAPH_COMPOSITION_WORKER_FACT_INVALID',
@@ -913,26 +1060,39 @@ function validateWorkerCompositionOutput(
         );
         continue;
       }
-      const workerFact = record.fact as unknown as GraphWorkspaceFact;
-      const admittedFact = knownFacts.get(workerFact.factId);
-      assign(workerFact.factId, `${factPath}/factId`);
-      if (!admittedFact || canonical(workerFact) !== canonical(admittedFact)) {
+      const factId = record.factId;
+      const admittedFact = knownFacts.get(factId);
+      assign(factId, `${factPath}/factId`);
+      if (!admittedFact) {
         issues.push(
           issue(
             'GRAPH_COMPOSITION_WORKER_FACT_MUTATED',
             factPath,
-            'Composition worker altered an admitted fact.'
+            'Composition worker referenced a fact that was not admitted.'
           )
         );
         continue;
       }
+      if ('fact' in record) {
+        const embedded = record.fact;
+        if (!isRecord(embedded) || canonical(embedded) !== canonical(admittedFact)) {
+          issues.push(
+            issue(
+              'GRAPH_COMPOSITION_WORKER_FACT_MUTATED',
+              factPath,
+              'Composition worker altered an admitted fact.'
+            )
+          );
+          continue;
+        }
+      }
       if (
-        !('identityScheme' in workerFact.object) ||
-        candidate.relation.kind !== workerFact.predicate ||
-        nodeOwners.get(workerFact.subject.id)?.length !== 1 ||
-        nodeOwners.get(workerFact.subject.id)?.[0]?.id !== candidate.from.id ||
-        nodeOwners.get(workerFact.object.id)?.length !== 1 ||
-        nodeOwners.get(workerFact.object.id)?.[0]?.id !== candidate.to.id
+        !('identityScheme' in admittedFact.object) ||
+        candidate.relation.kind !== admittedFact.predicate ||
+        nodeOwners.get(admittedFact.subject.id)?.length !== 1 ||
+        nodeOwners.get(admittedFact.subject.id)?.[0]?.id !== candidate.from.id ||
+        nodeOwners.get(admittedFact.object.id)?.length !== 1 ||
+        nodeOwners.get(admittedFact.object.id)?.[0]?.id !== candidate.to.id
       ) {
         issues.push(
           issue(
@@ -1015,6 +1175,77 @@ function validateWorkerCompositionOutput(
     : { accepted: false, issues };
 }
 
+function compositionWorkerFailure(
+  workerResult: GraphWorkerTaskResult<PreparedComposition>
+): GraphCompositionResult | undefined {
+  if (workerResult.status === 'cancelled') {
+    return failure('cancelled', [
+      issue('GRAPH_COMPOSITION_CANCELLED', '', 'Composition worker cancelled before publication.'),
+    ]);
+  }
+  if (workerResult.status === 'resource-limit') {
+    return failure(
+      'resource-limit',
+      workerResult.diagnostics.map((diagnostic) => ({
+        code: diagnostic.code,
+        path: diagnostic.path,
+        message: diagnostic.message,
+      }))
+    );
+  }
+  if (workerResult.status !== 'complete' || !workerResult.output) {
+    return failure(
+      'composition-failed',
+      workerResult.diagnostics.length > 0
+        ? workerResult.diagnostics.map((diagnostic) => ({
+            code: diagnostic.code,
+            path: diagnostic.path,
+            message: diagnostic.message,
+          }))
+        : [
+            issue(
+              'GRAPH_COMPOSITION_WORKER_UNAVAILABLE',
+              '/workers',
+              `Composition worker returned ${workerResult.status}.`
+            ),
+          ]
+    );
+  }
+  return undefined;
+}
+
+function rehydratePreparedComposition(
+  prepared: PreparedComposition,
+  knownFacts: ReadonlyMap<string, GraphWorkspaceFact>
+): {
+  readonly nodes: PreparedComposition['nodes'];
+  readonly candidates: readonly EdgeCandidate[];
+  readonly decisions: readonly GraphCompositionDecision[];
+  readonly diagnostics: PreparedComposition['diagnostics'];
+  readonly unresolved: PreparedComposition['unresolved'];
+} {
+  return {
+    nodes: prepared.nodes,
+    candidates: Object.freeze(
+      prepared.candidates.map((candidate) => ({
+        key: candidate.key,
+        relation: candidate.relation,
+        from: candidate.from,
+        to: candidate.to,
+        facts: Object.freeze(
+          candidate.facts.flatMap((record) => {
+            const fact = knownFacts.get(record.factId);
+            return fact ? [{ fact }] : [];
+          })
+        ),
+      }))
+    ),
+    decisions: prepared.decisions,
+    diagnostics: prepared.diagnostics,
+    unresolved: prepared.unresolved,
+  };
+}
+
 export async function composeGraph(
   request: GraphCompositionRequest,
   ports: GraphExecutionPorts
@@ -1074,6 +1305,7 @@ export async function composeGraph(
     }
     const admittedSources: GraphCompositionSource[] = [];
     const admissionIssues: GraphValidationIssue[] = [];
+    const admitStartedAt = performance.now();
     for (const [index, source] of request.sources.entries()) {
       const admission = admitGraphProviderOutput(source.manifest, source.batch);
       if (admission.accepted) admittedSources.push(source);
@@ -1082,6 +1314,7 @@ export async function composeGraph(
           ...admission.issues.map((item) => ({ ...item, path: `/sources/${index}${item.path}` }))
         );
     }
+    const admitMs = Math.max(0, Math.round(performance.now() - admitStartedAt));
     if (admissionIssues.length > 0) return failure('invalid-input', admissionIssues);
     // Provider batches can be much larger than the standalone canonical-value
     // budget. Their admitted identity is the deterministic ordering key; the
@@ -1120,80 +1353,138 @@ export async function composeGraph(
     const normalizedRequest = { ...request, sources: normalizedSources };
     const lineageIssues = validateLineages(normalizedRequest);
     if (lineageIssues.length > 0) return failure('invalid-input', lineageIssues);
-    const workerResult = await ports.workers.execute<GraphCompositionRequest, PreparedComposition>({
-      task: GRAPH_REFERENCE_COMPOSITION_TASK,
-      input: normalizedRequest,
-      timeoutMs: request.policy.workerTimeoutMs,
-      maxOutputBytes: request.policy.maxWorkerOutputBytes,
-      ...(ports.signal ? { signal: ports.signal } : {}),
-    });
-    if (workerResult.status === 'cancelled') {
-      return failure('cancelled', [
-        issue(
-          'GRAPH_COMPOSITION_CANCELLED',
-          '',
-          'Composition worker cancelled before publication.'
-        ),
-      ]);
+    const shardPlan =
+      ports.workers.serializesTasks === false
+        ? { status: 'ready' as const, shards: Object.freeze([normalizedSources]) }
+        : planGraphCompositionShards(normalizedSources, request.policy.maxWorkerOutputBytes);
+    if (shardPlan.status === 'failed') {
+      return failure('resource-limit', [issue(shardPlan.code, '/sources', shardPlan.message)]);
     }
-    if (workerResult.status === 'resource-limit') {
-      return failure(
-        'resource-limit',
-        workerResult.diagnostics.map((diagnostic) => ({
-          code: diagnostic.code,
-          path: diagnostic.path,
-          message: diagnostic.message,
-        }))
+
+    const executeWorker = (input: GraphCompositionRequest) =>
+      ports.workers.execute<GraphCompositionRequest, PreparedComposition>({
+        task: GRAPH_REFERENCE_COMPOSITION_TASK,
+        input,
+        timeoutMs: request.policy.workerTimeoutMs,
+        maxOutputBytes: request.policy.maxWorkerOutputBytes,
+        ...(ports.signal ? { signal: ports.signal } : {}),
+      });
+
+    const workerStartedAt = performance.now();
+    let compactOutput: PreparedComposition;
+    let durationMs = 0;
+    let inputBytes = 0;
+    let outputBytes = 0;
+    if (shardPlan.shards.length <= 1) {
+      const workerResult = await executeWorker(normalizedRequest);
+      const workerFailure = compositionWorkerFailure(workerResult);
+      if (workerFailure) return workerFailure;
+      compactOutput = workerResult.output as PreparedComposition;
+      durationMs = workerResult.metrics.durationMs;
+      inputBytes = workerResult.metrics.inputBytes;
+      outputBytes = workerResult.metrics.outputBytes;
+    } else {
+      const freeze = freezeGraphCompositionIdentity(normalizedRequest);
+      const freezeBudget = Math.max(1, Math.floor(request.policy.maxWorkerOutputBytes / 2));
+      const freezeBytes = measureCanonicalGraphValueBytes(freeze, freezeBudget);
+      if (!freezeBytes.accepted) {
+        return failure('resource-limit', [
+          issue(
+            'GRAPH_COMPOSITION_IDENTITY_FREEZE_LIMIT',
+            '/sources',
+            'Global identity freeze exceeds half of the worker output budget.'
+          ),
+        ]);
+      }
+      const shardOutputs: PreparedComposition[] = [];
+      for (const shardSources of shardPlan.shards) {
+        ports.cancellation.throwIfAborted();
+        await ports.scheduler.yield();
+        const workerResult = await executeWorker({
+          ...normalizedRequest,
+          sources: shardSources,
+          identityFreeze: freeze,
+        });
+        const workerFailure = compositionWorkerFailure(workerResult);
+        if (workerFailure) return workerFailure;
+        const shardOutput = workerResult.output as PreparedComposition;
+        const measuredShard = measureCanonicalGraphValueBytes(
+          shardOutput,
+          request.policy.maxWorkerOutputBytes
+        );
+        if (!measuredShard.accepted) {
+          return failure(
+            measuredShard.issues[0]?.message.includes('byte budget exceeded')
+              ? 'resource-limit'
+              : 'composition-failed',
+            measuredShard.issues
+          );
+        }
+        if (workerResult.metrics.outputBytes > request.policy.maxWorkerOutputBytes) {
+          return failure('resource-limit', [
+            issue(
+              'GRAPH_COMPOSITION_WORKER_BUDGET_INVALID',
+              '/workers',
+              'Composition worker metrics or actual output exceed the declared budget.'
+            ),
+          ]);
+        }
+        shardOutputs.push(shardOutput);
+        durationMs += workerResult.metrics.durationMs;
+        inputBytes += workerResult.metrics.inputBytes;
+        outputBytes = Math.max(outputBytes, workerResult.metrics.outputBytes);
+      }
+      compactOutput = mergeShardedCompositionOutputs(
+        freeze,
+        shardOutputs,
+        compositionFactOrder(normalizedRequest)
       );
     }
-    if (workerResult.status !== 'complete' || !workerResult.output) {
-      return failure(
-        'composition-failed',
-        workerResult.diagnostics.length > 0
-          ? workerResult.diagnostics.map((diagnostic) => ({
-              code: diagnostic.code,
-              path: diagnostic.path,
-              message: diagnostic.message,
-            }))
-          : [
-              issue(
-                'GRAPH_COMPOSITION_WORKER_UNAVAILABLE',
-                '/workers',
-                `Composition worker returned ${workerResult.status}.`
-              ),
-            ]
-      );
-    }
+    const workerMs = Math.max(0, Math.round(performance.now() - workerStartedAt));
+
     const workerOutputValidation = validateWorkerCompositionOutput(
-      workerResult.output,
+      compactOutput,
       normalizedRequest
     );
     if (!workerOutputValidation.accepted) {
       return failure('composition-failed', workerOutputValidation.issues);
     }
-    const prepared = workerOutputValidation.value;
-    const measuredOutput = measureCanonicalGraphValueBytes(
-      prepared,
-      request.policy.maxWorkerOutputBytes
-    );
-    if (!measuredOutput.accepted) {
-      return failure(
-        measuredOutput.issues[0]?.message.includes('byte budget exceeded')
-          ? 'resource-limit'
-          : 'composition-failed',
-        measuredOutput.issues
+    const compactPrepared = workerOutputValidation.value;
+    const sharded = shardPlan.shards.length > 1;
+    // In-process Node composition reports inputBytes 0 / outputBytes 1 and never
+    // serialized the prepared graph, so the worker JSON byte budget does not apply.
+    const inProcessComposition = inputBytes === 0 && outputBytes === 1;
+    if (!sharded && !inProcessComposition) {
+      const measuredOutput = measureCanonicalGraphValueBytes(
+        compactPrepared,
+        request.policy.maxWorkerOutputBytes
       );
+      if (!measuredOutput.accepted) {
+        return failure(
+          measuredOutput.issues[0]?.message.includes('byte budget exceeded')
+            ? 'resource-limit'
+            : 'composition-failed',
+          measuredOutput.issues
+        );
+      }
+      if (measuredOutput.value > request.policy.maxWorkerOutputBytes) {
+        return failure('resource-limit', [
+          issue(
+            'GRAPH_COMPOSITION_WORKER_BUDGET_INVALID',
+            '/workers',
+            'Composition worker metrics or actual output exceed the declared budget.'
+          ),
+        ]);
+      }
     }
-    const actualOutputBytes = measuredOutput.value;
     if (
-      !Number.isFinite(workerResult.metrics.durationMs) ||
-      workerResult.metrics.durationMs < 0 ||
-      !Number.isInteger(workerResult.metrics.inputBytes) ||
-      workerResult.metrics.inputBytes < 0 ||
-      !Number.isInteger(workerResult.metrics.outputBytes) ||
-      workerResult.metrics.outputBytes < 0 ||
-      workerResult.metrics.outputBytes > request.policy.maxWorkerOutputBytes ||
-      actualOutputBytes > request.policy.maxWorkerOutputBytes
+      !Number.isFinite(durationMs) ||
+      durationMs < 0 ||
+      !Number.isInteger(inputBytes) ||
+      inputBytes < 0 ||
+      !Number.isInteger(outputBytes) ||
+      outputBytes < 0 ||
+      outputBytes > request.policy.maxWorkerOutputBytes
     ) {
       return failure('resource-limit', [
         issue(
@@ -1206,6 +1497,12 @@ export async function composeGraph(
     ports.cancellation.throwIfAborted();
     await ports.scheduler.yield();
 
+    const knownFacts = new Map(
+      normalizedSources.flatMap((source) =>
+        source.batch.facts.map((fact) => [fact.factId, fact] as const)
+      )
+    );
+    const prepared = rehydratePreparedComposition(compactPrepared, knownFacts);
     const decisions: GraphCompositionDecision[] = [...prepared.decisions];
     const eligibleCandidates: EdgeCandidate[] = [];
     for (const candidate of prepared.candidates) {
@@ -1231,31 +1528,30 @@ export async function composeGraph(
       }
     }
 
+    const semanticStartedAt = performance.now();
     const semanticDigests = {
-      ontology: await digest(request.ontology, ports, request.policy.maxWorkerOutputBytes),
+      ontology: await digest(request.ontology, ports),
       proofPolicies: await digest(
         request.ontology.relations.map((relation) => relation.proofPolicy),
-        ports,
-        request.policy.maxWorkerOutputBytes
+        ports
       ),
-      inputs: await digest(
-        sortCanonical(normalizedSources.flatMap((source) => source.batch.inputs)),
-        ports,
-        request.policy.maxWorkerOutputBytes
+      inputs: await digestSortedValues(
+        normalizedSources.flatMap((source) => source.batch.inputs),
+        ports
       ),
-      facts: await digest(
-        sortCanonical(normalizedSources.flatMap((source) => source.batch.facts).map(semanticFact)),
-        ports,
-        request.policy.maxWorkerOutputBytes
+      facts: await digestSortedValues(
+        normalizedSources.flatMap((source) => source.batch.facts).map(semanticFact),
+        ports
       ),
-      providers: await digest(
-        sortCanonical(normalizedSources.map((source) => source.manifest)),
-        ports,
-        request.policy.maxWorkerOutputBytes
+      providers: await digestSortedValues(
+        normalizedSources.map((source) => source.manifest),
+        ports
       ),
-      compositionPolicy: await digest(request.policy, ports, request.policy.maxWorkerOutputBytes),
+      compositionPolicy: await digest(request.policy, ports),
     };
+    const semanticDigestMs = Math.max(0, Math.round(performance.now() - semanticStartedAt));
 
+    const proofStartedAt = performance.now();
     const evaluatedProofs = new Map(
       eligibleCandidates.map((candidate) => [
         candidate.key,
@@ -1285,15 +1581,13 @@ export async function composeGraph(
       const conflict = competitors.length > 1;
       const evidence = uniqueEvidence(candidate.facts);
       const factIds = sortUnique(candidate.facts.map(({ fact }) => fact.factId));
-      const edgeDigest = await digest(candidate.key, ports);
-      const proofInputDigest = await digest(
-        candidate.facts.map(({ fact }) => ({
-          factId: fact.factId,
-          inputDigest: fact.inputDigest,
-          evidence: fact.evidence,
-        })),
-        ports
-      );
+      const proofInput = candidate.facts.map(({ fact }) => ({
+        factId: fact.factId,
+        inputDigest: fact.inputDigest,
+        evidence: fact.evidence,
+      }));
+      const edgeDigest = digestNow(candidate.key, ports) ?? (await digest(candidate.key, ports));
+      const proofInputDigest = digestNow(proofInput, ports) ?? (await digest(proofInput, ports));
       const state = conflict
         ? 'disputed'
         : proof.state === 'insufficient'
@@ -1378,6 +1672,7 @@ export async function composeGraph(
       }
     }
 
+    const edgeProofMs = Math.max(0, Math.round(performance.now() - proofStartedAt));
     edges.sort((left, right) => left.id.localeCompare(right.id));
     decisions.sort((left, right) => left.edgeKey.localeCompare(right.edgeKey));
     const uniqueDisputes = [
@@ -1405,6 +1700,7 @@ export async function composeGraph(
       unresolved: prepared.unresolved,
       diagnostics: prepared.diagnostics,
     };
+    const contentStartedAt = performance.now();
     const contentDigest = await digest(
       {
         ...graphPayload,
@@ -1429,9 +1725,9 @@ export async function composeGraph(
           };
         }),
       },
-      ports,
-      request.policy.maxWorkerOutputBytes
+      ports
     );
+    const contentDigestMs = Math.max(0, Math.round(performance.now() - contentStartedAt));
     const generation: GraphGeneration = {
       reference: {
         id: `generation:${contentDigest.value.slice(0, 32)}`,
@@ -1468,6 +1764,7 @@ export async function composeGraph(
       integrity:
         prepared.unresolved.length > 0 ||
         uniqueDisputes.length > 0 ||
+        normalizedSources.some((source) => source.batch.unknownZones.length > 0) ||
         decisions.some((decision) => decision.state !== 'accepted')
           ? 'attention'
           : 'pass',
@@ -1486,10 +1783,28 @@ export async function composeGraph(
       ),
       proofStates,
       unknownZones: Object.freeze(
-        uniqueCanonical(normalizedSources.flatMap((source) => source.batch.unknownZones))
+        uniqueCanonical(
+          normalizedSources.flatMap((source) =>
+            source.batch.unknownZones.map((zone) =>
+              structurizeUnknownZone(zone, {
+                provider: source.manifest.id,
+                stage: 'provider-collect',
+              })
+            )
+          )
+        )
       ),
       unsupportedZones: Object.freeze(
-        uniqueCanonical(normalizedSources.flatMap((source) => source.batch.unsupportedZones))
+        uniqueCanonical(
+          normalizedSources.flatMap((source) =>
+            source.batch.unsupportedZones.map((zone) =>
+              structurizeUnknownZone(zone, {
+                provider: source.manifest.id,
+                stage: 'provider-collect',
+              })
+            )
+          )
+        )
       ),
       staleZones: Object.freeze(
         uniqueCanonical(
@@ -1519,18 +1834,24 @@ export async function composeGraph(
     if (!graphValidation.accepted) return failure('composition-failed', graphValidation.issues);
     const qualityValidation = validateGraphQualityReport(qualityDraft);
     if (!qualityValidation.accepted) return failure('composition-failed', qualityValidation.issues);
-    const graph = immutableCopy(graphDraft, request.policy.maxWorkerOutputBytes);
-    const quality = immutableCopy(qualityDraft, request.policy.maxWorkerOutputBytes);
+    const published = deepFreeze({
+      graph: graphDraft,
+      quality: qualityDraft,
+      decisions,
+      semanticDigests,
+    } satisfies GraphCompositionOutput);
 
     return {
       accepted: true,
-      value: deepFreeze({
-        graph,
-        quality,
-        decisions: immutableCopy(decisions, request.policy.maxWorkerOutputBytes),
-        semanticDigests: immutableCopy(semanticDigests, request.policy.maxWorkerOutputBytes),
-      } satisfies GraphCompositionOutput),
+      value: published,
       issues: [],
+      timings: Object.freeze({
+        admitMs,
+        workerMs,
+        semanticDigestMs,
+        edgeProofMs,
+        contentDigestMs,
+      }),
     };
   } catch (error) {
     if (ports.cancellation.aborted) {

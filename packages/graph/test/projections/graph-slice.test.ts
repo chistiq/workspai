@@ -9,6 +9,13 @@ import {
   type GraphEntityReference,
 } from '../../src/contracts/index.js';
 import { createGraphSlice } from '../../src/projections/index.js';
+import {
+  admittedRedactionPolicy,
+  createGraphScopePredicate,
+  graphEntityMatchesScope,
+  redactGraphEdge,
+  redactGraphEvidence,
+} from '../../src/projections/projection-policy.js';
 
 const digest = { algorithm: 'sha256' as const, value: 'b'.repeat(64) };
 const scope = { kind: 'project' as const, projectIds: ['project:slice'] as [string] };
@@ -85,6 +92,166 @@ const graph: GraphCanonicalGraph = {
 };
 
 describe('createGraphSlice', () => {
+  it('fails closed across scope forms and redacts unsafe proof material', () => {
+    const project = node('project:slice');
+    const organization = {
+      ...node('organization:one'),
+      scope: { kind: 'organization' as const, organizationId: 'org:one', workspaceId: 'ws:one' },
+    };
+    expect(graphEntityMatchesScope(project, undefined)).toBe(true);
+    expect(
+      graphEntityMatchesScope(project, { kind: 'project', projectIds: ['project:slice'] })
+    ).toBe(true);
+    expect(
+      graphEntityMatchesScope(project, { kind: 'project', projectIds: ['project:other'] })
+    ).toBe(false);
+    expect(
+      graphEntityMatchesScope(organization, {
+        kind: 'organization',
+        organizationId: 'org:one',
+        workspaceId: 'ws:one',
+      })
+    ).toBe(true);
+    expect(graphEntityMatchesScope(project, { kind: 'workspace', workspaceId: 'ws:one' })).toBe(
+      false
+    );
+    expect(
+      graphEntityMatchesScope(organization, { kind: 'organization', organizationId: 'org:one' })
+    ).toBe(true);
+    expect(
+      graphEntityMatchesScope(organization, {
+        kind: 'organization',
+        organizationId: 'org:one',
+        workspaceId: 'ws:other',
+      })
+    ).toBe(false);
+    expect(
+      graphEntityMatchesScope(project, {
+        kind: 'project',
+        projectIds: ['project:slice'],
+        workspaceId: 'ws:one',
+      })
+    ).toBe(false);
+    expect(
+      graphEntityMatchesScope(project, { kind: 'selection', entityIds: ['project:slice'] })
+    ).toBe(true);
+    expect(
+      graphEntityMatchesScope(project, {
+        kind: 'selection',
+        workspaceId: 'ws:one',
+        projectIds: ['project:slice'],
+      })
+    ).toBe(false);
+    expect(
+      graphEntityMatchesScope(project, { kind: 'selection', projectIds: ['project:slice'] })
+    ).toBe(true);
+    expect(
+      graphEntityMatchesScope(project, { kind: 'selection', entityIds: ['entity:other'] })
+    ).toBe(false);
+    expect(graphEntityMatchesScope(project, { kind: 'selection', workspaceId: 'ws:one' })).toBe(
+      false
+    );
+    expect(admittedRedactionPolicy('portable-default')).toBe(true);
+    expect(admittedRedactionPolicy('unsafe')).toBe(false);
+    expect(
+      redactGraphEvidence(
+        { id: '/home/private', sourceKind: 'source-file', digest },
+        'portable-default'
+      )
+    ).toBeUndefined();
+    expect(
+      redactGraphEvidence(
+        {
+          id: 'evidence:ok',
+          sourceKind: 'source-file',
+          relativeLocator: '../secret.ts',
+          digest,
+        },
+        'portable-default'
+      )
+    ).toBeUndefined();
+    expect(
+      redactGraphEvidence(
+        {
+          id: 'evidence:ok',
+          sourceKind: 'source-file',
+          artifact: {
+            id: 'artifact:secret',
+            generationId: 'generation:slice',
+            relativeLocator: 'credentials/.env',
+          },
+          digest,
+        },
+        'portable-default'
+      )
+    ).toBeUndefined();
+    expect(
+      redactGraphEvidence(
+        { id: 'evidence:ok', sourceKind: 'source-file', relativeLocator: 'src/ok.ts', digest },
+        'portable-default'
+      )
+    ).toMatchObject({ id: 'evidence:ok' });
+    const redacted = redactGraphEdge(graph.edges[0]!, 'portable-default', true, new Set());
+    expect(redacted.proof.evidence).toEqual([]);
+    const withoutEvidence = redactGraphEdge(graph.edges[0]!, 'portable-default', false);
+    expect(withoutEvidence.proof.evidence).toEqual([]);
+    expect(withoutEvidence.proof.corroborationGroups).toEqual([]);
+    const grouped = redactGraphEdge(
+      {
+        ...graph.edges[0]!,
+        proof: {
+          ...graph.edges[0]!.proof,
+          corroborationGroups: [
+            {
+              root: 'group:keep',
+              evidence: graph.edges[0]!.proof.evidence,
+            },
+            {
+              root: 'group:drop',
+              evidence: [{ id: 'evidence:unpermitted', sourceKind: 'source-file', digest }],
+            },
+          ],
+        },
+      },
+      'portable-default',
+      true,
+      new Set(graph.edges[0]!.proof.evidence.map((entry) => entry.id))
+    );
+    expect(grouped.proof.corroborationGroups.map((group) => group.root)).toEqual(['group:keep']);
+    expect(
+      createGraphScopePredicate(
+        { ...graph, edges: [connect('missing:from', 'missing:to', 'structural')] },
+        { kind: 'workspace', workspaceId: 'ws:one' }
+      )(project)
+    ).toBe(false);
+  });
+
+  it('admits workspace project members only through explicit graph edges', () => {
+    const workspace = {
+      ...node('workspace:one'),
+      scope: { kind: 'workspace' as const, workspaceId: 'ws:one' },
+    };
+    const member: GraphEntityReference = {
+      ...node('project:member'),
+      scope: { kind: 'project' as const, projectIds: ['project:member'], workspaceId: 'ws:one' },
+    };
+    const unrelated: GraphEntityReference = {
+      ...node('project:unrelated'),
+      scope: { kind: 'project' as const, projectIds: ['project:unrelated'] },
+    };
+    const predicate = createGraphScopePredicate(
+      {
+        ...graph,
+        nodes: [workspace, member, unrelated],
+        edges: [connect('workspace:one', 'project:member', 'structural')],
+      },
+      { kind: 'workspace', workspaceId: 'ws:one' }
+    );
+    expect(predicate(workspace)).toBe(true);
+    expect(predicate(member)).toBe(true);
+    expect(predicate(unrelated)).toBe(false);
+  });
+
   it('builds a bounded impact slice with provenance and explicit exclusions', () => {
     const slice = createGraphSlice(graph, {
       contract: GRAPH_SLICE_REQUEST_CONTRACT,
@@ -241,5 +408,83 @@ describe('createGraphSlice', () => {
       accepted: false,
       issues: [expect.objectContaining({ code: 'GRAPH_SLICE_CONTENT_BUDGET_EXCEEDED' })],
     });
+    expect(
+      createGraphSlice(graph, {
+        contract: {
+          id: 'workspai.graph.slice-request',
+          version: 'unsupported',
+        } as unknown as typeof GRAPH_SLICE_REQUEST_CONTRACT,
+        intent: 'impact',
+        subjects: ['service:a'],
+        includeEvidence: false,
+        redactionPolicy: 'portable-default',
+      })
+    ).toMatchObject({
+      accepted: false,
+      issues: [expect.objectContaining({ code: 'GRAPH_SLICE_CONTRACT_UNSUPPORTED' })],
+    });
+  });
+
+  it('prioritizes repair, release, and understand neighbors and records remaining truncation reasons', () => {
+    const specialized: GraphCanonicalGraph = {
+      ...graph,
+      unresolved: [{ id: 'entity:unresolved', candidates: ['entity:a', 'entity:b'] }],
+      edges: [
+        { ...connect('service:a', 'service:b', 'behavioral'), relation: 'blocks' },
+        { ...connect('service:a', 'service:c', 'structural'), relation: 'pipeline' },
+        connect('service:b', 'service:c', 'structural'),
+      ],
+    };
+    const repair = createGraphSlice(specialized, {
+      contract: GRAPH_SLICE_REQUEST_CONTRACT,
+      intent: 'repair',
+      subjects: ['service:a'],
+      budget: { maxDepth: 1, maxNodes: 10, maxEdges: 1 },
+      includeEvidence: false,
+      redactionPolicy: 'portable-default',
+    });
+    expect(repair.accepted).toBe(true);
+    if (repair.accepted) expect(repair.value.edges[0]?.relation).toBe('blocks');
+
+    const release = createGraphSlice(specialized, {
+      contract: GRAPH_SLICE_REQUEST_CONTRACT,
+      intent: 'release',
+      subjects: ['service:a'],
+      budget: { maxDepth: 1, maxNodes: 10, maxEdges: 1 },
+      includeEvidence: false,
+      redactionPolicy: 'portable-default',
+    });
+    expect(release.accepted).toBe(true);
+    if (release.accepted) expect(release.value.edges[0]?.relation).toBe('pipeline');
+
+    const understand = createGraphSlice(specialized, {
+      contract: GRAPH_SLICE_REQUEST_CONTRACT,
+      intent: 'understand',
+      subjects: ['service:a'],
+      budget: { maxDepth: 1, maxNodes: 10, maxEdges: 1 },
+      includeEvidence: false,
+      redactionPolicy: 'portable-default',
+    });
+    expect(understand.accepted).toBe(true);
+    if (understand.accepted) expect(understand.value.edges[0]?.semantics).toBe('structural');
+
+    const evidenceTruncated = createGraphSlice(specialized, {
+      contract: GRAPH_SLICE_REQUEST_CONTRACT,
+      intent: 'review',
+      subjects: ['service:a'],
+      budget: { maxDepth: 2, maxNodes: 10, maxEdges: 10, maxEvidence: 1 },
+      includeEvidence: true,
+      redactionPolicy: 'portable-default',
+    });
+    expect(evidenceTruncated.accepted).toBe(true);
+    if (evidenceTruncated.accepted) {
+      expect(evidenceTruncated.value.evidence).toHaveLength(1);
+      expect(evidenceTruncated.value.truncation.reasons).toContain('evidence');
+      expect(evidenceTruncated.value.unknownBoundaries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'graph.slice-unresolved-identity' }),
+        ])
+      );
+    }
   });
 });

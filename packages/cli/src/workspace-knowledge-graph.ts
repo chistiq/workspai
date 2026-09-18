@@ -742,10 +742,10 @@ function adaptiveGraphScanBudget(input: {
     deepFileBudget,
     Math.min(input.semanticOverride ?? semanticDefault, Math.max(eligible, deepFileBudget), 250_000)
   );
-  const sourceDefault = Math.min(
-    20_000,
-    Math.max(2_000, Math.ceil(Math.min(eligible, deepFileBudget) * 0.25))
-  );
+  // Source-structure should extract the files already admitted to the deep
+  // window. A 25% slice left large polyglot inventories at the 2,000 floor
+  // even after deep scan had already selected several thousand candidates.
+  const sourceDefault = Math.min(20_000, Math.max(2_000, Math.min(eligible, deepFileBudget)));
   const sourceExtractionFileBudget = Math.max(
     100,
     Math.min(input.sourceOverride ?? sourceDefault, deepFileBudget, 50_000)

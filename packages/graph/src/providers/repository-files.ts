@@ -8,6 +8,8 @@ import {
   type GraphWorkspaceFact,
   GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE,
 } from '../contracts/index.js';
+import { graphUnsupportedObservation } from '../domain/unknown-cause.js';
+import { isHostSuppliedGraphInputLocator } from './scope-containment.js';
 
 export const REPOSITORY_FILES_PROVIDER_ID = 'workspai.graph.provider.repository-files';
 
@@ -89,10 +91,14 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
     detect: (request) => ({
       contract: GRAPH_PROVIDER_DETECTION_CONTRACT,
       provider: { id: manifest.id, version: manifest.version },
-      status: request.availableInputs.some((input) => !input.startsWith('.git/'))
+      status: request.availableInputs.some(
+        (input) => !input.startsWith('.git/') && !isHostSuppliedGraphInputLocator(input)
+      )
         ? 'applicable'
         : 'not-applicable',
-      matchedInputs: request.availableInputs.some((input) => !input.startsWith('.git/'))
+      matchedInputs: request.availableInputs.some(
+        (input) => !input.startsWith('.git/') && !isHostSuppliedGraphInputLocator(input)
+      )
         ? ['repository-files']
         : [],
       missingPermissions: [],
@@ -111,7 +117,10 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
       }
 
       const facts: GraphWorkspaceFact[] = [];
-      const inputs = request.inputs.filter((input) => !input.locator.startsWith('.git/'));
+      const inputs = request.inputs.filter(
+        (input) =>
+          !input.locator.startsWith('.git/') && !isHostSuppliedGraphInputLocator(input.locator)
+      );
       const recognizedCodeInputs = inputs.filter((input) =>
         isKnownSourceExtension(extension(input.locator))
       );
@@ -126,11 +135,16 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
             !SUPPORTED_SOURCE_EXTENSIONS.has(sourceExtension)
           );
         })
-        .map((input) => ({
-          code: 'graph.source-language-unsupported',
-          scope: input.locator,
-          reason: `Semantic extraction is not admitted for ${extension(input.locator)} inputs; inventory and provenance remain preserved.`,
-        }));
+        .map((input) =>
+          graphUnsupportedObservation({
+            code: 'graph.source-language-unsupported',
+            scope: input.locator,
+            reason: `Semantic extraction is not admitted for ${extension(input.locator)} inputs; inventory and provenance remain preserved.`,
+            provider: REPOSITORY_FILES_PROVIDER_ID,
+            stage: 'provider-collect',
+            language: extension(input.locator).replace(/^\./u, ''),
+          })
+        );
       for (const [index, input] of inputs.entries()) {
         if (request.signal?.aborted) throw new Error('Repository file collection was cancelled.');
         const file = await request.resolveIdentity({

@@ -55,6 +55,7 @@ function failedBuild(
       inputBytes: 0,
       providerFacts: 0,
       omittedFiles: 0,
+      omittedBytes: 0,
     }),
   });
 }
@@ -162,6 +163,7 @@ export async function buildIncrementalRepoGraph(
     digest: request.ports.digest,
   });
   const registered = request.providers.map((provider) => provider.manifest.id);
+  const forceFullRebuild = inventoryReread.trust !== 'trusted';
 
   const generatedAt = request.ports.clock.now().toISOString();
   const projectedManifest = buildContentStateManifest({
@@ -191,19 +193,27 @@ export async function buildIncrementalRepoGraph(
     scopeKind: request.scope.kind === 'workspace' ? 'workspace' : 'project',
     networkAllowed: request.policy.network === 'allow',
   });
-  const toRecompute = providersToExecute(
-    registered,
-    [
-      ...planned.providersToRecompute,
-      ...addedRequired,
-      ...(planned.status === 'partial' ? registered : []),
-    ],
-    request.providersToRecompute,
-    reusable
+  const inventoryMembershipChanged = planned.comparison.changedInputs.some((change) =>
+    ['added', 'deleted', 'rename-candidate'].includes(change.kind)
   );
-  const reusedSources = Object.freeze(
-    request.baseSources.filter((source) => !toRecompute.includes(source.manifest.id))
-  );
+  const toRecompute =
+    forceFullRebuild || inventoryMembershipChanged
+      ? Object.freeze([...registered].sort((left, right) => left.localeCompare(right)))
+      : providersToExecute(
+          registered,
+          [
+            ...planned.providersToRecompute,
+            ...addedRequired,
+            ...(planned.status === 'partial' ? registered : []),
+          ],
+          request.providersToRecompute,
+          reusable
+        );
+  const reusedSources = forceFullRebuild
+    ? Object.freeze([])
+    : Object.freeze(
+        request.baseSources.filter((source) => !toRecompute.includes(source.manifest.id))
+      );
 
   const inventoryFailed = inventory.status === 'failed' || inventory.status === 'cancelled';
   const planningFailed = planned.status === 'failed';

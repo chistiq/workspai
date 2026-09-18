@@ -1,4 +1,6 @@
 #include <vector>
 #include "service/health.h"
 
-int main() { return 0; }
+int serve() { return 0; }
+
+int main() { return serve(); }

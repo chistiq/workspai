@@ -86,7 +86,11 @@ const admittedHistoricalG3 =
     graph?.latestClosure === 'packages/graph/governance/g3-stage-approval.v1.json') ||
   (graph?.currentStage === 'G5' &&
     graph?.stageStatus === 'local-source-complete' &&
-    graph?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json');
+    graph?.latestClosure === 'packages/graph/governance/g5-stage-closure.v1.json') ||
+  (graph?.currentStage === 'G8' &&
+    graph?.stageStatus === 'in-progress' &&
+    graph?.standaloneStability === 'admitted' &&
+    graph?.latestClosure === 'packages/graph/governance/g7-stage-admission.v1.json');
 if (!inProgressG3 && !admittedHistoricalG3)
   failures.push('Graph registry neither authorizes nor records admitted G3 work');
 if (plan.stage !== 'G3' || plan.nextStageAuthorized !== false)

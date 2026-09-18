@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "workspai-graph-stage-plan.v1",
+  "package": "@workspai/graph",
+  "stage": "G8",
+  "status": "in-progress",
+  "authorizedBy": "packages/graph/governance/g7-stage-admission.v1.json",
+  "authorizedRuntimeMode": "g8-shadow-comparison-only",
+  "currentGraphAuthority": "official-internal-graph-capability",
+  "targetGraphAuthority": "package-authoritative-after-replacement-gate",
+  "checkpoints": [
+    {
+      "id": "prepared-context-bridge",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-shadow-bridge.ts",
+        "packages/cli/src/graph-package-runtime.ts",
+        "packages/cli/src/__tests__/graph-package-shadow-bridge.test.ts"
+      ]
+    },
+    {
+      "id": "artifact-compatibility-renderers",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-shadow-bridge.ts",
+        "packages/cli/src/graph-shadow-parity.ts",
+        "packages/graph/schemas/standalone-support-matrix.v0.2.0-candidate.schema.json",
+        "packages/cli/scripts/graph-shadow-qualification.ts",
+        "packages/cli/src/__tests__/graph-shadow-qualification.test.ts"
+      ]
+    },
+    {
+      "id": "legacy-package-shadow-execution",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/scripts/graph-live-shadow-qualification.ts",
+        "packages/cli/src/__tests__/graph-live-shadow-qualification.test.ts",
+        "packages/cli/scripts/enterprise-package-smoke.mjs"
+      ]
+    },
+    {
+      "id": "semantic-parity-corpus",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/test-data/graph-shadow/semantic-parity-corpus.v1.json",
+        "packages/cli/src/__tests__/graph-shadow-parity.test.ts",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
+        "packages/cli/src/graph-shadow-unknown-contract.ts"
+      ]
+    },
+    {
+      "id": "package-locator-identity-contract",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/foundation.ts",
+        "packages/graph/src/conformance/locator-identity-api.ts",
+        "packages/graph/schemas/locator-identity.v1.schema.json",
+        "packages/graph/conformance/contract-catalog.v1.json",
+        "packages/graph/governance/g7-release-inventory.v1.json",
+        "packages/graph/test/conformance/locator-identity-contract.test.ts",
+        "packages/graph/scripts/check-packed-package.mjs",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
+        "packages/cli/src/__tests__/graph-shadow-comparison-projection.test.ts"
+      ]
+    },
+    {
+      "id": "package-semantic-parity-contracts",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/graph/src/contracts/semantic-parity.ts",
+        "packages/graph/src/conformance/semantic-parity-api.ts",
+        "packages/graph/schemas/unknown-cause.v1.schema.json",
+        "packages/graph/schemas/generated-artifact.v1.schema.json",
+        "packages/graph/schemas/comparable-surface.v1.schema.json",
+        "packages/graph/test/conformance/semantic-parity-contract.test.ts",
+        "packages/cli/src/graph-shadow-unknown-contract.ts",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
+        "packages/cli/src/graph-package-compatibility-renderer.ts",
+        "packages/cli/src/__tests__/graph-package-compatibility-renderer.test.ts"
+      ]
+    },
+    {
+      "id": "real-workspace-cross-platform-parity",
+      "status": "implemented-local-candidate",
+      "crossPlatformAdmission": "pending",
+      "evidence": [
+        "packages/cli/src/graph-real-workspace-shadow.ts",
+        "packages/cli/src/graph-real-workspace-shadow-worker.ts",
+        "packages/cli/src/graph-shadow-comparison-projection.ts",
+        "packages/cli/scripts/graph-real-workspace-shadow-qualification.ts",
+        "packages/cli/src/contracts/graph-real-workspace-shadow-contract.ts",
+        "packages/cli/test-data/graph-shadow/real-workspace-inventory.v1.json",
+        "packages/cli/test-data/graph-shadow/real-workspace-policy.v1.json",
+        "packages/cli/test-data/graph-shadow/real-workspace-approvals.v2.json",
+        "packages/cli/test-data/graph-shadow/real-workspace-fixture.v1/src/index.ts",
+        "packages/cli/test-data/graph-shadow/real-workspace-corpus.v1/src/index.ts",
+        "packages/cli/src/__tests__/graph-real-workspace-shadow.test.ts",
+        "packages/graph/schemas/g8-real-workspace-platform-report.v1-candidate.schema.json",
+        "packages/graph/schemas/g8-real-workspace-matrix-admission.v1-candidate.schema.json",
+        "packages/graph/scripts/check-g8-real-workspace-matrix-admission.mjs",
+        "packages/graph/test/governance/g8-real-workspace-matrix-admission.test.ts",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "workspace-intelligence-consumer-parity",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-consumer-adapter.ts",
+        "packages/cli/src/__tests__/graph-package-consumer-adapter.test.ts",
+        "packages/cli/test-data/graph-shadow/g8-consumer-inventory.v1.json"
+      ]
+    },
+    {
+      "id": "rust-wasm-host-routing",
+      "status": "implemented-local-candidate",
+      "evidence": [
+        "packages/cli/src/graph-package-native-routing.ts",
+        "packages/cli/src/graph-package-runtime.ts",
+        "packages/cli/src/__tests__/graph-package-native-routing.test.ts",
+        "packages/graph/src/application/route-native-traversal.ts",
+        "packages/graph/src/adapters/node/index.ts"
+      ]
+    },
+    {
+      "id": "package-primary-replacement-decision",
+      "status": "planned"
+    }
+  ],
+  "invariants": [
+    "The released CLI remains the only Graph authority during shadow execution.",
+    "Shadow execution is read-only and cannot publish or mutate canonical generations.",
+    "No package failure may silently fall back or weaken a result.",
+    "Every comparison binds scope, provider, policy, redaction, authorization, budget, version and commit identities.",
+    "Count-only parity is prohibited; identities, semantics, proof, unknowns, quality and diagnostics are compared.",
+    "Locator identity is owned by the versioned Graph package contract; CLI shadow comparison consumes that contract.",
+    "Unknown-cause, generated-artifact, and comparable-surface laws are owned by the versioned Graph package; CLI shadow comparison consumes those contracts.",
+    "Compatibility renderer must not fabricate, upgrade, or delete proof.",
+    "Rust and WASM remain internal execution adapters and never become a second Graph truth.",
+    "Users do not select an engine or install Rust tooling.",
+    "The packages remain private and npm publication stays prohibited.",
+    "Real-workspace qualification is a repository and CI TypeScript harness; it is not a published CLI runtime capability and must not require tsx for installed users."
+  ],
+  "nextStage": "G9",
+  "nextStageAuthorized": false
+}

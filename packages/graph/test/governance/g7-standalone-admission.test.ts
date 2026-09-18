@@ -64,7 +64,7 @@ describe('Graph G7 standalone admission', () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ status: 'blocked', failures: [] });
   });
 
-  it('rejects forged stability while package metadata and registry remain unadmitted', () => {
+  it('rejects an admitted ledger that enables npm publication', () => {
     const directory = fixtureDirectory();
     const admission = JSON.parse(fs.readFileSync(canonicalAdmission, 'utf8'));
     admission.gates = admission.gates.map((gate: Record<string, unknown>) => ({
@@ -75,6 +75,7 @@ describe('Graph G7 standalone admission', () => {
     admission.admitted = true;
     admission.standaloneStable = true;
     admission.nextStageAuthorized = true;
+    admission.npmPublication = 'allowed';
     const manifest = path.join(directory, 'forged-admission.json');
     fs.writeFileSync(manifest, JSON.stringify(admission));
 
@@ -87,7 +88,7 @@ describe('Graph G7 standalone admission', () => {
       nextStageAuthorized: false,
     });
     expect(JSON.parse(result.stdout).failures).toContain(
-      'admitted Graph state is not reflected by package, registry and metadata'
+      'Graph admission lifecycle fields are incomplete'
     );
   });
 
