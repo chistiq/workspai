@@ -48,7 +48,7 @@ function assertCompleteManifest(manifest: AgentFrameworkAdapterManifest) {
   expect(validateAgentFrameworkAdapterManifest(manifest)).toEqual([]);
   expect(Object.values(manifest.operations).every((operation) => operation.supported)).toBe(true);
   expect(manifest.framework.id).toBe('openai-agents');
-  expect(manifest.adapter.stability).toBe('preview');
+  expect(manifest.adapter.stability).toBe('stable');
   expect(manifest.security.secrets).toBe('references-only');
   expect(manifest.ownership.mutationAdmission).toBe('workspai-pcc');
   expect(manifest.capabilities['single-agent']?.support).toBe('native');

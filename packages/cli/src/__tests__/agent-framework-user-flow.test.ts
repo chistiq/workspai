@@ -266,22 +266,16 @@ describe('agent framework user flow', () => {
     ).rejects.toThrow(/Pass --framework explicitly/);
   });
 
-  it('plans an OpenAI attach after reviewed release admission', async () => {
-    const { workspacePath, projectPath } = await fixture();
-    const prepared = await prepareAgentFrameworkAttachment({
-      workspacePath,
-      project: 'api',
-      runtime: 'python',
-      framework: 'openai-agents',
-      instanceName: 'primary',
-    });
-    expect(prepared).toMatchObject({
-      operation: 'plan',
-      status: 'planned',
-      adapterId: 'openai-agents-python',
-      frameworkId: 'openai-agents',
-      instanceName: 'primary',
-    });
-    expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'primary'))).toBe(false);
+  it('fails closed for OpenAI attach until the stable digest is release-admitted', async () => {
+    const { workspacePath } = await fixture();
+    await expect(
+      prepareAgentFrameworkAttachment({
+        workspacePath,
+        project: 'api',
+        runtime: 'python',
+        framework: 'openai-agents',
+        instanceName: 'primary',
+      })
+    ).rejects.toThrow(/not release-admitted|adapter manifest changed after release admission/);
   });
 });

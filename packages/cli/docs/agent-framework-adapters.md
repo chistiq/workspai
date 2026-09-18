@@ -227,9 +227,11 @@ workspace profile. A later adapter-manifest change must not hide a kit.
 Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
-runtime is shared. Adapters remain `preview`; handoffs, MCP, sessions, voice,
-sandbox, and approval loops stay unsupported. Changing `preview` to `stable`
-would change the manifest digest and require a new matrix.
+runtime is shared. OpenAI adapters are labeled `stable`. Handoffs, MCP,
+sessions, voice, sandbox, and approval loops stay unsupported. Create and
+Attach stay fail-closed until the new manifest digest, framework baseline,
+runtime, and platform list are bound from a green matrix. Microsoft adapters
+remain `preview`.
 
 A path-filtered twelve-lane adapter matrix compiles the generated Microsoft
 Python/.NET and OpenAI Python/TypeScript projects on Linux, macOS, and Windows. Every lane records all 18 mandatory

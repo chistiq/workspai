@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 describe('agent framework project kits', () => {
-  it('publishes the exact release-admitted Microsoft and OpenAI kits', () => {
+  it('publishes the exact Microsoft and OpenAI kits and admits Microsoft until the OpenAI stable digest is bound', () => {
     expect(describeAgentFrameworkProjectKits().map((kit) => kit.id)).toEqual([
       'agent.microsoft.python',
       'agent.microsoft.dotnet',
@@ -28,20 +28,13 @@ describe('agent framework project kits', () => {
       'agent.openai.typescript',
     ]);
     const kits = listAgentFrameworkProjectKits();
-    expect(kits.map((kit) => kit.id)).toEqual([
-      'agent.microsoft.python',
-      'agent.microsoft.dotnet',
-      'agent.openai.python',
-      'agent.openai.typescript',
-    ]);
+    expect(kits.map((kit) => kit.id)).toEqual(['agent.microsoft.python', 'agent.microsoft.dotnet']);
     expect(isAgentFrameworkProjectKit('agent.openai.python')).toBe(true);
     expect(isAgentFrameworkProjectKit('agent.openai.typescript')).toBe(true);
-    expect(resolveAgentFrameworkProjectKit('agent.openai.python')?.adapterId).toBe(
-      'openai-agents-python'
-    );
-    expect(resolveAgentFrameworkProjectKit('agent.openai.typescript')?.adapterId).toBe(
-      'openai-agents-typescript'
-    );
+    expect(resolveAgentFrameworkProjectKit('agent.openai.python')).toBeNull();
+    expect(resolveAgentFrameworkProjectKit('agent.openai.typescript')).toBeNull();
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(false);
     expect(kits.every((kit) => isAdmittedAgentFrameworkProjectKit(kit))).toBe(true);
   });
 

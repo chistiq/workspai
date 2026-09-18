@@ -108,7 +108,7 @@ export function openaiAgentsManifest(
       id: adapterId,
       package: '@workspai/cli',
       version: '0.1.0',
-      stability: 'preview',
+      stability: 'stable',
     },
     framework: {
       id: 'openai-agents',
