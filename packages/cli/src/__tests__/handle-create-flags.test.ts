@@ -178,7 +178,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     );
   }, 90_000);
 
-  it('creates governed OpenAI agent projects after reviewed release admission', async () => {
+  it('refuses governed OpenAI agent projects until the stable digest is release-admitted', async () => {
     await create.createProject('agent-workspace', {
       parentDirectory: tmpDir,
       profile: 'minimal',
@@ -206,20 +206,12 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
       '--yes',
     ]);
 
-    expect(pythonCode).toBe(0);
-    expect(typescriptCode).toBe(0);
+    expect(pythonCode).toBe(1);
+    expect(typescriptCode).toBe(1);
     expect(
       await fsExtra.pathExists(
         path.join(workspacePath, 'openai-python-agent', 'agents', 'primary', 'main.py')
       )
-    ).toBe(true);
-    expect(
-      await fsExtra.pathExists(
-        path.join(workspacePath, 'openai-typescript-agent', 'agents', 'primary', 'src', 'main.ts')
-      )
-    ).toBe(true);
-    expect(
-      await fsExtra.pathExists(path.join(workspacePath, 'openai-python-agent', 'pyproject.toml'))
     ).toBe(false);
   }, 90_000);
 

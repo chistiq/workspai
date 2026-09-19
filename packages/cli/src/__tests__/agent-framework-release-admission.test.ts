@@ -15,6 +15,14 @@ describe('agent framework release admission', () => {
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
+      const openai = adapter.manifest.adapter.id.startsWith('openai-agents-');
+      if (openai) {
+        expect(resolution).toMatchObject({
+          status: 'blocked',
+          blockers: expect.arrayContaining(['adapter manifest changed after release admission']),
+        });
+        continue;
+      }
       if (admittedIds.has(adapter.manifest.adapter.id)) {
         expect(resolution).toMatchObject({ status: 'admitted', blockers: [] });
         expect(resolution.admission?.platforms).toEqual(['linux', 'darwin', 'win32']);
@@ -79,16 +87,11 @@ describe('agent framework release admission', () => {
         .filter((adapter) => adapter.status === 'admitted')
         .map((adapter) => adapter.id)
         .sort()
-    ).toEqual([
-      'microsoft-agent-framework-dotnet',
-      'microsoft-agent-framework-python',
-      'openai-agents-python',
-      'openai-agents-typescript',
-    ]);
+    ).toEqual(['microsoft-agent-framework-dotnet', 'microsoft-agent-framework-python']);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
-        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'preview')
+        .every((adapter) => adapter.status === 'blocked' && adapter.stability === 'stable')
     ).toBe(true);
     expect(
       createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status

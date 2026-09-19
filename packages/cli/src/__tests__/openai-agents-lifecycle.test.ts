@@ -52,7 +52,7 @@ function admittedRegistry(
         manifestSha256,
       },
       frameworkVersion: adapter.manifest.framework.testedVersions[0],
-      cliVersion: '0.75.2',
+      cliVersion: '0.76.0',
       environment: {
         platform,
         architecture: 'x64',

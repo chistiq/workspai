@@ -73,7 +73,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-python',
       frameworkId: 'openai-agents',
-      admitted: true,
+      admitted: false,
     });
     expect(
       resolveAgentFrameworkSelection({
@@ -84,7 +84,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-typescript',
       frameworkId: 'openai-agents',
-      admitted: true,
+      admitted: false,
     });
   });
 });

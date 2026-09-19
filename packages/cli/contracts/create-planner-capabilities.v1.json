@@ -134,30 +134,6 @@
       "versionPolicy": "tested-baseline",
       "moduleSupport": false,
       "workspacePythonEngine": "none"
-    },
-    {
-      "id": "agent.openai.python",
-      "runtime": "python",
-      "framework": "openai-agents",
-      "plannerFramework": "openai-agents",
-      "category": "agent",
-      "owner": "workspai",
-      "stability": "stable",
-      "versionPolicy": "tested-baseline",
-      "moduleSupport": false,
-      "workspacePythonEngine": "none"
-    },
-    {
-      "id": "agent.openai.typescript",
-      "runtime": "node",
-      "framework": "openai-agents",
-      "plannerFramework": "openai-agents",
-      "category": "agent",
-      "owner": "workspai",
-      "stability": "stable",
-      "versionPolicy": "tested-baseline",
-      "moduleSupport": false,
-      "workspacePythonEngine": "none"
     }
   ],
   "officialCreate": [

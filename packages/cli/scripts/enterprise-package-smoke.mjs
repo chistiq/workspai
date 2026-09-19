@@ -359,8 +359,6 @@ function assertCliContracts() {
   const expectedAdmittedIds = [
     'microsoft-agent-framework-dotnet',
     'microsoft-agent-framework-python',
-    'openai-agents-python',
-    'openai-agents-typescript',
   ];
   if (JSON.stringify(admittedIds) !== JSON.stringify(expectedAdmittedIds)) {
     fail(
@@ -369,16 +367,18 @@ function assertCliContracts() {
       })`
     );
   }
-  for (const previewId of ['openai-agents-python', 'openai-agents-typescript']) {
-    const preview = adapters.find((adapter) => adapter.id === previewId);
-    if (!preview) {
-      fail(`published CLI is missing implemented preview adapter ${previewId}`);
+  for (const openaiId of ['openai-agents-python', 'openai-agents-typescript']) {
+    const openai = adapters.find((adapter) => adapter.id === openaiId);
+    if (!openai) {
+      fail(`published CLI is missing implemented OpenAI adapter ${openaiId}`);
     }
-    if (preview.status !== 'admitted') {
-      fail(`${previewId} must be release-admitted after the reviewed matrix`);
+    if (openai.stability !== 'stable') {
+      fail(`${openaiId} must be labeled stable after the digest-changing promotion`);
     }
-    if (preview.stability && preview.stability !== 'preview') {
-      fail(`${previewId} must remain preview until a later digest-changing promotion`);
+    if (openai.status === 'admitted') {
+      fail(
+        `${openaiId} cannot stay admitted on the previous preview digest; bind the new matrix first`
+      );
     }
   }
 
@@ -416,6 +416,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.microsoft.python',
       name: 'python-agent',
+      expectCreate: true,
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -430,6 +431,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.microsoft.dotnet',
       name: 'dotnet-agent',
+      expectCreate: true,
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -446,6 +448,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.openai.python',
       name: 'openai-python-agent',
+      expectCreate: false,
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -462,6 +465,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.openai.typescript',
       name: 'openai-typescript-agent',
+      expectCreate: false,
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -489,6 +493,20 @@ function smokeCreateAgentFrameworkKits() {
           stdio: ['ignore', 'pipe', 'pipe'],
         }
       );
+      const combined = `${result.stdout}\n${result.stderr}`;
+      if (scenario.expectCreate === false) {
+        if (result.status === 0) {
+          fail(`${scenario.kit} create succeeded before the stable digest was release-admitted`);
+        }
+        if (
+          !/not release-admitted|adapter manifest changed after release admission/i.test(combined)
+        ) {
+          fail(
+            `${scenario.kit} failed closed without an admission blocker\n${result.stdout}\n${result.stderr}`
+          );
+        }
+        continue;
+      }
       if (result.status !== 0) {
         fail(
           `${scenario.kit} governed create failed with exit ${result.status}\n${result.stdout}\n${result.stderr}`

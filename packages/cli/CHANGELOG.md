@@ -7,16 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-09-18
+
 ### Added
 
-- Implemented preview OpenAI Agents SDK adapters for Python `0.22.2` and
-  TypeScript `@openai/agents` `0.18.0` with independent framework/runtime
-  selection, credentialless conformance lanes, and Create kit ids
-  `agent.openai.python` / `agent.openai.typescript`. Reviewed release admission
-  from matrix run 35357989405 on `8eb1308` now opens Create and Attach for those
-  explicit kit ids and `--framework openai-agents`. Adapters remain `preview`.
-  `--runtime python` without `--framework` requires an explicit framework because
-  Microsoft and OpenAI are both admitted.
+- Implemented OpenAI Agents SDK adapters for Python `0.22.2` and TypeScript
+  `@openai/agents` `0.18.0` with independent framework/runtime selection,
+  credentialless conformance lanes, and Create kit ids `agent.openai.python` /
+  `agent.openai.typescript`. Adapters are labeled `stable`. Create and Attach
+  stay fail-closed until the new manifest digest is bound from a green matrix.
+  `--runtime python` without `--framework` requires an explicit framework
+  because Microsoft and OpenAI are both published. Handoffs, MCP, sessions, and
+  voice stay unsupported.
 
 ### Changed
 
@@ -25,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instructions. Live entrypoints stream stdout, accept a prompt from argv or
   stdin, and redact Azure-shaped secrets in addition to `sk-` values.
   Microsoft Python adds a credentialless LocalChatClient loop when the
-  framework is installed. Adapters remain `preview`.
+  framework is installed. Microsoft adapters remain `preview`.
 
 ### Fixed
 
@@ -61,9 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pre-push`.
 - Isolated the workspace-intelligence adversarial script the same way; it runs
   during `quality:push` and was still inheriting husky Git env.
-- Kept published `agent framework list` preview OpenAI adapters visible before
-  release admission; the enterprise package smoke now requires the four
-  reviewed Microsoft and OpenAI adapters.
+- Kept published `agent framework list` OpenAI adapters visible; the enterprise
+  package smoke requires Microsoft to stay admitted and OpenAI to stay
+  fail-closed until the stable digest is bound.
 - Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
   so Windows does not `spawn EINVAL` on `npm.cmd`.
 - Ran the OpenAI TypeScript conformance install/test inside the generated
@@ -76,9 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   require `project-context-agent.v1` JSON, and reject escaped symlinks
   without echoing file contents. Credentialless SDK checks now call the
   generated `buildAgent` / `build_agent` seam with official ScriptedModel
-  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters remain
-  preview after the reviewed admission; changing that label would change the
-  manifest digest and require a new matrix. Context-path containment
+  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters are labeled
+  `stable`; binding the new digest still requires the next green matrix.
+  Context-path containment
   is a bounded fd read after `O_NOFOLLOW` when available, not a TOCTOU-free
   walk. Generator coverage remains in the Vitest gate alongside the OpenAI
   adapter sources.
