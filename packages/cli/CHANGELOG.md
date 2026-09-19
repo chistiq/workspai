@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `agent framework list --json` includes each adapter's `stability`, so the
+  enterprise package smoke can tell a labeled-stable OpenAI adapter from the
+  previous preview digest.
 - Microsoft .NET context loader assigns `FileAttributes` before `GetAttributes`
   so CS0165 does not fail the restore/build lane.
 - OpenAI Python tools pass `failure_error_function=None`, and OpenAI

@@ -373,7 +373,11 @@ function assertCliContracts() {
       fail(`published CLI is missing implemented OpenAI adapter ${openaiId}`);
     }
     if (openai.stability !== 'stable') {
-      fail(`${openaiId} must be labeled stable after the digest-changing promotion`);
+      fail(
+        `${openaiId} must be labeled stable after the digest-changing promotion (observed: ${
+          openai.stability ?? 'missing'
+        })`
+      );
     }
     if (openai.status === 'admitted') {
       fail(
