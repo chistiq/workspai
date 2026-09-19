@@ -148,6 +148,7 @@ describe('OpenAI Agents SDK adapters', () => {
       'agents/release-reviewer/main.py',
       'agents/release-reviewer/pyproject.toml',
       'agents/release-reviewer/tests/test_context.py',
+      'agents/release-reviewer/tests/test_framework.py',
       'agents/release-reviewer/.env.example',
       'agents/release-reviewer/README.md',
       '.workspai/agent-frameworks/openai-agents-python/release-reviewer.json',
@@ -160,18 +161,27 @@ describe('OpenAI Agents SDK adapters', () => {
     const entrypoint = first.files.find((file) => file.path.endsWith('/main.py'))?.content ?? '';
     const generatedTests =
       first.files.find((file) => file.path.endsWith('/tests/test_context.py'))?.content ?? '';
+    const generatedFrameworkTests =
+      first.files.find((file) => file.path.endsWith('/tests/test_framework.py'))?.content ?? '';
     const dependencies =
       first.files.find((file) => file.path.endsWith('/pyproject.toml'))?.content ?? '';
     expect(agent).toContain('from agents import Agent, ModelSettings, function_tool');
     expect(agent).toContain('ModelSettings(timeout=MODEL_TIMEOUT_SECONDS)');
     expect(agent).toContain('if model is not None:');
-    expect(generatedTests).toContain('setUpClass');
-    expect(generatedTests).toContain('_restore_live_context');
-    expect(generatedTests).toContain('test_scripted_model_tool_call_stays_offline');
-    expect(generatedTests).toContain('ScriptedModel');
+    expect(generatedTests).toContain('bind_workspai_project_root_for_tests');
+    expect(generatedTests).not.toContain('_restore_live_context');
+    expect(generatedFrameworkTests).toContain(
+      'openai-agents is required for this release-admitted kit'
+    );
+    expect(generatedFrameworkTests).not.toContain('skipTest("openai-agents is not installed")');
+    expect(generatedFrameworkTests).toContain('ScriptedModel');
+    expect(generatedTests).not.toContain('ScriptedModel');
     expect(generatedTests).toContain('test_allowlisted_views_omit_non_admitted_keys');
     expect(agent).toContain('@function_tool(failure_error_function=None)');
     expect(agent).toContain('describe_workspai_context');
+    expect(agent).toContain('async def describe_workspai_context()');
+    expect(agent).toContain('async def read_workspai_project_summary()');
+    expect(agent).toContain('async def list_workspai_supported_commands()');
     expect(agent).toContain('read_workspai_project_summary');
     expect(agent).toContain('list_workspai_supported_commands');
     expect(agent).toContain('OPENAI_API_KEY is not set');
@@ -235,8 +245,9 @@ describe('OpenAI Agents SDK adapters', () => {
     expect(contextFile).toContain('listWorkspaiSupportedCommands');
     expect(contextFile).toContain('redactSecretShapedValues');
     expect(contextFile).not.toContain('process.cwd()');
-    expect(generatedTests).toContain('restoreLiveContext');
-    expect(generatedTests).toContain('before(isolateLiveContext)');
+    expect(generatedTests).toContain('createTemporaryProjectFixture');
+    expect(generatedTests).toContain('before(createTemporaryProjectFixture)');
+    expect(generatedTests).not.toContain('isolateLiveContext');
     expect(generatedTests).toContain('scripted model tool call stays offline');
     expect(generatedTests).toContain('ScriptedModel');
     expect(generatedTests).toContain('allowlisted views omit non-admitted keys');

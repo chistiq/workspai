@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
   managedFile,
   MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
@@ -920,6 +921,7 @@ async function main(): Promise<void> {
       id: adapter.manifest.adapter.id,
       version: adapter.manifest.adapter.version,
       manifestSha256: digestBuiltinAgentFrameworkManifest(adapter),
+      implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter),
     },
     frameworkVersion: adapter.manifest.framework.testedVersions[0],
     cliVersion: await cliVersion(),

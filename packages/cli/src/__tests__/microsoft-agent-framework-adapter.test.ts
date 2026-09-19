@@ -98,6 +98,7 @@ describe('Microsoft Agent Framework adapters', () => {
       'agents/release-reviewer/main.py',
       'agents/release-reviewer/pyproject.toml',
       'agents/release-reviewer/tests/test_context.py',
+      'agents/release-reviewer/tests/test_framework.py',
       'agents/release-reviewer/.env.example',
       'agents/release-reviewer/README.md',
       '.workspai/agent-frameworks/microsoft-agent-framework-python/release-reviewer.json',
@@ -133,10 +134,16 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(contextFile).not.toContain('Path.cwd');
     const generatedTests =
       first.files.find((file) => file.path.endsWith('/tests/test_context.py'))?.content ?? '';
-    expect(generatedTests).toContain('setUpClass');
-    expect(generatedTests).toContain('_restore_live_context');
+    const generatedFrameworkTests =
+      first.files.find((file) => file.path.endsWith('/tests/test_framework.py'))?.content ?? '';
+    expect(generatedTests).toContain('bind_workspai_project_root_for_tests');
+    expect(generatedTests).not.toContain('_restore_live_context');
     expect(generatedTests).toContain('test_allowlisted_views_omit_non_admitted_keys');
-    expect(generatedTests).toContain('test_local_chat_client_loop_stays_offline');
+    expect(generatedFrameworkTests).toContain(
+      'agent-framework is required for this release-admitted kit'
+    );
+    expect(generatedFrameworkTests).not.toContain('skipTest("agent-framework is not installed")');
+    expect(generatedTests).not.toContain('RequiredFrameworkLoopTests');
     expect(generatedTests).not.toContain('main.Path.cwd');
     expect(dependencies).toContain('[build-system]');
     expect(dependencies).toContain('setuptools');
@@ -187,9 +194,15 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(contextLoader).toContain('ProjectSummaryAsync');
     expect(contextLoader).toContain('SupportedCommandsAsync');
     expect(contextLoader).toContain('RedactSecretShapedValues');
+    expect(contextLoader).toContain(
+      'new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)'
+    );
+    expect(contextLoader).toContain('if (!stream.CanSeek)');
+    expect(contextLoader).toContain('FileAttributes.Device');
     const generatedTests =
       rendered.files.find((file) => file.path.endsWith('/WorkspaiContextTests.cs'))?.content ?? '';
     expect(generatedTests).toContain('AllowlistedViewsOmitNonAdmittedKeys');
+    expect(generatedTests).toContain('RejectsMalformedUtf8WithoutDisclosingContents');
     expect(project).toContain(
       `Microsoft.Agents.AI.Foundry" Version="${packageVersion(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, 'Microsoft.Agents.AI.Foundry')}"`
     );
@@ -331,7 +344,7 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(result.stdout).toBe(admitted);
     const generatedSuite = spawnSync(
       'python3',
-      ['-m', 'unittest', 'discover', '-s', 'tests', '-v'],
+      ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_context.py', '-v'],
       {
         cwd: agentRoot,
         encoding: 'utf8',

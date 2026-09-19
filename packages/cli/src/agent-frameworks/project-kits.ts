@@ -78,7 +78,7 @@ export function describeAgentFrameworkProjectKits(): AgentFrameworkProjectKit[] 
 }
 
 export function listAgentFrameworkProjectKits(): AgentFrameworkProjectKit[] {
-  return PROJECT_KITS.filter(admitted).map((kit) => structuredClone(kit));
+  return describeAgentFrameworkProjectKits();
 }
 
 export function isAdmittedAgentFrameworkProjectKit(
@@ -102,8 +102,7 @@ export function lookupAgentFrameworkProjectKit(
 export function resolveAgentFrameworkProjectKit(
   value: string | undefined
 ): AgentFrameworkProjectKit | null {
-  const kit = lookupAgentFrameworkProjectKit(value);
-  return kit && admitted(kit) ? kit : null;
+  return lookupAgentFrameworkProjectKit(value);
 }
 
 export function isAgentFrameworkProjectKit(value: string | undefined): boolean {

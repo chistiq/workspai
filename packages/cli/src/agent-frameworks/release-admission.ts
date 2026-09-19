@@ -1,16 +1,19 @@
-import { createHash } from 'node:crypto';
-
-import admissionDocument from './release-admissions.v1.json' with { type: 'json' };
+import admissionDocument from './release-admissions.v2.json' with { type: 'json' };
 
 import type { AgentFrameworkAdapter } from './adapter.js';
+import {
+  digestAgentFrameworkImplementation,
+  digestAgentFrameworkManifest,
+} from './adapter-digest.js';
 
-const RELEASE_ADMISSION_SCHEMA_VERSION = 'workspai.agent-framework-release-admissions.v1' as const;
+const RELEASE_ADMISSION_SCHEMA_VERSION = 'workspai.agent-framework-release-admissions.v2' as const;
 const PLATFORMS = ['linux', 'darwin', 'win32'] as const;
 
 export type AgentFrameworkReleaseAdmission = {
   id: string;
   version: string;
   manifestSha256: string;
+  implementationSha256ByPlatform: Record<(typeof PLATFORMS)[number], string>;
   frameworkVersion: string;
   runtime: string;
   platforms: Array<(typeof PLATFORMS)[number]>;
@@ -44,8 +47,8 @@ function validateDocument(value: unknown): AgentFrameworkReleaseAdmission[] {
   ) {
     throw new Error('Bundled agent framework release admission source is invalid.');
   }
-  if (!Array.isArray(value.adapters) || value.adapters.length === 0) {
-    throw new Error('Bundled agent framework release admission inventory is empty.');
+  if (!Array.isArray(value.adapters)) {
+    throw new Error('Bundled agent framework release admission inventory is invalid.');
   }
   const seen = new Set<string>();
   return value.adapters.map((candidate, index) => {
@@ -55,12 +58,18 @@ function validateDocument(value: unknown): AgentFrameworkReleaseAdmission[] {
     const id = String(candidate.id ?? '');
     const version = String(candidate.version ?? '');
     const manifestSha256 = String(candidate.manifestSha256 ?? '');
+    const implementationSha256ByPlatform = isRecord(candidate.implementationSha256ByPlatform)
+      ? candidate.implementationSha256ByPlatform
+      : {};
     const frameworkVersion = String(candidate.frameworkVersion ?? '');
     const runtime = String(candidate.runtime ?? '');
     if (
       !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(id) ||
       !version ||
       !/^[a-f0-9]{64}$/.test(manifestSha256) ||
+      PLATFORMS.some(
+        (platform) => !/^[a-f0-9]{64}$/.test(String(implementationSha256ByPlatform[platform] ?? ''))
+      ) ||
       !frameworkVersion ||
       !runtime
     ) {
@@ -79,6 +88,9 @@ function validateDocument(value: unknown): AgentFrameworkReleaseAdmission[] {
       id,
       version,
       manifestSha256,
+      implementationSha256ByPlatform: Object.fromEntries(
+        PLATFORMS.map((platform) => [platform, String(implementationSha256ByPlatform[platform])])
+      ) as Record<(typeof PLATFORMS)[number], string>,
       frameworkVersion,
       runtime,
       platforms: [...PLATFORMS],
@@ -87,12 +99,6 @@ function validateDocument(value: unknown): AgentFrameworkReleaseAdmission[] {
 }
 
 const RELEASE_ADMISSIONS = Object.freeze(validateDocument(admissionDocument));
-
-function manifestDigest(adapter: AgentFrameworkAdapter): string {
-  return createHash('sha256')
-    .update(`${JSON.stringify(adapter.manifest)}\n`)
-    .digest('hex');
-}
 
 export function assessBundledAgentFrameworkRelease(
   adapter: AgentFrameworkAdapter
@@ -111,8 +117,15 @@ export function assessBundledAgentFrameworkRelease(
   if (admission.version !== adapter.manifest.adapter.version) {
     blockers.push('adapter version changed after release admission');
   }
-  if (admission.manifestSha256 !== manifestDigest(adapter)) {
+  if (admission.manifestSha256 !== digestAgentFrameworkManifest(adapter)) {
     blockers.push('adapter manifest changed after release admission');
+  }
+  if (
+    !PLATFORMS.includes(process.platform as (typeof PLATFORMS)[number]) ||
+    admission.implementationSha256ByPlatform[process.platform as (typeof PLATFORMS)[number]] !==
+      digestAgentFrameworkImplementation(adapter)
+  ) {
+    blockers.push('adapter implementation changed after release admission');
   }
   if (!adapter.manifest.framework.testedVersions.includes(admission.frameworkVersion)) {
     blockers.push('framework baseline changed after release admission');

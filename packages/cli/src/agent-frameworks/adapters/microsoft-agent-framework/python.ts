@@ -69,6 +69,7 @@ function pathsFor(instanceName: string) {
     agent: `agents/${slug}/agent.py`,
     dependencyManifest: `agents/${slug}/pyproject.toml`,
     test: `agents/${slug}/tests/test_context.py`,
+    frameworkTest: `agents/${slug}/tests/test_framework.py`,
     environmentExample: `agents/${slug}/.env.example`,
     readme: `agents/${slug}/README.md`,
     state: `.workspai/agent-frameworks/microsoft-agent-framework-python/${slug}.json`,
@@ -226,6 +227,9 @@ dependencies = [
 
 [tool.setuptools]
 py-modules = ["agent", "main", "workspai_context"]
+
+[tool.workspai]
+lifecycle-lock-tool = "uv"
 `
     ),
     managedFile(
@@ -246,69 +250,38 @@ from workspai_context import (
     CONTEXT_LIMIT,
     CONTEXT_PATH,
     CONTEXT_SCHEMA_VERSION,
+    GENERATED_NOTICE,
+    bind_workspai_project_root_for_tests,
     describe_workspai_context_view,
     list_workspai_supported_commands,
     load_workspai_context,
     read_workspai_project_summary,
     redact_secret_shaped_values,
-    resolve_workspai_project_root,
 )
 
 
-class WorkspaiContextTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls._live_context = resolve_workspai_project_root() / CONTEXT_PATH
-        cls._backup_dir = Path(tempfile.mkdtemp(prefix="workspai-context-backup-"))
-        cls._backup = cls._backup_dir / "project-context-agent.json"
-        cls._restored_kind = "none"
-        cls._isolated = False
-        cls.addClassCleanup(cls._restore_live_context)
-        live = cls._live_context
-        if live.is_symlink():
-            cls._backup.symlink_to(os.readlink(live))
-            cls._restored_kind = "symlink"
-            live.unlink()
-            cls._isolated = True
-            return
-        if live.is_file():
-            shutil.copy2(live, cls._backup)
-            cls._restored_kind = "file"
-            live.unlink()
-            cls._isolated = True
-            return
-        if live.exists():
-            raise RuntimeError("Workspai agent context path is not a contained regular file")
-        cls._isolated = True
-
-    @classmethod
-    def _restore_live_context(cls) -> None:
-        try:
-            if not getattr(cls, "_isolated", False):
-                return
-            live = cls._live_context
-            if live.is_symlink() or live.exists():
-                live.unlink()
-            if cls._restored_kind == "symlink":
-                live.parent.mkdir(parents=True, exist_ok=True)
-                live.symlink_to(os.readlink(cls._backup))
-            elif cls._restored_kind == "file":
-                live.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(cls._backup, live)
-        finally:
-            backup_dir = getattr(cls, "_backup_dir", None)
-            if backup_dir is not None:
-                shutil.rmtree(backup_dir, ignore_errors=True)
+class _TemporaryProjectFixture(unittest.TestCase):
+    def setUp(self) -> None:
+        self._fixture = Path(tempfile.mkdtemp(prefix="workspai-context-fixture-"))
+        self.addCleanup(shutil.rmtree, self._fixture, True)
+        agent = self._fixture / "agents" / "primary"
+        agent.mkdir(parents=True)
+        (agent / "pyproject.toml").write_text(
+            f"# {GENERATED_NOTICE}\\n\\n[project]\\nname = \\"primary\\"\\n",
+            encoding="utf-8",
+        )
+        bind_workspai_project_root_for_tests(self._fixture)
+        self.addCleanup(bind_workspai_project_root_for_tests, None)
 
     def _context_path(self) -> Path:
-        path = resolve_workspai_project_root() / CONTEXT_PATH
+        path = self._fixture / CONTEXT_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.is_symlink():
+        if path.is_symlink() or path.exists():
             path.unlink()
-        elif path.exists() and not path.is_file():
-            raise RuntimeError("Workspai agent context path is not a contained regular file")
         return path
 
+
+class WorkspaiContextTests(_TemporaryProjectFixture):
     def test_reads_bounded_context_from_the_owning_project_not_cwd(self) -> None:
         payload = json.dumps({"schemaVersion": CONTEXT_SCHEMA_VERSION})
         self._context_path().write_text(payload, encoding="utf-8")
@@ -333,6 +306,12 @@ class WorkspaiContextTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, CONTEXT_SCHEMA_VERSION) as raised:
             load_workspai_context()
         self.assertNotIn("do-not-leak", str(raised.exception))
+
+    def test_rejects_malformed_utf8_without_disclosing_contents(self) -> None:
+        self._context_path().write_bytes(b"{\\xffsecret")
+        with self.assertRaisesRegex(RuntimeError, "UTF-8") as raised:
+            load_workspai_context()
+        self.assertNotIn("secret", str(raised.exception))
 
     def test_rejects_an_external_symlink_without_disclosing_the_target(self) -> None:
         context = self._context_path()
@@ -395,11 +374,60 @@ class WorkspaiContextTests(unittest.TestCase):
         self.assertNotIn("SECRETKEYVALUE", redacted)
         self.assertIn("[redacted]", redacted)
 
+
+if __name__ == "__main__":
+    unittest.main()
+`
+    ),
+    managedFile(
+      target.frameworkTest,
+      `# Generated and managed by Workspai. This test performs no network calls.
+
+import json
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from workspai_context import (
+    CONTEXT_PATH,
+    CONTEXT_SCHEMA_VERSION,
+    GENERATED_NOTICE,
+    bind_workspai_project_root_for_tests,
+    describe_workspai_context_view,
+    list_workspai_supported_commands,
+    read_workspai_project_summary,
+)
+
+
+class RequiredFrameworkLoopTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._fixture = Path(tempfile.mkdtemp(prefix="workspai-framework-fixture-"))
+        self.addCleanup(shutil.rmtree, self._fixture, True)
+        agent = self._fixture / "agents" / "primary"
+        agent.mkdir(parents=True)
+        (agent / "pyproject.toml").write_text(
+            f"# {GENERATED_NOTICE}\\n\\n[project]\\nname = \\"primary\\"\\n",
+            encoding="utf-8",
+        )
+        bind_workspai_project_root_for_tests(self._fixture)
+        self.addCleanup(bind_workspai_project_root_for_tests, None)
+
+    def _context_path(self) -> Path:
+        path = self._fixture / CONTEXT_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink() or path.exists():
+            path.unlink()
+        return path
+
     def test_local_chat_client_loop_stays_offline(self) -> None:
         try:
             from agent_framework import Agent, ChatResponse, Message
-        except ImportError:
-            self.skipTest("agent-framework is not installed")
+        except ImportError as error:
+            self.fail(f"agent-framework is required for this release-admitted kit: {error}")
 
         class LocalChatClient:
             def __init__(self) -> None:
@@ -473,13 +501,17 @@ Activate the environment, then run:
 
 CI may use \`uv sync --project ${target.root}\` against the same \`pyproject.toml\`. \`uv\` success is not evidence that pip install succeeded.
 
+\`wspai workspace run init\` requires [uv](https://docs.astral.sh/uv/), validates it before changing the project, creates the project \`.venv\`, installs this package into that environment, and writes \`uv.lock\`. It fails closed rather than producing an unlocked environment.
+
 ## Verify
 
 \`${python} -m compileall ${target.root}\`
 
 \`cd ${target.root} && ${python} -m unittest discover -s tests\`
 
-Credentialless tests cover the Workspai context boundary, allowlisted views, and an optional LocalChatClient loop when \`agent-framework\` is installed. They isolate the operational context file for the suite and restore it afterward. They do not call a model provider.
+Credentialless tests cover the Workspai context boundary, allowlisted views, and a required LocalChatClient loop. They construct a temporary project fixture and never mutate the operational context file. A missing \`agent-framework\` install fails the required framework test; it is not skipped. They do not call a model provider.
+
+\`wspai workspace run init\` creates the project \`.venv\` and installs this package into that environment. \`wspai workspace run test\` and \`wspai workspace run build\` use that same interpreter. A blocking Doctor or Readiness gate fails the process even without \`--strict\`.
 
 ## Run
 

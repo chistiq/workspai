@@ -442,9 +442,98 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     expect(report.projects[0]?.runtimeExecutions).toEqual([
       expect.objectContaining({
         root: 'agents/primary',
-        command: `${process.platform === 'win32' ? 'python' : 'python3'} -m compileall .`,
+        command: `${process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python'} -m compileall .`,
       }),
     ]);
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('fails a Python unittest run when every required test was skipped', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-python-skip-fail-'));
+    const projectPath = path.join(workspacePath, 'agent-app');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'agent-app',
+      runtime: 'python',
+      framework: 'openai-agents',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'pyproject.toml'),
+      '# Generated and managed by Workspai\n\n[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'tests', 'test_context.py'),
+      'import unittest\n'
+    );
+    const projectPython =
+      process.platform === 'win32'
+        ? path.join(projectPath, '.venv', 'Scripts', 'python.exe')
+        : path.join(projectPath, '.venv', 'bin', 'python');
+    await fsExtra.outputFile(projectPython, '#!/usr/bin/env python3\n', { mode: 0o755 });
+
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async () => {
+      return {
+        exitCode: 0,
+        stdout: 'Ran 1 test in 0.001s\n\nOK (skipped=1)\n',
+        stderr: '',
+      };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'test',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.summary.failed).toBe(1);
+    expect(report.summary.exitCode).toBe(1);
+    expect(report.projects[0]?.status).toBe('failed');
+    expect(report.projects[0]?.runtimeExecutions?.[0]?.testCounts).toEqual({
+      ran: 1,
+      skipped: 1,
+      failed: 0,
+    });
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('preflights uv before creating a managed Python environment', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-python-uv-preflight-'));
+    const projectPath = path.join(workspacePath, 'agent-app');
+    await fsExtra.outputJson(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'agent-app',
+      runtime: 'python',
+      framework: 'openai-agents',
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'agents', 'primary', 'pyproject.toml'),
+      '# Generated and managed by Workspai\n\n[project]\nname = "primary"\nversion = "0.1.0"\n\n[tool.workspai]\nlifecycle-lock-tool = "uv"\n'
+    );
+
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (command: string, args: string[]) => ({
+      exitCode:
+        command === (process.platform === 'win32' ? 'where' : 'which') && args[0] === 'uv' ? 1 : 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'init',
+      enforceGates: false,
+      json: true,
+    });
+
+    expect(report.summary.exitCode).toBe(1);
+    expect(report.projects[0]?.reason).toContain('Missing admitted lock tool `uv`');
+    expect(await fsExtra.pathExists(path.join(projectPath, '.venv'))).toBe(false);
+    expect(
+      execaMock.mock.calls.some(
+        ([command, args]) => command === 'python3' && Array.isArray(args) && args.includes('venv')
+      )
+    ).toBe(false);
     await fsExtra.remove(workspacePath);
   });
 
@@ -704,6 +793,43 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     expect(report.gates.blocked).toBe(true);
     expect(report.summary.passed).toBe(0);
     expect(report.summary.failed).toBe(0);
+    expect(report.summary.blocked).toBe(1);
+    expect(report.projects[0]?.status).toBe('blocked');
+    expect(report.summary.exitCode).toBe(1);
+
+    await fsExtra.remove(workspacePath);
+  });
+
+  it('returns a non-zero process exit when a blocking gate skips selected projects without --strict', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
+    await createProject(workspacePath, 'services/api-a');
+
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    execaMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args.includes('doctor')) {
+        return { exitCode: 0, stdout: JSON.stringify({ healthScore: { errors: 0 } }), stderr: '' };
+      }
+      if (args.includes('readiness')) {
+        return { exitCode: 0, stdout: JSON.stringify({ overallStatus: 'fail' }), stderr: '' };
+      }
+      if (args.includes('build')) {
+        throw new Error('build should not execute when gate fails');
+      }
+      return { exitCode: 0, stdout: '{}', stderr: '' };
+    });
+
+    const report = await runWorkspaceStage({
+      workspacePath,
+      stage: 'build',
+      json: true,
+      strict: false,
+    });
+
+    expect(report.gates.blocked).toBe(true);
+    expect(report.summary.passed).toBe(0);
+    expect(report.summary.failed).toBe(0);
+    expect(report.summary.blocked).toBe(1);
+    expect(report.projects[0]?.status).toBe('blocked');
     expect(report.summary.exitCode).toBe(1);
 
     await fsExtra.remove(workspacePath);
@@ -1268,6 +1394,7 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     expect(typeof report.summary.passed).toBe('number');
     expect(typeof report.summary.failed).toBe('number');
     expect(typeof report.summary.skipped).toBe('number');
+    expect(typeof report.summary.blocked).toBe('number');
     expect(typeof report.summary.exitCode).toBe('number');
 
     // projects array

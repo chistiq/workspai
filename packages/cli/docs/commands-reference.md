@@ -277,8 +277,10 @@ See [Canonical-first agent entry](./agent-entry.md).
 `agent framework` is the governed bridge between Workspai evidence and an
 agent runtime. `list` exposes every built-in adapter and its release-admission
 state. In this CLI version Microsoft Python `1.18.0` and .NET `1.21.0` remain
-release-admitted `preview`. OpenAI Agents SDK Python `0.22.2` and TypeScript
-`0.18.0` are labeled `stable` and release-admitted. `plan` creates or reuses a scoped Goal, begins a Proof-Carrying Change, and
+`preview`. OpenAI Agents SDK Python `0.22.2` and TypeScript `0.18.0` are
+labeled `stable`. Create and Attach stay blocked until the v2
+implementation-digest inventory is promoted from the Linux, macOS, and Windows
+matrix. `plan` creates or reuses a scoped Goal, begins a Proof-Carrying Change, and
 attaches a hash-bound file plan without writing project files. `--runtime`
 selects `python`, `dotnet`, or `node`. `--framework` selects the independent
 framework id when more than one admitted adapter shares that runtime.

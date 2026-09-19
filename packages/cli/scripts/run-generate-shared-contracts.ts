@@ -91,7 +91,7 @@ writeJson(
   buildAgentFrameworkAdapterManifestSchema()
 );
 writeJson(
-  'workspace-intelligence/agent-framework-conformance-report.v1.json',
+  'workspace-intelligence/agent-framework-conformance-report.v2.json',
   buildAgentFrameworkConformanceReportSchema()
 );
 writeJson(
@@ -103,6 +103,6 @@ writeJson(
   buildAgentFrameworkOwnershipReceiptSchema()
 );
 writeJson(
-  'workspace-intelligence/agent-framework-admission-candidate.v1.json',
+  'workspace-intelligence/agent-framework-admission-candidate.v2.json',
   buildAgentFrameworkAdmissionCandidateSchema()
 );

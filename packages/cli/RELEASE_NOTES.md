@@ -5,17 +5,19 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.76.0 (September 18, 2026)
+## Release Candidate: v0.76.0 (September 19, 2026)
 
 ### Stable OpenAI Agents SDK Adapters
 
 Workspai 0.76.0 labels OpenAI Agents SDK starters stable for Python 0.22.2 and
-TypeScript 0.18.0 and admits Create and Attach from the green adapter matrix.
+TypeScript 0.18.0. Create and Attach remain fail-closed until the v2
+implementation-bound Linux, macOS, and Windows matrix is promoted.
 
 **What's New:**
 
 - Label `agent.openai.python` and `agent.openai.typescript` `stable`.
-- Bind the stable digest so Create and Attach write those kits.
+- Bind manifest and semantic implementation digests before Create and Attach
+  write those kits.
 - Require `--framework` when `--runtime python` is shared; the CLI does not
   guess.
 - Keep handoffs, MCP, sessions, voice, sandbox, and approval loops
@@ -25,7 +27,8 @@ TypeScript 0.18.0 and admits Create and Attach from the green adapter matrix.
 framework admission remain supported. Microsoft adapters stay `preview`.
 Independent Graph work is not this CLI release.
 
-**Publication status:** Released September 18, 2026.
+**Publication status:** Targeted for September 19, 2026; publication is blocked
+until the v2 admission matrix and post-promotion CI are green.
 
 **Install:**
 

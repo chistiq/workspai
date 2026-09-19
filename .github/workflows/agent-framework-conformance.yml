@@ -26,9 +26,9 @@ on:
       - "packages/cli/scripts/promote-agent-framework-release-admission.ts"
       - "packages/cli/package.json"
       - "packages/cli/contracts/agent-framework-capabilities.v1.json"
-      - "packages/cli/contracts/workspace-intelligence/agent-framework-*.v1.json"
+      - "packages/cli/contracts/workspace-intelligence/agent-framework-*.v*.json"
       - "contracts/agent-framework-capabilities.v1.json"
-      - "contracts/workspace-intelligence/agent-framework-*.v1.json"
+      - "contracts/workspace-intelligence/agent-framework-*.v*.json"
       - ".github/workflows/agent-framework-conformance.yml"
       - ".github/workflows/agent-framework-version-discovery.yml"
       - ".github/agent-framework-version-update.md"
@@ -227,8 +227,9 @@ jobs:
         run: >-
           npm exec tsx -- scripts/promote-agent-framework-release-admission.ts
           --candidate test-results/agent-framework-admission/agent-framework-admission-candidate.json
-          --output src/agent-frameworks/release-admissions.v1.json
+          --output src/agent-frameworks/release-admissions.v2.json
           --repository "${{ github.repository }}"
+          --source-commit "${{ github.sha }}"
           --workflow-run-id "${{ github.run_id }}"
 
       - name: Update the existing automation branch
@@ -236,13 +237,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if git diff --quiet -- packages/cli/src/agent-frameworks/release-admissions.v1.json; then
+          if git diff --quiet -- packages/cli/src/agent-frameworks/release-admissions.v2.json; then
             echo "Release admission already matches this verified matrix."
             exit 0
           fi
           gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- packages/cli/src/agent-frameworks/release-admissions.v1.json
+          git add -- packages/cli/src/agent-frameworks/release-admissions.v2.json
           git commit --no-verify -m "chore(agent-frameworks): bind verified release admission"
           git push --no-verify origin "HEAD:refs/heads/${GITHUB_REF_NAME}"

@@ -9,6 +9,7 @@ import process from 'node:process';
 const repoRoot = process.cwd();
 const cliPath = path.join(repoRoot, 'dist', 'index.js');
 const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-enterprise-home-'));
+let releaseAdmittedAdapterIds = new Set();
 
 process.on('exit', () => {
   fs.rmSync(isolatedHome, { recursive: true, force: true });
@@ -356,19 +357,23 @@ function assertCliContracts() {
     .filter((adapter) => adapter.status === 'admitted')
     .map((adapter) => adapter.id)
     .sort();
-  const expectedAdmittedIds = [
+  const expectedAdapterIds = [
     'microsoft-agent-framework-dotnet',
     'microsoft-agent-framework-python',
     'openai-agents-python',
     'openai-agents-typescript',
   ];
-  if (JSON.stringify(admittedIds) !== JSON.stringify(expectedAdmittedIds)) {
+  if (
+    admittedIds.length !== 0 &&
+    JSON.stringify(admittedIds) !== JSON.stringify(expectedAdapterIds)
+  ) {
     fail(
       `published CLI does not expose the exact release-admitted framework adapters (admitted: ${
         admittedIds.join(', ') || 'none'
       })`
     );
   }
+  releaseAdmittedAdapterIds = new Set(admittedIds);
   for (const openaiId of ['openai-agents-python', 'openai-agents-typescript']) {
     const openai = adapters.find((adapter) => adapter.id === openaiId);
     if (!openai) {
@@ -380,9 +385,6 @@ function assertCliContracts() {
           openai.stability ?? 'missing'
         })`
       );
-    }
-    if (openai.status !== 'admitted') {
-      fail(`${openaiId} must be release-admitted on the green stable-digest matrix`);
     }
   }
 
@@ -420,7 +422,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.microsoft.python',
       name: 'python-agent',
-      expectCreate: true,
+      expectCreate: releaseAdmittedAdapterIds.has('microsoft-agent-framework-python'),
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -435,7 +437,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.microsoft.dotnet',
       name: 'dotnet-agent',
-      expectCreate: true,
+      expectCreate: releaseAdmittedAdapterIds.has('microsoft-agent-framework-dotnet'),
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -452,7 +454,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.openai.python',
       name: 'openai-python-agent',
-      expectCreate: true,
+      expectCreate: releaseAdmittedAdapterIds.has('openai-agents-python'),
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -469,7 +471,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.openai.typescript',
       name: 'openai-typescript-agent',
-      expectCreate: true,
+      expectCreate: releaseAdmittedAdapterIds.has('openai-agents-typescript'),
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -503,7 +505,9 @@ function smokeCreateAgentFrameworkKits() {
           fail(`${scenario.kit} create succeeded before the stable digest was release-admitted`);
         }
         if (
-          !/not release-admitted|adapter manifest changed after release admission/i.test(combined)
+          !/not release-admitted|adapter (?:manifest|implementation) changed after release admission/i.test(
+            combined
+          )
         ) {
           fail(
             `${scenario.kit} failed closed without an admission blocker\n${result.stdout}\n${result.stderr}`

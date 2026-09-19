@@ -4,30 +4,32 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 
 ## Workflows
 
-| Workflow                 | Path                                                 | Purpose                                                                   |
-| ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------- |
-| Build / test matrix      | `.github/workflows/ci.yml`                           | Path-aware docs or full matrix validation plus the required `CI Gate`     |
-| Workspace E2E matrix     | `.github/workflows/workspace-e2e-matrix.yml`         | Cross-OS workspace lifecycle smoke; setup `--warm-deps`; cache/mirror ops |
-| Windows bridge E2E       | `.github/workflows/windows-bridge-e2e.yml`           | Native Windows bridge and lifecycle checks                                |
-| E2E smoke                | `.github/workflows/e2e-smoke.yml`                    | Focused bridge regression smoke                                           |
-| Official generator smoke | `.github/workflows/frontend-generator-smoke.yml`     | Contract-driven official-generator drift gate                             |
-| Agent Framework matrix   | `.github/workflows/agent-framework-conformance.yml`  | Twelve-lane Microsoft Python/.NET and OpenAI Python/TypeScript compile, credentialless lifecycle, admission |
-| Agent Framework discovery| `.github/workflows/agent-framework-version-discovery.yml` | Weekly PyPI/NuGet candidate report; no commit, PR, or contract rewrite |
-| Security                 | `.github/workflows/security.yml`                     | Path-aware scanning plus the always-resolved `Security Gate`              |
-| Manual npm release       | `.github/workflows/release-npm-manual.yml`           | Maintainer-only release gate and publish workflow                         |
-| Discord announcement     | `.github/workflows/discord-release-announcement.yml` | Preview and publish one idempotent product-aware release announcement     |
-| Contributor onboarding   | `.github/workflows/contributor-onboarding.yml`       | Accepted-contributor onboarding automation                                |
-| Contributor Hub          | `.github/workflows/contributor-hub.yml`              | Daily live issue-route freshness                                          |
-| Welcome                  | `.github/workflows/welcome.yml`                      | First-issue and first-contribution messages                               |
+| Workflow                  | Path                                                      | Purpose                                                                                                     |
+| ------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Build / test matrix       | `.github/workflows/ci.yml`                                | Path-aware docs or full matrix validation plus the required `CI Gate`                                       |
+| Workspace E2E matrix      | `.github/workflows/workspace-e2e-matrix.yml`              | Cross-OS workspace lifecycle smoke; setup `--warm-deps`; cache/mirror ops                                   |
+| Windows bridge E2E        | `.github/workflows/windows-bridge-e2e.yml`                | Native Windows bridge and lifecycle checks                                                                  |
+| E2E smoke                 | `.github/workflows/e2e-smoke.yml`                         | Focused bridge regression smoke                                                                             |
+| Official generator smoke  | `.github/workflows/frontend-generator-smoke.yml`          | Contract-driven official-generator drift gate                                                               |
+| Agent Framework matrix    | `.github/workflows/agent-framework-conformance.yml`       | Twelve-lane Microsoft Python/.NET and OpenAI Python/TypeScript compile, credentialless lifecycle, admission |
+| Agent Framework discovery | `.github/workflows/agent-framework-version-discovery.yml` | Weekly PyPI/NuGet candidate report; no commit, PR, or contract rewrite                                      |
+| Security                  | `.github/workflows/security.yml`                          | Path-aware scanning plus the always-resolved `Security Gate`                                                |
+| Manual npm release        | `.github/workflows/release-npm-manual.yml`                | Maintainer-only release gate and publish workflow                                                           |
+| Discord announcement      | `.github/workflows/discord-release-announcement.yml`      | Preview and publish one idempotent product-aware release announcement                                       |
+| Contributor onboarding    | `.github/workflows/contributor-onboarding.yml`            | Accepted-contributor onboarding automation                                                                  |
+| Contributor Hub           | `.github/workflows/contributor-hub.yml`                   | Daily live issue-route freshness                                                                            |
+| Welcome                   | `.github/workflows/welcome.yml`                           | First-issue and first-contribution messages                                                                 |
 
 ## Agent Framework workflows
 
 Weekly `agent-framework-version-discovery` checks PyPI, NuGet, and npm, then stops at
 a report and artifact. It does not commit, open a pull request, regenerate
-Create contracts, or write `release-admissions.v1.json`. A human pin update
+Create contracts, or write `release-admissions.v2.json`. A human pin update
 still has to pass `agent-framework-conformance` on Linux, macOS, and Windows
 for every built-in adapter runtime. That matrix compiles the nested `agents/primary` runtime,
-runs credentialless context-boundary tests, and records digest-bound evidence.
+runs credentialless context-boundary tests, and records manifest- and
+implementation-digest-bound evidence. Promotion requires the candidate source
+commit to equal the checked-out promotion commit.
 It never sets Foundry or OpenAI credentials. Only a reviewed admission on the protected
 version-update branch can promote a green candidate.
 

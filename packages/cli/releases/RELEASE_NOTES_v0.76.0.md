@@ -2,7 +2,7 @@
 {
   "productId": "workspai-cli",
   "headline": "Stable OpenAI Agents SDK adapters for Python and TypeScript",
-  "summary": "Workspai 0.76.0 labels OpenAI Agents SDK starters stable for Python 0.22.2 and TypeScript 0.18.0 and admits Create and Attach from the green adapter matrix.",
+  "summary": "Workspai 0.76.0 labels OpenAI Agents SDK starters stable and binds Create and Attach to manifest plus semantic implementation evidence from the same cross-platform matrix.",
   "highlights": [
     {
       "icon": "🏷️",
@@ -10,7 +10,7 @@
     },
     {
       "icon": "📦",
-      "text": "Create and Attach write the OpenAI kits after the stable digest is bound"
+      "text": "Create and Attach write agent kits only after manifest and implementation digests are promoted"
     },
     {
       "icon": "🔀",
@@ -26,15 +26,16 @@
 
 # Workspai CLI v0.76.0
 
-Released September 18, 2026.
+Release target: September 19, 2026.
 
-**Publication status:** Published.
+**Publication status:** Pending the v2 implementation-bound matrix and the
+post-promotion CI run. Do not publish from the pre-promotion tree.
 
 ## Stable OpenAI Agents SDK Adapters
 
 This minor release labels OpenAI Agents SDK starters `stable` and binds the
-matching manifest digest from Adapter Matrix run `35408663712`, so Create and
-Attach write `agent.openai.python` and `agent.openai.typescript`. It does not
+matching manifest and semantic implementation digests from one Adapter Matrix,
+so Create and Attach cannot use evidence from older generated templates. It does not
 add handoffs, MCP, sessions, voice, sandbox, or approval loops, or let weekly
 discovery rewrite Create contracts.
 
@@ -48,9 +49,9 @@ discovery rewrite Create contracts.
 - `--framework openai-agents` selects the OpenAI runtime. `--runtime python`
   without `--framework` requires an explicit choice because Microsoft Agent
   Framework and OpenAI Agents SDK are both published.
-- Labeling the adapters `stable` changed the manifest digest. Release
-  admission now binds that digest from matrix run `35408663712` on
-  `ff659fa`.
+- Release admission v2 binds both the manifest and deterministic semantic
+  implementation digest. The pre-promotion inventory is intentionally empty;
+  the qualifying matrix must produce and promote evidence for the release SHA.
 - Generated starters resolve the owning `agents/<instance>/` project, inspect
   admitted JSON through allowlisted read-only tools, stream live stdout, accept
   a prompt from argv or stdin, and fail closed on missing context. They do not
@@ -63,6 +64,10 @@ Framework adapters stay `preview`. Independent Graph work on `main` is not part
 of this CLI publication and is not CLI production authority. This release does
 not claim complete runtime validation for every repository or production-complete
 OpenAI coverage.
+
+Conformance-report and admission-candidate contracts move to v2. Their v1 JSON
+schemas remain published for consumers, but v1 evidence cannot authorize a v2
+release admission.
 
 ## Install
 

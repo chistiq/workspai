@@ -633,14 +633,11 @@ describe.sequential('in-process workspace Commander coverage', () => {
       '--dry-run',
       '--json',
     ]);
-    await runWorkspaceCommand(root, [
-      'run',
-      'build',
-      '--workspace',
+    await runWorkspaceCommandExpectExit(
       root,
-      '--json',
-      '--continue-on-error',
-    ]);
+      ['run', 'build', '--workspace', root, '--json', '--continue-on-error'],
+      1
+    );
 
     await runWorkspaceCommandExpectExit(root, ['run', 'dev', '--workspace', root], 2);
     await runWorkspaceCommandExpectExit(root, ['feedback', 'unknown', '--workspace', root], 1);

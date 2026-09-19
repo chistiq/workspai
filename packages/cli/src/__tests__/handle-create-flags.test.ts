@@ -9,6 +9,9 @@ import path from 'path';
 import * as cliPrompts from '../cli-ui/prompts.js';
 import * as frontendProject from '../frontend-project.js';
 import * as officialProject from '../official-project.js';
+import { listBundledAgentFrameworkReleaseAdmissions } from '../agent-frameworks/release-admission.js';
+
+const releaseAdmitted = listBundledAgentFrameworkReleaseAdmissions().length === 4;
 
 describe('handleCreateOrFallback - wrapper flags handling', () => {
   let tmpDir: string;
@@ -112,116 +115,156 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(output).not.toContain('rm -rf');
   });
 
-  it('creates a governed agent project through the admitted scaffold lifecycle', async () => {
-    await create.createProject('agent-workspace', {
-      parentDirectory: tmpDir,
-      profile: 'minimal',
-      skipPythonEngine: true,
-      skipGit: true,
-      yes: true,
-    });
-    const workspacePath = path.join(tmpDir, 'agent-workspace');
-    process.chdir(workspacePath);
+  it.skipIf(releaseAdmitted)(
+    'refuses governed agent kits until v2 implementation admission is promoted',
+    async () => {
+      await create.createProject('agent-workspace', {
+        parentDirectory: tmpDir,
+        profile: 'minimal',
+        skipPythonEngine: true,
+        skipGit: true,
+        yes: true,
+      });
+      const workspacePath = path.join(tmpDir, 'agent-workspace');
+      process.chdir(workspacePath);
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-    const code = await index.handleCreateOrFallback([
-      'create',
-      'project',
-      'agent.microsoft.python',
-      'support-agent',
-      '--agent-name',
-      'triage',
-      '--skip-git',
-      '--yes',
-    ]);
+      const code = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        'agent.openai.python',
+        'openai-python-agent',
+        '--skip-git',
+        '--yes',
+      ]);
 
-    expect(code).toBe(0);
-    const projectPath = path.join(workspacePath, 'support-agent');
-    expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'triage', 'main.py'))).toBe(
-      true
-    );
-    expect(
-      await fsExtra.pathExists(
-        path.join(workspacePath, '.workspai', 'agent-frameworks', 'ownership')
-      )
-    ).toBe(true);
-    expect(await fsExtra.pathExists(path.join(projectPath, 'pyproject.toml'))).toBe(false);
-    const contract = await fsExtra.readJson(
-      path.join(workspacePath, '.workspai', 'workspace.contract.json')
-    );
-    expect(contract.projects).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          slug: 'support-agent',
-          runtime: 'python',
-          kit: 'agent.microsoft.python',
-          ports: [],
-          contracts: expect.objectContaining({
-            env: expect.arrayContaining(['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL']),
+      expect(code).toBe(1);
+      expect(await fsExtra.pathExists(path.join(workspacePath, 'openai-python-agent'))).toBe(false);
+      expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
+        /not release-admitted/i
+      );
+    },
+    60_000
+  );
+
+  it.skipIf(!releaseAdmitted)(
+    'creates a governed agent project through the admitted scaffold lifecycle',
+    async () => {
+      await create.createProject('agent-workspace', {
+        parentDirectory: tmpDir,
+        profile: 'minimal',
+        skipPythonEngine: true,
+        skipGit: true,
+        yes: true,
+      });
+      const workspacePath = path.join(tmpDir, 'agent-workspace');
+      process.chdir(workspacePath);
+
+      const code = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        'agent.microsoft.python',
+        'support-agent',
+        '--agent-name',
+        'triage',
+        '--skip-git',
+        '--yes',
+      ]);
+
+      expect(code).toBe(0);
+      const projectPath = path.join(workspacePath, 'support-agent');
+      expect(await fsExtra.pathExists(path.join(projectPath, 'agents', 'triage', 'main.py'))).toBe(
+        true
+      );
+      expect(
+        await fsExtra.pathExists(
+          path.join(workspacePath, '.workspai', 'agent-frameworks', 'ownership')
+        )
+      ).toBe(true);
+      expect(await fsExtra.pathExists(path.join(projectPath, 'pyproject.toml'))).toBe(false);
+      const contract = await fsExtra.readJson(
+        path.join(workspacePath, '.workspai', 'workspace.contract.json')
+      );
+      expect(contract.projects).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            slug: 'support-agent',
+            runtime: 'python',
+            kit: 'agent.microsoft.python',
+            ports: [],
+            contracts: expect.objectContaining({
+              env: expect.arrayContaining(['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL']),
+            }),
           }),
-        }),
-      ])
-    );
-    const model = await fsExtra.readJson(
-      path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
-    );
-    const modeled = model.projects.find(
-      (project: { name?: string }) => project.name === 'support-agent'
-    );
-    expect(modeled).toMatchObject({
-      kind: 'agent',
-      framework: 'microsoft-agent-framework',
-      kit: 'agent.microsoft.python',
-      path: 'support-agent',
-    });
-    expect(modeled.commands.fleetStages).toEqual(
-      expect.arrayContaining(['init', 'test', 'build', 'start'])
-    );
-  }, 90_000);
+        ])
+      );
+      const model = await fsExtra.readJson(
+        path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
+      );
+      const modeled = model.projects.find(
+        (project: { name?: string }) => project.name === 'support-agent'
+      );
+      expect(modeled).toMatchObject({
+        kind: 'agent',
+        framework: 'microsoft-agent-framework',
+        kit: 'agent.microsoft.python',
+        path: 'support-agent',
+      });
+      expect(modeled.commands.fleetStages).toEqual(
+        expect.arrayContaining(['init', 'test', 'build', 'start'])
+      );
+    },
+    90_000
+  );
 
-  it('creates governed OpenAI agent projects after reviewed release admission', async () => {
-    await create.createProject('agent-workspace', {
-      parentDirectory: tmpDir,
-      profile: 'minimal',
-      skipPythonEngine: true,
-      skipGit: true,
-      yes: true,
-    });
-    const workspacePath = path.join(tmpDir, 'agent-workspace');
-    process.chdir(workspacePath);
+  it.skipIf(!releaseAdmitted)(
+    'creates governed OpenAI agent projects after reviewed release admission',
+    async () => {
+      await create.createProject('agent-workspace', {
+        parentDirectory: tmpDir,
+        profile: 'minimal',
+        skipPythonEngine: true,
+        skipGit: true,
+        yes: true,
+      });
+      const workspacePath = path.join(tmpDir, 'agent-workspace');
+      process.chdir(workspacePath);
 
-    const pythonCode = await index.handleCreateOrFallback([
-      'create',
-      'project',
-      'agent.openai.python',
-      'openai-python-agent',
-      '--skip-git',
-      '--yes',
-    ]);
-    const typescriptCode = await index.handleCreateOrFallback([
-      'create',
-      'project',
-      'agent.openai.typescript',
-      'openai-typescript-agent',
-      '--skip-git',
-      '--yes',
-    ]);
+      const pythonCode = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        'agent.openai.python',
+        'openai-python-agent',
+        '--skip-git',
+        '--yes',
+      ]);
+      const typescriptCode = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        'agent.openai.typescript',
+        'openai-typescript-agent',
+        '--skip-git',
+        '--yes',
+      ]);
 
-    expect(pythonCode).toBe(0);
-    expect(typescriptCode).toBe(0);
-    expect(
-      await fsExtra.pathExists(
-        path.join(workspacePath, 'openai-python-agent', 'agents', 'primary', 'main.py')
-      )
-    ).toBe(true);
-    expect(
-      await fsExtra.pathExists(
-        path.join(workspacePath, 'openai-typescript-agent', 'agents', 'primary', 'src', 'main.ts')
-      )
-    ).toBe(true);
-    expect(
-      await fsExtra.pathExists(path.join(workspacePath, 'openai-python-agent', 'pyproject.toml'))
-    ).toBe(false);
-  }, 90_000);
+      expect(pythonCode).toBe(0);
+      expect(typescriptCode).toBe(0);
+      expect(
+        await fsExtra.pathExists(
+          path.join(workspacePath, 'openai-python-agent', 'agents', 'primary', 'main.py')
+        )
+      ).toBe(true);
+      expect(
+        await fsExtra.pathExists(
+          path.join(workspacePath, 'openai-typescript-agent', 'agents', 'primary', 'src', 'main.ts')
+        )
+      ).toBe(true);
+      expect(
+        await fsExtra.pathExists(path.join(workspacePath, 'openai-python-agent', 'pyproject.toml'))
+      ).toBe(false);
+    },
+    90_000
+  );
 
   it('rolls back project registration when the governed scaffold cannot be planned', async () => {
     await create.createProject('agent-workspace', {

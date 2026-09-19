@@ -8,11 +8,67 @@ import {
 } from '../contracts/agent-framework-contract.js';
 import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
 
+export const AGENT_FRAMEWORK_ADMISSION_PLATFORMS = ['linux', 'darwin', 'win32'] as const;
+
+export type AgentFrameworkAdmissionPlatform = (typeof AGENT_FRAMEWORK_ADMISSION_PLATFORMS)[number];
+
 export type AgentFrameworkConformanceLane = {
-  platform: AgentFrameworkAdapterManifest['implementation']['platforms'][number];
+  platform: AgentFrameworkAdmissionPlatform;
   runtime: string;
   frameworkVersion: string;
 };
+
+function isAdmissionPlatform(value: string): value is AgentFrameworkAdmissionPlatform {
+  return (AGENT_FRAMEWORK_ADMISSION_PLATFORMS as readonly string[]).includes(value);
+}
+
+export function implementationSha256ByPlatformFromReports(
+  reports: readonly AgentFrameworkConformanceReport[]
+): Partial<Record<AgentFrameworkAdmissionPlatform, string>> {
+  const map: Partial<Record<AgentFrameworkAdmissionPlatform, string>> = {};
+  for (const report of reports) {
+    const platform = report.environment.platform;
+    const digest = report.adapter.implementationSha256;
+    if (!isAdmissionPlatform(platform)) {
+      throw new Error(`Conformance report platform is not admitted: ${platform}`);
+    }
+    if (!/^[a-f0-9]{64}$/.test(digest)) {
+      throw new Error(`Conformance ${platform} implementation digest is malformed.`);
+    }
+    const existing = map[platform];
+    if (existing && existing !== digest) {
+      throw new Error(`Conflicting implementation digest for ${platform}.`);
+    }
+    map[platform] = digest;
+  }
+  return map;
+}
+
+export function requireCompleteImplementationDigestMap(
+  map: Partial<Record<AgentFrameworkAdmissionPlatform, string>>
+): Record<AgentFrameworkAdmissionPlatform, string> {
+  for (const platform of AGENT_FRAMEWORK_ADMISSION_PLATFORMS) {
+    if (!/^[a-f0-9]{64}$/.test(map[platform] ?? '')) {
+      throw new Error(`Missing implementation digest for ${platform}.`);
+    }
+  }
+  return map as Record<AgentFrameworkAdmissionPlatform, string>;
+}
+
+export function liveImplementationDigestBlockers(input: {
+  liveImplementationSha256: string;
+  implementationSha256ByPlatform: Partial<Record<AgentFrameworkAdmissionPlatform, string>>;
+  platform?: string;
+}): string[] {
+  const platform = input.platform ?? process.platform;
+  if (!isAdmissionPlatform(platform)) {
+    return [`host platform ${platform} is not an admitted qualification platform`];
+  }
+  if (input.implementationSha256ByPlatform[platform] !== input.liveImplementationSha256) {
+    return [`live implementation digest does not match ${platform} evidence`];
+  }
+  return [];
+}
 
 export type AgentFrameworkAdmissionAssessment = {
   status: 'admitted' | 'blocked';
@@ -44,6 +100,10 @@ function requiredLanes(manifest: AgentFrameworkAdapterManifest): AgentFrameworkC
 export function assessAgentFrameworkAdmission(input: {
   manifest: AgentFrameworkAdapterManifest;
   manifestSha256: string;
+  implementationSha256?: string;
+  implementationSha256ByPlatform?: Partial<
+    Record<AgentFrameworkConformanceLane['platform'], string>
+  >;
   reports: AgentFrameworkConformanceReport[];
 }): AgentFrameworkAdmissionAssessment {
   const blockers: string[] = [];
@@ -103,6 +163,15 @@ export function assessAgentFrameworkAdmission(input: {
     if (report.adapter.manifestSha256 !== input.manifestSha256) {
       reportBlocked = true;
       blockers.push(`conformance ${label}: manifest digest does not match`);
+    }
+    const expectedImplementationDigest =
+      input.implementationSha256ByPlatform?.[lane.platform] ?? input.implementationSha256;
+    if (
+      !expectedImplementationDigest ||
+      report.adapter.implementationSha256 !== expectedImplementationDigest
+    ) {
+      reportBlocked = true;
+      blockers.push(`conformance ${label}: implementation digest does not match`);
     }
     if (!input.manifest.implementation.platforms.includes(lane.platform)) {
       reportBlocked = true;

@@ -97,7 +97,16 @@ describe('agent framework version automation', () => {
     const promotion = read('packages/cli/scripts/promote-agent-framework-release-admission.ts');
     expect(promotion).toContain('AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH');
     expect(promotion).toContain('digestBuiltinAgentFrameworkManifest');
+    expect(promotion).toContain('digestBuiltinAgentFrameworkImplementation');
+    expect(promotion).toContain('candidate.sourceCommit !== sourceCommit');
+    expect(conformance).toContain('release-admissions.v2.json');
     expect(promotion).toContain("repository !== 'chistiq/workspai'");
+    const verify = read('packages/cli/scripts/verify-agent-framework-conformance.ts');
+    expect(verify).toContain('implementationSha256ByPlatformFromReports');
+    expect(verify).toContain('liveImplementationDigestBlockers');
+    expect(verify).not.toContain(
+      'implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter)'
+    );
   });
 
   it('keeps generator coverage and OpenAI adapter coverage in the same Vitest gate', () => {

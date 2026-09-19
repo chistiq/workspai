@@ -12,6 +12,7 @@ import { areRuntimeAdaptersEnabled, getRuntimeAdapter } from '../runtime-adapter
 
 const normalizePath = (value: string | undefined): string => (value || '').replace(/\\/g, '/');
 const ORIGINAL_JAVA_HOME = process.env.JAVA_HOME;
+const ORIGINAL_BUN_INSTALL_CACHE_DIR = process.env.BUN_INSTALL_CACHE_DIR;
 
 function mockNodePackageScripts(
   projectPath: string,
@@ -59,6 +60,11 @@ describe('Runtime Adapters', () => {
       delete process.env.JAVA_HOME;
     } else {
       process.env.JAVA_HOME = ORIGINAL_JAVA_HOME;
+    }
+    if (typeof ORIGINAL_BUN_INSTALL_CACHE_DIR === 'undefined') {
+      delete process.env.BUN_INSTALL_CACHE_DIR;
+    } else {
+      process.env.BUN_INSTALL_CACHE_DIR = ORIGINAL_BUN_INSTALL_CACHE_DIR;
     }
   });
 
@@ -1434,6 +1440,7 @@ describe('Runtime Adapters', () => {
     });
 
     it('uses Bun for a Bun-locked package script and restores its cache environment', async () => {
+      delete process.env.BUN_INSTALL_CACHE_DIR;
       process.env.RAPIDKIT_DEP_SHARING_MODE = 'shared-runtime-caches';
       process.env.RAPIDKIT_WORKSPACE_PATH = '/tmp/workspace';
       let seenCache = '';

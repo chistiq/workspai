@@ -13,6 +13,7 @@ import type { AgentFrameworkAdapter } from './adapter.js';
 export type AgentFrameworkRegistryEntry = {
   manifest: AgentFrameworkAdapterManifest;
   manifestSha256: string;
+  implementationSha256: string;
   source: 'builtin' | 'package' | 'workspace';
   conformanceReports: AgentFrameworkConformanceReport[];
   releaseAdapter?: AgentFrameworkAdapter;
@@ -42,6 +43,7 @@ function cloneEntry(entry: AgentFrameworkRegistryEntry): AgentFrameworkRegistryE
   return structuredClone({
     manifest: entry.manifest,
     manifestSha256: entry.manifestSha256,
+    implementationSha256: entry.implementationSha256,
     source: entry.source,
     conformanceReports: entry.conformanceReports,
   });
@@ -71,6 +73,9 @@ export class AgentFrameworkRegistry {
     }
     if (!/^[a-f0-9]{64}$/.test(entry.manifestSha256)) {
       throw new Error('Agent framework manifest digest must be a lowercase SHA-256 value.');
+    }
+    if (!/^[a-f0-9]{64}$/.test(entry.implementationSha256)) {
+      throw new Error('Agent framework implementation digest must be a lowercase SHA-256 value.');
     }
     const adapterId = normalizedToken(entry.manifest.adapter.id);
     if (this.#entries.has(adapterId)) {
@@ -103,6 +108,7 @@ export class AgentFrameworkRegistry {
     const admission = assessAgentFrameworkAdmission({
       manifest: entry.manifest,
       manifestSha256: entry.manifestSha256,
+      implementationSha256: entry.implementationSha256,
       reports: entry.conformanceReports,
     });
     return admission.status === 'admitted'
@@ -154,6 +160,7 @@ export class AgentFrameworkRegistry {
     const admission = assessAgentFrameworkAdmission({
       manifest: selected.manifest,
       manifestSha256: selected.manifestSha256,
+      implementationSha256: selected.implementationSha256,
       reports: selected.conformanceReports,
     });
     if (admission.status !== 'admitted' && releaseAdmission?.status !== 'admitted') {

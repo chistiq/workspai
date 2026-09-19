@@ -24,15 +24,33 @@ export const LEGACY_AUTOPILOT_WORKSPACE_RUN_TEST_FILENAME = 'autopilot-workspace
 /** @deprecated Autopilot no longer writes separate stage files; use workspace-run-last.json stages map. */
 export const LEGACY_AUTOPILOT_WORKSPACE_RUN_BUILD_FILENAME = 'autopilot-workspace-run-build.json';
 
+export type WorkspaceRunProjectStageRecord = {
+  generatedAt: string;
+  status: string;
+  projectName: string;
+  relativePath: string;
+  command?: string;
+  exitCode: number | null;
+  runtime?: string;
+};
+
 export interface WorkspaceRunEvidence {
   schemaVersion: typeof WORKSPACE_RUN_EVIDENCE_SCHEMA_VERSION;
   generatedAt: string;
   workspacePath: string;
   latestStage: WorkspaceRunStageName;
   stages: Partial<Record<WorkspaceRunStageName, WorkspaceRunReport>>;
+  projectStages?: Record<
+    string,
+    Partial<Record<WorkspaceRunStageName, WorkspaceRunProjectStageRecord>>
+  >;
   enterpriseControls: {
     jsonReady: boolean;
     evidencePath: string;
+    projectStages?: Record<
+      string,
+      Partial<Record<WorkspaceRunStageName, WorkspaceRunProjectStageRecord>>
+    >;
   };
 }
 
@@ -96,7 +114,12 @@ export function isWorkspaceRunEvidenceAggregate(payload: unknown): payload is Wo
 
 export function normalizeWorkspaceRunEvidence(payload: unknown): WorkspaceRunEvidence | null {
   if (isWorkspaceRunEvidenceAggregate(payload)) {
-    return payload;
+    const controls = payload.enterpriseControls as WorkspaceRunEvidence['enterpriseControls'];
+    return {
+      ...payload,
+      projectStages: payload.projectStages ?? controls.projectStages,
+      enterpriseControls: controls,
+    };
   }
   if (isLegacyWorkspaceRunStageReport(payload)) {
     const stage = payload.stage;
@@ -147,6 +170,23 @@ export async function readWorkspaceRunEvidence(
   return normalizeWorkspaceRunEvidence(raw);
 }
 
+function projectEvidenceKey(project: {
+  relativePath?: string;
+  path?: string;
+  projectName?: string;
+}): string {
+  const relative =
+    typeof project.relativePath === 'string' ? project.relativePath.replace(/\\/g, '/') : '';
+  if (relative) {
+    return relative.toLowerCase();
+  }
+  const absolute = typeof project.path === 'string' ? project.path.replace(/\\/g, '/') : '';
+  if (absolute) {
+    return absolute.toLowerCase();
+  }
+  return (project.projectName ?? '').toLowerCase();
+}
+
 export async function publishWorkspaceRunStageReport(
   workspacePath: string,
   stageReport: WorkspaceRunReport
@@ -176,7 +216,41 @@ export async function publishWorkspaceRunStageReport(
         ? { ...normalized.stages }
         : {};
 
+      // The stage view is always the exact latest run. Historical per-project
+      // receipts live below with their own timestamps; copying old rows into a
+      // new report would make stale evidence appear freshly generated.
       stages[stageReport.stage] = stageReport;
+
+      const projectStages: NonNullable<WorkspaceRunEvidence['projectStages']> = {
+        ...(normalized?.projectStages ??
+          (
+            normalized?.enterpriseControls as {
+              projectStages?: WorkspaceRunEvidence['projectStages'];
+            }
+          )?.projectStages ??
+          {}),
+      };
+      for (const project of stageReport.projects) {
+        if (!project.selected) {
+          continue;
+        }
+        const key = projectEvidenceKey(project);
+        if (!key) {
+          continue;
+        }
+        projectStages[key] = {
+          ...projectStages[key],
+          [stageReport.stage]: {
+            generatedAt: stageReport.generatedAt,
+            status: project.status,
+            projectName: project.projectName,
+            relativePath: project.relativePath,
+            command: project.executionCommand,
+            exitCode: project.exitCode,
+            runtime: project.runtimeDetected,
+          },
+        };
+      }
 
       const evidence: WorkspaceRunEvidence = {
         schemaVersion: WORKSPACE_RUN_EVIDENCE_SCHEMA_VERSION,
@@ -187,6 +261,7 @@ export async function publishWorkspaceRunStageReport(
         enterpriseControls: {
           jsonReady: true,
           evidencePath: WORKSPACE_RUN_LAST_REPORT_RELATIVE_PATH,
+          projectStages,
         },
       };
 

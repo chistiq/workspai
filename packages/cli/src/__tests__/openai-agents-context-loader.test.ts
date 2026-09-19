@@ -361,7 +361,7 @@ assert loaded['marker'] == 'nested'
     expect(result.status, diagnostic(result)).toBe(0);
   });
 
-  it('Python generated context tests restore the operational context file', async () => {
+  it('Python generated context tests never mutate the operational context file', async () => {
     const root = await temporaryProject('workspai-oai-py-restore-');
     const rendered = openaiAgentsPythonAdapter.render({
       projectRoot: root,
@@ -371,11 +371,15 @@ assert loaded['marker'] == 'nested'
     const marker = `live-marker-${process.pid}`;
     const contextPath = await writeContext(root, admittedContext({ marker }));
     const before = await readFile(contextPath, 'utf8');
-    const result = spawnSync('python3', ['-m', 'unittest', 'discover', '-s', 'tests'], {
-      cwd: path.join(root, 'agents', 'release-reviewer'),
-      encoding: 'utf8',
-      env: { ...process.env, OPENAI_AGENTS_DISABLE_TRACING: '1' },
-    });
+    const result = spawnSync(
+      'python3',
+      ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_context.py'],
+      {
+        cwd: path.join(root, 'agents', 'release-reviewer'),
+        encoding: 'utf8',
+        env: { ...process.env, OPENAI_AGENTS_DISABLE_TRACING: '1' },
+      }
+    );
     expect(result.status, diagnostic(result)).toBe(0);
     expect(await readFile(contextPath, 'utf8')).toBe(before);
   });
