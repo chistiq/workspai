@@ -14,11 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented OpenAI Agents SDK adapters for Python `0.22.2` and TypeScript
   `@openai/agents` `0.18.0` with independent framework/runtime selection,
   credentialless conformance lanes, and Create kit ids `agent.openai.python` /
-  `agent.openai.typescript`. Adapters are labeled `stable`. Create and Attach
-  stay fail-closed until the new manifest digest is bound from a green matrix.
-  `--runtime python` without `--framework` requires an explicit framework
-  because Microsoft and OpenAI are both published. Handoffs, MCP, sessions, and
-  voice stay unsupported.
+  `agent.openai.typescript`. Adapters are labeled `stable` and release-admitted
+  from Adapter Matrix run `35408663712`. `--runtime python` without
+  `--framework` requires an explicit framework because Microsoft and OpenAI are
+  both published. Handoffs, MCP, sessions, and voice stay unsupported.
 
 ### Changed
 
@@ -31,9 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `agent framework list --json` includes each adapter's `stability`, so the
-  enterprise package smoke can tell a labeled-stable OpenAI adapter from the
-  previous preview digest.
+- `agent framework list --json` includes each adapter's `stability`.
 - Microsoft .NET context loader assigns `FileAttributes` before `GetAttributes`
   so CS0165 does not fail the restore/build lane.
 - OpenAI Python tools pass `failure_error_function=None`, and OpenAI
@@ -67,8 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated the workspace-intelligence adversarial script the same way; it runs
   during `quality:push` and was still inheriting husky Git env.
 - Kept published `agent framework list` OpenAI adapters visible; the enterprise
-  package smoke requires Microsoft to stay admitted and OpenAI to stay
-  fail-closed until the stable digest is bound.
+  package smoke requires Microsoft and OpenAI to stay release-admitted, and
+  OpenAI to stay labeled `stable`.
 - Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
   so Windows does not `spawn EINVAL` on `npm.cmd`.
 - Ran the OpenAI TypeScript conformance install/test inside the generated

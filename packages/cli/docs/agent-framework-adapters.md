@@ -20,7 +20,7 @@ manifest digests pass the required Linux, macOS, and Windows conformance lanes
 and are bound into the reviewed release-admission inventory.
 
 OpenAI Agents SDK adapters for Python and TypeScript are implemented in the
-same registry and lifecycle. They are not listed as Create/Attach kits until
+same registry and lifecycle. They are release-admitted Create/Attach kits after
 their complete cross-platform matrix is reviewed into that inventory. Public
 commands fail closed rather than silently substituting Microsoft, OpenAI, or
 another runtime.
@@ -227,11 +227,9 @@ workspace profile. A later adapter-manifest change must not hide a kit.
 Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
-runtime is shared. OpenAI adapters are labeled `stable`. Handoffs, MCP,
-sessions, voice, sandbox, and approval loops stay unsupported. Create and
-Attach stay fail-closed until the new manifest digest, framework baseline,
-runtime, and platform list are bound from a green matrix. Microsoft adapters
-remain `preview`.
+runtime is shared. OpenAI adapters are labeled `stable` and release-admitted.
+Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
+Microsoft adapters remain `preview`.
 
 A path-filtered twelve-lane adapter matrix compiles the generated Microsoft
 Python/.NET and OpenAI Python/TypeScript projects on Linux, macOS, and Windows. Every lane records all 18 mandatory

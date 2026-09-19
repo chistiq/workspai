@@ -1,16 +1,16 @@
 <!-- workspai-release-announcement
 {
   "productId": "workspai-cli",
-  "headline": "Stable OpenAI Agents SDK adapters pending digest re-admission",
-  "summary": "Workspai 0.76.0 labels OpenAI Agents SDK starters stable for Python 0.22.2 and TypeScript 0.18.0. Create and Attach stay fail-closed until the new digest is bound from a green matrix.",
+  "headline": "Stable OpenAI Agents SDK adapters for Python and TypeScript",
+  "summary": "Workspai 0.76.0 labels OpenAI Agents SDK starters stable for Python 0.22.2 and TypeScript 0.18.0 and admits Create and Attach from the green adapter matrix.",
   "highlights": [
     {
       "icon": "🏷️",
       "text": "OpenAI Python and TypeScript adapters are labeled stable"
     },
     {
-      "icon": "🔒",
-      "text": "Create stays fail-closed until the new digest is matrix-bound"
+      "icon": "📦",
+      "text": "Create and Attach write the OpenAI kits after the stable digest is bound"
     },
     {
       "icon": "🔀",
@@ -32,10 +32,11 @@ Released September 18, 2026.
 
 ## Stable OpenAI Agents SDK Adapters
 
-This minor release labels OpenAI Agents SDK starters `stable`. It does not
-bind the new manifest digest, so Create and Attach stay fail-closed until a
-green matrix is promoted. It does not add handoffs, MCP, sessions, voice,
-sandbox, or approval loops, or let weekly discovery rewrite Create contracts.
+This minor release labels OpenAI Agents SDK starters `stable` and binds the
+matching manifest digest from Adapter Matrix run `35408663712`, so Create and
+Attach write `agent.openai.python` and `agent.openai.typescript`. It does not
+add handoffs, MCP, sessions, voice, sandbox, or approval loops, or let weekly
+discovery rewrite Create contracts.
 
 ## Agent Framework Adapters
 
@@ -47,9 +48,9 @@ sandbox, or approval loops, or let weekly discovery rewrite Create contracts.
 - `--framework openai-agents` selects the OpenAI runtime. `--runtime python`
   without `--framework` requires an explicit choice because Microsoft Agent
   Framework and OpenAI Agents SDK are both published.
-- Labeling the adapters `stable` changes the manifest digest. The previous
-  preview admission on `8eb1308` no longer matches. Bind the next green
-  matrix before Create or Attach can write those kits.
+- Labeling the adapters `stable` changed the manifest digest. Release
+  admission now binds that digest from matrix run `35408663712` on
+  `ff659fa`.
 - Generated starters resolve the owning `agents/<instance>/` project, inspect
   admitted JSON through allowlisted read-only tools, stream live stdout, accept
   a prompt from argv or stdin, and fail closed on missing context. They do not

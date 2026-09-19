@@ -111,7 +111,11 @@ describe('create planner capabilities', () => {
       category: 'agent',
       versionPolicy: 'tested-baseline',
     });
-    expect(contract.nativeCreate.find((kit) => kit.id === 'agent.openai.python')).toBeUndefined();
+    expect(contract.nativeCreate.find((kit) => kit.id === 'agent.openai.python')).toMatchObject({
+      framework: 'openai-agents',
+      category: 'agent',
+      versionPolicy: 'tested-baseline',
+    });
     expect(contract.nativeCreate.find((kit) => kit.id === 'fastapi.standard')).toMatchObject({
       plannerFramework: 'fastapi',
       workspacePythonEngine: 'required',

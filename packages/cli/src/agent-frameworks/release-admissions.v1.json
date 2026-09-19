@@ -1,11 +1,11 @@
 {
   "schemaVersion": "workspai.agent-framework-release-admissions.v1",
-  "reviewedAt": "2026-09-18T14:46:18.000Z",
+  "reviewedAt": "2026-09-19T00:17:28.000Z",
   "source": {
     "repository": "chistiq/workspai",
-    "commit": "8eb13087b64db13762c046d413972f6034e312fd",
-    "workflowRunId": 35357989405,
-    "workflowUrl": "https://github.com/chistiq/workspai/actions/runs/35357989405",
+    "commit": "ff659fa8a7101dd750d48e504b1b19671aab8f73",
+    "workflowRunId": 35408663712,
+    "workflowUrl": "https://github.com/chistiq/workspai/actions/runs/35408663712",
     "conclusion": "success"
   },
   "adapters": [
@@ -36,7 +36,7 @@
     {
       "id": "openai-agents-python",
       "version": "0.1.0",
-      "manifestSha256": "17eecb2854bd5459cde78c2f00ce4f32d707819028faec926163e8b32a7e4993",
+      "manifestSha256": "f76c9973e07b1a3c7807efc489374cdede84038692d0012e03b530db4bcbba55",
       "frameworkVersion": "0.22.2",
       "runtime": "python",
       "platforms": [
@@ -48,7 +48,7 @@
     {
       "id": "openai-agents-typescript",
       "version": "0.1.0",
-      "manifestSha256": "f6a745a659ec662c89565f73bfff240ffd065816e54d8f8a87fb91bad6c01adb",
+      "manifestSha256": "35b4e04cda42e227ea8d352e3c87ec1ed7c5f53b39aafb734e895d456a32c38f",
       "frameworkVersion": "0.18.0",
       "runtime": "node",
       "platforms": [

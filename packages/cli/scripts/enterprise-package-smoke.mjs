@@ -359,6 +359,8 @@ function assertCliContracts() {
   const expectedAdmittedIds = [
     'microsoft-agent-framework-dotnet',
     'microsoft-agent-framework-python',
+    'openai-agents-python',
+    'openai-agents-typescript',
   ];
   if (JSON.stringify(admittedIds) !== JSON.stringify(expectedAdmittedIds)) {
     fail(
@@ -379,10 +381,8 @@ function assertCliContracts() {
         })`
       );
     }
-    if (openai.status === 'admitted') {
-      fail(
-        `${openaiId} cannot stay admitted on the previous preview digest; bind the new matrix first`
-      );
+    if (openai.status !== 'admitted') {
+      fail(`${openaiId} must be release-admitted on the green stable-digest matrix`);
     }
   }
 
@@ -452,7 +452,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.openai.python',
       name: 'openai-python-agent',
-      expectCreate: false,
+      expectCreate: true,
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -469,7 +469,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.openai.typescript',
       name: 'openai-typescript-agent',
-      expectCreate: false,
+      expectCreate: true,
       expectedFiles: [
         'README.md',
         '.workspai/project.json',

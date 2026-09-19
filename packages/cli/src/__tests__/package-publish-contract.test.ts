@@ -173,6 +173,7 @@ describe('npm publish contract', () => {
     expect(smoke).toContain('microsoft-agent-framework-python');
     expect(smoke).toContain('openai-agents-typescript');
     expect(smoke).toContain("openai.stability !== 'stable'");
+    expect(smoke).toContain('openai-agents-python');
     expect(smoke).not.toContain('adapters?.length !== 2');
 
     const listCommand = fs.readFileSync(
