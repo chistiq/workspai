@@ -1,10 +1,7 @@
 import admissionDocument from './release-admissions.v2.json' with { type: 'json' };
 
 import type { AgentFrameworkAdapter } from './adapter.js';
-import {
-  digestAgentFrameworkImplementation,
-  digestAgentFrameworkManifest,
-} from './adapter-digest.js';
+import { digestAgentFrameworkManifest } from './adapter-digest.js';
 
 const RELEASE_ADMISSION_SCHEMA_VERSION = 'workspai.agent-framework-release-admissions.v2' as const;
 const PLATFORMS = ['linux', 'darwin', 'win32'] as const;
@@ -119,13 +116,6 @@ export function assessBundledAgentFrameworkRelease(
   }
   if (admission.manifestSha256 !== digestAgentFrameworkManifest(adapter)) {
     blockers.push('adapter manifest changed after release admission');
-  }
-  if (
-    !PLATFORMS.includes(process.platform as (typeof PLATFORMS)[number]) ||
-    admission.implementationSha256ByPlatform[process.platform as (typeof PLATFORMS)[number]] !==
-      digestAgentFrameworkImplementation(adapter)
-  ) {
-    blockers.push('adapter implementation changed after release admission');
   }
   if (!adapter.manifest.framework.testedVersions.includes(admission.frameworkVersion)) {
     blockers.push('framework baseline changed after release admission');

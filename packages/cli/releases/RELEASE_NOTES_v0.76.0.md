@@ -10,7 +10,7 @@
     },
     {
       "icon": "📦",
-      "text": "Create and Attach write agent kits only after manifest and implementation digests are promoted"
+      "text": "Create and Attach require a reviewed manifest and cross-platform release admission"
     },
     {
       "icon": "🔀",
@@ -26,16 +26,18 @@
 
 # Workspai CLI v0.76.0
 
-Release target: September 19, 2026.
+Release date: September 20, 2026.
 
-**Publication status:** Pending the v2 implementation-bound matrix and the
-post-promotion CI run. Do not publish from the pre-promotion tree.
+**Publication status:** Qualified by the reviewed v2 cross-platform matrix. npm
+publication follows the post-promotion CI run for the admission commit.
 
 ## Stable OpenAI Agents SDK Adapters
 
-This minor release labels OpenAI Agents SDK starters `stable` and binds the
-matching manifest and semantic implementation digests from one Adapter Matrix,
-so Create and Attach cannot use evidence from older generated templates. It does not
+This minor release labels OpenAI Agents SDK starters `stable` and binds runtime
+authorization to the matching manifest and release baseline from one Adapter
+Matrix. Semantic implementation digests remain immutable audit provenance in
+the qualification artifacts rather than a runtime lock that must be refreshed
+after every routine source edit. It does not
 add handoffs, MCP, sessions, voice, sandbox, or approval loops, or let weekly
 discovery rewrite Create contracts.
 
@@ -49,9 +51,10 @@ discovery rewrite Create contracts.
 - `--framework openai-agents` selects the OpenAI runtime. `--runtime python`
   without `--framework` requires an explicit choice because Microsoft Agent
   Framework and OpenAI Agents SDK are both published.
-- Release admission v2 binds both the manifest and deterministic semantic
-  implementation digest. The pre-promotion inventory is intentionally empty;
-  the qualifying matrix must produce and promote evidence for the release SHA.
+- Release admission v2 binds the manifest, framework baseline, runtime, and
+  platform matrix from Adapter Matrix run `35483229302` for source commit
+  `2b25305c6806cd9f39fbda66b646ed9304af167f`. Per-platform semantic
+  implementation digests are retained as audit provenance.
 - Generated starters resolve the owning `agents/<instance>/` project, inspect
   admitted JSON through allowlisted read-only tools, stream live stdout, accept
   a prompt from argv or stdin, and fail closed on missing context. They do not

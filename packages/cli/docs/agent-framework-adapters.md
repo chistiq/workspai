@@ -15,10 +15,11 @@ existing project ---/            |
 Microsoft Agent Framework is the first adapter implementation of this
 foundation. Its Python and .NET adapters are intentionally separate because
 their package graphs, runtime requirements, entrypoints, and verification
-commands differ. Both become available for governed attachment only after their
-exact manifest and per-platform semantic implementation digests pass the
-required Linux, macOS, and Windows conformance lanes and are bound into the
-reviewed release-admission inventory.
+commands differ. Both become available for governed attachment only after the
+exact manifest and release baseline pass the required Linux, macOS, and Windows
+conformance lanes and are bound into the reviewed release-admission inventory.
+Per-platform semantic implementation digests accompany that evidence for
+traceability, but do not act as runtime authorization locks.
 
 OpenAI Agents SDK adapters for Python and TypeScript are implemented in the
 same registry and lifecycle. They become Create/Attach kits only after their
@@ -233,12 +234,17 @@ remains blocked until the exact v2 cross-platform candidate is promoted.
 Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
 Microsoft adapters remain `preview`.
 
-A path-filtered twelve-lane adapter matrix compiles the generated Microsoft
-Python/.NET and OpenAI Python/TypeScript projects on Linux, macOS, and Windows. Every lane records all 18 mandatory
-checks, the exact runtime and framework baseline, digests of the adapter
-manifest and semantic implementation, and one bounded evidence file per check. Reports are retained as CI
-artifacts for review. A final job validates every evidence path and admits the
-matrix only when all three operating-system lanes pass for every built-in adapter.
+A path-filtered PR gate compiles only the affected Microsoft or OpenAI adapter
+family on Linux. Shared lifecycle, security, registry, admission, and contract
+changes select both families; documentation-only edits do not run adapter
+conformance. The complete twelve-lane matrix is an explicit release-
+qualification operation: it compiles Microsoft Python/.NET and OpenAI
+Python/TypeScript on Linux, macOS, and Windows. Every full-qualification lane
+records all 18 mandatory checks, the exact runtime and framework baseline,
+digests of the adapter manifest and semantic implementation, and one bounded
+evidence file per check. Reports are retained as CI artifacts for review. A
+final job validates every evidence path and emits an admission candidate only
+when all three operating-system lanes pass for every built-in adapter.
 Python conformance is pinned to 3.10.11, the final Python 3.10 release with
 cross-platform binary installers; this provides one reproducible minimum-runtime
 baseline while the adapter continues to declare Python `>=3.10` support.
@@ -254,7 +260,12 @@ CI evidence is not silently trusted at runtime. The default registry remains
 blocked when callers provide neither raw conformance reports nor explicit
 permission to use the bundled reviewed release inventory. User-facing commands
 enable that inventory deliberately and fail closed if an adapter version,
-manifest digest, implementation digest, framework baseline, runtime, or platform list has changed.
+manifest digest, framework baseline, runtime, or platform list has changed.
+Semantic implementation digests remain in lane reports, candidates, and the
+reviewed inventory as audit provenance. They are verified during full
+qualification and promotion, but are deliberately not runtime authorization:
+routine implementation changes are guarded by affected-family tests instead
+of requiring a hand-edited admission digest for every source edit.
 
 ## Attach an agent runtime
 

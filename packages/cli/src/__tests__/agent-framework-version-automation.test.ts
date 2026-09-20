@@ -52,7 +52,26 @@ describe('agent framework version automation', () => {
       }
     }
     const conformance = workflows[1]!;
-    expect(conformance).toContain('os: [ubuntu-latest, macos-latest, windows-latest]');
+    expect(conformance).toContain('qualification_mode:');
+    expect(conformance).toContain("'packages/cli/src/__tests__/agent-framework-*.test.ts'");
+    expect(conformance).toContain(
+      'inputs.qualification_mode == \'full\' && \'["ubuntu-latest","macos-latest","windows-latest"]\' || \'["ubuntu-latest"]\''
+    );
+    expect(conformance).toContain(
+      "github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full'"
+    );
+    expect(conformance).toContain('dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d');
+    expect(YAML.parse(conformance).permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'read',
+    });
+    expect(conformance).toContain("- 'packages/cli/src/agent-frameworks/**'");
+    expect(conformance).toContain(
+      "- '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'"
+    );
+    expect(conformance).toContain(
+      "- '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'"
+    );
     expect(conformance).toContain('runtime: [python, dotnet]');
     expect(conformance).toContain('runtime: [python, typescript]');
     expect(conformance).toContain('smoke-openai-agents-adapter.ts');

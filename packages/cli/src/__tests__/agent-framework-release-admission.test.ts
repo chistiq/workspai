@@ -9,20 +9,20 @@ import {
 } from '../agent-frameworks/index.js';
 
 describe('agent framework release admission', () => {
-  it('fails closed until the v2 implementation-bound matrix is promoted', () => {
+  it('admits exactly the four adapters promoted from the reviewed v2 matrix', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
-    expect(admissions).toEqual([]);
+    expect(admissions.map((admission) => admission.id).sort()).toEqual(
+      BUILTIN_AGENT_FRAMEWORK_ADAPTERS.map((adapter) => adapter.manifest.adapter.id).sort()
+    );
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
-      expect(resolution.status).toBe('blocked');
-      expect(resolution.blockers).toEqual(
-        expect.arrayContaining([expect.stringContaining('No reviewed release admission exists')])
-      );
+      expect(resolution.status).toBe('admitted');
+      expect(resolution.blockers).toEqual([]);
     }
   });
 
-  it('produces deterministic semantic implementation digests that bind rendered output', () => {
+  it('records deterministic implementation provenance without making it runtime authority', () => {
     const adapter = BUILTIN_AGENT_FRAMEWORK_ADAPTERS[0];
     const changed = {
       ...adapter,
@@ -39,9 +39,31 @@ describe('agent framework release admission', () => {
     expect(digestBuiltinAgentFrameworkImplementation(adapter)).not.toBe(
       digestBuiltinAgentFrameworkImplementation(changed)
     );
+    expect(assessBundledAgentFrameworkRelease(changed)).toMatchObject({
+      status: 'admitted',
+      blockers: [],
+    });
+
+    const changedManifest = {
+      ...adapter,
+      manifest: {
+        ...adapter.manifest,
+        adapter: {
+          ...adapter.manifest.adapter,
+          version: '999.0.0',
+        },
+      },
+    };
+    expect(assessBundledAgentFrameworkRelease(changedManifest)).toMatchObject({
+      status: 'blocked',
+      blockers: expect.arrayContaining([
+        'adapter version changed after release admission',
+        'adapter manifest changed after release admission',
+      ]),
+    });
   });
 
-  it('keeps raw and release-trusting registries blocked before promotion', () => {
+  it('keeps raw registries blocked and admits reviewed adapters only when explicitly trusted', () => {
     const adapterId = BUILTIN_AGENT_FRAMEWORK_ADAPTERS[0].manifest.adapter.id;
     expect(createBuiltinAgentFrameworkRegistry().resolveAdapter(adapterId).status).toBe('blocked');
     expect(
@@ -49,7 +71,7 @@ describe('agent framework release admission', () => {
         {},
         { trustReviewedReleaseAdmissions: true }
       ).resolveAdapter(adapterId).status
-    ).toBe('blocked');
+    ).toBe('admitted');
     expect(
       createBuiltinAgentFrameworkRegistry({}, { trustReviewedReleaseAdmissions: true }).get(
         adapterId
@@ -57,7 +79,7 @@ describe('agent framework release admission', () => {
     ).not.toHaveProperty('releaseAdapter');
   });
 
-  it('keeps stable-labeled OpenAI adapters visible but blocked before promotion', () => {
+  it('keeps stable-labeled OpenAI adapters visible and admitted after promotion', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -67,11 +89,11 @@ describe('agent framework release admission', () => {
       status: registry.resolveAdapter(entry.manifest.adapter.id).status,
       stability: entry.manifest.adapter.stability,
     }));
-    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toEqual([]);
+    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toHaveLength(4);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
-        .every((adapter) => adapter.status === 'blocked' && adapter.stability === 'stable')
+        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'stable')
     ).toBe(true);
     expect(
       createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status

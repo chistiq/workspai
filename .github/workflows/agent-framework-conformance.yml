@@ -8,6 +8,7 @@ on:
       - "packages/cli/src/proof-carrying-change.ts"
       - "packages/cli/src/utils/json-schema-contract.ts"
       - "packages/cli/src/utils/workspace-paths.ts"
+      - "packages/cli/src/__tests__/agent-framework-*.test.ts"
       - "packages/cli/src/__tests__/agent-framework-lifecycle.test.ts"
       - "packages/cli/src/__tests__/agent-framework-admission-candidate.test.ts"
       - "packages/cli/src/__tests__/agent-framework-registry.test.ts"
@@ -34,23 +35,81 @@ on:
       - ".github/agent-framework-version-update.md"
       - "package-lock.json"
   workflow_dispatch:
+    inputs:
+      qualification_mode:
+        description: "Fast Linux validation or complete release qualification"
+        required: true
+        default: full
+        type: choice
+        options:
+          - fast
+          - full
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: agent-framework-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  detect-changes:
+    name: Detect affected adapter families
+    runs-on: ubuntu-latest
+    outputs:
+      microsoft: ${{ steps.filter.outputs.microsoft }}
+      openai: ${{ steps.filter.outputs.openai }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          filters: |
+            microsoft:
+              - 'packages/cli/src/agent-frameworks/**'
+              - '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'
+              - 'packages/cli/src/__tests__/microsoft-agent-framework-adapter.test.ts'
+              - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
+              - 'packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts'
+              - 'packages/cli/src/contracts/agent-framework-contract.ts'
+              - 'packages/cli/src/proof-carrying-change.ts'
+              - 'packages/cli/src/utils/json-schema-contract.ts'
+              - 'packages/cli/src/utils/workspace-paths.ts'
+              - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
+              - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
+              - 'packages/cli/package.json'
+              - 'package-lock.json'
+              - '.github/workflows/agent-framework-conformance.yml'
+            openai:
+              - 'packages/cli/src/agent-frameworks/**'
+              - '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'
+              - 'packages/cli/src/__tests__/openai-agents-*.test.ts'
+              - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
+              - 'packages/cli/scripts/smoke-openai-agents-adapter.ts'
+              - 'packages/cli/src/contracts/agent-framework-contract.ts'
+              - 'packages/cli/src/proof-carrying-change.ts'
+              - 'packages/cli/src/utils/json-schema-contract.ts'
+              - 'packages/cli/src/utils/workspace-paths.ts'
+              - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
+              - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
+              - 'packages/cli/package.json'
+              - 'package-lock.json'
+              - '.github/workflows/agent-framework-conformance.yml'
+
   microsoft-agent-framework:
     name: Microsoft Agent Framework · ${{ matrix.runtime }} · ${{ matrix.os }}
+    needs: detect-changes
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.microsoft == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
         runtime: [python, dotnet]
 
     steps:
@@ -102,12 +161,14 @@ jobs:
 
   openai-agents:
     name: OpenAI Agents SDK · ${{ matrix.runtime }} · ${{ matrix.os }}
+    needs: detect-changes
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.openai == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
         runtime: [python, typescript]
 
     steps:
@@ -152,7 +213,7 @@ jobs:
 
   admit-matrix:
     name: Admit complete adapter matrix
-    if: always()
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && needs['microsoft-agent-framework'].result == 'success' && needs['openai-agents'].result == 'success'
     needs: [microsoft-agent-framework, openai-agents]
     runs-on: ubuntu-latest
     timeout-minutes: 10

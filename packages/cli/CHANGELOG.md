@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.76.0] - 2026-09-19
+## [0.76.0] - 2026-09-20
 
 ### Added
 
@@ -15,18 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@openai/agents` `0.18.0` with independent framework/runtime selection,
   credentialless conformance lanes, and Create kit ids `agent.openai.python` /
   `agent.openai.typescript`. Adapters are labeled `stable`. Create and Attach
-  stay fail-closed until the v2 per-platform implementation-digest matrix is
-  promoted from Linux, macOS, and Windows evidence for this release SHA.
+  stay fail-closed until the reviewed v2 inventory is promoted from Linux,
+  macOS, and Windows evidence for this release SHA.
   `--runtime python` without `--framework` requires an explicit framework
   because Microsoft and OpenAI are both published. Handoffs, MCP, sessions, and
   voice stay unsupported.
 
 ### Changed
 
-- Conformance reports and admission candidates now require a per-platform
-  semantic implementation digest in addition to the adapter manifest digest.
-  The bundled `release-admissions.v2.json` inventory is empty until that matrix
-  is promoted; v1 evidence cannot authorize Create or Attach.
+- Conformance reports and admission candidates now retain a per-platform
+  semantic implementation digest as audit provenance in addition to the
+  adapter manifest digest. Runtime admission remains bound to the adapter
+  version and manifest, framework baseline, runtime, and platform matrix; a
+  routine implementation edit no longer requires a manually refreshed digest.
+  Pull requests validate only affected families on Linux, while manual `full`
+  qualification retains the complete twelve-lane release gate. V1 evidence
+  cannot authorize Create or Attach.
 - Generated OpenAI and Microsoft starters inspect admitted Workspai context
   through allowlisted read-only tools instead of pasting the JSON into
   instructions. Live entrypoints stream stdout, accept a prompt from argv or
@@ -70,9 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated the workspace-intelligence adversarial script the same way; it runs
   during `quality:push` and was still inheriting husky Git env.
 - Kept published `agent framework list` OpenAI adapters visible; the enterprise
-  package smoke requires OpenAI to stay labeled `stable`, fails closed while
-  the v2 inventory is empty, and after promotion requires the exact admitted
-  set.
+  package smoke requires OpenAI to stay labeled `stable` and requires the exact
+  admitted set after promotion.
 - Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
   so Windows does not `spawn EINVAL` on `npm.cmd`.
 - Ran the OpenAI TypeScript conformance install/test inside the generated
@@ -93,8 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adapter sources.
 - Bound Agent Framework qualification to deterministic semantic implementation
   digests in conformance-report v2, admission-candidate v2, and release-admission
-  v2. The pre-promotion admission inventory is empty by design; Create and
-  Attach fail closed until the exact Linux/macOS/Windows candidate is promoted.
+  v2. Create and Attach are admitted by the exact Linux/macOS/Windows candidate
+  from run `35483229302` on source commit `2b25305c`.
 - Preflighted Python and `uv` before lifecycle mutation, restricted dependency
   installation to the owned virtual environment, preserved scoped run evidence
   timestamps, and rejected PCC goal binding after unreceipted filesystem drift.
