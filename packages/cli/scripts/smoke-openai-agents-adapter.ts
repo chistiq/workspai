@@ -953,7 +953,8 @@ async function main(): Promise<void> {
       assertCondition(
         generatedTests.content.includes('setUpClass') ||
           generatedTests.content.includes('restoreLiveContext') ||
-          generatedTests.content.includes('bind_workspai_project_root_for_tests'),
+          generatedTests.content.includes('bind_workspai_project_root_for_tests') ||
+          generatedTests.content.includes('bindWorkspaiProjectRootForTests'),
         'Generated context tests neither isolate their fixture root nor restore operational context.'
       );
       const agentSource = rendered.files.find(
@@ -1434,7 +1435,12 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${status} ${adapter.manifest.adapter.id} ${report.frameworkVersion} on ${platform}; report: ${reportPath}\n`
   );
-  if (report.verdict !== 'admitted') process.exitCode = 1;
+  if (report.verdict !== 'admitted') {
+    for (const blocker of report.blockers) {
+      process.stdout.write(`blocker: ${blocker}\n`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error: unknown) => {

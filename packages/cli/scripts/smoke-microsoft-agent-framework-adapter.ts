@@ -948,7 +948,12 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${status} ${adapter.manifest.adapter.id} ${report.frameworkVersion} on ${platform}; report: ${reportPath}\n`
   );
-  if (report.verdict !== 'admitted') process.exitCode = 1;
+  if (report.verdict !== 'admitted') {
+    for (const blocker of report.blockers) {
+      process.stdout.write(`blocker: ${blocker}\n`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error: unknown) => {

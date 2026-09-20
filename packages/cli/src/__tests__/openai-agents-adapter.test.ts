@@ -246,6 +246,7 @@ describe('OpenAI Agents SDK adapters', () => {
     expect(contextFile).toContain('redactSecretShapedValues');
     expect(contextFile).not.toContain('process.cwd()');
     expect(generatedTests).toContain('createTemporaryProjectFixture');
+    expect(generatedTests).toContain('bindWorkspaiProjectRootForTests');
     expect(generatedTests).toContain('before(createTemporaryProjectFixture)');
     expect(generatedTests).not.toContain('isolateLiveContext');
     expect(generatedTests).toContain('scripted model tool call stays offline');
