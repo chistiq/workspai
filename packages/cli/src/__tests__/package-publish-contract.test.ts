@@ -174,6 +174,8 @@ describe('npm publish contract', () => {
     expect(smoke).toContain('openai-agents-typescript');
     expect(smoke).toContain("openai.stability !== 'stable'");
     expect(smoke).toContain('openai-agents-python');
+    expect(smoke).toContain('agent kit smoke did not record ownership receipts');
+    expect(smoke).toContain('recorded ownership receipts without a release-admitted create');
     expect(smoke).not.toContain('adapters?.length !== 2');
 
     const listCommand = fs.readFileSync(

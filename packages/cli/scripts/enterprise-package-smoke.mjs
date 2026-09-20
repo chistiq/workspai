@@ -522,8 +522,16 @@ function smokeCreateAgentFrameworkKits() {
       }
       assertGeneratedProject(path.join(workspacePath, scenario.name), scenario.expectedFiles);
     }
+    const admittedCreates = scenarios.filter((scenario) => scenario.expectCreate);
     const ownershipRoot = path.join(workspacePath, '.workspai', 'agent-frameworks', 'ownership');
-    if (!fs.existsSync(ownershipRoot)) fail('agent kit smoke did not record ownership receipts');
+    const recordedOwnership = fs.existsSync(ownershipRoot);
+    if (admittedCreates.length === 0) {
+      if (recordedOwnership) {
+        fail('agent kit smoke recorded ownership receipts without a release-admitted create');
+      }
+    } else if (!recordedOwnership) {
+      fail('agent kit smoke did not record ownership receipts');
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
