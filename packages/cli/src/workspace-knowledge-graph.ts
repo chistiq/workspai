@@ -4009,6 +4009,7 @@ const sourceStructureProvider: Provider = {
           if (route.detail !== 'swagger route' && isCommentOnlyRouteMatch(file, routeLine))
             continue;
           const method = inferHttpMethod(routeLine, route.detail);
+          const routePath = route.name || '/';
           const proof = await context.state.addProof({
             provider: this.id,
             artifact,
@@ -4017,14 +4018,14 @@ const sourceStructureProvider: Provider = {
             derivation: 'extracted',
             trust: 'observed',
             confidence: 'medium',
-            detail: `${method} ${route.name}`,
+            detail: `${method} ${routePath}`,
           });
           const endpoint = context.state.addEntity({
             kind: 'endpoint',
-            key: `source-endpoint:${project.id}:${artifact}:${method}:${route.name}`,
-            label: `${method} ${route.name || '/'}`,
+            key: `source-endpoint:${project.id}:${artifact}:${method}:${routePath}`,
+            label: `${method} ${routePath}`,
             projectId: project.id,
-            attributes: { method, path: route.name || '/', source: artifact },
+            attributes: { method, path: routePath, source: artifact },
             proofIds: [proof],
           });
           context.state.addRelation({

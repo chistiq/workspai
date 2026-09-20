@@ -88,6 +88,70 @@
       ],
       "automaticUpgrade": false,
       "admissionRequired": true
+    },
+    {
+      "adapterId": "openai-agents-python",
+      "frameworkId": "openai-agents",
+      "runtime": "python",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "0.22.2",
+      "packages": [
+        {
+          "ecosystem": "pypi",
+          "name": "openai-agents",
+          "version": "0.22.2",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://pypi.org/pypi/openai-agents/json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
+    },
+    {
+      "adapterId": "openai-agents-typescript",
+      "frameworkId": "openai-agents",
+      "runtime": "node",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "0.18.0",
+      "packages": [
+        {
+          "ecosystem": "npm",
+          "name": "@openai/agents",
+          "version": "0.18.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://registry.npmjs.org/@openai/agents"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "zod",
+          "version": "4.6.5",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/zod"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "typescript",
+          "version": "5.9.3",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/typescript"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "@types/node",
+          "version": "22.20.3",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/@types/node"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
     }
   ]
 }

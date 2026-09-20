@@ -7,7 +7,10 @@ import { buildPolyglotLifecyclePlan } from '../polyglot-lifecycle-plan.js';
 
 describe('polyglot lifecycle plan', () => {
   const tempDirs: string[] = [];
-  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const nestedAgentPython =
+    process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python';
+  const siblingPython =
+    process.platform === 'win32' ? '../.venv/Scripts/python.exe' : '../.venv/bin/python';
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((directory) => fs.remove(directory)));
@@ -333,8 +336,59 @@ describe('polyglot lifecycle plan', () => {
 
     expect(buildPolyglotLifecyclePlan(root).units[0]?.stages).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ stage: 'build', command: `${python} -m compileall .` }),
-        expect.objectContaining({ stage: 'start', command: `${python} main.py` }),
+        expect.objectContaining({
+          stage: 'init',
+          command: expect.stringContaining('-m venv'),
+        }),
+        expect.objectContaining({
+          stage: 'build',
+          command: `${nestedAgentPython} -m compileall .`,
+        }),
+        expect.objectContaining({ stage: 'start', command: `${nestedAgentPython} main.py` }),
+      ])
+    );
+    expect(
+      buildPolyglotLifecyclePlan(root).units[0]?.stages.find((stage) => stage.stage === 'init')
+        ?.command
+    ).not.toMatch(/(?:^|&& )(?:python3|python) -m pip install -e \./);
+  });
+
+  it('compiles a Python agent with a build-system table instead of invoking python -m build', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-python-agent-build-system-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'agents', 'primary', 'pyproject.toml'),
+      '[build-system]\nrequires = ["setuptools>=68"]\nbuild-backend = "setuptools.build_meta"\n\n[project]\nname = "primary"\nversion = "0.1.0"\n'
+    );
+    await fs.outputFile(path.join(root, 'agents', 'primary', 'main.py'), 'print("ready")\n');
+
+    expect(buildPolyglotLifecyclePlan(root).units[0]?.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: 'build',
+          command: `${nestedAgentPython} -m compileall .`,
+        }),
+        expect.objectContaining({ stage: 'start', command: `${nestedAgentPython} main.py` }),
+      ])
+    );
+    expect(buildPolyglotLifecyclePlan(root).units[0]?.stages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ command: `${nestedAgentPython} -m build` }),
+      ])
+    );
+  });
+
+  it('keeps python -m build only for packaging projects without a main module', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-python-packaging-lifecycle-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'library', 'pyproject.toml'),
+      '[build-system]\nrequires = ["setuptools>=68"]\nbuild-backend = "setuptools.build_meta"\n\n[project]\nname = "library"\nversion = "0.1.0"\n'
+    );
+
+    expect(buildPolyglotLifecyclePlan(root).units[0]?.stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: 'build', command: `${siblingPython} -m build` }),
       ])
     );
   });
@@ -362,12 +416,12 @@ describe('polyglot lifecycle plan', () => {
       plan.units
         .find((unit) => unit.root === 'stdlib')
         ?.stages.find((stage) => stage.stage === 'test')
-    ).toMatchObject({ command: `${python} -m unittest discover -s tests` });
+    ).toMatchObject({ command: `${siblingPython} -m unittest discover -s tests` });
     expect(
       plan.units
         .find((unit) => unit.root === 'pytest-owned')
         ?.stages.find((stage) => stage.stage === 'test')
-    ).toMatchObject({ command: `${python} -m pytest` });
+    ).toMatchObject({ command: `${siblingPython} -m pytest` });
   });
 
   it('treats a direct .NET test project as the only test execution boundary', async () => {

@@ -507,6 +507,11 @@
       "publication": "json-schema"
     },
     "agentFrameworkConformanceReport": {
+      "schemaVersion": "workspai.agent-framework-conformance-report.v2",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-conformance-report.v2.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkConformanceReportLegacy": {
       "schemaVersion": "workspai.agent-framework-conformance-report.v1",
       "contractPath": "contracts/workspace-intelligence/agent-framework-conformance-report.v1.json",
       "publication": "json-schema"
@@ -522,6 +527,11 @@
       "publication": "json-schema"
     },
     "agentFrameworkAdmissionCandidate": {
+      "schemaVersion": "workspai.agent-framework-admission-candidate.v2",
+      "contractPath": "contracts/workspace-intelligence/agent-framework-admission-candidate.v2.json",
+      "publication": "json-schema"
+    },
+    "agentFrameworkAdmissionCandidateLegacy": {
       "schemaVersion": "workspai.agent-framework-admission-candidate.v1",
       "contractPath": "contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json",
       "publication": "json-schema"

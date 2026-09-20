@@ -134,6 +134,10 @@
           "attributeName": "runtime"
         },
         {
+          "flags": "--framework <framework>",
+          "attributeName": "framework"
+        },
+        {
           "flags": "--workspace <path>",
           "attributeName": "workspace"
         },
@@ -176,6 +180,10 @@
         {
           "flags": "--runtime <runtime>",
           "attributeName": "runtime"
+        },
+        {
+          "flags": "--framework <framework>",
+          "attributeName": "framework"
         },
         {
           "flags": "--name <name>",
@@ -240,6 +248,10 @@
         {
           "flags": "--runtime <runtime>",
           "attributeName": "runtime"
+        },
+        {
+          "flags": "--framework <framework>",
+          "attributeName": "framework"
         },
         {
           "flags": "--name <name>",

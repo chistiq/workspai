@@ -23,6 +23,7 @@ import {
 } from '../utils/artifact-path-compat.js';
 import { withInterprocessLock } from '../utils/interprocess-lock.js';
 import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
+import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 import { resolveWorkspaceProjectPaths } from '../utils/workspace-project-paths.js';
 import { WORKSPACE_MODEL_REPORT_PATH, type WorkspaceModel } from '../workspace-model.js';
 import { hashCanonicalJson } from '../workspace-model-hash.js';
@@ -38,6 +39,82 @@ import {
 import type { AgentFrameworkRegistry } from './registry.js';
 
 const PLAN_ROLE = 'agent-framework-change-plan';
+const PROJECT_ROOT_MANIFESTS = [
+  '.workspai/project.json',
+  'package.json',
+  'pyproject.toml',
+  'go.mod',
+  'Cargo.toml',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+];
+
+async function predictedArchitectureOperations(input: {
+  target: AgentFrameworkTarget;
+  plan: AgentFrameworkChangePlan;
+}): Promise<
+  Array<{
+    operation: 'change';
+    targetKind: 'artifact';
+    targetId: string;
+    rationale: string;
+    confidence: 'high';
+  }>
+> {
+  const operations: Array<{
+    operation: 'change';
+    targetKind: 'artifact';
+    targetId: string;
+    rationale: string;
+    confidence: 'high';
+  }> = [];
+  const seen = new Set<string>();
+  const addTarget = (targetId: string, rationale: string) => {
+    if (seen.has(targetId)) return;
+    seen.add(targetId);
+    operations.push({
+      operation: 'change',
+      targetKind: 'artifact',
+      targetId,
+      rationale,
+      confidence: 'high',
+    });
+  };
+  const add = (relativePath: string, rationale: string) => {
+    addTarget(artifactPath(input.target.artifactPrefix, relativePath), rationale);
+  };
+
+  for (const file of input.plan.files) {
+    add(file.path, `${file.overwrite} under the admitted agent-framework plan.`);
+  }
+  add(
+    '.workspai/project.json',
+    'Create and attach refresh the governed project lens after nested runtime files exist.'
+  );
+  addTarget(
+    WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract,
+    'Agent required environment is recorded on the workspace contract during Graph refresh.'
+  );
+  for (const relativePath of PROJECT_ROOT_MANIFESTS) {
+    if (await fsExtra.pathExists(path.join(input.target.projectRoot, relativePath))) {
+      add(
+        relativePath,
+        'Nested runtime attach re-observes the existing project-root manifest during Graph refresh.'
+      );
+    }
+  }
+  const rootEntries = await fsExtra.readdir(input.target.projectRoot).catch(() => []);
+  for (const entry of rootEntries) {
+    if (/\.(?:cs|fs|vb)proj$/i.test(entry)) {
+      add(
+        entry,
+        'Nested runtime attach re-observes the existing .NET project manifest during Graph refresh.'
+      );
+    }
+  }
+  return operations;
+}
 const MANAGED_FILE_SCHEMA_VERSION = 'workspai.agent-framework-managed-file.v1';
 const MAX_MANAGED_FILE_BYTES = 1024 * 1024;
 
@@ -360,15 +437,11 @@ export async function prepareAgentFrameworkChange(input: {
       baselineGeneration: '',
       nonCanonical: true,
       proofEligible: false,
-      operations: plan.files.map((file) => ({
-        operation: 'change',
-        targetKind: 'artifact',
-        targetId: artifactPath(target.artifactPrefix, file.path),
-        rationale: `${file.overwrite} under the admitted agent-framework plan.`,
-        confidence: 'high',
-      })),
+      operations: await predictedArchitectureOperations({ target, plan }),
       assumptions: [
         'Only hash-bound Workspai-managed files in the admitted ownership roots will change.',
+        'The project lens metadata at .workspai/project.json is rewritten after the nested runtime is applied.',
+        'Existing project-root manifests are re-observed when the nested runtime makes the project polyglot.',
       ],
       predictedRisk: plan.files.length > 0 ? 'low' : 'none',
     },

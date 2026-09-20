@@ -9,6 +9,7 @@ import process from 'node:process';
 const repoRoot = process.cwd();
 const cliPath = path.join(repoRoot, 'dist', 'index.js');
 const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-enterprise-home-'));
+let releaseAdmittedAdapterIds = new Set();
 
 process.on('exit', () => {
   fs.rmSync(isolatedHome, { recursive: true, force: true });
@@ -350,12 +351,43 @@ function assertCliContracts() {
   }
 
   const frameworks = parseTrailingJson(runCli(['agent', 'framework', 'list', '--json']));
+  if (frameworks.schemaVersion !== 'workspai.agent-framework-list.v1') {
+    fail(`unexpected agent framework list schema: ${frameworks.schemaVersion}`);
+  }
+  const adapters = Array.isArray(frameworks.adapters) ? frameworks.adapters : [];
+  const admittedIds = adapters
+    .filter((adapter) => adapter.status === 'admitted')
+    .map((adapter) => adapter.id)
+    .sort();
+  const expectedAdapterIds = [
+    'microsoft-agent-framework-dotnet',
+    'microsoft-agent-framework-python',
+    'openai-agents-python',
+    'openai-agents-typescript',
+  ];
   if (
-    frameworks.schemaVersion !== 'workspai.agent-framework-list.v1' ||
-    frameworks.adapters?.length !== 2 ||
-    frameworks.adapters.some((adapter) => adapter.status !== 'admitted')
+    admittedIds.length !== 0 &&
+    JSON.stringify(admittedIds) !== JSON.stringify(expectedAdapterIds)
   ) {
-    fail('published CLI does not expose the two exact release-admitted framework adapters');
+    fail(
+      `published CLI does not expose the exact release-admitted framework adapters (admitted: ${
+        admittedIds.join(', ') || 'none'
+      })`
+    );
+  }
+  releaseAdmittedAdapterIds = new Set(admittedIds);
+  for (const openaiId of ['openai-agents-python', 'openai-agents-typescript']) {
+    const openai = adapters.find((adapter) => adapter.id === openaiId);
+    if (!openai) {
+      fail(`published CLI is missing implemented OpenAI adapter ${openaiId}`);
+    }
+    if (openai.stability !== 'stable') {
+      fail(
+        `${openaiId} must be labeled stable after the digest-changing promotion (observed: ${
+          openai.stability ?? 'missing'
+        })`
+      );
+    }
   }
 
   log(`verified CLI contract surfaces for v${version.version}`);
@@ -392,6 +424,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.microsoft.python',
       name: 'python-agent',
+      expectCreate: releaseAdmittedAdapterIds.has('microsoft-agent-framework-python'),
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -406,6 +439,7 @@ function smokeCreateAgentFrameworkKits() {
     {
       kit: 'agent.microsoft.dotnet',
       name: 'dotnet-agent',
+      expectCreate: releaseAdmittedAdapterIds.has('microsoft-agent-framework-dotnet'),
       expectedFiles: [
         'README.md',
         '.workspai/project.json',
@@ -415,6 +449,41 @@ function smokeCreateAgentFrameworkKits() {
         'agents/primary/Primary.csproj',
         'agents/primary/tests/Primary.Tests.csproj',
         'agents/primary/tests/WorkspaiContextTests.cs',
+        'agents/primary/.env.example',
+        'agents/primary/README.md',
+      ],
+    },
+    {
+      kit: 'agent.openai.python',
+      name: 'openai-python-agent',
+      expectCreate: releaseAdmittedAdapterIds.has('openai-agents-python'),
+      expectedFiles: [
+        'README.md',
+        '.workspai/project.json',
+        '.workspai/agent-frameworks/openai-agents-python/primary.json',
+        'agents/primary/main.py',
+        'agents/primary/workspai_context.py',
+        'agents/primary/agent.py',
+        'agents/primary/pyproject.toml',
+        'agents/primary/tests/test_context.py',
+        'agents/primary/.env.example',
+        'agents/primary/README.md',
+      ],
+    },
+    {
+      kit: 'agent.openai.typescript',
+      name: 'openai-typescript-agent',
+      expectCreate: releaseAdmittedAdapterIds.has('openai-agents-typescript'),
+      expectedFiles: [
+        'README.md',
+        '.workspai/project.json',
+        '.workspai/agent-frameworks/openai-agents-typescript/primary.json',
+        'agents/primary/src/main.ts',
+        'agents/primary/src/workspai-context.ts',
+        'agents/primary/src/agent.ts',
+        'agents/primary/package.json',
+        'agents/primary/tsconfig.json',
+        'agents/primary/tests/context.test.ts',
         'agents/primary/.env.example',
         'agents/primary/README.md',
       ],
@@ -432,6 +501,22 @@ function smokeCreateAgentFrameworkKits() {
           stdio: ['ignore', 'pipe', 'pipe'],
         }
       );
+      const combined = `${result.stdout}\n${result.stderr}`;
+      if (scenario.expectCreate === false) {
+        if (result.status === 0) {
+          fail(`${scenario.kit} create succeeded before the stable digest was release-admitted`);
+        }
+        if (
+          !/not release-admitted|adapter (?:manifest|implementation) changed after release admission/i.test(
+            combined
+          )
+        ) {
+          fail(
+            `${scenario.kit} failed closed without an admission blocker\n${result.stdout}\n${result.stderr}`
+          );
+        }
+        continue;
+      }
       if (result.status !== 0) {
         fail(
           `${scenario.kit} governed create failed with exit ${result.status}\n${result.stdout}\n${result.stderr}`
@@ -439,8 +524,16 @@ function smokeCreateAgentFrameworkKits() {
       }
       assertGeneratedProject(path.join(workspacePath, scenario.name), scenario.expectedFiles);
     }
+    const admittedCreates = scenarios.filter((scenario) => scenario.expectCreate);
     const ownershipRoot = path.join(workspacePath, '.workspai', 'agent-frameworks', 'ownership');
-    if (!fs.existsSync(ownershipRoot)) fail('agent kit smoke did not record ownership receipts');
+    const recordedOwnership = fs.existsSync(ownershipRoot);
+    if (admittedCreates.length === 0) {
+      if (recordedOwnership) {
+        fail('agent kit smoke recorded ownership receipts without a release-admitted create');
+      }
+    } else if (!recordedOwnership) {
+      fail('agent kit smoke did not record ownership receipts');
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

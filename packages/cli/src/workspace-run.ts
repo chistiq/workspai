@@ -28,6 +28,7 @@ import { buildCleanGitEnv } from './utils/git-worktree.js';
 import {
   buildPackageRunnerSubprocessEnv,
   resolvePackageRunnerInvocation,
+  resolvePythonLifecycleInterpreter,
 } from './utils/platform-capabilities.js';
 import { discoverWorkspaceProjects as discoverWorkspaceProjectsShared } from './utils/workspace-discovery.js';
 import { closureFromAdjacency } from './workspace-graph-traversal.js';
@@ -88,7 +89,7 @@ interface ProjectExecutionResult {
   projectName: string;
   selected: boolean;
   affected: boolean;
-  status: 'passed' | 'failed' | 'skipped';
+  status: 'passed' | 'failed' | 'skipped' | 'blocked';
   exitCode: number | null;
   durationMs: number;
   reason?: string;
@@ -108,6 +109,7 @@ interface ProjectExecutionResult {
     durationMs: number;
     reason?: string;
     errorCategory?: ErrorCategory;
+    testCounts?: { ran: number; skipped: number; failed: number };
     failureDiagnostic?: {
       category: ErrorCategory;
       exitCode: number;
@@ -176,6 +178,7 @@ export interface WorkspaceRunReport {
     passed: number;
     failed: number;
     skipped: number;
+    blocked: number;
     exitCode: number;
   };
   projects: ProjectExecutionResult[];
@@ -729,6 +732,106 @@ function parseDirectLifecycleCommand(command: string): { file: string; args: str
   return { file, args };
 }
 
+type LifecycleArgvStep = { executable: string; args: string[] };
+
+function looksLikePythonInterpreter(executable: string): boolean {
+  const base = path.basename(executable).toLowerCase();
+  return (
+    base === 'python' ||
+    base === 'python3' ||
+    base === 'python.exe' ||
+    base === 'python3.exe' ||
+    /(?:^|[\\/])\.venv[\\/]/.test(executable)
+  );
+}
+
+function materializePythonArgvSequence(
+  unitPath: string,
+  steps: LifecycleArgvStep[]
+): LifecycleArgvStep[] {
+  const live = resolvePythonLifecycleInterpreter({ unitRoot: unitPath });
+  const materialized: LifecycleArgvStep[] = [];
+  for (const step of steps) {
+    const createsVenv = step.args[0] === '-m' && step.args[1] === 'venv';
+    if (createsVenv && live.venvExists) {
+      continue;
+    }
+    if (looksLikePythonInterpreter(step.executable) && !createsVenv) {
+      const interpreter = live.usedForDependencyInstall
+        ? live.interpreter
+        : path.isAbsolute(step.executable)
+          ? step.executable
+          : path.resolve(unitPath, step.executable);
+      materialized.push({ ...step, executable: interpreter });
+      continue;
+    }
+    materialized.push(step);
+  }
+  return materialized;
+}
+
+function formatArgvSequence(steps: LifecycleArgvStep[]): string {
+  return steps.map((step) => [step.executable, ...step.args].join(' ')).join(' && ');
+}
+
+async function validateArgvSequenceBeforeMutation(
+  unitPath: string,
+  steps: LifecycleArgvStep[]
+): Promise<{ valid: true } | { valid: false; reason: string }> {
+  const createdRoots: string[] = [];
+  for (const step of steps) {
+    const createsVenv = step.args[0] === '-m' && step.args[1] === 'venv' && step.args[2];
+    const executablePath = path.isAbsolute(step.executable)
+      ? path.resolve(step.executable)
+      : step.executable.includes('/') || step.executable.includes('\\')
+        ? path.resolve(unitPath, step.executable)
+        : null;
+    const createdByEarlierStep = Boolean(
+      executablePath &&
+      createdRoots.some((root) => {
+        const relative = path.relative(root, executablePath);
+        return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+      })
+    );
+    if (!createdByEarlierStep) {
+      const validation = await validateCommand(step.executable, unitPath);
+      if (!validation.valid) {
+        const tool = path.basename(step.executable);
+        return {
+          valid: false,
+          reason:
+            tool === 'uv' || tool === 'uv.exe'
+              ? 'Missing admitted lock tool `uv`. Install uv and retry; no environment was changed.'
+              : validation.reason || `Required executable is unavailable: ${step.executable}`,
+        };
+      }
+    }
+    if (createsVenv) {
+      createdRoots.push(path.resolve(unitPath, step.args[2]));
+    }
+  }
+  return { valid: true };
+}
+
+function parsePythonUnittestCounts(output: string): {
+  ran: number;
+  skipped: number;
+  failed: number;
+} | null {
+  const ranMatch = output.match(/Ran (\d+) tests?/i);
+  if (!ranMatch) {
+    return null;
+  }
+  const skipped = Number(output.match(/skipped\s*=\s*(\d+)/i)?.[1] ?? 0);
+  const failures = Number(output.match(/failures\s*=\s*(\d+)/i)?.[1] ?? 0);
+  const errors = Number(output.match(/errors\s*=\s*(\d+)/i)?.[1] ?? 0);
+  return {
+    ran: Number(ranMatch[1]),
+    skipped,
+    failed: failures + errors,
+  };
+}
+
 function resolvePositiveDuration(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -1173,7 +1276,8 @@ async function executeStageCommand(
   commandOverrides?: Record<string, string>,
   environmentCommandVariants?: EnvironmentVariant,
   environment?: 'dev' | 'staging' | 'prod',
-  streamOutput = false
+  streamOutput = false,
+  argvSequence?: LifecycleArgvStep[]
 ): Promise<{
   exitCode: number;
   command: string;
@@ -1182,6 +1286,7 @@ async function executeStageCommand(
   errorCategory?: ErrorCategory;
   healthStatus?: { healthy: boolean; reason?: string };
   failureDiagnostic?: ProjectExecutionResult['failureDiagnostic'];
+  testCounts?: { ran: number; skipped: number; failed: number };
 }> {
   const useRapidkitWrapper = !commandOverrides?.[stage] && isWrapperOwnedRuntime(runtime);
 
@@ -1226,6 +1331,13 @@ async function executeStageCommand(
     };
   }
 
+  const materializedArgv =
+    argvSequence && argvSequence.length > 0
+      ? runtime === 'python'
+        ? materializePythonArgvSequence(projectPath, argvSequence)
+        : argvSequence
+      : undefined;
+
   // Step 1: Preflight validation
   const nativeStageCommand = resolveWorkspaceStageCommand({
     projectPath,
@@ -1234,25 +1346,43 @@ async function executeStageCommand(
     stage,
   });
 
-  if (!useRapidkitWrapper) {
-    const validation = await validateCommand(finalCommand, projectPath);
-    if (!validation.valid) {
-      return {
-        exitCode: 127,
-        command: finalCommand,
-        message: validation.reason || 'Command not available',
-        errorCategory: 'setup',
-      };
+  if (!materializedArgv?.length) {
+    if (!useRapidkitWrapper) {
+      const validation = await validateCommand(finalCommand, projectPath);
+      if (!validation.valid) {
+        return {
+          exitCode: 127,
+          command: finalCommand,
+          message: validation.reason || 'Command not available',
+          errorCategory: 'setup',
+        };
+      }
+    } else if (nativeStageCommand) {
+      const validation = useRapidkitWrapper
+        ? await validateWrapperStagePreflight(projectPath, runtime, nativeStageCommand)
+        : await validateCommand(nativeStageCommand, projectPath);
+      if (!validation.valid) {
+        return {
+          exitCode: 127,
+          command: finalCommand,
+          message: validation.reason || 'Command not available',
+          errorCategory: 'setup',
+        };
+      }
     }
-  } else if (nativeStageCommand) {
-    const validation = useRapidkitWrapper
-      ? await validateWrapperStagePreflight(projectPath, runtime, nativeStageCommand)
-      : await validateCommand(nativeStageCommand, projectPath);
+  }
+
+  const resolvedCommand = materializedArgv?.length
+    ? formatArgvSequence(materializedArgv)
+    : finalCommand;
+
+  if (materializedArgv?.length) {
+    const validation = await validateArgvSequenceBeforeMutation(projectPath, materializedArgv);
     if (!validation.valid) {
       return {
         exitCode: 127,
-        command: finalCommand,
-        message: validation.reason || 'Command not available',
+        command: resolvedCommand,
+        message: validation.reason,
         errorCategory: 'setup',
       };
     }
@@ -1273,7 +1403,7 @@ async function executeStageCommand(
       stage === 'start'
         ? await runStartupSmoke({
             projectPath,
-            finalCommand,
+            finalCommand: resolvedCommand,
             useRapidkitWrapper,
             runtime,
             framework,
@@ -1283,23 +1413,72 @@ async function executeStageCommand(
           ? stage === 'init' && isVitestRuntime()
             ? await runRapidkitInitInProcess(projectPath)
             : await runRapidkitSelfCommand([stage], projectPath, timeoutMs, streamOutput)
-          : await (async () => {
-              const directCommand = parseDirectLifecycleCommand(finalCommand);
-              return directCommand
-                ? execa(directCommand.file, directCommand.args, {
+          : materializedArgv?.length
+            ? await (async () => {
+                let combinedStdout = '';
+                let combinedStderr = '';
+                let lastExit = 0;
+                let timedOut = false;
+                for (const step of materializedArgv) {
+                  const stepResult = await execa(step.executable, step.args, {
                     cwd: projectPath,
                     reject: false,
-                    timeout: timeoutMs,
-                    forceKillAfterDelay: 1000,
-                  })
-                : execa(finalCommand, [], {
-                    cwd: projectPath,
-                    reject: false,
-                    shell: true,
                     timeout: timeoutMs,
                     forceKillAfterDelay: 1000,
                   });
-            })();
+                  combinedStdout += `${stepResult.stdout ?? ''}\n`;
+                  combinedStderr += `${stepResult.stderr ?? ''}\n`;
+                  timedOut = Boolean(
+                    typeof stepResult === 'object' &&
+                    stepResult !== null &&
+                    'timedOut' in stepResult &&
+                    (stepResult as { timedOut?: unknown }).timedOut
+                  );
+                  const rawExit = stepResult.exitCode;
+                  const failed =
+                    timedOut ||
+                    (typeof rawExit === 'number'
+                      ? rawExit !== 0
+                      : Boolean((stepResult as { failed?: boolean }).failed));
+                  lastExit = timedOut
+                    ? 124
+                    : typeof rawExit === 'number'
+                      ? rawExit
+                      : failed
+                        ? 127
+                        : 0;
+                  if (lastExit !== 0 && step.executable === 'uv') {
+                    combinedStderr +=
+                      '\nMissing admitted lock tool `uv`. Install uv and retry; Workspai does not fall back to an unlocked pip freeze.';
+                  }
+                  if (lastExit !== 0) {
+                    break;
+                  }
+                }
+                return {
+                  exitCode: lastExit,
+                  stdout: combinedStdout.trim(),
+                  stderr: combinedStderr.trim(),
+                  timedOut,
+                };
+              })()
+            : await (async () => {
+                const directCommand = parseDirectLifecycleCommand(finalCommand);
+                return directCommand
+                  ? execa(directCommand.file, directCommand.args, {
+                      cwd: projectPath,
+                      reject: false,
+                      timeout: timeoutMs,
+                      forceKillAfterDelay: 1000,
+                    })
+                  : execa(finalCommand, [], {
+                      cwd: projectPath,
+                      reject: false,
+                      shell: true,
+                      timeout: timeoutMs,
+                      forceKillAfterDelay: 1000,
+                    });
+              })();
 
     commandTimedOut = Boolean(
       typeof result === 'object' &&
@@ -1334,7 +1513,7 @@ async function executeStageCommand(
       Boolean((error as { timedOut?: unknown }).timedOut);
     return {
       exitCode: timedOut ? 124 : 1,
-      command: finalCommand,
+      command: resolvedCommand,
       message: timedOut
         ? `Stage timed out after ${timeoutMs}ms`
         : error instanceof Error
@@ -1360,10 +1539,23 @@ async function executeStageCommand(
   if (noApplicableGoTests) {
     return {
       exitCode: 0,
-      command: finalCommand,
+      command: resolvedCommand,
       skipped: true,
       message: 'No Go packages matched; test stage is not applicable to this runtime unit.',
     };
+  }
+  const pythonTestCounts =
+    stage === 'test' && runtime === 'python'
+      ? parsePythonUnittestCounts(`${stdout}\n${stderr}`)
+      : null;
+  const requiredPythonTestsSkipped =
+    pythonTestCounts !== null &&
+    pythonTestCounts.ran > 0 &&
+    pythonTestCounts.failed === 0 &&
+    pythonTestCounts.skipped === pythonTestCounts.ran;
+  if (requiredPythonTestsSkipped && exitCode === 0) {
+    exitCode = 1;
+    errorCategory = 'runtime';
   }
   const timedOut =
     commandTimedOut ||
@@ -1376,7 +1568,7 @@ async function executeStageCommand(
       : {
           category: normalizedCategory,
           exitCode,
-          command: finalCommand,
+          command: resolvedCommand,
           timedOut,
           timeoutMs,
           ...(outputExcerpt ? { outputExcerpt } : {}),
@@ -1384,17 +1576,20 @@ async function executeStageCommand(
 
   return {
     exitCode,
-    command: finalCommand,
+    command: resolvedCommand,
     errorCategory: normalizedCategory,
     healthStatus,
     failureDiagnostic,
+    testCounts: pythonTestCounts ?? undefined,
     message: timedOut
       ? `Stage timed out after ${timeoutMs}ms`
-      : exitCode !== 0
-        ? failureSummary
-          ? `Stage failed with exit code ${exitCode}: ${failureSummary}`
-          : `Stage failed with exit code ${exitCode}`
-        : undefined,
+      : requiredPythonTestsSkipped
+        ? `Required Python tests were skipped (${pythonTestCounts?.skipped ?? 0}/${pythonTestCounts?.ran ?? 0}); missing framework dependencies cannot pass.`
+        : exitCode !== 0
+          ? failureSummary
+            ? `Stage failed with exit code ${exitCode}: ${failureSummary}`
+            : `Stage failed with exit code ${exitCode}`
+          : undefined,
   };
 }
 
@@ -1418,7 +1613,7 @@ function runtimeInstallHint(runtime: RuntimeFamily | undefined): string | null {
     case 'node':
       return 'Install Node.js LTS and npm/pnpm/yarn, then rerun `npx workspai setup node` or `npx workspai init`.';
     case 'python':
-      return 'Install Python 3.10+ and pip/Poetry, then rerun `npx workspai setup python` or `npx workspai init`.';
+      return 'Install Python 3.10+, then rerun `wspai workspace run init` so Workspai can create the project `.venv` and install into it. Do not pip-install agent dependencies into system Python.';
     default:
       return null;
   }
@@ -1691,8 +1886,9 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
     for (const projectPath of runTargets) {
       const row = executionRows.get(projectPath);
       if (row) {
-        row.status = 'skipped';
+        row.status = 'blocked';
         row.reason = `blocked by ${blockingGate.gate}`;
+        row.exitCode = 1;
       }
     }
   } else {
@@ -1836,7 +2032,8 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
             { [options.stage]: stage.command },
             detected.environmentCommandVariants,
             detected.environment,
-            !options.json
+            !options.json,
+            stage.argvSequence
           );
           execution.durationMs = Date.now() - unitStarted;
           execution.exitCode = result.exitCode;
@@ -1847,6 +2044,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
               : 'failed';
           execution.reason = result.message;
           execution.errorCategory = result.errorCategory;
+          execution.testCounts = result.testCounts;
           execution.failureDiagnostic = result.failureDiagnostic;
           if (result.exitCode !== 0 && !firstFailure)
             firstFailure = result.message ?? stage.command;
@@ -1971,6 +2169,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         primaryRuntimeExecution.durationMs = row.durationMs;
         primaryRuntimeExecution.reason = execResult.message;
         primaryRuntimeExecution.errorCategory = execResult.errorCategory;
+        primaryRuntimeExecution.testCounts = execResult.testCounts;
         primaryRuntimeExecution.failureDiagnostic = execResult.failureDiagnostic;
       }
 
@@ -2080,20 +2279,22 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
   }
   const passed = rows.filter((row) => row.status === 'passed').length;
   const failed = rows.filter((row) => row.status === 'failed').length;
+  const blocked = rows.filter((row) => row.status === 'blocked').length;
   const skipped = rows.filter((row) => row.status === 'skipped').length;
 
   emitActivityBlock({
     blockId: 'workspace.run.execute',
     status: failed > 0 ? 'failed' : blockingGate ? 'blocked' : 'succeeded',
-    message: `Workspace run finished: ${passed} passed, ${failed} failed, ${skipped} skipped`,
+    message: `Workspace run finished: ${passed} passed, ${failed} failed, ${blocked} blocked, ${skipped} skipped`,
     component: 'workspace-run',
     progress: { completed: totalTargets, total: totalTargets, percent: 100 },
-    attributes: { passed, failed, skipped, stage: options.stage },
+    attributes: { passed, failed, blocked, skipped, stage: options.stage },
   });
 
   const strict = options.strict === true;
   const exitCode =
     failed > 0 ||
+    blocked > 0 ||
     (strict && gateResults.some((gate) => gate.status === 'fail' || gate.status === 'warn'))
       ? 1
       : 0;
@@ -2137,6 +2338,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
       passed,
       failed,
       skipped,
+      blocked,
       exitCode,
     },
     projects: rows,
@@ -2183,7 +2385,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
     }
     console.log(
       chalk.cyan(
-        `Workspace run (${options.stage}) => passed: ${passed}, failed: ${failed}, skipped: ${skipped}`
+        `Workspace run (${options.stage}) => passed: ${passed}, failed: ${failed}, blocked: ${blocked}, skipped: ${skipped}`
       )
     );
     console.log(chalk.gray(`Report: ${reportPath}`));

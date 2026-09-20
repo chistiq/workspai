@@ -84,9 +84,9 @@ npx workspai create project agent.microsoft.python <name> [--agent-name <name>] 
 npx workspai create project agent.microsoft.dotnet <name> [--agent-name <name>] [--skip-git]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
 npx workspai agent framework list [--json]
-npx workspai agent framework plan --project <name> --runtime <python|dotnet> --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
-npx workspai agent framework attach --project <name> --runtime <python|dotnet> --name <agent> [-y] [--granted-by <identity>] [--workspace <path>] [--json]
-npx workspai agent framework apply --change <change-id> --project <name> --runtime <python|dotnet> [--workspace <path>] [--json]
+npx workspai agent framework plan --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
+npx workspai agent framework attach --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [-y] [--granted-by <identity>] [--workspace <path>] [--json]
+npx workspai agent framework apply --change <change-id> --project <name> --runtime <python|dotnet|node> [--framework <id>] [--workspace <path>] [--json]
 ```
 
 Recommended CI:
@@ -275,16 +275,25 @@ Blocked receipts exit `2`; strict mode also maps degraded evidence to exit `2`.
 See [Canonical-first agent entry](./agent-entry.md).
 
 `agent framework` is the governed bridge between Workspai evidence and an
-agent runtime. `list` exposes only exact release-admitted baselines: Python
-`1.18.0` and .NET `1.21.0` in this CLI version. `plan` creates or reuses a
-scoped Goal, begins a Proof-Carrying Change, and attaches a hash-bound file
-plan without writing project files. `attach` shows that plan and requires an
+agent runtime. `list` exposes every built-in adapter and its release-admission
+state. In this CLI version Microsoft Python `1.18.0` and .NET `1.21.0` remain
+`preview`. OpenAI Agents SDK Python `0.22.2` and TypeScript `0.18.0` are
+labeled `stable`. Create and Attach require the reviewed v2 release inventory,
+whose manifest, framework baseline, runtime, and platform claims were promoted
+from the Linux, macOS, and Windows release matrix. Semantic implementation
+digests remain audit provenance rather than runtime authorization. `plan`
+creates or reuses a scoped Goal, begins a Proof-Carrying Change, and
+attaches a hash-bound file plan without writing project files. `--runtime`
+selects `python`, `dotnet`, or `node`. `--framework` selects the independent
+framework id when more than one admitted adapter shares that runtime.
+`attach` shows that plan and requires an
 interactive confirmation or explicit `--yes` before granting the filesystem
 effect and writing an isolated `agents/<name>` directory. `create project
 agent.microsoft.python|dotnet` uses the same admitted lifecycle for a new
 project: it registers the project, plans against a Model baseline, writes the
 nested runtime, then re-observes Model/Graph before it claims Intelligence is
-sealed. Dependency installation, credentials, generated-code execution, and
+sealed. `create project agent.openai.python|typescript` uses the same admitted
+lifecycle. Dependency installation, credentials, generated-code execution, and
 model provider calls are never implied by that approval. `apply` is the
 automation counterpart for a plan that was separately authorized with
 `change authorize`. Any adapter, version, manifest, runtime, or platform drift

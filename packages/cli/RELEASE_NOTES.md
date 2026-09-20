@@ -5,7 +5,43 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Latest Release: v0.75.2 (September 14, 2026)
+## v0.76.0 (September 20, 2026)
+
+### Stable OpenAI Agents SDK Adapters
+
+Workspai 0.76.0 labels OpenAI Agents SDK starters stable for Python 0.22.2 and
+TypeScript 0.18.0. Create and Attach are admitted by the reviewed v2 inventory
+promoted from the Linux, macOS, and Windows release matrix.
+
+**What's New:**
+
+- Label `agent.openai.python` and `agent.openai.typescript` `stable`.
+- Bind runtime authorization to the reviewed manifest, framework baseline,
+  runtime, and platform matrix; retain semantic implementation digests as
+  qualification provenance.
+- Run affected-family Linux conformance on pull requests and reserve the full
+  twelve-lane matrix for explicit release qualification.
+- Require `--framework` when `--runtime python` is shared; the CLI does not
+  guess.
+- Keep handoffs, MCP, sessions, voice, sandbox, and approval loops
+  unsupported.
+
+**Compatibility:** Existing commands, schema versions, and fail-closed
+framework admission remain supported. Microsoft adapters stay `preview`.
+Independent Graph work is not this CLI release.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.76.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.76.0/packages/cli/releases/RELEASE_NOTES_v0.76.0.md)
+
+---
+
+## v0.75.2 (September 14, 2026)
 
 ### Reviewed Framework Pins Without Automatic Promotion
 

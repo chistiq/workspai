@@ -118,7 +118,7 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 | [goal-packs.md](./goal-packs.md)                                                               | Plain-language intent compilation, scope/evidence binding, agent handoff, and mutation boundary                     |
 | [proof-carrying-change.md](./proof-carrying-change.md)                                         | Generation-pinned Decisions ledger, predicted-vs-actual Graph delta, receipts, verification, and capsule validation |
 | [agent-entry.md](./agent-entry.md)                                                             | Host-native discovery, canonical evidence preflight, receipt status, privacy, and consumer integration              |
-| [agent-framework-adapters.md](./agent-framework-adapters.md)                                   | Framework-neutral kit/attach contract, admitted Python 1.18 / .NET 1.21 pins, Create re-observation, and conformance |
+| [agent-framework-adapters.md](./agent-framework-adapters.md)                                   | Framework-neutral kit/attach contract, admitted Microsoft pins, implemented OpenAI adapters pending admission, and conformance |
 | [workspace-knowledge-graph.md](./workspace-knowledge-graph.md)                                 | Two-minute graph quickstart, proof model, AI/MCP consumption, performance, and honest token-efficiency measurement  |
 | [graph-benchmark-methodology.md](./graph-benchmark-methodology.md)                             | Reproducible payload-reduction benchmark, formulas, claim boundaries, and publication rules                         |
 | [workspace-intelligence-evaluation.md](./workspace-intelligence-evaluation.md)                 | Provider usage, cost provenance, verified outcomes, comparison, and extension consumption                           |
@@ -142,7 +142,7 @@ with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
 - Scaffold a frontend app: [commands-reference.md](./commands-reference.md) (`create project nextjs <name>`)
 - Canonical intelligence gate: `workspace intelligence run --for-agent generic --strict --json`
 - Agent entry preflight: `agent bootstrap --for-agent <host> --json`
-- Governed agent runtime: `agent framework attach --project <name> --runtime <python|dotnet> --name <agent>`
+- Governed agent runtime: `agent framework attach --project <name> --runtime <python|dotnet|node> --name <agent>`
 - Broader CI release gate: [commands-reference.md](./commands-reference.md) (`pipeline`, `readiness`)
 - Targeted model/context inspection — schemas in [contracts/workspace-intelligence/](../contracts/workspace-intelligence/)
 

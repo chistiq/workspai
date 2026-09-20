@@ -461,6 +461,7 @@ async function inferDependencyBaselineRepair(input: {
       typeof input.packageJsonData?.packageManager === 'string'
         ? input.packageJsonData.packageManager.split('@')[0]
         : null;
+    const agentPrefix = input.projectKind === 'agent' ? ' --prefix agents/primary' : '';
     const command =
       packageManager === 'pnpm'
         ? 'pnpm install'
@@ -468,11 +469,17 @@ async function inferDependencyBaselineRepair(input: {
           ? 'yarn install'
           : packageManager === 'bun'
             ? 'bun install'
-            : 'npm install';
+            : `npm install${agentPrefix}`;
     return {
       command,
-      title: 'Generate Node dependency lockfile',
-      files: ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock'],
+      title:
+        input.projectKind === 'agent'
+          ? 'Generate nested Node agent dependency lockfile'
+          : 'Generate Node dependency lockfile',
+      files:
+        input.projectKind === 'agent'
+          ? ['agents/primary/package.json', 'agents/primary/package-lock.json']
+          : ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock'],
       limitations: ['Review dependency and lockfile changes before committing.'],
     };
   }
@@ -575,7 +582,7 @@ async function inferDependencyBaselineRepair(input: {
   if (input.runtime === 'dotnet') {
     if (input.projectKind === 'agent') {
       return {
-        command: 'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file',
+        command: 'dotnet restore agents/primary/tests/Primary.Tests.csproj',
         title: '.NET agent dependency restore',
         files: [
           'agents/primary/Primary.csproj',
@@ -1146,6 +1153,20 @@ function buildManualRepair(input: {
   };
 }
 
+async function existingRepairFiles(
+  projectPath: string,
+  relativeFiles: string[]
+): Promise<string[]> {
+  const unique = [...new Set(relativeFiles.filter((file) => file && !file.includes('*')))];
+  const existing: string[] = [];
+  for (const relativeFile of unique) {
+    if (await fsExtra.pathExists(path.join(projectPath, relativeFile))) {
+      existing.push(relativeFile);
+    }
+  }
+  return existing;
+}
+
 function buildDockerignoreRepair(projectPath: string): DoctorRepairCapability {
   return buildFileCreateRepairCapability({
     issueId: 'surface-dockerignore',
@@ -1198,7 +1219,9 @@ async function buildDependencyContractProbe(input: {
       ? [`${agentRuntimeRoot}/pyproject.toml`]
       : agentRuntimeRoot && input.runtime === 'dotnet'
         ? [`${agentRuntimeRoot}/Primary.csproj`, `${agentRuntimeRoot}/tests/Primary.Tests.csproj`]
-        : []),
+        : agentRuntimeRoot && input.runtime === 'node'
+          ? [`${agentRuntimeRoot}/package.json`]
+          : []),
   ];
   const lockfiles = [
     ...(DEPENDENCY_LOCKFILES[input.runtime] ?? []),
@@ -1210,7 +1233,9 @@ async function buildDependencyContractProbe(input: {
             `${agentRuntimeRoot}/tests/packages.lock.json`,
             `${agentRuntimeRoot}/Directory.Packages.props`,
           ]
-        : []),
+        : agentRuntimeRoot && input.runtime === 'node'
+          ? [`${agentRuntimeRoot}/package-lock.json`]
+          : []),
   ];
   if (manifests.length === 0 && lockfiles.length === 0) {
     return null;
@@ -1524,11 +1549,11 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
   const npmShrinkwrapExists = await fsExtra.pathExists(
     path.join(input.projectPath, 'npm-shrinkwrap.json')
   );
-  const vulnerabilityFiles = [
-    'package.json',
-    'package-lock.json',
+  const vulnerabilityFiles = await existingRepairFiles(input.projectPath, [
+    ...(DEPENDENCY_MANIFESTS[runtime] ?? []),
+    ...(DEPENDENCY_LOCKFILES[runtime] ?? []),
     ...(npmShrinkwrapExists ? ['npm-shrinkwrap.json'] : []),
-  ];
+  ]);
   const auditInvocation = dependencyAudit?.invocation;
   const remediationDisposition = dependencyAudit?.remediation?.disposition;
   const resolutionCandidateCount = dependencyAudit?.remediation?.resolutionCandidates?.length ?? 0;
@@ -1652,14 +1677,12 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
         issueId: 'surface-security-hygiene',
         title: `Establish ${dependencyAudit?.ecosystem ?? runtime} security audit evidence`,
         projectPath: input.projectPath,
-        files: Array.from(
-          new Set([
-            ...(DEPENDENCY_MANIFESTS[runtime] ?? []),
-            ...(DEPENDENCY_LOCKFILES[runtime] ?? []),
-            ...(runtime === 'node' ? ['package.json'] : []),
-            ...(runtime === 'python' ? ['pyproject.toml', 'requirements.txt'] : []),
-          ])
-        ),
+        files: await existingRepairFiles(input.projectPath, [
+          ...(DEPENDENCY_MANIFESTS[runtime] ?? []),
+          ...(DEPENDENCY_LOCKFILES[runtime] ?? []),
+          ...(runtime === 'node' ? ['package.json'] : []),
+          ...(runtime === 'python' ? ['pyproject.toml', 'requirements.txt'] : []),
+        ]),
         reason: `${dependencyAudit?.tool ?? 'The runtime-native audit tool'} is unavailable. Add or declare the audit tool in the project's governed dependency/tooling surface, then rerun Doctor.`,
         limitations: [
           'Do not install an unpinned global scanner as an implicit repair.',
@@ -1708,19 +1731,10 @@ async function buildSecurityHygieneProbe(input: SurfaceInput): Promise<DoctorSur
             issueId: 'surface-security-hygiene',
             title: `Resolve ${dependencyAudit?.ecosystem ?? runtime} dependency vulnerabilities`,
             projectPath: input.projectPath,
-            files: [
-              'package.json',
-              'package-lock.json',
-              'pnpm-lock.yaml',
-              'yarn.lock',
-              'pyproject.toml',
-              'requirements.txt',
-              'go.mod',
-              'Cargo.toml',
-              'composer.json',
-              'Gemfile',
-              'Directory.Packages.props',
-            ],
+            files: await existingRepairFiles(input.projectPath, [
+              ...(DEPENDENCY_MANIFESTS[runtime] ?? []),
+              ...(DEPENDENCY_LOCKFILES[runtime] ?? []),
+            ]),
             reason:
               remediationDisposition === 'breaking-only'
                 ? resolutionCandidateCount > 0

@@ -41,6 +41,7 @@ export default defineConfig({
         'src/contracts/**/*.ts',
         'src/core-bridge/**/*.ts',
         'src/generators/**/*.ts',
+        'src/agent-frameworks/adapters/openai-agents/**/*.ts',
         'src/observability/**/*.ts',
         'src/runtime-adapters/**/*.ts',
         'src/utils/**/*.ts',

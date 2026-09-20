@@ -3,13 +3,13 @@ export const AGENT_FRAMEWORK_CAPABILITIES_SCHEMA_VERSION =
 export const AGENT_FRAMEWORK_ADAPTER_MANIFEST_SCHEMA_VERSION =
   'workspai.agent-framework-adapter-manifest.v1' as const;
 export const AGENT_FRAMEWORK_CONFORMANCE_REPORT_SCHEMA_VERSION =
-  'workspai.agent-framework-conformance-report.v1' as const;
+  'workspai.agent-framework-conformance-report.v2' as const;
 export const AGENT_FRAMEWORK_CHANGE_PLAN_SCHEMA_VERSION =
   'workspai.agent-framework-change-plan.v1' as const;
 export const AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_SCHEMA_VERSION =
   'workspai.agent-framework-ownership-receipt.v1' as const;
 export const AGENT_FRAMEWORK_ADMISSION_CANDIDATE_SCHEMA_VERSION =
-  'workspai.agent-framework-admission-candidate.v1' as const;
+  'workspai.agent-framework-admission-candidate.v2' as const;
 export const AGENT_FRAMEWORK_ADAPTER_PROTOCOL_VERSION =
   'workspai.agent-framework-adapter-protocol.v1' as const;
 
@@ -18,13 +18,13 @@ export const AGENT_FRAMEWORK_CAPABILITIES_CONTRACT_PATH =
 export const AGENT_FRAMEWORK_ADAPTER_MANIFEST_CONTRACT_PATH =
   'contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json' as const;
 export const AGENT_FRAMEWORK_CONFORMANCE_REPORT_CONTRACT_PATH =
-  'contracts/workspace-intelligence/agent-framework-conformance-report.v1.json' as const;
+  'contracts/workspace-intelligence/agent-framework-conformance-report.v2.json' as const;
 export const AGENT_FRAMEWORK_CHANGE_PLAN_CONTRACT_PATH =
   'contracts/workspace-intelligence/agent-framework-change-plan.v1.json' as const;
 export const AGENT_FRAMEWORK_OWNERSHIP_RECEIPT_CONTRACT_PATH =
   'contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json' as const;
 export const AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH =
-  'contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json' as const;
+  'contracts/workspace-intelligence/agent-framework-admission-candidate.v2.json' as const;
 
 export const AGENT_FRAMEWORK_CAPABILITY_IDS = [
   'single-agent',
@@ -230,6 +230,7 @@ export type AgentFrameworkConformanceReport = {
     id: string;
     version: string;
     manifestSha256: string;
+    implementationSha256: string;
   };
   frameworkVersion: string;
   cliVersion: string;
@@ -269,6 +270,7 @@ export type AgentFrameworkAdmissionCandidate = {
     id: string;
     version: string;
     manifestSha256: string;
+    implementationSha256ByPlatform: Record<'linux' | 'darwin' | 'win32', string>;
     framework: { id: string };
     lanes: Array<{
       platform: 'linux' | 'darwin' | 'win32';
@@ -615,8 +617,8 @@ export function buildAgentFrameworkAdapterManifestSchema() {
 export function buildAgentFrameworkConformanceReportSchema() {
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://workspai.dev/contracts/workspace-intelligence/agent-framework-conformance-report.v1.json',
-    title: 'Workspai Agent Framework Conformance Report v1',
+    $id: 'https://workspai.dev/contracts/workspace-intelligence/agent-framework-conformance-report.v2.json',
+    title: 'Workspai Agent Framework Conformance Report v2',
     ...strictObject({
       schemaVersion: { const: AGENT_FRAMEWORK_CONFORMANCE_REPORT_SCHEMA_VERSION },
       protocolVersion: { const: AGENT_FRAMEWORK_ADAPTER_PROTOCOL_VERSION },
@@ -625,6 +627,7 @@ export function buildAgentFrameworkConformanceReportSchema() {
         id: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$' },
         version: { type: 'string', minLength: 1 },
         manifestSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+        implementationSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' },
       }),
       frameworkVersion: { type: 'string', minLength: 1 },
       cliVersion: { type: 'string', minLength: 1 },
@@ -786,8 +789,8 @@ export function buildAgentFrameworkAdmissionCandidateSchema() {
   });
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://workspai.dev/contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json',
-    title: 'Workspai Agent Framework Admission Candidate v1',
+    $id: 'https://workspai.dev/contracts/workspace-intelligence/agent-framework-admission-candidate.v2.json',
+    title: 'Workspai Agent Framework Admission Candidate v2',
     ...strictObject({
       schemaVersion: { const: AGENT_FRAMEWORK_ADMISSION_CANDIDATE_SCHEMA_VERSION },
       protocolVersion: { const: AGENT_FRAMEWORK_ADAPTER_PROTOCOL_VERSION },
@@ -802,6 +805,11 @@ export function buildAgentFrameworkAdmissionCandidateSchema() {
           id: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$' },
           version: { type: 'string', minLength: 1 },
           manifestSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          implementationSha256ByPlatform: strictObject({
+            linux: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+            darwin: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+            win32: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          }),
           framework: strictObject({
             id: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$' },
           }),

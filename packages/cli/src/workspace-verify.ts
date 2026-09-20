@@ -470,6 +470,47 @@ function evaluatePipelineEvidence(payload: Record<string, unknown>): EvidenceEva
   return { status: 'warn', message: 'Pipeline evidence status is unknown.' };
 }
 
+function resolveKeyedProjectStage(
+  payload: Record<string, unknown>,
+  projectName: string,
+  stage: string
+): { generatedAt?: string; status?: string } | 'ambiguous' | null {
+  const projectStages =
+    asRecord(payload.projectStages) ??
+    asRecord(asRecord(payload.enterpriseControls)?.projectStages);
+  if (!projectStages) {
+    return null;
+  }
+  const normalizedProject = projectName.replace(/\\/g, '/').toLowerCase();
+  const matches = Object.entries(projectStages).filter(([key, value]) => {
+    const normalizedKey = key.replace(/\\/g, '/').toLowerCase();
+    const stages = asRecord(value);
+    const candidate = asRecord(stages?.[stage]);
+    const candidateName =
+      typeof candidate?.projectName === 'string' ? candidate.projectName.toLowerCase() : '';
+    const candidatePath =
+      typeof candidate?.relativePath === 'string'
+        ? candidate.relativePath.replace(/\\/g, '/').toLowerCase()
+        : '';
+    return (
+      normalizedKey === normalizedProject ||
+      candidateName === normalizedProject ||
+      candidatePath === normalizedProject
+    );
+  });
+  if (matches.length > 1) {
+    return 'ambiguous';
+  }
+  const stages = asRecord(matches[0]?.[1]);
+  const record = asRecord(stages?.[stage]);
+  return record
+    ? {
+        generatedAt: typeof record.generatedAt === 'string' ? record.generatedAt : undefined,
+        status: typeof record.status === 'string' ? record.status : undefined,
+      }
+    : null;
+}
+
 function evaluateWorkspaceRunEvidence(
   payload: Record<string, unknown>,
   command: WorkspaceImpactCommand,
@@ -498,7 +539,7 @@ function evaluateWorkspaceRunEvidence(
       message: 'Project-scoped workspace run evidence is missing a project identifier.',
     };
   }
-  const projectRow = projects.find((entry) => {
+  const matchingProjectRows = projects.filter((entry) => {
     const record = asRecord(entry);
     if (!record) {
       return false;
@@ -510,11 +551,16 @@ function evaluateWorkspaceRunEvidence(
       .map((value) => value.replace(/\\/g, '/').toLowerCase());
     return (
       name === projectName ||
-      projectPathCandidates.some(
-        (projectPath) => projectPath.endsWith(`/${projectName}`) || projectPath === projectName
-      )
+      projectPathCandidates.some((projectPath) => projectPath === projectName)
     );
   });
+  if (matchingProjectRows.length > 1) {
+    return {
+      status: 'fail',
+      message: `Workspace run evidence is ambiguous for project ${command.project}.`,
+    };
+  }
+  const projectRow = matchingProjectRows[0];
   if (projectRow) {
     const staleMessage = staleEvidenceMessage(
       stageReport.generatedAt,
@@ -526,13 +572,45 @@ function evaluateWorkspaceRunEvidence(
     }
     const record = asRecord(projectRow);
     const status = typeof record?.status === 'string' ? record.status : 'unknown';
-    if (status === 'failed') {
-      return { status: 'fail', message: `Workspace run evidence failed for ${command.project}.` };
+    if (status === 'failed' || status === 'blocked') {
+      return {
+        status: 'fail',
+        message: `Workspace run evidence ${status} for ${command.project}.`,
+      };
     }
     if (status === 'passed') {
       return { status: 'pass', message: `Workspace run evidence passed for ${command.project}.` };
     }
     if (status === 'skipped') {
+      const keyed = resolveKeyedProjectStage(payload, projectName, stage ?? stageReport.stage);
+      if (keyed === 'ambiguous') {
+        return {
+          status: 'fail',
+          message: `Workspace run history is ambiguous for project ${command.project}.`,
+        };
+      }
+      if (keyed) {
+        const staleKeyed = staleEvidenceMessage(
+          keyed.generatedAt,
+          minGeneratedAt,
+          `Workspace run evidence for ${command.project ?? command.id}`
+        );
+        if (staleKeyed) {
+          return { status: 'fail', message: staleKeyed };
+        }
+        if (keyed.status === 'passed') {
+          return {
+            status: 'pass',
+            message: `Workspace run evidence passed for ${command.project} from keyed project/stage history.`,
+          };
+        }
+        if (keyed.status === 'failed' || keyed.status === 'blocked') {
+          return {
+            status: 'fail',
+            message: `Workspace run evidence ${keyed.status} for ${command.project}.`,
+          };
+        }
+      }
       return { status: 'warn', message: `Workspace run evidence skipped for ${command.project}.` };
     }
     return {

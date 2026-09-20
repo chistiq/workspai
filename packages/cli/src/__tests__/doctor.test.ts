@@ -59,6 +59,13 @@ describe('Doctor Command', () => {
     expect(
       pythonPackageListProvesDependencies([{ name: 'FastAPI' }, { name: 'pip' }], 'fastapi')
     ).toBe(true);
+    expect(
+      pythonPackageListProvesDependencies(
+        [{ name: 'openai-agents' }, { name: 'pip' }],
+        'openai-agents'
+      )
+    ).toBe(true);
+    expect(pythonPackageListProvesDependencies([{ name: 'openai' }], 'openai-agents')).toBe(false);
     expect(pythonPackageListProvesDependencies([{ name: 'requests' }], '')).toBe(true);
   });
 
@@ -3562,6 +3569,111 @@ describe('Doctor Command', () => {
       expect(
         payload.project.probes.find((probe: { id?: string }) => probe.id === 'surface-env-contract')
       ).toMatchObject({ status: 'pass', applicability: 'applicable' });
+    } finally {
+      process.chdir(originalCwd);
+      logSpy.mockRestore();
+      await fsExtra.remove(tempRoot);
+    }
+  });
+
+  it('keeps governed nested OpenAI Python and TypeScript agent identity consistent', async () => {
+    const tempRoot = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-doctor-openai-agent-'));
+    const pythonProjectPath = path.join(tempRoot, 'openai-python-agent');
+    const typescriptProjectPath = path.join(tempRoot, 'openai-typescript-agent');
+    await fsExtra.outputJson(path.join(pythonProjectPath, '.workspai', 'project.json'), {
+      name: 'openai-python-agent',
+      generated_by: 'workspai',
+      kind: 'agent',
+      runtime: 'python',
+      framework: 'openai-agents',
+      kit: 'agent.openai.python',
+      contracts: { env: ['OPENAI_API_KEY', 'OPENAI_MODEL'] },
+    });
+    await fsExtra.outputFile(
+      path.join(pythonProjectPath, 'agents', 'primary', 'pyproject.toml'),
+      '[project]\nname = "primary"\ndependencies = ["openai-agents==0.22.2"]\n'
+    );
+    await fsExtra.outputFile(
+      path.join(pythonProjectPath, 'agents', 'primary', '.env.example'),
+      'OPENAI_API_KEY=\nOPENAI_MODEL=\n'
+    );
+    await fsExtra.outputFile(
+      path.join(pythonProjectPath, 'agents', 'primary', 'tests', 'test_context.py'),
+      'import unittest\n'
+    );
+    await fsExtra.outputJson(path.join(typescriptProjectPath, '.workspai', 'project.json'), {
+      name: 'openai-typescript-agent',
+      generated_by: 'workspai',
+      kind: 'agent',
+      runtime: 'node',
+      framework: 'openai-agents',
+      kit: 'agent.openai.typescript',
+      contracts: { env: ['OPENAI_API_KEY', 'OPENAI_MODEL'] },
+    });
+    await fsExtra.outputJson(
+      path.join(typescriptProjectPath, 'agents', 'primary', 'package.json'),
+      {
+        name: 'primary',
+        dependencies: { '@openai/agents': '0.18.0', zod: '4.6.5' },
+      }
+    );
+    await fsExtra.outputFile(
+      path.join(typescriptProjectPath, 'agents', 'primary', '.env.example'),
+      'OPENAI_API_KEY=\nOPENAI_MODEL=\n'
+    );
+
+    mockedExeca.mockImplementation(async (cmd: string, args?: any) => {
+      if ((cmd === 'python3' || cmd === 'python') && args?.[0] === '--version') {
+        return { stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any;
+      }
+      return { stdout: '', stderr: '', exitCode: 0 } as any;
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const originalCwd = process.cwd();
+
+    try {
+      const { runDoctor } = await import('../doctor.js');
+
+      process.chdir(pythonProjectPath);
+      await runDoctor({ project: true, json: true, fresh: true });
+      const pythonPayload = JSON.parse(
+        (logSpy.mock.calls
+          .map((call) => call[0])
+          .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as
+          string | undefined) ?? '{}'
+      );
+      expect(pythonPayload.project).toMatchObject({
+        framework: 'OpenAI Agents SDK',
+        frameworkKey: 'openai-agents',
+        runtimeFamily: 'python',
+        projectKind: 'agent',
+      });
+      expect(
+        pythonPayload.project.fixCommands.some((command: string) =>
+          command.includes('uv sync --project agents/primary')
+        )
+      ).toBe(true);
+
+      logSpy.mockClear();
+      process.chdir(typescriptProjectPath);
+      await runDoctor({ project: true, json: true, fresh: true });
+      const typescriptPayload = JSON.parse(
+        (logSpy.mock.calls
+          .map((call) => call[0])
+          .find((message) => typeof message === 'string' && message.trim().startsWith('{')) as
+          string | undefined) ?? '{}'
+      );
+      expect(typescriptPayload.project).toMatchObject({
+        framework: 'OpenAI Agents SDK',
+        frameworkKey: 'openai-agents',
+        runtimeFamily: 'node',
+        projectKind: 'agent',
+      });
+      expect(
+        typescriptPayload.project.fixCommands.some((command: string) =>
+          command.includes('npm install --prefix agents/primary')
+        )
+      ).toBe(true);
     } finally {
       process.chdir(originalCwd);
       logSpy.mockRestore();

@@ -568,10 +568,10 @@
         "path": "contracts/agent-framework-capabilities.v1.json"
       },
       "adapterManifestSchema": "contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json",
-      "conformanceReportSchema": "contracts/workspace-intelligence/agent-framework-conformance-report.v1.json",
+      "conformanceReportSchema": "contracts/workspace-intelligence/agent-framework-conformance-report.v2.json",
       "changePlanSchema": "contracts/workspace-intelligence/agent-framework-change-plan.v1.json",
       "ownershipReceiptSchema": "contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json",
-      "admissionCandidateSchema": "contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json",
+      "admissionCandidateSchema": "contracts/workspace-intelligence/agent-framework-admission-candidate.v2.json",
       "rules": [
         "Create kits and existing-project attachment must consume the same framework adapter contract.",
         "A framework adapter owns runtime integration, never canonical Model, Graph, Goal, PCC, or verification truth.",
@@ -681,7 +681,9 @@
       "dotnet.webapi.clean",
       "rust.axum",
       "agent.microsoft.python",
-      "agent.microsoft.dotnet"
+      "agent.microsoft.dotnet",
+      "agent.openai.python",
+      "agent.openai.typescript"
     ],
     "officialCreate": [
       "frontend.nextjs",

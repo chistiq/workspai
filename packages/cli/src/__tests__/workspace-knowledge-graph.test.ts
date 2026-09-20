@@ -6,6 +6,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { buildCleanGitEnv } from '../utils/git-worktree.js';
+
 import {
   assertWorkspaceKnowledgeGraphSourceBinding,
   buildWorkspaceKnowledgeGraph,
@@ -807,6 +809,7 @@ describe('workspace knowledge graph', () => {
       path.join(root, 'dotnet-api', 'src', 'Program.cs'),
       [
         'var app = builder.Build();',
+        'app.MapGet("/", () => Results.Ok());',
         'app.MapHealthChecks("/health/live");',
         'app.MapGet("/api/v1/info", () => Results.Ok());',
       ].join('\n')
@@ -831,6 +834,7 @@ describe('workspace knowledge graph', () => {
         .map((entity) => `${entity.projectId}:${entity.label}`)
         .sort()
     ).toEqual([
+      'dotnet-api:GET /',
       'dotnet-api:GET /api/v1/info',
       'dotnet-api:GET /health/live',
       'go-api:GET /api/v1/health/live',
@@ -838,6 +842,7 @@ describe('workspace knowledge graph', () => {
       'rust-api:GET /health',
     ]);
     for (const endpoint of graph.entities.filter((entity) => entity.kind === 'endpoint')) {
+      expect(endpoint.identity.key).not.toContain('\0');
       const proof = graph.proofs.find((candidate) => endpoint.proofIds.includes(candidate.id));
       expect(proof).toMatchObject({ provider: 'source-structure', trust: 'observed' });
       expect(proof?.line).toBeGreaterThan(0);
@@ -864,7 +869,7 @@ describe('workspace knowledge graph', () => {
     expect(dotnet.entities.map((entity) => entity.label)).toContain('GET /health/live');
     expect(dotnet.proofs).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ artifact: 'dotnet-api/src/Program.cs', line: 2 }),
+        expect.objectContaining({ artifact: 'dotnet-api/src/Program.cs', line: 3 }),
       ])
     );
   });
@@ -1102,9 +1107,14 @@ describe('workspace knowledge graph', () => {
     await fsExtra.outputJson(path.join(projectRoot, 'package.json'), { name: 'api' });
     await fsExtra.outputFile(trackedPath, 'export const safe = true;\n');
     await fsExtra.outputFile(outsidePath, 'export const must_not_escape_project = true;\n');
-    execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['init'], {
+      cwd: projectRoot,
+      env: buildCleanGitEnv(),
+      stdio: 'ignore',
+    });
     execFileSync('git', ['add', 'package.json', 'src/tracked.ts'], {
       cwd: projectRoot,
+      env: buildCleanGitEnv(),
       stdio: 'ignore',
     });
     await fsExtra.remove(trackedPath);

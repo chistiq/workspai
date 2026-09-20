@@ -14,9 +14,15 @@ import { hashCanonicalJson } from '../workspace-model-hash.js';
 import type { AgentFrameworkAdapter } from './adapter.js';
 import {
   BUILTIN_AGENT_FRAMEWORK_ADAPTERS,
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
 } from './builtins.js';
-import { assessAgentFrameworkAdmission } from './conformance.js';
+import {
+  assessAgentFrameworkAdmission,
+  implementationSha256ByPlatformFromReports,
+  liveImplementationDigestBlockers,
+  requireCompleteImplementationDigestMap,
+} from './conformance.js';
 
 const MAX_CANDIDATE_INPUT_BYTES = 2 * 1024 * 1024;
 
@@ -95,9 +101,22 @@ export async function buildAgentFrameworkAdmissionCandidate(input: {
         .filter((report) => report.adapter.id === adapter.manifest.adapter.id)
         .sort((left, right) => laneKey(left).localeCompare(laneKey(right)));
       const manifestSha256 = digestBuiltinAgentFrameworkManifest(adapter);
+      const implementationSha256ByPlatform = requireCompleteImplementationDigestMap(
+        implementationSha256ByPlatformFromReports(reports)
+      );
+      const liveBlockers = liveImplementationDigestBlockers({
+        liveImplementationSha256: digestBuiltinAgentFrameworkImplementation(adapter),
+        implementationSha256ByPlatform,
+      });
+      if (liveBlockers.length > 0) {
+        throw new Error(
+          `Cannot build admission candidate for ${adapter.manifest.adapter.id}: ${liveBlockers.join('; ')}`
+        );
+      }
       const assessment = assessAgentFrameworkAdmission({
         manifest: adapter.manifest,
         manifestSha256,
+        implementationSha256ByPlatform,
         reports,
       });
       if (assessment.status !== 'admitted') {
@@ -109,6 +128,7 @@ export async function buildAgentFrameworkAdmissionCandidate(input: {
         id: adapter.manifest.adapter.id,
         version: adapter.manifest.adapter.version,
         manifestSha256,
+        implementationSha256ByPlatform,
         framework: { id: adapter.manifest.framework.id },
         lanes: await Promise.all(
           reports.map(async (report) => {

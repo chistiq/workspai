@@ -61,6 +61,7 @@ import {
   buildWorkspaceVerify,
   evaluateWorkspaceVerifyGate,
   writeWorkspaceVerify,
+  type WorkspaceVerify,
 } from './workspace-verify.js';
 
 type ChangePaths = {
@@ -346,6 +347,28 @@ async function append(
 
 function operationKey(operation: string, targetKind: string, targetId: string): string {
   return `${operation}\u0000${targetKind}\u0000${targetId}`;
+}
+
+const AGENT_FRAMEWORK_PLAN_ROLE = 'agent-framework-change-plan';
+const AGENT_FRAMEWORK_RUNTIME_STAGES = new Set(['init', 'test', 'build']);
+
+function agentFrameworkRuntimeVerificationPending(input: {
+  record: DecisionTransactionRecord;
+  lease: ArchitectureChangeLease;
+  verify: WorkspaceVerify;
+}): boolean {
+  const isAgentFramework = input.record.transaction.plans.some(
+    (plan) => plan.role === AGENT_FRAMEWORK_PLAN_ROLE
+  );
+  if (!isAgentFramework) return false;
+  const scoped = new Set(input.lease.scope.projects);
+  const scopedStages = input.verify.steps.filter((step) => {
+    if (step.scope !== 'project' || !step.project || !scoped.has(step.project)) return false;
+    const stage = step.id.split('.').at(-1);
+    return stage !== undefined && AGENT_FRAMEWORK_RUNTIME_STAGES.has(stage);
+  });
+  if (scopedStages.some((step) => step.status === 'fail')) return false;
+  return scopedStages.length === 0 || scopedStages.some((step) => step.status === 'missing');
 }
 
 function actualOperations(overlay: WorkspaceKnowledgeGraphChangeOverlay) {
@@ -1744,6 +1767,31 @@ export async function verifyProofCarryingChange(input: {
       ],
     });
   }
+  const verify = await buildWorkspaceVerify({ workspacePath });
+  if (
+    !evaluateWorkspaceVerifyGate(verify, { strict: input.strict === true }).passed &&
+    agentFrameworkRuntimeVerificationPending({ record, lease, verify })
+  ) {
+    await writeWorkspaceVerify(verify, workspacePath);
+    const capsule = await publishCapsule(workspacePath, lease, record);
+    const scopedProject = lease.scope.projects[0];
+    return result({
+      operation: 'verify',
+      lease,
+      record,
+      capsule,
+      nextActions: [
+        ...(scopedProject
+          ? [
+              `workspai workspace run init --workspace ${JSON.stringify(workspacePath)} --scope ${JSON.stringify(scopedProject)} --json`,
+              `workspai workspace run test --workspace ${JSON.stringify(workspacePath)} --scope ${JSON.stringify(scopedProject)} --json`,
+              `workspai workspace run build --workspace ${JSON.stringify(workspacePath)} --scope ${JSON.stringify(scopedProject)} --json`,
+            ]
+          : []),
+        `workspai change verify --change ${input.changeId} --json`,
+      ],
+    });
+  }
   record = await append(
     workspacePath,
     record,
@@ -1755,7 +1803,6 @@ export async function verifyProofCarryingChange(input: {
       actorId
     )
   );
-  const verify = await buildWorkspaceVerify({ workspacePath });
   const verifyPath = await writeWorkspaceVerify(verify, workspacePath);
   const relativeVerifyPath = path.relative(workspacePath, verifyPath).split(path.sep).join('/');
   const persistedVerify = await readJson<typeof verify>(workspacePath, relativeVerifyPath);
@@ -2242,6 +2289,159 @@ export function decisionTransactionForCapsule(
     capsule.decision.eventHeadDigest === transaction.eventHeadDigest &&
     capsule.decision.transaction.digest.value === hashCanonicalJson(transaction)
   );
+}
+
+export async function assertAppliedProofCarryingChangeCurrent(input: {
+  workspacePath: string;
+  changeId: string;
+  goalId: string;
+}): Promise<{ modelHash: string; graphHash: string }> {
+  const { lease, record } = await loadChange(input.workspacePath, input.changeId);
+  if (lease.goalId !== input.goalId) {
+    throw new Error(
+      `Proof-carrying change ${input.changeId} is not bound to Goal ${input.goalId}.`
+    );
+  }
+  const pendingStates = new Set(['authorized', 'executing', 'verifying']);
+  const blockedPendingVerification =
+    record.transaction.state === 'blocked' &&
+    record.transaction.blockers.length > 0 &&
+    record.transaction.blockers.every(
+      (blocker) => blocker.code === 'change.verification.criteria_missing'
+    );
+  if (!pendingStates.has(record.transaction.state) && !blockedPendingVerification) {
+    throw new Error(
+      `Proof-carrying change ${input.changeId} is not an applied scaffold pending verification.`
+    );
+  }
+  const filesystemEffects = record.transaction.effects.filter(
+    (effect) => effect.effectClass === 'filesystem'
+  );
+  if (filesystemEffects.length === 0) {
+    throw new Error(
+      `Proof-carrying change ${input.changeId} has no succeeded filesystem effect receipt.`
+    );
+  }
+  if (
+    filesystemEffects.some(
+      (effect) => effect.status !== 'succeeded' || effect.artifacts.length === 0
+    )
+  ) {
+    throw new Error(
+      `Proof-carrying change ${input.changeId} has incomplete or unsuccessful filesystem effects.`
+    );
+  }
+  for (const effect of filesystemEffects) {
+    for (const artifact of effect.artifacts) {
+      if (!(await artifactDigestMatches(input.workspacePath, artifact))) {
+        throw new Error(
+          `Proof-carrying change ${input.changeId} no longer matches effect artifact ${artifact.artifact}.`
+        );
+      }
+    }
+  }
+
+  const agentPlanReference = record.transaction.plans.find(
+    (reference) => reference.role === AGENT_FRAMEWORK_PLAN_ROLE
+  );
+  if (agentPlanReference) {
+    const plan = await readJson<Record<string, unknown>>(
+      input.workspacePath,
+      agentPlanReference.artifact
+    );
+    if (!plan || hashCanonicalJson(plan) !== agentPlanReference.digest.value) {
+      throw new Error(
+        `Proof-carrying change ${input.changeId} has a missing or corrupt agent framework plan.`
+      );
+    }
+    const target = plan.target as { artifactPrefix?: unknown } | undefined;
+    const prefix =
+      typeof target?.artifactPrefix === 'string'
+        ? normalizedArtifactIdentity(target.artifactPrefix).replace(/\/$/u, '')
+        : '';
+    const expectedFiles = Array.isArray(plan.files)
+      ? plan.files.flatMap((candidate) => {
+          if (!candidate || typeof candidate !== 'object') return [];
+          const filePath = (candidate as { path?: unknown }).path;
+          if (typeof filePath !== 'string') return [];
+          const normalized = normalizedArtifactIdentity(filePath);
+          return [prefix ? `${prefix}/${normalized}` : normalized];
+        })
+      : [];
+    const receiptedArtifacts = new Set(
+      filesystemEffects.flatMap((effect) =>
+        effect.artifacts.map((artifact) => normalizedArtifactIdentity(artifact.artifact))
+      )
+    );
+    const missing = expectedFiles.filter((artifact) => !receiptedArtifacts.has(artifact));
+    if (expectedFiles.length === 0 || missing.length > 0) {
+      throw new Error(
+        `Proof-carrying change ${input.changeId} has a partial filesystem effect receipt.`
+      );
+    }
+  }
+
+  const snapshot = await currentSnapshot(input.workspacePath);
+  const current = snapshotGeneration(snapshot);
+  const baseline = await readJson<ProofCarryingChangeBaseline>(
+    input.workspacePath,
+    lease.privateMaterialization.artifact
+  );
+  if (!baseline || hashCanonicalJson(baseline) !== lease.privateMaterialization.digest.value) {
+    throw new Error(
+      `Proof-carrying change ${input.changeId} has a missing or corrupt architecture baseline.`
+    );
+  }
+  const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(baseline, snapshot.graph);
+  const allowedArtifacts = new Set<string>();
+  const changesRoot = await resolveContainedWorkspaceArtifactPath(
+    input.workspacePath,
+    '.workspai/changes',
+    'directory'
+  );
+  const entries = changesRoot ? await fsExtra.readdir(changesRoot, { withFileTypes: true }) : [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^change-[a-z0-9][a-z0-9-]{7,95}$/.test(entry.name)) continue;
+    const candidate = await loadChange(input.workspacePath, entry.name).catch(() => null);
+    if (!candidate || candidate.record.transaction.createdAt < lease.createdAt) continue;
+    const successfulFilesystemEffects = candidate.record.transaction.effects.filter(
+      (effect) => effect.effectClass === 'filesystem' && effect.status === 'succeeded'
+    );
+    if (successfulFilesystemEffects.length === 0) continue;
+    for (const effect of successfulFilesystemEffects) {
+      for (const artifact of effect.artifacts) {
+        if (await artifactDigestMatches(input.workspacePath, artifact)) {
+          allowedArtifacts.add(normalizedArtifactIdentity(artifact.artifact));
+        }
+      }
+    }
+    const predictionReference = candidate.record.transaction.plans.find(
+      (reference) => reference.role === 'noncanonical-prediction'
+    );
+    if (!predictionReference) continue;
+    const prediction = await readJson<PredictedArchitectureChange>(
+      input.workspacePath,
+      predictionReference.artifact
+    );
+    if (!prediction || hashCanonicalJson(prediction) !== predictionReference.digest.value) continue;
+    for (const operation of prediction.operations) {
+      if (operation.targetKind === 'artifact') {
+        allowedArtifacts.add(normalizedArtifactIdentity(operation.targetId));
+      }
+    }
+  }
+  const unexplained = overlay.changedArtifacts
+    .map(normalizedArtifactIdentity)
+    .filter((artifact) => !allowedArtifacts.has(artifact));
+  if (unexplained.length > 0) {
+    throw new Error(
+      `Proof-carrying change ${input.changeId} does not explain current architecture artifacts: ${unexplained.slice(0, 3).join(', ')}.`
+    );
+  }
+  return {
+    modelHash: current.modelHash,
+    graphHash: current.graphHash,
+  };
 }
 
 export async function assertSealedProofCarryingChangeCurrent(input: {

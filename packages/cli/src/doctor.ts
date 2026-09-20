@@ -289,6 +289,7 @@ function contextualizeDoctorSystemChecks(
 
 type DetectedFramework =
   | 'Microsoft Agent Framework'
+  | 'OpenAI Agents SDK'
   | 'FastAPI'
   | 'Django'
   | 'Flask'
@@ -1501,7 +1502,7 @@ function supportTierForFramework(framework: DetectedFramework): FrameworkSupport
 }
 
 function kindForFramework(framework: DetectedFramework): ProjectKind {
-  if (framework === 'Microsoft Agent Framework') {
+  if (framework === 'Microsoft Agent Framework' || framework === 'OpenAI Agents SDK') {
     return 'agent';
   }
 
@@ -1689,6 +1690,8 @@ function toDoctorFramework(detection: BackendFrameworkDetection): DetectedFramew
   switch (detection.key) {
     case 'microsoft-agent-framework':
       return 'Microsoft Agent Framework';
+    case 'openai-agents':
+      return 'OpenAI Agents SDK';
     case 'fastapi':
       return 'FastAPI';
     case 'django':
@@ -1833,7 +1836,7 @@ function applyBackendFrameworkDetection(
   health.frameworkConfidence = detection.confidence;
   health.supportTier = detection.supportTier;
   health.projectKind =
-    detection.key === 'microsoft-agent-framework'
+    detection.key === 'microsoft-agent-framework' || detection.key === 'openai-agents'
       ? 'agent'
       : detection.key === 'tauri' || detection.key === 'electron'
         ? 'desktop'
@@ -1868,6 +1871,9 @@ function detectNodeFrameworkFromManifest(input: {
   }
   if (hasDep('@nestjs/core') || kitName.startsWith('nestjs.')) {
     return { framework: 'NestJS', confidence: 'high' };
+  }
+  if (hasDep('@openai/agents') || kitName.startsWith('agent.openai.')) {
+    return { framework: 'OpenAI Agents SDK', confidence: 'high' };
   }
   if (hasDep('express')) {
     return { framework: 'Express', confidence: 'high' };
@@ -4566,8 +4572,8 @@ async function checkProjectUnnormalized(
     }
     health.venvActive = true; // N/A for Node.js projects
 
-    // Check for node_modules
-    const nodeModulesPath = path.join(projectPath, 'node_modules');
+    const agentRuntimeRoot = health.projectKind === 'agent' ? 'agents/primary' : undefined;
+    const nodeModulesPath = path.join(projectPath, agentRuntimeRoot ?? '', 'node_modules');
     if (await fsExtra.pathExists(nodeModulesPath)) {
       try {
         const modules = await fsExtra.readdir(nodeModulesPath);
@@ -4593,7 +4599,9 @@ async function checkProjectUnnormalized(
           : declaredPackageManager === 'yarn' ||
               (await fsExtra.pathExists(path.join(projectPath, 'yarn.lock')))
             ? 'yarn install'
-            : 'npm install';
+            : agentRuntimeRoot
+              ? `npm install --prefix ${agentRuntimeRoot}`
+              : 'npm install';
       health.fixCommands?.push(buildProjectFixCommand(projectPath, nodeInstallCommand));
     }
 
@@ -4670,7 +4678,10 @@ async function checkProjectUnnormalized(
 
   // Python/FastAPI project checks
   if (primaryRuntime === 'python') {
-    if (primaryBackendDetection.key === 'microsoft-agent-framework') {
+    if (
+      primaryBackendDetection.key === 'microsoft-agent-framework' ||
+      primaryBackendDetection.key === 'openai-agents'
+    ) {
       applyBackendFrameworkDetection(health, primaryBackendDetection);
     } else {
       const pythonDetection = await detectPythonFramework(projectPath, projectJsonData);
@@ -4683,10 +4694,11 @@ async function checkProjectUnnormalized(
     else if (health.framework === 'Python') frameworkImport = '';
     else if (health.framework === 'Microsoft Agent Framework') {
       frameworkImport = 'agent-framework-core';
+    } else if (health.framework === 'OpenAI Agents SDK') {
+      frameworkImport = 'openai-agents';
     }
 
-    const agentRuntimeRoot =
-      health.framework === 'Microsoft Agent Framework' ? 'agents/primary' : undefined;
+    const agentRuntimeRoot = health.projectKind === 'agent' ? 'agents/primary' : undefined;
     const pythonManifestPath = agentRuntimeRoot
       ? path.join(projectPath, agentRuntimeRoot, 'pyproject.toml')
       : pyprojectTomlPath;
@@ -4913,7 +4925,7 @@ async function checkProjectUnnormalized(
         buildProjectFixCommand(
           projectPath,
           health.framework === 'Microsoft Agent Framework'
-            ? 'dotnet restore agents/primary/tests/Primary.Tests.csproj --use-lock-file'
+            ? 'dotnet restore agents/primary/tests/Primary.Tests.csproj'
             : 'dotnet restore'
         )
       );
@@ -7009,6 +7021,11 @@ function parseDependencySyncFix(
         'dotnet\\s+restore\\s+agents/primary/tests/Primary\\.Tests\\.csproj\\s+--use-lock-file',
       command: 'dotnet',
       args: ['restore', 'agents/primary/tests/Primary.Tests.csproj', '--use-lock-file'],
+    },
+    {
+      pattern: 'dotnet\\s+restore\\s+agents/primary/tests/Primary\\.Tests\\.csproj',
+      command: 'dotnet',
+      args: ['restore', 'agents/primary/tests/Primary.Tests.csproj'],
     },
     { pattern: 'dotnet\\s+restore', command: 'dotnet', args: ['restore'] },
     { pattern: 'cargo\\s+fetch', command: 'cargo', args: ['fetch'] },

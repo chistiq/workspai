@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
   managedFile,
   MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
@@ -38,11 +39,17 @@ const LIFECYCLE_RESPONSE_MARKER = 'WORKSPAI_AGENT_LIFECYCLE_OK';
 
 function pythonLifecycleHarness(): string {
   return `import asyncio
+import sys
+from pathlib import Path
 
 from agent_framework import Agent, ChatResponse, Message
 
 CONTEXT_MARKER = "${LIFECYCLE_CONTEXT_MARKER}"
 RESPONSE_MARKER = "${LIFECYCLE_RESPONSE_MARKER}"
+sys.path.insert(0, str(Path(__file__).resolve().parent / "agents" / "conformance-agent"))
+
+from agent import describe_workspai_context, list_workspai_supported_commands, read_workspai_project_summary
+from workspai_context import load_workspai_context
 
 
 class LocalChatClient:
@@ -64,11 +71,25 @@ class LocalChatClient:
 
 
 async def main() -> None:
+    loaded = load_workspai_context()
+    if CONTEXT_MARKER not in loaded:
+        raise RuntimeError("Generated loader did not return the admitted context")
+    if "admitted-context-bytes:" not in describe_workspai_context():
+        raise RuntimeError("Typed context tool did not return the admitted size")
+    summary = read_workspai_project_summary()
+    if "schemaVersion" not in summary:
+        raise RuntimeError("Project summary view did not return schemaVersion")
+    if "do-not-leak" in summary:
+        raise RuntimeError("Project summary view leaked a non-allowlisted key")
+    commands = list_workspai_supported_commands()
+    if "supported" not in commands:
+        raise RuntimeError("Supported-commands view did not return the command surface")
     client = LocalChatClient()
     agent = Agent(
         client=client,
         name="workspai-conformance",
         instructions=f"Treat this as bounded repository context: {CONTEXT_MARKER}",
+        tools=[describe_workspai_context],
     )
     response = await agent.run("Confirm the admitted context.")
     if response.text != RESPONSE_MARKER:
@@ -183,13 +204,13 @@ function portablePath(value: string): string {
 }
 
 function sanitized(value: string, isolatedRoot: string, reportRoot: string): string {
-  const replacements = [
+  const replacements: Array<[string, string]> = [
     [isolatedRoot, '<isolated-project>'],
     [reportRoot, '<conformance-artifact>'],
     [process.cwd(), '<cli-root>'],
     [os.homedir(), '<home>'],
     [os.tmpdir(), '<temporary-root>'],
-  ] as const;
+  ];
   return replacements
     .sort(([left], [right]) => right.length - left.length)
     .reduce((result, [source, replacement]) => result.split(source).join(replacement), value);
@@ -245,7 +266,12 @@ async function materialize(files: AgentFrameworkManagedFile[], root: string): Pr
   await fs.mkdir(path.dirname(contextPath), { recursive: true });
   await fs.writeFile(
     contextPath,
-    `${JSON.stringify({ schemaVersion: 'workspai.project-context-agent.v1', scope: 'conformance' })}\n`,
+    `${JSON.stringify({
+      schemaVersion: 'project-context-agent.v1',
+      scope: 'conformance',
+      marker: LIFECYCLE_CONTEXT_MARKER,
+      secret: 'do-not-leak',
+    })}\n`,
     'utf8'
   );
 }
@@ -584,8 +610,31 @@ async function main(): Promise<void> {
         'Canonical context loader does not enforce the 128 KiB boundary.'
       );
       assertCondition(
-        runtime === 'python' || entrypoint.content.includes('WorkspaiContext.LoadAsync'),
-        '.NET entrypoint does not invoke its canonical context loader.'
+        runtime === 'python'
+          ? rendered.files.some(
+              (file) =>
+                file.path.endsWith('workspai_context.py') &&
+                file.content.includes('resolve_workspai_project_root') &&
+                !file.content.includes('Path.cwd')
+            ) &&
+              !entrypoint.content.includes('Path.cwd') &&
+              rendered.files.some(
+                (file) =>
+                  file.path.endsWith('/agent.py') &&
+                  file.content.includes('describe_workspai_context') &&
+                  file.content.includes('read_workspai_project_summary') &&
+                  file.content.includes('list_workspai_supported_commands') &&
+                  !file.content.includes('<workspai-context>') &&
+                  !file.content.includes('gpt-4o')
+              )
+          : entrypoint.content.includes('WorkspaiContext.DescribeViewAsync') &&
+              entrypoint.content.includes('AIFunctionFactory.Create') &&
+              entrypoint.content.includes('ReadWorkspaiProjectSummary') &&
+              entrypoint.content.includes('RunStreamingAsync') &&
+              !entrypoint.content.includes('<workspai-context>') &&
+              !entrypoint.content.includes('GetCurrentDirectory') &&
+              !entrypoint.content.includes('gpt-4o'),
+        'Generated entrypoint still treats process cwd as project-root authority.'
       );
       return {
         entrypoint: context.entrypoint,
@@ -708,11 +757,7 @@ async function main(): Promise<void> {
       } else {
         const version = await run('dotnet', ['--version'], generatedRoot);
         runtimeVersion = version.stdout.trim();
-        await run(
-          'dotnet',
-          ['restore', context.dependencyManifest, '--use-lock-file'],
-          generatedRoot
-        );
+        await run('dotnet', ['restore', context.dependencyManifest], generatedRoot);
         const lockPath = path.resolve(
           generatedRoot,
           path.dirname(context.dependencyManifest),
@@ -746,7 +791,7 @@ async function main(): Promise<void> {
           file.path.endsWith('.Tests.csproj')
         )?.path;
         assertCondition(testProject, 'Rendered .NET test project is missing.');
-        await run('dotnet', ['restore', testProject, '--use-lock-file'], generatedRoot);
+        await run('dotnet', ['restore', testProject], generatedRoot);
         // xUnit v3 test projects are native Microsoft Testing Platform executables. Running the
         // generated test project directly is stable across supported .NET SDKs and avoids
         // inheriting or rewriting a host repository's global.json runner policy.
@@ -876,6 +921,7 @@ async function main(): Promise<void> {
       id: adapter.manifest.adapter.id,
       version: adapter.manifest.adapter.version,
       manifestSha256: digestBuiltinAgentFrameworkManifest(adapter),
+      implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter),
     },
     frameworkVersion: adapter.manifest.framework.testedVersions[0],
     cliVersion: await cliVersion(),
@@ -902,7 +948,12 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${status} ${adapter.manifest.adapter.id} ${report.frameworkVersion} on ${platform}; report: ${reportPath}\n`
   );
-  if (report.verdict !== 'admitted') process.exitCode = 1;
+  if (report.verdict !== 'admitted') {
+    for (const blocker of report.blockers) {
+      process.stdout.write(`blocker: ${blocker}\n`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error: unknown) => {

@@ -50,8 +50,10 @@ import { registerChangeCommands } from './commands/change.js';
 import { registerAgentFrameworkCommands } from './commands/agent-framework.js';
 import {
   applyPreparedAgentFrameworkAttachment,
+  createBuiltinAgentFrameworkRegistry,
   initializeAgentFrameworkProjectRoot,
   isAgentFrameworkProjectKit,
+  lookupAgentFrameworkProjectKit,
   prepareAgentFrameworkAttachment,
   resolveAgentFrameworkProjectKit,
 } from './agent-frameworks/index.js';
@@ -79,6 +81,7 @@ import {
 } from './utils/cli-lifecycle-contract.js';
 import { findRapidkitProjectRoot } from './utils/project-command-capabilities.js';
 import { missingShellActivationDiagnostic } from './utils/shell-activation-diagnostics.js';
+import { enrichBridgeBackedProjectMetadata } from './utils/bridge-kit-metadata.js';
 import { canonicalizeProjectMetadata } from './utils/project-metadata.js';
 import {
   ProjectWorkspaceResolutionError,
@@ -398,6 +401,9 @@ async function enforceWorkspaceProfileForRequestedKit(kitName: string): Promise<
   const workspacePath = findWorkspaceUp(process.cwd());
   const normalizedKitName = kitName.trim().toLowerCase();
   if (!workspacePath || !normalizedKitName) {
+    return true;
+  }
+  if (isAgentFrameworkProjectKit(normalizedKitName)) {
     return true;
   }
 
@@ -1106,11 +1112,16 @@ async function finalizeCreatedProjectWorkspace(
     }) => Promise<void>;
   } = {}
 ): Promise<string | undefined> {
-  if (args.includes('--no-workspace') || args.includes('--dry-run')) {
+  if (args.includes('--dry-run')) {
     return undefined;
   }
   if (!(await fsExtra.pathExists(projectPath))) {
     logger.warn(`Created project path was not found for workspace linking: ${projectPath}`);
+    return undefined;
+  }
+  await canonicalizeProjectMetadata(projectPath);
+  await enrichBridgeBackedProjectMetadata(projectPath);
+  if (args.includes('--no-workspace')) {
     return undefined;
   }
 
@@ -1136,7 +1147,6 @@ async function finalizeCreatedProjectWorkspace(
 
   let relationship = 'managed';
   try {
-    await canonicalizeProjectMetadata(projectPath);
     const relativeProjectPath = path.relative(workspacePath, projectPath);
     const projectIsExternal =
       relativeProjectPath.startsWith('..') || path.isAbsolute(relativeProjectPath);
@@ -1208,8 +1218,19 @@ async function finalizeCreatedProjectWorkspace(
 
 async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
   if (args[0] !== 'create' || args[1] !== 'project') return 1;
+  const requestedKit = lookupAgentFrameworkProjectKit(args[2]);
+  if (!requestedKit) return 1;
   const kit = resolveAgentFrameworkProjectKit(args[2]);
-  if (!kit) return 1;
+  if (!kit) {
+    const admission = createBuiltinAgentFrameworkRegistry(
+      {},
+      { trustReviewedReleaseAdmissions: true }
+    ).resolveAdapter(requestedKit.adapterId);
+    process.stderr.write(
+      `Agent framework kit ${requestedKit.id} is not release-admitted. ${admission.blockers.join(' ')}\n`
+    );
+    return 1;
+  }
   const projectName = args[3];
   if (!projectName) {
     process.stderr.write(
@@ -1258,6 +1279,7 @@ async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
           workspacePath,
           project: projectName,
           runtime: kit.runtime,
+          framework: kit.frameworkId,
           instanceName,
           mode: 'scaffold',
           intent: `Create ${projectName} as a governed ${kit.label} project`,

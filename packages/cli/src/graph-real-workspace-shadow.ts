@@ -925,7 +925,11 @@ async function qualifyOne(input: {
     ...(input.packageBuilder ? { package: input.packageBuilder } : {}),
   });
   const semanticBinding = discovery.packageExecution.semanticBinding;
-  if (!semanticBinding || discovery.packageExecution.status !== 'complete') {
+  if (
+    !semanticBinding ||
+    !discovery.packageExecution.semanticBinding ||
+    !['complete', 'partial'].includes(discovery.packageExecution.status)
+  ) {
     return {
       id: input.entry.id,
       kind: input.entry.kind,

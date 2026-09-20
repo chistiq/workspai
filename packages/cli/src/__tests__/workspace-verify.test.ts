@@ -454,6 +454,7 @@ describe('workspace verify', () => {
         passed: 1,
         failed: 0,
         skipped: 0,
+        blocked: 0,
         exitCode: 0,
       },
       projects: [
@@ -468,7 +469,6 @@ describe('workspace verify', () => {
         },
       ],
     } satisfies WorkspaceRunReport);
-
     const verify = await buildWorkspaceVerify({
       workspacePath,
       fromImpactPath: impactPath,
@@ -553,6 +553,7 @@ describe('workspace verify', () => {
         passed: 1,
         failed: 0,
         skipped: 0,
+        blocked: 0,
         exitCode: 0,
       },
       projects: [
@@ -564,6 +565,67 @@ describe('workspace verify', () => {
           status: 'passed',
           exitCode: 0,
           durationMs: 25,
+        },
+      ],
+    } satisfies WorkspaceRunReport);
+
+    // A newer scoped run must not make the older web receipt fresh merely by
+    // copying it into the latest stage report.
+    await publishWorkspaceRunStageReport(workspacePath, {
+      schemaVersion: '1.0',
+      workspacePath,
+      stage: 'test',
+      generatedAt: '2026-06-15T00:03:00.000Z',
+      durationMs: 10,
+      options: {
+        affected: false,
+        blastRadius: false,
+        since: null,
+        parallel: false,
+        maxWorkers: 1,
+        continueOnError: false,
+        strict: false,
+        enforceGates: false,
+        scope: 'project:api',
+      },
+      selection: {
+        mode: 'all',
+        since: null,
+        scope: 'project:api',
+        graphStatus: 'not-applicable',
+        expansionDepth: 0,
+      },
+      gates: { enforced: false, results: [], blocked: false },
+      summary: {
+        projectCount: 2,
+        selectedCount: 1,
+        passed: 1,
+        failed: 0,
+        skipped: 1,
+        blocked: 0,
+        exitCode: 0,
+      },
+      projects: [
+        {
+          path: path.join(workspacePath, 'api'),
+          relativePath: 'api',
+          projectName: 'api',
+          selected: true,
+          affected: false,
+          status: 'passed',
+          exitCode: 0,
+          durationMs: 10,
+        },
+        {
+          path: path.join(workspacePath, 'web'),
+          relativePath: 'web',
+          projectName: 'web',
+          selected: false,
+          affected: false,
+          status: 'skipped',
+          exitCode: null,
+          durationMs: 0,
+          reason: 'outside scope',
         },
       ],
     } satisfies WorkspaceRunReport);

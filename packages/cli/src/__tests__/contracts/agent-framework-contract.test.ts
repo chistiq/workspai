@@ -155,6 +155,7 @@ function validReport(): AgentFrameworkConformanceReport {
       id: 'fixture-agent',
       version: '1.0.0',
       manifestSha256: 'a'.repeat(64),
+      implementationSha256: 'b'.repeat(64),
     },
     frameworkVersion: '1.2.3',
     cliVersion: '0.74.0',
@@ -324,6 +325,11 @@ describe('agent framework contracts', () => {
           id: 'fixture-agent',
           version: '1.0.0',
           manifestSha256: 'b'.repeat(64),
+          implementationSha256ByPlatform: {
+            linux: 'c'.repeat(64),
+            darwin: 'd'.repeat(64),
+            win32: 'e'.repeat(64),
+          },
           framework: { id: 'fixture' },
           lanes: [
             {

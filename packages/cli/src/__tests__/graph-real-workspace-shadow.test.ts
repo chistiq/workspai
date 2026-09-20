@@ -23,6 +23,7 @@ import {
   normalizeComparablePath,
   parseGraphRealWorkspaceApprovals,
   pathsUseRejectedWindowsOrMacSpellings,
+  qualifyGraphRealWorkspaceObservation,
   resolveGraphRealWorkspaceLimits,
   runGraphRealWorkspaceQualification,
   workspaceContainsCanonicalGraphWrites,
@@ -542,6 +543,45 @@ describe('Graph real-workspace shadow qualification', () => {
     expect(JSON.stringify(redacted.result)).not.toContain('package engine unavailable');
     expect(redacted.result.receipt.fallback).toBe('prohibited');
     expect(redacted.exitCode).toBe(4);
+  });
+
+  it('compares an evidence-backed partial package graph instead of discarding its unknown zones', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'workspai-g8-partial-'));
+    roots.push(root);
+    await writeFile(path.join(root, 'package.json'), '{"name":"partial-fixture"}\n');
+    await writeFile(
+      path.join(root, 'generated.ts'),
+      Array.from({ length: 501 }, (_, index) => `export function generated${index}() {}`).join('\n')
+    );
+    const sourceTree = await digestRealWorkspaceSourceTree(
+      root,
+      GRAPH_REAL_WORKSPACE_DEFAULT_LIMITS
+    );
+    const observation = await qualifyGraphRealWorkspaceObservation({
+      entry: {
+        id: 'partial-fixture',
+        kind: 'committed-fixture',
+        projectId: 'partial-fixture',
+        workspaceId: 'partial-fixture',
+        relativeRoot: 'partial-fixture',
+        trustedBaseline: false,
+        requiredFor: ['regression'],
+      },
+      projectRoot: root,
+      inventoryDigest: digest('partial-inventory'),
+      sourceTreeDigest: sourceTree.digest,
+      mappingVersion: GRAPH_SHADOW_MAPPING_VERSION,
+      approvals: [],
+      limits: GRAPH_REAL_WORKSPACE_DEFAULT_LIMITS,
+      versions: {
+        cli: { version: '0.76.0', commit: 'a'.repeat(40) },
+        graphPackage: { version: '0.0.0-development', commit: 'b'.repeat(40) },
+      },
+    });
+
+    expect(observation.packageExecution?.status).toBe('partial');
+    expect(observation.reason).not.toBe('partial-package-execution');
+    expect(observation.comparison).toBeDefined();
   });
 
   it('does not overwrite existing evidence and keeps CLI default independent from cwd', async () => {

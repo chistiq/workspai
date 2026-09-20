@@ -4,13 +4,17 @@ import path from 'node:path';
 import {
   assessAgentFrameworkAdmission,
   BUILTIN_AGENT_FRAMEWORK_ADAPTERS,
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
+  implementationSha256ByPlatformFromReports,
+  liveImplementationDigestBlockers,
   loadAgentFrameworkConformanceReport,
 } from '../src/agent-frameworks/index.js';
 import { buildAgentFrameworkAdmissionCandidate } from '../src/agent-frameworks/admission-candidate.js';
 import type { AgentFrameworkConformanceReport } from '../src/contracts/agent-framework-contract.js';
 
-const REPORT_NAME = /^microsoft-agent-framework-(python|dotnet)-(linux|darwin|win32)\.json$/;
+const REPORT_NAME =
+  /^(microsoft-agent-framework-(python|dotnet)|openai-agents-(python|typescript))-(linux|darwin|win32)\.json$/;
 const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
 const CANDIDATE_NAME = 'agent-framework-admission-candidate.json';
 
@@ -139,9 +143,18 @@ async function main(): Promise<void> {
     const adapterReports = reports.filter(
       (report) => report.adapter.id === adapter.manifest.adapter.id
     );
+    const implementationSha256ByPlatform =
+      implementationSha256ByPlatformFromReports(adapterReports);
+    blockers.push(
+      ...liveImplementationDigestBlockers({
+        liveImplementationSha256: digestBuiltinAgentFrameworkImplementation(adapter),
+        implementationSha256ByPlatform,
+      }).map((blocker) => `${adapter.manifest.adapter.id}: ${blocker}`)
+    );
     const assessment = assessAgentFrameworkAdmission({
       manifest: adapter.manifest,
       manifestSha256: digestBuiltinAgentFrameworkManifest(adapter),
+      implementationSha256ByPlatform,
       reports: adapterReports,
     });
     if (assessment.status !== 'admitted') blockers.push(...assessment.blockers);
