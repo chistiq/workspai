@@ -26,10 +26,7 @@
 
 # Workspai CLI v0.76.0
 
-Release date: September 20, 2026.
-
-**Publication status:** Qualified by the reviewed v2 cross-platform matrix. npm
-publication follows the post-promotion CI run for the admission commit.
+Released September 20, 2026.
 
 ## Stable OpenAI Agents SDK Adapters
 

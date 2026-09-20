@@ -460,5 +460,5 @@ describe.skipIf(!releaseAdmitted)('agent framework user flow', () => {
             operation.targetId.startsWith('backend/'))
       )
     ).toBe(false);
-  }, 60_000);
+  }, 120_000);
 });

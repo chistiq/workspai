@@ -5,7 +5,7 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Release Candidate: v0.76.0 (September 20, 2026)
+## v0.76.0 (September 20, 2026)
 
 ### Stable OpenAI Agents SDK Adapters
 
@@ -29,9 +29,6 @@ promoted from the Linux, macOS, and Windows release matrix.
 **Compatibility:** Existing commands, schema versions, and fail-closed
 framework admission remain supported. Microsoft adapters stay `preview`.
 Independent Graph work is not this CLI release.
-
-**Publication status:** Qualified on September 20, 2026 by Agent Framework
-Matrix run `35483229302`; npm publication follows the post-promotion CI gate.
 
 **Install:**
 
